@@ -49,6 +49,17 @@ const FACE_TIERS: readonly { minScore: number; lump: string }[] = [
   { minScore: 0, lump: 'STFOUCH1' },
 ];
 
+/** One `<label>  <value>` line as `Intermission.drawPair` lays it out. */
+interface LabelledValue {
+  label: string;
+  valueText: string;
+  valueFont: WadFont;
+  /** Where the value starts — or, with `columnWidth`, where its column does. */
+  valueX: number;
+  /** Right-aligns the value inside a column this wide instead of starting it at `valueX`. */
+  columnWidth?: number;
+}
+
 /**
  * The end-of-level popup: the same three counts the HUD strip carries, as vanilla's percentages
  * this time, then the frozen level time and how it compares to the level's best. Shown when a
@@ -108,19 +119,44 @@ export class Intermission {
   }
 
   /**
-   * A red label with its value starting at `valueX`. Given a `columnWidth`, the value is instead
-   * right-aligned inside that column — which also makes every line that shares one the same total
-   * width, so a run of them lines up on the numbers' right edge. A value wider than the column
-   * (a kill count past 100%) widens it rather than being clipped or pushed back over the label.
+   * `cheated` is `game.ts`'s `recordsEligible` inverted — the same flag that already decides
+   * whether a completion may set a record, rather than a second account of what happened this run.
    */
-  private drawPair(
-    canvas: HTMLCanvasElement,
-    label: string,
-    valueText: string,
-    valueFont: WadFont,
-    valueX: number,
-    columnWidth?: number,
-  ): void {
+  show(stats: LevelStats, record: BestTimeResult | null, parSeconds: number | null, cheated: boolean): void {
+    if (cheated) return this.showCheated();
+    this.cheatedCanvas.classList.add('hidden');
+    this.statsBlock.classList.remove('hidden');
+    // The one line below with no `draw*` of its own to un-hide it: every run that gets here has a
+    // time, so nothing but `showCheated` ever hides it.
+    this.timeCanvas.classList.remove('hidden');
+    this.drawStatLine(this.killsCanvas, 'Kills', stats.kills, stats.totalKills);
+    this.drawStatLine(this.itemsCanvas, 'Items', stats.items, stats.totalItems);
+    this.drawStatLine(this.secretsCanvas, 'Secrets', stats.secrets, stats.totalSecrets);
+    this.drawFace(this.faceFor(stats));
+    // Always yellow, records included — the green `NEW BEST TIME!` line below is what announces
+    // one.
+    this.drawTimeLine(this.timeCanvas, 'Your time', formatClock(stats.elapsedSeconds), this.yellowFont);
+    this.drawParLine(parSeconds, stats.elapsedSeconds);
+    this.drawBestLines(record);
+    this.root.classList.remove('hidden');
+  }
+
+  /**
+   * Drops the popup. Like the other overlays, the element outlives any one `Game`, so `dispose`
+   * clears it too.
+   */
+  clear(): void {
+    this.root.classList.add('hidden');
+  }
+
+  /**
+   * A red label with its value starting at `pair.valueX`. Given a `columnWidth`, the value is
+   * instead right-aligned inside that column — which also makes every line that shares one the same
+   * total width, so a run of them lines up on the numbers' right edge. A value wider than the
+   * column (a kill count past 100%) widens it rather than being clipped or pushed over the label.
+   */
+  private drawPair(canvas: HTMLCanvasElement, pair: LabelledValue): void {
+    const { label, valueText, valueFont, valueX, columnWidth } = pair;
     const valueWidth = valueFont.measure(valueText);
     const column = Math.max(columnWidth ?? valueWidth, valueWidth);
     canvas.width = valueX + column;
@@ -138,7 +174,13 @@ export class Intermission {
   private drawStatLine(canvas: HTMLCanvasElement, label: string, found: number, total: number): void {
     const percent = percentOf(found, total);
     const valueFont = percent >= 100 ? this.greenFont : this.yellowFont;
-    this.drawPair(canvas, label, `${percent}%`, valueFont, this.labelColumnWidth, this.percentColumnWidth);
+    this.drawPair(canvas, {
+      label,
+      valueText: `${percent}%`,
+      valueFont,
+      valueX: this.labelColumnWidth,
+      columnWidth: this.percentColumnWidth,
+    });
   }
 
   /**
@@ -158,7 +200,13 @@ export class Intermission {
 
   /** One `<label>  <clock>` line of the time block, in the columns every line of it shares. */
   private drawTimeLine(canvas: HTMLCanvasElement, label: string, clock: string, font: WadFont): void {
-    this.drawPair(canvas, label, clock, font, this.timeLabelColumnWidth, this.timeColumnWidth);
+    this.drawPair(canvas, {
+      label,
+      valueText: clock,
+      valueFont: font,
+      valueX: this.timeLabelColumnWidth,
+      columnWidth: this.timeColumnWidth,
+    });
   }
 
   /**
@@ -213,36 +261,5 @@ export class Intermission {
     drawText(this.cheatedCanvas, this.redFont, CHEATED_TEXT);
     this.drawFace(CHEATED_FACE);
     this.root.classList.remove('hidden');
-  }
-
-  /**
-   * `cheated` is `game.ts`'s `recordsEligible` inverted — the same flag that already decides
-   * whether a completion may set a record, rather than a second account of what happened this run.
-   */
-  show(stats: LevelStats, record: BestTimeResult | null, parSeconds: number | null, cheated: boolean): void {
-    if (cheated) return this.showCheated();
-    this.cheatedCanvas.classList.add('hidden');
-    this.statsBlock.classList.remove('hidden');
-    // The one line below with no `draw*` of its own to un-hide it: every run that gets here has a
-    // time, so nothing but `showCheated` ever hides it.
-    this.timeCanvas.classList.remove('hidden');
-    this.drawStatLine(this.killsCanvas, 'Kills', stats.kills, stats.totalKills);
-    this.drawStatLine(this.itemsCanvas, 'Items', stats.items, stats.totalItems);
-    this.drawStatLine(this.secretsCanvas, 'Secrets', stats.secrets, stats.totalSecrets);
-    this.drawFace(this.faceFor(stats));
-    // Always yellow, records included — the green `NEW BEST TIME!` line below is what announces
-    // one.
-    this.drawTimeLine(this.timeCanvas, 'Your time', formatClock(stats.elapsedSeconds), this.yellowFont);
-    this.drawParLine(parSeconds, stats.elapsedSeconds);
-    this.drawBestLines(record);
-    this.root.classList.remove('hidden');
-  }
-
-  /**
-   * Drops the popup. Like the other overlays, the element outlives any one `Game`, so `dispose`
-   * clears it too.
-   */
-  clear(): void {
-    this.root.classList.add('hidden');
   }
 }

@@ -284,15 +284,10 @@ export class Game {
   private combat: CombatContext;
   private weaponSystem = new WeaponSystem();
   /**
-   * Set by the exit trigger and consumed right after `specials.update()`
-   * returns in `frame` — **never** loaded from inside the callback itself.
-   * `handleWalkTriggers` runs partway through that `update()`, and a mover
-   * ticked dirty earlier in the same call is only rebuilt afterwards; tearing
-   * the scene down synchronously would leave that pending rebuild to `add` the
-   * old map's mover mesh to the new map's scene, with nothing to clean it up.
-   *
-   * Which of the two exits fired is carried along: it decides where the level leads, and only
-   * here, since by the time the popup is up the choice has already been made into `nextMapIndex`.
+   * Set by the exit trigger and consumed right after `specials.update()` returns — **never** loaded
+   * from inside the callback itself, or a mover rebuild still pending from that same `update()`
+   * would add the old map's mesh to the new map's scene. Which of the two exits fired is carried
+   * along, since it decides where the level leads.
    */
   private pendingExit: 'normal' | 'secret' | null = null;
   /**
@@ -539,29 +534,25 @@ export class Game {
     // PLAY's own walk cycle: DOOM has no separate idle art, it just holds
     // frame A (this list's first entry) until the player is actually moving.
     // `FULLBRIGHT_FRAMES` lights the muzzle frame (`PLAY F`) the way vanilla does.
-    this.playerActor = new SpriteActor(
-      this.spriteBank,
-      this.spriteMaterials,
-      'PLAY',
-      ['A', 'B', 'C', 'D'],
-      undefined,
-      FULLBRIGHT_FRAMES,
-    );
+    this.playerActor = new SpriteActor(this.spriteBank, this.spriteMaterials, {
+      spriteName: 'PLAY',
+      animFrames: ['A', 'B', 'C', 'D'],
+      brightFrames: FULLBRIGHT_FRAMES,
+    });
     this.scene.add(this.playerActor.mesh);
     // The vile-flame resolver is `monsterAttacks`', not the batch's — where the
     // flame belongs depends on live monster/player state. Both callbacks are
     // reached through a closure because `monsterAttacks` and `fogOfWar` are both
     // built after `effects` (the fog on every level load), and neither is called
     // before a frame runs, long after all three exist.
-    this.effects = new SpriteFxLayer(
-      this.scene,
-      this.spriteBank,
-      this.spriteMaterials,
+    this.effects = new SpriteFxLayer(this.scene, {
+      spriteBank: this.spriteBank,
+      spriteMaterials: this.spriteMaterials,
       audio,
-      (vileId, targetId) => this.monsterAttacks.vileFlameFor(vileId, targetId),
-      (subsector) => this.fogOfWar.isVisible(subsector),
-      this.lights,
-    );
+      resolveVileFlame: (vileId, targetId) => this.monsterAttacks.vileFlameFor(vileId, targetId),
+      fogVisible: (subsector) => this.fogOfWar.isVisible(subsector),
+      lights: this.lights,
+    });
     // `world`/`things`/`player`/`inventory` are all replaced on a map load (and
     // `inventory` again on restart), so the context reads them back off this
     // instance every time rather than capturing them — hence the getters, and
@@ -585,7 +576,12 @@ export class Game {
       triggerShotPath: (from, to, blocker, byMonster) =>
         this.specials?.triggerShotPath(from, to, blocker, this.inventory.keys, byMonster),
     };
-    this.projectiles = new ProjectileLayer(this.combat, this.effects, this.spriteBank, this.spriteMaterials, audio);
+    this.projectiles = new ProjectileLayer(this.combat, {
+      effects: this.effects,
+      spriteBank: this.spriteBank,
+      spriteMaterials: this.spriteMaterials,
+      audio,
+    });
     this.monsterAttacks = new MonsterAttacks(this.combat, this.effects, this.projectiles, audio, () =>
       hasPower(this.inventory, 'invisibility'),
     );
@@ -604,6 +600,94 @@ export class Game {
 
   get currentMap(): string {
     return this.mapNames[this.mapIndex];
+  }
+
+  /**
+   * Why this moment can't be saved, or null when it can — death, a pending exit and the
+   * intermission are refused. A sentence rather than a flag because it is what the player is told.
+   * Deliberately narrower than `levelEnding`: the Icon of Sin's death cascade stays saveable, since
+   * `IconSnapshot` carries `exitTimer`. docs/savegames.md § What is saved and what is deliberately
+   * not.
+   */
+  saveRefusal(): string | null {
+    if (this.playerDead) return "you can't save while dead";
+    if (this.popup === 'intermission') return "you can't save during the intermission";
+    if (this.popup === 'endcard') return "you can't save once the campaign is over";
+    if (this.pendingExit) return "you can't save while the level is exiting";
+    return null;
+  }
+
+  /**
+   * Saves this moment through the caller's writer — the menu's Save and Overwrite, whose store call
+   * is all that differs. The capture, the write and `savedState` stay together because only a write
+   * that actually stored the bytes may move what `R` reloads (docs/death.md § Player death).
+   * Refuses by *throwing*, the save path's one refusal convention (docs/savegames.md § What is
+   * saved and what is deliberately not).
+   */
+  async saveVia(write: (capture: SaveCapture) => Promise<unknown>): Promise<void> {
+    const capture = this.captureSave();
+    await write(capture);
+    this.savedState = capture.state;
+  }
+
+  resume(): void {
+    if (this.running) return;
+    // Reached from the Start button or ESC, i.e. from a real user gesture —
+    // which is the only way a browser lets an AudioContext start.
+    this.audio.resume();
+    this.paused = false;
+    this.running = true;
+    this.lastTime = performance.now();
+    this.lastRaf = this.lastTime;
+    // Time spent paused is not simulation time: without this the level would
+    // run a catch-up burst of tics the moment the menu closes.
+    this.accumulator = 0;
+    // Zero, not `lastTime + interval`: the first frame back is always due, and
+    // `dueThisFrame` resyncs the deadline off its own timestamp.
+    this.nextFrameAt = 0;
+    // Music kept playing behind the menu, and no frame was there to report what
+    // it cost; charging all of it to the first frame back would spike the
+    // profiler's `Music` bar for seconds. Discarded like the accumulator above.
+    this.audio.music.takeRenderMs();
+    this.view.input.reset();
+    requestAnimationFrame(this.frame);
+  }
+
+  pause(): void {
+    if (this.paused) return; // a second call would leave two `stillFrame` loops running
+    this.stop();
+    this.paused = true;
+    requestAnimationFrame(this.stillFrame);
+  }
+
+  dispose(): void {
+    // Read by `resumeFromCheckpoint`, whose store read can still be in flight.
+    this.disposed = true;
+    this.stop();
+    // The engine is session-level and the next Game sets its own bank; this
+    // only makes sure nothing from this level is left holding a channel.
+    this.audio.stopAll();
+    // The music would otherwise keep playing over the menu once this level is gone.
+    this.audio.music.stop();
+    this.screenEffects.reset();
+    // Like `screenEffects`, these elements outlive the Game that drove them — without
+    // this the menu (and the next level started from it) inherits the line.
+    this.deathOverlay.clear();
+    this.message.clear();
+    this.levelCard.clear();
+    this.intermission.clear();
+    this.endCard.clear();
+    this.playerActor.dispose();
+    this.specials?.dispose();
+    this.built?.group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+    });
+    // Both sprite batches' instance buffers and cloned materials are their
+    // own; the geometry/textures behind them are spriteMaterials'.
+    this.things?.dispose();
+    this.effects.dispose();
+    this.materials.dispose();
+    this.spriteMaterials.dispose();
   }
 
   /**
@@ -628,52 +712,10 @@ export class Game {
   }
 
   /**
-   * Why this moment can't be saved, or null when it can. Death, a pending exit
-   * and the intermission are refused — excluding those three from the save
-   * format entirely is far cheaper than restoring them correctly
-   * (docs/savegames.md § What is saved and what is deliberately not). The
-   * reason is a sentence rather than a flag because it is what the player is
-   * told — `captureSave` throws it, and the menu also asks *before* the fact to
-   * disable Save/Overwrite and name the reason (docs/menu.md § Save and Load tabs).
-   *
-   * Deliberately narrower than `levelEnding`: the Icon of Sin's death cascade stays saveable,
-   * since `IconSnapshot` carries `exitTimer` and a mid-cascade save restores mid-cascade.
-   */
-  saveRefusal(): string | null {
-    if (this.playerDead) return "you can't save while dead";
-    if (this.popup === 'intermission') return "you can't save during the intermission";
-    if (this.popup === 'endcard') return "you can't save once the campaign is over";
-    if (this.pendingExit) return "you can't save while the level is exiting";
-    return null;
-  }
-
-  /**
-   * Saves this moment through the caller's writer — the menu's Save and
-   * Overwrite, whose store call is all that differs between them, handed in the
-   * same `(capture) => Promise` shape `CheckpointStore.write` already uses. The
-   * capture, the write and `savedState` stay together here for the reason
-   * `writeCheckpoint` keeps its own trio together: what a save *is* and what a
-   * successful one makes `R` reload are both this class's, and only a write that
-   * actually stored the bytes may move `savedState` (docs/death.md § Player death).
-   *
-   * Refuses by *throwing*, from `captureSave` below or from the writer itself —
-   * the same shape either way, which is what lets the menu turn any of it into
-   * one status line (docs/menu.md § Save and Load tabs).
-   */
-  async saveVia(write: (capture: SaveCapture) => Promise<unknown>): Promise<void> {
-    const capture = this.captureSave();
-    await write(capture);
-    this.savedState = capture.state;
-  }
-
-  /**
-   * The full state of this moment plus a thumbnail, ready for the store.
-   * Refuses by *throwing* the reason, the same convention the store's own
-   * writers use, so the whole save path has one refusal shape and the player is
-   * told which condition actually applies (docs/menu.md § Save and Load tabs).
-   * Only the store's own bookkeeping (ID, name, date) is the caller's to add: a
-   * capture identifies its WAD set by content, so this class needs to know
-   * nothing about the library it was picked from.
+   * The full state of this moment plus a thumbnail, ready for the store; throws `saveRefusal`'s
+   * reason when there is one. Only the store's own bookkeeping (ID, name, date) is the caller's to
+   * add — a capture identifies its WAD set by content, so this class knows nothing about the
+   * library it was picked from.
    */
   private captureSave(thumbnail = true): SaveCapture {
     const refusal = this.saveRefusal();
@@ -906,7 +948,7 @@ export class Game {
     // framed rather than mid-zoom. docs/camera.md § Auto camera.
     this.autoCamera.seed(this.player, this.view.camera);
     this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
-    this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y, movableSectors);
+    this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player, movableSectors);
     if (restore) this.fogOfWar.restoreExplored(restore.fog);
     this.specials = new SpecialsController(this.world, {
       bank: this.materials,
@@ -929,22 +971,10 @@ export class Game {
         // Boom's silent family spawns neither puff and plays no `telept` —
         // docs/specials.md § Silent and line-to-line teleporters.
         if (!dest.silent) this.effects.spawnTeleportPair(from, dest, this.player.z);
-        // The camera's follow point always snaps — a teleport should cut, not
-        // fly across the map to catch up (docs/camera.md § The camera is
-        // simulation state). The *yaw* differs by kind, and `yawDeg` is an
-        // orbit the player owns with Q/E rather than anything slaved to their
-        // facing:
-        //
-        // - A vanilla teleport reorients it to the landing angle, same as the
-        //   initial spawn. It is a cut; the arrival has an authored facing.
-        // - **A silent one turns it by the same angle the body turned**, so a
-        //   pair authored as one continuous doorway (`rotateBy` 0) leaves the
-        //   view completely still, and whatever orbit the player had chosen
-        //   survives. Reorienting it absolutely would inject that orbit offset
-        //   as a visible spin on every silent arrival, which is the opposite
-        //   of the point. docs/specials.md § Silent and line-to-line teleporters.
-        //
-        // Yaw first either way: `snapTo` poses the camera with it.
+        // The follow point always snaps; the yaw is reoriented by a vanilla teleport and turned
+        // *relatively* by a silent one, which is what preserves the player's own Q/E orbit
+        // (docs/specials.md § Silent and line-to-line teleporters). Yaw first either way: `snapTo`
+        // poses the camera with it.
         const camera = this.view.camera;
         camera.yawDeg =
           dest.rotateBy === undefined
@@ -1005,19 +1035,18 @@ export class Game {
     this.scene.add(this.things.group);
 
     // Built after `things`, which its cube spawns and telefrags go through.
-    this.icon = new IconOfSin(
-      map,
-      this.combat,
-      this.effects,
-      this.spriteBank,
-      this.spriteMaterials,
-      this.skill,
-      () => {
+    this.icon = new IconOfSin(map, {
+      ctx: this.combat,
+      effects: this.effects,
+      spriteBank: this.spriteBank,
+      spriteMaterials: this.spriteMaterials,
+      skill: this.skill,
+      onExit: () => {
         // `A_BrainDie` is a plain `G_ExitLevel` — MAP30 has no secret exit to take.
         this.pendingExit = 'normal';
       },
-      this.audio,
-    );
+      sfx: this.audio,
+    });
     if (restore) {
       this.icon.restore(restore.icon);
       this.projectiles.restore(restore.projectiles);
@@ -1054,41 +1083,11 @@ export class Game {
     }
   }
 
-  resume(): void {
-    if (this.running) return;
-    // Reached from the Start button or ESC, i.e. from a real user gesture —
-    // which is the only way a browser lets an AudioContext start.
-    this.audio.resume();
-    this.paused = false;
-    this.running = true;
-    this.lastTime = performance.now();
-    this.lastRaf = this.lastTime;
-    // Time spent paused is not simulation time: without this the level would
-    // run a catch-up burst of tics the moment the menu closes.
-    this.accumulator = 0;
-    // Zero, not `lastTime + interval`: the first frame back is always due, and
-    // `dueThisFrame` resyncs the deadline off its own timestamp.
-    this.nextFrameAt = 0;
-    // Music kept playing behind the menu, and no frame was there to report what
-    // it cost; charging all of it to the first frame back would spike the
-    // profiler's `Music` bar for seconds. Discarded like the accumulator above.
-    this.audio.music.takeRenderMs();
-    this.view.input.reset();
-    requestAnimationFrame(this.frame);
-  }
-
   /** Stops both loops. `dispose` uses this rather than `pause` — see `stillFrame`. */
   private stop(): void {
     this.running = false;
     this.paused = false;
     this.audio.suspend();
-  }
-
-  pause(): void {
-    if (this.paused) return; // a second call would leave two `stillFrame` loops running
-    this.stop();
-    this.paused = true;
-    requestAnimationFrame(this.stillFrame);
   }
 
   /**
@@ -1107,36 +1106,6 @@ export class Game {
     }
     requestAnimationFrame(this.stillFrame);
   };
-
-  dispose(): void {
-    // Read by `resumeFromCheckpoint`, whose store read can still be in flight.
-    this.disposed = true;
-    this.stop();
-    // The engine is session-level and the next Game sets its own bank; this
-    // only makes sure nothing from this level is left holding a channel.
-    this.audio.stopAll();
-    // The music would otherwise keep playing over the menu once this level is gone.
-    this.audio.music.stop();
-    this.screenEffects.reset();
-    // Like `screenEffects`, these elements outlive the Game that drove them — without
-    // this the menu (and the next level started from it) inherits the line.
-    this.deathOverlay.clear();
-    this.message.clear();
-    this.levelCard.clear();
-    this.intermission.clear();
-    this.endCard.clear();
-    this.playerActor.dispose();
-    this.specials?.dispose();
-    this.built?.group.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) obj.geometry.dispose();
-    });
-    // Both sprite batches' instance buffers and cloned materials are their
-    // own; the geometry/textures behind them are spriteMaterials'.
-    this.things?.dispose();
-    this.effects.dispose();
-    this.materials.dispose();
-    this.spriteMaterials.dispose();
-  }
 
   /**
    * Runs the walk triggers **any non-player thing** crossed this tic
@@ -1412,14 +1381,10 @@ export class Game {
   }
 
   /**
-   * The FPS cap (`getFpsCap`): whether this rendering opportunity is the one to
-   * use, or one to skip because the next frame isn't due yet. Skipping is the
-   * whole frame — nothing is advanced, so the input `frame` would have consumed
-   * simply arrives on the next one. Read live rather than cached, so a change in
-   * the menu applies to the level already running.
-   *
-   * See docs/frameloop.md § The FPS cap for why the deadline is compared with half a
-   * display period of slack and why it advances by whole intervals.
+   * The FPS cap (`getFpsCap`): whether this rendering opportunity is the one to use. Skipping is
+   * the whole frame, so the input it would have consumed arrives on the next one; read live rather
+   * than cached, so a change in the menu applies to the level already running.
+   * docs/frameloop.md § The FPS cap.
    */
   private dueThisFrame(now: number): boolean {
     const period = now - this.lastRaf;
@@ -1438,19 +1403,10 @@ export class Game {
       requestAnimationFrame(this.frame);
       return;
     }
-    // `rawDt` is the real elapsed wall-clock time, and it is banked rather than
-    // consumed: the simulation only ever advances in whole `DOOM_TIC` steps
-    // (`tic`), and whatever is left over becomes the interpolation alpha the
-    // draw below poses everything at. `DebugHud` gets `rawDt` because it is
-    // measuring real frames, not tics.
-    //
-    // The lower clamp is load-bearing, not defensive: `now` can predate the
-    // `performance.now()` `resume` stamped into `lastTime`, so a level's first
-    // frame really can compute a negative delta. It is clamped **here**, at
-    // the source, rather than at the accumulator alone — a negative
-    // wall-clock delta is meaningless to every consumer `rawDt` reaches, and
-    // one of them (`AnimatedTextures`) indexes an array by its own running
-    // total of it. See docs/frameloop.md § The accumulator.
+    // Real elapsed time, banked rather than consumed: the simulation advances in whole `DOOM_TIC`
+    // steps and the remainder becomes the draw's interpolation alpha. The lower clamp is
+    // load-bearing, and belongs at the source rather than on the accumulator alone — `rawDt`
+    // reaches consumers that would misread a negative one. docs/frameloop.md § The accumulator.
     const rawDt = Math.max(0, (now - this.lastTime) / 1000);
     this.lastTime = now;
     this.accumulator += rawDt;
@@ -1598,20 +1554,12 @@ export class Game {
       return true;
     }
 
-    // Auto-aim, movement, firing and pickups all freeze once the player is
-    // dead — there's nothing to aim/move/fire/collect with a corpse — but
-    // fog of war, things and effects below keep ticking normally, so a
-    // still-flying rocket the player fired right before dying finishes its
-    // flight and can still deal splash damage (including, in a
-    // grim-but-correct edge case, to the player's own corpse — damagePlayer
-    // is a no-op once already dead, so this can't double-kill).
-    // The aim ray is cast through the live `THREE` camera, which the last
-    // rendered frame left at an *interpolated* pose — a function of frame
-    // timing. Re-posing it at alpha 1 puts it back on the previous tic's exact
-    // state, which is what keeps what auto-aim can lock onto (and so
-    // `player.angle`, and so every shot) independent of framerate. It has to
-    // happen immediately before the ray: `draw` overwrites the pose afterwards.
-    // docs/frameloop.md § Posing for the aim ray.
+    // Auto-aim, movement, firing and pickups freeze once the player is dead; fog of war, things
+    // and effects below keep ticking, so a rocket fired just before dying finishes its flight.
+    // Re-posed at alpha 1 so the ray is cast through the previous tic's exact camera rather than
+    // the last frame's interpolated one, which is what keeps aim framerate-independent. Must sit
+    // immediately before the ray — `draw` overwrites the pose. docs/frameloop.md § Posing for the
+    // aim ray.
     if (!this.playerDead) camera.applyToCamera(1);
     const cursor = this.playerDead ? null : this.updateLivingPlayer(DOOM_TIC, input, camera);
 
@@ -2033,7 +1981,10 @@ export class Game {
     // same descent, and only once a light is actually live — so a WAD with no GLDEFS, or lights
     // switched off, pays nothing for it here.
     const tint = this.lights.offerAndTint(this.playerActor.frameKey, x, y, z, PLAYER_EMITTER_ID);
-    this.playerActor.setPose(x, y, z, facingDeg, light, rawDt, walking, viewAngleDeg, tint);
+    this.playerActor.setPose(
+      { x, y, z },
+      { facingDeg, light, dt: rawDt, animating: walking, viewerAngleDeg: viewAngleDeg, tint },
+    );
   }
 
   /** DEVMODE's status text. Only ever called while the panel is shown — see `DebugHud.update`. */

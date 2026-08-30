@@ -74,6 +74,15 @@ export class SpriteBank {
     for (let i = lumps.length - 1; i >= 0; i--) this.index(lumps[i], lumps[i].name.slice(0, 4));
   }
 
+  /**
+   * Lump for this sprite/frame/rotation digit (1-8); falls back to the omnidirectional "0" frame.
+   */
+  lookup(sprite: string, frame: string, rotationDigit: number): SpriteFrame | undefined {
+    const byRotation = this.frames.get(sprite.toUpperCase() + frame.toUpperCase());
+    if (!byRotation) return undefined;
+    return byRotation.get('0') ?? byRotation.get(String(rotationDigit));
+  }
+
   private index(lump: Lump, sprite: string): void {
     const name = lump.name;
     if (name.length < 6) return;
@@ -106,14 +115,5 @@ export class SpriteBank {
       const slot = String(digit);
       if (!byRotation.has(slot)) byRotation.set(slot, shared);
     }
-  }
-
-  /**
-   * Lump for this sprite/frame/rotation digit (1-8); falls back to the omnidirectional "0" frame.
-   */
-  lookup(sprite: string, frame: string, rotationDigit: number): SpriteFrame | undefined {
-    const byRotation = this.frames.get(sprite.toUpperCase() + frame.toUpperCase());
-    if (!byRotation) return undefined;
-    return byRotation.get('0') ?? byRotation.get(String(rotationDigit));
   }
 }

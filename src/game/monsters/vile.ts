@@ -105,16 +105,22 @@ export function resolveVileBlast(
     // `CombatContext.damagePlayer` — and skips the knockup along with it.
     if (ctx.damagePlayer(atk.damage, atk.x, atk.y, atk.sourceType)) player.launchUpward(atk.blast.knockUpSpeed);
   } else {
-    ctx.things?.damage(atk.targetId, atk.damage, { id: atk.sourceId, type: atk.sourceType }, atk.blast.knockUpSpeed, atk.x, atk.y);
+    ctx.things?.damage(atk.targetId, atk.damage, {
+      source: { id: atk.sourceId, type: atk.sourceType },
+      knockUpSpeed: atk.blast.knockUpSpeed,
+      from: atk,
+    });
   }
   // A_VileAttack's own sound is the barrel/rocket explosion, played on the
   // vile rather than on the flame it just placed.
   audio.play('barexp', atk, monsterOrigin(atk.sourceId));
   const offset = vileBlastOffset(atk, at);
   const fireAt = { x: at.x + offset.x, y: at.y + offset.y, z: at.z };
-  applyRadiusDamage(ctx, fireAt, atk.blast.splashRadius, atk.blast.splashDamage, true, {
-    id: atk.sourceId,
-    type: atk.sourceType,
+  applyRadiusDamage(ctx, fireAt, {
+    radius: atk.blast.splashRadius,
+    maxDamage: atk.blast.splashDamage,
+    hitsPlayer: true,
+    source: { id: atk.sourceId, type: atk.sourceType },
   });
   effects.spawnImpact('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, fireAt);
 }

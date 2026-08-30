@@ -22,7 +22,7 @@ function corridorFog(middleRow: string): (col: number) => { dist: number; alpha:
   const grid = gridMap([wall, middleRow, wall], { cell: CELL });
   const world = new World(grid.map);
   const start = grid.centre(1, 1);
-  const fog = new FogOfWar(world, [], start.x, start.y);
+  const fog = new FogOfWar(world, [], start);
   return (col) => {
     const p = grid.centre(col, 1);
     return { dist: p.x - start.x, alpha: fog.alphaOf(world.subsectorAt(p.x, p.y)) };
@@ -47,7 +47,7 @@ describe('Regressions · fog reveal radius', () => {
    */
   test('the chaingunner 3584 units out is revealed iff it is inside the view', () => {
     const { world, player, monster } = loadCorridor();
-    const fog = new FogOfWar(world, [], player.x, player.y);
+    const fog = new FogOfWar(world, [], player);
     assert.equal(fog.alphaOf(world.subsectorAt(player.x, player.y)), 1);
 
     const dist = Math.hypot(monster.x - player.x, monster.y - player.y);

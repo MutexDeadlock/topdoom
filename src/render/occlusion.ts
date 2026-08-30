@@ -51,28 +51,19 @@ export const FADE_CORE = FADE_RADIUS * FADE_CORE_FRACTION;
 export const MONSTER_FADE_RANGE = 768;
 
 /**
- * How wide a hole an awake *monster* opens, as against the player's
- * `FADE_RADIUS` — **tuned by feel**, and deliberately the smallest that still
- * clears a whole chunk rather than a slit (alpha lives only at chunk corners,
- * so a core under `WALL_CHUNK_LEN / 2` cannot). The player's hole is wider
- * because it is centred on the one place the view has to be readable, and what
- * it dissolves is what you were looking at anyway; a monster's is centred
- * somewhere else, and everything it dissolves is context you wanted — the
- * switch on the wall in front of you included.
+ * How wide a hole an awake *monster* opens, against the player's `FADE_RADIUS` — **tuned by feel**,
+ * and the smallest that still clears a whole chunk rather than a slit (alpha lives only at chunk
+ * corners, so a core under `WALL_CHUNK_LEN / 2` cannot).
  * docs/render.md § The fade is a hole, not a wall.
  */
 export const MONSTER_FADE_RADIUS = FADE_RADIUS / 2;
 
 /**
- * What occlusion is tested against — the player, or an awake monster (see
- * `WallFader.update`'s doc). Not a point: `z` is the middle of an **upright
- * sprite** and `halfHeight` how far that sprite reaches above and below it, so
- * a sightline is a wedge rather than a ray and something covering only the
- * head still counts as hiding the target. docs/render.md § The target is the
- * billboard.
- *
- * `fadeFloor` is how far down this target alone pulls what hides it
+ * What occlusion is tested against — the player, or an awake monster. Not a point: `z` is the
+ * middle of an **upright sprite** and `halfHeight` how far it reaches either side, so a sightline
+ * is a wedge rather than a ray. `fadeFloor` is how far down this target pulls what hides it
  * (`FADE_ALPHA` is full strength) and `fadeRadius` how wide a hole it opens.
+ * docs/render.md § The target is the billboard.
  */
 export type FadeTarget = Pos3 & { halfHeight: number; fadeFloor: number; fadeRadius: number };
 
@@ -132,16 +123,10 @@ export function fadeReach(camX: number, camY: number, targets: FadeTarget[], out
 }
 
 /**
- * The player plus the awake monsters near enough to fade walls for, nearest
- * first and capped at `MAX_FADE_TARGETS`. A wall/flat hiding a monster only
- * fades once that monster is alerted — an unseen sleeping one is supposed to
- * stay hidden — so the caller passes `ThingLayer.awakeMonsters()`, not every
- * monster. **Each target's wedge is its own body**: a monster brings its
- * `mobjinfo.height` (`StandingBody.height`, 56 for an imp to 110 for a
- * cyberdemon), the player `PLAYER_HEIGHT`, and either way `z` is the middle of
- * that span and `halfHeight` reaches from there to the feet and to the crown —
- * the same centre-and-half-extent `shotPath` locks onto as `ShotLock.halfHeight`.
- * docs/render.md § The target is the billboard.
+ * The player plus the awake monsters near enough to fade walls for, nearest first and capped at
+ * `MAX_FADE_TARGETS` — alerted ones only, since an unseen sleeping monster is supposed to stay
+ * hidden. **Each target's wedge is its own body**, built from the same `height` field `shotPath`
+ * locks onto. docs/render.md § The target is the billboard.
  */
 export function collectFadeTargets(player: Pos3, awakeMonsters: readonly StandingBody[]): FadeTarget[] {
   const nearby = awakeMonsters
@@ -173,14 +158,10 @@ export function collectFadeTargets(player: Pos3, awakeMonsters: readonly Standin
 }
 
 /**
- * A growable bag of the points a pass-one sweep found — where a sightline was actually stopped, and
- * which target it was stopped for. Everything else about the hole is a property of that target, so
- * a crossing carries the index rather than a copy. Both faders file the same four channels, so they
- * share one structure rather than two sets of parallel arrays.
- *
- * One bag holds a whole frame's stops across **every** fader of its kind (docs/render.md § One
- * hole, whichever mesh it lands in); walls and flats keep one each, a wall crossing and a floor
- * pierce being different points that fold different geometry.
+ * A growable bag of the points a pass-one sweep found — where a sightline was stopped, and the
+ * index of the target it was stopped for (everything else about the hole belongs to that target).
+ * One bag holds a whole frame's stops across **every** fader of its kind; walls and flats keep one
+ * each. docs/render.md § One hole, whichever mesh it lands in.
  */
 export class FadeCrossings {
   x: Float64Array = new Float64Array(64);
@@ -233,12 +214,9 @@ const SNAP_EPS = 0.004;
 
 /**
  * Total occluder count below which `WallFader` scans them all instead of building an index: over a
- * short list the 3x3 cell walk costs more than the scan it replaces. **Tuned by feel.**
- *
- * A mover fader is *not* excluded, and on a big sector it does cross this — the grid is indexed on
- * quad midpoints, and `refreshMoverMesh` changes a mover's heights, never a quad's footprint
- * (`copyRefreshedQuad`), so the buckets stay true across a refresh. A rebuild that does reshape the
- * mesh builds a fresh fader with it (`MoverGeometry.createMoverMesh`).
+ * short list the 3x3 cell walk costs more than the scan it replaces. **Tuned by feel.** A mover
+ * fader is not excluded — the grid is indexed on quad midpoints, and a refresh moves a mover's
+ * heights, never a quad's footprint, so the buckets stay true across one.
  */
 const GRID_MIN_OCCLUDERS = 256;
 
@@ -477,16 +455,6 @@ export class WallFader {
     this.commitAll = true;
     // The same refresh that rewrote the buffers may have moved a quad to another batch.
     this.resolveAttrs();
-  }
-
-  /** Re-reads `attrs` from the mesh map — see that field. */
-  private resolveAttrs(): void {
-    this.attrs.length = this.occluders.length;
-    for (let i = 0; i < this.occluders.length; i++) {
-      this.attrs[i] = this.meshes.get(this.occluders[i].key)?.geometry.getAttribute('color') as
-        | THREE.BufferAttribute
-        | undefined;
-    }
   }
 
   /**
@@ -780,6 +748,16 @@ export class WallFader {
     }
 
     for (const attr of dirty) attr.needsUpdate = true;
+  }
+
+  /** Re-reads `attrs` from the mesh map — see that field. */
+  private resolveAttrs(): void {
+    this.attrs.length = this.occluders.length;
+    for (let i = 0; i < this.occluders.length; i++) {
+      this.attrs[i] = this.meshes.get(this.occluders[i].key)?.geometry.getAttribute('color') as
+        | THREE.BufferAttribute
+        | undefined;
+    }
   }
 
   /**
@@ -1272,16 +1250,6 @@ export class FlatFader {
     this.resolveAttrs();
   }
 
-  /** Re-reads `attrs` from the mesh map — see that field. */
-  private resolveAttrs(): void {
-    this.attrs.length = this.surfaces.length;
-    for (let i = 0; i < this.surfaces.length; i++) {
-      this.attrs[i] = this.meshes.get(this.surfaces[i].key)?.geometry.getAttribute('color') as
-        | THREE.BufferAttribute
-        | undefined;
-    }
-  }
-
   /**
    * Same base × occlusion × fog-of-war write as `WallFader.commit` — here the base is a water
    * surface's, and the alpha varies across the fan.
@@ -1342,6 +1310,16 @@ export class FlatFader {
     }
 
     for (const attr of dirty) attr.needsUpdate = true;
+  }
+
+  /** Re-reads `attrs` from the mesh map — see that field. */
+  private resolveAttrs(): void {
+    this.attrs.length = this.surfaces.length;
+    for (let i = 0; i < this.surfaces.length; i++) {
+      this.attrs[i] = this.meshes.get(this.surfaces[i].key)?.geometry.getAttribute('color') as
+        | THREE.BufferAttribute
+        | undefined;
+    }
   }
 
   /**

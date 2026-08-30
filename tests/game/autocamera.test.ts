@@ -421,7 +421,8 @@ describe('game · the buried-eye rescue searches both dials', () => {
   test('a framing that is already clear is returned untouched', () => {
     const grid = room();
     const world = new World(grid.map);
-    rescueFraming(world, at(grid.centre(6, 6)), TILT, SOUTH_YAW, 400, LIMIT, out);
+    const ask = { mappedTilt: TILT, yawDeg: SOUTH_YAW, wanted: 400, limit: LIMIT };
+    rescueFraming(world, at(grid.centre(6, 6)), ask, out);
     assert.deepEqual(out, { distance: 400, tiltDeg: TILT });
   });
 
@@ -432,7 +433,7 @@ describe('game · the buried-eye rescue searches both dials', () => {
     // Fixture: pulling in at the mapped tilt would fall under the occluded floor.
     assert.ok(measureClearance(world, from, TILT, SOUTH_YAW, 400) < AUTO_OCCLUDED_DISTANCE);
 
-    rescueFraming(world, from, TILT, SOUTH_YAW, 400, LIMIT, out);
+    rescueFraming(world, from, { mappedTilt: TILT, yawDeg: SOUTH_YAW, wanted: 400, limit: LIMIT }, out);
     const eye = eyeAt(from, out.tiltDeg, out.distance);
     assert.ok(eye.h > 320, 'the framing it picks hangs clear of the high floor');
     assert.ok(out.distance > AUTO_OCCLUDED_DISTANCE, 'and is not a collapse');
@@ -443,7 +444,7 @@ describe('game · the buried-eye rescue searches both dials', () => {
     const world = new World(grid.map);
     const from = at(grid.centre(3, 1));
     const wanted = 400;
-    rescueFraming(world, from, TILT, SOUTH_YAW, wanted, LIMIT, out);
+    rescueFraming(world, from, { mappedTilt: TILT, yawDeg: SOUTH_YAW, wanted, limit: LIMIT }, out);
     const won = cost(out.distance, out.tiltDeg, wanted, TILT);
 
     // Nothing else the search could have reached is both clear and nearer.
@@ -476,7 +477,7 @@ describe('game · the buried-eye rescue searches both dials', () => {
     }
     assert.ok(overheadClears, 'fixture: turning toward overhead would clear this cliff');
 
-    rescueFraming(world, from, TILT, SOUTH_YAW, 600, LIMIT, out);
+    rescueFraming(world, from, { mappedTilt: TILT, yawDeg: SOUTH_YAW, wanted: 600, limit: LIMIT }, out);
     assert.ok(out.tiltDeg >= TILT, 'the tilt never goes back toward top-down');
     assert.equal(out.tiltDeg, TILT, 'and here nothing leaning over clears either');
     assert.equal(out.distance, measureClearance(world, from, TILT, SOUTH_YAW, 600), 'so pulling in decides');
@@ -488,7 +489,8 @@ describe('game · the buried-eye rescue searches both dials', () => {
     const grid = cliffEdge();
     const world = new World(grid.map);
     const from = at(grid.centre(3, 1));
-    rescueFraming(world, from, TILT, SOUTH_YAW, 600, MIN_RESCUE_DISTANCE - 1, out);
+    const ask = { mappedTilt: TILT, yawDeg: SOUTH_YAW, wanted: 600, limit: MIN_RESCUE_DISTANCE - 1 };
+    rescueFraming(world, from, ask, out);
     assert.equal(out.tiltDeg, TILT, 'the mapped tilt stands');
     assert.equal(out.distance, measureClearance(world, from, TILT, SOUTH_YAW, 600), 'and pulling in decides');
   });
@@ -564,7 +566,8 @@ describe('game · framing past an occluder', () => {
   test('open floor obstructs nothing', () => {
     const grid = room();
     const world = new World(grid.map);
-    assert.equal(nearestObstruction(world, at(grid.centre(6, 6)), TILT, SOUTH_YAW, 600), Infinity);
+    const look = { tiltDeg: TILT, yawDeg: SOUTH_YAW, distance: 600 };
+    assert.equal(nearestObstruction(world, at(grid.centre(6, 6)), look), Infinity);
   });
 
   test('a wall the camera hangs behind hides the player, and says how far off it is', () => {
@@ -573,7 +576,7 @@ describe('game · framing past an occluder', () => {
     // From row 4 the camera at 600u clears the wall's far side, so it looks at
     // the face the wall draws for it.
     const at4 = at(grid.centre(2, 4));
-    const d = nearestObstruction(world, at4, TILT, SOUTH_YAW, 600);
+    const d = nearestObstruction(world, at4, { tiltDeg: TILT, yawDeg: SOUTH_YAW, distance: 600 });
     assert.ok(Number.isFinite(d), 'the wall is found');
     // The wall stands one and a half cells south, and the ray reaches it along
     // the horizontal leg of its own tilt.
@@ -586,7 +589,8 @@ describe('game · framing past an occluder', () => {
   test('the same wall with the camera on the player’s own side hides nothing', () => {
     const grid = wallToTheSouth();
     const world = new World(grid.map);
-    assert.equal(nearestObstruction(world, at(grid.centre(2, 4)), TILT, NORTH_YAW, 600), Infinity);
+    const look = { tiltDeg: TILT, yawDeg: NORTH_YAW, distance: 600 };
+    assert.equal(nearestObstruction(world, at(grid.centre(2, 4)), look), Infinity);
   });
 
   test('a wall the camera hangs well over is left to the fade, and the framing decides which', () => {
@@ -595,14 +599,17 @@ describe('game · framing past an occluder', () => {
     const from = at(grid.centre(2, 4));
     // Same wall, same place: near in the eye is still under its top, far out it
     // is over it and what little the wall covers is the fade's to dissolve.
-    assert.ok(Number.isFinite(nearestObstruction(world, from, TILT, SOUTH_YAW, 400)), 'near in, under the top');
-    assert.equal(nearestObstruction(world, from, TILT, SOUTH_YAW, 800), Infinity, 'far out, over the top');
+    const near = { tiltDeg: TILT, yawDeg: SOUTH_YAW, distance: 400 };
+    assert.ok(Number.isFinite(nearestObstruction(world, from, near)), 'near in, under the top');
+    const far = { tiltDeg: TILT, yawDeg: SOUTH_YAW, distance: 800 };
+    assert.equal(nearestObstruction(world, from, far), Infinity, 'far out, over the top');
   });
 
   test('a framing that stops short of the wall is unobstructed', () => {
     const grid = wallToTheSouth();
     const world = new World(grid.map);
-    assert.equal(nearestObstruction(world, at(grid.centre(2, 0)), TILT, SOUTH_YAW, 300), Infinity);
+    const look = { tiltDeg: TILT, yawDeg: SOUTH_YAW, distance: 300 };
+    assert.equal(nearestObstruction(world, at(grid.centre(2, 0)), look), Infinity);
   });
 
   test('a tick behind an occluder pulls the zoom nearer than the openness alone would', () => {
@@ -640,7 +647,8 @@ describe('game · framing past an occluder', () => {
     const auto = new AutoCamera(world);
     auto.seed(from, camera);
 
-    const wall = nearestObstruction(world, from, camera.tiltDeg, camera.yawDeg, 1e9);
+    const look = { tiltDeg: camera.tiltDeg, yawDeg: camera.yawDeg, distance: 1e9 };
+    const wall = nearestObstruction(world, from, look);
     assert.ok(wall - AUTO_OCCLUDED_DISTANCE > 100, `fixture: the wall at ${wall} must sit well beyond the floor`);
     assert.ok(camera.targetDistance < wall, 'inside the wall it found');
     assert.ok(
@@ -705,13 +713,14 @@ describe('game · framing past an occluder drawn by a render transfer', () => {
 
     // The crossing sits well below the water's own 192 ceiling — inside the
     // stretch of upper that only the control sector's 32 accounts for.
-    const found = nearestObstruction(world, from, TILT, SOUTH_YAW, 600, transfers);
+    const look = { tiltDeg: TILT, yawDeg: SOUTH_YAW, distance: 600 };
+    const found = nearestObstruction(world, from, look, transfers);
     assert.ok(Number.isFinite(found), `the drawn upper is found, got ${found}`);
 
     // And the same trace told the sectors' raw heights misses it outright,
     // which is what this used to do.
     assert.equal(
-      nearestObstruction(world, from, TILT, SOUTH_YAW, 600),
+      nearestObstruction(world, from, { tiltDeg: TILT, yawDeg: SOUTH_YAW, distance: 600 }),
       Infinity,
       'read off raw ceilings the same wall is invisible',
     );

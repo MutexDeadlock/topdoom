@@ -46,6 +46,13 @@ function boxOverlapsSector(world: World, x: number, y: number, radius: number, s
   return false;
 }
 
+/** The gap one sector's moving plane would leave: which sector, and the two heights around it. */
+interface SectorSlot {
+  sectorIndex: number;
+  floorHeight: number;
+  ceilingHeight: number;
+}
+
 /**
  * Whether someone standing in `sectorIndex` doesn't fit in the vertical gap the
  * mover's next step would leave — the shared test behind both obstruction
@@ -53,15 +60,9 @@ function boxOverlapsSector(world: World, x: number, y: number, radius: number, s
  * (`MonsterRef.height`), so a door closes on a cyberdemon well before it would
  * on an imp. docs/specials.md § Every other mover stops instead.
  */
-function headroomBlocked(
-  world: World,
-  map: DoomMap,
-  things: ThingLayer | null,
-  player: Pos2,
-  sectorIndex: number,
-  floorHeight: number,
-  ceilingHeight: number,
-): boolean {
+function headroomBlocked(world: World, things: ThingLayer | null, player: Pos2, slot: SectorSlot): boolean {
+  const { sectorIndex, floorHeight, ceilingHeight } = slot;
+  const map = world.map;
   if (
     boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex) &&
     floorHeight + PLAYER_HEIGHT > ceilingHeight
@@ -90,8 +91,8 @@ export function blocksCeilingLower(
   sectorIndex: number,
   ceilingHeight: number,
 ): boolean {
-  const map = world.map;
-  return headroomBlocked(world, map, things, player, sectorIndex, map.sectors[sectorIndex].floorHeight, ceilingHeight);
+  const floorHeight = world.map.sectors[sectorIndex].floorHeight;
+  return headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight });
 }
 
 /**
@@ -116,9 +117,8 @@ export function blocksFloorRise(
   // crushed there — having it silently jam the level's own machinery is the
   // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
   const map = world.map;
-  if (headroomBlocked(world, map, things, player, sectorIndex, floorHeight, map.sectors[sectorIndex].ceilHeight)) {
-    return true;
-  }
+  const ceilingHeight = map.sectors[sectorIndex].ceilHeight;
+  if (headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight })) return true;
   if (boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) {
     const ceiling = world.groundCeiling(player.x, player.y, PLAYER_RADIUS);
     if (floorHeight + PLAYER_HEIGHT > ceiling) return true;
@@ -153,15 +153,15 @@ function crushNeighborhood(map: DoomMap, sectorIndex: number): ReadonlySet<Secto
 }
 
 /**
- * `PIT_ChangeSector`'s own two questions about one body: does the headroom
- * `P_ThingHeightClip` gives it here fall short of its own height, and is the
- * mover's sector what took that headroom away. Measured against the openings
- * its box spans (`World.headroom`), never against the sector's own gap at its
- * centre point — the body pinned half under a descending ceiling is the case
- * that distinguishes the two, and it is crushed.
+ * `PIT_ChangeSector`'s two questions about one body: does the headroom `P_ThingHeightClip` gives it
+ * here fall short of its own height, and is the mover's sector what took that headroom away.
+ * Measured against the openings its box spans (`World.headroom`), never the sector's gap at its
+ * centre point — a body pinned half under a descending ceiling is crushed. Height first: it rejects
+ * everyone in an ordinary room for one box walk. docs/specials.md § Crushers.
  *
- * Height first: it rejects everyone standing in an ordinary room for one box
- * walk, leaving the eight-point sector sampling to the few actually squeezed.
+ * The box stays **scalars**, matching `world.headroom` and `boxOverlapsSector` below — the
+ * coordinate exception in docs/conventions.md § Named arguments; a record here would only move the
+ * boundary one call deeper.
  */
 function crushed(
   world: World,
@@ -176,15 +176,11 @@ function crushed(
 }
 
 /**
- * `SpecialsController`'s `onCrush` callback: deals `CRUSH_DAMAGE` to the player
- * and to every crushable body the sector's own moving plane has left without
- * the headroom to stand in. Gated on `PIT_ChangeSector`'s actual "doesn't fit"
- * test, not merely standing in the sector — a crusher parked at the top of its
- * travel, or one that hasn't reached anyone yet, must not deal damage — and
- * that test is each body's clipped headroom, so a body straddling the sector's
- * edge is crushed like one standing squarely in it (docs/specials.md §
- * Crushers). Monsters and barrels share one loop, matching `PIT_ChangeSector`
- * treating any shootable mobj the same.
+ * `SpecialsController`'s `onCrush` callback: deals `CRUSH_DAMAGE` to the player and to every
+ * crushable body the sector's moving plane has left without the headroom to stand in. Gated on
+ * `crushed` rather than on merely standing in the sector, so a crusher parked at the top of its
+ * travel deals none. Monsters and barrels share one loop, matching `PIT_ChangeSector` treating any
+ * shootable mobj the same. docs/specials.md § Crushers.
  */
 export function applyCrushDamage(
   world: World,

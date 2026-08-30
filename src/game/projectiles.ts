@@ -5,8 +5,7 @@
  */
 import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
-import type { AudioEngine } from '../audio/audio.ts';
-import { PLAYER_ORIGIN } from '../audio/sfx.ts';
+import { PLAYER_ORIGIN, type SoundEmitter } from '../audio/sfx.ts';
 import { playerShotRange } from './world.ts';
 import { transfersOf } from './specials/transfers.ts';
 import { AIM_HEIGHT_OFFSET, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
@@ -27,6 +26,14 @@ import { BFG_SPRAY_HIT_FRAMES, IMPACT_EFFECTS, IMPACT_FRAME_SECONDS, PROJECTILE_
 import type { Pos3 } from '../types.ts';
 import type { MonsterRef } from './things/defs.ts';
 
+/** The banks a `ProjectileLayer` draws and sounds a missile through, beside the world it flies in. */
+export interface ProjectileLayerOptions {
+  effects: SpriteFxLayer;
+  spriteBank: SpriteBank;
+  spriteMaterials: SpriteMaterialCache;
+  audio: SoundEmitter;
+}
+
 /**
  * Every shot in flight, from launch to whatever it lands on. Who *decides* to fire is somebody
  * else's business (`weapons.ts`, `monsters/ai.ts`); this half knows nothing about ammo, cooldowns
@@ -37,7 +44,7 @@ export class ProjectileLayer {
   private effects: SpriteFxLayer;
   private spriteBank: SpriteBank;
   private spriteMaterials: SpriteMaterialCache;
-  private audio: AudioEngine;
+  private audio: SoundEmitter;
   private projectiles: Projectile[] = [];
   /**
    * Where the projectile being advanced stood before this frame's step — a
@@ -49,18 +56,12 @@ export class ProjectileLayer {
   /** `draw`'s interpolated position, reused per missile for the same reason `stepFrom` is. */
   private readonly drawAt: Pos3 = { x: 0, y: 0, z: 0 };
 
-  constructor(
-    ctx: CombatContext,
-    effects: SpriteFxLayer,
-    spriteBank: SpriteBank,
-    spriteMaterials: SpriteMaterialCache,
-    audio: AudioEngine,
-  ) {
+  constructor(ctx: CombatContext, options: ProjectileLayerOptions) {
     this.ctx = ctx;
-    this.effects = effects;
-    this.spriteBank = spriteBank;
-    this.spriteMaterials = spriteMaterials;
-    this.audio = audio;
+    this.effects = options.effects;
+    this.spriteBank = options.spriteBank;
+    this.spriteMaterials = options.spriteMaterials;
+    this.audio = options.audio;
   }
 
   /**
@@ -128,7 +129,7 @@ export class ProjectileLayer {
         // A fist swing traces exactly MELEERANGE and so takes the sparkless
         // puff; the chainsaw's own +1 is what buys it the spark back.
         else this.effects.spawnPuff(hitAt, shot.range === PLAYER_MELEE_RANGE);
-        things?.damage(swung.id, shot.damage, undefined, undefined, origin.x, origin.y);
+        things?.damage(swung.id, shot.damage, { from: origin });
       }
       // A_Punch/A_Saw both key their sound off whether they found a target: the
       // chainsaw revs on air and bites on contact, the fist is silent on a miss.
@@ -204,7 +205,7 @@ export class ProjectileLayer {
         const hitAt = { x: endX, y: endY, z: path.z };
         if (things?.bleeds(hitMonsterId)) this.effects.spawnBlood(hitAt, shot.damage);
         else this.effects.spawnPuff(hitAt);
-        things?.damage(hitMonsterId, shot.damage, undefined, undefined, origin.x, origin.y);
+        things?.damage(hitMonsterId, shot.damage, { from: origin });
       } else {
         this.effects.spawnWallPuff(path, shot.angleRad);
       }
@@ -390,7 +391,7 @@ export class ProjectileLayer {
           // the missile but takes no damage from it (see bodyStruckBy).
           if (struck.id !== null) {
             const source = fromMonster ? { id: p.sourceId!, type: p.sourceType } : undefined;
-            things?.damage(struck.id, p.damage, source, undefined, at.x, at.y);
+            things?.damage(struck.id, p.damage, { source, from: at });
           }
         }
         // A clean miss (reached maxDist without hitting a body) means it
@@ -402,17 +403,15 @@ export class ProjectileLayer {
           // Attributed to the firing monster (if any), the same as a direct
           // hit already is — a cyberdemon's own rocket splash should start
           // an infight exactly like one of its direct hits would.
-          applyRadiusDamage(
-            this.ctx,
-            at,
-            p.splash.radius,
-            p.splash.damage,
-            p.splash.hitsPlayer,
-            fromMonster ? { id: p.sourceId!, type: p.sourceType } : undefined,
+          applyRadiusDamage(this.ctx, at, {
+            radius: p.splash.radius,
+            maxDamage: p.splash.damage,
+            hitsPlayer: p.splash.hitsPlayer,
+            source: fromMonster ? { id: p.sourceId!, type: p.sourceType } : undefined,
             // No `source` means the shot is the player's own, which is the one
             // splash that can kill them without anyone else being involved.
-            fromMonster ? p.sourceType : 'self',
-          );
+            cause: fromMonster ? p.sourceType : 'self',
+          });
         }
         // Only ever set for the player's own BFG ball (spawnMonsterShot
         // always passes spray: null) — see resolveBfgSpray's doc.
@@ -605,7 +604,7 @@ export class ProjectileLayer {
       for (let j = 0; j < spray.diceRolls; j++) damage += rollDamage(spray.diceSides, 1);
       // Vanilla's inflictor is the ball itself, by then far from the player;
       // this engine doesn't track where it stopped, so `origin` stands in.
-      things?.damage(hit.id, damage, undefined, undefined, origin.x, origin.y);
+      things?.damage(hit.id, damage, { from: origin });
       // `A_BFGSpray` spawns MT_EXTRABFG at `linetarget->height>>2`, which the
       // body's own `mobjinfo.height` gives exactly.
       this.effects.spawnImpact('BFE2', BFG_SPRAY_HIT_FRAMES, IMPACT_FRAME_SECONDS, {

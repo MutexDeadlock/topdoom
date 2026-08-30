@@ -8,21 +8,6 @@ import type { DoomMap } from '../../wad/map.ts';
 import { NO_SIDE } from '../../wad/map.ts';
 import { sectorsByTag, linesByTag, sectorLines } from '../world.ts';
 
-/**
- * The WAD's "no texture here" sidedef name, spelled out rather than imported from the render layer.
- */
-const NO_TEXTURE = '-';
-
-/**
- * A Boom translucency map is a 256×256 palette-blend table. The name of one is
- * what a 260 line's sidedef carries in place of a midtexture, and the length is
- * the only thing that tells the two apart (`p_setup.c: P_LoadSideDefs2`).
- */
-const TRANMAP_LUMP_SIZE = 65536;
-
-/** A colormap lump is 34 rows of 256 palette indexes — see `wad/colormaps.ts`. */
-const COLORMAP_LUMP_SIZE = 34 * 256;
-
 /** The colormap lump names a 242 control line's sidedef carries, by where the eye is. */
 export interface ColormapNames {
   /** Below the control sector's floor — submerged. */
@@ -45,14 +30,41 @@ export interface TransferCounts {
 export type LumpSize = (name: string) => number | null;
 
 /**
- * One level's render transfers.
- *
- * Every one of them names its model the same way vanilla does — the control
- * sector is the one behind the special line's front sidedef, and the targets
- * are the sectors carrying its tag (`p_spec.c: P_SpawnSpecials`) — so the scan
- * is four passes over the linedefs with no runtime state to keep afterwards.
+ * The WAD's "no texture here" sidedef name, spelled out rather than imported from the render layer.
+ */
+const NO_TEXTURE = '-';
+
+/**
+ * A Boom translucency map is a 256×256 palette-blend table. The name of one is
+ * what a 260 line's sidedef carries in place of a midtexture, and the length is
+ * the only thing that tells the two apart (`p_setup.c: P_LoadSideDefs2`).
+ */
+const TRANMAP_LUMP_SIZE = 65536;
+
+/** A colormap lump is 34 rows of 256 palette indexes — see `wad/colormaps.ts`. */
+const COLORMAP_LUMP_SIZE = 34 * 256;
+
+/**
+ * The level's transfers, built on first use and keyed by the `DoomMap` the way `world.ts`'s tag
+ * indexes are. See docs/specials.md § Render transfers.
+ */
+const cache = new WeakMap<DoomMap, { transfers: Transfers; probed: boolean }>();
+
+export function transfersOf(map: DoomMap, lumpSize?: LumpSize): Transfers {
+  const cached = cache.get(map);
+  // A caller holding a `Wad` upgrades an entry some earlier probe-less caller
+  // built: only that caller can resolve 260's midtexture overload, and load
+  // order is not something the scattered readers here should have to know.
+  if (cached && (cached.probed || !lumpSize)) return cached.transfers;
+  const transfers = new Transfers(map, lumpSize);
+  cache.set(map, { transfers, probed: lumpSize !== undefined });
+  return transfers;
+}
+
+/**
+ * One level's render transfers: four passes over the linedefs at load, nothing kept ticking after.
  * Reached through `transfersOf`, not constructed directly, except by tests and
- * `scripts/inspect-wad.ts`.
+ * `scripts/inspect-wad.ts`. See docs/specials.md § Render transfers.
  */
 export class Transfers {
   private map: DoomMap;
@@ -87,12 +99,11 @@ export class Transfers {
   /** Colormap names by control sector — only the 242 control sectors that carry any. */
   private colormaps = new Map<number, ColormapNames>();
   /**
-   * Sidedef names on a 242 line that turned out to be colormap lumps, so the
-   * renderer does not report them as missing textures. Boom decides this per
-   * sidedef (`p_setup.c: P_LoadSideDefs2`); this keys on the name across the
-   * level instead, which differs only if a WAD ships a wall texture sharing a
-   * colormap lump's name — nothing does, since a colormap is a standalone lump
-   * and a texture is a TEXTURE1 entry.
+   * Sidedef names on a 242 line that turned out to be colormap lumps, so the renderer does not
+   * report them as missing textures. Keyed by name across the level rather than per sidedef as
+   * Boom does (`p_setup.c: P_LoadSideDefs2`): the two differ only for a wall texture named after a
+   * colormap lump, which nothing ships — a colormap is a standalone lump, a texture a TEXTURE1
+   * entry.
    */
   private colormapNames = new Set<string>();
   private tally: TransferCounts = { floorLight: 0, ceilingLight: 0, water: 0, translucent: 0 };
@@ -128,179 +139,6 @@ export class Transfers {
       this.tally.floorLight + this.tally.ceilingLight + this.tally.water + this.tally.translucent > 0;
   }
 
-  /** 213 and 261 — `sectors[s].floorlightsec`/`ceilinglightsec`. */
-  private spawnLightTransfers(): void {
-    for (const [i, line] of this.map.linedefs.entries()) {
-      if (line.special !== 213 && line.special !== 261) continue;
-      const control = this.frontSector(i);
-      if (control < 0) continue;
-      const into = line.special === 213 ? this.floorLightSec : this.ceilingLightSec;
-      for (const s of sectorsByTag(this.map, line.tag)) into[s] = control;
-      if (line.special === 213) this.tally.floorLight++;
-      else this.tally.ceilingLight++;
-    }
-  }
-
-  /**
-   * 242 — `sectors[s].heightsec`, plus the colormap names its sidedef carries.
-   * Boom stores those names on the *control* sector (`p_setup.c`'s `sd->special
-   * == 242` case reads them off the sidedef into `sec->bottommap`/`midmap`/
-   * `topmap`), so they are keyed by control sector here too.
-   */
-  private spawnHeightTransfers(lumpSize?: LumpSize): void {
-    for (const [i, line] of this.map.linedefs.entries()) {
-      if (line.special !== 242) continue;
-      const control = this.frontSector(i);
-      if (control < 0) continue;
-      for (const s of sectorsByTag(this.map, line.tag)) this.heightSecs[s] = control;
-      this.tally.water++;
-      const side = this.map.sidedefs[line.right];
-      if (side) {
-        this.colormaps.set(control, { bottom: side.lower, mid: side.middle, top: side.upper });
-        for (const name of [side.lower, side.middle, side.upper]) {
-          if (name !== '' && name !== NO_TEXTURE && (lumpSize?.(name) ?? 0) >= COLORMAP_LUMP_SIZE) {
-            this.colormapNames.add(name.toUpperCase());
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Picks the 242 sectors whose *below-floor* control sector is a fake floor to
-   * draw rather than a fake ceiling's leftover — the load-time half of
-   * `drawnFloor`. A sector qualifies when every neighbour across a two-sided
-   * line can follow it down: the neighbour sits at or below the fake floor, and
-   * carries no 242 of its own (so it is drawn at the floor read here, and not at
-   * one this scan may not have decided yet). See docs/specials.md § The fake
-   * floor for why both clauses keep the substitution from opening a hole.
-   *
-   * Only the half of the rule that is about **adjacency** is settled here, since
-   * nothing moves that; whether the control sector really is the lower of the two
-   * is a live comparison `drawnFloor` makes. The heights compared *here* are
-   * still load-time ones — a mover that lifts a neighbour above the fake floor
-   * afterwards is a case no map this covers has, and re-running the walk per mesh
-   * rebuild would put it in `processFlat`'s path.
-   */
-  private markFakeFloors(): void {
-    for (let s = 0; s < this.heightSecs.length; s++) {
-      const control = this.heightSecs[s];
-      if (control < 0) continue;
-      const fake = this.map.sectors[control]?.floorHeight;
-      if (fake === undefined || fake >= (this.map.sectors[s]?.floorHeight ?? 0)) continue;
-      if (this.neighboursFollow(s, fake)) this.fakeFloorSecs[s] = control;
-    }
-  }
-
-  /**
-   * The 242 sectors that had water over them at load: the control sector's floor
-   * stood above the real one. That is a *height* comparison and a mover can undo
-   * it, which is exactly why it is settled here — a raised pool bottom is still
-   * the ground it was, and `poolBottom` is what keeps it drawing that way.
-   * See docs/specials.md § Deep water.
-   */
-  private markPools(): void {
-    for (let s = 0; s < this.heightSecs.length; s++) {
-      const control = this.heightSecs[s];
-      if (control < 0) continue;
-      const surface = this.map.sectors[control]?.floorHeight;
-      if (surface === undefined || surface <= (this.map.sectors[s]?.floorHeight ?? 0)) continue;
-      this.poolSecs[s] = control;
-    }
-  }
-
-  /**
-   * The sectors walled in by one pool and left out of its tag: no 242 of their
-   * own, and every side facing a 242 sector that borrows the *same* control
-   * sector. Boom draws no surface over one, which from overhead is a hole in the
-   * water rather than the island it is — see docs/specials.md § Deep water for
-   * what the renderer then does with it, and why only adjacency is settled here.
-   */
-  private markPoolIslands(): void {
-    for (let s = 0; s < this.heightSecs.length; s++) {
-      if (this.heightSecs[s] >= 0) continue;
-      let pool = -1;
-      let control = -1;
-      let enclosed = true;
-      for (const lineIndex of sectorLines(this.map, s)) {
-        const line = this.map.linedefs[lineIndex];
-        const front = line.right === NO_SIDE ? undefined : this.map.sidedefs[line.right]?.sector;
-        const back = line.left === NO_SIDE ? undefined : this.map.sidedefs[line.left]?.sector;
-        const other = front === s ? back : front;
-        // A self-referencing line borders nothing; a one-sided one is a wall the
-        // pool does not reach behind, which is what makes this sector a room.
-        if (other === s) continue;
-        if (other === undefined) {
-          enclosed = false;
-          break;
-        }
-        const theirs = this.heightSecs[other] ?? -1;
-        if (theirs < 0 || (control >= 0 && theirs !== control)) {
-          enclosed = false;
-          break;
-        }
-        control = theirs;
-        // The flat and light the surface draws with come off the pool sector
-        // itself, so one of them has to be picked: the first, they being
-        // interchangeable in every respect this reads them for.
-        if (pool < 0) pool = other;
-      }
-      if (enclosed && pool >= 0) this.islandSecs[s] = pool;
-    }
-  }
-
-  /**
-   * Whether every sector across a two-sided line from `s` can be drawn against a
-   * floor at `fake`: it sits at or below that height, so lowering `s` to it opens
-   * no step the map has no lower texture for, and it carries no 242 of its own,
-   * so the floor read off it is the one it draws at.
-   */
-  private neighboursFollow(s: number, fake: number): boolean {
-    for (const lineIndex of sectorLines(this.map, s)) {
-      const line = this.map.linedefs[lineIndex];
-      if (line.right === NO_SIDE || line.left === NO_SIDE) continue;
-      const front = this.map.sidedefs[line.right]?.sector;
-      const back = this.map.sidedefs[line.left]?.sector;
-      // A self-referencing line names `s` on both sides and borders nothing.
-      const other = front === s ? back : front;
-      if (other === undefined || other === s) continue;
-      if ((this.map.sectors[other]?.floorHeight ?? 0) > fake) return false;
-      if (this.heightSecs[other] >= 0) return false;
-    }
-    return true;
-  }
-
-  /**
-   * 260. Tag 0 marks only the line it sits on; any other tag marks every line
-   * carrying it (`p_setup.c: P_LoadLineDefs2`). The same sidedef's midtexture
-   * name may be the translucency map rather than a texture — `TRANMAP`
-   * literally, or any lump of exactly 65536 bytes — in which case Boom draws no
-   * midtexture there at all.
-   */
-  private spawnTranslucentLines(lumpSize?: LumpSize): void {
-    for (const [i, line] of this.map.linedefs.entries()) {
-      if (line.special !== 260) continue;
-      this.tally.translucent++;
-      if (line.tag === 0) this.translucent.add(i);
-      else for (const l of linesByTag(this.map, line.tag)) this.translucent.add(l);
-
-      const name = this.map.sidedefs[line.right]?.middle ?? '';
-      if (name === '' || name === NO_TEXTURE) continue;
-      if (name.toUpperCase() === 'TRANMAP' || lumpSize?.(name) === TRANMAP_LUMP_SIZE) {
-        this.suppressed.add(i);
-      }
-    }
-  }
-
-  /**
-   * The sector behind a line's front sidedef — Boom's `sides[*l->sidenum].sector` control lookup.
-   */
-  private frontSector(lineIndex: number): number {
-    const line = this.map.linedefs[lineIndex];
-    if (!line || line.right === NO_SIDE) return -1;
-    return this.map.sidedefs[line.right]?.sector ?? -1;
-  }
-
   /** The light a sector's floor draws with — 213's control sector, else its own (`R_FakeFlat`). */
   floorLight(sectorIndex: number): number {
     const source = this.floorLightSec[sectorIndex] ?? -1;
@@ -318,10 +156,8 @@ export class Transfers {
   }
 
   /**
-   * The light a thing standing in a sector draws with: `(floorlightlevel +
-   * ceilinglightlevel) / 2`, `R_AddSprites`. With no transfer line in the level
-   * both halves are the sector's own light, so this is the same number every
-   * sprite read before Boom compat.
+   * The light a thing standing in a sector draws with: `(floorlightlevel + ceilinglightlevel) / 2`
+   * (`r_bsp.c: R_AddSprites`). See docs/specials.md § Transferred lighting.
    */
   spriteLight(sectorIndex: number): number {
     return (this.floorLight(sectorIndex) + this.ceilingLight(sectorIndex)) / 2;
@@ -359,16 +195,10 @@ export class Transfers {
   }
 
   /**
-   * The height a sector's floor is *drawn* at when only one floor is drawn for
-   * it: its 242 control sector's where `markFakeFloors` cleared the substitution
-   * and that sector is still the lower of the two, else its own. The floor-side
-   * counterpart of `drawnCeiling`, and what sizes the walls across a two-sided
-   * line from it.
-   *
-   * Vanilla substitutes unconditionally (`r_bsp.c: R_FakeFlat`); this engine
-   * draws a pool bottom at the real floor, so it never substitutes *upwards*,
-   * which is why the comparison is live: a mover can raise the drawn floor over
-   * the real one. See docs/specials.md § The fake floor.
+   * The height a sector's floor is *drawn* at: its 242 control sector's where `markFakeFloors`
+   * cleared the substitution and that sector is still the lower of the two, else its own — the
+   * floor-side counterpart of `drawnCeiling`. Comparing live is a deviation from vanilla's
+   * unconditional substitution (`r_bsp.c: R_FakeFlat`); see docs/specials.md § The fake floor.
    */
   drawnFloor(sectorIndex: number): number {
     const own = this.map.sectors[sectorIndex]?.floorHeight ?? 0;
@@ -379,11 +209,9 @@ export class Transfers {
   }
 
   /**
-   * The control sector a pool bottom takes its flat and light from, or -1 for a
-   * sector that never had water over it. Fixed at load (`markPools`), so a
-   * mover raising the floor clear of the surface leaves the ground it exposes
-   * looking like the pool bottom it is rather than like the water flat the
-   * sector wears for its surface. See docs/specials.md § Deep water.
+   * The control sector a pool bottom takes its flat and light from, or -1 for a sector that never
+   * had water over it. Fixed at load (`markPools`), so a mover raising the bottom clear of the
+   * surface cannot turn it into water. See docs/specials.md § Deep water.
    */
   poolBottom(sectorIndex: number): number {
     return this.poolSecs[sectorIndex] ?? -1;
@@ -463,26 +291,158 @@ export class Transfers {
   counts(): TransferCounts {
     return { ...this.tally };
   }
-}
 
-/**
- * The level's transfers, built on first use and memoized against the map.
- *
- * Keyed by the `DoomMap` for the same reason `world.ts`'s tag indexes are: this
- * is a pure function of data nothing rewrites at runtime, and its readers span
- * layers that have no path to each other — the mesh builder runs before any
- * controller exists, and the sprite-lighting sites sit in five different
- * modules. See docs/specials.md § Render transfers.
- */
-const cache = new WeakMap<DoomMap, { transfers: Transfers; probed: boolean }>();
+  /** 213 and 261 — `sectors[s].floorlightsec`/`ceilinglightsec`. */
+  private spawnLightTransfers(): void {
+    for (const [i, line] of this.map.linedefs.entries()) {
+      if (line.special !== 213 && line.special !== 261) continue;
+      const control = this.frontSector(i);
+      if (control < 0) continue;
+      const into = line.special === 213 ? this.floorLightSec : this.ceilingLightSec;
+      for (const s of sectorsByTag(this.map, line.tag)) into[s] = control;
+      if (line.special === 213) this.tally.floorLight++;
+      else this.tally.ceilingLight++;
+    }
+  }
 
-export function transfersOf(map: DoomMap, lumpSize?: LumpSize): Transfers {
-  const cached = cache.get(map);
-  // A caller holding a `Wad` upgrades an entry some earlier probe-less caller
-  // built: only that caller can resolve 260's midtexture overload, and load
-  // order is not something the scattered readers here should have to know.
-  if (cached && (cached.probed || !lumpSize)) return cached.transfers;
-  const transfers = new Transfers(map, lumpSize);
-  cache.set(map, { transfers, probed: lumpSize !== undefined });
-  return transfers;
+  /**
+   * 242 — `sectors[s].heightsec`, plus the colormap names its sidedef carries. Boom stores those
+   * on the *control* sector (`p_setup.c`'s `sd->special == 242` case reads them into
+   * `sec->bottommap`/`midmap`/`topmap`), so they are keyed by control sector here too.
+   */
+  private spawnHeightTransfers(lumpSize?: LumpSize): void {
+    for (const [i, line] of this.map.linedefs.entries()) {
+      if (line.special !== 242) continue;
+      const control = this.frontSector(i);
+      if (control < 0) continue;
+      for (const s of sectorsByTag(this.map, line.tag)) this.heightSecs[s] = control;
+      this.tally.water++;
+      const side = this.map.sidedefs[line.right];
+      if (side) {
+        this.colormaps.set(control, { bottom: side.lower, mid: side.middle, top: side.upper });
+        for (const name of [side.lower, side.middle, side.upper]) {
+          if (name !== '' && name !== NO_TEXTURE && (lumpSize?.(name) ?? 0) >= COLORMAP_LUMP_SIZE) {
+            this.colormapNames.add(name.toUpperCase());
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Picks the 242 sectors whose *below-floor* control sector is a fake floor to draw rather than a
+   * fake ceiling's leftover — the adjacency half of `drawnFloor`, settled here because nothing
+   * moves it. See docs/specials.md § The fake floor.
+   */
+  private markFakeFloors(): void {
+    for (let s = 0; s < this.heightSecs.length; s++) {
+      const control = this.heightSecs[s];
+      if (control < 0) continue;
+      const fake = this.map.sectors[control]?.floorHeight;
+      if (fake === undefined || fake >= (this.map.sectors[s]?.floorHeight ?? 0)) continue;
+      if (this.neighboursFollow(s, fake)) this.fakeFloorSecs[s] = control;
+    }
+  }
+
+  /**
+   * The 242 sectors that had water over them at load — a height comparison a mover can undo, which
+   * is why `poolBottom` reads it from here. See docs/specials.md § Deep water.
+   */
+  private markPools(): void {
+    for (let s = 0; s < this.heightSecs.length; s++) {
+      const control = this.heightSecs[s];
+      if (control < 0) continue;
+      const surface = this.map.sectors[control]?.floorHeight;
+      if (surface === undefined || surface <= (this.map.sectors[s]?.floorHeight ?? 0)) continue;
+      this.poolSecs[s] = control;
+    }
+  }
+
+  /**
+   * The sectors walled in by one pool and left out of its tag: no 242 of their own, and every side
+   * facing a 242 sector that borrows the *same* control sector. Only the adjacency is settled
+   * here. See docs/specials.md § Deep water.
+   */
+  private markPoolIslands(): void {
+    for (let s = 0; s < this.heightSecs.length; s++) {
+      if (this.heightSecs[s] >= 0) continue;
+      let pool = -1;
+      let control = -1;
+      let enclosed = true;
+      for (const lineIndex of sectorLines(this.map, s)) {
+        const line = this.map.linedefs[lineIndex];
+        const front = line.right === NO_SIDE ? undefined : this.map.sidedefs[line.right]?.sector;
+        const back = line.left === NO_SIDE ? undefined : this.map.sidedefs[line.left]?.sector;
+        const other = front === s ? back : front;
+        // A self-referencing line borders nothing; a one-sided one is a wall the
+        // pool does not reach behind, which is what makes this sector a room.
+        if (other === s) continue;
+        if (other === undefined) {
+          enclosed = false;
+          break;
+        }
+        const theirs = this.heightSecs[other] ?? -1;
+        if (theirs < 0 || (control >= 0 && theirs !== control)) {
+          enclosed = false;
+          break;
+        }
+        control = theirs;
+        // The flat and light the surface draws with come off the pool sector
+        // itself, so one of them has to be picked: the first, they being
+        // interchangeable in every respect this reads them for.
+        if (pool < 0) pool = other;
+      }
+      if (enclosed && pool >= 0) this.islandSecs[s] = pool;
+    }
+  }
+
+  /**
+   * Whether every sector across a two-sided line from `s` can be drawn against a floor at `fake`:
+   * it sits at or below that height, and carries no 242 of its own. docs/specials.md § The fake
+   * floor has what each clause prevents.
+   */
+  private neighboursFollow(s: number, fake: number): boolean {
+    for (const lineIndex of sectorLines(this.map, s)) {
+      const line = this.map.linedefs[lineIndex];
+      if (line.right === NO_SIDE || line.left === NO_SIDE) continue;
+      const front = this.map.sidedefs[line.right]?.sector;
+      const back = this.map.sidedefs[line.left]?.sector;
+      // A self-referencing line names `s` on both sides and borders nothing.
+      const other = front === s ? back : front;
+      if (other === undefined || other === s) continue;
+      if ((this.map.sectors[other]?.floorHeight ?? 0) > fake) return false;
+      if (this.heightSecs[other] >= 0) return false;
+    }
+    return true;
+  }
+
+  /**
+   * 260. Tag 0 marks only the line it sits on; any other tag marks every line carrying it
+   * (`p_setup.c: P_LoadLineDefs2`). The sidedef's midtexture name may be the translucency map
+   * instead of a texture, which draws no midtexture at all — see docs/specials.md § Translucent
+   * midtextures.
+   */
+  private spawnTranslucentLines(lumpSize?: LumpSize): void {
+    for (const [i, line] of this.map.linedefs.entries()) {
+      if (line.special !== 260) continue;
+      this.tally.translucent++;
+      if (line.tag === 0) this.translucent.add(i);
+      else for (const l of linesByTag(this.map, line.tag)) this.translucent.add(l);
+
+      const name = this.map.sidedefs[line.right]?.middle ?? '';
+      if (name === '' || name === NO_TEXTURE) continue;
+      if (name.toUpperCase() === 'TRANMAP' || lumpSize?.(name) === TRANMAP_LUMP_SIZE) {
+        this.suppressed.add(i);
+      }
+    }
+  }
+
+  /**
+   * The sector behind a line's front sidedef — Boom's `sides[*l->sidenum].sector` control lookup.
+   */
+  private frontSector(lineIndex: number): number {
+    const line = this.map.linedefs[lineIndex];
+    if (!line || line.right === NO_SIDE) return -1;
+    return this.map.sidedefs[line.right]?.sector ?? -1;
+  }
 }

@@ -40,17 +40,6 @@ const CHEAT_CODES: readonly (readonly [string, CheatId])[] = [
 const LONGEST_CODE = Math.max(...CHEAT_CODES.map(([code]) => code.length));
 
 /**
- * Whether the tail of `buffer` is the beginning of `code` — the buffer carries whatever junk was
- * typed before a code was started, so it is its *suffixes* that are candidate prefixes.
- */
-function startsPartway(code: string, buffer: string): boolean {
-  for (let n = Math.min(buffer.length, code.length - 1); n > 0; n--) {
-    if (code.startsWith(buffer.slice(-n))) return true;
-  }
-  return false;
-}
-
-/**
  * What the player has typed lately, and the two cheats that stay switched on once typed. Owned by
  * `Game` for the session rather than per level: vanilla keeps them in `player_t`, which an ordinary
  * level exit doesn't clear.
@@ -103,6 +92,19 @@ export class Cheats {
     return message;
   }
 
+  snapshot(): CheatSnapshot {
+    return { god: this.god, noclip: this.noclip };
+  }
+
+  /**
+   * A save from before cheats existed — or one taken with none on — carries nothing, and means both
+   * off.
+   */
+  restore(saved?: CheatSnapshot): void {
+    this.god = saved?.god ?? false;
+    this.noclip = saved?.noclip ?? false;
+  }
+
   /** One cheat's effect, `ST_Responder`'s own block per code. */
   private fire(id: CheatId, inv: Inventory): string {
     switch (id) {
@@ -129,17 +131,15 @@ export class Cheats {
         return this.noclip ? CHEAT_MESSAGES.STSTR_NCON : CHEAT_MESSAGES.STSTR_NCOFF;
     }
   }
+}
 
-  snapshot(): CheatSnapshot {
-    return { god: this.god, noclip: this.noclip };
+/**
+ * Whether the tail of `buffer` is the beginning of `code` — the buffer carries whatever junk was
+ * typed before a code was started, so it is its *suffixes* that are candidate prefixes.
+ */
+function startsPartway(code: string, buffer: string): boolean {
+  for (let n = Math.min(buffer.length, code.length - 1); n > 0; n--) {
+    if (code.startsWith(buffer.slice(-n))) return true;
   }
-
-  /**
-   * A save from before cheats existed — or one taken with none on — carries nothing, and means both
-   * off.
-   */
-  restore(saved?: CheatSnapshot): void {
-    this.god = saved?.god ?? false;
-    this.noclip = saved?.noclip ?? false;
-  }
+  return false;
 }

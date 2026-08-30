@@ -302,6 +302,106 @@ export class Menu {
     return true;
   }
 
+  /**
+   * Dismisses whichever overlay is up, topmost first, and reports whether there was one — the
+   * hand-off `main.ts` gives ESC before it acts on the menu itself. The order lives here rather
+   * than in the caller, so a third overlay is one edit and never changes what ESC does elsewhere.
+   */
+  closeTopOverlay(): boolean {
+    return this.closeChangelog() || this.library.close();
+  }
+
+  /** Whether any of them is up — the same set as `closeTopOverlay`, kept next to it. */
+  get hasOverlay(): boolean {
+    return this.changelogOpen || this.library.isOpen;
+  }
+
+  /** True once a level can actually be started. */
+  get isReady(): boolean {
+    return this.selectedIwad !== null && this.levelSelect.value !== '';
+  }
+
+  /**
+   * Resolves a stored `WadSource.key` — `init`'s restored selection — against
+   * the current library, uploads included, since `addFiles` unshifts a
+   * re-uploaded file under the same key. A savegame's set does *not* come
+   * through here: it resolves by content ID (`resolveSaveWads`).
+   */
+  findSource(key: string): WadSource | undefined {
+    return this.sources.find((s) => s.key.toLowerCase() === key.toLowerCase());
+  }
+
+  /**
+   * Resolves a savegame's whole WAD set against the current library, in load order — the one place
+   * that rule lives, so the save row and the load path can't disagree about which files a save can
+   * be played with. Matching is by content ID; the name is only the fallback *diagnosis*, and
+   * `wads[0]` is the game WAD, so a file's role is its position. `requiredWads` decides which
+   * missing file stops a load. docs/savegames.md § WAD-set identity.
+   */
+  resolveSaveWads(save: SaveWadSet): { iwad?: WadSource; pwads: WadSource[]; missing: MissingWad[] } {
+    const { wads, mapWad, patchWads } = save;
+    const required = requiredWads(wads, mapWad, patchWads);
+    const missing: MissingWad[] = [];
+    const found = wads.map((wad, i) => {
+      const source = this.sources.find((s) => s.id !== '' && s.id === wad.id);
+      if (source) return source;
+      missing.push({
+        name: wadLabel(wad),
+        role: i === 0 ? 'IWAD' : 'PWAD',
+        wrongVersion: this.sources.some((s) => s.label.toLowerCase() === wad.name.toLowerCase()),
+        required: required[i],
+      });
+      return undefined;
+    });
+    const [iwad, ...pwads] = found;
+    // Add-ons the library no longer has are simply left out — a caller that
+    // can't proceed without them reads `missing` instead.
+    return { iwad, pwads: pwads.filter((p): p is WadSource => p !== undefined), missing };
+  }
+
+  /**
+   * What a save row shows beyond its own stored meta: the level named exactly as
+   * the level select names it (`describeMap` — a save stores only the lump name,
+   * which alone can't name a level, docs/wad.md § Level names), and whatever
+   * `resolveSaveWads` reports as unavailable.
+   */
+  describeSave(meta: SaveMeta): SaveSetInfo {
+    const { iwad, pwads, missing } = this.resolveSaveWads(meta);
+    // Without the game WAD there is no map list to resolve against; the row
+    // falls back to the bare lump name and says which file is missing.
+    if (!iwad) return { level: meta.map, missing };
+    const map = this.mapsFor(iwad, pwads).find((m) => m.name === meta.map);
+    return { level: map ? describeMap(map, iwad.label) : meta.map, missing };
+  }
+
+  /**
+   * The menu's status line — or the WAD Library's, while that overlay is up. It covers `#menu`
+   * completely, so everything raised behind it (a file the overlay's own `Add single WADs…` just
+   * loaded, a WAD that wouldn't parse) would otherwise be reported to a line nobody can see, and
+   * would then surface on the New Game tab once the overlay closed, out of the context that
+   * explains it. docs/menu.md § WAD Library.
+   */
+  setStatus(text: string, isError = false): void {
+    if (this.library.isOpen) {
+      this.library.showStatus(text, isError);
+      return;
+    }
+    this.statusEl.textContent = text;
+    // Clamped to two lines (menu.css), so the whole of a long one lives in the tooltip.
+    this.statusEl.title = text;
+    this.statusEl.classList.toggle('error', isError);
+  }
+
+  /**
+   * Starts with whatever is currently selected — used by ?map= deep links,
+   * which skip the menu entirely and so run at the last skill picked. Settled
+   * either way when the start is over, which is how `main.ts` knows a
+   * deep-linked level has taken the screen (docs/menu.md § Session lifecycle).
+   */
+  submit(): Promise<void> {
+    return this.startWithSkill(this.currentSkill());
+  }
+
   private setTab(tab: MenuTab): void {
     this.activeTab = tab;
     for (const key of Object.keys(this.tabButtons) as MenuTab[]) {
@@ -324,14 +424,10 @@ export class Menu {
   }
 
   /**
-   * The three volume sliders. Dragging one is itself a user gesture, so the engine
-   * can start its context and preview the change right here rather than waiting
-   * for the level to start — which is the only way to set volume by ear.
-   *
-   * The music slider needs no preview of its own: it rides the track that is
-   * already playing behind the menu, and there is nothing to audition on the
-   * first visit, where no WAD set is loaded yet. The master slider takes the sfx
-   * one's, being the only other thing it can be auditioned on with no track up.
+   * The three volume sliders. Dragging one is itself a user gesture, so the engine can start its
+   * context and preview the change here rather than at level start — the only way to set volume by
+   * ear. The music slider needs no preview of its own (it rides the track already playing behind
+   * the menu); the master slider takes the sfx one's.
    */
   private installVolume(): void {
     const bind = (
@@ -541,72 +637,6 @@ export class Menu {
     return true;
   }
 
-  /**
-   * Dismisses whichever overlay is up, topmost first, and reports whether there was one — the
-   * hand-off `main.ts` gives ESC before it acts on the menu itself. The order lives here rather
-   * than in the caller, so a third overlay is one edit and never changes what ESC does elsewhere.
-   */
-  closeTopOverlay(): boolean {
-    return this.closeChangelog() || this.library.close();
-  }
-
-  /** Whether any of them is up — the same set as `closeTopOverlay`, kept next to it. */
-  get hasOverlay(): boolean {
-    return this.changelogOpen || this.library.isOpen;
-  }
-
-  /** True once a level can actually be started. */
-  get isReady(): boolean {
-    return this.selectedIwad !== null && this.levelSelect.value !== '';
-  }
-
-  /**
-   * Resolves a stored `WadSource.key` — `init`'s restored selection — against
-   * the current library, uploads included, since `addFiles` unshifts a
-   * re-uploaded file under the same key. A savegame's set does *not* come
-   * through here: it resolves by content ID (`resolveSaveWads`).
-   */
-  findSource(key: string): WadSource | undefined {
-    return this.sources.find((s) => s.key.toLowerCase() === key.toLowerCase());
-  }
-
-  /**
-   * Resolves a savegame's whole WAD set against the current library, in load
-   * order — the one place that rule lives, so the save row and the load path
-   * can't disagree about which files a save can be played with.
-   *
-   * Matching is by content ID, the file's real identity, so a renamed WAD (or
-   * the server's copy of one that was uploaded when the save was made) still
-   * matches. The name is only the fallback *diagnosis*: a file matching by name
-   * but not by ID is the same WAD in a different version, worth saying
-   * precisely rather than reporting as missing (docs/savegames.md § WAD-set
-   * identity). `wads[0]` is the game WAD, so a file's role is just its position.
-   *
-   * A missing file is also classified, by `requiredWads`: the game WAD, the one
-   * `mapWad` names, and any that carried a DEHACKED patch stop a load — nothing
-   * else can have shaped what the snapshot indexes into or means.
-   */
-  resolveSaveWads(save: SaveWadSet): { iwad?: WadSource; pwads: WadSource[]; missing: MissingWad[] } {
-    const { wads, mapWad, patchWads } = save;
-    const required = requiredWads(wads, mapWad, patchWads);
-    const missing: MissingWad[] = [];
-    const found = wads.map((wad, i) => {
-      const source = this.sources.find((s) => s.id !== '' && s.id === wad.id);
-      if (source) return source;
-      missing.push({
-        name: wadLabel(wad),
-        role: i === 0 ? 'IWAD' : 'PWAD',
-        wrongVersion: this.sources.some((s) => s.label.toLowerCase() === wad.name.toLowerCase()),
-        required: required[i],
-      });
-      return undefined;
-    });
-    const [iwad, ...pwads] = found;
-    // Add-ons the library no longer has are simply left out — a caller that
-    // can't proceed without them reads `missing` instead.
-    return { iwad, pwads: pwads.filter((p): p is WadSource => p !== undefined), missing };
-  }
-
   /** `mergedMaps` for a set, from `mapCache` — see that field's doc. */
   private mapsFor(iwad: WadSource, pwads: WadSource[]): ReturnType<typeof mergedMaps> {
     const key = [iwad.key, ...pwads.map((p) => p.key)].join('\n');
@@ -616,39 +646,6 @@ export class Menu {
       this.mapCache.set(key, maps);
     }
     return maps;
-  }
-
-  /**
-   * What a save row shows beyond its own stored meta: the level named exactly as
-   * the level select names it (`describeMap` — a save stores only the lump name,
-   * which alone can't name a level, docs/wad.md § Level names), and whatever
-   * `resolveSaveWads` reports as unavailable.
-   */
-  describeSave(meta: SaveMeta): SaveSetInfo {
-    const { iwad, pwads, missing } = this.resolveSaveWads(meta);
-    // Without the game WAD there is no map list to resolve against; the row
-    // falls back to the bare lump name and says which file is missing.
-    if (!iwad) return { level: meta.map, missing };
-    const map = this.mapsFor(iwad, pwads).find((m) => m.name === meta.map);
-    return { level: map ? describeMap(map, iwad.label) : meta.map, missing };
-  }
-
-  /**
-   * The menu's status line — or the WAD Library's, while that overlay is up. It covers `#menu`
-   * completely, so everything raised behind it (a file the overlay's own `Add single WADs…` just
-   * loaded, a WAD that wouldn't parse) would otherwise be reported to a line nobody can see, and
-   * would then surface on the New Game tab once the overlay closed, out of the context that
-   * explains it. docs/menu.md § WAD Library.
-   */
-  setStatus(text: string, isError = false): void {
-    if (this.library.isOpen) {
-      this.library.showStatus(text, isError);
-      return;
-    }
-    this.statusEl.textContent = text;
-    // Clamped to two lines (menu.css), so the whole of a long one lives in the tooltip.
-    this.statusEl.title = text;
-    this.statusEl.classList.toggle('error', isError);
   }
 
   private render(): void {
@@ -994,17 +991,13 @@ export class Menu {
   }
 
   /**
-   * Remembers the WAD set and level for the next visit. Called from the places
-   * the *player* changes something, deliberately not from `render`: `init`
-   * renders while restoring, and would write back a level select that hasn't
-   * caught up with the stored map yet.
+   * Remembers the WAD set and level for the next visit. Called from the places the *player* changes
+   * something, never from `render`: `init` renders while restoring, and would write back a level
+   * select that hasn't caught up with the stored map yet.
    *
-   * Uploads are the one thing never stored: their bytes are gone after a reload,
-   * so persisting a key would restore a selection that can never load — better
-   * to leave the last restorable one in place. A server file and a file in the
-   * player's own folder both keep their key across visits, so both are stored.
-   * That also means a missing manifest (every source gone, `selectedIwad` null)
-   * can't wipe a good stored value.
+   * Uploads are never stored — their bytes are gone after a reload, so a stored key would restore a
+   * selection that can never load. That also keeps a missing manifest (every source gone,
+   * `selectedIwad` null) from wiping a good stored value. docs/menu.md § Persisted settings.
    */
   private saveSelection(): void {
     if (!this.selectedIwad || this.selectedIwad.origin === 'upload') return;
@@ -1144,16 +1137,6 @@ export class Menu {
       if (saves.length > 0) void this.savegames.importFiles(saves);
       if (wads.length > 0) void this.addFiles(wads);
     });
-  }
-
-  /**
-   * Starts with whatever is currently selected — used by ?map= deep links,
-   * which skip the menu entirely and so run at the last skill picked. Settled
-   * either way when the start is over, which is how `main.ts` knows a
-   * deep-linked level has taken the screen (docs/menu.md § Session lifecycle).
-   */
-  submit(): Promise<void> {
-    return this.startWithSkill(this.currentSkill());
   }
 
   private startWithSkill(skill: Skill): Promise<void> {

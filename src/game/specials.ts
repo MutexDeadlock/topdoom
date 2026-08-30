@@ -88,6 +88,59 @@ export {
 } from './specials/sectoreffects.ts';
 export { applyCrushDamage, blocksCeilingLower, blocksFloorRise } from './specials/moverblocking.ts';
 
+export interface LightState {
+  pattern: LightPattern;
+  baseLight: number;
+  darkLight: number;
+  timer: number;
+  bright: boolean;
+  phase: number;
+  /**
+   * The current light value for `flicker` alone, which is the one pattern that
+   * isn't a two-level toggle `bright` can express — see `tickLight`.
+   */
+  level: number;
+}
+
+/**
+ * A teleport landing spot: where to put the thing and which way it faces on
+ * arrival (`angle`, radians — see `Placement`), plus what the Boom silent
+ * family needs on top. The three optional fields are absent for a vanilla
+ * teleport, which is exactly its old behavior.
+ * See docs/specials.md § Silent and line-to-line teleporters.
+ */
+export interface TeleportDest extends Placement {
+  /**
+   * No fog puffs and no `telept` — the whole point of Boom's silent numbers.
+   * It also means "preserve the body's height above the floor" (`p_telept.c`'s
+   * `z = thing->z - thing->floorz`, which loud `EV_Teleport` discards); the
+   * height itself is the caller's to measure, since this controller is never
+   * told it.
+   */
+  silent?: boolean;
+  /**
+   * How far the arrival turned the body, in radians. `angle` above already has
+   * it applied; this is here so the caller can turn the body's *momentum*
+   * through the same angle, which is what makes a silent teleport read as
+   * walking through a doorway. Absent means vanilla's landing, which sets an
+   * absolute facing and zeroes momentum outright.
+   */
+  rotateBy?: number;
+}
+
+/**
+ * A locked line the player just used without what it wants — what `game.ts` needs to say so
+ * (see `consumeLockedLine`). `kind` is vanilla's own split between "open this door" (`PD_*K`, the
+ * manual door specials 26-28/32-34, where the line *is* the door) and "activate this object"
+ * (`PD_*O`, the remote switches 99/133-137) — the two messages `EV_VerticalDoor` and
+ * `EV_DoLockedDoor` print. Boom's generalized locks carry their own wording per `LockRule`
+ * (`P_CanUnlockGenDoor`'s `PD_*` picks). docs/items.md § Locked doors and use triggers.
+ */
+export interface LockedLine {
+  lock: LockRule;
+  kind: 'door' | 'switch';
+}
+
 /** How far ahead of the player a `use` press reaches, in map units. */
 const USE_RANGE = 64;
 
@@ -101,9 +154,6 @@ const USE_RANGE = 64;
  * radius and large enough that the side test can't flip back.
  */
 const LINE_TELEPORT_NUDGE = 0.01;
-
-/** The `TeleportSource` for a caller with no silent teleport in play — see `trigger`'s `at`. */
-const NO_SOURCE: TeleportSource = { x: 0, y: 0, angle: 0 };
 
 /**
  * Vanilla's own moving-floor/ceiling grind (`sfx_stnmov`) is retriggered on a
@@ -124,6 +174,27 @@ const DOOR_SOUNDS: Record<'normal' | 'fast', { open: SfxId; close: SfxId }> = {
   normal: { open: 'doropn', close: 'dorcls' },
   fast: { open: 'bdopn', close: 'bdcls' },
 };
+
+/**
+ * How far around a monster to look for walk-trigger lines — the largest monster radius (the spider
+ * mastermind's 128) plus slack.
+ */
+const MONSTER_CROSS_RADIUS = 136;
+
+/**
+ * The `use` specials whose switch flip is *not* gated on the effect having done
+ * anything: `P_UseSpecialLine` calls `P_ChangeSwitchTexture` outside the
+ * `if (EV_…)` for exactly the two exits and the two light switches, and for
+ * nothing else. Every other switch — and only a switch; walk and shoot triggers
+ * are unconditional throughout — flips, and spends a one-shot line, solely when
+ * its EV_ call returned true. docs/specials.md § A switch only flips when it acts.
+ */
+const SWITCH_ALWAYS_FLIPS = new Set([
+  11, // exit level
+  51, // secret exit
+  138, // light turn on
+  139, // light turn off
+]);
 
 /**
  * `holdClosed` is the mirror of `hold`: waiting at the *bottom* before
@@ -311,90 +382,8 @@ interface CrusherMover {
  */
 export type Mover = DoorMover | LiftMover | FloorMover | CrusherMover | CeilingMover | ElevatorMover;
 
-export interface LightState {
-  pattern: LightPattern;
-  baseLight: number;
-  darkLight: number;
-  timer: number;
-  bright: boolean;
-  phase: number;
-  /**
-   * The current light value for `flicker` alone, which is the one pattern that
-   * isn't a two-level toggle `bright` can express — see `tickLight`.
-   */
-  level: number;
-}
-
-/**
- * A teleport landing spot: where to put the thing and which way it faces on
- * arrival (`angle`, radians — see `Placement`), plus what the Boom silent
- * family needs on top. The three optional fields are absent for a vanilla
- * teleport, which is exactly its old behavior.
- * See docs/specials.md § Silent and line-to-line teleporters.
- */
-export interface TeleportDest extends Placement {
-  /**
-   * No fog puffs and no `telept` — the whole point of Boom's silent numbers.
-   * It also means "preserve the body's height above the floor" (`p_telept.c`'s
-   * `z = thing->z - thing->floorz`, which loud `EV_Teleport` discards); the
-   * height itself is the caller's to measure, since this controller is never
-   * told it.
-   */
-  silent?: boolean;
-  /**
-   * How far the arrival turned the body, in radians. `angle` above already has
-   * it applied; this is here so the caller can turn the body's *momentum*
-   * through the same angle, which is what makes a silent teleport read as
-   * walking through a doorway. Absent means vanilla's landing, which sets an
-   * absolute facing and zeroes momentum outright.
-   */
-  rotateBy?: number;
-}
-
-/**
- * Where the body was when it crossed the line, which only Boom's silent
- * teleports need: they rotate the body relative to its current facing, where a
- * vanilla teleport overwrites it. The position is the crossing point a
- * line-to-line exit interpolates from.
- */
-interface TeleportSource extends Pos2 {
-  /** Current facing, radians. */
-  angle: number;
-}
-
-/**
- * A locked line the player just used without what it wants — what `game.ts` needs to say so
- * (see `consumeLockedLine`). `kind` is vanilla's own split between "open this door" (`PD_*K`, the
- * manual door specials 26-28/32-34, where the line *is* the door) and "activate this object"
- * (`PD_*O`, the remote switches 99/133-137) — the two messages `EV_VerticalDoor` and
- * `EV_DoLockedDoor` print. Boom's generalized locks carry their own wording per `LockRule`
- * (`P_CanUnlockGenDoor`'s `PD_*` picks). docs/items.md § Locked doors and use triggers.
- */
-export interface LockedLine {
-  lock: LockRule;
-  kind: 'door' | 'switch';
-}
-
-/**
- * How far around a monster to look for walk-trigger lines — the largest monster radius (the spider
- * mastermind's 128) plus slack.
- */
-const MONSTER_CROSS_RADIUS = 136;
-
-/**
- * The `use` specials whose switch flip is *not* gated on the effect having done
- * anything: `P_UseSpecialLine` calls `P_ChangeSwitchTexture` outside the
- * `if (EV_…)` for exactly the two exits and the two light switches, and for
- * nothing else. Every other switch — and only a switch; walk and shoot triggers
- * are unconditional throughout — flips, and spends a one-shot line, solely when
- * its EV_ call returned true. docs/specials.md § A switch only flips when it acts.
- */
-const SWITCH_ALWAYS_FLIPS = new Set([
-  11, // exit level
-  51, // secret exit
-  138, // light turn on
-  139, // light turn off
-]);
+/** The `at` for a caller with no silent teleport in play — see `trigger`. */
+const NO_SOURCE: Placement = { x: 0, y: 0, angle: 0 };
 
 /** What a `SpecialsController` needs beside the `World` it runs over. */
 export interface SpecialsOptions extends MoverGeometryOptions {
@@ -502,11 +491,11 @@ export class SpecialsController {
 
   private lightStates = new Map<number, LightState>();
 
-  private prevX: number;
-  private prevY: number;
+  /** Where the player stood at the end of the previous tic — what `crossLines` scans from. */
+  private prev: Pos2;
   /**
    * Set by `trigger` for the one frame a teleport fires, and consumed at the
-   * end of `update` to seed `prevX`/`prevY` from the destination instead of
+   * end of `update` to seed `prev` from the destination instead of
    * the pre-teleport position `update` was called with. Without this, the
    * next frame's walk-trigger scan would test a segment from the old spot all
    * the way to the teleport pad — an arbitrarily long jump that could cross
@@ -545,8 +534,7 @@ export class SpecialsController {
     this.blocksFloorRise = blocksFloorRise;
     this.sfx = sfx;
     this.bossDeathTriggers = bossDeathTriggersFor(map.name);
-    this.prevX = playerAt.x;
-    this.prevY = playerAt.y;
+    this.prev = { x: playerAt.x, y: playerAt.y };
 
     for (const [i, line] of map.linedefs.entries()) {
       const def = lookupSpecial(line.special);
@@ -591,8 +579,8 @@ export class SpecialsController {
       lightStates: [...this.lightStates.entries()],
       moveSoundTimer: this.moveSoundTimer,
       crushDamageTimer: this.crushDamageTimer,
-      prevX: this.prevX,
-      prevY: this.prevY,
+      prevX: this.prev.x,
+      prevY: this.prev.y,
       stairFlips: [...this.retriggerFlips],
     });
   }
@@ -622,8 +610,8 @@ export class SpecialsController {
     this.lightStates = new Map(structuredClone(s.lightStates));
     this.moveSoundTimer = s.moveSoundTimer;
     this.crushDamageTimer = s.crushDamageTimer;
-    this.prevX = s.prevX;
-    this.prevY = s.prevY;
+    this.prev.x = s.prevX;
+    this.prev.y = s.prevY;
     const dirty = new Set<number>();
     // Two sources, since a switch shows its on-texture for two different
     // reasons: a repeatable one mid-BUTTONTIME (`switchFlashes`), and a
@@ -646,6 +634,200 @@ export class SpecialsController {
    */
   get fadeParticipant(): FadeParticipant {
     return this.geometry;
+  }
+
+  /**
+   * The keyed line the player was refused this frame, if any — one read per attempt, so holding
+   * `use` against a locked door re-announces it on every press and not in between. Call after
+   * `update`, which is where every keyed line is reached from (all of them are `use` triggers).
+   */
+  consumeLockedLine(): LockedLine | null {
+    const locked = this.lockedLine;
+    this.lockedLine = null;
+    return locked;
+  }
+
+  update(
+    dt: number,
+    player: Placement,
+    input: Input,
+    ownedKeys: ReadonlySet<KeySlot>,
+    /**
+     * IDCLIP: walk triggers stop firing, exactly as `MF_NOCLIP` keeps `P_TryMove` from running
+     * its `spechit` list at all. Use triggers are untouched — `P_UseLines` never looks at the
+     * flag. docs/cheats.md § IDCLIP.
+     */
+    noclip = false,
+  ): void {
+    const dirty = new Set<number>();
+    // One shared clock for every mover's grind — see MOVE_SOUND_INTERVAL.
+    this.moveSoundTimer -= dt;
+    this.moveSoundDue = this.moveSoundTimer <= 0;
+    if (this.moveSoundDue) this.moveSoundTimer += MOVE_SOUND_INTERVAL;
+    // Same reasoning, one shared clock for every crusher's damage pulse — see tickCrush.
+    this.crushDamageTimer -= dt;
+    this.crushDamageDue = this.crushDamageTimer <= 0;
+    if (this.crushDamageDue) this.crushDamageTimer += CRUSH_DAMAGE_INTERVAL;
+    this.tickMovers(dt, dirty);
+    this.lastTeleport = null;
+    // Read once, up front: `player` is the live `Player`, and a use-triggered teleport moves it
+    // inside `handleUseTrigger`. Both the walk pass and the reseed below mean where the player
+    // stood when the tic began, not where a switch just sent them.
+    const at: Placement = { x: player.x, y: player.y, angle: player.angle };
+    this.handleUseTrigger(at, input, ownedKeys);
+    if (!noclip) this.handleWalkTriggers(at, ownedKeys);
+    this.geometry.rebuildAround(dirty);
+    this.updateSwitchFlashes(dt);
+    this.updateLights(dt);
+    // See `lastTeleport`'s doc: a teleport this frame reseeds `prev` from the destination,
+    // not from where the player stood before it.
+    const teleport = this.consumeLastTeleport();
+    this.prev.x = teleport ? teleport.x : at.x;
+    this.prev.y = teleport ? teleport.y : at.y;
+  }
+
+  /**
+   * A monster walking from `prev` to `pos` crosses whatever walk triggers lie between, gated to the
+   * short allow-list `SpecialDef.monsterActivate` carries. Returns the landing spot if the crossing
+   * teleported it, so the caller can move the monster and puff the fog; everything else happens as
+   * a side effect, as it does under the player. See docs/specials.md § Teleporters.
+   */
+  crossMonster(prev: Pos2, pos: CrossingBody, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
+    return this.crossLines(prev, pos, 'monster', ownedKeys);
+  }
+
+  /**
+   * The door a chasing monster walks into, opened — `P_Move`'s `spechit` pass, run when a step is
+   * refused, over the lines the monster's box at the *attempted* position `(tryX, tryY)` crossed.
+   * Every one of them that admits a non-player is pushed with `side` 0, so unlike the player's own
+   * press the side the monster stands on is never tested. Returns a landing spot the same way
+   * `crossMonster` does. The key check still runs and a monster carries none, which is
+   * `EV_VerticalDoor`'s `if (!player) return;` by another route.
+   * docs/monster-ai.md § Opening doors.
+   *
+   * The coordinates stay scalars: the caller is `P_Move`'s refused step, which computes them
+   * inline — docs/conventions.md § Named arguments.
+   */
+  useMonster(body: CrossingBody, tryX: number, tryY: number, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
+    if (this.monsterUseLines.size === 0) return null;
+    const radius = body.blockRadius;
+    const left = tryX - radius;
+    const right = tryX + radius;
+    const bottom = tryY - radius;
+    const top = tryY + radius;
+    const hits = this.monsterUseHits;
+    hits.length = 0;
+    // `PIT_CheckLine`'s own two gates, in its order — the box, then the side test. The `+ 1` is
+    // broadphase slop only, as in `checkPosition`.
+    this.world.forEachLineNear(tryX, tryY, radius + 1, (i) => {
+      if (!this.monsterUseLines.has(i)) return;
+      if (!this.world.boxOverlapsLine(left, bottom, right, top, i)) return;
+      if (this.world.boxOnLineSide(left, bottom, right, top, i) !== -1) return;
+      hits.push(i);
+    });
+    let dest: TeleportDest | null = null;
+    // Where the monster *stands*, not where it was heading: a silent teleport reads the body's
+    // own position, as `P_UseSpecialLine` does from `thing`.
+    const at: Placement = { x: body.x, y: body.y, angle: body.angle };
+    for (const i of hits) dest = this.trigger(i, ownedKeys, 'monster', false, at) ?? dest;
+    return dest;
+  }
+
+  /**
+   * `crossMonster`'s voodoo-doll twin: whatever walk lines the doll was carried
+   * across this tic fire as though the player had walked them — same keys, same
+   * lines — but the landing spot of a teleport comes back for the caller to
+   * move the *doll*, not the player. See docs/specials.md § Voodoo dolls.
+   */
+  crossVoodoo(prev: Pos2, pos: Placement, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
+    return this.crossLines(prev, pos, 'voodoo', ownedKeys);
+  }
+
+  /**
+   * Vanilla's `A_BossDeath` — see docs/death.md § Boss death. `game.ts` calls this once per
+   * monster death that leaves none of its type alive on the level (`ThingLayer`'s own doomednum
+   * check).
+   *
+   * `playerAlive` is `A_BossDeath`'s "make sure there is a player alive for victory" loop, applied
+   * per row rather than to the whole call: only rows that came from that function carry
+   * `needsLivingPlayer` (see `bossDeathTriggersFor`).
+   */
+  notifyBossDeath(type: number, playerAlive: boolean): void {
+    for (const t of this.bossDeathTriggers) {
+      if (t.type !== type || (t.needsLivingPlayer && !playerAlive)) continue;
+      if (t.action.kind === 'exit') this.onExit(false);
+      else this.triggerTag(t.action.tag, t.action.kind);
+    }
+  }
+
+  /**
+   * Fires a `shoot` special (24, 46, 47) on exactly this line — vanilla's
+   * `P_ShootSpecialLine`. The single-line form: a projectile fires only the line
+   * it hits (`game/projectiles.ts`), while a hitscan shot goes through
+   * `triggerShotPath` below, which fires each line it crossed through here.
+   * Either way the caller already knows the line rather than searching for it
+   * (`linesNear`), so this is a plain lookup. `byMonster` reproduces vanilla's own
+   * per-number gate (`SpecialDef.monsterCanTrigger` — true only for 46): a
+   * monster's shot that happens to stop against a 24 or 47 line does nothing,
+   * same as vanilla.
+   */
+  triggerShot(lineIndex: number | null, ownedKeys: ReadonlySet<KeySlot>, byMonster = false): void {
+    if (lineIndex === null) return;
+    const def = lookupSpecial(this.lineSpecial(lineIndex));
+    if (!def || def.trigger !== 'shoot') return;
+    if (byMonster && !def.monsterCanTrigger) return;
+    this.trigger(lineIndex, ownedKeys, byMonster ? 'monster' : 'player');
+  }
+
+  /**
+   * Fires every shoot special a **hitscan** shot from `from` to `to` crossed, in the order it
+   * crossed them, plus `blocker` — the line that stopped it, if a line did — last. What each line
+   * still has to satisfy is `triggerShot`'s, unchanged. See docs/combat.md § Shoot-triggered
+   * specials.
+   *
+   * Crossings are tested against the linedefs' **raw vertexes**, not `World.lineOverlapEnds`:
+   * `shotPath` extends the ends so a ray can't leak between two walls at a shared vertex, and that
+   * extension would fire switches a bullet passed the end of. `handleUseTrigger` reads raw vertexes
+   * for the same reason.
+   */
+  triggerShotPath(from: Pos2, to: Pos2, blocker: number | null, ownedKeys: ReadonlySet<KeySlot>, byMonster = false): void {
+    const hits: { t: number; line: number }[] = [];
+    for (const i of this.shootLines) {
+      if (i === blocker) continue;
+      const line = this.map.linedefs[i];
+      const a = this.map.vertexes[line.v1];
+      const b = this.map.vertexes[line.v2];
+      if (!a || !b) continue;
+      const t = segmentCrossT(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
+      if (t >= 0) hits.push({ t, line: i });
+    }
+    // `P_TraverseIntercepts` fires them nearest-first. Collected into a local and
+    // sorted, as `handleUseTrigger` does: the list is empty or a single entry on
+    // every real map, and each `triggerShot` below dispatches arbitrary specials,
+    // which a shared scratch buffer would let re-enter and clobber mid-loop.
+    hits.sort((p, q) => p.t - q.t);
+    for (const h of hits) this.triggerShot(h.line, ownedKeys, byMonster);
+    this.triggerShot(blocker, ownedKeys, byMonster);
+  }
+
+  /**
+   * Which shoot-triggered line the pointer is over and where on it a shot should be
+   * aimed, or null — auto-aim's lock onto switches, the counterpart to
+   * `ThingLayer.pickMonster`. See docs/combat.md § Auto-aim.
+   *
+   * A line that can no longer fire is no candidate: a spent one-shot, and a
+   * tagless line that acts by tag, both fail the same guards `trigger` leads with,
+   * and locking aim onto one would spend the shot on nothing.
+   */
+  pickShootTarget(ray: THREE.Ray, fireZ: number): ShootAim | null {
+    const live: number[] = [];
+    for (const i of this.shootLines) {
+      const def = lookupSpecial(this.lineSpecial(i));
+      if (!def || def.trigger !== 'shoot') continue;
+      if (!this.stillFires(i, def)) continue;
+      live.push(i);
+    }
+    return live.length === 0 ? null : pickShootAim(this.world, ray, live, fireZ);
   }
 
   /**
@@ -696,58 +878,6 @@ export class SpecialsController {
    */
   private consumeLastTeleport(): Pos2 | null {
     return this.lastTeleport;
-  }
-
-  /**
-   * The keyed line the player was refused this frame, if any — one read per attempt, so holding
-   * `use` against a locked door re-announces it on every press and not in between. Call after
-   * `update`, which is where every keyed line is reached from (all of them are `use` triggers).
-   */
-  consumeLockedLine(): LockedLine | null {
-    const locked = this.lockedLine;
-    this.lockedLine = null;
-    return locked;
-  }
-
-  update(
-    dt: number,
-    player: Placement,
-    input: Input,
-    ownedKeys: ReadonlySet<KeySlot>,
-    /**
-     * IDCLIP: walk triggers stop firing, exactly as `MF_NOCLIP` keeps `P_TryMove` from running
-     * its `spechit` list at all. Use triggers are untouched — `P_UseLines` never looks at the
-     * flag. docs/cheats.md § IDCLIP.
-     */
-    noclip = false,
-  ): void {
-    const dirty = new Set<number>();
-    // One shared clock for every mover's grind — see MOVE_SOUND_INTERVAL.
-    this.moveSoundTimer -= dt;
-    this.moveSoundDue = this.moveSoundTimer <= 0;
-    if (this.moveSoundDue) this.moveSoundTimer += MOVE_SOUND_INTERVAL;
-    // Same reasoning, one shared clock for every crusher's damage pulse — see tickCrush.
-    this.crushDamageTimer -= dt;
-    this.crushDamageDue = this.crushDamageTimer <= 0;
-    if (this.crushDamageDue) this.crushDamageTimer += CRUSH_DAMAGE_INTERVAL;
-    this.tickMovers(dt, dirty);
-    this.lastTeleport = null;
-    // Read once, up front: `player` is the live `Player`, and a use-triggered teleport moves it
-    // inside `handleUseTrigger`. Both the walk pass and the reseed below mean where the player
-    // stood when the tic began, not where a switch just sent them.
-    const playerX = player.x;
-    const playerY = player.y;
-    const playerAngle = player.angle;
-    this.handleUseTrigger(playerX, playerY, playerAngle, input, ownedKeys);
-    if (!noclip) this.handleWalkTriggers(playerX, playerY, playerAngle, ownedKeys);
-    this.geometry.rebuildAround(dirty);
-    this.updateSwitchFlashes(dt);
-    this.updateLights(dt);
-    // See `lastTeleport`'s doc: a teleport this frame reseeds prevX/prevY from the destination,
-    // not from where the player stood before it.
-    const teleport = this.consumeLastTeleport();
-    this.prevX = teleport ? teleport.x : playerX;
-    this.prevY = teleport ? teleport.y : playerY;
   }
 
   /**
@@ -1149,17 +1279,10 @@ export class SpecialsController {
   }
 
   /**
-   * Asks `onCrush` whether anything in `sectorIndex` is caught under the
-   * mover, dealing `CRUSH_DAMAGE` at the same time only on the shared
-   * `crushDamageDue` clock. Two rates in one call because vanilla has two:
-   * `P_ChangeSector`'s `nofit` is recomputed every tic (it is what
-   * `T_MovePlane` returns as `crushed`, and so what drives the crusher
-   * slowdown), while `PIT_ChangeSector` rations the damage inside it on
-   * `leveltime&3`.
-   *
-   * That damage clock is one clock for the whole level, not a per-mover
-   * countdown (`moveSoundDue`'s reasoning, applied to damage) — a per-mover
-   * countdown drifts off vanilla's global `leveltime&3` and racks up extra hits.
+   * Asks `onCrush` whether anything in `sectorIndex` is caught under the mover, dealing
+   * `CRUSH_DAMAGE` at the same time only on the shared `crushDamageDue` clock — two rates in one
+   * call because vanilla has two, and the damage one is level-wide rather than per mover.
+   * See docs/specials.md § Crushers.
    */
   private tickCrush(sectorIndex: number): boolean {
     return this.onCrush(sectorIndex, this.crushDamageDue);
@@ -1176,21 +1299,12 @@ export class SpecialsController {
   }
 
   /**
-   * `P_SectorActive(floor_special, sec)`: this sector already has a *floor*
-   * thinker running, so `EV_DoFloor`, `EV_DoPlat`, `EV_DoDonut` and
-   * `EV_BuildStairs` must `continue` past it. A closing door overhead does
-   * not block them — that is `ceilingActive`'s slot, and keeping the two
-   * apart is the whole point of Boom's split.
-   *
-   * A mover that has finished is **not** active — vanilla removes its thinker and clears
-   * `specialdata` the moment it stops, freeing the sector to be triggered again. This engine keeps
-   * the finished record instead (a lift re-triggers off its own `restHeight`), so the
-   * state has to be read rather than mere presence.
-   *
-   * The two re-triggers vanilla does honor are handled by their own callers *before* asking this: a
-   * door reverses (`EV_VerticalDoor`) and a stopped crusher restarts (`P_ActivateInStasis`).
-   *
-   * See docs/specials.md § One mover per sector — DOOM2 MAP30's central pillar is the repro.
+   * `P_SectorActive(floor_special, sec)`: this sector already has a *floor* thinker running, so
+   * every floor-class trigger must pass it by. A mover that has **finished** is not active — this
+   * engine keeps the finished record where vanilla removes the thinker, so the state is read rather
+   * than mere presence. The two re-triggers vanilla honors (a door reversing, a stopped crusher
+   * restarting) are handled by their own callers before asking.
+   * See docs/specials.md § One mover per sector.
    */
   private floorActive(sectorIndex: number): boolean {
     return this.moverActive(this.floorMovers.get(sectorIndex));
@@ -1674,15 +1788,11 @@ export class SpecialsController {
   }
 
   /**
-   * Vanilla's `raiseToTexture` (`EV_DoFloor`'s own case, not reachable
-   * through `resolveFloorTarget`): scans every two-sided line bordering the
-   * sector and, for *both* of that line's sidedefs (not just the far one —
-   * confirmed against `p_floor.c`), checks its lower texture's pixel height,
-   * keeping the smallest found. No candidates at all: vanilla's own
-   * `minsize` sentinel (`MAXINT`) is replicated as `Infinity`, meaning the
-   * floor just rises forever rather than being clamped to something safer —
-   * this only happens on a malformed map (no bordering line has a bottom
-   * texture at all), which no real map actually does.
+   * Vanilla's `raiseToTexture` (`EV_DoFloor`'s own case, not reachable through
+   * `resolveFloorTarget`): the shortest lower-texture pixel height among the sector's bordering
+   * two-sided lines, both sidedefs of each. With no candidate at all, vanilla's `minsize` sentinel
+   * (`MAXINT`) is replicated as `Infinity` and the floor rises forever, which only a malformed map
+   * can reach. See docs/specials.md § raiseToTexture, lowerAndChange.
    */
   private triggerRaiseToTexture(sectorIndex: number): boolean {
     if (this.floorActive(sectorIndex)) return false;
@@ -1870,7 +1980,7 @@ export class SpecialsController {
     lineIndex: number,
     def: SpecialDef,
     effect: TeleportEffect,
-    at: TeleportSource,
+    at: Placement,
     activator: Activator,
   ): TeleportDest | null {
     if (effect.destination === 'line') return this.lineArrival(lineIndex, effect, at, activator);
@@ -1897,22 +2007,15 @@ export class SpecialsController {
   }
 
   /**
-   * `EV_SilentLineTeleport`: the body keeps its position *along* the crossed
-   * line and is re-laid onto the first tag-matched two-sided linedef that
-   * isn't this one, turned by the angle between them. `reversed` (262-265)
-   * flips both the position along the exit and the turn, so the pair reads as
-   * one continuous doorway rather than a mirror.
-   *
-   * Two details are load-bearing and come straight from the source: the
-   * landing floor is the **higher** of the exit line's two sectors
-   * (`sides[l->sidenum[stepdown]]`), and the body must end up on a specific
-   * *side* of the exit line — `reverse || (player && stepdown)` — or it
-   * oscillates back through the teleporter it just came out of.
+   * `EV_SilentLineTeleport`: the body keeps its position *along* the crossed line and is re-laid
+   * onto the first tag-matched two-sided linedef that isn't this one, turned by the angle between
+   * them; `reversed` (262-265) flips both. The landing floor and the side the body must end on are
+   * both load-bearing — docs/specials.md § Silent and line-to-line teleporters.
    */
   private lineArrival(
     lineIndex: number,
     effect: TeleportEffect,
-    at: TeleportSource,
+    at: Placement,
     activator: Activator,
   ): TeleportDest | null {
     const line = this.map.linedefs[lineIndex];
@@ -2001,16 +2104,18 @@ export class SpecialsController {
    * teleport branch reads it, matching vanilla, where `side` reaches nothing but
    * `EV_Teleport`. See docs/specials.md § Teleporters.
    *
-   * `at` is where the activator is standing and which way it faces — only the
-   * silent teleports read it (`TeleportSource`), so every other caller can
-   * leave it at the default.
+   * `at` is where the activator is standing and which way it faces. Only Boom's
+   * silent teleports read it — they rotate the body relative to its current
+   * facing where a vanilla teleport overwrites it, and interpolate a
+   * line-to-line exit from the crossing point — so every other caller can leave
+   * it at the default.
    */
   private trigger(
     lineIndex: number,
     ownedKeys: ReadonlySet<KeySlot>,
     activator: Activator = 'player',
     fromBackSide = false,
-    at: TeleportSource = NO_SOURCE,
+    at: Placement = NO_SOURCE,
   ): TeleportDest | null {
     const line = this.map.linedefs[lineIndex];
     const def = lookupSpecial(this.lineSpecial(lineIndex));
@@ -2151,92 +2256,22 @@ export class SpecialsController {
   }
 
   /**
-   * A monster walking from `prev` to `pos` crosses whatever walk
-   * triggers lie between — vanilla's `P_CrossSpecialLine` runs for any thing,
-   * not just the player, but gates non-players to a short allow-list carried
-   * per number as `SpecialDef.monsterActivate`: teleports (vanilla's and
-   * Boom's silent family alike), one door type and two lift types.
-   * Returns the landing spot if the crossing teleported it, so the caller can
-   * move the monster and puff the fog; everything else (a door opening, a lift
-   * dropping) happens as a side effect, exactly as it does under the player.
+   * The one walk-trigger scan every activator goes through: whatever walk lines lie between `from`
+   * and `to` fire, gated per activator (`SpecialDef.monsterActivate` for monsters). Returns the
+   * landing spot if a crossing teleported the activator — a monster's or voodoo doll's move is the
+   * caller's to apply — or null.
    *
-   * This is what makes a mapper's monster closet work: the classic setup is a
-   * pack of monsters behind a 125/126 line that only they can walk, teleporting
-   * them into the arena the moment they start chasing.
-   */
-  crossMonster(prev: Pos2, pos: CrossingBody, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
-    // The facing matters: Boom's silent numbers rotate a body rather than
-    // aiming it.
-    return this.crossLines(prev.x, prev.y, pos.x, pos.y, 'monster', ownedKeys, pos.angle);
-  }
-
-  /**
-   * The door a chasing monster walks into, opened — `P_Move`'s `spechit` pass, run when a step is
-   * refused, over the lines the monster's box at the *attempted* position `(tryX, tryY)` crossed.
-   * Every one of them that admits a non-player (`SpecialDef.monsterActivate`: the manual doors and
-   * Boom's switch teleporters) is pushed, exactly as `P_UseSpecialLine` does with `side` 0 — so
-   * unlike the player's own press, the side the monster stands on is never tested.
-   * Returns a landing spot the same way `crossMonster` does, for the teleport switches.
-   * docs/monster-ai.md § Opening doors.
-   *
-   * The key check still runs, and a monster carries no keys: 32/33/34 are in the allow-list and
-   * fail it, which is `EV_VerticalDoor`'s `if (!player) return;` by another route.
-   */
-  useMonster(body: CrossingBody, tryX: number, tryY: number, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
-    if (this.monsterUseLines.size === 0) return null;
-    const radius = body.blockRadius;
-    const left = tryX - radius;
-    const right = tryX + radius;
-    const bottom = tryY - radius;
-    const top = tryY + radius;
-    const hits = this.monsterUseHits;
-    hits.length = 0;
-    // `PIT_CheckLine`'s own two gates, in its order — the box, then the side test. The `+ 1` is
-    // broadphase slop only, as in `checkPosition`.
-    this.world.forEachLineNear(tryX, tryY, radius + 1, (i) => {
-      if (!this.monsterUseLines.has(i)) return;
-      if (!this.world.boxOverlapsLine(left, bottom, right, top, i)) return;
-      if (this.world.boxOnLineSide(left, bottom, right, top, i) !== -1) return;
-      hits.push(i);
-    });
-    let dest: TeleportDest | null = null;
-    // Where the monster *stands*, not where it was heading: a silent teleport reads the body's
-    // own position, as `P_UseSpecialLine` does from `thing`.
-    const at: TeleportSource = { x: body.x, y: body.y, angle: body.angle };
-    for (const i of hits) dest = this.trigger(i, ownedKeys, 'monster', false, at) ?? dest;
-    return dest;
-  }
-
-  /**
-   * `crossMonster`'s voodoo-doll twin: whatever walk lines the doll was carried
-   * across this tic fire as though the player had walked them — same keys, same
-   * lines — but the landing spot of a teleport comes back for the caller to
-   * move the *doll*, not the player. See docs/specials.md § Voodoo dolls.
-   */
-  crossVoodoo(prev: Pos2, pos: Placement, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
-    return this.crossLines(prev.x, prev.y, pos.x, pos.y, 'voodoo', ownedKeys, pos.angle);
-  }
-
-  /**
-   * The one walk-trigger scan every activator goes through: whatever walk
-   * lines lie between `(prevX, prevY)` and `(x, y)` fire, gated per activator
-   * (`SpecialDef.monsterActivate` for monsters). Returns the landing spot if a
-   * crossing teleported the activator — a monster's or voodoo doll's move is
-   * the caller's to apply — or null.
-   *
-   * `facing` is the activator's heading in radians, the one thing a silent
-   * teleport needs from it that this scan can't derive; the *position* it
-   * reads is the crossing point below, never where the move ended.
+   * `to.angle` is the activator's heading, the one thing a silent teleport needs that this scan
+   * can't derive; the *position* it reads is the crossing point below, never where the move ended.
    */
   private crossLines(
-    prevX: number,
-    prevY: number,
-    x: number,
-    y: number,
+    from: Pos2,
+    to: Placement,
     activator: Activator,
     ownedKeys: ReadonlySet<KeySlot>,
-    facing = 0,
   ): TeleportDest | null {
+    const { x: prevX, y: prevY } = from;
+    const { x, y } = to;
     if (prevX === x && prevY === y) return null;
     const radius = activator === 'monster' ? MONSTER_CROSS_RADIUS : PLAYER_RADIUS + 8;
     for (const i of this.world.linesNear(x, y, radius)) {
@@ -2253,29 +2288,16 @@ export class SpecialsController {
       // crossed line*, so it wants the crossing point rather than wherever the
       // move happened to end (`EV_SilentLineTeleport` runs from `thing->x/y`
       // inside `P_CrossSpecialLine`, i.e. mid-crossing).
-      const source: TeleportSource = { x: prevX + (x - prevX) * hit.t, y: prevY + (y - prevY) * hit.t, angle: facing };
+      const source: Placement = {
+        x: prevX + (x - prevX) * hit.t,
+        y: prevY + (y - prevY) * hit.t,
+        angle: to.angle,
+      };
       // `oldside`: the side the activator was on before this move — see `trigger`.
       const dest = this.trigger(i, ownedKeys, activator, !isFrontSide(a.x, a.y, b.x, b.y, prevX, prevY), source);
       if (dest) return dest;
     }
     return null;
-  }
-
-  /**
-   * Vanilla's `A_BossDeath` — see docs/death.md § Boss death. `game.ts` calls this once per
-   * monster death that leaves none of its type alive on the level (`ThingLayer`'s own doomednum
-   * check).
-   *
-   * `playerAlive` is `A_BossDeath`'s "make sure there is a player alive for victory" loop, applied
-   * per row rather than to the whole call: only rows that came from that function carry
-   * `needsLivingPlayer` (see `bossDeathTriggersFor`).
-   */
-  notifyBossDeath(type: number, playerAlive: boolean): void {
-    for (const t of this.bossDeathTriggers) {
-      if (t.type !== type || (t.needsLivingPlayer && !playerAlive)) continue;
-      if (t.action.kind === 'exit') this.onExit(false);
-      else this.triggerTag(t.action.tag, t.action.kind);
-    }
   }
 
   /**
@@ -2309,105 +2331,21 @@ export class SpecialsController {
     }
   }
 
-  /**
-   * Fires a `shoot` special (24, 46, 47) on exactly this line — vanilla's
-   * `P_ShootSpecialLine`. The single-line form: a projectile fires only the line
-   * it hits (`game/projectiles.ts`), while a hitscan shot goes through
-   * `triggerShotPath` below, which fires each line it crossed through here.
-   * Either way the caller already knows the line rather than searching for it
-   * (`linesNear`), so this is a plain lookup. `byMonster` reproduces vanilla's own
-   * per-number gate (`SpecialDef.monsterCanTrigger` — true only for 46): a
-   * monster's shot that happens to stop against a 24 or 47 line does nothing,
-   * same as vanilla.
-   */
-  triggerShot(lineIndex: number | null, ownedKeys: ReadonlySet<KeySlot>, byMonster = false): void {
-    if (lineIndex === null) return;
-    const def = lookupSpecial(this.lineSpecial(lineIndex));
-    if (!def || def.trigger !== 'shoot') return;
-    if (byMonster && !def.monsterCanTrigger) return;
-    this.trigger(lineIndex, ownedKeys, byMonster ? 'monster' : 'player');
-  }
-
-  /**
-   * Fires every shoot special a **hitscan** shot from `from` to `to` crossed, in
-   * the order it crossed them, plus `blocker` — the line that stopped it, if a
-   * line did — last. A bullet fires the specials of lines it merely flew through, at whatever
-   * height — vanilla runs `P_ShootSpecialLine` before testing whether the line blocks. `blocker` is
-   * passed separately rather than found here: it is already resolved (`ShotPath.lineIndex`), and
-   * the trace ends exactly on it, which is the one crossing floating point can't be trusted to
-   * report.
-   *
-   * Crossings are tested against the linedefs' **raw vertexes**, deliberately, not
-   * `World.lineOverlapEnds`: `shotPath` uses the extended ends so a ray can't leak
-   * between two walls meeting at a shared vertex, but firing a special is not
-   * blocking — `P_TraverseIntercepts` walks the true linedef, and the extension
-   * would fire switches a bullet passed the end of. `handleUseTrigger` reads raw
-   * vertexes for the same reason.
-   *
-   * Everything each line still has to satisfy is `triggerShot`'s, unchanged.
-   * See docs/combat.md § Shoot-triggered specials.
-   */
-  triggerShotPath(from: Pos2, to: Pos2, blocker: number | null, ownedKeys: ReadonlySet<KeySlot>, byMonster = false): void {
-    const hits: { t: number; line: number }[] = [];
-    for (const i of this.shootLines) {
-      if (i === blocker) continue;
-      const line = this.map.linedefs[i];
-      const a = this.map.vertexes[line.v1];
-      const b = this.map.vertexes[line.v2];
-      if (!a || !b) continue;
-      const t = segmentCrossT(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
-      if (t >= 0) hits.push({ t, line: i });
-    }
-    // `P_TraverseIntercepts` fires them nearest-first. Collected into a local and
-    // sorted, as `handleUseTrigger` does: the list is empty or a single entry on
-    // every real map, and each `triggerShot` below dispatches arbitrary specials,
-    // which a shared scratch buffer would let re-enter and clobber mid-loop.
-    hits.sort((p, q) => p.t - q.t);
-    for (const h of hits) this.triggerShot(h.line, ownedKeys, byMonster);
-    this.triggerShot(blocker, ownedKeys, byMonster);
-  }
-
-  /**
-   * Which shoot-triggered line the pointer is over and where on it a shot should be
-   * aimed, or null — auto-aim's lock onto switches, the counterpart to
-   * `ThingLayer.pickMonster`. See docs/combat.md § Auto-aim.
-   *
-   * A line that can no longer fire is no candidate: a spent one-shot, and a
-   * tagless line that acts by tag, both fail the same guards `trigger` leads with,
-   * and locking aim onto one would spend the shot on nothing.
-   */
-  pickShootTarget(ray: THREE.Ray, fireZ: number): ShootAim | null {
-    const live: number[] = [];
-    for (const i of this.shootLines) {
-      const def = lookupSpecial(this.lineSpecial(i));
-      if (!def || def.trigger !== 'shoot') continue;
-      if (!this.stillFires(i, def)) continue;
-      live.push(i);
-    }
-    return live.length === 0 ? null : pickShootAim(this.world, ray, live, fireZ);
-  }
-
-  private handleUseTrigger(
-    playerX: number,
-    playerY: number,
-    playerAngle: number,
-    input: Input,
-    ownedKeys: ReadonlySet<KeySlot>,
-  ): void {
+  private handleUseTrigger(at: Placement, input: Input, ownedKeys: ReadonlySet<KeySlot>): void {
     if (!input.pressed('Space') && !input.rightMousePressed('use')) return;
-    const tx = playerX + Math.cos(playerAngle) * USE_RANGE;
-    const ty = playerY + Math.sin(playerAngle) * USE_RANGE;
+    const tx = at.x + Math.cos(at.angle) * USE_RANGE;
+    const ty = at.y + Math.sin(at.angle) * USE_RANGE;
 
     // Every line the trace crosses, special or not: a wall with no opening ends
     // the press before anything behind it is reached, so the scan can't skip the
     // walls. See docs/specials.md § The use trace.
     const hits: { t: number; line: number }[] = [];
-    for (const i of this.world.linesNear(playerX, playerY, USE_RANGE + 8)) {
+    for (const i of this.world.linesNear(at.x, at.y, USE_RANGE + 8)) {
       const line = this.map.linedefs[i];
       const a = this.map.vertexes[line.v1];
       const b = this.map.vertexes[line.v2];
       if (!a || !b) continue;
-      const hit = segmentIntersect(playerX, playerY, tx, ty, a.x, a.y, b.x, b.y);
+      const hit = segmentIntersect(at.x, at.y, tx, ty, a.x, a.y, b.x, b.y);
       if (hit) hits.push({ t: hit.t, line: i });
     }
     hits.sort((p, q) => p.t - q.t);
@@ -2429,9 +2367,9 @@ export class SpecialsController {
       // A special stops the trace whether or not it fires — a walk-only number,
       // a line reached from its back side, and one whose EV_ helper refused all
       // shadow what is behind them the same way a switch that worked does.
-      if (def?.trigger === 'use' && isFrontSide(a.x, a.y, b.x, b.y, playerX, playerY)) {
+      if (def?.trigger === 'use' && isFrontSide(a.x, a.y, b.x, b.y, at.x, at.y)) {
         // The player's own stance, for a silent switch teleport (209/210).
-        this.trigger(h.line, ownedKeys, 'player', false, { x: playerX, y: playerY, angle: playerAngle });
+        this.trigger(h.line, ownedKeys, 'player', false, at);
       }
       // Boom's PASSUSE: the trace keeps going past a special line only while
       // that line carries the flag, so several stacked specials can fire from
@@ -2440,13 +2378,8 @@ export class SpecialsController {
     }
   }
 
-  private handleWalkTriggers(
-    playerX: number,
-    playerY: number,
-    playerAngle: number,
-    ownedKeys: ReadonlySet<KeySlot>,
-  ): void {
-    this.crossLines(this.prevX, this.prevY, playerX, playerY, 'player', ownedKeys, playerAngle);
+  private handleWalkTriggers(at: Placement, ownedKeys: ReadonlySet<KeySlot>): void {
+    this.crossLines(this.prev, at, 'player', ownedKeys);
   }
 
   /**
@@ -2505,7 +2438,6 @@ export class SpecialsController {
       this.geometry.recolorSector(sectorIndex);
     }
   }
-
 }
 
 /**

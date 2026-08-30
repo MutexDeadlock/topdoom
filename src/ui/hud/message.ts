@@ -108,16 +108,6 @@ export class CenterMessage {
     this.gfx = gfx;
   }
 
-  private fontFor(color: WadFontRecolor): WadFont {
-    const cacheKey = color.join(',');
-    let font = this.fonts.get(cacheKey);
-    if (!font) {
-      font = new WadFont(this.gfx, color);
-      this.fonts.set(cacheKey, font);
-    }
-    return font;
-  }
-
   /**
    * Draws `runs` as one line and restarts the timeout — a second message replaces whatever is up,
    * it doesn't queue.
@@ -161,5 +151,15 @@ export class CenterMessage {
   clear(): void {
     this.secondsLeft = 0;
     this.canvas.classList.add('hidden');
+  }
+
+  private fontFor(color: WadFontRecolor): WadFont {
+    const cacheKey = color.join(',');
+    let font = this.fonts.get(cacheKey);
+    if (!font) {
+      font = new WadFont(this.gfx, color);
+      this.fonts.set(cacheKey, font);
+    }
+    return font;
   }
 }

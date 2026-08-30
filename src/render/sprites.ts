@@ -9,6 +9,7 @@ import type { SpriteBank } from '../wad/sprites.ts';
 import { doomToWorld, litColor } from './mapmesh.ts';
 import { DOOM_TIC } from '../constants.ts';
 import { tinted, type Tint } from './lights.ts';
+import type { Pos3 } from '../types.ts';
 
 /**
  * Default viewer angle (DOOM-space, 0 = east, 90 = north, counter-clockwise):
@@ -201,64 +202,6 @@ export class SpriteMaterialCache {
       c?.geometry.dispose();
     }
     this.cache.clear();
-  }
-}
-
-/**
- * A one-shot frame sequence, either holding on its last frame forever once
- * exhausted (`SpriteAnimator`'s death slot) or clearing itself and handing
- * control back to the caller (its attack/pain override slot) — the two only
- * differ in that one behavior, so both share this bookkeeping instead of each
- * carrying their own {frames, duration, index, timer} quadruple.
- */
-class FrameSequence {
-  frames: string[] | null = null;
-  index = 0;
-  /**
-   * One duration for every frame, or a per-frame list. An attack pose takes the list: its frames
-   * are vanilla's own attack states and their tic counts are uneven, which is what puts the firing
-   * frame at the moment the shot goes off (docs/sprites.md § Pain, and attack/pain poses).
-   */
-  private durations: number | readonly number[] = 0;
-  private holdLast = false;
-  private timer = 0;
-
-  start(frames: string[], durations: number | readonly number[], holdLast: boolean): void {
-    this.frames = frames;
-    this.durations = durations;
-    this.holdLast = holdLast;
-    this.index = 0;
-    this.timer = 0;
-  }
-
-  stop(): void {
-    this.frames = null;
-    this.index = 0;
-    this.timer = 0;
-  }
-
-  /** This frame's own duration; a list shorter than the sequence holds on its last entry. */
-  private durationAt(index: number): number {
-    if (typeof this.durations === 'number') return this.durations;
-    return this.durations[Math.min(index, this.durations.length - 1)] ?? 0;
-  }
-
-  advance(dt: number): void {
-    if (!this.frames) return;
-    this.timer += dt;
-    for (;;) {
-      const duration = this.durationAt(this.index);
-      // A zero-length frame would spin here forever. Vanilla's own zero-tic states are dropped
-      // when a pose is built, so this only catches a patch that wrote one.
-      if (duration <= 0 || this.timer < duration) break;
-      if (this.holdLast && this.index >= this.frames.length - 1) break;
-      this.timer -= duration;
-      this.index++;
-      if (!this.holdLast && this.index >= this.frames.length) {
-        this.frames = null;
-        break;
-      }
-    }
   }
 }
 
@@ -456,6 +399,26 @@ export class SpriteAnimator {
   }
 }
 
+/** What a `SpriteActor` draws, beyond the banks it draws through. */
+export interface SpriteActorOptions {
+  spriteName: string;
+  /** Frame letters to cycle, `['A']` for a still sprite. */
+  animFrames: string[];
+  /** `things/tables.ts`'s `FULLBRIGHT_FRAMES`, handed in so this layer stays free of the tables. */
+  brightFrames: ReadonlySet<string>;
+}
+
+/** One pose: where the actor stands, and everything about how this frame draws it. */
+export interface SpritePose {
+  facingDeg: number;
+  light: number;
+  /** Seconds since the last pose, for the animation clock. */
+  dt: number;
+  animating: boolean;
+  viewerAngleDeg: number;
+  tint: Tint | undefined;
+}
+
 /**
  * One sprite drawn as its own upright `THREE.Mesh`. The plane never tilts —
  * see SpriteMaterialCache's class doc — but does turn around its vertical
@@ -485,22 +448,12 @@ export class SpriteActor {
    */
   private opacity = 1;
   private translucent = new Map<THREE.MeshBasicMaterial, THREE.MeshBasicMaterial>();
-  /**
-   * The `(sprite, letter)` keys drawn at full light — `things/tables.ts`'s `FULLBRIGHT_FRAMES`,
-   * handed in so this layer stays free of the game tables.
-   */
+  /** The `(sprite, letter)` keys drawn at full light — see `SpriteActorOptions.brightFrames`. */
   private brightFrames: ReadonlySet<string>;
 
-  constructor(
-    bank: SpriteBank,
-    materials: SpriteMaterialCache,
-    spriteName: string,
-    animFrames: string[] = ['A'],
-    frameDuration = 4 * DOOM_TIC,
-    brightFrames: ReadonlySet<string>,
-  ) {
-    this.anim = new SpriteAnimator(bank, materials, spriteName, animFrames, frameDuration);
-    this.brightFrames = brightFrames;
+  constructor(bank: SpriteBank, materials: SpriteMaterialCache, options: SpriteActorOptions) {
+    this.anim = new SpriteAnimator(bank, materials, options.spriteName, options.animFrames);
+    this.brightFrames = options.brightFrames;
   }
 
   /**
@@ -515,18 +468,9 @@ export class SpriteActor {
   /**
    * Repositions the actor and advances its animation; returns false if no matching lump was found.
    */
-  setPose(
-    x: number,
-    y: number,
-    z: number,
-    facingDeg: number,
-    light: number,
-    dt = 0,
-    animating = false,
-    viewerAngleDeg = VIEWER_ANGLE_DEG,
-    tint?: Tint,
-  ): boolean {
-    this.anim.advance(dt, animating);
+  setPose(at: Pos3, pose: SpritePose): boolean {
+    const { facingDeg, light, viewerAngleDeg, tint } = pose;
+    this.anim.advance(pose.dt, pose.animating);
     const cached = this.anim.resolve(facingDeg, viewerAngleDeg);
     if (!cached) return false;
     if (this.mesh.geometry !== cached.geometry) this.mesh.geometry = cached.geometry;
@@ -535,7 +479,7 @@ export class SpriteActor {
     const material = this.opacity < 1 ? this.translucentOf(cached.material) : cached.material;
     if (this.mesh.material !== material) this.mesh.material = material;
 
-    doomToWorld(x, y, z, this.mesh.position);
+    doomToWorld(at.x, at.y, at.z, this.mesh.position);
     // The plane's un-rotated pose already faces VIEWER_ANGLE_DEG (see
     // SpriteMaterialCache's doc); turn it by however far the live viewer
     // angle has moved from that default so it keeps facing the camera.
@@ -559,19 +503,6 @@ export class SpriteActor {
     this.opacity = opacity;
   }
 
-  private translucentOf(base: THREE.MeshBasicMaterial): THREE.MeshBasicMaterial {
-    let clone = this.translucent.get(base);
-    if (!clone) {
-      clone = base.clone();
-      clone.transparent = true;
-      // Both values: docs/sprites.md § Batching.
-      clone.alphaTest = 0.01;
-      clone.depthWrite = false;
-      this.translucent.set(base, clone);
-    }
-    return clone;
-  }
-
   die(frames: string[], frameDuration: number): void {
     this.anim.die(frames, frameDuration);
   }
@@ -592,5 +523,76 @@ export class SpriteActor {
   dispose(): void {
     for (const m of this.translucent.values()) m.dispose();
     this.translucent.clear();
+  }
+
+  private translucentOf(base: THREE.MeshBasicMaterial): THREE.MeshBasicMaterial {
+    let clone = this.translucent.get(base);
+    if (!clone) {
+      clone = base.clone();
+      clone.transparent = true;
+      // Both values: docs/sprites.md § Batching.
+      clone.alphaTest = 0.01;
+      clone.depthWrite = false;
+      this.translucent.set(base, clone);
+    }
+    return clone;
+  }
+}
+
+/**
+ * A one-shot frame sequence, either holding on its last frame forever once
+ * exhausted (`SpriteAnimator`'s death slot) or clearing itself and handing
+ * control back to the caller (its attack/pain override slot) — the two only
+ * differ in that one behavior, so both share this bookkeeping instead of each
+ * carrying their own {frames, duration, index, timer} quadruple.
+ */
+class FrameSequence {
+  frames: string[] | null = null;
+  index = 0;
+  /**
+   * One duration for every frame, or a per-frame list. An attack pose takes the list: its frames
+   * are vanilla's own attack states and their tic counts are uneven, which is what puts the firing
+   * frame at the moment the shot goes off (docs/sprites.md § Pain, and attack/pain poses).
+   */
+  private durations: number | readonly number[] = 0;
+  private holdLast = false;
+  private timer = 0;
+
+  start(frames: string[], durations: number | readonly number[], holdLast: boolean): void {
+    this.frames = frames;
+    this.durations = durations;
+    this.holdLast = holdLast;
+    this.index = 0;
+    this.timer = 0;
+  }
+
+  stop(): void {
+    this.frames = null;
+    this.index = 0;
+    this.timer = 0;
+  }
+
+  advance(dt: number): void {
+    if (!this.frames) return;
+    this.timer += dt;
+    for (;;) {
+      const duration = this.durationAt(this.index);
+      // A zero-length frame would spin here forever. Vanilla's own zero-tic states are dropped
+      // when a pose is built, so this only catches a patch that wrote one.
+      if (duration <= 0 || this.timer < duration) break;
+      if (this.holdLast && this.index >= this.frames.length - 1) break;
+      this.timer -= duration;
+      this.index++;
+      if (!this.holdLast && this.index >= this.frames.length) {
+        this.frames = null;
+        break;
+      }
+    }
+  }
+
+  /** This frame's own duration; a list shorter than the sequence holds on its last entry. */
+  private durationAt(index: number): number {
+    if (typeof this.durations === 'number') return this.durations;
+    return this.durations[Math.min(index, this.durations.length - 1)] ?? 0;
   }
 }

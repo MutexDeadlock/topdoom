@@ -47,7 +47,7 @@ describe('Savegames · things round-trip', () => {
     // Wound one imp (wakes it and rolls pain/homing dice), kill the other, and
     // consume the stimpack, so the save holds an alerted monster, a corpse
     // mid-death-animation and a picked item all at once.
-    layer.damage(0, 20, undefined, undefined, player.x, player.y);
+    layer.damage(0, 20, { from: player });
     layer.damage(1, 1000);
     layer.update(DOOM_TIC, player);
     const at = { ...grid.centre(4, 1), z: 0 };
@@ -97,7 +97,7 @@ describe('Savegames · things round-trip', () => {
     const { grid, world } = arena();
     const layer = build(world);
     const player = { ...grid.centre(1, 1), z: 0 };
-    layer.damage(0, 20, undefined, undefined, player.x, player.y); // wound one imp
+    layer.damage(0, 20, { from: player }); // wound one imp
     layer.damage(1, 1000); // gib the other
 
     const saved = layer.snapshot();
@@ -120,7 +120,7 @@ describe('Savegames · things round-trip', () => {
     const { grid, world } = arena();
     const layer = build(world);
     const player = { ...grid.centre(1, 1), z: 0 };
-    layer.damage(0, 20, undefined, undefined, player.x, player.y);
+    layer.damage(0, 20, { from: player });
     layer.damage(1, 1000);
     layer.update(DOOM_TIC, player);
     const saved = JSON.parse(JSON.stringify(layer.snapshot()));
@@ -159,7 +159,7 @@ describe('Savegames · things round-trip', () => {
     const { grid, world } = arena();
     const layer = build(world);
     const player: Pos3 = { ...grid.centre(1, 1), z: 0 };
-    layer.damage(0, 20, undefined, undefined, player.x, player.y);
+    layer.damage(0, 20, { from: player });
     layer.damage(1, 1000);
     for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, player);
 
@@ -175,7 +175,7 @@ describe('Savegames · things round-trip', () => {
     // Run the restored level on, which is what would corrupt a snapshot the
     // restore had kept a reference into.
     for (let i = 0; i < 35; i++) once.update(DOOM_TIC, player);
-    once.damage(2, 30, undefined, undefined, player.x, player.y);
+    once.damage(2, 30, { from: player });
 
     const second = arena();
     const twice = buildThingSprites(second.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });

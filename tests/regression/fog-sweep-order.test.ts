@@ -50,7 +50,7 @@ for (let row = 3; row < 3 + ROOM; row++) {
 
 /** A fog freshly seeded in the corridor — per test, since the sweep mutates it. */
 function darkRoom(): FogOfWar {
-  return new FogOfWar(world, [], seed.x, seed.y);
+  return new FogOfWar(world, [], seed);
 }
 
 /**

@@ -16,7 +16,14 @@ import {
   type WeaponId,
 } from '../../game/inventory.ts';
 import { WEAPON_CYCLE, WEAPONS } from '../../game/weapons.ts';
-import { WadFont, WadNumbers, COLOR_BLUE, COLOR_YELLOW, type WadFontRecolor } from './wadfont.ts';
+import {
+  WadFont,
+  WadNumbers,
+  COLOR_BLUE,
+  COLOR_YELLOW,
+  type DigitRun,
+  type WadFontRecolor,
+} from './wadfont.ts';
 
 /**
  * The kill/item/secret totals the level-stats strip shows — see `WadFont`'s doc and
@@ -204,7 +211,7 @@ const NUMBER_CELLS = 3;
 interface NumberSource {
   readonly height: number;
   measure(cells: number): number;
-  draw(ctx: CanvasRenderingContext2D, x: number, y: number, value: number, cells: number): void;
+  draw(ctx: CanvasRenderingContext2D, x: number, y: number, run: DigitRun): void;
 }
 
 /**
@@ -228,15 +235,15 @@ class TieredNumbers implements NumberSource {
     return this.red.measure(cells);
   }
 
-  draw(ctx: CanvasRenderingContext2D, x: number, y: number, value: number, cells: number): void {
+  draw(ctx: CanvasRenderingContext2D, x: number, y: number, run: DigitRun): void {
     let font = this.red;
     for (const tier of this.tiers) {
-      if (value >= tier.atLeast) {
+      if (run.value >= tier.atLeast) {
         font = tier.font;
         break;
       }
     }
-    font.draw(ctx, x, y, value, cells);
+    font.draw(ctx, x, y, run);
   }
 }
 
@@ -264,7 +271,7 @@ class NumberField {
     this.shown = value;
     this.ctx.canvas.classList.toggle('hidden', value === null);
     this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
-    if (value !== null) this.font.draw(this.ctx, 0, 0, value, NUMBER_CELLS);
+    if (value !== null) this.font.draw(this.ctx, 0, 0, { value, cells: NUMBER_CELLS });
   }
 }
 
@@ -372,52 +379,6 @@ export class Hud {
     this.backpackRow = this.addPowerRow(gfx, BACKPACK_ICON).row;
   }
 
-  /** One hidden icon (+ its countdown slot) in the powerup strip, in STRIP_POWER_IDS order. */
-  private addPowerRow(gfx: GraphicsBank, lump: string): { row: HTMLElement; value: NumberField } {
-    const row = document.createElement('div');
-    row.className = 'hidden';
-    const canvas = document.createElement('canvas');
-    canvas.className = 'icon';
-    drawIcon(canvas, gfx, lump);
-    const value = document.createElement('canvas');
-    value.className = 'value';
-    row.append(canvas, value);
-    this.powerPanel.appendChild(row);
-    return { row, value: new NumberField(value, this.shortNumbers) };
-  }
-
-  /**
-   * Composes one `hud-levelstats` line — a red `"<label>: "` run, then a `"<found>/<total>"` run
-   * starting at `labelColumnWidth` rather than wherever this line's own (proportionally-spaced,
-   * so differently-wide) label happens to end, so the three lines' numbers form a flush column
-   * instead of drifting with each label's width. The number run switches from yellow to green
-   * once `found` reaches `total` — a hit-your-goal cue with no vanilla equivalent (see
-   * `LEVEL_STATS_GREEN`'s doc). Same "canvas sized to its content, CSS scales it" pattern
-   * `drawIcon` uses for a WAD picture lump.
-   */
-  private drawStatLine(canvas: HTMLCanvasElement, label: string, found: number, total: number): void {
-    const redText = `${label}: `;
-    const numberText = `${found}/${total}`;
-    const numberFont = found >= total ? this.greenFont : this.yellowFont;
-    canvas.width = this.labelColumnWidth + numberFont.measure(numberText);
-    canvas.height = Math.max(this.redFont.height, numberFont.height);
-    const ctx = canvas.getContext('2d')!;
-    this.redFont.draw(ctx, 0, 0, redText);
-    numberFont.draw(ctx, this.labelColumnWidth, 0, numberText);
-  }
-
-  /**
-   * Draws the level clock, right of `#game-hud`, in the same native STCFN red as the strip's
-   * labels. `elapsedSeconds` is `Game`'s to freeze (on death or level completion) — this method
-   * only ever formats whatever it's handed.
-   */
-  private drawTimer(elapsedSeconds: number): void {
-    const text = formatClock(elapsedSeconds);
-    this.timerCanvas.width = this.redFont.measure(text);
-    this.timerCanvas.height = this.redFont.height;
-    this.redFont.draw(this.timerCanvas.getContext('2d')!, 0, 0, text);
-  }
-
   update(inv: Inventory, stats: LevelStats): void {
     this.drawStatLine(this.killsCanvas, 'M', stats.kills, stats.totalKills);
     this.drawStatLine(this.itemsCanvas, 'I', stats.items, stats.totalItems);
@@ -471,5 +432,51 @@ export class Hud {
     // #game-hud's flex row doesn't leave a hole between the weapon icon and
     // the HUD's right edge.
     this.powerPanel.classList.toggle('hidden', !anyPower);
+  }
+
+  /** One hidden icon (+ its countdown slot) in the powerup strip, in STRIP_POWER_IDS order. */
+  private addPowerRow(gfx: GraphicsBank, lump: string): { row: HTMLElement; value: NumberField } {
+    const row = document.createElement('div');
+    row.className = 'hidden';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'icon';
+    drawIcon(canvas, gfx, lump);
+    const value = document.createElement('canvas');
+    value.className = 'value';
+    row.append(canvas, value);
+    this.powerPanel.appendChild(row);
+    return { row, value: new NumberField(value, this.shortNumbers) };
+  }
+
+  /**
+   * Composes one `hud-levelstats` line — a red `"<label>: "` run, then a `"<found>/<total>"` run
+   * starting at `labelColumnWidth` rather than wherever this line's own (proportionally-spaced,
+   * so differently-wide) label happens to end, so the three lines' numbers form a flush column
+   * instead of drifting with each label's width. The number run switches from yellow to green
+   * once `found` reaches `total` — a hit-your-goal cue with no vanilla equivalent (see
+   * `LEVEL_STATS_GREEN`'s doc). Same "canvas sized to its content, CSS scales it" pattern
+   * `drawIcon` uses for a WAD picture lump.
+   */
+  private drawStatLine(canvas: HTMLCanvasElement, label: string, found: number, total: number): void {
+    const redText = `${label}: `;
+    const numberText = `${found}/${total}`;
+    const numberFont = found >= total ? this.greenFont : this.yellowFont;
+    canvas.width = this.labelColumnWidth + numberFont.measure(numberText);
+    canvas.height = Math.max(this.redFont.height, numberFont.height);
+    const ctx = canvas.getContext('2d')!;
+    this.redFont.draw(ctx, 0, 0, redText);
+    numberFont.draw(ctx, this.labelColumnWidth, 0, numberText);
+  }
+
+  /**
+   * Draws the level clock, right of `#game-hud`, in the same native STCFN red as the strip's
+   * labels. `elapsedSeconds` is `Game`'s to freeze (on death or level completion) — this method
+   * only ever formats whatever it's handed.
+   */
+  private drawTimer(elapsedSeconds: number): void {
+    const text = formatClock(elapsedSeconds);
+    this.timerCanvas.width = this.redFont.measure(text);
+    this.timerCanvas.height = this.redFont.height;
+    this.redFont.draw(this.timerCanvas.getContext('2d')!, 0, 0, text);
   }
 }

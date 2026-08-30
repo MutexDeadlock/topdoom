@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { WeaponSystem, WEAPONS } from '../../src/game/weapons.ts';
 import { createInventory, setAutoSwitchWeapon, type Inventory, type WeaponId } from '../../src/game/inventory.ts';
 import type { Input } from '../../src/game/input.ts';
-import type { AudioEngine } from '../../src/audio/audio.ts';
+import { SILENT, type SfxId, type SoundEmitter } from '../../src/audio/sfx.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 
 /**
@@ -13,7 +13,6 @@ import { DOOM_TIC } from '../../src/constants.ts';
  * (a pickup, a berserk pack) still counts — docs/weapons.md § Slot keys.
  */
 
-const AUDIO = { play: () => {} } as unknown as AudioEngine;
 const AT = { x: 0, y: 0, z: 0 };
 
 /** Right-clicking with the button bound to `previousweapon`, and nothing else pressed. */
@@ -29,7 +28,7 @@ const IDLE = { pressed: () => false, rightMousePressed: () => false } as unknown
  */
 function settle(weapons: WeaponSystem, inv: Inventory, input: Input = IDLE, wheel = 0): WeaponId {
   weapons.handleSwitching(input, inv, wheel);
-  weapons.update(DOOM_TIC, false, inv, AUDIO, AT);
+  weapons.update(DOOM_TIC, false, inv, SILENT, AT);
   return inv.currentWeapon;
 }
 
@@ -63,7 +62,7 @@ describe('Weapons · switch to previous weapon', () => {
 
     // The same frame's update records the weapon just left, so the next
     // click goes the other way rather than sticking on the pistol.
-    weapons.update(0.016, false, inv, AUDIO, AT);
+    weapons.update(0.016, false, inv, SILENT, AT);
     weapons.handleSwitching(CLICK, inv, 0);
     assert.equal(inv.currentWeapon, 'fist');
   });
@@ -321,7 +320,7 @@ describe('Game rules · super shotgun reload sounds', () => {
   function reloadSounds(shells: number, tics: number, switchAwayAt = -1): [number, string][] {
     const played: [number, string][] = [];
     let tic = 0;
-    const audio = { play: (id: string) => played.push([tic, id]) } as unknown as AudioEngine;
+    const audio: SoundEmitter = { play: (id: SfxId) => played.push([tic, id]) };
     const inv = createInventory();
     inv.weapons.add('supershotgun').add('shotgun');
     inv.currentWeapon = 'supershotgun';

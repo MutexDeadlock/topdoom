@@ -19,20 +19,17 @@ import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from './lightvis.ts';
 
 export type SurfaceKind = 'wall' | 'flat';
 
+/** A texture's pixel dimensions, as `MaterialBank.size` reports them. */
+export interface Size {
+  w: number;
+  h: number;
+}
+
 /**
  * The live uniform objects `DynamicLights` mutates each frame; see docs/lights.md § Two lighting
  * paths.
  */
 type LightUniforms = DynamicLights['uniforms'];
-
-/**
- * One JS number as a GLSL float literal. Every float spliced into the shader below goes through
- * here: a whole number would otherwise reach GLSL as an int and turn the surrounding arithmetic
- * into integer arithmetic, which is a silent wrong answer rather than a compile error.
- */
-function glslFloat(n: number): string {
-  return Number.isInteger(n) ? `${n}.0` : String(n);
-}
 
 const SOFT_BINS = glslFloat(SHADOW_SOFT_BINS);
 const SOFT_SPAN = glslFloat(2 * SHADOW_SOFT_BINS);
@@ -105,12 +102,6 @@ const DYN_LIGHT_FRAGMENT = /* glsl */ `
               diffuseColor.rgb = min(diffuseColor.rgb + sampledDiffuseColor.rgb * dynLight, vec3(1.0));
             }`;
 
-/** A texture's pixel dimensions, as `MaterialBank.size` reports them. */
-export interface Size {
-  w: number;
-  h: number;
-}
-
 /**
  * Turns WAD bitmaps into three.js materials and caches them, so every wall
  * texture and flat exists exactly once on the GPU.
@@ -126,29 +117,6 @@ export class MaterialBank {
     this.gfx = gfx;
     this.lights = lights ?? null;
     if (renderer) this.maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
-  }
-
-  private toTexture(bmp: Bitmap): THREE.DataTexture {
-    const tex = new THREE.DataTexture(bmp.data, bmp.width, bmp.height, THREE.RGBAFormat);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    // Nearest magnification keeps the chunky DOOM pixels; mipmaps kill the
-    // shimmer on floors that stretch far away from the camera.
-    tex.magFilter = THREE.NearestFilter;
-    tex.minFilter = THREE.NearestMipmapLinearFilter;
-    tex.generateMipmaps = true;
-    tex.anisotropy = this.maxAnisotropy;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.needsUpdate = true;
-    return tex;
-  }
-
-  /** True when the bitmap has fully transparent texels (grates, fences, ...). */
-  private hasHoles(bmp: Bitmap): boolean {
-    for (let i = 3; i < bmp.data.length; i += 4) {
-      if (bmp.data[i] === 0) return true;
-    }
-    return false;
   }
 
   /**
@@ -297,4 +265,36 @@ export class MaterialBank {
     }
     this.materials.clear();
   }
+
+  private toTexture(bmp: Bitmap): THREE.DataTexture {
+    const tex = new THREE.DataTexture(bmp.data, bmp.width, bmp.height, THREE.RGBAFormat);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    // Nearest magnification keeps the chunky DOOM pixels; mipmaps kill the
+    // shimmer on floors that stretch far away from the camera.
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    tex.anisotropy = this.maxAnisotropy;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  /** True when the bitmap has fully transparent texels (grates, fences, ...). */
+  private hasHoles(bmp: Bitmap): boolean {
+    for (let i = 3; i < bmp.data.length; i += 4) {
+      if (bmp.data[i] === 0) return true;
+    }
+    return false;
+  }
+}
+
+/**
+ * One JS number as a GLSL float literal. Every float spliced into the shader below goes through
+ * here: a whole number would otherwise reach GLSL as an int and turn the surrounding arithmetic
+ * into integer arithmetic, which is a silent wrong answer rather than a compile error.
+ */
+function glslFloat(n: number): string {
+  return Number.isInteger(n) ? `${n}.0` : String(n);
 }

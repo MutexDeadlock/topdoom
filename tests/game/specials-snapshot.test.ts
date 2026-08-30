@@ -10,7 +10,7 @@ import { applySectors, sectorBaseline, snapshotSectors } from '../../src/game/sn
 import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
 import type { Input } from '../../src/game/input.ts';
-import type { AudioEngine } from '../../src/audio/audio.ts';
+import type { SfxId, SoundEmitter } from '../../src/audio/sfx.ts';
 import type { Pos2 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, specialsRig, TIC } from '../fixtures/specialsrig.ts';
@@ -152,7 +152,7 @@ describe('Savegames · specials round-trip', () => {
     ws.restore({ cooldownTics: 0, previousWeapon: 'shotgun', sawIdleTimer: 0, refire: 0, refireWeapon: null }, inv);
 
     const played: string[] = [];
-    const audio = { play: (id: string) => played.push(id) } as unknown as AudioEngine;
+    const audio: SoundEmitter = { play: (id: SfxId) => played.push(id) };
     ws.update(0.016, false, inv, audio, { x: 0, y: 0, z: 0 });
 
     // `sawidl` is expected and correct — the saw is the ready weapon with a
@@ -167,10 +167,10 @@ describe('Savegames · specials round-trip', () => {
     const world = new World(map);
     const built = buildMapMesh(map, BANK, { movableSectors: scanSectors(map).movable });
     const at = grid.centre(1, 1);
-    const fog = new FogOfWar(world, built.occluders, at.x, at.y);
+    const fog = new FogOfWar(world, built.occluders, at);
     const runs = JSON.parse(JSON.stringify(fog.snapshotExplored()));
 
-    const fresh = new FogOfWar(world, built.occluders, at.x, at.y);
+    const fresh = new FogOfWar(world, built.occluders, at);
     fresh.restoreExplored(runs);
     assert.deepEqual(fresh.snapshotExplored(), fog.snapshotExplored());
   });

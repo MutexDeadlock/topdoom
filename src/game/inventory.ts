@@ -7,30 +7,44 @@ import { ThingType } from './things/doomednums.ts';
 import { DEFAULT_SKILL, ammoAtSkill, type Skill } from './skill.ts';
 import { PLAYER_RADIUS } from './player.ts';
 import type { LockRule } from './specials/defs.ts';
-
-/**
- * The four ammo classes DOOM tracks — vanilla's `ammotype_t` set, but **not its order**: that enum
- * is `am_clip, am_shell, am_cell, am_misl` (cells before rockets). Nothing keyed by `AmmoType`
- * cares, but anything reproducing a vanilla *loop* over ammo classes does — see `AMMO_UPGRADE`.
- */
-export const AMMO_TYPES = ['bullets', 'shells', 'rockets', 'cells'] as const;
-export type AmmoType = (typeof AMMO_TYPES)[number];
-
-/**
- * The three key colors. Vanilla's own locked-door checks accept card or skull
- * of a color interchangeably (`p_doors.c`'s
- * `!p->cards[it_bluecard] && !p->cards[it_blueskull]`) — which is why its
- * message says "key" for a skull — but Boom's generalized locks *can* tell
- * them apart (`P_CanUnlockGenDoor`), so ownership is tracked per exact
- * `KeySlot` below and the vanilla-style color locks accept either slot
- * (`satisfiesLock`, below).
- */
-export const KEY_COLORS = ['blue', 'red', 'yellow'] as const;
-export type KeyColor = (typeof KEY_COLORS)[number];
-
-/** The six key things, vanilla's `card_t` roster, tracked exactly. */
-export const KEY_SLOTS = ['blueCard', 'redCard', 'yellowCard', 'blueSkull', 'redSkull', 'yellowSkull'] as const;
-export type KeySlot = (typeof KEY_SLOTS)[number];
+import {
+  KEY_COLORS,
+  KEY_SLOTS,
+  POWER_IDS,
+  type AmmoType,
+  type Inventory,
+  type InventoryLimits,
+  type KeyColor,
+  type KeySlot,
+  type PowerId,
+  type WeaponId,
+} from './inventory/defs.ts';
+export {
+  // Re-exported so this file stays the inventory's one public entry point — nothing outside
+  // `inventory/` needs to know which file inside it a shape lives in.
+  // docs/conventions.md § File names.
+  AMMO_TYPES,
+  KEY_COLORS,
+  KEY_SLOTS,
+  POWER_IDS,
+  type AmmoType,
+  type Inventory,
+  type InventoryLimits,
+  type KeyColor,
+  type KeySlot,
+  type PowerId,
+  type WeaponId,
+} from './inventory/defs.ts';
+import {
+  AMMO_PICKUPS,
+  AMMO_UPGRADE,
+  ARMOR_PICKUP_CLASS,
+  HEALTH_PICKUPS,
+  KEY_PICKUPS,
+  POWERUP_PICKUPS,
+  POWER_SECONDS,
+  WEAPON_PICKUPS,
+} from './inventory/tables.ts';
 
 /** The color half of a slot — what the HUD tints and lock messages name. */
 export function keySlotColor(slot: KeySlot): KeyColor {
@@ -59,80 +73,6 @@ export function satisfiesLock(keys: ReadonlySet<KeySlot>, lock: LockRule): boole
     case 'all':
       return lock.colorsSuffice ? KEY_COLORS.every((c) => hasKeyColor(keys, c)) : keys.size === KEY_SLOTS.length;
   }
-}
-
-/**
- * Every weapon the player can carry, including fist and pistol — vanilla
- * starts every game with both already owned and neither has a map pickup, but
- * both are selectable and fireable (game/weapons.ts), so both need an ID like
- * every other weapon to be `currentWeapon`-able.
- */
-export type WeaponId =
-  | 'fist'
-  | 'chainsaw'
-  | 'pistol'
-  | 'shotgun'
-  | 'supershotgun'
-  | 'chaingun'
-  | 'rocketLauncher'
-  | 'plasmaRifle'
-  | 'bfg';
-
-/**
- * The six powerup spheres/items, in the order the HUD shows them. Named after
- * what they do rather than after vanilla's own `pw_*` enum (`pw_strength`,
- * `pw_ironfeet`, `pw_allmap`, `pw_infrared`), which is named after DOOM's
- * development history more than its effects.
- */
-export const POWER_IDS = [
-  'invulnerability',
-  'berserk',
-  'invisibility',
-  'radiationSuit',
-  'computerMap',
-  'lightVisor',
-] as const;
-export type PowerId = (typeof POWER_IDS)[number];
-
-/**
- * How long each powerup lasts, in seconds — vanilla's own `INVULNTICS`
- * (30s), `INVISTICS`/`IRONTICS` (60s) and `INFRATICS` (120s) over 35, plain
- * constants that survive the conversion out of tics intact (unlike
- * `weapons.ts`'s fire rates, see there). Berserk and the computer area map
- * are `Infinity`: vanilla stores them as a flag that never counts down, and
- * both are cleared at the end of the level like every other power
- * (`finishLevel`).
- */
-const POWER_SECONDS: Record<PowerId, number> = {
-  invulnerability: 30,
-  berserk: Infinity,
-  invisibility: 60,
-  radiationSuit: 60,
-  computerMap: Infinity,
-  lightVisor: 120,
-};
-
-export interface Inventory {
-  health: number;
-  armor: number;
-  /** 0 = none, 1 = green/jacket armor, 2 = blue/security armor. */
-  armorType: 0 | 1 | 2;
-  ammo: Record<AmmoType, number>;
-  keys: Set<KeySlot>;
-  weapons: Set<WeaponId>;
-  /** Which owned weapon is selected — see game/weapons.ts for switching/firing. */
-  currentWeapon: WeaponId;
-  /**
-   * Seconds of each powerup left (0 = not active, `Infinity` = lasts the rest
-   * of the level), ticked down by `tickPowers`. Vanilla's `player->powers[]`,
-   * which counts tics the same way.
-   */
-  powers: Record<PowerId, number>;
-  /**
-   * Vanilla's `player->backpack`: doubles every ammo class's cap (`ammoMax`), and unlike the powers
-   * above it survives a level transition.
-   */
-  backpack: boolean;
 }
 
 /** Vanilla DOOM's own new-game defaults: full health, no armor, fist + pistol with 50 bullets. */
@@ -191,68 +131,6 @@ export function ammoMax(inv: Inventory, type: AmmoType): number {
 }
 
 /**
- * A health pickup grants either a fixed amount or whatever a `LIMITS` field currently says — the
- * soulsphere is the one `Misc` can move (`Soulsphere health`), so it names the field and is read at
- * the point of use rather than mirrored here, exactly as `ARMOR_PICKUP_CLASS` below.
- * `bonus` picks which cap applies. docs/items.md § Collecting things.
- */
-type HealthPickup = { bonus: boolean } & ({ amount: number } | { limit: keyof InventoryLimits });
-
-const HEALTH_PICKUPS: Record<number, HealthPickup> = {
-  [ThingType.stimpack]: { amount: 10, bonus: false },
-  [ThingType.medikit]: { amount: 25, bonus: false },
-  [ThingType.healthBonus]: { amount: 1, bonus: true },
-  [ThingType.soulsphere]: { limit: 'soulsphereHealth', bonus: true },
-};
-
-/**
- * Which `LIMITS` armor class each armor shirt grants — `P_GiveArmor(1)` for the green one and
- * `(2)` for the blue. The amount it hands over is `armortype*100` and so follows from the class,
- * which is why it is read off `LIMITS` at the point of use rather than mirrored into a second
- * table that a `Misc` patch would then have to keep in step. docs/items.md § Collecting things.
- */
-const ARMOR_PICKUP_CLASS: Record<number, 'greenArmorClass' | 'blueArmorClass'> = {
-  [ThingType.greenArmor]: 'greenArmorClass',
-  [ThingType.blueArmor]: 'blueArmorClass',
-};
-
-/**
- * Each ammo pickup's `num` as `P_TouchSpecialThing` passes it to `P_GiveAmmo`, which multiplies it
- * by `clipammo[type]` — so these are **clip counts, not amounts**: a clip is one, a box is five.
- * Vanilla's own indirection, kept rather than folded flat, because `CLIP_AMMO` is patchable and
- * everything computed off it has to follow.
- */
-const AMMO_PICKUPS: Record<number, { type: AmmoType; clips: number }> = {
-  [ThingType.clip]: { type: 'bullets', clips: 1 },
-  [ThingType.boxOfBullets]: { type: 'bullets', clips: 5 },
-  [ThingType.shells]: { type: 'shells', clips: 1 },
-  [ThingType.boxOfShells]: { type: 'shells', clips: 5 },
-  [ThingType.rocket]: { type: 'rockets', clips: 1 },
-  [ThingType.boxOfRockets]: { type: 'rockets', clips: 5 },
-  [ThingType.cellCharge]: { type: 'cells', clips: 1 },
-  [ThingType.cellChargePack]: { type: 'cells', clips: 5 },
-};
-
-const KEY_PICKUPS: Record<number, KeySlot> = {
-  [ThingType.blueKeycard]: 'blueCard',
-  [ThingType.blueSkullKey]: 'blueSkull',
-  [ThingType.redKeycard]: 'redCard',
-  [ThingType.redSkullKey]: 'redSkull',
-  [ThingType.yellowKeycard]: 'yellowCard',
-  [ThingType.yellowSkullKey]: 'yellowSkull',
-};
-
-/** The powerup spheres/items, by doomednum — see `POWER_SECONDS` for how long each lasts. */
-const POWERUP_PICKUPS: Record<number, PowerId> = {
-  [ThingType.invulnerability]: 'invulnerability',
-  [ThingType.berserk]: 'berserk',
-  [ThingType.invisibility]: 'invisibility',
-  [ThingType.radiationSuit]: 'radiationSuit',
-  [ThingType.computerMap]: 'computerMap',
-  [ThingType.lightAmpVisor]: 'lightVisor',
-};
-
-/**
  * Vanilla's `clipammo[]` — one clip's worth of each ammo class. Every ammo grant in this file goes
  * through it, because `P_GiveAmmo` multiplies its `num` by this table: `AMMO_PICKUPS` above counts
  * clips, `WEAPON_PICKUPS` below hands over two of them, and a backpack gives one of each
@@ -262,95 +140,6 @@ const POWERUP_PICKUPS: Record<number, PowerId> = {
  * that reaches the pickups too. docs/dehacked.md § Weapon, Ammo and Misc.
  */
 const CLIP_AMMO: Record<AmmoType, number> = { bullets: 10, shells: 4, rockets: 1, cells: 20 };
-
-/**
- * `P_GiveAmmo`'s tail: collecting a class you had **none** of raises the ready weapon to the one it
- * feeds, so walking over a box of shells with nothing but fists brings up a shotgun you already
- * owned. Only fist and pistol are ever raised off — vanilla's own comment is "Preferences are not
- * user selectable", which is why there is no dial here beyond the whole feature's own toggle
- * (`getAutoSwitchWeapon`). docs/items.md § Ammo raises the weapon.
- *
- * An **ordered array in `ammotype_t` order** (`doomdef.h`: `am_clip, am_shell, am_cell, am_misl`),
- * deliberately not a `Record` and deliberately not reusing `AMMO_TYPES`, whose last two entries are
- * swapped. `P_GiveBackpack` grants all four in this order and each overwrites the last one's pick,
- * so the order decides what a backpack taken at zero across the board hands you: the rocket
- * launcher, `am_misl` being last.
- */
-const AMMO_UPGRADE: { ammo: AmmoType; from: readonly WeaponId[]; to: readonly WeaponId[] }[] = [
-  { ammo: 'bullets', from: ['fist'], to: ['chaingun', 'pistol'] },
-  { ammo: 'shells', from: ['fist', 'pistol'], to: ['shotgun'] },
-  { ammo: 'cells', from: ['fist', 'pistol'], to: ['plasmaRifle'] },
-  { ammo: 'rockets', from: ['fist'], to: ['rocketLauncher'] },
-];
-
-/**
- * Applies `AMMO_UPGRADE` for one ammo class, given what the player held **before** the grant —
- * vanilla's `oldammo`, which is why a partial stock is left alone ("player was lower on purpose").
- * Call it once per class granted, in `AMMO_UPGRADE`'s own order where several land together.
- *
- * `ready` is the weapon held when the *pickup* began, not when this class was granted, and the two
- * differ only in the backpack loop. Vanilla sets `pendingweapon` here and never touches
- * `readyweapon`, so each of `P_GiveBackpack`'s four grants tests against the same weapon and simply
- * overwrites the previous one's pick; this engine has no pending/ready split, so the caller has to
- * hold that weapon still. Reading `inv.currentWeapon` per call instead would let the first
- * qualifying class lock out every later one — a backpack taken at zero would hand over a chaingun
- * and stop there. docs/items.md § Ammo raises the weapon.
- *
- * The `bullets` row's `pistol` fallback is unconditional in vanilla (`weaponowned[wp_pistol]` is
- * never false there); here it goes through the same ownership test as every other entry, since
- * `Inventory.weapons` is a real set this engine treats as authoritative — the same deviation
- * `AMMO_FALLBACK_ORDER` carries in game/weapons.ts.
- */
-function upgradeOnAmmo(inv: Inventory, type: AmmoType, oldAmount: number, ready: WeaponId): void {
-  if (oldAmount > 0 || !getAutoSwitchWeapon()) return;
-  const rule = AMMO_UPGRADE.find((r) => r.ammo === type);
-  if (!rule || !rule.from.includes(ready)) return;
-  const pick = rule.to.find((w) => inv.weapons.has(w));
-  if (pick) inv.currentWeapon = pick;
-}
-
-/**
- * Ammo granted alongside a weapon pickup follows vanilla's `P_GiveWeapon`:
- * it hands over `2 * clipammo[type]` — twice what a single clip gives — for a
- * weapon placed directly on the map, or exactly half that for one a dead
- * monster dropped (`applyPickup`'s `dropped` param). The chainsaw needs none.
- */
-const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | null; clips: number }> = {
-  [ThingType.chainsaw]: { weapon: 'chainsaw', ammoType: null, clips: 0 },
-  [ThingType.shotgun]: { weapon: 'shotgun', ammoType: 'shells', clips: 2 },
-  [ThingType.superShotgun]: { weapon: 'supershotgun', ammoType: 'shells', clips: 2 },
-  [ThingType.chaingun]: { weapon: 'chaingun', ammoType: 'bullets', clips: 2 },
-  [ThingType.rocketLauncher]: { weapon: 'rocketLauncher', ammoType: 'rockets', clips: 2 },
-  [ThingType.plasmaRifle]: { weapon: 'plasmaRifle', ammoType: 'cells', clips: 2 },
-  [ThingType.bfg9000]: { weapon: 'bfg', ammoType: 'cells', clips: 2 },
-};
-
-/**
- * The `Misc` limits a DEHACKED patch can move, and vanilla's `deh_misc[]` name for each. Grouped
- * into one record so `setInventoryLimits` has a single shape to write and the applier has a single
- * shape to build — docs/dehacked.md § Weapon, Ammo and Misc.
- */
-export interface InventoryLimits {
-  maxHealth: number;
-  maxHealthBonus: number;
-  maxArmor: number;
-  greenArmorClass: number;
-  blueArmorClass: number;
-  initialHealth: number;
-  initialBullets: number;
-  /** Vanilla's `soul_health` — what a soulsphere gives, capped at `maxHealthBonus`. */
-  soulsphereHealth: number;
-  /** Vanilla's `mega_health` — the health a megasphere sets, alongside blue armor. */
-  megasphereHealth: number;
-  /** `deh_god_health`: the health IDDQD sets on the way on (docs/cheats.md § IDDQD). */
-  godModeHealth: number;
-  /**
-   * `deh_idkfa_armor` / `deh_idkfa_armor_class`: the armor IDKFA hands over (docs/cheats.md §
-   * IDKFA).
-   */
-  idkfaArmor: number;
-  idkfaArmorClass: number;
-}
 
 /**
  * Vanilla's `maxammo[i]` for one class. `ammoMax` is the only reader, so the backpack's doubling
@@ -408,7 +197,9 @@ const LIMITS: InventoryLimits = {
  * The pristine values, for `resetDehacked` — see docs/dehacked.md § Applying: reset, then patch.
  */
 const PRISTINE_LIMITS: InventoryLimits = { ...LIMITS };
+
 const PRISTINE_AMMO_MAX: Record<AmmoType, number> = { ...AMMO_MAX };
+
 const PRISTINE_CLIP_AMMO: Record<AmmoType, number> = { ...CLIP_AMMO };
 
 /** Puts every patchable value in this module back to vanilla's, before a new patch is applied. */
@@ -418,6 +209,50 @@ export function resetInventoryLimits(): void {
   setInventoryLimits(PRISTINE_LIMITS);
 }
 
+const PISTOL_START_STORAGE_KEY = 'topdoom.pistolStart';
+
+/**
+ * Whether every level is entered on a fresh `createInventory()` instead of carrying health, armor,
+ * ammo and weapons over — the speedrunners' "pistol start", off by default and not vanilla's
+ * behavior for an ordinary exit (it is what vanilla does between *episodes*, and what its level
+ * select has always done). Read by `game.ts: enterLevel`, the one place a level transition installs
+ * an inventory. docs/items.md § Pistol start.
+ * Shaped like every persisted setting — docs/menu.md § Persisted settings.
+ */
+let pistolStart = globalThis.localStorage?.getItem(PISTOL_START_STORAGE_KEY) === 'true';
+
+export function getPistolStart(): boolean {
+  return pistolStart;
+}
+
+export function setPistolStart(enabled: boolean): void {
+  pistolStart = enabled;
+  globalThis.localStorage?.setItem(PISTOL_START_STORAGE_KEY, String(enabled));
+}
+
+const AUTO_SWITCH_STORAGE_KEY = 'topdoom.autoSwitchWeapon';
+
+/**
+ * Whether the game picks a *better* weapon for you: on ammo collected from empty (`AMMO_UPGRADE`)
+ * and on the ready weapon running dry (`AMMO_FALLBACK_ORDER`, game/weapons.ts). **On by default** —
+ * vanilla does both unconditionally, so the setting exists to opt out. Read per call, so it applies
+ * to the level already running. docs/weapons.md § Automatic weapon switching.
+ *
+ * Two switches are deliberately **outside** it, both because neither is a guess at which weapon is
+ * better: a newly picked-up weapon selecting itself (`P_GiveWeapon`, in `applyPickup` below), and
+ * berserk selecting the fist (`givePower`) — punching is that pickup's entire effect.
+ * Shaped like every persisted setting — docs/menu.md § Persisted settings.
+ */
+let autoSwitchWeapon = globalThis.localStorage?.getItem(AUTO_SWITCH_STORAGE_KEY) !== 'false';
+
+export function getAutoSwitchWeapon(): boolean {
+  return autoSwitchWeapon;
+}
+
+export function setAutoSwitchWeapon(enabled: boolean): void {
+  autoSwitchWeapon = enabled;
+  globalThis.localStorage?.setItem(AUTO_SWITCH_STORAGE_KEY, String(enabled));
+}
 /**
  * Applies a picked-up thing's effect, vanilla's `P_TouchSpecialThing` rules. Returns false for an
  * item that shouldn't be collected right now (Stimpack at full health), so the caller leaves it on
@@ -549,36 +384,6 @@ export function pickupSound(type: number): SfxId {
 }
 
 /**
- * Vanilla's `P_GivePower`, which is not uniform across the six powers:
- *
- * - The four **timed** ones (invulnerability, invisibility, radiation suit,
- *   light visor) always take, restarting their own clock — picking up a
- *   second one at 5 seconds left gives a fresh full duration, not 5 + full.
- * - **Berserk** always takes too, and does two things besides setting the
- *   flag: `P_GiveBody(player, 100)` tops health back up to the normal 100 cap
- *   (never past it, unlike the bonus items above), and the player is switched
- *   to the fist, since punching is the entire point of the pickup.
- * - The **computer area map** is the one that can be refused: it falls into
- *   `P_GivePower`'s generic "if you already have it, return false" branch, so
- *   a second one is left on the ground rather than silently consumed.
- */
-function givePower(inv: Inventory, power: PowerId): boolean {
-  if (power === 'berserk') {
-    inv.health = Math.max(inv.health, LIMITS.maxHealth);
-    inv.powers.berserk = POWER_SECONDS.berserk;
-    inv.currentWeapon = 'fist';
-    return true;
-  }
-  if (power === 'computerMap') {
-    if (inv.powers.computerMap > 0) return false;
-    inv.powers.computerMap = POWER_SECONDS.computerMap;
-    return true;
-  }
-  inv.powers[power] = POWER_SECONDS[power];
-  return true;
-}
-
-/**
  * Keys and powerups don't survive a level transition in vanilla
  * (`G_PlayerFinishLevel` clears `player->cards` and `player->powers` and
  * drops the `MF_SHADOW` invisibility flag off the player); health, armor,
@@ -587,51 +392,6 @@ function givePower(inv: Inventory, power: PowerId): boolean {
 export function finishLevel(inv: Inventory): void {
   inv.keys.clear();
   for (const p of POWER_IDS) inv.powers[p] = 0;
-}
-
-const PISTOL_START_STORAGE_KEY = 'topdoom.pistolStart';
-
-/**
- * Whether every level is entered on a fresh `createInventory()` instead of carrying health, armor,
- * ammo and weapons over — the speedrunners' "pistol start", off by default and not vanilla's
- * behavior for an ordinary exit (it is what vanilla does between *episodes*, and what its level
- * select has always done). Read by `game.ts: enterLevel`, the one place a level transition installs
- * an inventory. docs/items.md § Pistol start.
- * Shaped like every persisted setting — docs/menu.md § Persisted settings.
- */
-let pistolStart = globalThis.localStorage?.getItem(PISTOL_START_STORAGE_KEY) === 'true';
-
-export function getPistolStart(): boolean {
-  return pistolStart;
-}
-
-export function setPistolStart(enabled: boolean): void {
-  pistolStart = enabled;
-  globalThis.localStorage?.setItem(PISTOL_START_STORAGE_KEY, String(enabled));
-}
-
-const AUTO_SWITCH_STORAGE_KEY = 'topdoom.autoSwitchWeapon';
-
-/**
- * Whether the game picks a *better* weapon for you: on ammo collected from empty (`AMMO_UPGRADE`)
- * and on the ready weapon running dry (`AMMO_FALLBACK_ORDER`, game/weapons.ts). **On by default** —
- * vanilla does both unconditionally, so the setting exists to opt out. Read per call, so it applies
- * to the level already running. docs/weapons.md § Automatic weapon switching.
- *
- * Two switches are deliberately **outside** it, both because neither is a guess at which weapon is
- * better: a newly picked-up weapon selecting itself (`P_GiveWeapon`, in `applyPickup` below), and
- * berserk selecting the fist (`givePower`) — punching is that pickup's entire effect.
- * Shaped like every persisted setting — docs/menu.md § Persisted settings.
- */
-let autoSwitchWeapon = globalThis.localStorage?.getItem(AUTO_SWITCH_STORAGE_KEY) !== 'false';
-
-export function getAutoSwitchWeapon(): boolean {
-  return autoSwitchWeapon;
-}
-
-export function setAutoSwitchWeapon(enabled: boolean): void {
-  autoSwitchWeapon = enabled;
-  globalThis.localStorage?.setItem(AUTO_SWITCH_STORAGE_KEY, String(enabled));
 }
 
 /**
@@ -643,17 +403,14 @@ export function setAutoSwitchWeapon(enabled: boolean): void {
 const INVULNERABLE_DAMAGE_LIMIT = 1000;
 
 /**
- * Reduces health by `amount`, letting worn armor absorb part of it first — vanilla's own
- * `P_DamageMobj` armor formula, with invulnerability short-circuiting it in the same place vanilla
- * checks (see `INVULNERABLE_DAMAGE_LIMIT`). `health` is clamped at 0 rather than going negative:
- * `game.ts`'s death check is a simple `<= 0`. Returns whether the hit actually landed, the same
- * "did anything happen" boolean `applyPickup` returns. docs/death.md § Player death.
+ * Reduces health by `amount`, letting worn armor absorb part of it first — vanilla's `P_DamageMobj`
+ * armor formula, with invulnerability short-circuiting it where vanilla checks (see
+ * `INVULNERABLE_DAMAGE_LIMIT`). `health` clamps at 0, since `game.ts`'s death check is `<= 0`.
+ * Returns whether the hit landed. docs/death.md § Player death.
  *
- * `god` is IDDQD's `CF_GODMODE` (docs/cheats.md § IDDQD), taken as a parameter
- * rather than read from the inventory because it is not something the player
- * carries: vanilla tests the two in one condition here, under the same limit.
- * Required rather than defaulted, so a damage path added later has to say which
- * it is instead of silently losing god mode.
+ * `god` is IDDQD's `CF_GODMODE` (docs/cheats.md § IDDQD) — a parameter rather than an inventory
+ * field because it is not something the player carries, and required rather than defaulted so a
+ * damage path added later has to say which it is.
  */
 export function applyDamage(inv: Inventory, amount: number, god: boolean): boolean {
   if ((god || hasPower(inv, 'invulnerability')) && amount < INVULNERABLE_DAMAGE_LIMIT) return false;
@@ -668,5 +425,46 @@ export function applyDamage(inv: Inventory, amount: number, god: boolean): boole
     damage -= saved;
   }
   inv.health = Math.max(0, inv.health - damage);
+  return true;
+}
+
+/**
+ * Applies `AMMO_UPGRADE` for one ammo class, given what the player held **before** the grant —
+ * vanilla's `oldammo`. Call it once per class granted, in `AMMO_UPGRADE`'s own order where several
+ * land together; `ready` is the weapon held when the *pickup* began, which the caller has to hold
+ * still because this engine has no pending/ready split. docs/items.md § Ammo raises the weapon.
+ *
+ * The `bullets` row's `pistol` fallback is unconditional in vanilla (`weaponowned[wp_pistol]` is
+ * never false there); here it takes the same ownership test as every other entry, since
+ * `Inventory.weapons` is authoritative — the deviation `AMMO_FALLBACK_ORDER` also carries
+ * (game/weapons.ts).
+ */
+function upgradeOnAmmo(inv: Inventory, type: AmmoType, oldAmount: number, ready: WeaponId): void {
+  if (oldAmount > 0 || !getAutoSwitchWeapon()) return;
+  const rule = AMMO_UPGRADE.find((r) => r.ammo === type);
+  if (!rule || !rule.from.includes(ready)) return;
+  const pick = rule.to.find((w) => inv.weapons.has(w));
+  if (pick) inv.currentWeapon = pick;
+}
+
+/**
+ * Vanilla's `P_GivePower`, which is not uniform across the six powers: the four timed ones restart
+ * their own clock, berserk also runs `P_GiveBody(player, 100)` and switches to the fist, and the
+ * computer area map is the only one that can be refused — its generic "already have it" branch
+ * leaves a second one on the ground. docs/items.md § Powerups and the backpack.
+ */
+function givePower(inv: Inventory, power: PowerId): boolean {
+  if (power === 'berserk') {
+    inv.health = Math.max(inv.health, LIMITS.maxHealth);
+    inv.powers.berserk = POWER_SECONDS.berserk;
+    inv.currentWeapon = 'fist';
+    return true;
+  }
+  if (power === 'computerMap') {
+    if (inv.powers.computerMap > 0) return false;
+    inv.powers.computerMap = POWER_SECONDS.computerMap;
+    return true;
+  }
+  inv.powers[power] = POWER_SECONDS[power];
   return true;
 }

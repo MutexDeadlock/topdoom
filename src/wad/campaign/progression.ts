@@ -47,10 +47,6 @@ const DOOM2_SECRET_RETURN = 'MAP16';
 /** The only DOOM II level whose secret exit leads anywhere, and where it leads. */
 const DOOM2_SECRET_EXITS: Record<string, string> = { MAP15: 'MAP31', MAP31: 'MAP32' };
 
-function doom2Name(number: number): string {
-  return `MAP${String(number).padStart(2, '0')}`;
-}
-
 /** The two trivial `NextLevel`s, so the table below reads as a table. */
 const toMap = (name: string): NextLevel => ({ kind: 'map', name });
 const UNKNOWN: NextLevel = { kind: 'unknown' };
@@ -111,11 +107,6 @@ export class LevelProgression {
     this.known = new Map(mapNames.map((name) => [name.toUpperCase(), name]));
   }
 
-  /** The set's own spelling of `name` when it provides that map, else undefined. */
-  private provided(name: string): string | undefined {
-    return this.known.get(name.toUpperCase());
-  }
-
   /**
    * Where an exit out of `mapName` leads, resolved against the maps the loaded set actually
    * provides (docs/wad.md § Level progression).
@@ -147,4 +138,13 @@ export class LevelProgression {
     if (secret) return this.nextMap(upper, false);
     return { kind: 'unknown' };
   }
+
+  /** The set's own spelling of `name` when it provides that map, else undefined. */
+  private provided(name: string): string | undefined {
+    return this.known.get(name.toUpperCase());
+  }
+}
+
+function doom2Name(number: number): string {
+  return `MAP${String(number).padStart(2, '0')}`;
 }

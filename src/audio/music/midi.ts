@@ -27,6 +27,65 @@ interface TickedEvent {
   event: MusicEvent | null;
 }
 
+/**
+ * A standard MIDI file's events with absolute times, or null when the bytes
+ * aren't one. Every track is read onto the shared tick clock and merged, then
+ * walked once to apply the tempo map — a tempo change sits in track 0 of a
+ * format-1 file but governs all of them, so times can only be resolved after
+ * the merge.
+ */
+export function decodeMidi(bytes: Uint8Array): Song | null {
+  if (bytes.length < 14) return null;
+  const r = new MidiReader(bytes);
+  if (r.ascii(4) !== 'MThd') return null;
+  const headerLength = r.u32();
+  r.u16(); // format: 0, 1 and 2 are all just tracks to be merged here
+  const trackCount = r.u16();
+  const division = r.u16();
+  r.pos = 8 + headerLength;
+
+  const ticked: TickedEvent[] = [];
+  for (let i = 0; i < trackCount && !r.eof; i++) {
+    const id = r.ascii(4);
+    const length = r.u32();
+    const end = Math.min(bytes.length, r.pos + length);
+    // Anything that isn't an `MTrk` is a chunk type this reader doesn't know;
+    // the header's own length field is how the format says to skip it.
+    if (id === 'MTrk') readTrack(r, end, ticked);
+    r.pos = end;
+  }
+  // Stable, so events sharing a tick keep track order — a program change and
+  // the note that uses it routinely do.
+  ticked.sort((a, b) => a.tick - b.tick);
+
+  /**
+   * SMPTE timing (the division's high bit) fixes seconds per tick outright:
+   * frames per second in the high byte, as a negative number, and ticks per
+   * frame in the low. Otherwise a tick is a fraction of a quarter note and the
+   * tempo map decides how long that is.
+   */
+  const smpte = (division & 0x8000) !== 0;
+  const ticksPerQuarter = smpte ? 0 : division;
+  const smpteSeconds = smpte ? 1 / (((0x100 - (division >> 8)) & 0xff) * (division & 0xff)) : 0;
+
+  const events: MusicEvent[] = [];
+  let tempo = DEFAULT_TEMPO;
+  let lastTick = 0;
+  let time = 0;
+  for (const entry of ticked) {
+    const secondsPerTick = smpte ? smpteSeconds : tempo / 1e6 / Math.max(1, ticksPerQuarter);
+    time += (entry.tick - lastTick) * secondsPerTick;
+    lastTick = entry.tick;
+    if (entry.event) {
+      entry.event.time = time;
+      events.push(entry.event);
+    } else if (entry.tempo > 0) {
+      tempo = entry.tempo;
+    }
+  }
+  return buildSong(events, time);
+}
+
 /** Big-endian cursor — MIDI files are, unlike everything else in a WAD. */
 class MidiReader {
   private view: DataView;
@@ -167,61 +226,3 @@ function readTrack(r: MidiReader, end: number, out: TickedEvent[]): void {
   }
 }
 
-/**
- * A standard MIDI file's events with absolute times, or null when the bytes
- * aren't one. Every track is read onto the shared tick clock and merged, then
- * walked once to apply the tempo map — a tempo change sits in track 0 of a
- * format-1 file but governs all of them, so times can only be resolved after
- * the merge.
- */
-export function decodeMidi(bytes: Uint8Array): Song | null {
-  if (bytes.length < 14) return null;
-  const r = new MidiReader(bytes);
-  if (r.ascii(4) !== 'MThd') return null;
-  const headerLength = r.u32();
-  r.u16(); // format: 0, 1 and 2 are all just tracks to be merged here
-  const trackCount = r.u16();
-  const division = r.u16();
-  r.pos = 8 + headerLength;
-
-  const ticked: TickedEvent[] = [];
-  for (let i = 0; i < trackCount && !r.eof; i++) {
-    const id = r.ascii(4);
-    const length = r.u32();
-    const end = Math.min(bytes.length, r.pos + length);
-    // Anything that isn't an `MTrk` is a chunk type this reader doesn't know;
-    // the header's own length field is how the format says to skip it.
-    if (id === 'MTrk') readTrack(r, end, ticked);
-    r.pos = end;
-  }
-  // Stable, so events sharing a tick keep track order — a program change and
-  // the note that uses it routinely do.
-  ticked.sort((a, b) => a.tick - b.tick);
-
-  /**
-   * SMPTE timing (the division's high bit) fixes seconds per tick outright:
-   * frames per second in the high byte, as a negative number, and ticks per
-   * frame in the low. Otherwise a tick is a fraction of a quarter note and the
-   * tempo map decides how long that is.
-   */
-  const smpte = (division & 0x8000) !== 0;
-  const ticksPerQuarter = smpte ? 0 : division;
-  const smpteSeconds = smpte ? 1 / (((0x100 - (division >> 8)) & 0xff) * (division & 0xff)) : 0;
-
-  const events: MusicEvent[] = [];
-  let tempo = DEFAULT_TEMPO;
-  let lastTick = 0;
-  let time = 0;
-  for (const entry of ticked) {
-    const secondsPerTick = smpte ? smpteSeconds : tempo / 1e6 / Math.max(1, ticksPerQuarter);
-    time += (entry.tick - lastTick) * secondsPerTick;
-    lastTick = entry.tick;
-    if (entry.event) {
-      entry.event.time = time;
-      events.push(entry.event);
-    } else if (entry.tempo > 0) {
-      tempo = entry.tempo;
-    }
-  }
-  return buildSong(events, time);
-}

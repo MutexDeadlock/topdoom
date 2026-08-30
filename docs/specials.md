@@ -526,9 +526,10 @@ the pad on their back side; covered by `tests/regression/teleport-back-side.test
 
 The side is vanilla's `P_CrossSpecialLine` `side` argument, which `P_TryMove` fills with
 **`oldside`** — the side the thing occupied *before* the move, not after — so `trigger`'s
-`fromBackSide` is computed from `prevX`/`prevY` (the player) or `prev` (a monster), not the current
-position. Teleports are the only consumer: tracing `P_CrossSpecialLine`, `side` reaches nothing but
-`EV_Teleport`, so no other special is direction-gated this way. `handleUseTrigger`'s own front-side
+`fromBackSide` is computed from `prev` — the controller's own for the player, the one
+`crossMonster`'s caller hands in for a monster — not the current position. Teleports are the only
+consumer: tracing `P_CrossSpecialLine`, `side` reaches nothing but `EV_Teleport`, so no other
+special is direction-gated this way. `handleUseTrigger`'s own front-side
 test is a separate vanilla rule (`P_UseSpecialLine`) that happens to share `isFrontSide`.
 
 **A blocked teleport still consumes a one-shot line.** Vanilla's `case 39` is
@@ -541,7 +542,7 @@ gate returns before the consume. **Boom's own numbers invert this** — theirs c
 teleports.
 
 **Monsters cross walk triggers too**, via `crossMonster` — `ThingLayer` keeps each monster's own
-`prevX`/`prevY` and hands the segment it just walked to a `crossLines` callback, the same "system
+previous position and hands the segment it just walked to a `crossLines` callback, the same "system
 reports, `game.ts` realizes" shape as `fogAlphaOf` and the crush callback. Vanilla runs
 `P_CrossSpecialLine` for *any* thing but gates non-players to a very short allow-list, carried per
 number as `SpecialDef.monsterActivate`: vanilla's 39/97/125/126 (teleports), 4 (raise door) and
@@ -572,11 +573,11 @@ spot that `game.ts` then declines to move the monster to. The rules, and why the
 either way, are in docs/death.md § Telefrag.
 
 **`lastTeleport`**: teleporting moves the player an arbitrary distance in a single frame, which
-breaks `SpecialsController`'s own walk-trigger detection. It tracks `prevX`/`prevY` to know what
-segment the player just crossed, and leaving those at the pre-teleport position would make the next
+breaks `SpecialsController`'s own walk-trigger detection. It tracks `prev` to know what segment
+the player just crossed, and leaving that at the pre-teleport position would make the next
 frame test a segment from the old spot all the way to the pad — long enough to cross, and wrongly
 re-trigger, unrelated lines along the way. `lastTeleport` is set inside `trigger` and consumed at
-the end of `update` to reseed `prevX`/`prevY` from the destination.
+the end of `update` to reseed `prev` from the destination.
 
 Vanilla also spawns a one-shot `MT_TFOG` puff at both ends (where the player stood, and 20 units
 ahead of the landing spot along its facing). That isn't a real map `Thing`, so it isn't modeled
@@ -1368,6 +1369,10 @@ The adjacency half is settled once at load (`markFakeFloors`, `neighboursFollow`
 moves it; **whether the control sector is still the lower of the two is compared live**, so a lift
 that raises a sector past its own fake floor stops substituting rather than drawing its floor above
 itself. BOOMEDIT MAP01 sector 110 is a lift, which is what makes that split worth having.
+
+The heights the adjacency walk compares are load-time ones, so a mover that lifts a *neighbour*
+above the fake floor afterwards keeps the substitution. No committed WAD has that case, and
+re-running the walk per mesh rebuild would put it in `processFlat`'s path.
 
 Where both clauses hold, no step the map has no texture for can open: the fake floor only ever moves
 *down*, onto or below a neighbour already there, so every wall between them either shrinks or

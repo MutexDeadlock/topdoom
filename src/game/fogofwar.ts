@@ -188,8 +188,7 @@ export class FogOfWar {
   constructor(
     world: World,
     occluders: WallOccluder[],
-    startX: number,
-    startY: number,
+    start: Pos2,
     movableSectors?: ReadonlySet<number>,
   ) {
     this.world = world;
@@ -288,7 +287,7 @@ export class FogOfWar {
     // `VIEW_DISTANCE` rather than the map, so it is a handful of entries however large the level
     // is.
     this.orderRings = new Int32Array(Math.floor((VIEW_DISTANCE + ORDER_ANCHOR_SLACK) / ORDER_RING) + 1);
-    this.buildOrder(startX, startY);
+    this.buildOrder(start.x, start.y);
 
     // Which subsector each wall quad faces into, so a wall reveals with the
     // space it encloses. `mapmesh` resolves the same quantity for the dynamic
@@ -313,7 +312,7 @@ export class FogOfWar {
     // black on frame one: unbounded on both caps, so this one call reveals
     // everything visible from spawn rather than leaving some of it to fade in
     // over the first few tics. The alpha snap below skips the fade itself.
-    this.sweep(startX, startY, Infinity, Infinity);
+    this.sweep(start.x, start.y, Infinity, Infinity);
     this.alpha.set(this.explored);
   }
 
@@ -340,15 +339,120 @@ export class FogOfWar {
   }
 
   /**
-   * One tic of reveal: marks newly seen subsectors `explored`. Player position
-   * in DOOM (x, y) coordinates.
-   *
-   * On the **simulation** clock, because `explored` decides what can be shot
-   * (`isVisible`). The visual fade is `updateFade`, which is not.
-   * docs/fogofwar.md § What gameplay reads.
+   * One tic of reveal: marks newly seen subsectors `explored`, from the player's DOOM (x, y). On
+   * the **simulation** clock, because `explored` decides what can be shot; the visual fade is
+   * `updateFade`, which is not. docs/fogofwar.md § What gameplay reads.
    */
   tick(playerX: number, playerY: number): void {
     this.sweep(playerX, playerY, MAX_SIGHT_TESTS_PER_TIC, MAX_SIGHT_WORK_PER_TIC);
+  }
+
+  /**
+   * Fades each subsector's drawn alpha toward whether it is explored. Purely
+   * cosmetic and on the **render** clock: nothing in the simulation reads
+   * `alpha`, which is what lets this stay framerate-smooth without making
+   * shootability framerate-dependent.
+   */
+  updateFade(dt: number): void {
+    this.changedWallCount = 0;
+    this.changedAny = false;
+    for (let ss = 0; ss < this.alpha.length; ss++) {
+      const target = this.explored[ss];
+      if (this.alpha[ss] === target) continue;
+      this.alpha[ss] = dampen(this.alpha[ss], target, FADE_SPEED, dt, SNAP_EPS);
+      // Where the reveal is happening, for `changedBounds`.
+      if (!this.changedAny) {
+        this.changedAny = true;
+        this.changedBox.minX = this.ssMinX[ss];
+        this.changedBox.minY = this.ssMinY[ss];
+        this.changedBox.maxX = this.ssMaxX[ss];
+        this.changedBox.maxY = this.ssMaxY[ss];
+      } else {
+        if (this.ssMinX[ss] < this.changedBox.minX) this.changedBox.minX = this.ssMinX[ss];
+        if (this.ssMinY[ss] < this.changedBox.minY) this.changedBox.minY = this.ssMinY[ss];
+        if (this.ssMaxX[ss] > this.changedBox.maxX) this.changedBox.maxX = this.ssMaxX[ss];
+        if (this.ssMaxY[ss] > this.changedBox.maxY) this.changedBox.maxY = this.ssMaxY[ss];
+      }
+      // The walls this subsector holds now read a different reveal, so file
+      // them for `changedWalls`. Past the buffer it stops filing and says
+      // "everything" instead — a level-wide reveal is worth one full pass, not
+      // a list as long as the map.
+      const from = this.wallsBySubsectorStart[ss];
+      const to = this.wallsBySubsectorStart[ss + 1];
+      if (this.changedWallCount + (to - from) > this.changedWallList.length) {
+        this.wallsAllChanged = true;
+        continue;
+      }
+
+      for (let k = from; k < to; k++) this.changedWallList[this.changedWallCount++] = this.wallsBySubsector[k];
+    }
+  }
+
+  /**
+   * Where the last `updateFade`'s reveal happened: one coarse box around every subsector whose
+   * alpha moved, or `null` when none did — its reader only asks whether a mesh *might* be affected.
+   * A wholesale write reports the whole plane; reading it does not consume that fallback, which
+   * `changedWalls` owns. docs/fogofwar.md § Which walls a reveal moved.
+   */
+  changedBounds(): { minX: number; minY: number; maxX: number; maxY: number } | null {
+    if (this.boundsAllChanged) {
+      this.boundsAllChanged = false;
+      return EVERYWHERE;
+    }
+    return this.changedAny ? this.changedBox : null;
+  }
+
+  /**
+   * The wall quads whose reveal alpha moved in the last `updateFade`, or `null` for "all of them".
+   * Reading it consumes that fallback, so it must be called once per frame, after `updateFade`.
+   * docs/fogofwar.md § Which walls a reveal moved.
+   */
+  changedWalls(): { indices: Int32Array; count: number } | null {
+    if (this.wallsAllChanged) {
+      this.wallsAllChanged = false;
+      return null;
+    }
+    return { indices: this.changedWallList, count: this.changedWallCount };
+  }
+
+  /**
+   * Whether a subsector has been revealed — the **gameplay** gate, deciding
+   * what is drawn, shootable and auto-aimable (`ThingLayer.update`). Reads the
+   * crisp `explored` flag rather than the damped `alpha`, so it cannot depend on
+   * how many frames the fade has had. docs/fogofwar.md § What gameplay reads.
+   */
+  isVisible(subsector: number): boolean {
+    return this.explored[subsector] !== 0;
+  }
+
+  /**
+   * Marks the whole level explored — the computer area map powerup (vanilla's `pw_allmap`, which
+   * here reveals the play view itself). Only `explored` is set, not `alpha`, so the level fades in
+   * rather than snapping on. See docs/items.md § Powerups and the backpack.
+   */
+  revealAll(): void {
+    this.explored.fill(1);
+    this.pending = 0;
+  }
+
+  /** Current reveal alpha (0 = hidden, 1 = fully shown) for a subsector. */
+  alphaOf(subsector: number): number {
+    return this.alpha[subsector] ?? 1;
+  }
+
+  /** Reveal alpha for a wall quad, by the index it has in the built map's occluder list. */
+  wallAlpha(occluderIndex: number): number {
+    return this.alphaOf(this.wallSubsector[occluderIndex]);
+  }
+
+  /**
+   * The subsector a wall quad faces into, for the mover quads the constructor never indexed. A BSP
+   * descent, so it is the fallback rather than the path — a mesh built with a probe already carries
+   * the answer on `WallOccluder.subsector`. docs/fogofwar.md § Mover wall quads.
+   */
+  wallSubsectorAt(ax: number, ay: number, bx: number, by: number): number {
+    wallProbePoint(ax, ay, bx, by, this.wallProbe);
+    return this.world.subsectorAt(this.wallProbe.x, this.wallProbe.y);
   }
 
   /**
@@ -471,103 +575,15 @@ export class FogOfWar {
 
   /**
    * The sector of a subsector that is **permanently** solid — no vertical opening, and no special
-   * that could ever give it one — else -1. Every line bounding one blocks sight by definition, so
-   * no ray can ever land inside it and it would stay dark for the whole level, drawing as a hole;
-   * seeing such a sector from outside is seeing all there is of it, so `testBlocker` waives its own
-   * lines while sampling it. A sector a mover can drive is excluded however shut it is now: that is
-   * space the player may yet explore, and lighting it early shows a room through its own door.
-   * The opening test is live, not load-time, so a mover's sector still reveals normally the tic it
-   * opens. docs/fogofwar.md § Closed sectors.
+   * or mover that could ever give it one — else -1. `testBlocker` waives such a sector's own lines
+   * while sampling it, or it would stay dark all level and draw as a hole. The opening test is live
+   * rather than load-time. docs/fogofwar.md § Closed sectors.
    */
   private closedTarget(ss: number): number {
     const index = this.sectorOf[ss];
     const sector = this.world.map.sectors[index];
     if (!sector || sector.ceilHeight > sector.floorHeight) return -1;
     return this.movableSectors.has(index) ? -1 : index;
-  }
-
-  /**
-   * Fades each subsector's drawn alpha toward whether it is explored. Purely
-   * cosmetic and on the **render** clock: nothing in the simulation reads
-   * `alpha`, which is what lets this stay framerate-smooth without making
-   * shootability framerate-dependent.
-   */
-  updateFade(dt: number): void {
-    this.changedWallCount = 0;
-    this.changedAny = false;
-    for (let ss = 0; ss < this.alpha.length; ss++) {
-      const target = this.explored[ss];
-      if (this.alpha[ss] === target) continue;
-      this.alpha[ss] = dampen(this.alpha[ss], target, FADE_SPEED, dt, SNAP_EPS);
-      // Where the reveal is happening, for `changedBounds`.
-      if (!this.changedAny) {
-        this.changedAny = true;
-        this.changedBox.minX = this.ssMinX[ss];
-        this.changedBox.minY = this.ssMinY[ss];
-        this.changedBox.maxX = this.ssMaxX[ss];
-        this.changedBox.maxY = this.ssMaxY[ss];
-      } else {
-        if (this.ssMinX[ss] < this.changedBox.minX) this.changedBox.minX = this.ssMinX[ss];
-        if (this.ssMinY[ss] < this.changedBox.minY) this.changedBox.minY = this.ssMinY[ss];
-        if (this.ssMaxX[ss] > this.changedBox.maxX) this.changedBox.maxX = this.ssMaxX[ss];
-        if (this.ssMaxY[ss] > this.changedBox.maxY) this.changedBox.maxY = this.ssMaxY[ss];
-      }
-      // The walls this subsector holds now read a different reveal, so file
-      // them for `changedWalls`. Past the buffer it stops filing and says
-      // "everything" instead — a level-wide reveal is worth one full pass, not
-      // a list as long as the map.
-      const from = this.wallsBySubsectorStart[ss];
-      const to = this.wallsBySubsectorStart[ss + 1];
-      if (this.changedWallCount + (to - from) > this.changedWallList.length) {
-        this.wallsAllChanged = true;
-        continue;
-      }
-
-      for (let k = from; k < to; k++) this.changedWallList[this.changedWallCount++] = this.wallsBySubsector[k];
-    }
-  }
-
-  /**
-   * Where the last `updateFade`'s reveal happened: one box around every
-   * subsector whose alpha moved, or `null` when none did. A coarse union on
-   * purpose — its reader (`MoverGeometry.updateFading`) only asks whether a
-   * mesh *might* be affected, and a walk of the level's movers is what it saves
-   * by asking. A wholesale alpha write reports the whole plane, the same
-   * fallback `changedWalls` makes, and reading it does not consume that:
-   * `changedWalls` owns the flag.
-   */
-  changedBounds(): { minX: number; minY: number; maxX: number; maxY: number } | null {
-    if (this.boundsAllChanged) {
-      this.boundsAllChanged = false;
-      return EVERYWHERE;
-    }
-    return this.changedAny ? this.changedBox : null;
-  }
-
-  /**
-   * The wall quads whose reveal alpha moved in the last `updateFade`, for
-   * `WallFader.commit` to write without walking every quad on the map — or
-   * `null` for "all of them", which is what a wholesale alpha write reports and
-   * what a frame with more movement than the buffer holds falls back to.
-   * Reading it consumes that fallback, so it must be called once per frame,
-   * after `updateFade`. docs/fogofwar.md § Which walls a reveal moved.
-   */
-  changedWalls(): { indices: Int32Array; count: number } | null {
-    if (this.wallsAllChanged) {
-      this.wallsAllChanged = false;
-      return null;
-    }
-    return { indices: this.changedWallList, count: this.changedWallCount };
-  }
-
-  /**
-   * Whether a subsector has been revealed — the **gameplay** gate, deciding
-   * what is drawn, shootable and auto-aimable (`ThingLayer.update`). Reads the
-   * crisp `explored` flag rather than the damped `alpha`, so it cannot depend on
-   * how many frames the fade has had. docs/fogofwar.md § What gameplay reads.
-   */
-  isVisible(subsector: number): boolean {
-    return this.explored[subsector] !== 0;
   }
 
   /**
@@ -621,42 +637,5 @@ export class FogOfWar {
     return (
       sides[line.right]?.sector === this.rayTargetSector || sides[line.left]?.sector === this.rayTargetSector
     );
-  }
-
-  /**
-   * Marks the whole level explored — the computer area map powerup (vanilla's `pw_allmap`, which
-   * here reveals the play view itself). Only `explored` is set, not `alpha`, so the level fades in
-   * rather than snapping on. See docs/items.md § Powerups and the backpack.
-   */
-  revealAll(): void {
-    this.explored.fill(1);
-    this.pending = 0;
-  }
-
-  /** Current reveal alpha (0 = hidden, 1 = fully shown) for a subsector. */
-  alphaOf(subsector: number): number {
-    return this.alpha[subsector] ?? 1;
-  }
-
-  /** Reveal alpha for a wall quad, by the index it has in the built map's occluder list. */
-  wallAlpha(occluderIndex: number): number {
-    return this.alphaOf(this.wallSubsector[occluderIndex]);
-  }
-
-  /**
-   * The subsector a wall quad faces into, for quads that aren't in the static
-   * occluder list — game/specials.ts's mover geometry (door/lift walls), which
-   * is built and rebuilt on its own and so was never indexed in the
-   * constructor loop above.
-   *
-   * This is a BSP descent, so it is the fallback rather than the path: a mesh
-   * built with a probe already carries the answer on `WallOccluder.subsector`,
-   * and it depends only on the quad's endpoints, which vertical movement never
-   * changes. Asking per quad per frame would dominate the fading pass on a Boom
-   * map with hundreds of movable sectors. docs/fogofwar.md § Mover wall quads.
-   */
-  wallSubsectorAt(ax: number, ay: number, bx: number, by: number): number {
-    wallProbePoint(ax, ay, bx, by, this.wallProbe);
-    return this.world.subsectorAt(this.wallProbe.x, this.wallProbe.y);
   }
 }

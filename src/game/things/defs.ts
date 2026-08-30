@@ -307,6 +307,25 @@ export interface LevelKillItemStats {
   items: number;
 }
 
+/** Everything about a hit except how hard it lands. Every field is optional; so is the record. */
+export interface DamageHit {
+  /**
+   * Who dealt it, absent meaning the player. Drives the infighting retarget via `shouldRetarget`
+   * (docs/monster-ai.md § Infighting).
+   */
+  source?: { id: number; type: number };
+  /**
+   * The arch-vile's `A_VileAttack` launch. Applied inside `damage` because it writes the same
+   * `z`/`velZ` fields gravity integration owns.
+   */
+  knockUpSpeed?: number;
+  /**
+   * The inflictor's position, driving `thrustSpeed`'s horizontal knockback. Omitted by damage
+   * floors and crushers, matching vanilla's null-inflictor call (docs/movement.md § Knockback).
+   */
+  from?: Pos2;
+}
+
 export interface ThingLayer {
   group: THREE.Group;
   count: number;
@@ -499,25 +518,13 @@ export interface ThingLayer {
    * non-positive: a projectile can outlive its target, and splash falloff
    * reaches 0 at the blast edge.
    *
-   * - `source` — who dealt the hit, absent meaning the player. Drives the
-   *   infighting retarget via `shouldRetarget` (docs/monster-ai.md § Infighting).
-   * - `knockUpSpeed` — the arch-vile's `A_VileAttack` launch. Applied here
-   *   because it writes the same `z`/`velZ` fields gravity integration owns.
-   * - `fromX`/`fromY` — the inflictor position, driving `thrustSpeed`'s
-   *   horizontal knockback. Omitted by damage floors and crushers, matching
-   *   vanilla's null-inflictor call (docs/movement.md § Knockback).
+   * Everything beyond the amount is `DamageHit`'s business; an omitted `hit` is the unattributed,
+   * unpositioned call damage floors and crushers make.
    *
    * A barrel takes this same call but follows none of it except the knockback:
    * no pain state, no retarget, and death switches its sprite to `BEXP`.
    */
-  damage(
-    id: number,
-    amount: number,
-    source?: { id: number; type: number },
-    knockUpSpeed?: number,
-    fromX?: number,
-    fromY?: number,
-  ): void;
+  damage(id: number, amount: number, hit?: DamageHit): void;
   /**
    * `P_TeleportMove`'s stomp for a body arriving at `at` with `radius`: every overlapping
    * shootable thing — a monster or a barrel, vanilla's `MF_SHOOTABLE`, so a solid decoration is

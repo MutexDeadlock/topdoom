@@ -128,6 +128,28 @@ export class SavegamesUi {
     void this.renderVisible();
   }
 
+  /** Which tab is showing, `null` for one of the menu's others — `Menu.setTab`'s hand-off. */
+  setVisible(tab: 'save' | 'load' | null): void {
+    this.visible = tab;
+    void this.renderVisible();
+  }
+
+  /**
+   * Imports downloaded `.json` saves — from the file picker or from a drop on the menu (see
+   * `Menu.installDropTarget`).
+   */
+  async importFiles(files: File[]): Promise<void> {
+    for (const file of files) {
+      try {
+        const meta = await importSave(await file.text());
+        this.setStatus(`Imported "${meta.name}".`);
+      } catch (err) {
+        this.setStatus(`${file.name}: ${(err as Error).message}`, true);
+      }
+    }
+    this.refresh();
+  }
+
   /**
    * Whether Save and Overwrite are live: a game to save, and a moment it would
    * accept. Asked afresh each time rather than cached — it is three field reads
@@ -136,12 +158,6 @@ export class SavegamesUi {
    */
   private get canSave(): boolean {
     return this.inGame && this.hooks.saveRefusal() === null;
-  }
-
-  /** Which tab is showing, `null` for one of the menu's others — `Menu.setTab`'s hand-off. */
-  setVisible(tab: 'save' | 'load' | null): void {
-    this.visible = tab;
-    void this.renderVisible();
   }
 
   /**
@@ -194,22 +210,6 @@ export class SavegamesUi {
     this.saveButton.disabled = !this.canSave;
     if (!ok) return;
     this.nameInput.value = '';
-    this.refresh();
-  }
-
-  /**
-   * Imports downloaded `.json` saves — from the file picker or from a drop on the menu (see
-   * `Menu.installDropTarget`).
-   */
-  async importFiles(files: File[]): Promise<void> {
-    for (const file of files) {
-      try {
-        const meta = await importSave(await file.text());
-        this.setStatus(`Imported "${meta.name}".`);
-      } catch (err) {
-        this.setStatus(`${file.name}: ${(err as Error).message}`, true);
-      }
-    }
     this.refresh();
   }
 

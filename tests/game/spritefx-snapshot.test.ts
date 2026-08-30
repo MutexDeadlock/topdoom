@@ -1,12 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
+import type { SpriteFxLayer } from '../../src/game/spritefx.ts';
 import { World } from '../../src/game/world.ts';
-import { SpriteFxLayer } from '../../src/game/spritefx.ts';
 import { TFOG_FRAME_SECONDS, TFOG_FRAMES } from '../../src/game/spritefx/tables.ts';
-import type { AudioEngine } from '../../src/audio/audio.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { drawnLumps, MATERIALS, ROT0_BANK } from '../fixtures/spritestubs.ts';
+import { drawnLumps, fxLayer } from '../fixtures/spritestubs.ts';
 
 /**
  * The teleport fog is the one `SpriteFxLayer` transient a save carries: at 10
@@ -17,20 +15,12 @@ import { drawnLumps, MATERIALS, ROT0_BANK } from '../fixtures/spritestubs.ts';
  * what is deliberately not.
  */
 
-const SILENT = { play: () => {} } as unknown as AudioEngine;
 
 function layerOn(): { layer: SpriteFxLayer; world: World } {
   const world = new World(gridMap(['######', '#....#', '#....#', '######'], { cell: 128 }).map);
   // Everything revealed: what this file pins is the animation clock, and the
   // fog-of-war draw gate is `tests/regression/effects-in-unseen-rooms.test.ts`'.
-  const layer = new SpriteFxLayer(
-    new THREE.Scene(),
-    ROT0_BANK,
-    MATERIALS,
-    SILENT,
-    () => null,
-    () => true,
-  );
+  const layer = fxLayer({ fogVisible: () => true });
   layer.beginLevel(world);
   return { layer, world };
 }

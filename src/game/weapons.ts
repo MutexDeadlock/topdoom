@@ -5,8 +5,7 @@
 import { getAutoSwitchWeapon, hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
 import type { WeaponsSnapshot } from './snapshot.ts';
 import type { Input } from './input.ts';
-import type { AudioEngine } from '../audio/audio.ts';
-import { PLAYER_ORIGIN, type SfxId } from '../audio/sfx.ts';
+import { PLAYER_ORIGIN, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
 import { DOOM_TIC } from '../constants.ts';
 import { rollDamage, triangularDraw, triangularSpread } from '../util/random.ts';
@@ -539,6 +538,18 @@ export interface MeleeShot {
 
 export type Shot = HitscanShot | ProjectileShot | MeleeShot;
 
+/** What `update`'s two sound passes both work from, built once per call. */
+interface SoundFrame {
+  dt: number;
+  firing: boolean;
+  /** Whether `inv.currentWeapon` differs from what was selected on the previous frame. */
+  justSwitched: boolean;
+  inv: Inventory;
+  audio: SoundEmitter;
+  /** The player's own position, which vanilla attenuates the weapon's sounds from. */
+  at: Pos3;
+}
+
 /**
  * Owns weapon selection (number keys, mouse wheel) and fire timing/ammo. Knows nothing about
  * three.js or what a shot hits: `update` returns the `Shot`s fired this frame and the layers above
@@ -626,14 +637,6 @@ export class WeaponSystem {
   }
 
   /**
-   * Forgets every slot but the one `weapon` sits in, which is left holding it:
-   * a level starts remembering only what it is carrying.
-   */
-  private seedSlotMemory(weapon: WeaponId): void {
-    this.slotWeapon = WEAPON_SLOTS.map((slot) => (slot.includes(weapon) ? weapon : null));
-  }
-
-  /**
    * The fire-timing and selection state a savegame keeps: `beginLevel`'s reset
    * list minus `weaponLastFrame`, which `restore` derives rather than reads back.
    */
@@ -685,7 +688,7 @@ export class WeaponSystem {
    * pickup can select a weapon too (`applyPickup`), exactly as vanilla's own
    * `pendingweapon` path does — docs/weapons.md § Switch to previous weapon.
    */
-  update(dt: number, firing: boolean, inv: Inventory, audio: AudioEngine, at: Pos3): void {
+  update(dt: number, firing: boolean, inv: Inventory, audio: SoundEmitter, at: Pos3): void {
     const weapon = inv.currentWeapon;
     const justSwitched = weapon !== this.weaponLastFrame;
     if (justSwitched) {
@@ -693,71 +696,9 @@ export class WeaponSystem {
       this.weaponLastFrame = weapon;
       this.slotWeapon[WEAPON_SLOTS.findIndex((slot) => slot.includes(weapon))] = weapon;
     }
-    this.updateSounds(dt, firing, weapon, justSwitched, audio, at);
-    this.updateReloadSounds(weapon, inv, audio, at);
-  }
-
-  /**
-   * The super shotgun's three reload sounds, each `SSG_RELOAD_SOUNDS` tics after
-   * the shot that started them — the one weapon in the game whose state chain
-   * keeps making noise once the shot itself is gone. Two things abort the
-   * sequence, both because vanilla lowers the weapon and its psprite never
-   * reaches the states those actions sit on: switching away, and
-   * `SSG_RELOAD_CHECK_TIC`'s ammo check. `at` is the player's own position,
-   * which they are attenuated from as vanilla's `player->mo` origin makes them.
-   * docs/audio.md § Weapons and projectiles.
-   */
-  private updateReloadSounds(weapon: WeaponId, inv: Inventory, audio: AudioEngine, at: Pos3): void {
-    if (this.reloadTic < 0) return;
-    if (weapon !== 'supershotgun') {
-      this.reloadTic = -1;
-      return;
-    }
-    // `A_CheckReload` is `P_CheckAmmo`'s third caller, and the only one that runs mid-chain: it
-    // both silences the rest of the reload *and* lowers the weapon, 14 tics in rather than at the
-    // end of the SSG's 57. Running the real check here is what makes the two one thing.
-    if (this.reloadTic === SSG_RELOAD_CHECK_TIC && !this.checkAmmo(inv)) {
-      this.reloadTic = -1;
-      return;
-    }
-    const due = SSG_RELOAD_SOUNDS.find((s) => s.tic === this.reloadTic);
-    if (due) audio.play(due.sfx, at, PLAYER_ORIGIN);
-    this.reloadTic = this.reloadTic < SSG_RELOAD_TICS ? this.reloadTic + 1 : -1;
-  }
-
-  /**
-   * The two weapon sounds that aren't tied to firing: the chainsaw announcing
-   * itself as it comes up (`P_BringUpWeapon`, which does this for no other
-   * weapon) and its idle rattle while it's the ready weapon and the trigger is
-   * released (`A_WeaponReady`, see `SAW_IDLE_INTERVAL`). `at` is the player's
-   * own position, which both are attenuated from.
-   */
-  private updateSounds(
-    dt: number,
-    firing: boolean,
-    weapon: WeaponId,
-    justSwitched: boolean,
-    audio: AudioEngine,
-    at: Pos3,
-  ): void {
-    if (justSwitched && weapon === 'chainsaw') audio.play('sawup', at, PLAYER_ORIGIN);
-    if (weapon !== 'chainsaw' || firing) {
-      this.sawIdleTimer = 0;
-      return;
-    }
-    // A fresh switch skips straight to a full interval rather than falling
-    // into the countdown below: `sawIdleTimer` is left at 0 from whatever
-    // weapon was selected before, so falling through would fire `sawidl` in
-    // this same call and cut off the `sawup` that just played above — both
-    // share the player's origin (see this method's own doc).
-    if (justSwitched) {
-      this.sawIdleTimer = SAW_IDLE_INTERVAL;
-      return;
-    }
-    this.sawIdleTimer -= dt;
-    if (this.sawIdleTimer > 0) return;
-    this.sawIdleTimer = SAW_IDLE_INTERVAL;
-    audio.play('sawidl', at, PLAYER_ORIGIN);
+    const frame: SoundFrame = { dt, firing, justSwitched, inv, audio, at };
+    this.updateSounds(frame);
+    this.updateReloadSounds(frame);
   }
 
   /**
@@ -793,29 +734,6 @@ export class WeaponSystem {
     const idx = owned.indexOf(inv.currentWeapon);
     const dir = wheelDelta > 0 ? 1 : -1;
     inv.currentWeapon = owned[(idx + dir + owned.length) % owned.length];
-  }
-
-  /**
-   * Vanilla's `P_CheckAmmo`: whether the ready weapon can pay for one shot, and if it can't, the
-   * switch to the best owned weapon that can — `AMMO_FALLBACK_ORDER`, ending at the fist. Returns
-   * what vanilla does, **true when the shot may go ahead**, so a caller reads it as its own guard.
-   *
-   * The switch is what `getAutoSwitchWeapon` governs; the *answer* is not. With the setting off an
-   * empty weapon stays selected and simply fires nothing, which is what this engine did before the
-   * rule existed. docs/weapons.md § Automatic weapon switching.
-   *
-   * Ownership of the *ready* weapon is deliberately not tested — vanilla doesn't, and the fire-rate
-   * tests drive weapons they never add to `inv.weapons`.
-   */
-  private checkAmmo(inv: Inventory): boolean {
-    const def = WEAPONS[inv.currentWeapon];
-    if (!def.ammoType || inv.ammo[def.ammoType] >= def.ammoPerShot) return true;
-    if (!getAutoSwitchWeapon()) return false;
-    const pick = AMMO_FALLBACK_ORDER.find(
-      (r) => inv.weapons.has(r.weapon) && (r.ammo === null || inv.ammo[r.ammo] > r.minAmmo),
-    );
-    inv.currentWeapon = pick?.weapon ?? 'fist';
-    return false;
   }
 
   /**
@@ -911,5 +829,93 @@ export class WeaponSystem {
         spray: def.spray,
       },
     ];
+  }
+
+  /**
+   * Forgets every slot but the one `weapon` sits in, which is left holding it:
+   * a level starts remembering only what it is carrying.
+   */
+  private seedSlotMemory(weapon: WeaponId): void {
+    this.slotWeapon = WEAPON_SLOTS.map((slot) => (slot.includes(weapon) ? weapon : null));
+  }
+
+  /**
+   * The super shotgun's three reload sounds, each `SSG_RELOAD_SOUNDS` tics after
+   * the shot that started them — the one weapon in the game whose state chain
+   * keeps making noise once the shot itself is gone. Two things abort the
+   * sequence, both because vanilla lowers the weapon and its psprite never
+   * reaches the states those actions sit on: switching away, and
+   * `SSG_RELOAD_CHECK_TIC`'s ammo check. `at` is the player's own position,
+   * which they are attenuated from as vanilla's `player->mo` origin makes them.
+   * docs/audio.md § Weapons and projectiles.
+   */
+  private updateReloadSounds({ inv, audio, at }: SoundFrame): void {
+    if (this.reloadTic < 0) return;
+    if (inv.currentWeapon !== 'supershotgun') {
+      this.reloadTic = -1;
+      return;
+    }
+    // `A_CheckReload` is `P_CheckAmmo`'s third caller, and the only one that runs mid-chain: it
+    // both silences the rest of the reload *and* lowers the weapon, 14 tics in rather than at the
+    // end of the SSG's 57. Running the real check here is what makes the two one thing.
+    if (this.reloadTic === SSG_RELOAD_CHECK_TIC && !this.checkAmmo(inv)) {
+      this.reloadTic = -1;
+      return;
+    }
+    const due = SSG_RELOAD_SOUNDS.find((s) => s.tic === this.reloadTic);
+    if (due) audio.play(due.sfx, at, PLAYER_ORIGIN);
+    this.reloadTic = this.reloadTic < SSG_RELOAD_TICS ? this.reloadTic + 1 : -1;
+  }
+
+  /**
+   * The two weapon sounds that aren't tied to firing: the chainsaw announcing
+   * itself as it comes up (`P_BringUpWeapon`, which does this for no other
+   * weapon) and its idle rattle while it's the ready weapon and the trigger is
+   * released (`A_WeaponReady`, see `SAW_IDLE_INTERVAL`). `at` is the player's
+   * own position, which both are attenuated from.
+   */
+  private updateSounds({ dt, firing, justSwitched, inv, audio, at }: SoundFrame): void {
+    const weapon = inv.currentWeapon;
+    if (justSwitched && weapon === 'chainsaw') audio.play('sawup', at, PLAYER_ORIGIN);
+    if (weapon !== 'chainsaw' || firing) {
+      this.sawIdleTimer = 0;
+      return;
+    }
+    // A fresh switch skips straight to a full interval rather than falling
+    // into the countdown below: `sawIdleTimer` is left at 0 from whatever
+    // weapon was selected before, so falling through would fire `sawidl` in
+    // this same call and cut off the `sawup` that just played above — both
+    // share the player's origin (see this method's own doc).
+    if (justSwitched) {
+      this.sawIdleTimer = SAW_IDLE_INTERVAL;
+      return;
+    }
+    this.sawIdleTimer -= dt;
+    if (this.sawIdleTimer > 0) return;
+    this.sawIdleTimer = SAW_IDLE_INTERVAL;
+    audio.play('sawidl', at, PLAYER_ORIGIN);
+  }
+
+  /**
+   * Vanilla's `P_CheckAmmo`: whether the ready weapon can pay for one shot, and if it can't, the
+   * switch to the best owned weapon that can — `AMMO_FALLBACK_ORDER`, ending at the fist. Returns
+   * what vanilla does, **true when the shot may go ahead**, so a caller reads it as its own guard.
+   *
+   * The switch is what `getAutoSwitchWeapon` governs; the *answer* is not. With the setting off an
+   * empty weapon stays selected and simply fires nothing, which is what this engine did before the
+   * rule existed. docs/weapons.md § Automatic weapon switching.
+   *
+   * Ownership of the *ready* weapon is deliberately not tested — vanilla doesn't, and the fire-rate
+   * tests drive weapons they never add to `inv.weapons`.
+   */
+  private checkAmmo(inv: Inventory): boolean {
+    const def = WEAPONS[inv.currentWeapon];
+    if (!def.ammoType || inv.ammo[def.ammoType] >= def.ammoPerShot) return true;
+    if (!getAutoSwitchWeapon()) return false;
+    const pick = AMMO_FALLBACK_ORDER.find(
+      (r) => inv.weapons.has(r.weapon) && (r.ammo === null || inv.ammo[r.ammo] > r.minAmmo),
+    );
+    inv.currentWeapon = pick?.weapon ?? 'fist';
+    return false;
   }
 }

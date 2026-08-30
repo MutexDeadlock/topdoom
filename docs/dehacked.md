@@ -482,7 +482,7 @@ record that only repoints frames leaves the weapon's ammo class alone rather tha
 
 `Ammo` reaches both of vanilla's tables, `maxammo[]` and `clipammo[]`. The second matters more than
 it looks: `P_GiveAmmo` multiplies a pickup's `num` by `clipammo[type]`, so `Per ammo` drives what
-every ammo pickup is worth, not just the backpack maths. `inventory.ts`'s `AMMO_PICKUPS` and
+every ammo pickup is worth, not just the backpack maths. `inventory/tables.ts`'s `AMMO_PICKUPS` and
 `WEAPON_PICKUPS` therefore hold **clip counts rather than amounts** — a clip is one, a box is five,
 a weapon hands over two — which is vanilla's own indirection, and is what lets `setClipAmmo` reach
 the pickups without re-deriving anything.
@@ -752,9 +752,10 @@ The frame walker's sinks — `THING_SPRITES`, `THING_ANIM_FRAMES`, the seven pos
 `Set`s. `applyFrames` runs after the `Thing` loop (whose `Speed` scaling it composes with) and
 before `rebuildDerivedMonsterStats` (which derives from the durations it writes).
 
-`inventory.ts`'s tables are module-private, so the applier does not reach into them; that module
-exposes `setMaxAmmo`, `setClipAmmo`, `setInventoryLimits` and `resetInventoryLimits` instead, each
-owning its own derivations. `audio/sfx.ts`, `audio/music/tables.ts` and `wad/sprites.ts` do the
+The inventory's tables are not reached into either: `inventory/tables.ts` is read-only data, and the
+values a patch does move (`AMMO_MAX`, `CLIP_AMMO`, `LIMITS`) stay in `inventory.ts` beside the
+`setMaxAmmo`, `setClipAmmo`, `setInventoryLimits` and `resetInventoryLimits` that own their
+derivations. `audio/sfx.ts`, `audio/music/tables.ts` and `wad/sprites.ts` do the
 same for their lump redirects.
 
 The patch has to land **before `buildThingSprites`**, which resolves the stat table once per level

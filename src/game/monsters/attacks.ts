@@ -93,7 +93,7 @@ export class MonsterAttacks {
         this.resolveHitscan(atk);
       } else {
         // Melee lands on whatever it swung at, no trace involved.
-        this.applyDirectDamage(atk.targetId, atk.damage, atk.sourceId, atk.sourceType, atk.x, atk.y);
+        this.applyDirectDamage(atk);
       }
     }
   }
@@ -104,22 +104,15 @@ export class MonsterAttacks {
   }
 
   /**
-   * Applies a monster's damage to whatever it landed on — the player when
-   * `targetId` is null, otherwise another monster, tagged with who did it so
-   * `ThingLayer.damage` can run vanilla's retaliation rule and start an
-   * infight. `fromX`/`fromY` are the attacking monster's own position, for the
-   * knockback thrust both sides derive.
+   * Applies a monster's damage to whatever it landed on — the player when `atk.targetId` is null,
+   * otherwise another monster, tagged with who did it so `ThingLayer.damage` can run vanilla's
+   * retaliation rule and start an infight. The knockback thrust both sides derive comes off the
+   * attacking monster's own position, which is what `atk` carries.
    */
-  private applyDirectDamage(
-    targetId: number | null,
-    damage: number,
-    sourceId: number,
-    sourceType: number,
-    fromX: number,
-    fromY: number,
-  ): void {
-    if (targetId === null) this.ctx.damagePlayer(damage, fromX, fromY, sourceType);
-    else this.ctx.things?.damage(targetId, damage, { id: sourceId, type: sourceType }, undefined, fromX, fromY);
+  private applyDirectDamage(atk: MonsterAttackEvent): void {
+    const { targetId, damage, sourceId, sourceType } = atk;
+    if (targetId === null) this.ctx.damagePlayer(damage, atk.x, atk.y, sourceType);
+    else this.ctx.things?.damage(targetId, damage, { source: { id: sourceId, type: sourceType }, from: atk });
   }
 
   /**
@@ -197,7 +190,7 @@ export class MonsterAttacks {
     // two can't drift — and so the tie-break that branch encodes stays in one place.
     let stopped: number | null = null;
     if (blocker && (!playerInPath || blocker.dist <= playerAlong)) {
-      things?.damage(blocker.id, damage, { id: atk.sourceId, type: atk.sourceType }, undefined, atk.x, atk.y);
+      things?.damage(blocker.id, damage, { source: { id: atk.sourceId, type: atk.sourceType }, from: atk });
       endX = blocker.x;
       endY = blocker.y;
       endZ = blocker.z + MONSTER_FIRE_HEIGHT;

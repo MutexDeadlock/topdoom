@@ -34,11 +34,20 @@ describe('SpriteAnimator · frameKey', () => {
   });
 
   test('a SpriteActor lifts a bright frame to 255 and leaves the rest to its sector', () => {
-    const bright = new SpriteActor(BANK, MATERIALS, 'PLAY', ['F'], undefined, new Set(['PLAYF']));
-    bright.setPose(0, 0, 0, 0, 64, 0, false, VIEWER_ANGLE_DEG);
+    const pose = { facingDeg: 0, light: 64, dt: 0, animating: false, viewerAngleDeg: VIEWER_ANGLE_DEG, tint: undefined };
+    const bright = new SpriteActor(BANK, MATERIALS, {
+      spriteName: 'PLAY',
+      animFrames: ['F'],
+      brightFrames: new Set(['PLAYF']),
+    });
+    bright.setPose({ x: 0, y: 0, z: 0 }, pose);
     assert.equal((bright.mesh.material as THREE.MeshBasicMaterial).color.r, litColor(255));
-    const plain = new SpriteActor(BANK, MATERIALS, 'PLAY', ['A'], undefined, new Set(['PLAYF']));
-    plain.setPose(0, 0, 0, 0, 64, 0, false, VIEWER_ANGLE_DEG);
+    const plain = new SpriteActor(BANK, MATERIALS, {
+      spriteName: 'PLAY',
+      animFrames: ['A'],
+      brightFrames: new Set(['PLAYF']),
+    });
+    plain.setPose({ x: 0, y: 0, z: 0 }, pose);
     assert.equal((plain.mesh.material as THREE.MeshBasicMaterial).color.r, litColor(64));
   });
 });

@@ -1,17 +1,16 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
+import { SILENT } from '../../src/audio/sfx.ts';
+import type { SpriteFxLayer } from '../../src/game/spritefx.ts';
 import { World } from '../../src/game/world.ts';
-import { SpriteFxLayer } from '../../src/game/spritefx.ts';
 import { ProjectileLayer } from '../../src/game/projectiles.ts';
 import { IMPACT_EFFECTS, PROJECTILE_RADIUS } from '../../src/game/spritefx/tables.ts';
-import { MATERIALS, ROT0_BANK, drawnLumps } from '../fixtures/spritestubs.ts';
+import { MATERIALS, ROT0_BANK, drawnLumps, fxLayer } from '../fixtures/spritestubs.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import type { CombatContext } from '../../src/game/combat.ts';
 import type { Player } from '../../src/game/player.ts';
 import type { ProjectileShot } from '../../src/game/weapons.ts';
-import type { AudioEngine } from '../../src/audio/audio.ts';
 
 /**
  * `shotPath` ends a missile *on* the wall plane, and a one-shot effect spawned there resolves its
@@ -23,7 +22,6 @@ import type { AudioEngine } from '../../src/audio/audio.ts';
  * stops it. See docs/combat.md § Where an impact sits.
  */
 
-const SILENT = { play: () => {} } as unknown as AudioEngine;
 
 /** North wall over an open cell — the orientation whose plane point falls in the *wall's* leaf. */
 const GRID = gridMap(['#', '.'], { cell: 128 });
@@ -49,14 +47,7 @@ function rig(): { effects: SpriteFxLayer; projectiles: ProjectileLayer; world: W
   const world = new World(GRID.map);
   const at = GRID.centre(0, 1);
   const player = { x: at.x, y: at.y, z: 0 } as Player;
-  const effects = new SpriteFxLayer(
-    new THREE.Scene(),
-    ROT0_BANK,
-    MATERIALS,
-    SILENT,
-    () => null,
-    (subsector) => subsector === SHOOTER,
-  );
+  const effects = fxLayer({ fogVisible: (subsector) => subsector === SHOOTER });
   effects.beginLevel(world);
   const ctx = {
     world,
@@ -67,7 +58,12 @@ function rig(): { effects: SpriteFxLayer; projectiles: ProjectileLayer; world: W
     triggerShot: () => {},
     triggerShotPath: () => {},
   } as unknown as CombatContext;
-  const projectiles = new ProjectileLayer(ctx, effects, ROT0_BANK, MATERIALS, SILENT);
+  const projectiles = new ProjectileLayer(ctx, {
+    effects,
+    spriteBank: ROT0_BANK,
+    spriteMaterials: MATERIALS,
+    audio: SILENT,
+  });
   projectiles.beginLevel();
   return { effects, projectiles, world, fireFrom: at };
 }

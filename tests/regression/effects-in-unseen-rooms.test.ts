@@ -1,12 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
+import type { SpriteFxLayer } from '../../src/game/spritefx.ts';
 import { World } from '../../src/game/world.ts';
-import { SpriteFxLayer } from '../../src/game/spritefx.ts';
 import { TFOG_FRAMES, TFOG_FRAME_SECONDS } from '../../src/game/spritefx/tables.ts';
-import { drawnLumps, MATERIALS, ROT0_BANK } from '../fixtures/spritestubs.ts';
+import { drawnLumps, fxLayer } from '../fixtures/spritestubs.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import type { AudioEngine } from '../../src/audio/audio.ts';
 
 /**
  * A monster teleporting out of a closet used to give the closet away: vanilla
@@ -16,7 +14,6 @@ import type { AudioEngine } from '../../src/audio/audio.ts';
  * docs/fogofwar.md § How reveal reaches the geometry.
  */
 
-const SILENT = { play: () => {} } as unknown as AudioEngine;
 
 /** Two one-cell rooms with no way between them, so each is its own subsector. */
 const GRID = gridMap(['#####', '#.#.#', '#####'], { cell: 128 });
@@ -24,14 +21,7 @@ const ROOM = { col: 1, row: 1 };
 const CLOSET = { col: 3, row: 1 };
 
 function layerOn(revealed: Set<number>): SpriteFxLayer {
-  const layer = new SpriteFxLayer(
-    new THREE.Scene(),
-    ROT0_BANK,
-    MATERIALS,
-    SILENT,
-    () => null,
-    (subsector) => revealed.has(subsector),
-  );
+  const layer = fxLayer({ fogVisible: (subsector) => revealed.has(subsector) });
   layer.beginLevel(new World(GRID.map));
   return layer;
 }

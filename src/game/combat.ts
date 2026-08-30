@@ -64,6 +64,23 @@ export interface CombatContext {
 }
 
 /**
+ * One blast, as everything that raises `P_RadiusAttack` describes it: the rocket, the BFG's
+ * tracers, a barrel and the arch-vile all fill this same record.
+ */
+export interface RadiusBlast {
+  radius: number;
+  maxDamage: number;
+  hitsPlayer: boolean;
+  source?: { id: number; type: number };
+  /**
+   * Who the overlay names for a killing blast, when that is not `source`'s own type: a barrel
+   * blames the barrel rather than whoever set it off, and a shot of the player's has no `source`
+   * at all. Left out entirely to mean `source`'s own type.
+   */
+  cause?: DamageCause;
+}
+
+/**
  * An explosion's blast — vanilla's `P_RadiusAttack`: every living body whose
  * **edge** lies within `radius` of the impact point, with an unobstructed line
  * to it, takes damage falling off linearly to 0 there. Range is
@@ -75,27 +92,16 @@ export interface CombatContext {
  * check**, as in vanilla.
  * Vanilla carries one number where this takes two — docs/combat.md § Splash and the BFG.
  */
-export function applyRadiusDamage(
-  ctx: CombatContext,
-  at: Pos3,
-  radius: number,
-  maxDamage: number,
-  hitsPlayer: boolean,
-  source?: { id: number; type: number },
-  /**
-   * Who the overlay names for a killing blast, when that is not `source`'s own
-   * type: a barrel blames the barrel rather than whoever set it off, and a
-   * shot of the player's has no `source` at all.
-   */
-  cause: DamageCause | undefined = source?.type,
-): void {
+export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBlast): void {
+  const { radius, maxDamage, hitsPlayer, source } = blast;
+  const cause = 'cause' in blast ? blast.cause : source?.type;
   for (const m of ctx.things?.monstersNear(at, radius) ?? []) {
     // Vanilla's PIT_RadiusAttack: the spider mastermind and cyberdemon take
     // no concussion/splash damage at all, direct hits only.
     if (m.type === ThingType.spiderMastermind || m.type === ThingType.cyberdemon) continue;
     const dist = blastDistanceToBox(at.x, at.y, m.x, m.y, m.radius);
     if (dist >= radius || !ctx.world.hasLineOfSight(at, m)) continue;
-    ctx.things?.damage(m.id, maxDamage * (1 - dist / radius), source, undefined, at.x, at.y);
+    ctx.things?.damage(m.id, maxDamage * (1 - dist / radius), { source, from: at });
   }
 
   if (!hitsPlayer) return;
@@ -115,5 +121,11 @@ export function applyRadiusDamage(
 export function applyBarrelExplosion(ctx: CombatContext, exp: BarrelExplosion): void {
   // The barrel, not `exp.source`: retaliation follows whoever set it off,
   // but what killed the player is the barrel they were standing next to.
-  applyRadiusDamage(ctx, exp, BARREL_SPLASH_RADIUS, BARREL_SPLASH_DAMAGE, true, exp.source, ThingType.barrel);
+  applyRadiusDamage(ctx, exp, {
+    radius: BARREL_SPLASH_RADIUS,
+    maxDamage: BARREL_SPLASH_DAMAGE,
+    hitsPlayer: true,
+    source: exp.source,
+    cause: ThingType.barrel,
+  });
 }

@@ -41,20 +41,6 @@ const PAIN_FLASH_MAX_ALPHA = 0.5;
 const POWER_BLINK_WARNING_SECONDS = 3;
 const POWER_BLINK_HZ = 4;
 
-/**
- * Whether a powerup's screen effect should currently show, given its
- * remaining seconds (`Inventory.powers[id]`). Once inside the warning
- * window, `floor(secs * Hz) % 2` alternates every `1/Hz` seconds as `secs`
- * counts down — a plain on/off square wave ending exactly at 0, no separate
- * blink-phase timer to track.
- */
-function powerBlinkVisible(secondsLeft: number): boolean {
-  return (
-    secondsLeft > 0 &&
-    (secondsLeft > POWER_BLINK_WARNING_SECONDS || Math.floor(secondsLeft * POWER_BLINK_HZ) % 2 === 0)
-  );
-}
-
 export class ScreenEffects {
   private renderer: THREE.WebGLRenderer;
   private setPlayerOpacity: (opacity: number) => void;
@@ -130,4 +116,18 @@ export class ScreenEffects {
     this.painEl.style.opacity = '0';
     this.renderer.toneMappingExposure = 1;
   }
+}
+
+/**
+ * Whether a powerup's screen effect should currently show, given its
+ * remaining seconds (`Inventory.powers[id]`). Once inside the warning
+ * window, `floor(secs * Hz) % 2` alternates every `1/Hz` seconds as `secs`
+ * counts down — a plain on/off square wave ending exactly at 0, no separate
+ * blink-phase timer to track.
+ */
+function powerBlinkVisible(secondsLeft: number): boolean {
+  return (
+    secondsLeft > 0 &&
+    (secondsLeft > POWER_BLINK_WARNING_SECONDS || Math.floor(secondsLeft * POWER_BLINK_HZ) % 2 === 0)
+  );
 }

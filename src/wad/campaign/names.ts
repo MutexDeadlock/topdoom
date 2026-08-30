@@ -198,17 +198,6 @@ export function levelNamePatch(mapName: string): string | undefined {
 }
 
 /**
- * The menu graphic naming the episode `mapName` belongs to (`M_EPI1`-`M_EPI4`, `m_menu.c`'s own
- * `EpiDef` patches), or undefined for a map outside the `E<x>M<y>` scheme. The episode's *name*
- * exists nowhere as a string in vanilla — only as these four graphics — which is why the end card
- * blits one rather than printing a title (docs/hud.md § End card).
- */
-function episodeNamePatch(mapName: string): string | undefined {
-  const doom1 = /^E(\d)M\d$/.exec(mapName);
-  return doom1 ? `M_EPI${doom1[1]}` : undefined;
-}
-
-/**
  * Strips a `level 1:`, `MAP01:` or `E1M1:` identifier and capitalizes what is left — the two edits
  * `LEVEL_NAMES` was generated with (see its own doc), applied to a title arriving from somewhere
  * else so the two read alike. A value naming none of the three prefixes is kept verbatim:
@@ -296,21 +285,6 @@ export function mergeLevelTitles(
     for (const [map, title] of dehTitlesFor(missionOf(fileName), patchStrings)) levelNames[map] ??= title;
   }
   return levelNames;
-}
-
-/** Which map lump a `[STRINGS]` mnemonic names under this mission, or undefined for none. */
-function dehTitleKey(key: string, mission: LevelMission | null): string | undefined {
-  if (/^(MAP\d\d|E\dM\d)$/.test(key)) return key;
-  const commercial = /^(P|T)?HUSTR_(\d{1,2})$/.exec(key);
-  if (commercial) {
-    const want = commercial[1] === 'P' ? 'plutonia' : commercial[1] === 'T' ? 'tnt' : 'doom2';
-    // An unrecognised IWAD keeps the plain `HUSTR_*` set, which is the only one it could mean.
-    if (mission !== want && !(mission === null && want === 'doom2')) return undefined;
-    return `MAP${commercial[2].padStart(2, '0')}`;
-  }
-  const episodic = /^HUSTR_(E\dM\d)$/.exec(key);
-  if (episodic && (mission === 'doom' || mission === null)) return episodic[1];
-  return undefined;
 }
 
 /**
@@ -422,4 +396,30 @@ export class LevelNames {
     if (provider?.type === 'PWAD' && lump.source !== provider) return undefined;
     return patch;
   }
+}
+
+/**
+ * The menu graphic naming the episode `mapName` belongs to (`M_EPI1`-`M_EPI4`, `m_menu.c`'s own
+ * `EpiDef` patches), or undefined for a map outside the `E<x>M<y>` scheme. The episode's *name*
+ * exists nowhere as a string in vanilla — only as these four graphics — which is why the end card
+ * blits one rather than printing a title (docs/hud.md § End card).
+ */
+function episodeNamePatch(mapName: string): string | undefined {
+  const doom1 = /^E(\d)M\d$/.exec(mapName);
+  return doom1 ? `M_EPI${doom1[1]}` : undefined;
+}
+
+/** Which map lump a `[STRINGS]` mnemonic names under this mission, or undefined for none. */
+function dehTitleKey(key: string, mission: LevelMission | null): string | undefined {
+  if (/^(MAP\d\d|E\dM\d)$/.test(key)) return key;
+  const commercial = /^(P|T)?HUSTR_(\d{1,2})$/.exec(key);
+  if (commercial) {
+    const want = commercial[1] === 'P' ? 'plutonia' : commercial[1] === 'T' ? 'tnt' : 'doom2';
+    // An unrecognised IWAD keeps the plain `HUSTR_*` set, which is the only one it could mean.
+    if (mission !== want && !(mission === null && want === 'doom2')) return undefined;
+    return `MAP${commercial[2].padStart(2, '0')}`;
+  }
+  const episodic = /^HUSTR_(E\dM\d)$/.exec(key);
+  if (episodic && (mission === 'doom' || mission === null)) return episodic[1];
+  return undefined;
 }

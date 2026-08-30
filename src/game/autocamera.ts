@@ -208,6 +208,13 @@ const rayBands: DrawnBands = { lowerBot: 0, lowerTop: 0, upperBot: 0, upperTop: 
 let eyeDirX = 0;
 let eyeDirY = 0;
 let eyeDirZ = 0;
+/** Where the eye is looking, and how far along that direction the ray may reach. */
+export interface EyeLook {
+  tiltDeg: number;
+  yawDeg: number;
+  distance: number;
+}
+
 /**
  * How far out the nearest thing drawn facing the camera and standing up to its eye is on the
  * sightline, in map units — `Infinity` when nothing does within `distance`, the ordinary case. One
@@ -217,11 +224,10 @@ let eyeDirZ = 0;
 export function nearestObstruction(
   world: World,
   from: Pos3,
-  tiltDeg: number,
-  yawDeg: number,
-  distance: number,
+  look: EyeLook,
   transfers?: SectorTransfers,
 ): number {
+  const { tiltDeg, yawDeg, distance } = look;
   eyeDirection(tiltDeg, yawDeg);
   rayWorld = world;
   // Omitted means every sector draws itself, the same default `buildMapMesh`
@@ -286,6 +292,18 @@ export function nearTiltLean(distance: number): number {
   return NEAR_TILT_LEAN * Math.min(1, Math.max(0, t));
 }
 
+/** The framing the openness dials asked for, and how far out the search may look for a clear one. */
+export interface RescueRequest {
+  /** The tilt the dials mapped to, in degrees off vertical. */
+  mappedTilt: number;
+  /** The camera's yaw, which decides which way "behind the player" is. */
+  yawDeg: number;
+  /** The distance the dials asked for. */
+  wanted: number;
+  /** The furthest out the search may pull, `MIN_RESCUE_DISTANCE` being the nearest. */
+  limit: number;
+}
+
 /** A framing the rescue settled on — written into a caller's object, so a tic allocates nothing. */
 export interface RescueFraming {
   distance: number;
@@ -302,15 +320,8 @@ export interface RescueFraming {
  * Why a search rather than one chosen direction, why the tilt is one-way, and how a degree is
  * weighed against a unit: docs/camera.md § The buried-eye rescue.
  */
-export function rescueFraming(
-  world: World,
-  from: Pos3,
-  mappedTilt: number,
-  yawDeg: number,
-  wanted: number,
-  limit: number,
-  out: RescueFraming,
-): void {
+export function rescueFraming(world: World, from: Pos3, ask: RescueRequest, out: RescueFraming): void {
+  const { mappedTilt, yawDeg, wanted, limit } = ask;
   out.distance = wanted;
   out.tiltDeg = mappedTilt;
   if (!framingBuried(world, from, mappedTilt, yawDeg, wanted)) return;
@@ -455,9 +466,9 @@ export class AutoCamera {
     // docs/camera.md § The buried-eye rescue.
     const open = this.mapDistance();
     const mappedTilt = this.mapTilt();
+    const look = { tiltDeg: mappedTilt, yawDeg: camera.yawDeg, distance: open };
     // Just inside whatever stands in the way, and no nearer than the floor.
-    const inside =
-      nearestObstruction(this.world, from, mappedTilt, camera.yawDeg, open, this.transfers) - OCCLUDER_STANDOFF;
+    const inside = nearestObstruction(this.world, from, look, this.transfers) - OCCLUDER_STANDOFF;
     const wanted = Math.max(AUTO_OCCLUDED_DISTANCE, Math.min(open, inside));
     // The cap above is deliberately *not* re-measured through the lean: it decides how near the
     // camera comes and the lean rides on the answer, or a few degrees of lean would quietly widen
@@ -467,7 +478,8 @@ export class AutoCamera {
     // The rescue may not go past an occluder the framing just came inside of, nor past the widest
     // framing the openness mapping would pick on its own.
     const limit = Math.min(AUTO_WIDE_DISTANCE, inside);
-    rescueFraming(this.world, from, baseTilt, camera.yawDeg, wanted, limit, this.rescue);
+    const ask = { mappedTilt: baseTilt, yawDeg: camera.yawDeg, wanted, limit };
+    rescueFraming(this.world, from, ask, this.rescue);
     const corrected = this.rescue.distance;
     const wantedShift = this.rescue.tiltDeg - mappedTilt;
     // `displaced` is deliberately narrower than `rescuing`, which counts a tilt-only rescue too:

@@ -116,36 +116,6 @@ const WAVES = buildWaves();
 /** Gain for an attenuation in `ATTEN_UNIT_DB` units, silent past the envelope's 96 dB. */
 const GAIN = buildGainTable();
 
-function buildWaves(): Float32Array[] {
-  const waves: Float32Array[] = [];
-  for (let w = 0; w < 8; w++) waves.push(new Float32Array(WAVE_STEPS));
-  for (let i = 0; i < WAVE_STEPS; i++) {
-    const t = i / WAVE_STEPS;
-    const sine = Math.sin(2 * Math.PI * t);
-    waves[0][i] = sine;
-    // 1: the negative half silenced. 2: rectified. 3: rectified with the second
-    // and fourth quarters silenced. 4-7 exist on the OPL3 only, and `GENMIDI`
-    // (an OPL2 bank, `#OPL_II#`) never selects them — they are here so a
-    // DMXOPL-style replacement bank that does isn't rendered as silence.
-    waves[1][i] = sine > 0 ? sine : 0;
-    waves[2][i] = Math.abs(sine);
-    waves[3][i] = t % 0.5 < 0.25 ? Math.abs(sine) : 0;
-    waves[4][i] = t < 0.5 ? Math.sin(4 * Math.PI * t) : 0;
-    waves[5][i] = t < 0.5 ? Math.abs(Math.sin(4 * Math.PI * t)) : 0;
-    waves[6][i] = t < 0.5 ? 1 : -1;
-    // 7 is an exponentially falling ramp, mirrored in the second half.
-    waves[7][i] = t < 0.5 ? Math.pow(2, -16 * t) : -Math.pow(2, -16 * (t - 0.5));
-  }
-  return waves;
-}
-
-function buildGainTable(): Float32Array {
-  const table = new Float32Array(MAX_ATTEN + 2);
-  for (let i = 0; i <= MAX_ATTEN; i++) table[i] = Math.pow(10, (-i * ATTEN_UNIT_DB) / 20);
-  table[MAX_ATTEN + 1] = 0;
-  return table;
-}
-
 /**
  * Key-scale-level attenuation at block 7 for each sixteenth of the F-number
  * range, in dB — the chip's own table, from which every lower block subtracts
@@ -426,11 +396,6 @@ export class OplChip {
     this.updateGains(channel);
   }
 
-  private updateGains(channel: Channel): void {
-    channel.gainLeft = channel.leftGate ? channel.panLeft : 0;
-    channel.gainRight = channel.rightGate ? channel.panRight : 0;
-  }
-
   /**
    * How far below full scale whatever is left on a channel currently sits, in
    * the envelope's own attenuation units — `Infinity` once nothing reaches the
@@ -447,62 +412,6 @@ export class OplChip {
     if (!channel.additive) return carAtten;
     const modAtten = mod.state === 'off' ? Infinity : mod.envelope + mod.fixedAtten;
     return Math.min(modAtten, carAtten);
-  }
-
-  /**
-   * Key-on restarts the phase and re-enters attack from wherever the envelope
-   * currently sits — the chip does not reset it to silence first, which is what
-   * makes a retriggered note continue rather than click.
-   *
-   * The feedback history is cleared with the phase, and that is load-bearing
-   * rather than tidiness: an operator only writes `out`/`prevOut` on the samples
-   * its channel is *live* for, so a note keyed on after a silence would
-   * otherwise open with whatever the last note through that channel left there
-   * — a value that depends on where the render calls happened to fall.
-   * Rendering has to be identical however the output is cut into chunks.
-   */
-  private key(op: Operator, on: boolean): void {
-    if (on) {
-      op.phase = 0;
-      op.out = 0;
-      op.prevOut = 0;
-      // An attack rate of 15 is instant on the chip, where the exponential
-      // approach below would only ever get close — so it lands in decay outright.
-      if (op.attackRate === 15) {
-        op.envelope = 0;
-        op.state = 'decay';
-      } else {
-        op.state = 'attack';
-      }
-    } else if (op.state !== 'off') {
-      op.state = 'release';
-    }
-  }
-
-  private updatePhaseStep(op: Operator, channel: Channel): void {
-    // The chip's frequency — F-number scaled by the block, over a 2^20 divider
-    // — as a fraction of a cycle per *output* sample.
-    op.phaseStep = ((channel.fnum * Math.pow(2, channel.block)) / (1 << 20)) * op.multiplier * this.timebase;
-  }
-
-  private updateLevels(op: Operator, channel: Channel): void {
-    const divisor = KSL_DIVISOR[op.keyScaleLevel];
-    const scaled = Math.max(0, KSL_BLOCK7[(channel.fnum >> 6) & 0x0f] - 6 * (7 - channel.block)) / divisor;
-    op.fixedAtten = op.totalLevel * TL_UNITS + scaled / ATTEN_UNIT_DB;
-  }
-
-  /**
-   * Envelope rates, which key-scale off the note: the 6-bit rate index is
-   * `4 * R + ksr`, where `ksr` is two bits taken from the block and the
-   * F-number's top bit — all four of them when `KSR` is set, the block's top two
-   * otherwise. See docs/music.md § Envelopes.
-   */
-  private updateRates(op: Operator, channel: Channel): void {
-    const fnumTop = (channel.fnum >> 9) & 1;
-    const ksr = op.keyScaleRate ? (channel.block << 1) | fnumTop : channel.block >> 1;
-    op.attackFactor = attackFactor(op.attackRate, ksr, this.rate);
-    op.decayStep = sweepStep(op.decayRate, ksr, this.rate);
-    op.releaseStep = sweepStep(op.releaseRate, ksr, this.rate);
   }
 
   /**
@@ -579,6 +488,67 @@ export class OplChip {
     }
   }
 
+  private updateGains(channel: Channel): void {
+    channel.gainLeft = channel.leftGate ? channel.panLeft : 0;
+    channel.gainRight = channel.rightGate ? channel.panRight : 0;
+  }
+
+  /**
+   * Key-on restarts the phase and re-enters attack from wherever the envelope
+   * currently sits — the chip does not reset it to silence first, which is what
+   * makes a retriggered note continue rather than click.
+   *
+   * The feedback history is cleared with the phase, and that is load-bearing
+   * rather than tidiness: an operator only writes `out`/`prevOut` on the samples
+   * its channel is *live* for, so a note keyed on after a silence would
+   * otherwise open with whatever the last note through that channel left there
+   * — a value that depends on where the render calls happened to fall.
+   * Rendering has to be identical however the output is cut into chunks.
+   */
+  private key(op: Operator, on: boolean): void {
+    if (on) {
+      op.phase = 0;
+      op.out = 0;
+      op.prevOut = 0;
+      // An attack rate of 15 is instant on the chip, where the exponential
+      // approach below would only ever get close — so it lands in decay outright.
+      if (op.attackRate === 15) {
+        op.envelope = 0;
+        op.state = 'decay';
+      } else {
+        op.state = 'attack';
+      }
+    } else if (op.state !== 'off') {
+      op.state = 'release';
+    }
+  }
+
+  private updatePhaseStep(op: Operator, channel: Channel): void {
+    // The chip's frequency — F-number scaled by the block, over a 2^20 divider
+    // — as a fraction of a cycle per *output* sample.
+    op.phaseStep = ((channel.fnum * Math.pow(2, channel.block)) / (1 << 20)) * op.multiplier * this.timebase;
+  }
+
+  private updateLevels(op: Operator, channel: Channel): void {
+    const divisor = KSL_DIVISOR[op.keyScaleLevel];
+    const scaled = Math.max(0, KSL_BLOCK7[(channel.fnum >> 6) & 0x0f] - 6 * (7 - channel.block)) / divisor;
+    op.fixedAtten = op.totalLevel * TL_UNITS + scaled / ATTEN_UNIT_DB;
+  }
+
+  /**
+   * Envelope rates, which key-scale off the note: the 6-bit rate index is
+   * `4 * R + ksr`, where `ksr` is two bits taken from the block and the
+   * F-number's top bit — all four of them when `KSR` is set, the block's top two
+   * otherwise. See docs/music.md § Envelopes.
+   */
+  private updateRates(op: Operator, channel: Channel): void {
+    const fnumTop = (channel.fnum >> 9) & 1;
+    const ksr = op.keyScaleRate ? (channel.block << 1) | fnumTop : channel.block >> 1;
+    op.attackFactor = attackFactor(op.attackRate, ksr, this.rate);
+    op.decayStep = sweepStep(op.decayRate, ksr, this.rate);
+    op.releaseStep = sweepStep(op.releaseRate, ksr, this.rate);
+  }
+
   /**
    * Advances one operator by a sample and returns its output: phase plus
    * whatever is modulating it through the waveform, scaled by the envelope,
@@ -637,6 +607,36 @@ export class OplChip {
         break;
     }
   }
+}
+
+function buildWaves(): Float32Array[] {
+  const waves: Float32Array[] = [];
+  for (let w = 0; w < 8; w++) waves.push(new Float32Array(WAVE_STEPS));
+  for (let i = 0; i < WAVE_STEPS; i++) {
+    const t = i / WAVE_STEPS;
+    const sine = Math.sin(2 * Math.PI * t);
+    waves[0][i] = sine;
+    // 1: the negative half silenced. 2: rectified. 3: rectified with the second
+    // and fourth quarters silenced. 4-7 exist on the OPL3 only, and `GENMIDI`
+    // (an OPL2 bank, `#OPL_II#`) never selects them — they are here so a
+    // DMXOPL-style replacement bank that does isn't rendered as silence.
+    waves[1][i] = sine > 0 ? sine : 0;
+    waves[2][i] = Math.abs(sine);
+    waves[3][i] = t % 0.5 < 0.25 ? Math.abs(sine) : 0;
+    waves[4][i] = t < 0.5 ? Math.sin(4 * Math.PI * t) : 0;
+    waves[5][i] = t < 0.5 ? Math.abs(Math.sin(4 * Math.PI * t)) : 0;
+    waves[6][i] = t < 0.5 ? 1 : -1;
+    // 7 is an exponentially falling ramp, mirrored in the second half.
+    waves[7][i] = t < 0.5 ? Math.pow(2, -16 * t) : -Math.pow(2, -16 * (t - 0.5));
+  }
+  return waves;
+}
+
+function buildGainTable(): Float32Array {
+  const table = new Float32Array(MAX_ATTEN + 2);
+  for (let i = 0; i <= MAX_ATTEN; i++) table[i] = Math.pow(10, (-i * ATTEN_UNIT_DB) / 20);
+  table[MAX_ATTEN + 1] = 0;
+  return table;
 }
 
 /** A 0-1 triangle over one cycle of an LFO phase, which is the shape both of the chip's are. */

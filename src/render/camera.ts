@@ -21,6 +21,24 @@ export interface TopDownCameraOptions {
 }
 
 /**
+ * The hard zoom/tilt envelope — all four tuned by feel. Enforced here, by both
+ * framing setters, rather than by each writer: the manual keys and the auto
+ * camera would otherwise each have to remember it. docs/camera.md § Auto camera.
+ */
+export const MIN_CAMERA_DISTANCE = 200;
+export const MAX_CAMERA_DISTANCE = 2400;
+export const MIN_TILT_DEG = 10;
+export const MAX_TILT_DEG = 70;
+
+/**
+ * The floor the auto camera's own route clamps to instead — tuned by feel. Its
+ * buried-eye rescue has to duck under any distance a player would dial by hand,
+ * because geometry, not taste, is what asks for it.
+ * docs/camera.md § The buried-eye rescue.
+ */
+export const MIN_RESCUE_DISTANCE = 64;
+
+/**
  * How fast `yawDeg` catches up to a `stepYaw` target, as a lerp-per-second rate — tuned by feel.
  */
 const YAW_STEP_SMOOTH_RATE = 18;
@@ -43,48 +61,24 @@ const MAX_AIM_LEAD = 220;
  * has to make target changes read as motion rather than steps.
  */
 const FRAMING_SMOOTH_RATE = 10;
+
 /**
  * Snap epsilons for the framing dampers, in map units / degrees — tuned by feel (imperceptible).
  */
 const DISTANCE_SNAP_EPS = 0.01;
 const TILT_SNAP_EPS = 0.001;
 
-/**
- * The hard zoom/tilt envelope — all four tuned by feel. Enforced here, by both
- * framing setters, rather than by each writer: the manual keys and the auto
- * camera would otherwise each have to remember it. docs/camera.md § Auto camera.
- */
-export const MIN_CAMERA_DISTANCE = 200;
-export const MAX_CAMERA_DISTANCE = 2400;
-export const MIN_TILT_DEG = 10;
-export const MAX_TILT_DEG = 70;
-
-/**
- * The floor the auto camera's own route clamps to instead — tuned by feel. Its
- * buried-eye rescue has to duck under any distance a player would dial by hand,
- * because geometry, not taste, is what asks for it.
- * docs/camera.md § The buried-eye rescue.
- */
-export const MIN_RESCUE_DISTANCE = 64;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
 /** Degrees Q/E snap the camera per press. */
 const KEY_YAW_STEP = 45;
+
 /** Seconds between auto-repeated Q/E steps while the key stays held, after the initial tap. */
 const KEY_YAW_REPEAT_INTERVAL = 0.26;
 
 /**
- * A camera hanging above the player, tilted slightly off vertical so walls
- * show a bit of their height and the level reads as a space rather than a plan.
- * `yawDeg` lets it orbit around the followed point (Q/E, see `applyYawInput`)
- * so geometry facing away from the default south view stays reachable.
- *
- * **This camera's follow point, yaw and framing (distance/tilt) are simulation state, not view
- * state**, and advance in `tick` on the tic clock; `applyToCamera` interpolates them into the
- * actual `THREE` camera for display. The split is forced rather than stylistic —
+ * A camera hanging above the player, tilted slightly off vertical so walls show a bit of their
+ * height and the level reads as a space rather than a plan. `yawDeg` orbits it around the followed
+ * point (Q/E, `applyYawInput`). Its follow point, yaw and framing are **simulation state**,
+ * advanced in `tick` on the tic clock and interpolated into the `THREE` camera by `applyToCamera` —
  * docs/camera.md § The camera is simulation state.
  */
 export class TopDownCamera {
@@ -206,10 +200,8 @@ export class TopDownCamera {
   }
 
   /**
-   * The auto camera's glide route into the same target — identical to
-   * `targetDistance` but floored at `MIN_RESCUE_DISTANCE`, so its buried-eye
-   * rescue can pull nearer than the manual keys' envelope allows. Write-only on
-   * purpose: `targetDistance` is the one place to read the target from.
+   * The auto camera's route into the same target, floored at `MIN_RESCUE_DISTANCE` instead. Write-
+   * only on purpose: `targetDistance` is the one place to read the target from.
    * docs/camera.md § The buried-eye rescue.
    */
   set autoDistance(value: number) {
@@ -226,14 +218,9 @@ export class TopDownCamera {
   }
 
   /**
-   * Poses the framing with nothing left to glide — the framing twin of
-   * `snapTo`, and the only route that writes value, target and `prev` at once
-   * (a mid-glide `prev` would otherwise make `applyToCamera` interpolate out of
-   * a stale pose). `AutoCamera.seed` uses it so a level never opens mid-zoom.
-   *
-   * Being the auto camera's route, it takes `autoDistance`'s lower floor rather
-   * than the manual keys' — a level that opens where the framing would bury the
-   * eye must seed at the rescued distance, not be clamped straight back off it.
+   * Poses the framing with nothing left to glide — the framing twin of `snapTo`, and the only route
+   * that writes value, target and `prev` at once. Being the auto camera's route it takes
+   * `autoDistance`'s lower floor rather than the manual keys'. docs/camera.md § Auto camera.
    */
   snapFraming(distance: number, tiltDeg: number): void {
     this.autoDistance = distance;
@@ -245,16 +232,10 @@ export class TopDownCamera {
   }
 
   /**
-   * Puts the follow point at `pos` with nothing left to catch up on — the
-   * position twin of the `yawDeg` setter, and the camera's own
-   * `Player.syncInterpolation`. This camera outlives the level (it belongs to
-   * the `Viewport`), so without it a level load or a save restore leaves the
-   * smoother holding the *previous* level's point and the new level opens with
-   * the camera flying to the player. Collapses the interpolation window too,
-   * and poses the `THREE` camera immediately, since a frame can be drawn
-   * before the next `tick` (the pause loop's `stillFrame`, `captureThumbnail`).
-   * Set `yawDeg` first if both are being snapped. docs/frameloop.md §
-   * Interpolation.
+   * Puts the follow point at `pos` with nothing left to catch up on — the position twin of the
+   * `yawDeg` setter, needed because this camera outlives the level. Collapses the interpolation
+   * window and poses the `THREE` camera immediately. Set `yawDeg` first if both are being snapped.
+   * docs/camera.md § The camera is simulation state.
    */
   snapTo(pos: Pos3): void {
     this.setTarget(pos);
@@ -262,11 +243,6 @@ export class TopDownCamera {
     this.prevSmoothed.copy(this.target);
     this.initialised = true;
     this.applyToCamera(1);
-  }
-
-  /** The followed point in three.js space — DOOM's `(x, y, z)` is three's `(x, z, -y)`. */
-  private setTarget(pos: Pos3): void {
-    this.target.set(pos.x, pos.z, -pos.y);
   }
 
   /**
@@ -287,27 +263,20 @@ export class TopDownCamera {
   }
 
   /**
-   * DOOM-space angle (0 = east, 90 = north, CCW) from the followed point to
-   * the camera. At yaw=0 this is -90 (due south), matching the sprite system's
-   * default viewer angle; see render/sprites.ts's VIEWER_ANGLE_DEG.
-   *
-   * The **tic-exact** angle: this is the one the simulation reads, since it is
-   * the basis WASD movement is rotated into. Billboards want `viewAngleDeg`.
+   * DOOM-space angle (0 = east, 90 = north, CCW) from the followed point to the camera; -90 at
+   * yaw 0, matching `sprites.ts`'s `VIEWER_ANGLE_DEG`. The **tic-exact** angle, which is what the
+   * simulation reads — billboards want `viewAngleDeg` instead.
+   * docs/camera.md § The camera is simulation state.
    */
   get viewerAngleDeg(): number {
     return this._yawDeg - 90;
   }
 
   /**
-   * The DOOM-space height the camera is currently pointed at — the eye height
-   * it was last given, after follow smoothing, at the pose `applyToCamera` last
-   * struck.
-   *
-   * The aim plane is derived from this rather than from the player's own live
-   * `z` (`game.ts`). The two agree once the smoother has caught up, but during
-   * a fall they do not, and a plane that moves while the camera lags swings the
-   * cursor's world point — and with it the player's facing — for the third of a
-   * second it takes to settle. docs/camera.md § Aim lead.
+   * The DOOM-space height the camera is currently pointed at — the eye height it was last given,
+   * after follow smoothing, at the pose `applyToCamera` last struck. The aim plane is derived from
+   * this rather than from the player's own live `z`, which parts company with it during a fall.
+   * docs/camera.md § Aim lead.
    */
   get followHeight(): number {
     return this.initialised ? this.viewPoint.y : this.smoothed.y;
@@ -426,17 +395,23 @@ export class TopDownCamera {
   }
 
   /**
-   * A world-space ray through the pointer's NDC position: auto-aim tests it
-   * against monster billboards (game/things.ts's `ThingLayer.pickMonster`),
-   * `pointerToPlane` against the flat aim plane.
-   *
-   * Cast through the `THREE` camera at whatever pose it currently holds, so a
-   * caller in the tic has to put that at alpha 1 first — docs/frameloop.md §
-   * Posing for the aim ray.
+   * A world-space ray through the pointer's NDC position, which auto-aim tests against monster
+   * billboards (`ThingLayer.pickMonster`). Cast through the `THREE` camera at whatever pose it
+   * currently holds, so a caller in the tic has to put that at alpha 1 first —
+   * docs/frameloop.md § Posing for the aim ray.
    */
   rayFor(ndcX: number, ndcY: number): THREE.Ray {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
     return raycaster.ray;
   }
+
+  /** The followed point in three.js space — DOOM's `(x, y, z)` is three's `(x, z, -y)`. */
+  private setTarget(pos: Pos3): void {
+    this.target.set(pos.x, pos.z, -pos.y);
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }

@@ -5,44 +5,6 @@
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 
-/** Vanilla `hu_stuff.h`'s `HU_FONTSTART`/`HU_FONTEND` — the `STCFN033`-`STCFN095` range. */
-const FONT_FIRST = 33; // '!'
-const FONT_LAST = 95; // '_'
-
-/**
- * `hu_lib.c`'s `HUlib_drawTextLine` advance for a space or any character outside the font's range.
- */
-const SPACE_ADVANCE = 4;
-
-/** ASCII `'0'`, where `WadNumbers`' fallback digits start in the STCFN range. */
-const STCFN_DIGIT_ZERO = 48;
-
-/**
- * The lump holding one STCFN glyph. The three-digit padding is the whole rule and it lives here
- * once — spelled out a second way, unpadded, it silently finds nothing.
- */
-function stcfnLump(code: number): string {
-  return `STCFN${String(code).padStart(3, '0')}`;
-}
-
-interface Glyph {
-  /**
-   * Built once at load rather than per blit: `putImageData` copies out of it, so one `ImageData`
-   * serves every draw of this glyph into every canvas.
-   */
-  image: ImageData;
-  /**
-   * The patch's own hotspots, negated — where this glyph starts relative to the pen position,
-   * the way `V_DrawPatch` draws at `x - leftoffset, y - topoffset`. The short glyphs are not
-   * full-height images with blank rows: `.` is a 3px-tall patch with a `topoffset` of -4, and only
-   * lands on the baseline because of that subtraction. Ignoring it puts every period, comma,
-   * hyphen and underscore at the *top* of the line; ignoring `left` shifts DOOM2's `STTNUM1`
-   * (`leftoffset` -1) inside its cell.
-   */
-  left: number;
-  top: number;
-}
-
 /**
  * Flattens every glyph's hue to this color instead of the lump's own — alpha is left
  * untouched, and each opaque pixel is scaled by its *own* brightness first (`max(r,g,b)/255`)
@@ -71,31 +33,51 @@ export const COLOR_BLUE: WadFontRecolor = [99, 99, 255];
 export const COLOR_YELLOW: WadFontRecolor = [255, 255, 115];
 
 /**
- * Decodes one glyph lump, applying `recolor` to its pixels; undefined when the WAD has no such
- * lump.
+ * Which of vanilla's two status-bar digit sets a `WadNumbers` draws (`st_stuff.c`'s `tallnum` and
+ * `shortnum`): `'tall'` is `STTNUM0`-`STTNUM9`, the big red digits the original prints health,
+ * armor and the current weapon's ammo in; `'short'` is `STYSNUM0`-`STYSNUM9`, the small yellow
+ * ones its ammo list is drawn with. Both already carry their color in the lump — recoloring is for
+ * the cues this HUD adds on top (`LEVEL_STATS_GREEN`), not for getting the vanilla look.
  */
-function loadGlyph(gfx: GraphicsBank, lump: string, recolor?: WadFontRecolor): Glyph | undefined {
-  const bmp = gfx.picture(lump);
-  if (!bmp) return undefined;
-  const data = new Uint8ClampedArray(bmp.data);
-  if (recolor) {
-    const [r, g, b] = recolor;
-    for (let i = 0; i < data.length; i += 4) {
-      const brightness = Math.max(data[i], data[i + 1], data[i + 2]) / 255;
-      data[i] = r * brightness;
-      data[i + 1] = g * brightness;
-      data[i + 2] = b * brightness;
-    }
-  }
-  // `data` has to be wrapped here, from the local rather than from a field: `ImageData`'s
-  // constructor wants a `Uint8ClampedArray<ArrayBuffer>`, which TS only narrows to from the
-  // inline `new` expression's own contextual typing.
-  return { image: new ImageData(data, bmp.width, bmp.height), left: -(bmp.left ?? 0), top: -(bmp.top ?? 0) };
+export type WadNumberSet = 'tall' | 'short';
+
+/** One right-aligned readout: the number to draw and how many digit cells it is drawn in. */
+export interface DigitRun {
+  value: number;
+  cells: number;
 }
 
-/** Blits one glyph with its pen position at (x, y), placed by its own patch offsets. */
-function putGlyph(ctx: CanvasRenderingContext2D, glyph: Glyph, x: number, y: number): void {
-  ctx.putImageData(glyph.image, x + glyph.left, y + glyph.top);
+/** Vanilla `hu_stuff.h`'s `HU_FONTSTART`/`HU_FONTEND` — the `STCFN033`-`STCFN095` range. */
+const FONT_FIRST = 33; // '!'
+const FONT_LAST = 95; // '_'
+
+/**
+ * `hu_lib.c`'s `HUlib_drawTextLine` advance for a space or any character outside the font's range.
+ */
+const SPACE_ADVANCE = 4;
+
+/** ASCII `'0'`, where `WadNumbers`' fallback digits start in the STCFN range. */
+const STCFN_DIGIT_ZERO = 48;
+
+/** The lump prefix each set's ten digits are named with. */
+const NUMBER_LUMPS: Record<WadNumberSet, string> = { tall: 'STTNUM', short: 'STYSNUM' };
+
+interface Glyph {
+  /**
+   * Built once at load rather than per blit: `putImageData` copies out of it, so one `ImageData`
+   * serves every draw of this glyph into every canvas.
+   */
+  image: ImageData;
+  /**
+   * The patch's own hotspots, negated — where this glyph starts relative to the pen position,
+   * the way `V_DrawPatch` draws at `x - leftoffset, y - topoffset`. The short glyphs are not
+   * full-height images with blank rows: `.` is a 3px-tall patch with a `topoffset` of -4, and only
+   * lands on the baseline because of that subtraction. Ignoring it puts every period, comma,
+   * hyphen and underscore at the *top* of the line; ignoring `left` shifts DOOM2's `STTNUM1`
+   * (`leftoffset` -1) inside its cell.
+   */
+  left: number;
+  top: number;
 }
 
 /**
@@ -128,10 +110,6 @@ export class WadFont {
     this.height = height;
   }
 
-  private glyphFor(ch: string): Glyph | undefined {
-    return this.glyphs.get(ch.toUpperCase().charCodeAt(0));
-  }
-
   /** Total pixel width `text` would draw at, for sizing a canvas or composing multiple runs. */
   measure(text: string): number {
     let w = 0;
@@ -152,33 +130,10 @@ export class WadFont {
     }
     return x;
   }
-}
 
-/**
- * Which of vanilla's two status-bar digit sets a `WadNumbers` draws (`st_stuff.c`'s `tallnum` and
- * `shortnum`): `'tall'` is `STTNUM0`-`STTNUM9`, the big red digits the original prints health,
- * armor and the current weapon's ammo in; `'short'` is `STYSNUM0`-`STYSNUM9`, the small yellow
- * ones its ammo list is drawn with. Both already carry their color in the lump — recoloring is for
- * the cues this HUD adds on top (`LEVEL_STATS_GREEN`), not for getting the vanilla look.
- */
-export type WadNumberSet = 'tall' | 'short';
-
-/** The lump prefix each set's ten digits are named with. */
-const NUMBER_LUMPS: Record<WadNumberSet, string> = { tall: 'STTNUM', short: 'STYSNUM' };
-
-/**
- * All ten digits of one lump family, or undefined unless the WAD has the whole set. Answered per
- * set rather than per digit: a PWAD shipping only some of `STTNUM` would otherwise render a mix of
- * the two families inside one cell block, with nothing to signal it.
- */
-function loadDigits(gfx: GraphicsBank, lumpFor: (d: number) => string, recolor?: WadFontRecolor): Glyph[] | undefined {
-  const digits: Glyph[] = [];
-  for (let d = 0; d <= 9; d++) {
-    const glyph = loadGlyph(gfx, lumpFor(d), recolor);
-    if (!glyph) return undefined;
-    digits.push(glyph);
+  private glyphFor(ch: string): Glyph | undefined {
+    return this.glyphs.get(ch.toUpperCase().charCodeAt(0));
   }
-  return digits;
 }
 
 /**
@@ -216,10 +171,11 @@ export class WadNumbers {
     return cells * this.cellWidth;
   }
 
-  /** Draws `value` right-aligned in a `cells`-wide block whose top-left is (x, y). */
-  draw(ctx: CanvasRenderingContext2D, x: number, y: number, value: number, cells: number): void {
+  /** Draws `run.value` right-aligned in a `run.cells`-wide block whose top-left is (x, y). */
+  draw(ctx: CanvasRenderingContext2D, x: number, y: number, run: DigitRun): void {
     if (this.digits.length === 0) return;
-    let num = Math.max(0, Math.floor(value));
+    let { cells } = run;
+    let num = Math.max(0, Math.floor(run.value));
     let right = x + this.measure(cells);
     if (num === 0) {
       putGlyph(ctx, this.digits[0], right - this.cellWidth, y);
@@ -233,4 +189,55 @@ export class WadNumbers {
       num = Math.floor(num / 10);
     }
   }
+}
+
+/**
+ * The lump holding one STCFN glyph. The three-digit padding is the whole rule and it lives here
+ * once — spelled out a second way, unpadded, it silently finds nothing.
+ */
+function stcfnLump(code: number): string {
+  return `STCFN${String(code).padStart(3, '0')}`;
+}
+
+/**
+ * Decodes one glyph lump, applying `recolor` to its pixels; undefined when the WAD has no such
+ * lump.
+ */
+function loadGlyph(gfx: GraphicsBank, lump: string, recolor?: WadFontRecolor): Glyph | undefined {
+  const bmp = gfx.picture(lump);
+  if (!bmp) return undefined;
+  const data = new Uint8ClampedArray(bmp.data);
+  if (recolor) {
+    const [r, g, b] = recolor;
+    for (let i = 0; i < data.length; i += 4) {
+      const brightness = Math.max(data[i], data[i + 1], data[i + 2]) / 255;
+      data[i] = r * brightness;
+      data[i + 1] = g * brightness;
+      data[i + 2] = b * brightness;
+    }
+  }
+  // `data` has to be wrapped here, from the local rather than from a field: `ImageData`'s
+  // constructor wants a `Uint8ClampedArray<ArrayBuffer>`, which TS only narrows to from the
+  // inline `new` expression's own contextual typing.
+  return { image: new ImageData(data, bmp.width, bmp.height), left: -(bmp.left ?? 0), top: -(bmp.top ?? 0) };
+}
+
+/** Blits one glyph with its pen position at (x, y), placed by its own patch offsets. */
+function putGlyph(ctx: CanvasRenderingContext2D, glyph: Glyph, x: number, y: number): void {
+  ctx.putImageData(glyph.image, x + glyph.left, y + glyph.top);
+}
+
+/**
+ * All ten digits of one lump family, or undefined unless the WAD has the whole set. Answered per
+ * set rather than per digit: a PWAD shipping only some of `STTNUM` would otherwise render a mix of
+ * the two families inside one cell block, with nothing to signal it.
+ */
+function loadDigits(gfx: GraphicsBank, lumpFor: (d: number) => string, recolor?: WadFontRecolor): Glyph[] | undefined {
+  const digits: Glyph[] = [];
+  for (let d = 0; d <= 9; d++) {
+    const glyph = loadGlyph(gfx, lumpFor(d), recolor);
+    if (!glyph) return undefined;
+    digits.push(glyph);
+  }
+  return digits;
 }

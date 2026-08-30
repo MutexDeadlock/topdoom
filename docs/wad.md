@@ -322,9 +322,11 @@ Text resolution order, highest authority first:
    Hexen-format numeric `map 01 "Title"`. `map MAP01 lookup HUSTR_1` names no literal and is
    **skipped**, falling through to the table below — which is the same string it was pointing at.
    Property blocks are walked brace-by-brace rather than by keyword, so a `map` *property* nested in
-   one can't be mistaken for the next level. Later files win, matching the merged directory; within
-   one file `ZMAPINFO` suppresses that file's `MAPINFO`, as in ZDoom. A MAPINFO title applies even
-   to a map the IWAD provides — renaming the base game's levels is what the lump is for.
+   one can't be mistaken for the next level. Later files win, matching the merged directory, and a
+   later entry replaces an earlier one outright rather than merging field by field — a PWAD
+   redefining a level defines all of it, rather than inheriting half a progression. Within one file
+   `ZMAPINFO` suppresses that file's `MAPINFO`, as in ZDoom. A MAPINFO title applies even to a map
+   the IWAD provides — renaming the base game's levels is what the lump is for.
 2. **A DEHACKED/BEX patch in the set** (docs/dehacked.md § Strings), whether from a BEX `[STRINGS]`
    mnemonic or a vanilla `Text` substitution. Like a MAPINFO title and unlike the table below, it
    applies to any map the set provides, because renaming the base game's levels is exactly what

@@ -137,10 +137,14 @@ export class SpriteBatch {
   }
 
   /**
-   * Queues one sprite. `pos` is already **three.js** space (the caller
+   * Queues one sprite. `x`/`y`/`z` are already **three.js** space (the caller
    * converts via `doomToWorld`) and `light` is a 0..1 tint (`lightToColor`).
    * `tint` adds a dynamic light's contribution on top of that
    * (docs/lights.md § Two lighting paths); omitted is the unlit sprite.
+   *
+   * The position stays **scalars** rather than a point, the coordinate-triple exception in
+   * docs/conventions.md § Named arguments: this runs once per drawn sprite per frame, and every
+   * caller has just computed the three through `doomToWorld` into a reused vector.
    */
   add(cached: CachedSprite, x: number, y: number, z: number, scale: number, light: number, tint?: Tint): void {
     const batch = this.batchFor(cached);

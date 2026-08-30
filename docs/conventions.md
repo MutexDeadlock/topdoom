@@ -88,10 +88,16 @@ Everything else is named for what it *does*: `ai.ts`, `attacks.ts`, `grid.ts`, `
 The `defs`/`tables` split earns its keep when both halves are large — the thing layer's are 555 and
 833 lines, the monsters' 491 and 503 — or when the subsystem needs a directory anyway and the split
 is what fills it, which is `spritefx/`'s case at 159 and 208 and `specials/`'s at 360 and 392. A
-subsystem needing neither keeps its shapes and tables in one `defs.ts`. **`tables.ts` may import
-`defs.ts`, never the reverse**: the shapes have to stay usable by a module that wants nothing to do
-with the data, which is what lets `monsters/ai.ts` take `MonsterStats` without pulling the whole
-stat table's dependency on `world.ts` in behind it.
+subsystem needing neither keeps its shapes and tables in one `defs.ts`.
+
+**Splitting a file out is the answer when its own constant block buries its subject**, whatever the
+halves measure: `inventory/` exists at 117 and 122 lines because ~110 lines of doomednum-keyed
+pickup tables sat between `createInventory` and `applyPickup`. The parent `<domain>.ts` re-exports
+what moved (§ File names), so no importer learns which file inside the directory a shape lives in.
+
+**`tables.ts` may import `defs.ts`, never the reverse**: the shapes have to stay usable by a module
+that wants nothing to do with the data, which is what lets `monsters/ai.ts` take `MonsterStats`
+without pulling the whole stat table's dependency on `world.ts` in behind it.
 
 ## Source order inside a file
 
@@ -146,15 +152,12 @@ Three rules constrain the tail:
 
 **When the constant block itself buries the subject, that is the signal to split**, not to bend the
 order: a type-keyed table big enough to push the class hundreds of lines down belongs in the
-subsystem's `tables.ts` (§ The role names), at the size bar that section sets.
+subsystem's `tables.ts` — § The role names owns that call, `inventory/` being the worked case.
 
 This is the one **prescriptive** rule here, but it usually asks for less than it looks: in most
-files only *private* helpers move, so 41 of the 62 modules with a class already conform. The
-exception to expect is a module whose tail is free functions, where **exported** ones sit down there
-too and move up as well — `game/world.ts` had eighteen. Of the 21 that don't, three carry real
-weight — `wad/graphics.ts` (106 lines of helper bodies above its class), `wad/campaign/mapinfo.ts`
-(67) and `ui/menu/library.ts` (65) — and the other eighteen are under 30 lines each. Convert a file
-when you next touch it for another reason, never in a sweep of its own.
+files only *private* helpers move, and **every module in `src/` now conforms**. The exception to
+expect when adding one is a module whose tail is free functions, where **exported** ones sit down
+there too and move up as well — `game/world.ts` had eighteen, `render/mapmesh.ts` twenty-two.
 
 **The exception**: a module that is a bag of independent pure functions keeps each function's own
 types and constants immediately above it instead of hoisting them, and interleaves private with

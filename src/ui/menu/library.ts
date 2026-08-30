@@ -56,13 +56,9 @@ export interface LibraryHooks {
 }
 
 /**
- * One row of the left-hand tree. The two counts are deliberately different things:
- *
- * - **`sources` is the folder's own WADs**, and only those — what the file pane lists when the row
- *   is picked, the way a file manager behaves.
- * - **`total` is every WAD at or below it**, which is what the row's count shows and what decides
- *   whether the row is worth drawing at all. A folder holding nothing but subfolders has no
- *   `sources` of its own, and dropping it on that basis would orphan the rows nested under it.
+ * One row of the left-hand tree. The two counts answer different questions: `sources` is the
+ * folder's own WADs, what the file pane lists; `total` is every WAD at or below it, the row's count
+ * and what decides whether the row is drawn at all. See docs/menu.md § WAD Library.
  */
 export interface FolderNode {
   id: string;
@@ -72,156 +68,6 @@ export interface FolderNode {
   total: number;
   /** The row this one nests under, which is what collapsing walks. Absent for a top-level group. */
   parent?: string;
-}
-
-/**
- * The lookups every walk over the tree needs, built once per render and threaded down. Rebuilding
- * either inside the walk that wants it — a `byId` per row in `hiddenByCollapse`, a `nodes.some` per
- * row in `folderRow` — makes one render quadratic in the row count, on every keystroke in the
- * filter box.
- */
-interface TreeIndex {
-  byId: Map<string, FolderNode>;
-  /** IDs with at least one child row, so a folder knows whether it is foldable at all. */
-  parents: Set<string>;
-}
-
-function indexTree(nodes: readonly FolderNode[]): TreeIndex {
-  const byId = new Map<string, FolderNode>();
-  const parents = new Set<string>();
-  for (const node of nodes) {
-    byId.set(node.id, node);
-    if (node.parent !== undefined) parents.add(node.parent);
-  }
-  return { byId, parents };
-}
-
-/**
- * The chain of rows from `id` upwards, nearest first. Walked by `parent`, never by ID prefix:
- * `library:mega` is a prefix of `library:megawads` without being its parent, so a prefix test would
- * take a sibling for an ancestor.
- */
-function* ancestors(tree: TreeIndex, id: string | undefined): Generator<string> {
-  for (let at = id; at !== undefined; at = tree.byId.get(at)?.parent) yield at;
-}
-
-/** The top-level groups, in the order they are shown. */
-const SERVER_IWADS = 'server:iwad';
-const SERVER_PWADS = 'server:pwad';
-const LIBRARY_ROOT = 'library';
-const UPLOADS = 'uploads';
-
-/**
- * How long the fallback `<input webkitdirectory>` is given to answer before the overlay says it
- * hasn't. Generous, because it is racing a human browsing their disk, not a machine: too short and
- * it cries wolf over a player taking their time in the dialog.
- */
-const PICKER_TIMEOUT = 30_000;
-
-/** Every row that is a root of its own subtree — the ones that start unfolded. */
-const TOP_LEVEL_FOLDERS = [SERVER_IWADS, SERVER_PWADS, LIBRARY_ROOT, UPLOADS];
-
-/**
- * The tree, flattened to rows carrying their own depth: the server's two folders and whatever
- * subfolders they hold, the player's library the same way, and anything dropped on the menu.
- *
- * There is no `topdoom` row above the served pair, and no `Your library` row above the player's
- * folders: which panel a row sits in already says that, and the panel headings carry the totals.
- *
- * **A folder with no WAD beneath it is not a row** — nothing the player can act on. Once a folder
- * *is* set its root stays even while empty, because then it is reporting something: that folder
- * held no WADs.
- *
- * Pure, and separate from `LibraryUi` so it can be tested without a DOM — docs/menu.md § WAD
- * Library.
- */
-export function buildFolderTree(
-  sources: readonly WadSource[],
-  libraryLabel: string,
-  libraryPicked: boolean,
-): FolderNode[] {
-  const server = sources.filter((s) => s.origin === 'server');
-  const uploads = sources.filter((s) => s.origin === 'upload');
-  const library = sources.filter((s) => s.origin === 'library');
-  // How a served path splits into root and subfolder is `wad/library.ts`'s to know, not the menu's.
-  const under = (s: WadSource) => servedFolder(s).under;
-  const iwads = server.filter((s) => servedFolder(s).root === 'iwad');
-  const pwads = server.filter((s) => servedFolder(s).root !== 'iwad');
-
-  const nodes: FolderNode[] = [
-    ...rootedSubtree(SERVER_IWADS, 'Game WADs', iwads, under),
-    ...rootedSubtree(SERVER_PWADS, 'Add-ons', pwads, under),
-    ...rootedSubtree(LIBRARY_ROOT, libraryLabel, library, (s) => s.folder ?? ''),
-  ];
-
-  if (uploads.length > 0) nodes.push(folder(UPLOADS, 'Dropped on the menu', 0, uploads));
-  return nodes.filter((n) => n.total > 0 || (n.id === LIBRARY_ROOT && libraryPicked));
-}
-
-/**
- * One root row plus a row for every folder beneath it. Shared by the two served folders and the
- * player's library, which differ only in where their paths are rooted — so subfolders behave
- * identically in `public/wads/pwad/` and in the folder the player nominated.
- *
- * Ancestors are synthesized: a file whose path is `mega/scythe` names only that, and without a
- * `mega` row its own would be indented under a parent that isn't there and would have nothing to
- * fold into.
- */
-function rootedSubtree(
-  rootId: string,
-  rootLabel: string,
-  sources: readonly WadSource[],
-  pathOf: (source: WadSource) => string,
-): FolderNode[] {
-  // One pass files each source under its own path and counts it against every folder above it, so
-  // neither the folder's own list nor its subtree total costs a scan of `sources` per folder.
-  const own = new Map<string, WadSource[]>();
-  const beneath = new Map<string, number>();
-  const paths = new Set<string>();
-  for (const source of sources) {
-    const path = pathOf(source);
-    const here = own.get(path);
-    if (here) here.push(source);
-    else own.set(path, [source]);
-
-    const segments = path ? path.split('/') : [];
-    for (let i = 1; i <= segments.length; i++) {
-      const above = segments.slice(0, i).join('/');
-      paths.add(above);
-      beneath.set(above, (beneath.get(above) ?? 0) + 1);
-    }
-  }
-  const at = (path: string) => own.get(path) ?? [];
-
-  const out: FolderNode[] = [folder(rootId, rootLabel, 0, at(''), sources.length)];
-
-  // Siblings sorted A-Z by their own name, then emitted depth-first so a parent always precedes its
-  // children. Deliberately *not* one flat sort of the full paths: that would have to get both the
-  // alphabetical order and the parent-first grouping out of the same comparison, and how a
-  // collation ranks `/` against letters decides whether `a/b` lands under `a` or after `aa`.
-  // Sorting one level at a time needs no such guarantee.
-  const byParent = new Map<string, string[]>();
-  for (const path of paths) {
-    const cut = path.lastIndexOf('/');
-    const parent = cut < 0 ? '' : path.slice(0, cut);
-    byParent.set(parent, [...(byParent.get(parent) ?? []), path]);
-  }
-  const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1);
-  const emit = (parentPath: string): void => {
-    const children = [...(byParent.get(parentPath) ?? [])].sort((a, b) =>
-      nameOf(a).localeCompare(nameOf(b), undefined, { sensitivity: 'base', numeric: true }),
-    );
-    for (const path of children) {
-      const segments = path.split('/');
-      out.push({
-        ...folder(`${rootId}/${path}`, nameOf(path), segments.length, at(path), beneath.get(path) ?? 0),
-        parent: segments.length === 1 ? rootId : `${rootId}/${segments.slice(0, -1).join('/')}`,
-      });
-      emit(path);
-    }
-  };
-  emit('');
-  return out;
 }
 
 /** Which rows a filter leaves on screen, and which of them it opens wholesale. */
@@ -242,17 +88,62 @@ export interface FilterMatch {
   hits: Set<string>;
 }
 
+/** The top-level groups, in the order they are shown. */
+const SERVER_IWADS = 'server:iwad';
+const SERVER_PWADS = 'server:pwad';
+const LIBRARY_ROOT = 'library';
+const UPLOADS = 'uploads';
+
 /**
- * Applies the header's filter to the tree. A row survives if its own name matches, if a folder
- * above it matched, or if it holds a matching WAD at or below it — so searching for a file still
- * shows the folders it lives in, and searching for a folder shows the folder.
- *
- * **The game WADs are exempt**, and stay listed in full whatever the filter says. Finding an add-on
- * and seeing that it wants the other game is a normal outcome of a search, and having to clear the
- * filter to go and switch game WAD — then type it again — turns one decision into three.
- *
- * Pure, and separate from `LibraryUi` so it can be tested without a DOM — docs/menu.md § WAD
- * Library.
+ * How long the fallback `<input webkitdirectory>` is given to answer before the overlay says it
+ * hasn't. Generous, because it is racing a human browsing their disk, not a machine: too short and
+ * it cries wolf over a player taking their time in the dialog.
+ */
+const PICKER_TIMEOUT = 30_000;
+
+/** Every row that is a root of its own subtree — the ones that start unfolded. */
+const TOP_LEVEL_FOLDERS = [SERVER_IWADS, SERVER_PWADS, LIBRARY_ROOT, UPLOADS];
+
+/** The badge on a row refused for `unplayable`. The support column's tooltip carries the detail. */
+const REFUSED = "won't load";
+
+/**
+ * The tree, flattened to rows carrying their own depth: the server's two folders and whatever
+ * subfolders they hold, the player's library the same way, and anything dropped on the menu. A
+ * folder with no WAD beneath it is not a row, the one exception being a library root the player has
+ * set — which then reports that the folder held none. Pure, and separate from `LibraryUi` so it can
+ * be tested without a DOM — docs/menu.md § WAD Library.
+ */
+export function buildFolderTree(
+  sources: readonly WadSource[],
+  libraryLabel: string,
+  libraryPicked: boolean,
+): FolderNode[] {
+  const server = sources.filter((s) => s.origin === 'server');
+  const uploads = sources.filter((s) => s.origin === 'upload');
+  const library = sources.filter((s) => s.origin === 'library');
+  // How a served path splits into root and subfolder is `wad/library.ts`'s to know, not the menu's.
+  const under = (s: WadSource) => servedFolder(s).under;
+  const iwads = server.filter((s) => servedFolder(s).root === 'iwad');
+  const pwads = server.filter((s) => servedFolder(s).root !== 'iwad');
+
+  const nodes: FolderNode[] = [
+    ...rootedSubtree({ id: SERVER_IWADS, label: 'Game WADs' }, iwads, under),
+    ...rootedSubtree({ id: SERVER_PWADS, label: 'Add-ons' }, pwads, under),
+    ...rootedSubtree({ id: LIBRARY_ROOT, label: libraryLabel }, library, (s) => s.folder ?? ''),
+  ];
+
+  if (uploads.length > 0) {
+    nodes.push({ id: UPLOADS, label: 'Dropped on the menu', depth: 0, sources: uploads, total: uploads.length });
+  }
+  return nodes.filter((n) => n.total > 0 || (n.id === LIBRARY_ROOT && libraryPicked));
+}
+
+/**
+ * Applies the header's filter to the tree: a row survives if its own name matches, if a folder
+ * above it matched, or if it holds a matching WAD at or below it. The game WADs are exempt and stay
+ * listed in full whatever the filter says. Pure, and separate from `LibraryUi` so it can be tested
+ * without a DOM — docs/menu.md § WAD Library.
  */
 export function filterTree(nodes: readonly FolderNode[], filter: string): FilterMatch {
   const rows = new Set<string>();
@@ -296,6 +187,25 @@ export function filterTree(nodes: readonly FolderNode[], filter: string): Filter
   return { rows, whole, hits: found };
 }
 
+/**
+ * What a finished scan says, as `say`'s two arguments — quoting the first skipped file's own reason
+ * rather than only counting, since "no WADs here" and "every WAD here was unreadable" call for
+ * completely different things from the player. Pure, so the wording is testable without a DOM —
+ * docs/menu.md § WAD Library.
+ */
+export function scanResult(found: number, skipped: readonly LibrarySkip[]): [string, boolean] {
+  const first = skipped[0];
+  if (found === 0) {
+    return first
+      ? [`No readable WADs — ${skipped.length} skipped, e.g. ${first.path}: ${first.reason}`, true]
+      : ['No WADs found in that folder.', true];
+  }
+  const wads = found === 1 ? '1 WAD' : `${found} WADs`;
+  return first
+    ? [`Found ${wads}; skipped ${skipped.length} (e.g. ${first.path}: ${first.reason}).`, false]
+    : [`Found ${wads}.`, false];
+}
+
 export class LibraryUi {
   private root = el<HTMLDivElement>('wadlibrary');
   private servedEl = el<HTMLDivElement>('wadlibrary-served');
@@ -311,32 +221,23 @@ export class LibraryUi {
 
   private hooks: LibraryHooks;
   /**
-   * Which tree row is showing its files. Survives a re-render; falls back to the first row that has
-   * files of its own — it must not start on a *container* row, one owning no WADs directly, or the
-   * overlay would open on an empty pane.
-   *
-   * It opens on the served **add-ons**, not on the game WADs: a game WAD is already picked by the
-   * time anyone opens this — the select on the New Game tab carries it — so add-ons are what the
-   * overlay is being opened to browse.
+   * Which tree row is showing its files. Survives a re-render, and never falls back to a
+   * *container* row (one owning no WADs directly) or the overlay would open on an empty pane. It
+   * starts on the served add-ons: a game WAD is already picked by the time anyone opens this.
    */
   private selectedFolder = SERVER_PWADS;
   private filter = '';
   /**
-   * The pick being assembled, **not the menu's**. Every tick in here edits this pair and nothing
-   * else; `Apply` hands it to the menu and `Close` throws it away, so browsing a library — trying a
-   * game WAD on to see which add-ons it allows, ticking half a set and thinking better of it —
-   * costs the player nothing. Snapshotted from the menu on every `open`, so the overlay always
-   * starts from what is actually selected.
+   * The pick being assembled, **not the menu's**: every tick in here edits this pair and nothing
+   * else, `Apply` hands it over and every other way out throws it away. Snapshotted from the menu
+   * on every `open`. docs/menu.md § WAD Library.
    */
   private draftIwad: WadSource | null = null;
   private draftPwads: WadSource[] = [];
   /**
-   * Folder rows whose children are shown. Tracked as *expanded* rather than collapsed so the
-   * default is a property of this set alone: a collapsed-ID set could not express "folded by
-   * default", since a folder the player has never touched is absent from it and would read as open.
-   *
-   * Seeded with every top-level row, which start open — folding those would leave the overlay
-   * showing a handful of bare headings and nothing to act on. Everything below them starts folded.
+   * Folder rows whose children are shown, tracked as *expanded* rather than collapsed so that
+   * "folded by default" is expressible at all — see docs/menu.md § WAD Library. Seeded with the
+   * top-level rows; everything below them starts folded.
    */
   private expanded = new Set<string>(TOP_LEVEL_FOLDERS);
   /** True while a scan is running, so a second click can't start an overlapping walk. */
@@ -373,18 +274,6 @@ export class LibraryUi {
     this.draftPwads = [...this.hooks.pwads()];
     this.render();
     this.filterInput.focus();
-  }
-
-  /**
-   * Commits the draft and closes. The one path out that changes anything the menu holds — `close`
-   * is a discard, whether it came from the button, the backdrop or ESC.
-   *
-   * Closed *first*: applying redraws the menu, which redraws this overlay, and a set whose files
-   * still need hashing leaves the panel up and frozen for the length of a disk read.
-   */
-  private async apply(): Promise<void> {
-    this.close();
-    await this.hooks.applyPicks(this.draftIwad, this.draftPwads);
   }
 
   /**
@@ -427,14 +316,9 @@ export class LibraryUi {
   }
 
   /**
-   * The overlay's footer line, and **the only place anything raised while the overlay is up is
-   * reported**. The overlay covers `#menu` completely, so a message sent to `#menu-status` from
-   * behind it is reported to a line nobody can see — and one that outlives the overlay turns up on
-   * the New Game tab out of context, talking about buttons that tab doesn't have.
-   *
-   * Public because it works the other way too: `Menu.setStatus` routes here while `isOpen`, so the
-   * menu's own messages — what `Add single WADs…` just loaded, and anything else the overlay set in
-   * motion — land in front of the player rather than behind them.
+   * The overlay's footer line, and the only place anything raised while the overlay is up is
+   * reported — it covers `#menu` completely. Public because it works the other way too:
+   * `Menu.setStatus` routes here while `isOpen`. docs/menu.md § WAD Library.
    */
   showStatus(text: string, isError = false): void {
     this.statusEl.textContent = text;
@@ -442,6 +326,15 @@ export class LibraryUi {
     // a message long enough to be clipped is a message that was explaining something.
     this.statusEl.title = text;
     this.statusEl.classList.toggle('error', isError);
+  }
+
+  /**
+   * Commits the draft and closes — the one path out that changes anything the menu holds. Closed
+   * *first*, since applying redraws the menu and with it this overlay. docs/menu.md § WAD Library.
+   */
+  private async apply(): Promise<void> {
+    this.close();
+    await this.hooks.applyPicks(this.draftIwad, this.draftPwads);
   }
 
   private render(): void {
@@ -793,14 +686,10 @@ export class LibraryUi {
   }
 
   /**
-   * Takes one source into the draft the way its type asks to be taken — a game WAD replaces the
-   * pick, anything else joins the add-ons. A game WAD the add-ons already picked don't suit
-   * **drops none of them**: their rows go quiet with the reason in the badge and they come back the
-   * moment one that suits them is picked again (docs/menu.md § Picking a WAD set). What the set
-   * would actually merge is `pwadsFor`, which the footer counts and the menu applies.
-   *
-   * No redraw of its own, so a batch draws once. Membership is by **key**, not identity: a file
-   * added twice, or re-read by a scan, is a fresh `WadSource` for the same WAD (see `carryDraft`).
+   * Takes one source into the draft the way its type asks — a game WAD replaces the pick, anything
+   * else joins the add-ons, and a game WAD the picked add-ons don't suit drops none of them
+   * (docs/menu.md § Picking a WAD set). No redraw of its own, so a batch draws once, and membership
+   * is by **key**, not identity — see `carryDraft`.
    */
   private draftTake(source: WadSource): void {
     // The one place a file can reach the draft without going through a row: `stage`, for a file
@@ -814,11 +703,10 @@ export class LibraryUi {
   }
 
   /**
-   * Re-resolves the draft against the sources the menu now holds, by key: a rescan (and a re-upload
-   * of a file already known) builds fresh `WadSource` objects for the same files, and the draft
-   * holds them by identity, so without this a scan would silently untick everything it just
-   * re-read. A file the folder no longer has drops out — there is nothing left to apply. Called
+   * Re-resolves the draft against the sources the menu now holds, by key — a rescan builds fresh
+   * `WadSource` objects for the same files, and a file the folder no longer has drops out. Called
    * from `refresh` alone, which is every path by which the sources can move under the overlay.
+   * docs/menu.md § WAD Library.
    */
   private carryDraft(): void {
     const byKey = new Map(this.hooks.sources().map((s) => [s.key, s]));
@@ -890,12 +778,8 @@ export class LibraryUi {
 
   /**
    * The `<input webkitdirectory>` path: a folder for this session only, with no handle to store.
-   *
-   * All three of its outcomes are answered — the folder (`change`), a dismissed dialog (`cancel`),
-   * and **the dialog never opening at all**, which is what an embedding that blocks file choosers
-   * looks like from in here and has no event of its own. The last is a watchdog rather than a real
-   * signal, so it says what it actually knows; a `change` or `cancel` that arrives later overwrites
-   * it. Silence is the one answer the player can't act on.
+   * All three outcomes are answered — the folder, a dismissed dialog, and the dialog never opening,
+   * which has no event of its own and so gets a watchdog. docs/menu.md § WAD Library.
    */
   private chooseWithoutPicker(): void {
     this.folderInput.value = '';
@@ -911,12 +795,8 @@ export class LibraryUi {
 
   /**
    * The dialog handed nothing back. Fires on Chromium and Firefox; the watchdog covers the rest.
-   *
-   * Worded for the case that isn't a dismissal: a directory `<input>` needs a second, browser-drawn
-   * confirmation after the folder is chosen, and a window that suppresses it turns a *successful*
-   * pick into this event — which is how a player who did choose a folder gets told nobody chose
-   * one. There is no way to tell the two apart from here, so the line names both and offers the
-   * route that needs no confirmation.
+   * Not necessarily a dismissal — a suppressed confirmation looks the same from here — so the line
+   * names both readings and offers the route that needs none. docs/menu.md § WAD Library.
    */
   private onFolderCancelled(): void {
     window.clearTimeout(this.pickTimer);
@@ -995,36 +875,104 @@ export class LibraryUi {
 }
 
 /**
- * What a finished scan says, as `say`'s two arguments. A scan that read nothing is reported by what
- * it *walked past* wherever it can be: "no WADs here" and "every WAD here was unreadable" look the
- * same from the tree and call for completely different things from the player, so the first skipped
- * file's own reason is quoted rather than counted.
- *
- * Pure, so the wording is testable without a DOM — docs/menu.md § WAD Library.
+ * The lookups every walk over the tree needs, built once per render and threaded down — rebuilding
+ * either inside the walk that wants it makes a render quadratic in the row count, on every
+ * keystroke in the filter box. See docs/menu.md § WAD Library.
  */
-export function scanResult(found: number, skipped: readonly LibrarySkip[]): [string, boolean] {
-  const first = skipped[0];
-  if (found === 0) {
-    return first
-      ? [`No readable WADs — ${skipped.length} skipped, e.g. ${first.path}: ${first.reason}`, true]
-      : ['No WADs found in that folder.', true];
-  }
-  const wads = found === 1 ? '1 WAD' : `${found} WADs`;
-  return first
-    ? [`Found ${wads}; skipped ${skipped.length} (e.g. ${first.path}: ${first.reason}).`, false]
-    : [`Found ${wads}.`, false];
+interface TreeIndex {
+  byId: Map<string, FolderNode>;
+  /** IDs with at least one child row, so a folder knows whether it is foldable at all. */
+  parents: Set<string>;
 }
 
-/** `total` defaults to the folder's own count — the leaf case; a folder with subfolders passes its
-    whole subtree's, which is what the row's number is for (see `FolderNode`). */
-function folder(
-  id: string,
-  label: string,
-  depth: number,
-  sources: WadSource[],
-  total = sources.length,
-): FolderNode {
-  return { id, label, depth, sources, total };
+function indexTree(nodes: readonly FolderNode[]): TreeIndex {
+  const byId = new Map<string, FolderNode>();
+  const parents = new Set<string>();
+  for (const node of nodes) {
+    byId.set(node.id, node);
+    if (node.parent !== undefined) parents.add(node.parent);
+  }
+  return { byId, parents };
+}
+
+/**
+ * The chain of rows from `id` upwards, nearest first. Walked by `parent`, never by ID prefix:
+ * `library:mega` is a prefix of `library:megawads` without being its parent, so a prefix test would
+ * take a sibling for an ancestor.
+ */
+function* ancestors(tree: TreeIndex, id: string | undefined): Generator<string> {
+  for (let at = id; at !== undefined; at = tree.byId.get(at)?.parent) yield at;
+}
+
+/**
+ * One root row plus a row for every folder beneath it. Shared by the two served folders and the
+ * player's library, which differ only in where their paths are rooted — so subfolders behave
+ * identically in `public/wads/pwad/` and in the folder the player nominated.
+ *
+ * Ancestors are synthesized: a file whose path is `mega/scythe` names only that, and without a
+ * `mega` row its own would be indented under a parent that isn't there and would have nothing to
+ * fold into.
+ */
+function rootedSubtree(
+  root: { id: string; label: string },
+  sources: readonly WadSource[],
+  pathOf: (source: WadSource) => string,
+): FolderNode[] {
+  // One pass files each source under its own path and counts it against every folder above it, so
+  // neither the folder's own list nor its subtree total costs a scan of `sources` per folder.
+  const own = new Map<string, WadSource[]>();
+  const beneath = new Map<string, number>();
+  const paths = new Set<string>();
+  for (const source of sources) {
+    const path = pathOf(source);
+    const here = own.get(path);
+    if (here) here.push(source);
+    else own.set(path, [source]);
+
+    const segments = path ? path.split('/') : [];
+    for (let i = 1; i <= segments.length; i++) {
+      const above = segments.slice(0, i).join('/');
+      paths.add(above);
+      beneath.set(above, (beneath.get(above) ?? 0) + 1);
+    }
+  }
+  const at = (path: string) => own.get(path) ?? [];
+
+  const out: FolderNode[] = [
+    { id: root.id, label: root.label, depth: 0, sources: at(''), total: sources.length },
+  ];
+
+  // Siblings sorted A-Z by their own name, then emitted depth-first so a parent always precedes its
+  // children. Deliberately *not* one flat sort of the full paths: that would have to get both the
+  // alphabetical order and the parent-first grouping out of the same comparison, and how a
+  // collation ranks `/` against letters decides whether `a/b` lands under `a` or after `aa`.
+  // Sorting one level at a time needs no such guarantee.
+  const byParent = new Map<string, string[]>();
+  for (const path of paths) {
+    const cut = path.lastIndexOf('/');
+    const parent = cut < 0 ? '' : path.slice(0, cut);
+    byParent.set(parent, [...(byParent.get(parent) ?? []), path]);
+  }
+  const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1);
+  const emit = (parentPath: string): void => {
+    const children = [...(byParent.get(parentPath) ?? [])].sort((a, b) =>
+      nameOf(a).localeCompare(nameOf(b), undefined, { sensitivity: 'base', numeric: true }),
+    );
+    for (const path of children) {
+      const segments = path.split('/');
+      out.push({
+        id: `${root.id}/${path}`,
+        label: nameOf(path),
+        depth: segments.length,
+        sources: at(path),
+        total: beneath.get(path) ?? 0,
+        parent: segments.length === 1 ? root.id : `${root.id}/${segments.slice(0, -1).join('/')}`,
+      });
+      emit(path);
+    }
+  };
+  emit('');
+  return out;
 }
 
 /** Sets a panel heading to its name plus how many WADs the panel holds. */
@@ -1046,9 +994,6 @@ function header(el: HTMLHeadingElement, label: string, count: number): void {
 function unplayable(source: WadSource): boolean {
   return source.support !== undefined && nothingLoads(source.support, source.maps.length);
 }
-
-/** The badge on a row refused for `unplayable`. The support column's tooltip carries the detail. */
-const REFUSED = "won't load";
 
 function empty(text: string): HTMLParagraphElement {
   const p = document.createElement('p');

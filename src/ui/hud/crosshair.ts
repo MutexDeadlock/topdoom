@@ -10,12 +10,6 @@
 import { COLOR_BLUE } from './wadfont.ts';
 
 /**
- * The over-100 blue, as CSS — the HUD's own `ARM2A0`-sampled blue (`COLOR_BLUE`), so the reticle
- * and the health number cross into it as one cue rather than in two different blues.
- */
-const OVER_HUNDRED = `rgb(${COLOR_BLUE.join(', ')})`;
-
-/**
  * Reticle geometry in CSS pixels, all tuned by feel like the rest of the crosshair above.
  * `SIZE` stays at or under 32 because that's the largest cursor bitmap every platform accepts.
  * The outline is a second, wider pass of the same shape drawn underneath: it runs `HALO` further
@@ -29,6 +23,33 @@ const STROKE = 2;
 const ARM_INNER = 6;
 const ARM_OUTER = 12;
 const DOT_R = 1.5;
+
+/**
+ * Sets the game canvas's OS cursor to a health-colored reticle; skips the rebuild when the color
+ * hasn't changed.
+ */
+export class Crosshair {
+  private canvas: HTMLCanvasElement;
+  private lastColor: string | null = null;
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+  }
+
+  update(health: number): void {
+    const color = colorForHealth(health);
+    if (color === this.lastColor) return;
+    this.lastColor = color;
+    const uri = `data:image/svg+xml,${encodeURIComponent(crosshairSvg(color))}`;
+    this.canvas.style.cursor = `url("${uri}") ${CENTER} ${CENTER}, crosshair`;
+  }
+}
+
+/**
+ * The over-100 blue, as CSS — the HUD's own `ARM2A0`-sampled blue (`COLOR_BLUE`), so the reticle
+ * and the health number cross into it as one cue rather than in two different blues.
+ */
+const OVER_HUNDRED = `rgb(${COLOR_BLUE.join(', ')})`;
 
 /** Health → CSS color. `health <= 100` maps linearly onto hue 120 (green) down to 0 (red). */
 function colorForHealth(health: number): string {
@@ -63,25 +84,4 @@ function crosshairSvg(color: string): string {
     `${arms(ARM_INNER, ARM_OUTER)}` +
     `<circle cx="${CENTER}" cy="${CENTER}" r="${DOT_R}" stroke="none"/></g></svg>`
   );
-}
-
-/**
- * Sets the game canvas's OS cursor to a health-colored reticle; skips the rebuild when the color
- * hasn't changed.
- */
-export class Crosshair {
-  private canvas: HTMLCanvasElement;
-  private lastColor: string | null = null;
-
-  constructor(canvas: HTMLCanvasElement) {
-    this.canvas = canvas;
-  }
-
-  update(health: number): void {
-    const color = colorForHealth(health);
-    if (color === this.lastColor) return;
-    this.lastColor = color;
-    const uri = `data:image/svg+xml,${encodeURIComponent(crosshairSvg(color))}`;
-    this.canvas.style.cursor = `url("${uri}") ${CENTER} ${CENTER}, crosshair`;
-  }
 }

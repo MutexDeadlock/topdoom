@@ -9,21 +9,17 @@ import { MusicPlayer } from './music.ts';
 import { storedVolume } from './volume.ts';
 
 /**
- * Sounds that may play at once. **Tuned by feel**, not vanilla: `snd_channels`
- * defaults to 8 there, sized for a first-person view that can only ever see one
- * room of a fight. This camera looks down on the whole room and a corridor's
- * worth of the next one, so 8 channels have monsters cutting each other off
- * inside the frame they're visible in. The eviction rule they're allocated by
- * is still vanilla's own (`allocate`).
+ * Sounds that may play at once. **Tuned by feel**, not vanilla: `snd_channels` defaults to 8, sized
+ * for a first-person view, and this camera shows a whole room and part of the next. The eviction
+ * rule they are allocated by is still vanilla's own (`allocate`). docs/audio.md § The mixer model.
  */
 const CHANNELS = 32;
 
 /**
- * Vanilla's `S_CLIPPING_DIST`/`S_CLOSE_DIST`/`S_ATTENUATOR` (`s_sound.c`), in
- * map units: full volume within 160, falling off linearly to silence at 1200,
- * beyond which the sound isn't started at all. Distance is a true `hypot` here
- * rather than vanilla's octagonal `adx + ady - min/2` approximation, which
- * exists only to avoid a fixed-point square root.
+ * Vanilla's `S_CLIPPING_DIST`/`S_CLOSE_DIST`/`S_ATTENUATOR` (`s_sound.c`), in map units — full
+ * volume within 160, linear to silence at 1200, past which the sound isn't started at all.
+ * Distance is a true `hypot` rather than vanilla's octagonal approximation.
+ * docs/audio.md § The mixer model.
  */
 const CLIPPING_DIST = 1200;
 const CLOSE_DIST = 160;
@@ -72,6 +68,19 @@ const ASSETS = {
 
 export type AssetSfxId = keyof typeof ASSETS;
 
+/** What one channel is started with — see `AudioEngine.start`. */
+interface VoiceSpec {
+  /** `SFX`'s own priority, which is what a full pool evicts by. */
+  priority: number;
+  /** Playback rate, vanilla's per-shot pitch wobble. */
+  rate: number;
+  gain: number;
+  /** -1..1; 0 skips the panner node entirely. */
+  pan: number;
+  /** The emitter this belongs to, so a second sound from it takes the same channel. */
+  origin: number | undefined;
+}
+
 interface Voice {
   /** `SoundEmitter.play`'s origin key, or undefined for a positional sound with no origin. */
   origin: number | undefined;
@@ -86,16 +95,10 @@ interface Voice {
 }
 
 /**
- * Plays the WAD's own sound lumps through Web Audio, reproducing vanilla's
- * mixer model rather than a 3D audio scene: per-sound distance attenuation and
- * stereo pan computed exactly as `S_AdjustSoundParams` computes them, a fixed
- * pool of channels allocated by `S_getChannel`'s priority rule, and vanilla's
- * random pitch wobble per instance. See docs/audio.md.
- *
- * Session-level, like `Viewport`: one `AudioContext` outlives every level and
- * every WAD set (`setBank` swaps the lumps). The context is created lazily on
- * the first `resume`, since a browser only lets one start from a user gesture
- * — which is exactly what starting a level is.
+ * Plays the WAD's own sound lumps through Web Audio, reproducing vanilla's mixer model rather than
+ * a 3D audio scene — docs/audio.md § The mixer model. Session-level, like `Viewport`: one
+ * `AudioContext` outlives every level and every WAD set (`setBank` swaps the lumps), created lazily
+ * on the first `resume` since a browser only lets one start from a user gesture.
  */
 export class AudioEngine implements SoundEmitter {
   private ctx: AudioContext | null = null;
@@ -155,13 +158,6 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * What an sfx actually comes out at: the two sliders multiplied, and the thing 0 is tested on.
-   */
-  private get sfxAudible(): number {
-    return this._volume * this._masterVolume;
-  }
-
-  /**
    * 0-1; persisted, so it survives a reload. There is no separate mute: 0 *is*
    * the mute, so it does everything mute did — `play` short-circuits on it
    * rather than starting inaudible sources, and reaching it cuts the voices
@@ -187,16 +183,6 @@ export class AudioEngine implements SoundEmitter {
     if (this._masterVolume === 0) this.stopAll();
     this.music.setMasterVolume(this._masterVolume);
     this.applyVolume();
-  }
-
-  /**
-   * The sfx slider goes on the sfx bus, not on `master`: music hangs off `master` too, and putting
-   * it there would have the sfx slider quietly ride the music as well. The master slider is the
-   * one that *is* `master`.
-   */
-  private applyVolume(): void {
-    if (this.sfxBus) this.sfxBus.gain.value = this._volume;
-    if (this.master) this.master.gain.value = this._masterVolume;
   }
 
   /**
@@ -277,7 +263,7 @@ export class AudioEngine implements SoundEmitter {
 
     const buffer = this.bufferFor(id);
     if (!buffer) return;
-    this.start(buffer, SFX[id], randomPlaybackRate(id), gain, pan, origin);
+    this.start(buffer, { priority: SFX[id], rate: randomPlaybackRate(id), gain, pan, origin });
   }
 
   /**
@@ -290,21 +276,33 @@ export class AudioEngine implements SoundEmitter {
     if (this.sfxAudible === 0) return;
     const buffer = this.assetBuffers.get(id);
     if (!buffer) return;
-    this.start(buffer, ASSETS[id].priority, 1, 1, 0, undefined);
+    const { priority } = ASSETS[id];
+    this.start(buffer, { priority, rate: 1, gain: 1, pan: 0, origin: undefined });
+  }
+
+  /**
+   * What an sfx actually comes out at: the two sliders multiplied, and the thing 0 is tested on.
+   */
+  private get sfxAudible(): number {
+    return this._volume * this._masterVolume;
+  }
+
+  /**
+   * The sfx slider goes on the sfx bus, not on `master`: music hangs off `master` too, and putting
+   * it there would have the sfx slider quietly ride the music as well. The master slider is the
+   * one that *is* `master`.
+   */
+  private applyVolume(): void {
+    if (this.sfxBus) this.sfxBus.gain.value = this._volume;
+    if (this.master) this.master.gain.value = this._masterVolume;
   }
 
   /**
    * Takes a channel for `buffer` and starts it — the half of `play` that has nothing left to
    * decide.
    */
-  private start(
-    buffer: AudioBuffer,
-    priority: number,
-    rate: number,
-    gain: number,
-    pan: number,
-    origin: number | undefined,
-  ): void {
+  private start(buffer: AudioBuffer, voice: VoiceSpec): void {
+    const { priority, rate, gain, pan, origin } = voice;
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.sfxBus) return;
     const channel = this.allocate(origin, priority);
@@ -341,13 +339,10 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * Vanilla's `S_StartSound`'s channel choice, in its own order: stop whatever
-   * this origin was already playing (`S_StopSound(origin)`), take a free
-   * channel, and otherwise evict the **first** channel whose priority is no
-   * higher than this sound's (`S_getChannel`) — with no channel left to take,
-   * the sound is simply dropped. That "first, not quietest or oldest" rule is
-   * vanilla's, and is what keeps a crowd of same-priority sight sounds fighting
-   * over one channel instead of flushing the whole pool.
+   * Vanilla's `S_StartSound` channel choice, in its own order: stop whatever this origin was
+   * already playing, take a free channel, else evict the **first** channel whose priority is no
+   * higher than this sound's (`S_getChannel`), else drop the sound.
+   * docs/audio.md § The mixer model.
    */
   private allocate(origin: number | undefined, priority: number): number {
     if (origin !== undefined) {

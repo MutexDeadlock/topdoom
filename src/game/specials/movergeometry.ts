@@ -43,13 +43,9 @@ import {
 } from '../../render/occlusion.ts';
 
 /**
- * One movable sector's geometry plus the two faders that own its vertex
- * alpha, exactly as `game.ts` runs them over the static batches. Mover walls
- * need the camera-player sightline fade for the same reason static ones do —
- * a lift's front wall or a door frame sits between camera and player just as
- * readily as any other wall — and rebuilding the mesh drops the faders'
- * smoothing state with it, which only ever happens while the mover is in
- * motion.
+ * One movable sector's geometry plus the two faders that own its vertex alpha, exactly as `game.ts`
+ * runs them over the static batches — every movable sector owns its own mesh and its own pair.
+ * docs/render.md § One hole, whichever mesh it lands in.
  */
 interface MoverEntry {
   mesh: MoverMesh;
@@ -69,10 +65,9 @@ interface MoverEntry {
    */
   committed: boolean;
   /**
-   * Whether this frame's `collectFadeHits` took this entry's pass one, so
-   * `updateFading` knows to take its pass two. Set once per frame, since the
-   * two halves must agree: a fader that filed no crossings still has to fold
-   * the ones every other fader filed.
+   * Whether this frame's `collectFadeHits` took this entry's pass one, so `updateFading` knows to
+   * take its pass two. The two halves must agree: a fader that filed no crossings still folds the
+   * ones every other fader filed.
    */
   fading: boolean;
 }
@@ -91,12 +86,6 @@ export function buildMoverIndex(map: DoomMap, polys: SubSectorPoly[]): MoverInde
     subsectorsOf: (sectorIndex) => subsectors[sectorIndex] ?? NO_SUBSECTORS,
     linesOf: (sectorIndex) => sectorLines(map, sectorIndex),
   };
-}
-
-function disposeGroup(group: THREE.Group): void {
-  group.traverse((obj) => {
-    if (obj instanceof THREE.Mesh) obj.geometry.dispose();
-  });
 }
 
 /** What a `MoverGeometry` needs beside the `World` it draws over. */
@@ -167,50 +156,16 @@ export class MoverGeometry {
   }
 
   /**
-   * `sectorOccluders`/`sectorFlats` point at every sector's own occluder/flat
-   * objects, pulled out of `built.occluders`/`built.flatSurfaces` once at
-   * construction time so `recolorSector` never has to re-scan the whole map.
-   * **Every sector, not just the ones with a load-time blink pattern**: the
-   * `lightChange` line specials (`triggerLightChange`) can recolor any
-   * tag-matched sector on demand — a one-time, load-only cost.
-   * Static batches only: geometry living in a mover mesh is reached by
-   * `moverLightTargets` instead — see docs/specials.md § Relighting mover
-   * geometry.
-   */
-  private indexLightGeometry(): void {
-    this.sectorOccluders.clear();
-    this.sectorFlats.clear();
-    for (const o of this.built.occluders) {
-      const arr = this.sectorOccluders.get(o.sector) ?? [];
-      arr.push(o);
-      this.sectorOccluders.set(o.sector, arr);
-    }
-    for (const f of this.built.flatSurfaces) {
-      const arr = this.sectorFlats.get(f.lightSector) ?? [];
-      arr.push(f);
-      this.sectorFlats.set(f.lightSector, arr);
-    }
-  }
-
-  /**
-   * Per-frame vertex-alpha pass over the mover geometry, mirroring what
-   * `game.ts` runs over the static batches: camera sightline occlusion
-   * (player plus every awake monster — see `WallFader.update`'s doc) combined
-   * with fog-of-war reveal. Separate from `SpecialsController.update` because
-   * it needs the camera position, which is only settled after the player has
-   * moved.
-   *
-   * Split in two so that every mover's pass one lands in the frame's shared bags before any fader
-   * dissolves anything — docs/render.md § One hole, whichever mesh it lands in.
+   * Per-frame vertex-alpha pass over the mover geometry, mirroring what `game.ts` runs over the
+   * static batches. Separate from `SpecialsController.update` because it needs the camera position,
+   * settled only after the player has moved; split in two so every mover's pass one lands in the
+   * frame's shared bags before any fader dissolves anything.
+   * docs/render.md § One hole, whichever mesh it lands in.
    */
   collectFadeHits(frame: FadeFrame, walls: FadeCrossings, flats: FadeCrossings): void {
     fadeReach(frame.camX, frame.camY, frame.targets, this.reach);
     for (const g of this.moverMeshes.values()) {
-      // Nothing that reaches this mesh moved, and nothing in it is still
-      // relaxing: every call below would write back what is already there. On a
-      // map with a couple of thousand movers those calls are the whole cost.
-      // A crossing lies inside the sight box and folds nothing further than its
-      // own radius, so `reach` is exactly what a shared bag can reach too.
+      // Skipped when nothing that reaches this mesh moved and nothing in it is still relaxing —
       // docs/render.md § Mover meshes a frame cannot touch.
       g.fading = !(g.walls.idle && g.flats.idle) || this.reachesMesh(g);
       if (!g.fading) continue;
@@ -233,96 +188,23 @@ export class MoverGeometry {
         g.flats.applyPierces(frame, flats);
       }
       g.committed = true;
-      // Mover quads aren't in the static occluder list FogOfWar indexed at
-      // load; `mapmesh` resolved each one's leaf when the mesh was built, and a
-      // refresh preserves it, so -1 means only that the build was given no probe.
+      // Mover quads aren't in the static occluder list `FogOfWar` indexed at load. `mapmesh`
+      // resolved each one's leaf when the mesh was built and a refresh preserves it, so -1 means
+      // only that the build was given no probe.
       g.walls.commit((i) => {
         const q = g.mesh.wallQuads[i];
         const s = q.subsector >= 0 ? q.subsector : this.fog.wallSubsectorAt(q.ax, q.ay, q.bx, q.by);
         return this.fog.alphaOf(s);
       });
       g.flats.commit((subsector) => this.fog.alphaOf(subsector));
-      // A mover mesh every quad of which resolved to alpha 0 — fog of war has
-      // not revealed it, or view distance has faded it out — draws nothing, so
-      // it is skipped outright. One mesh can hold both walls and flats, so both
-      // faders' verdicts count. This runs immediately before the frame's render
-      // (`game.ts: draw`), so the flag is always this frame's.
-      // docs/render.md § Skipping invisible mover meshes.
+      // A mesh every quad of which resolved to alpha 0 draws nothing. Both faders' verdicts count,
+      // since one mesh can hold walls and flats. docs/render.md § Skipping invisible mover meshes.
       for (const [key, mesh] of g.mesh.meshes) {
         const wall = g.walls.maxAlphaByKey.get(key) ?? 0;
         const flat = g.flats.maxAlphaByKey.get(key) ?? 0;
         mesh.visible = wall > 0 || flat > 0;
       }
     }
-  }
-
-  /**
-   * Whether this frame's fade reach (`fadeReach`, filled into `reach`) overlaps a mesh's footprint.
-   */
-  private reachesMesh(g: MoverEntry): boolean {
-    return boxesOverlap(g.bounds, this.reach);
-  }
-
-  private createMoverMesh(sectorIndex: number): void {
-    const mesh = buildMoverMesh(this.mover, sectorIndex);
-    this.scene.add(mesh.group);
-    // `trackVisibility` on: these are the faders whose verdict `updateFading`
-    // reads to skip drawing an invisible mover mesh.
-    const walls = new WallFader(mesh.wallQuads, mesh.meshes, true);
-    // The wall half of this box is the fader's own footprint, which it boxed
-    // over these very quads — so the two cannot drift, and only the fans are
-    // left to walk. `reachesMesh` needs both; `applyCrossings` needs the walls.
-    const bounds: FadeBox = { ...walls.footprint };
-    for (const f of mesh.flatFans) {
-      for (let p = 0; p < f.vertexXY.length; p += 2) stretchBox(bounds, f.vertexXY[p], f.vertexXY[p + 1]);
-    }
-    this.moverMeshes.set(sectorIndex, {
-      mesh,
-      walls,
-      flats: new FlatFader(mesh.flatFans, mesh.meshes, true),
-      bounds,
-      committed: false,
-      fading: false,
-    });
-    // A mover mesh holds its own sector's flats plus wall quads from *both*
-    // sides of every bordering line, so the sectors it must be relit for are
-    // not just `sectorIndex` — see `recolorSector`. Rebuilding a mesh never
-    // changes which sectors those are, so the sets only ever grow once.
-    for (const q of mesh.wallQuads) this.trackMoverLight(q.sector, sectorIndex);
-    for (const f of mesh.flatFans) this.trackMoverLight(f.lightSector, sectorIndex);
-  }
-
-  private trackMoverLight(sectorIndex: number, moverIndex: number): void {
-    const set = this.moverLightTargets.get(sectorIndex) ?? new Set<number>();
-    set.add(moverIndex);
-    this.moverLightTargets.set(sectorIndex, set);
-  }
-
-  /**
-   * Brings exactly one sector's mesh up to date. Private, and the whole reason
-   * is the doc on `rebuildAround`: the set of meshes a changed sector
-   * invalidates is never just its own, so nothing outside may pick a sector to
-   * rebuild without going through the closure. Only a sector whose set of drawn
-   * quads changed pays for a fresh mesh — docs/render.md § Mover meshes.
-   */
-  private rebuild(sectorIndex: number): void {
-    const old = this.moverMeshes.get(sectorIndex);
-    if (old) {
-      if (refreshMoverMesh(old.mesh, this.mover, sectorIndex)) {
-        // A refresh rewrites the whole colour attribute, alpha channel and all,
-        // so what the faders last wrote is gone from the buffer even though
-        // their own record still claims it. Both halves matter: the entry has
-        // to be visited again however quiet its surroundings, and the faders
-        // have to write rather than recognize their own last value.
-        old.walls.invalidateWritten();
-        old.flats.invalidateWritten();
-        old.committed = false;
-        return;
-      }
-      this.scene.remove(old.mesh.group);
-      disposeGroup(old.mesh.group);
-    }
-    this.createMoverMesh(sectorIndex);
   }
 
   /**
@@ -344,6 +226,129 @@ export class MoverGeometry {
       for (const n of this.movableNeighbors.get(sectorIndex) ?? []) rebuild.add(n);
     }
     for (const sectorIndex of rebuild) this.rebuild(sectorIndex);
+  }
+
+  /**
+   * Rewrites the vertex colours of every surface lit by `sectorIndex` to that sector's current
+   * `light` — the static batches (indexed once by `indexLightGeometry`) and any mover meshes
+   * holding its geometry. RGB only; alpha belongs to the faders (render/occlusion.ts).
+   * docs/specials.md § Light changes.
+   */
+  recolorSector(sectorIndex: number): void {
+    const sector = this.mover.map.sectors[sectorIndex];
+    const dirty = new Set<string>();
+
+    for (const o of this.sectorOccluders.get(sectorIndex) ?? []) {
+      const c = litColor(sector.light, wallContrast(o.ax, o.ay, o.bx, o.by));
+      const attr = this.built.wallMeshes.get(o.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+      if (!attr) continue;
+      for (let v = 0; v < o.vertexCount; v++) attr.setXYZ(o.vertexStart + v, c, c, c);
+      dirty.add(o.key);
+    }
+    for (const f of this.sectorFlats.get(sectorIndex) ?? []) {
+      // Indexed by the sector the fan's *light* came from, so this is that sector's level even
+      // where the fan belongs to another one (a 213 transfer, a deep-water bottom).
+      const c = litColor(sector.light);
+      const attr = this.built.flatMeshes.get(f.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+      if (!attr) continue;
+      for (let v = 0; v < f.vertexCount; v++) attr.setXYZ(f.vertexStart + v, c, c, c);
+      dirty.add(f.key);
+    }
+
+    for (const key of dirty) {
+      const attr = (this.built.wallMeshes.get(key) ?? this.built.flatMeshes.get(key))?.geometry.getAttribute('color') as
+        | THREE.BufferAttribute
+        | undefined;
+      if (attr) attr.needsUpdate = true;
+    }
+
+    this.recolorMoverGeometry(sectorIndex, sector.light);
+  }
+
+  /**
+   * Indexes every sector's own occluders and flats out of `built` once, so `recolorSector` never
+   * re-scans the map. **Every sector, not just the ones with a load-time blink pattern**: the
+   * `lightChange` line specials can recolor any tag-matched sector on demand. Static batches only —
+   * mover-mesh geometry is reached through `moverLightTargets`.
+   * docs/specials.md § Relighting mover geometry.
+   */
+  private indexLightGeometry(): void {
+    this.sectorOccluders.clear();
+    this.sectorFlats.clear();
+    for (const o of this.built.occluders) {
+      const arr = this.sectorOccluders.get(o.sector) ?? [];
+      arr.push(o);
+      this.sectorOccluders.set(o.sector, arr);
+    }
+    for (const f of this.built.flatSurfaces) {
+      const arr = this.sectorFlats.get(f.lightSector) ?? [];
+      arr.push(f);
+      this.sectorFlats.set(f.lightSector, arr);
+    }
+  }
+
+  /**
+   * Whether this frame's fade reach (`fadeReach`, filled into `reach`) overlaps a mesh's footprint.
+   */
+  private reachesMesh(g: MoverEntry): boolean {
+    return boxesOverlap(g.bounds, this.reach);
+  }
+
+  private createMoverMesh(sectorIndex: number): void {
+    const mesh = buildMoverMesh(this.mover, sectorIndex);
+    this.scene.add(mesh.group);
+    // `trackVisibility` on: `updateFading` reads these faders' verdict to skip an invisible mesh.
+    const walls = new WallFader(mesh.wallQuads, mesh.meshes, true);
+    // The wall half is the fader's own footprint over these very quads, so the two cannot drift
+    // and only the fans are left to walk.
+    const bounds: FadeBox = { ...walls.footprint };
+    for (const f of mesh.flatFans) {
+      for (let p = 0; p < f.vertexXY.length; p += 2) stretchBox(bounds, f.vertexXY[p], f.vertexXY[p + 1]);
+    }
+    this.moverMeshes.set(sectorIndex, {
+      mesh,
+      walls,
+      flats: new FlatFader(mesh.flatFans, mesh.meshes, true),
+      bounds,
+      committed: false,
+      fading: false,
+    });
+    // A mesh holds its own sector's flats plus wall quads from *both* sides of every bordering
+    // line, so the sectors it must be relit for are not just `sectorIndex`; a rebuild never changes
+    // which those are. docs/specials.md § Relighting mover geometry.
+    for (const q of mesh.wallQuads) this.trackMoverLight(q.sector, sectorIndex);
+    for (const f of mesh.flatFans) this.trackMoverLight(f.lightSector, sectorIndex);
+  }
+
+  private trackMoverLight(sectorIndex: number, moverIndex: number): void {
+    const set = this.moverLightTargets.get(sectorIndex) ?? new Set<number>();
+    set.add(moverIndex);
+    this.moverLightTargets.set(sectorIndex, set);
+  }
+
+  /**
+   * Brings exactly one sector's mesh up to date. Private, and the whole reason
+   * is the doc on `rebuildAround`: the set of meshes a changed sector
+   * invalidates is never just its own, so nothing outside may pick a sector to
+   * rebuild without going through the closure. Only a sector whose set of drawn
+   * quads changed pays for a fresh mesh — docs/render.md § Mover meshes.
+   */
+  private rebuild(sectorIndex: number): void {
+    const old = this.moverMeshes.get(sectorIndex);
+    if (old) {
+      if (refreshMoverMesh(old.mesh, this.mover, sectorIndex)) {
+        // A refresh rewrites the whole colour attribute, alpha included, so what the faders last
+        // wrote is gone from the buffer while their own record still claims it — the entry must be
+        // revisited *and* the faders must write rather than recognize their last value.
+        old.walls.invalidateWritten();
+        old.flats.invalidateWritten();
+        old.committed = false;
+        return;
+      }
+      this.scene.remove(old.mesh.group);
+      disposeGroup(old.mesh.group);
+    }
+    this.createMoverMesh(sectorIndex);
   }
 
   private indexMovableNeighbors(): void {
@@ -390,53 +395,10 @@ export class MoverGeometry {
   }
 
   /**
-   * Rewrites the vertex colours of every surface lit by `sectorIndex` to that
-   * sector's current `light` — both the static batches (indexed once by
-   * `indexLightGeometry`) and any mover meshes holding its geometry. Only the
-   * RGB channels are touched; alpha belongs to the faders (render/occlusion.ts).
-   * See docs/specials.md § Light changes.
-   */
-  recolorSector(sectorIndex: number): void {
-    const sector = this.mover.map.sectors[sectorIndex];
-    const dirty = new Set<string>();
-
-    for (const o of this.sectorOccluders.get(sectorIndex) ?? []) {
-      const c = litColor(sector.light, wallContrast(o.ax, o.ay, o.bx, o.by));
-      const attr = this.built.wallMeshes.get(o.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-      if (!attr) continue;
-      for (let v = 0; v < o.vertexCount; v++) attr.setXYZ(o.vertexStart + v, c, c, c);
-      dirty.add(o.key);
-    }
-    for (const f of this.sectorFlats.get(sectorIndex) ?? []) {
-      // Indexed by the sector the fan's *light* came from, so this is that
-      // sector's level even where the fan belongs to another one (a 213
-      // transfer, a deep-water bottom).
-      const c = litColor(sector.light);
-      const attr = this.built.flatMeshes.get(f.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-      if (!attr) continue;
-      for (let v = 0; v < f.vertexCount; v++) attr.setXYZ(f.vertexStart + v, c, c, c);
-      dirty.add(f.key);
-    }
-
-    for (const key of dirty) {
-      const attr = (this.built.wallMeshes.get(key) ?? this.built.flatMeshes.get(key))?.geometry.getAttribute('color') as
-        | THREE.BufferAttribute
-        | undefined;
-      if (attr) attr.needsUpdate = true;
-    }
-
-    this.recolorMoverGeometry(sectorIndex, sector.light);
-  }
-
-  /**
-   * `recolorSector`'s mover-mesh half. A sector that is *also* a mover (a
-   * strobing lift — DOOM1 E1M5 sectors 2 and 32) has its flats and walls in
-   * its own `moverMeshes` entry rather than the static batch, and a static
-   * sector bordering a mover has its side of the shared line built there too,
-   * so neither is reachable through `sectorOccluders`/`sectorFlats`. Without
-   * this pass such a sector only ever picked up its light while it happened
-   * to be moving, since a height change rebuilds the mesh from the live
-   * `sector.light` anyway.
+   * `recolorSector`'s mover-mesh half: geometry in a `moverMeshes` entry is not reachable through
+   * `sectorOccluders`/`sectorFlats`, and a sector's light must reach its geometry whether or not
+   * that geometry currently lives in a mover mesh. Repro: DOOM1 E1M5 sectors 2 and 32, the tag-1
+   * strobing lifts. docs/specials.md § Relighting mover geometry.
    */
   private recolorMoverGeometry(sectorIndex: number, light: number): void {
     for (const moverIndex of this.moverLightTargets.get(sectorIndex) ?? []) {
@@ -467,4 +429,10 @@ export class MoverGeometry {
       }
     }
   }
+}
+
+function disposeGroup(group: THREE.Group): void {
+  group.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+  });
 }

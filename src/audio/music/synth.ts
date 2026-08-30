@@ -29,9 +29,27 @@ const TL_MAX = 0x3f;
  */
 const CHANNEL_REGS = Array.from({ length: OPL_CHANNELS }, (_, i) => channelRegisters(i));
 
-/** MIDI's own 0-127, which every table here is indexed by. */
-function clamp7(value: number): number {
-  return Math.max(0, Math.min(127, Math.round(value)));
+/**
+ * `2^(20 - block)` per block, computed once rather than per pitch write. The division by
+ * `OPL_RATE` stays at the call: scaling by a power of two is exact, so multiplying first and
+ * dividing after leaves the result one rounding away from exact instead of two.
+ */
+const BLOCK_SHIFT = Array.from({ length: 8 }, (_, block) => Math.pow(2, 20 - block));
+
+/**
+ * A frequency as the chip addresses it: a 3-bit block (an octave) and a 10-bit
+ * F-number, `fnum = f * 2^(20 - block) / 49716`. The lowest block whose
+ * F-number still fits is picked, which keeps it in the top half of its range
+ * and so at the chip's best resolution — the same thing DMX's own frequency
+ * table does, arrived at arithmetically rather than transcribed.
+ */
+export function blockAndFnum(frequency: number): { block: number; fnum: number } {
+  for (let block = 0; block < 7; block++) {
+    const fnum = Math.round((frequency * BLOCK_SHIFT[block]) / OPL_RATE);
+    if (fnum < 1024) return { block, fnum: Math.max(0, fnum) };
+  }
+  const fnum = Math.round((frequency * BLOCK_SHIFT[7]) / OPL_RATE);
+  return { block: 7, fnum: Math.max(0, Math.min(1023, fnum)) };
 }
 
 /**
@@ -63,45 +81,6 @@ interface Voice {
   sustained: boolean;
   /** Allocation counter, so the oldest voice is the one stolen. */
   order: number;
-}
-
-function newChannelState(): ChannelState {
-  return { program: 0, volume: 127, expression: 127, bend: 0, sustain: false, pan: 64 };
-}
-
-/**
- * How droppable a sounding voice is, highest first — Chocolate Doom's
- * `ReplaceExistingVoice` rule, made total so it orders any two voices:
- *
- * 1. A voice the sustain pedal alone is holding: its key is already up.
- * 2. The **second voice of a two-voice instrument**, which is a thickener, not
- *    the note. DMX drops these first for exactly that reason.
- * 3. The **highest MIDI channel number**. Scores put the lead on a low channel
- *    and pads and doubling above it, so channel order stands in for importance
- *    — and it is why a busy passage thins out instead of losing the tune.
- * 4. Failing all that, the oldest voice.
- *
- * The four are packed into one number so `allocate` is a single pass, with the
- * age term small enough that it only breaks ties.
- */
-function victimScore(voice: Voice): number {
-  const sustained = voice.sustained ? 1 : 0;
-  const secondary = voice.secondary ? 1 : 0;
-  return sustained * 1e9 + secondary * 1e6 + voice.midiChannel * 1e4 - voice.order * 1e-6;
-}
-
-/**
- * A MIDI pan (0-127) as `OplChip.setPan`'s 0-1. Two deliberate departures from
- * DMX live here, both explained in docs/music.md § From notes to registers: the
- * score's value is used **as it stands** rather than quantized to the chip's
- * three gate positions, and the sides are **not swapped**, which DMX does and
- * Chocolate Doom preserves as a bug behind `opl_stereo_correct`.
- */
-function panPosition(pan: number): number {
-  // MIDI's centre is 64, not the midpoint of 0-127, so the balance is taken
-  // either side of it and 0 lands a hair past hard left.
-  const balance = Math.max(-1, Math.min(1, (clamp7(pan) - 64) / 63));
-  return (balance + 1) / 2;
 }
 
 /**
@@ -266,19 +245,10 @@ export class OplSynth {
   }
 
   /**
-   * A chip channel for a note on `midiChannel`. Key-on cuts whatever still
-   * rings on the channel it takes, so *which* free channel is taken is
-   * audible, not bookkeeping. Three rules, in order:
-   *
-   * 1. **Reclaim**: the channel this MIDI channel released most recently, cutting exactly the tail
-   *    the new note supersedes. On the percussion channel the note must match too.
-   * 2. The **least audible** other free channel: a fully silent one outright, else the one whose
-   *    leftover tail has decayed furthest (`OplChip.channelAttenuation`).
-   * 3. With no free channel at all, the sounding voice that will be missed least — `victimScore`
-   *    ranks them; see it for the order.
-   *
-   * Why reclaim is explicit here where DMX got it for free, and why this departs from
-   * `i_oplmusic.c`'s FIFO: docs/music.md § From notes to registers.
+   * A chip channel for a note on `midiChannel`. Key-on cuts whatever still rings on the channel it
+   * takes, so which free channel is taken is audible: **reclaim** the one this MIDI channel
+   * released most recently, else the **least audible** free one, else drop the voice `victimScore`
+   * ranks lowest. docs/music.md § From notes to registers has why each rule is there.
    */
   private allocate(midiChannel: number, note: number): number {
     let reclaim = -1;
@@ -358,18 +328,9 @@ export class OplSynth {
   }
 
   /**
-   * The carrier's total level, and the modulator's too when the patch is
-   * additive and therefore audible in its own right. This is `SetVoiceVolume`'s
-   * arithmetic: velocity and channel volume each through `DMX_VOLUME_CURVE`,
-   * multiplied, and subtracted from full attenuation — the instrument's *own*
-   * carrier level plays no part, which is DMX's behavior and not an oversight
-   * here. An additive patch's modulator is held at or below the carrier so it
-   * can't shout over it.
-   *
-   * The one addition is expression (controller 11), folded into the channel's
-   * volume: DMX has no such controller and MUS scores never send one, but the
-   * MIDI tracks modern PWADs ship lean on it, and ignoring it plays their
-   * every fade at full blast. docs/music.md § Volume.
+   * The carrier's total level, and the modulator's too when the patch is additive and therefore
+   * audible in its own right — `SetVoiceVolume`'s arithmetic, plus expression (controller 11)
+   * folded into the channel volume. docs/music.md § Volume.
    */
   private volume(chip: number, additive: boolean): void {
     const voice = this.voices[chip]!;
@@ -430,25 +391,38 @@ export class OplSynth {
   }
 }
 
-/**
- * A frequency as the chip addresses it: a 3-bit block (an octave) and a 10-bit
- * F-number, `fnum = f * 2^(20 - block) / 49716`. The lowest block whose
- * F-number still fits is picked, which keeps it in the top half of its range
- * and so at the chip's best resolution — the same thing DMX's own frequency
- * table does, arrived at arithmetically rather than transcribed.
- */
-export function blockAndFnum(frequency: number): { block: number; fnum: number } {
-  for (let block = 0; block < 7; block++) {
-    const fnum = Math.round((frequency * BLOCK_SHIFT[block]) / OPL_RATE);
-    if (fnum < 1024) return { block, fnum: Math.max(0, fnum) };
-  }
-  const fnum = Math.round((frequency * BLOCK_SHIFT[7]) / OPL_RATE);
-  return { block: 7, fnum: Math.max(0, Math.min(1023, fnum)) };
+/** MIDI's own 0-127, which every table here is indexed by. */
+function clamp7(value: number): number {
+  return Math.max(0, Math.min(127, Math.round(value)));
+}
+
+function newChannelState(): ChannelState {
+  return { program: 0, volume: 127, expression: 127, bend: 0, sustain: false, pan: 64 };
 }
 
 /**
- * `2^(20 - block)` per block, computed once rather than per pitch write. The division by
- * `OPL_RATE` stays at the call: scaling by a power of two is exact, so multiplying first and
- * dividing after leaves the result one rounding away from exact instead of two.
+ * How droppable a sounding voice is, highest first — Chocolate Doom's `ReplaceExistingVoice` rule,
+ * made total so it orders any two voices: sustain-held, then the second voice of a two-voice
+ * instrument, then the highest MIDI channel, then the oldest (docs/music.md § From notes to
+ * registers). The four are packed into one number so `allocate` is a single pass, with the age term
+ * small enough that it only breaks ties.
  */
-const BLOCK_SHIFT = Array.from({ length: 8 }, (_, block) => Math.pow(2, 20 - block));
+function victimScore(voice: Voice): number {
+  const sustained = voice.sustained ? 1 : 0;
+  const secondary = voice.secondary ? 1 : 0;
+  return sustained * 1e9 + secondary * 1e6 + voice.midiChannel * 1e4 - voice.order * 1e-6;
+}
+
+/**
+ * A MIDI pan (0-127) as `OplChip.setPan`'s 0-1. Two deliberate departures from
+ * DMX live here, both explained in docs/music.md § From notes to registers: the
+ * score's value is used **as it stands** rather than quantized to the chip's
+ * three gate positions, and the sides are **not swapped**, which DMX does and
+ * Chocolate Doom preserves as a bug behind `opl_stereo_correct`.
+ */
+function panPosition(pan: number): number {
+  // MIDI's centre is 64, not the midpoint of 0-127, so the balance is taken
+  // either side of it and 0 lands a hair past hard left.
+  const balance = Math.max(-1, Math.min(1, (clamp7(pan) - 64) / 63));
+  return (balance + 1) / 2;
+}

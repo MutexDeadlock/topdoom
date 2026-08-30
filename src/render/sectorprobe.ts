@@ -109,14 +109,6 @@ export class SectorProbe {
     }
   }
 
-  private clampCol(v: number): number {
-    return Math.max(0, Math.min(this.cols - 1, Math.floor(v)));
-  }
-
-  private clampRow(v: number): number {
-    return Math.max(0, Math.min(this.rows - 1, Math.floor(v)));
-  }
-
   /**
    * Which sector a point is in, or -1 for void — the nearest linedef decides,
    * by which side of it the point falls on. Rings of grid cells are scanned
@@ -175,5 +167,13 @@ export class SectorProbe {
       if (y < this.sectorMinY[sector] - pad || y > this.sectorMaxY[sector] + pad) return false;
     }
     return true;
+  }
+
+  private clampCol(v: number): number {
+    return Math.max(0, Math.min(this.cols - 1, Math.floor(v)));
+  }
+
+  private clampRow(v: number): number {
+    return Math.max(0, Math.min(this.rows - 1, Math.floor(v)));
   }
 }

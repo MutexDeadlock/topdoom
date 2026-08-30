@@ -10,8 +10,8 @@ is docs/fogofwar.md.
 
 Every doomednum this engine knows sits in `game/things/doomednums.ts` as a named member of one
 `as const` object, and **every type-keyed table keys through it** — `THING_SPRITES`,
-`MONSTER_STATS`, the pickup records in `inventory.ts`, the membership sets, all of them — rather
-than spelling the number:
+`MONSTER_STATS`, the pickup records in `inventory/tables.ts`, the membership sets, all of them —
+rather than spelling the number:
 
 ```ts
 export const MONSTER_HEALTH: Record<number, number> = {
@@ -318,9 +318,9 @@ composes safely with floor-anchoring: geometry is translated so the plane's bott
 local `(0, 0)` *before* `scale` is applied, so scaling stretches the plane upward and outward from
 that point instead of moving its anchor.
 
-Animation (`setPose`'s `animFrames`/`animating`) is a plain frame-letter cycle with no separate idle
-art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D` as its walk cycle and holds
-`A` while not moving.
+Animation (`SpriteActorOptions.animFrames`, `SpritePose.animating`) is a plain frame-letter cycle
+with no separate idle art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D` as its
+walk cycle and holds `A` while not moving.
 
 Monsters gate `animating` on whether they actually stepped this frame (`ThingLayer.update`), like
 the player — but they run their own per-type frame tables rather than `THING_ANIM_FRAMES`, and a

@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { VIEWER_ANGLE_DEG } from '../../src/render/sprites.ts';
 import type { SpriteBank } from '../../src/wad/sprites.ts';
 import type { SpriteMaterialCache } from '../../src/render/sprites.ts';
-import type { SpriteFxLayer } from '../../src/game/spritefx.ts';
+import { SpriteFxLayer, type FogVisibility } from '../../src/game/spritefx.ts';
+import { SILENT } from '../../src/audio/sfx.ts';
+import type { DynamicLights } from '../../src/render/lights.ts';
 
 /**
  * The two stubs that get `ThingLayer`/`SpriteFxLayer` running headless: both
@@ -69,4 +71,20 @@ export function recordingBank(): { bank: SpriteBank; asked: string[] } {
     },
   } as unknown as SpriteBank;
   return { bank, asked };
+}
+
+/**
+ * A `SpriteFxLayer` on the stub banks, silent and with no arch-vile flame — the
+ * four settings every effects test shares. Callers pass only what they vary, and
+ * still `beginLevel` it themselves, since which `World` a layer runs over is part
+ * of what those tests are saying.
+ */
+export function fxLayer(options: { fogVisible: FogVisibility; lights?: DynamicLights }): SpriteFxLayer {
+  return new SpriteFxLayer(new THREE.Scene(), {
+    spriteBank: ROT0_BANK,
+    spriteMaterials: MATERIALS,
+    audio: SILENT,
+    resolveVileFlame: () => null,
+    ...options,
+  });
 }

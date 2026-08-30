@@ -40,22 +40,15 @@ import {
 } from './tables.ts';
 
 /**
- * Above this, a `Width`/`Height`/missile `Speed` value is read as 16.16 fixed point, and below it
- * as plain map units.
- *
- * **A heuristic, not a vanilla rule.** DeHackEd writes what the exe stores, which is fixed point,
- * but a hand-edited patch writes map units — EPIC.WAD's `Thing 97 / Radius = 2` means two map
- * units, not 1/32768 of one. The two ranges sit two orders of magnitude apart with nothing
- * between them: the largest plain radius in `info.c` is `MT_SPIDER`'s 128, and the smallest
- * fixed-point one is `MT_TROOPSHOT`'s `6*FRACUNIT` = 393216. docs/dehacked.md § Units.
+ * One `key = value` line, as every field reader sees it: what it says, the record word a warning
+ * about it is filed under, and the log it goes to. Built once per line, in `parseDehacked`.
  */
-const FIXED_POINT_THRESHOLD = 4096;
-
-/** `info.c` writes its fixed-point fields as `n*FRACUNIT`. */
-const FRACUNIT = 65536;
-
-/** A `Text` record's old string is only matched against a title if it could plausibly be one. */
-const MAX_TITLE_BYTES = 64;
+interface FieldLine {
+  field: string;
+  value: string;
+  label: string;
+  warnings: WarningLog;
+}
 
 /**
  * The two `key = value` lines that carry no edit and belong to no record. A patch may repeat them
@@ -67,16 +60,11 @@ const HEADER_KEYS = new Set(['doom version', 'patch format']);
 /** Pristine sprite names, lowercased, for the `[SPRITES]` and `Text 4 4` rename lookups. */
 const SPRITE_MNEMONICS = new Set(SPRITE_NAMES.map((name) => name.toLowerCase()));
 
-/** Reads a fixed-point-or-map-units field down to plain map units. */
-function mapUnits(raw: number): number {
-  return Math.abs(raw) >= FIXED_POINT_THRESHOLD ? raw / FRACUNIT : raw;
-}
-
 /**
- * Collects warnings deduped by `(record, field, support)`, which is what keeps a report readable.
- * Also the merge point across a set's several lumps (`readDehacked`), so one dedupe key serves
- * both. `support` is in the key because one record word can land differently by index — a
- * `Frame` on a muzzle flash has no target, one past the table is unknown — and a row has one class.
+ * Collects warnings deduped by `(record, field, support)`, and the merge point across a set's
+ * several lumps (`readDehacked`), so one dedupe key serves both. `support` is in the key because
+ * one record word can land differently by index — a `Frame` on a muzzle flash has no target, one
+ * past the table is unknown — and a row carries one class.
  */
 export class WarningLog {
   private rows = new Map<string, DehWarning>();
@@ -90,6 +78,12 @@ export class WarningLog {
     for (const row of rows) this.absorb(row);
   }
 
+  /** Most serious first, so a report's opening line is the one worth reading. */
+  drain(): DehWarning[] {
+    const rank: Record<DehShortfall, number> = { unknown: 0, unsupported: 1, noTarget: 2 };
+    return [...this.rows.values()].sort((a, b) => rank[a.support] - rank[b.support] || b.count - a.count);
+  }
+
   private absorb(row: DehWarning): void {
     const key = `${row.record} ${row.field ?? ''} ${row.support}`;
     const seen = this.rows.get(key);
@@ -99,93 +93,6 @@ export class WarningLog {
     }
     this.rows.set(key, { ...row });
   }
-
-  /** Most serious first, so a report's opening line is the one worth reading. */
-  drain(): DehWarning[] {
-    const rank: Record<DehShortfall, number> = { unknown: 0, unsupported: 1, noTarget: 2 };
-    return [...this.rows.values()].sort((a, b) => rank[a.support] - rank[b.support] || b.count - a.count);
-  }
-}
-
-/**
- * A cursor over the raw lump text that yields lines but can also be jumped forward by a byte
- * count. That is the whole reason this parser doesn't just split on newlines: a vanilla `Text`
- * record is followed by two raw runs whose lengths it declares, and those runs routinely contain
- * newlines of their own — EPIC.WAD's level titles do. A line array would have already chopped
- * them apart. docs/dehacked.md § The record grammar.
- */
-class TextCursor {
-  private text: string;
-  at = 0;
-
-  constructor(text: string) {
-    this.text = text;
-  }
-
-  get done(): boolean {
-    return this.at >= this.text.length;
-  }
-
-  /** The next line, with the cursor left just past its terminator. */
-  nextLine(): string {
-    const end = this.text.indexOf('\n', this.at);
-    if (end === -1) {
-      const rest = this.text.slice(this.at);
-      this.at = this.text.length;
-      return rest;
-    }
-    const line = this.text.slice(this.at, end);
-    this.at = end + 1;
-    return line.endsWith('\r') ? line.slice(0, -1) : line;
-  }
-
-  /** Exactly `n` characters from the cursor, newlines included, consuming them. */
-  take(n: number): string {
-    const out = this.text.slice(this.at, this.at + n);
-    this.at += n;
-    return out;
-  }
-}
-
-/** `key = value`, or null for a comment, a blank, or a line that is not an assignment at all. */
-function assignment(line: string): { key: string; value: string } | null {
-  const body = line.split('#')[0];
-  const eq = body.indexOf('=');
-  if (eq === -1) return null;
-  const key = body.slice(0, eq).trim();
-  const value = body.slice(eq + 1).trim();
-  return key ? { key, value } : null;
-}
-
-/**
- * A `Bits` value, in either form a real patch writes — EPIC.WAD uses both, `Bits = SOLID` on one
- * thing and `Bits = 768` on another. A value with no letters in it is the numeric mask; anything
- * else is a `+`/`|`/`,`-separated mnemonic list. Returns the mask and any mnemonic the flag table
- * doesn't know.
- */
-function parseBits(value: string): { mask: number; unknown: string[] } {
-  if (/^[0-9][0-9\s]*$/.test(value.trim())) return { mask: Number(value.trim()) >>> 0, unknown: [] };
-  let mask = 0;
-  const unknown: string[] = [];
-  for (const token of value.split(/[+|,\s]+/).filter(Boolean)) {
-    const row = classifyDehackedFlag(token);
-    if (row) mask |= row.bit;
-    else unknown.push(token);
-  }
-  return { mask: mask >>> 0, unknown };
-}
-
-/**
- * A `Text` record is a raw substitution rather than a keyed edit, so what it changes has to be
- * recognised from the old string alone. Level titles are the one corpus this engine can act on:
- * normalized, they are exactly `LEVEL_NAMES`' own values, which is what lets a table lookup stand
- * in for reconstructing id's original bytes.
- */
-function titleSubstitution(oldText: string, newText: string): { from: string; to: string } | null {
-  if (oldText.length > MAX_TITLE_BYTES) return null;
-  const from = stripTitlePrefix(oldText);
-  if (!from) return null;
-  return { from, to: stripTitlePrefix(newText) };
 }
 
 /**
@@ -254,12 +161,12 @@ export function parseDehacked(
     const header = /^(\[[A-Za-z]+\]|[A-Za-z]+)(?:\s+(-?\d+))?/.exec(trimmed);
     const word = header ? header[1] : '';
     const classified = classifyDehackedRecord(word);
-    // A bracketed BEX section runs until the next bracket or a record kind we know. Without that,
+    // A bracketed BEX section runs until the next bracket or a record kind we know — otherwise
     // `[PARS]`' own `par 1 30` lines read as `Word N` record headers and eat the whole section.
     const inSection = kind === 'pars' || kind === 'strings';
-    // A `Word N` candidate carrying an `=` is a field line, whatever the word: `[CODEPTR]`'s body
-    // is `Frame 185 = A_PosAttack`, and reading that as a `Frame` record header would open an
-    // empty, applied-looking frame edit on every line of the section.
+    // A `Word N` candidate carrying an `=` is a field line whatever the word: `[CODEPTR]`'s body
+    // is `Frame 185 = A_PosAttack`, which as a `Frame` record header would open an empty,
+    // applied-looking frame edit on every line of the section.
     const isRecordHeader =
       header !== null &&
       (trimmed.startsWith('[') ||
@@ -276,8 +183,8 @@ export function parseDehacked(
 
       if (classified.support !== 'applied') {
         warnings.add(word, classified.support, recordDetailFor(word, trimmed, classified.support));
-        // Its own field lines say nothing the record header hasn't: a `Pointer` record's `Codep
-        // Frame` line would otherwise contribute a second row on top of the one that matters.
+        // Its field lines say nothing the header hasn't — a `Pointer` record's `Codep Frame` line
+        // would otherwise contribute a second row on top of the one that matters.
         skipping = true;
         continue;
       }
@@ -303,7 +210,7 @@ export function parseDehacked(
         }
         frame = { index };
       } else if (kind === 'text') {
-        readText(trimmed, cursor, titleLookup, strings, spriteRenames, warnings);
+        readText(trimmed, cursor, { titleLookup, strings, spriteRenames, warnings });
       }
       continue;
     }
@@ -317,9 +224,10 @@ export function parseDehacked(
     if (!pair) continue;
     if (HEADER_KEYS.has(pair.key.toLowerCase())) continue;
     if (skipping) continue;
+    const line: FieldLine = { field: pair.key, value: pair.value, label, warnings };
 
     if (kind === 'strings') {
-      readString(pair.key, pair.value, cursor, strings, warnings);
+      readString(line, cursor, strings);
       continue;
     }
     // A BEX `[SOUNDS]`/`[MUSIC]`/`[SPRITES]` entry is `mnemonic = name`, keyed by name rather than
@@ -335,18 +243,18 @@ export function parseDehacked(
       continue;
     }
     if (kind === 'sprite') {
-      readSpriteRename(pair.key, pair.value, spriteRenames, warnings);
+      readSpriteRename(line, spriteRenames);
       continue;
     }
     // The two action-pointer forms. Both land in `pointerEdits`; only the record spelling differs —
     // `Pointer` names its target on the header line and copies an action off another state, while
     // `[CODEPTR]` names both on the one line. docs/dehacked.md § Action pointers.
     if (kind === 'pointer') {
-      readPointerField(pointerState, pair.key, pair.value, pointerEdits, warnings);
+      readPointerField(pointerState, line, pointerEdits);
       continue;
     }
     if (kind === 'codeptr') {
-      readCodePointer(pair.key, pair.value, pointerEdits, warnings);
+      readCodePointer(line, pointerEdits);
       continue;
     }
 
@@ -358,18 +266,17 @@ export function parseDehacked(
     const key = pair.key.trim().toLowerCase();
     const value = Number(pair.value);
     if (kind === 'thing' && edit && row) {
-      editTouched = readThingField(edit, row, pair.key, pair.value, label, warnings) || editTouched;
+      editTouched = readThingField(edit, row, line) || editTouched;
     } else if (kind === 'frame' && frame) {
-      frameTouched = readFrameField(frame, pair.key, pair.value, label, warnings) || frameTouched;
+      frameTouched = readFrameField(frame, line) || frameTouched;
     } else if (kind === 'ammo' && ammo && Number.isFinite(value)) {
       if (key === 'max ammo') ammo.maxAmmo = value;
       else ammo.perAmmo = value;
     } else if (kind === 'weapon' && weapon && Number.isFinite(value)) {
-      readWeaponField(weapon, key, pair.key, value, label, warnings);
+      readWeaponField(weapon, value, line);
     } else if (kind === 'misc' && Number.isFinite(value)) {
-      // Keyed by the DEH name as written, not by the sink: `MISC_SINKS` is the applier's business,
-      // and half-resolving it here is what let `BFG Cells/Shot` report as applied while landing
-      // nowhere. `classifyDehackedField` has already rejected any name with no sink.
+      // Keyed by the DEH name as written, not by the sink — `MISC_SINKS` is the applier's
+      // business, and `classifyDehackedField` has already rejected any name with no sink.
       misc[key] = value;
     }
   }
@@ -405,6 +312,102 @@ export function parseDehacked(
 }
 
 /**
+ * Above this, a `Width`/`Height`/missile `Speed` value is read as 16.16 fixed point, and below it
+ * as plain map units. **A heuristic, not a vanilla rule** — the two ranges sit two orders of
+ * magnitude apart with nothing between them. docs/dehacked.md § Units.
+ */
+const FIXED_POINT_THRESHOLD = 4096;
+
+/** `info.c` writes its fixed-point fields as `n*FRACUNIT`. */
+const FRACUNIT = 65536;
+
+/** Reads a fixed-point-or-map-units field down to plain map units. */
+function mapUnits(raw: number): number {
+  return Math.abs(raw) >= FIXED_POINT_THRESHOLD ? raw / FRACUNIT : raw;
+}
+
+/**
+ * A cursor over the raw lump text that yields lines but can also be jumped forward by a byte count
+ * — which is why this parser doesn't split on newlines: a vanilla `Text` record's two declared-
+ * length runs routinely contain newlines of their own. docs/dehacked.md § The record grammar.
+ */
+class TextCursor {
+  private text: string;
+  at = 0;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+
+  get done(): boolean {
+    return this.at >= this.text.length;
+  }
+
+  /** The next line, with the cursor left just past its terminator. */
+  nextLine(): string {
+    const end = this.text.indexOf('\n', this.at);
+    if (end === -1) {
+      const rest = this.text.slice(this.at);
+      this.at = this.text.length;
+      return rest;
+    }
+    const line = this.text.slice(this.at, end);
+    this.at = end + 1;
+    return line.endsWith('\r') ? line.slice(0, -1) : line;
+  }
+
+  /** Exactly `n` characters from the cursor, newlines included, consuming them. */
+  take(n: number): string {
+    const out = this.text.slice(this.at, this.at + n);
+    this.at += n;
+    return out;
+  }
+}
+
+/** `key = value`, or null for a comment, a blank, or a line that is not an assignment at all. */
+function assignment(line: string): { key: string; value: string } | null {
+  const body = line.split('#')[0];
+  const eq = body.indexOf('=');
+  if (eq === -1) return null;
+  const key = body.slice(0, eq).trim();
+  const value = body.slice(eq + 1).trim();
+  return key ? { key, value } : null;
+}
+
+/**
+ * A `Bits` value, in either form a real patch writes — EPIC.WAD uses both, `Bits = SOLID` on one
+ * thing and `Bits = 768` on another. A value with no letters in it is the numeric mask; anything
+ * else is a `+`/`|`/`,`-separated mnemonic list. Returns the mask and any mnemonic the flag table
+ * doesn't know.
+ */
+function parseBits(value: string): { mask: number; unknown: string[] } {
+  if (/^[0-9][0-9\s]*$/.test(value.trim())) return { mask: Number(value.trim()) >>> 0, unknown: [] };
+  let mask = 0;
+  const unknown: string[] = [];
+  for (const token of value.split(/[+|,\s]+/).filter(Boolean)) {
+    const row = classifyDehackedFlag(token);
+    if (row) mask |= row.bit;
+    else unknown.push(token);
+  }
+  return { mask: mask >>> 0, unknown };
+}
+
+/** A `Text` record's old string is only matched against a title if it could plausibly be one. */
+const MAX_TITLE_BYTES = 64;
+
+/**
+ * A `Text` record is a raw substitution rather than a keyed edit, so what it changes is recognised
+ * from the old string alone. Level titles are the one corpus this engine can act on: normalized,
+ * they are exactly `LEVEL_NAMES`' own values. docs/dehacked.md § Strings.
+ */
+function titleSubstitution(oldText: string, newText: string): { from: string; to: string } | null {
+  if (oldText.length > MAX_TITLE_BYTES) return null;
+  const from = stripTitlePrefix(oldText);
+  if (!from) return null;
+  return { from, to: stripTitlePrefix(newText) };
+}
+
+/**
  * One sentence naming why a whole record class is skipped, so `RECORD_KINDS`' classification is
  * what decides — including `noTarget`, which is the numeric `Sound`/`Music`/`Sprite`/`Cheat`
  * records: those only move a pointer into the exe's own string table, which this engine has no
@@ -434,6 +437,14 @@ function detailFor(kind: DehRecordKind, field: string, support: DehSupport, row?
   return `\`${field}\` is out of scope here`;
 }
 
+/** Where a `Text` record's two halves can land: a sprite rename, a level title, or a warning. */
+interface TextSinks {
+  titleLookup: (title: string) => string | undefined;
+  strings: Map<string, string>;
+  spriteRenames: Map<string, string>;
+  warnings: WarningLog;
+}
+
 /**
  * A vanilla `Text <oldlen> <newlen>` record: two raw runs follow the header line, and the cursor
  * is jumped over exactly as many characters as it declares — see `TextCursor`.
@@ -442,14 +453,8 @@ function detailFor(kind: DehRecordKind, field: string, support: DehSupport, row?
  * first, as `d_deh.c`'s `deh_procText` does (`fromlen==4 && tolen==4`, against `sprnames[]`),
  * because that was how a patch renamed sprites before BEX gave it `[SPRITES]`.
  */
-function readText(
-  headerLine: string,
-  cursor: TextCursor,
-  titleLookup: (title: string) => string | undefined,
-  strings: Map<string, string>,
-  spriteRenames: Map<string, string>,
-  warnings: WarningLog,
-): void {
+function readText(headerLine: string, cursor: TextCursor, sinks: TextSinks): void {
+  const { titleLookup, strings, spriteRenames, warnings } = sinks;
   const lengths = /^Text\s+(\d+)\s+(\d+)/i.exec(headerLine);
   if (!lengths) {
     warnings.add('Text', 'unknown', `\`${headerLine}\` gives no byte counts`);
@@ -480,12 +485,8 @@ function readText(
  * the original names before any patch runs, so a rename never chains through an earlier one.
  * docs/dehacked.md § Sprite renames.
  */
-function readSpriteRename(
-  key: string,
-  value: string,
-  spriteRenames: Map<string, string>,
-  warnings: WarningLog,
-): void {
+function readSpriteRename(line: FieldLine, spriteRenames: Map<string, string>): void {
+  const { field: key, value, warnings } = line;
   const from = key.trim().toLowerCase();
   const to = value.trim().toUpperCase();
   if (!SPRITE_MNEMONICS.has(from)) {
@@ -504,14 +505,8 @@ function readSpriteRename(
  * the edit, which is what tells `closeRecord` an otherwise-empty record is worth filing.
  * docs/dehacked.md § Units.
  */
-function readThingField(
-  edit: DehThingEdit,
-  row: MobjRow,
-  field: string,
-  value: string,
-  label: string,
-  warnings: WarningLog,
-): boolean {
+function readThingField(edit: DehThingEdit, row: MobjRow, line: FieldLine): boolean {
+  const { field, value, label, warnings } = line;
   const raw = Number(value);
   const key = field.trim().toLowerCase();
   if (key !== 'bits' && !Number.isFinite(raw)) {
@@ -551,7 +546,7 @@ function readThingField(
         warnings.add(label, 'unknown', `\`Bits\` names \`${name}\`, which is not a mobjflag`, 'Bits');
       }
       // Keyed per flag, so the report names the one a patch wanted rather than counting `Bits`
-      // lines. The line itself still applies — only these flags of it don't.
+      // lines. The line still applies — only these flags of it don't.
       for (const flag of unhonoredFlags(bits.mask)) {
         const detail = `\`Bits\` asks for \`MF_${flag.name}\`, which has no sink here`;
         warnings.add(label, flag.support, detail, `Bits/${flag.name}`);
@@ -587,13 +582,8 @@ function readThingField(
  * here: a `Next frame` past the table or a `Sprite number` past `sprnames[]` would index nothing,
  * and is reported rather than carried.
  */
-function readFrameField(
-  frame: DehFrameEdit,
-  field: string,
-  value: string,
-  label: string,
-  warnings: WarningLog,
-): boolean {
+function readFrameField(frame: DehFrameEdit, line: FieldLine): boolean {
+  const { field, value, label, warnings } = line;
   const raw = Number(value);
   const key = field.trim().toLowerCase();
   const sink = FRAME_FIELD_SINKS[key];
@@ -604,8 +594,8 @@ function readFrameField(
     return false;
   }
   if (arg !== undefined) {
-    // Dense, so a slot a patch never wrote reads 0 — which is what `info.c` gives `misc1`/`misc2`
-    // on every state anyway, and what an MBF pointer reading an unwritten slot sees in vanilla.
+    // Dense, so a slot a patch never wrote reads 0 — `info.c`'s own `misc1`/`misc2` on every
+    // state, and what an MBF pointer reading an unwritten slot sees in vanilla.
     const args = [...(frame.args ?? [])];
     while (args.length < arg) args.push(0);
     args[arg] = raw;
@@ -645,7 +635,7 @@ function noState(subject: string): string {
 function pointerTarget(headerLine: string, warnings: WarningLog): number | null {
   // The word inside the parentheses is *not* checked: `deh_procPointer` scans `(%s %i)` and reads
   // the string into a buffer it never looks at, so `Pointer 426 (x 777)` is as valid as
-  // `(Frame 777)` — and mbfedit!.wad writes exactly that.
+  // `(Frame 777)` — which mbfedit!.wad writes.
   const paren = /\(\s*\S+\s+(-?\d+)\s*\)/.exec(headerLine);
   if (!paren) {
     warnings.add('Pointer', 'unknown', `\`${headerLine}\` names no target frame`);
@@ -667,13 +657,8 @@ function pointerTarget(headerLine: string, warnings: WarningLog): number | null 
  * `deh_codeptr[]`, a snapshot taken before any patch runs, so two repoints in sequence cannot
  * chain through each other. docs/dehacked.md § Action pointers.
  */
-function readPointerField(
-  state: number | null,
-  field: string,
-  value: string,
-  edits: DehPointerEdit[],
-  warnings: WarningLog,
-): void {
+function readPointerField(state: number | null, line: FieldLine, edits: DehPointerEdit[]): void {
+  const { field, value, warnings } = line;
   if (state === null) return;
   if (field.trim().toLowerCase() !== 'codep frame') {
     warnings.add('Pointer', 'unknown', `\`${field}\` is not a field of a \`Pointer\` record`, field);
@@ -684,14 +669,15 @@ function readPointerField(
     warnings.add('Pointer', 'unknown', noState(`${field} = ${value}`), field);
     return;
   }
-  filePointer('Pointer', state, STATES[source][3], edits, warnings);
+  filePointer({ state, action: STATES[source][3] }, 'Pointer', edits, warnings);
 }
 
 /**
  * One `[CODEPTR]` line, `FRAME nnn = Mnemonic`. `deh_procBexCodePointers` prefixes `A_` before
  * looking the mnemonic up, so a patch may write either spelling.
  */
-function readCodePointer(key: string, value: string, edits: DehPointerEdit[], warnings: WarningLog): void {
+function readCodePointer(line: FieldLine, edits: DehPointerEdit[]): void {
+  const { field: key, value, warnings } = line;
   const named = /^frame\s+(-?\d+)$/i.exec(key.trim());
   if (!named) {
     warnings.add('[CODEPTR]', 'unknown', `\`${key.trim()}\` is not a \`FRAME n\` line`);
@@ -707,25 +693,24 @@ function readCodePointer(key: string, value: string, edits: DehPointerEdit[], wa
     warnings.add('[CODEPTR]', 'unknown', `\`${value.trim()}\` is not an action pointer`, value.trim());
     return;
   }
-  filePointer('[CODEPTR]', state, action, edits, warnings);
+  filePointer({ state, action }, '[CODEPTR]', edits, warnings);
 }
 
 /**
- * Files one repoint under either spelling, and reports it under the *action* rather than the
- * record — which pointer a patch wanted is the part a reader can act on, the same reason a `Bits`
- * line reports per flag (docs/dehacked.md § Bits). A patch restating the action a state already has
- * raises nothing: whole `[CODEPTR]` blocks are written that way.
+ * Files one repoint under either spelling, and reports it under the *action* rather than the record
+ * — the same reason a `Bits` line reports per flag (docs/dehacked.md § Bits). A patch restating the
+ * action a state already has raises nothing: whole `[CODEPTR]` blocks are written that way.
  */
 function filePointer(
+  repoint: DehPointerEdit,
   label: string,
-  state: number,
-  action: string,
   edits: DehPointerEdit[],
   warnings: WarningLog,
 ): void {
+  const { state, action } = repoint;
   const verdict = classifyDehackedPointer(STATES[state][3], action, chainKindsOf(state));
   if (verdict === null) return;
-  edits.push({ state, action });
+  edits.push(repoint);
   if (verdict.support === 'applied') return;
   warnings.add(label, verdict.support, verdict.detail, action === NO_ACTION ? 'A_NULL' : action);
 }
@@ -735,15 +720,9 @@ function filePointer(
  * `WEAPON_STATE_FIELDS` maps it to. A pointer past `states[]` is reported rather than carried, the
  * same range check a `Thing`'s frame pointers get; 0 is `S_NULL` and is kept as written.
  */
-function readWeaponField(
-  weapon: DehWeaponEdit,
-  key: string,
-  field: string,
-  value: number,
-  label: string,
-  warnings: WarningLog,
-): void {
-  const pointer = WEAPON_STATE_FIELDS[key];
+function readWeaponField(weapon: DehWeaponEdit, value: number, line: FieldLine): void {
+  const { field, label, warnings } = line;
+  const pointer = WEAPON_STATE_FIELDS[field.trim().toLowerCase()];
   if (!pointer) {
     weapon.ammoType = value;
     return;
@@ -759,14 +738,9 @@ function readWeaponField(
  * One `[STRINGS]` entry. A line ending in a backslash continues onto the next, and the usual C
  * escapes are expanded — `deh_procStrings`.
  */
-function readString(
-  key: string,
-  first: string,
-  cursor: TextCursor,
-  strings: Map<string, string>,
-  warnings: WarningLog,
-): void {
-  let value = first;
+function readString(line: FieldLine, cursor: TextCursor, strings: Map<string, string>): void {
+  const { field: key, warnings } = line;
+  let value = line.value;
   while (value.endsWith('\\') && !cursor.done) {
     value = value.slice(0, -1) + cursor.nextLine().trim();
   }
@@ -777,8 +751,8 @@ function readString(
     .replace(/\\\\/g, '\\');
   const support = classifyDehackedString(key);
   if (support !== 'applied') {
-    // Only an unrecognised mnemonic earns a row. A `GOT*` or an `OB_MPFIST` is recognised and
-    // deliberately homeless, and reporting those said nothing a reader could act on.
+    // Only an unrecognised mnemonic earns a row: a `GOT*` or an `OB_MPFIST` is recognised and
+    // deliberately homeless.
     if (support === 'unknown') warnings.add('[STRINGS]', support, 'mnemonic this parser does not recognise');
     return;
   }

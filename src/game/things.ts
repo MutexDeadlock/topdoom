@@ -26,6 +26,7 @@ import {
   TELEFRAG_DAMAGE,
   type BarrelExplosion,
   type CrossingBody,
+  type DamageHit,
   type LevelKillItemStats,
   type MonsterRef,
   type PosedThing,
@@ -42,6 +43,7 @@ export {
   TELEFRAG_DAMAGE,
   type BarrelExplosion,
   type CrossingBody,
+  type DamageHit,
   type MonsterRef,
   type StandingBody,
   type ThingLayer,
@@ -763,16 +765,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     return out;
   }
 
-  function damage(
-    id: number,
-    amount: number,
-    source?: { id: number; type: number },
-    knockUpSpeed?: number,
-    fromX?: number,
-    fromY?: number,
-  ): void {
+  function damage(id: number, amount: number, hit?: DamageHit): void {
     const p = posed[id];
-    if (p) damageThing(p, amount, source, knockUpSpeed, fromX, fromY);
+    if (p) damageThing(p, amount, hit);
   }
 
   /**
@@ -1048,14 +1043,11 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * parameters. Split out from it so `telefragAt` can kill through the same path rather than
    * reaching for an ID it would have to look back up.
    */
-  function damageThing(
-    p: PosedThing,
-    amount: number,
-    source?: { id: number; type: number },
-    knockUpSpeed?: number,
-    fromX?: number,
-    fromY?: number,
-  ): void {
+  function damageThing(p: PosedThing, amount: number, hit?: DamageHit): void {
+    const source = hit?.source;
+    const knockUpSpeed = hit?.knockUpSpeed;
+    const fromX = hit?.from?.x;
+    const fromY = hit?.from?.y;
     const isBarrel = p.type === ThingType.barrel;
     if (p.dead || amount <= 0 || !(isBarrel || MONSTER_TYPES.has(p.type))) return;
     // The two AI-less shootables: no stats to roll pain against and no target to retarget, so

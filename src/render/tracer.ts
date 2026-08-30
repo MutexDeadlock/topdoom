@@ -58,37 +58,12 @@ const FADE_COLORS = new Float32Array([1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1]);
  */
 const materials = new Map<number, THREE.LineBasicMaterial>();
 
-function materialFor(color: number): THREE.LineBasicMaterial {
-  let material = materials.get(color);
-  if (!material) {
-    material = new THREE.LineBasicMaterial({
-      color,
-      fog: true,
-      vertexColors: true,
-      transparent: true,
-      // One translucent line among opaque geometry, the same trade the translucent
-      // sprite materials make (render/spritebatch.ts): not writing depth keeps it
-      // from punching a hole in whatever draws after it.
-      depthWrite: false,
-    });
-    materials.set(color, material);
-  }
-  return material;
-}
-
 /**
- * A thin line from a hitscan shot's origin to where it struck, that blinks
- * rapidly for its short lifetime rather than fading smoothly. The wall/flat
- * fading elsewhere (render/occlusion.ts) is an exponential lerp because it's
- * tracking *permanent* geometry that needs to ease in and out without
- * popping; a tracer is a one-shot effect gone in a fraction of a second, so a
- * literal flash/blink reads as a muzzle flash rather than a fade.
- *
- * Only the impact end is a real world anchor. The muzzle end belongs to a shooter
- * who has usually moved on by the time the line expires, so it starts short of them,
- * fades in over `FADE_LENGTH` rather than beginning at full brightness, and retracts
- * toward the impact over the lifetime rather than staying put — see docs/combat.md
- * § Effects and their batching.
+ * A thin line from a hitscan shot's origin to where it struck, blinking for its short lifetime
+ * rather than easing out the way `render/occlusion.ts`'s permanent geometry does. **Only the impact
+ * end is a real world anchor** — the muzzle end belongs to a shooter who has usually moved on, so
+ * it starts short of them, fades in over `FADE_LENGTH`, and retracts toward the impact.
+ * docs/combat.md § Effects and their batching.
  */
 export class Tracer {
   readonly line: THREE.Line;
@@ -140,6 +115,13 @@ export class Tracer {
   }
 
   /**
+   * Drops this tracer's own geometry. The material is shared and outlives it — see `materialFor`.
+   */
+  dispose(): void {
+    this.line.geometry.dispose();
+  }
+
+  /**
    * Puts the three vertices down for however far the tail has retracted by now: back
    * from the impact by what is left of the line, with the fade point `FADE_LENGTH`
    * ahead of it. Retraction is a constant *speed*, not a fraction of the line — the lag
@@ -162,11 +144,22 @@ export class Tracer {
     this.positions.setXYZ(2, this.impact.x, this.impact.y, this.impact.z);
     this.positions.needsUpdate = true;
   }
+}
 
-  /**
-   * Drops this tracer's own geometry. The material is shared and outlives it — see `materialFor`.
-   */
-  dispose(): void {
-    this.line.geometry.dispose();
+function materialFor(color: number): THREE.LineBasicMaterial {
+  let material = materials.get(color);
+  if (!material) {
+    material = new THREE.LineBasicMaterial({
+      color,
+      fog: true,
+      vertexColors: true,
+      transparent: true,
+      // One translucent line among opaque geometry, the same trade the translucent
+      // sprite materials make (render/spritebatch.ts): not writing depth keeps it
+      // from punching a hole in whatever draws after it.
+      depthWrite: false,
+    });
+    materials.set(color, material);
   }
+  return material;
 }

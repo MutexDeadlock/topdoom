@@ -85,25 +85,6 @@ export interface GenMidiInstrument {
   voices: GenMidiVoice[];
 }
 
-function readOperator(r: Reader): GenMidiOperator {
-  return {
-    tremolo: r.u8(),
-    attack: r.u8(),
-    sustain: r.u8(),
-    waveform: r.u8(),
-    scale: r.u8(),
-    level: r.u8(),
-  };
-}
-
-function readVoice(r: Reader): GenMidiVoice {
-  const modulator = readOperator(r);
-  const feedback = r.u8();
-  const carrier = readOperator(r);
-  r.u8(); // the record's one unused byte
-  return { modulator, feedback, carrier, baseNoteOffset: r.i16() };
-}
-
 /** The 175 instruments a `GENMIDI` lump's bytes carry, or null if it isn't one. */
 export function parseGenMidi(bytes: Uint8Array): GenMidiInstrument[] | null {
   if (bytes.length < GENMIDI_HEADER_SIZE + GENMIDI_RECORDS * GENMIDI_RECORD_SIZE) return null;
@@ -168,6 +149,25 @@ export class MusicBank {
     }
     return this.instruments;
   }
+}
+
+function readOperator(r: Reader): GenMidiOperator {
+  return {
+    tremolo: r.u8(),
+    attack: r.u8(),
+    sustain: r.u8(),
+    waveform: r.u8(),
+    scale: r.u8(),
+    level: r.u8(),
+  };
+}
+
+function readVoice(r: Reader): GenMidiVoice {
+  const modulator = readOperator(r);
+  const feedback = r.u8();
+  const carrier = readOperator(r);
+  r.u8(); // the record's one unused byte
+  return { modulator, feedback, carrier, baseNoteOffset: r.i16() };
 }
 
 function startsWith(bytes: Uint8Array, magic: readonly number[]): boolean {

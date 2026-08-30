@@ -1,6 +1,13 @@
 /**
  * MAP30's Icon of Sin: the boss eye's spitter, the spawn cube in flight, telefrag on landing and
  * the brain's death sequence. See docs/monster-iconofsin.md.
+ *
+ * Three `ThingType` members drive it. `bossShooter` (`MT_BOSSSPIT`) is the invisible eye that does
+ * the spitting, and the *only* thing that makes a map an Icon of Sin map; `bossTarget` is where a
+ * cube is aimed, `bossBrain` the shootable target itself. The first two are
+ * `MF_NOBLOCKMAP|MF_NOSECTOR` in `info.c` and neither has a sprite of its own, which is why both
+ * stay out of `THING_SPRITES` and are read straight off `map.things` here — the same treatment
+ * `SpecialsController.findTeleportDestination` gives the teleport-landing marker.
  */
 import type { DoomMap, Thing } from '../../wad/map.ts';
 import type { SpriteBank } from '../../wad/sprites.ts';
@@ -17,15 +24,6 @@ import type { Skill } from '../skill.ts';
 import type { Pos3 } from '../../types.ts';
 import { DOOM_TIC } from '../../constants.ts';
 import { pRandom, triangularDraw } from '../../util/random.ts';
-
-/**
- * Three `ThingType` members drive this file. `bossShooter` (`MT_BOSSSPIT`) is the invisible eye
- * that does the spitting, and the *only* thing that makes a map an Icon of Sin map; `bossTarget` is
- * where a cube is aimed, `bossBrain` the shootable target itself. The first two are
- * `MF_NOBLOCKMAP|MF_NOSECTOR` in `info.c` and neither has a sprite of its own, which is why both
- * stay out of `THING_SPRITES` and are read straight off `map.things` here — the same treatment
- * `SpecialsController.findTeleportDestination` gives the teleport-landing marker.
- */
 
 /**
  * Where the eye sights from, above its own floor: `MT_BOSSSPIT`'s `mobjinfo.height` of 32, less the
@@ -56,10 +54,9 @@ const CUBE_FRAME_SECONDS = 3 * DOOM_TIC;
  */
 const CUBE_SOUND_INTERVAL = CUBE_FRAMES.length * CUBE_FRAME_SECONDS;
 /**
- * Light a cube in flight is handed to the batch. Its `BOSF` frames carry vanilla's fullbright bit,
- * so `FULLBRIGHT_FRAMES` lifts them to 255 regardless (docs/sprites.md § Fullbright frames); this
- * is only what a patch that cleared that bit would see, and a cube tracks no sector of its own to
- * shade by — it crosses rooms `MF_NOCLIP`, so none is "its" room.
+ * Light a cube in flight is handed to the batch. Its `BOSF` frames already carry vanilla's
+ * fullbright bit, so this is only what a patch clearing that bit would see — and a cube crosses
+ * rooms `MF_NOCLIP`, so none is "its" room to shade by. docs/sprites.md § Fullbright frames.
  */
 const FULLBRIGHT = 255;
 
@@ -68,11 +65,10 @@ const SPAWN_FIRE_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 const SPAWN_FIRE_FRAME_SECONDS = 4 * DOOM_TIC;
 
 /**
- * The radius the *player* is telefragged against when a cube lands. Every type in
- * `SPAWN_CUBE_MONSTERS` has a `mobjinfo.radius` between 20 and 48, and the spawned body's own
- * `blockRadius` is what covers the monster half inside `ThingLayer.spawnMonster`; one mid-range
- * value for the player half keeps a spawn spot uniformly lethal to stand on, rather than lethal
- * only when the lottery happens to pick a fat monster.
+ * The radius the *player* is telefragged against when a cube lands — **tuned by feel**, mid-range
+ * across `SPAWN_CUBE_MONSTERS`' 20-to-48 `mobjinfo.radius` spread, so a spawn spot is uniformly
+ * lethal to stand on rather than lethal only when the lottery picks a fat monster. The monster half
+ * of the stomp runs off each body's own `blockRadius` inside `ThingLayer.spawnMonster`.
  */
 const PLAYER_TELEFRAG_RADIUS = 32;
 
@@ -102,27 +98,41 @@ const EXPLODE_FRAMES = ['B', 'C', 'D'];
 const EXPLODE_FRAME_SECONDS = 10 * DOOM_TIC;
 /**
  * How often the death cascade re-fires while the exit is pending, and how many bursts each pass
- * spawns. Vanilla's chain is genuinely unbounded — every `A_BrainExplode` spawns another rocket
- * whose own chain ends in `A_BrainExplode` again — and only stops because the level ends underneath
- * it. Bounding it on the same exit timer reproduces what that looks like without an ever-growing
- * effect list.
+ * spawns. Vanilla's `A_BrainExplode` chain is unbounded and only stops because the level ends
+ * underneath it. docs/monster-iconofsin.md § Dying.
  */
 const EXPLODE_CHAIN_INTERVAL = 3 * EXPLODE_FRAME_SECONDS;
 const EXPLODE_CHAIN_COUNT = 8;
 
-/** One `MT_SPAWNSHOT` in flight. */
-interface SpawnCube extends Pos3 {
-  anim: SpriteAnimator;
+/** Where a cube is headed and how far along it is — everything `makeCube` needs beside a position. */
+interface CubeFlight {
   angleRad: number;
   /** The `MT_BOSSTARGET` it was aimed at — where it turns into a monster. */
   target: Pos3;
   /** Distance still to cover, this engine's stand-in for vanilla's launch-time `reactiontime`. */
   remaining: number;
   soundTimer: number;
+}
+
+/** One `MT_SPAWNSHOT` in flight. */
+interface SpawnCube extends Pos3, CubeFlight {
+  anim: SpriteAnimator;
   /** Position at the end of the previous tic — docs/frameloop.md § Interpolation. */
   drawPrevX: number;
   drawPrevY: number;
   drawPrevZ: number;
+}
+
+/** What an `IconOfSin` is built with, beside the map it reads its three boss things off. */
+export interface IconOfSinOptions {
+  ctx: CombatContext;
+  effects: SpriteFxLayer;
+  spriteBank: SpriteBank;
+  spriteMaterials: SpriteMaterialCache;
+  skill: Skill;
+  /** Vanilla's `G_ExitLevel`, the same callback `SpecialsController` is handed. */
+  onExit: () => void;
+  sfx?: SoundEmitter;
 }
 
 /**
@@ -164,32 +174,22 @@ export class IconOfSin {
   private exitTimer = -1;
   private explodeTimer = 0;
 
-  constructor(
-    map: DoomMap,
-    ctx: CombatContext,
-    effects: SpriteFxLayer,
-    spriteBank: SpriteBank,
-    spriteMaterials: SpriteMaterialCache,
-    skill: Skill,
-    /** Vanilla's `G_ExitLevel`, the same callback `SpecialsController` is handed. */
-    onExit: () => void,
-    sfx: SoundEmitter = SILENT,
-  ) {
+  constructor(map: DoomMap, options: IconOfSinOptions) {
     this.map = map;
-    this.ctx = ctx;
-    this.effects = effects;
-    this.spriteBank = spriteBank;
-    this.spriteMaterials = spriteMaterials;
-    this.skill = skill;
-    this.onExit = onExit;
-    this.sfx = sfx;
+    this.ctx = options.ctx;
+    this.effects = options.effects;
+    this.spriteBank = options.spriteBank;
+    this.spriteMaterials = options.spriteMaterials;
+    this.skill = options.skill;
+    this.onExit = options.onExit;
+    this.sfx = options.sfx ?? SILENT;
     this.shooter = map.things.find((t) => t.type === ThingType.bossShooter) ?? null;
   }
 
   /**
-   * Whether the brain is dead and the level is on its way out — the `BRAIN_DEATH_TO_EXIT` cascade
-   * is running and `onExit` is now unavoidable. `game.ts` reads it to keep the death overlay and
-   * `R` off a level that is already ending. docs/death.md § Dying on the way out.
+   * Whether the brain is dead and the level is on its way out, so `onExit` is now unavoidable.
+   * `game.ts` reads it to keep the death overlay and `R` off a level that is already ending.
+   * docs/death.md § Dying on the way out.
    */
   get exiting(): boolean {
     return this.exitTimer >= 0;
@@ -238,40 +238,12 @@ export class IconOfSin {
     for (const c of s.cubes) {
       const target = this.targets[c.targetIndex];
       if (!target) continue;
-      const cube = this.makeCube({ x: c.x, y: c.y, z: c.z }, c.angleRad, target, c.remaining, c.soundTimer);
+      const cube = this.makeCube(
+        { x: c.x, y: c.y, z: c.z },
+        { angleRad: c.angleRad, target, remaining: c.remaining, soundTimer: c.soundTimer },
+      );
       if (cube) this.cubes.push(cube);
     }
-  }
-
-  /**
-   * One `MT_SPAWNSHOT` in flight, animator armed and interpolation seeded from
-   * where it stands. Null when this WAD set can't draw `BOSF` at all, which is
-   * a cube that simply never exists — the same silent drop a missing missile
-   * sprite gets. Shared by `brainSpit` and the savegame restore, so a restored
-   * cube can't be built differently from a freshly spat one.
-   */
-  private makeCube(
-    at: Pos3,
-    angleRad: number,
-    target: Pos3,
-    remaining: number,
-    soundTimer: number,
-  ): SpawnCube | null {
-    const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, 'BOSF', CUBE_FRAMES, CUBE_FRAME_SECONDS);
-    if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return null;
-    return {
-      anim,
-      x: at.x,
-      y: at.y,
-      z: at.z,
-      angleRad,
-      target,
-      remaining,
-      soundTimer,
-      drawPrevX: at.x,
-      drawPrevY: at.y,
-      drawPrevZ: at.z,
-    };
   }
 
   /**
@@ -310,11 +282,48 @@ export class IconOfSin {
   }
 
   /**
+   * Draws every cube still in flight, interpolated `alpha` of the way through
+   * the last tic. Runs inside the caller's `SpriteFxLayer.beginFrame`/`endFrame`
+   * pair, same as the cube's own update. docs/frameloop.md § Interpolation.
+   */
+  draw(alpha: number): void {
+    for (const c of this.cubes) {
+      this.drawAt.x = c.drawPrevX + (c.x - c.drawPrevX) * alpha;
+      this.drawAt.y = c.drawPrevY + (c.y - c.drawPrevY) * alpha;
+      this.drawAt.z = c.drawPrevZ + (c.z - c.drawPrevZ) * alpha;
+      this.effects.batchSprite(c.anim, this.drawAt, (c.angleRad * 180) / Math.PI, FULLBRIGHT);
+    }
+  }
+
+  /**
+   * One `MT_SPAWNSHOT` in flight, animator armed and interpolation seeded from where it stands.
+   * Null when this WAD set can't draw `BOSF` — the same silent drop a missing missile sprite gets.
+   * Shared by `brainSpit` and the savegame restore, so a restored cube can't be built differently
+   * from a freshly spat one.
+   */
+  private makeCube(at: Pos3, flight: CubeFlight): SpawnCube | null {
+    const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, 'BOSF', CUBE_FRAMES, CUBE_FRAME_SECONDS);
+    if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return null;
+    return {
+      anim,
+      x: at.x,
+      y: at.y,
+      z: at.z,
+      angleRad: flight.angleRad,
+      target: flight.target,
+      remaining: flight.remaining,
+      soundTimer: flight.soundTimer,
+      drawPrevX: at.x,
+      drawPrevY: at.y,
+      drawPrevZ: at.z,
+    };
+  }
+
+  /**
    * Idle `A_Look` on the eye, which is `MF_NOBLOCKMAP|MF_NOSECTOR` and has no `PosedThing` for
-   * `tryWake` to run on. Both of vanilla's wake paths are reproduced: its sector's `soundtarget`,
-   * and `P_LookForPlayers`' sight. No FOV cone, though `A_Look` passes `allaround == false` —
-   * gating the whole boss on the facing a mapper gave a thing that draws nothing is not worth
-   * reproducing. See docs/monster-iconofsin.md § Waking the eye.
+   * `tryWake` to run on. Both of vanilla's wake paths are reproduced — its sector's `soundtarget`
+   * and `P_LookForPlayers`' sight — but deliberately no FOV cone, though `A_Look` passes
+   * `allaround == false`. docs/monster-iconofsin.md § Waking the eye.
    */
   private eyeNotices(): boolean {
     if (!this.shooter) return false;
@@ -350,7 +359,12 @@ export class IconOfSin {
     const dx = target.x - this.shooter.x;
     const dy = target.y - this.shooter.y;
     const at = { x: this.shooter.x, y: this.shooter.y, z: this.ctx.world.floorAt(this.shooter.x, this.shooter.y) };
-    const cube = this.makeCube(at, Math.atan2(dy, dx), target, Math.hypot(dx, dy), 0);
+    const cube = this.makeCube(at, {
+      angleRad: Math.atan2(dy, dx),
+      target,
+      remaining: Math.hypot(dx, dy),
+      soundTimer: 0,
+    });
     if (!cube) return;
     this.cubes.push(cube);
     this.sfx.play('bospit', null);
@@ -358,9 +372,9 @@ export class IconOfSin {
 
   /**
    * Flies every cube and lands the ones that arrive. `MT_SPAWNSHOT` is
-   * `MF_NOBLOCKMAP|MF_NOCLIP|MF_NOGRAVITY`, so this deliberately tests nothing against the geometry
-   * it crosses and damages nothing on the way — which is exactly why a cube is not a
-   * `ProjectileLayer` projectile. See docs/monster-iconofsin.md § The spawn cube.
+   * `MF_NOBLOCKMAP|MF_NOCLIP|MF_NOGRAVITY`, so this tests nothing against the geometry it crosses
+   * and damages nothing on the way — which is why a cube is not a `ProjectileLayer` projectile.
+   * docs/monster-iconofsin.md § The spawn cube.
    */
   private updateCubes(dt: number): void {
     if (this.cubes.length === 0) return;
@@ -377,9 +391,8 @@ export class IconOfSin {
       }
       c.x += Math.cos(c.angleRad) * step;
       c.y += Math.sin(c.angleRad) * step;
-      // Eased toward the destination's own floor height rather than held flat: the eye and the
-      // spawn spots sit at different heights, and vanilla's cube carries a real `momz` out of
-      // `P_SpawnMissile`'s slope for the same reason.
+      // Eased toward the destination's own floor rather than held flat — the eye and the spawn
+      // spots sit at different heights, and vanilla's cube carries a real `momz` for that reason.
       const flat = Math.hypot(c.target.x - c.x, c.target.y - c.y);
       c.z += (c.target.z - c.z) * Math.min(1, step / Math.max(flat, step));
       c.soundTimer -= dt;
@@ -394,20 +407,6 @@ export class IconOfSin {
   }
 
   /**
-   * Draws every cube still in flight, interpolated `alpha` of the way through
-   * the last tic. Runs inside the caller's `SpriteFxLayer.beginFrame`/`endFrame`
-   * pair, same as the cube's own update. docs/frameloop.md § Interpolation.
-   */
-  draw(alpha: number): void {
-    for (const c of this.cubes) {
-      this.drawAt.x = c.drawPrevX + (c.x - c.drawPrevX) * alpha;
-      this.drawAt.y = c.drawPrevY + (c.y - c.drawPrevY) * alpha;
-      this.drawAt.z = c.drawPrevZ + (c.z - c.drawPrevZ) * alpha;
-      this.effects.batchSprite(c.anim, this.drawAt, (c.angleRad * 180) / Math.PI, FULLBRIGHT);
-    }
-  }
-
-  /**
    * `A_SpawnFly`: the fire puff, the teleport sound, one monster off the weighted table, and the
    * telefrag that comes with `P_TeleportMove`.
    */
@@ -418,7 +417,7 @@ export class IconOfSin {
     const last = SPAWN_CUBE_MONSTERS[SPAWN_CUBE_MONSTERS.length - 1];
     const entry = SPAWN_CUBE_MONSTERS.find((e) => roll < e.below) ?? last;
     // Facing the player: vanilla's newly spawned monster goes straight to its seestate with the
-    // player already acquired, so there is no idle facing for it to keep.
+    // player acquired, so there is no idle facing for it to keep.
     const angleRad = Math.atan2(this.ctx.player.y - at.y, this.ctx.player.x - at.x);
     const spawned = this.ctx.things?.spawnMonster(entry.type, at, angleRad);
     if (!spawned || this.ctx.playerDead) return;
@@ -479,8 +478,8 @@ export class IconOfSin {
 
   /**
    * Where the cascade is centred. Read off `map.things` rather than the `PosedThing`: the brain is
-   * already a corpse by the time this runs, and its map position is what vanilla's own
-   * `A_BrainScream` uses anyway — the mobj never moves.
+   * a corpse by the time this runs, and the mobj never moves, so its map position is what vanilla's
+   * `A_BrainScream` uses too.
    */
   private brainPos(): Thing | null {
     return this.map.things.find((t) => t.type === ThingType.bossBrain) ?? null;

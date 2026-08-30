@@ -4,6 +4,27 @@
  * See docs/wad.md § Loading and merging.
  */
 
+/**
+ * A lump read as a run of fixed-size records. Returns `[]` for a lump that is absent or
+ * too short to hold one, so a caller never has to guard the empty case itself; a trailing
+ * partial record is ignored, which is how a WAD with a slightly over-long lump still loads.
+ */
+export function records<T>(
+  data: Uint8Array | undefined,
+  offset: number,
+  size: number,
+  fn: (r: Reader) => T,
+): T[] {
+  if (!data || data.length - offset < size) return [];
+  const r = new Reader(data.buffer, data.byteOffset + offset, data.byteLength - offset);
+  const n = Math.floor((data.length - offset) / size);
+  const out: T[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    r.seek(i * size);
+    out[i] = fn(r);
+  }
+  return out;
+}
 /** Small little-endian cursor over an ArrayBuffer. */
 export class Reader {
   private view: DataView;
@@ -89,24 +110,3 @@ export class Reader {
   }
 }
 
-/**
- * A lump read as a run of fixed-size records. Returns `[]` for a lump that is absent or
- * too short to hold one, so a caller never has to guard the empty case itself; a trailing
- * partial record is ignored, which is how a WAD with a slightly over-long lump still loads.
- */
-export function records<T>(
-  data: Uint8Array | undefined,
-  offset: number,
-  size: number,
-  fn: (r: Reader) => T,
-): T[] {
-  if (!data || data.length - offset < size) return [];
-  const r = new Reader(data.buffer, data.byteOffset + offset, data.byteLength - offset);
-  const n = Math.floor((data.length - offset) / size);
-  const out: T[] = new Array(n);
-  for (let i = 0; i < n; i++) {
-    r.seek(i * size);
-    out[i] = fn(r);
-  }
-  return out;
-}

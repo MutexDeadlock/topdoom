@@ -1798,6 +1798,9 @@ export class World {
   /**
    * One subtree's share of `subsectorsAlongSegment`. The near half of a split recurses; the far
    * half continues in the loop, so the recursion depth is the tree's and not the segment's.
+   *
+   * The endpoints stay **scalars**, the coordinate-pair exception in docs/conventions.md § Named
+   * arguments: this recurses once per BSP node crossed, on the sight and shot paths.
    */
   private walkSegmentLeaves(
     child: number,

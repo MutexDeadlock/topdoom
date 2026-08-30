@@ -17,36 +17,13 @@ import type { Song } from './music/defs.ts';
  */
 const DEFAULT_VOLUME = 0.6;
 
-/**
- * Where the bus' safety curve starts bending, and how finely it is sampled.
- * **Tuned by feel.** A dense track's transients leave the chip past full scale
- * — drum hits in DOOM 2's `D_RUNNIN` reach nearly twice it — and this is what
- * catches them, *after* the volume rather than before: at any normal setting
- * the signal never reaches the bend, so those transients arrive intact, and
- * only someone running the music at full volume trades a little shaping for
- * not clipping. Shaping inside the chip instead costs every drum hit whatever
- * the volume is set to. See docs/music.md § Volume.
- */
-const SOFT_CLIP_KNEE = 0.7;
-const SOFT_CLIP_STEPS = 4096;
-
 const VOLUME_STORAGE_KEY = 'topdoom.musicVolume';
 
 /**
- * How much audio is rendered at a time and how far ahead of the clock the
- * scheduler keeps. Both **tuned by feel**, and they answer different questions.
- *
- * The chunk is a *burst* of main-thread work — a dense track costs about 2 ms
- * of synthesis per quarter second — so it stays short enough to disappear into
- * a frame. It costs nothing in quality to keep it short: the chip renders at
- * the context's own rate, so consecutive chunks are sample-exact continuations
- * of each other rather than separately resampled fragments.
- *
- * The lookahead is the opposite concern: a queue that runs dry is an audible
- * dropout, so it covers the longest stall the main thread can have — a level
- * load, a big GC, or a background tab throttling this timer to one call a
- * second. Stopping is unaffected by it: the scheduled sources are stopped
- * outright rather than left to run out.
+ * How much audio is rendered at a time and how far ahead of the clock the scheduler keeps. Both
+ * **tuned by feel**, and they answer different questions: the chunk is a burst of main-thread work
+ * kept short enough to disappear into a frame, the lookahead covers the longest stall the main
+ * thread can have. docs/music.md § Getting it to the speakers.
  */
 const CHUNK_SECONDS = 0.25;
 const LOOKAHEAD_SECONDS = 2.5;
@@ -64,33 +41,12 @@ interface Playback {
   /** Context time the next chunk is scheduled at. */
   nextChunkAt: number;
   /**
-   * Frames per chunk, at the context's own sample rate — the chip renders
-   * straight to it, so nothing is resampled between here and the speakers. An
-   * exact frame count is also what keeps consecutive chunks butting up against
-   * each other instead of drifting apart by a rounding error each time.
+   * Frames per chunk, at the context's own sample rate — nothing is resampled between the chip and
+   * the speakers, and an exact frame count is what keeps consecutive chunks butting up against
+   * each other rather than drifting apart by a rounding error each time.
    */
   chunkFrames: number;
   sources: Set<AudioBufferSourceNode>;
-}
-
-/**
- * The bus' transfer curve: straight through below `SOFT_CLIP_KNEE`, asymptotic
- * above it. A `WaveShaperNode` clamps its input to -1..1 before looking up, so
- * the curve's ends are also the ceiling — anything past full scale lands there
- * softly instead of squaring off.
- */
-function softClipCurve(): Float32Array<ArrayBuffer> {
-  const curve = new Float32Array(SOFT_CLIP_STEPS);
-  for (let i = 0; i < SOFT_CLIP_STEPS; i++) {
-    const x = (i / (SOFT_CLIP_STEPS - 1)) * 2 - 1;
-    const magnitude = Math.abs(x);
-    const over = (magnitude - SOFT_CLIP_KNEE) / (1 - SOFT_CLIP_KNEE);
-    curve[i] =
-      magnitude <= SOFT_CLIP_KNEE
-        ? x
-        : Math.sign(x) * (SOFT_CLIP_KNEE + (1 - SOFT_CLIP_KNEE) * Math.tanh(over));
-  }
-  return curve;
 }
 
 /**
@@ -157,11 +113,6 @@ export class MusicPlayer {
     return this._volume;
   }
 
-  /** What the track actually comes out at: this slider and the master multiplied. */
-  private get audible(): number {
-    return this._volume * this._master;
-  }
-
   /**
    * 0-1; persisted, so it survives a reload. As with sfx there is no separate
    * mute: 0 stops the track outright rather than rendering a chip nobody can
@@ -177,24 +128,13 @@ export class MusicPlayer {
 
   /**
    * The master slider, as this player's gate and nothing else — `AudioEngine.setMasterVolume` owns
-   * the value and the gain node. Silent is silent whichever slider got there, so a master of 0
-   * stops the track for the same reason this one's own 0 does: no chip rendered that nobody can
-   * hear.
+   * the value and the gain node. A master of 0 stops the track for the same reason this one's own 0
+   * does: no chip rendered that nobody can hear.
    */
   setMasterVolume(value: number): void {
     const previous = this.audible;
     this._master = Math.max(0, Math.min(1, value));
     this.regate(previous);
-  }
-
-  /**
-   * The gate both sliders close and open, given what was audible before one of them moved. Written
-   * once because the rule is one rule: silence stops the chip outright whichever slider reached it,
-   * and coming back up from silence restarts the track from the beginning.
-   */
-  private regate(previous: number): void {
-    if (this.audible === 0) this.stopPlayback();
-    else if (previous === 0) this.start();
   }
 
   /** The WAD set's music lumps, for as long as a level owns them. Stops whatever was playing. */
@@ -222,18 +162,29 @@ export class MusicPlayer {
   }
 
   /**
-   * Main-thread milliseconds spent synthesizing since the last call, zeroed by
-   * the read. This work is driven by a timer rather than the frame loop, so the
-   * frame that follows it reports it (`FrameProfiler.offFrame`, DEVMODE's
-   * `Music` bar) — a chunk costs about two milliseconds and lands every quarter
-   * second, a burst the profiler spreads over frames into the per-frame average
-   * it really is (docs/menu.md § Profiling overlay). Zero for a
-   * container-format track, which the browser decodes.
+   * Main-thread milliseconds spent synthesizing since the last call, zeroed by the read. Driven by
+   * a timer rather than the frame loop, so the frame that follows reports it
+   * (`FrameProfiler.offFrame`, DEVMODE's `Music` bar — docs/menu.md § Profiling overlay). Zero for
+   * a container-format track, which the browser decodes.
    */
   takeRenderMs(): number {
     const ms = this.renderMs;
     this.renderMs = 0;
     return ms;
+  }
+
+  /** What the track actually comes out at: this slider and the master multiplied. */
+  private get audible(): number {
+    return this._volume * this._master;
+  }
+
+  /**
+   * The gate both sliders close and open, given what was audible before one of them moved: silence
+   * stops the chip whichever slider reached it, and coming back up restarts the track.
+   */
+  private regate(previous: number): void {
+    if (this.audible === 0) this.stopPlayback();
+    else if (previous === 0) this.start();
   }
 
   private start(): void {
@@ -243,8 +194,8 @@ export class MusicPlayer {
 
     if (lump.kind === 'encoded') {
       const token = ++this.decodeToken;
-      // `decodeAudioData` detaches the buffer it is given, and the lump's bytes
-      // are a view into the whole WAD file — so it gets a copy, not that view.
+      // `decodeAudioData` detaches the buffer it is given, and the lump's bytes are a view into
+      // the whole WAD file — so it gets a copy, not that view.
       void ctx
         .decodeAudioData(lump.bytes.slice().buffer)
         .then((buffer) => {
@@ -268,8 +219,8 @@ export class MusicPlayer {
       return;
     }
     const song = lump.kind === 'mus' ? decodeMus(lump.bytes) : decodeMidi(lump.bytes);
-    // A score with no events, or with all of them at time zero, has no loop to
-    // walk — and `renderChunk` would spin restarting it.
+    // A score with no events, or all of them at time zero, has no loop to walk — `renderChunk`
+    // would spin restarting it.
     if (!song || song.events.length === 0 || song.duration <= 0) return;
 
     const chip = new OplChip(ctx.sampleRate);
@@ -318,16 +269,16 @@ export class MusicPlayer {
   }
 
   /**
-   * Keeps the scheduled audio a lookahead ahead of the context clock. A
-   * suspended context (the menu is open) stops advancing `currentTime`, so this
-   * naturally stops queueing and the music resumes where it left off.
+   * Keeps the scheduled audio a lookahead ahead of the context clock. A suspended context (the menu
+   * is open) stops advancing `currentTime`, so this stops queueing on its own and the music resumes
+   * where it left off.
    */
   private pump(): void {
     const ctx = this.ctx;
     const playback = this.playback;
     if (!ctx || !playback || !this.bus) return;
-    // Scheduling in the past would play the chunk immediately and stack the
-    // song on top of itself — a tab asleep long enough for that resyncs instead.
+    // Scheduling in the past would play the chunk at once and stack the song on top of itself —
+    // a tab asleep long enough for that resyncs instead.
     if (playback.nextChunkAt < ctx.currentTime) playback.nextChunkAt = ctx.currentTime;
     while (playback.nextChunkAt < ctx.currentTime + LOOKAHEAD_SECONDS) {
       const t0 = performance.now();
@@ -343,19 +294,16 @@ export class MusicPlayer {
         playback.sources.delete(source);
         source.disconnect();
       };
-      // By the buffer's own frame count, not by `CHUNK_SECONDS`: the two agree
-      // to a rounding error, and it is the frames that decide where the audio
-      // actually ends — a chunk starting a few microseconds early or late leaves
-      // a seam right in the middle of whatever note spans it.
+      // By the buffer's own frame count, not by `CHUNK_SECONDS`: the frames decide where the
+      // audio actually ends, and a chunk a few microseconds off leaves a seam mid-note.
       playback.nextChunkAt += playback.chunkFrames / ctx.sampleRate;
     }
   }
 
   /**
-   * One chunk of chip output, with the song's events applied at the sample they
-   * fall on: render up to the next event, apply every event due at that moment,
-   * repeat. Reaching the end wraps to the start — every DOOM track loops
-   * (`I_PlaySong(handle, looping)`) — and takes the chip's voices with it, so a
+   * One chunk of chip output, with the song's events applied at the sample they fall on: render up
+   * to the next event, apply every event due there, repeat. Reaching the end wraps to the start —
+   * every DOOM track loops (`I_PlaySong(handle, looping)`) — and resets the chip's voices, so a
    * note still held at the last event can't hang over the loop.
    */
   private renderChunk(playback: Playback, ctx: AudioContext): AudioBuffer {
@@ -370,8 +318,8 @@ export class MusicPlayer {
     let written = 0;
     while (written < total) {
       if (playback.event >= song.events.length) {
-        // Render the tail after the last event before restarting, so a track
-        // that ends on a held chord keeps it rather than cutting to the top.
+        // The tail after the last event renders before the restart, so a track ending on a held
+        // chord keeps it rather than cutting to the top.
         const remaining = Math.max(0, Math.round((song.duration - playback.time) * rate));
         const count = Math.min(total - written, remaining);
         if (count > 0) {
@@ -403,12 +351,9 @@ export class MusicPlayer {
 }
 
 /**
- * Which `D_*` lump a map plays — the same resolver shape as `LevelNames` and
- * `LevelProgression`: `Game` holds one of these and asks one question. The
- * chain is the set's own MAPINFO first, then vanilla's `S_Start` choice, then
- * a lump named after the map itself — the convention a PWAD with map names of
- * its own follows — each gated on the lump actually existing.
- * docs/music.md § Which track a level plays.
+ * Which `D_*` lump a map plays — the same resolver shape as `LevelNames` and `LevelProgression`.
+ * The chain is the set's own MAPINFO, then vanilla's `S_Start` choice, then a lump named after the
+ * map itself, each gated on the lump existing. docs/music.md § Which track a level plays.
  */
 export class LevelMusic {
   /** Only `has` is needed of the bank — structural, so tests can pass a plain lump-name set. */
@@ -449,4 +394,31 @@ export class LevelMusic {
     const track = finaleMusicFor(mapName);
     return this.bank.has(track) ? track : null;
   }
+}
+
+/**
+ * Where the bus' safety curve starts bending, and how finely it is sampled. **Tuned by feel.** It
+ * catches the chip's over-scale transients *after* the volume rather than before, so at any normal
+ * setting they arrive intact. docs/music.md § Volume.
+ */
+const SOFT_CLIP_KNEE = 0.7;
+const SOFT_CLIP_STEPS = 4096;
+
+/**
+ * The bus' transfer curve: straight through below `SOFT_CLIP_KNEE`, asymptotic above it. A
+ * `WaveShaperNode` clamps its input to -1..1 before looking up, so the curve's ends are also the
+ * ceiling — anything past full scale lands there softly instead of squaring off.
+ */
+function softClipCurve(): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(SOFT_CLIP_STEPS);
+  for (let i = 0; i < SOFT_CLIP_STEPS; i++) {
+    const x = (i / (SOFT_CLIP_STEPS - 1)) * 2 - 1;
+    const magnitude = Math.abs(x);
+    const over = (magnitude - SOFT_CLIP_KNEE) / (1 - SOFT_CLIP_KNEE);
+    curve[i] =
+      magnitude <= SOFT_CLIP_KNEE
+        ? x
+        : Math.sign(x) * (SOFT_CLIP_KNEE + (1 - SOFT_CLIP_KNEE) * Math.tanh(over));
+  }
+  return curve;
 }

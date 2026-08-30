@@ -1,7 +1,8 @@
 # Pickups, inventory and powerups
 
-`src/game/inventory.ts`, `src/game/things.ts: ThingLayer.tryPickup`,
-`src/game/specials/sectoreffects.ts`, `src/ui/hud/screeneffects.ts`, `src/game.ts`
+`src/game/inventory.ts` (with `inventory/defs.ts` for the shapes and `inventory/tables.ts` for the
+pickup data), `src/game/things.ts: ThingLayer.tryPickup`, `src/game/specials/sectoreffects.ts`,
+`src/ui/hud/screeneffects.ts`, `src/game.ts`
 
 What any of this *looks like* on screen — the HUD panels reading off `Inventory`, the powerup strip,
 the screen tints the powers drive — is docs/hud.md.
@@ -250,7 +251,8 @@ mapper hid elsewhere; E1M2's sector 21 secret is exactly this shape.
 Vanilla's `P_GiveAmmo` multiplies a pickup's `num` by `clipammo[type]`, so an ammo item's real
 worth is a **clip count**, not an amount. `AMMO_PICKUPS` and `WEAPON_PICKUPS` (`inventory.ts`) hold
 that count — a clip is one, a box is five, a weapon hands over two, a monster drop half — and every
-grant multiplies it by `CLIP_AMMO` at the point of use. Keeping vanilla's indirection rather than
+grant multiplies it by `CLIP_AMMO` (which stays in `inventory.ts`, since a patch writes it) at the
+point of use. Keeping vanilla's indirection rather than
 folding it flat is what lets a DEHACKED `Ammo N / Per ammo` line reach the pickups as well as the
 backpack, with nothing re-derived.
 

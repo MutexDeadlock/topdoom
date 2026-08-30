@@ -56,27 +56,13 @@ export function applyProfilerVisible(): void {
 }
 
 /**
- * One of the two total rows: the milliseconds and the frame rate they alone would allow. Shared so
- * the pair stays formatted alike — they are meant to be read against each other.
- */
-function msRow(label: string, ms: number): string {
-  return `${label} ${ms.toFixed(1)} ms  (${Math.round(1000 / Math.max(ms, 0.001))} fps eq.)`;
-}
-
-/**
- * The per-category timing overlay (top-right — see profilerhud.css). Renders
- * `FrameProfiler`'s smoothed samples as horizontal bars sized against one
- * 60fps frame's budget rather than against each other, so a glance at bar
- * *length* (not just the ms text) says whether a category is comfortably
- * cheap or the actual reason a frame is being missed — the stated goal being
- * to spot bottlenecks quickly, not just log numbers.
+ * The per-category timing overlay (top-right — see profilerhud.css). Renders `FrameProfiler`'s
+ * smoothed samples as bars sized against one 60fps frame's budget rather than against each other,
+ * so bar *length* alone says whether a category is the reason a frame is being missed.
+ * docs/menu.md § Profiling overlay.
  *
- * Rows are created lazily, the first time a label is seen, and reused after
- * that (matching `Hud`'s "draw icons once, update fields every frame"
- * approach) — cheaper than rebuilding the DOM every frame, and avoids the
- * flicker that would cause. Rows are re-sorted worst-first on every update
- * (`appendChild` on an existing child just moves it, no new node) so the
- * biggest cost is always the first thing the eye lands on.
+ * Rows are created lazily and reused, the same "build once, update every frame" shape `Hud` uses,
+ * and re-sorted worst-first on each update (`appendChild` on an existing child just moves it).
  */
 export class ProfilerHud {
   private root = document.getElementById('profiler-hud')!;
@@ -146,4 +132,12 @@ export class ProfilerHud {
       this.rowsEl.appendChild(entry.row);
     }
   }
+}
+
+/**
+ * One of the two total rows: the milliseconds and the frame rate they alone would allow. Shared so
+ * the pair stays formatted alike — they are meant to be read against each other.
+ */
+function msRow(label: string, ms: number): string {
+  return `${label} ${ms.toFixed(1)} ms  (${Math.round(1000 / Math.max(ms, 0.001))} fps eq.)`;
 }

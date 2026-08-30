@@ -50,51 +50,6 @@ export function worldToDoom(x: number, y: number, z: number, out: Pos3 = { x: 0,
   return out;
 }
 
-interface Batch {
-  key: string;
-  kind: SurfaceKind;
-  texture: string;
-  positions: number[];
-  uvs: number[];
-  colors: number[];
-  /**
-   * Per vertex, the BSP leaf the surface faces into — the `aLightCell` attribute (docs/lights.md §
-   * Light stops at walls).
-   */
-  cells: number[];
-}
-
-/** A batch's identity, and the key `MoverMesh.meshes` files its three.js mesh under. */
-function batchKey(kind: SurfaceKind, texture: string): string {
-  return kind + ':' + texture;
-}
-
-/** The batches a build is accumulating into, one per `batchKey`. */
-class BatchSet {
-  private batches = new Map<string, Batch>();
-
-  get(kind: SurfaceKind, texture: string): Batch {
-    const key = batchKey(kind, texture);
-    let b = this.batches.get(key);
-    if (!b) {
-      b = { key, kind, texture, positions: [], uvs: [], colors: [], cells: [] };
-      this.batches.set(key, b);
-    }
-    return b;
-  }
-
-  /**
-   * The batch `key` names, or undefined — `WallOccluder.key` is the same `kind + ':' + texture`.
-   */
-  byKey(key: string): Batch | undefined {
-    return this.batches.get(key);
-  }
-
-  all(): Batch[] {
-    return [...this.batches.values()];
-  }
-}
-
 /**
  * What each of `COLORMAP`'s 32 rows does to brightness, as a **linear-light** multiplier —
  * measured from the real lump, one baked table for DOOM, DOOM2 and Freedoom.
@@ -162,20 +117,6 @@ export function litColor(light: number, contrast = 0): number {
 }
 
 /**
- * How opaque a Boom 260 midtexture draws: `tran_filter_pct`'s default of 66 (`m_misc.c`'s config
- * table), the percentage Boom generates its `TRANMAP` at. Every 260 line gets this one value —
- * docs/specials.md § Translucent midtextures.
- */
-const TRANSLUCENT_ALPHA = 0.66;
-
-/**
- * How much water a Boom 242 sector needs before its surface is drawn over a pool bottom rather
- * than simply *being* the drawn floor. **Tuned by feel** against the artifact it stops: two fans
- * a map unit apart z-fight (BOOMEDIT MAP01 sector 405). docs/specials.md § Deep water.
- */
-const WATER_MIN_DEPTH = 8;
-
-/**
  * The longest quad `addWall` emits before cutting a wall into several, so the occlusion fade has
  * vertices to put a gradient on. **Tuned by feel** against vertex count, which grows with
  * `1 / this`, and carrying an unenforced relationship to `occlusion.ts`'s `FADE_CORE` —
@@ -199,39 +140,6 @@ export const FLAT_GRID_LEN = WALL_CHUNK_LEN / Math.SQRT2;
  * number.
  */
 export const FLAT_TEX_SIZE = 64;
-
-/**
- * `processFlat`'s two loop bodies, hoisted out of a function a mover rebuild runs per subsector per
- * tic.
- */
-const FLOOR_ONLY = [false];
-const FLOOR_AND_CEILING = [false, true];
-
-/**
- * One vertex into a batch's four attribute arrays. Scalars rather than a record, and the file's
- * only signature this long: it runs once per emitted vertex, so a point parameter would allocate
- * one per vertex — docs/conventions.md § Named arguments.
- */
-function pushVertex(
-  b: Batch,
-  x: number,
-  y: number,
-  z: number,
-  u: number,
-  v: number,
-  c: number,
-  alpha = 1,
-  /**
-   * -1 leaves the leaf unresolved: wall quads get theirs from `fillWallCells` once the occluders
-   * exist.
-   */
-  cell = -1,
-): void {
-  b.positions.push(x, y, z);
-  b.uvs.push(u, v);
-  b.colors.push(c, c, c, alpha);
-  b.cells.push(cell);
-}
 
 /**
  * How far past a wall's face its leaf is probed. A face sits exactly on the boundary between the
@@ -289,27 +197,6 @@ export function twoSidedBands(
   out.upperBot = ceilingFacing(transfers, other, otherIndex, secIndex);
   out.upperTop = sec.ceilHeight;
   out.skyPair = sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT;
-}
-
-/**
- * Resolves each wall quad's leaf and stamps it onto that quad's vertices, so the dynamic-light
- * shader can ask whether a light reached the room this wall faces. Runs once the quads exist
- * rather than inside `addWall`, for a value the occluder records anyway. Without
- * `MapMeshOptions.subsectorAt` (tests, tools) the quads stay at -1, which the shader reads as an
- * empty light list — unlit. docs/lights.md § Light stops at walls.
- */
-function fillWallCells(build: Build): void {
-  const { subsectorAt, batches } = build;
-  if (!subsectorAt) return;
-  const probe: Pos2 = { x: 0, y: 0 };
-  for (const o of build.occluders) {
-    if (Math.hypot(o.bx - o.ax, o.by - o.ay) < 1e-6) continue;
-    wallProbePoint(o.ax, o.ay, o.bx, o.by, probe);
-    o.subsector = subsectorAt(probe.x, probe.y);
-    const cells = batches.byKey(o.key)?.cells;
-    if (!cells) continue;
-    for (let v = 0; v < o.vertexCount; v++) cells[o.vertexStart + v] = o.subsector;
-  }
 }
 
 /**
@@ -682,6 +569,98 @@ export function refreshMoverMesh(mesh: MoverMesh, mover: MoverBuild, sectorIndex
   for (let i = 0; i < wallQuads.length; i++) copyRefreshedQuad(mesh.wallQuads[i], wallQuads[i]);
   applyFlatRefresh(mesh, plan);
   return true;
+}
+
+interface Batch {
+  key: string;
+  kind: SurfaceKind;
+  texture: string;
+  positions: number[];
+  uvs: number[];
+  colors: number[];
+  /**
+   * Per vertex, the BSP leaf the surface faces into — the `aLightCell` attribute (docs/lights.md §
+   * Light stops at walls).
+   */
+  cells: number[];
+}
+
+/** The batches a build is accumulating into, one per `batchKey`. */
+class BatchSet {
+  private batches = new Map<string, Batch>();
+
+  get(kind: SurfaceKind, texture: string): Batch {
+    const key = batchKey(kind, texture);
+    let b = this.batches.get(key);
+    if (!b) {
+      b = { key, kind, texture, positions: [], uvs: [], colors: [], cells: [] };
+      this.batches.set(key, b);
+    }
+    return b;
+  }
+
+  /**
+   * The batch `key` names, or undefined — `WallOccluder.key` is the same `kind + ':' + texture`.
+   */
+  byKey(key: string): Batch | undefined {
+    return this.batches.get(key);
+  }
+
+  all(): Batch[] {
+    return [...this.batches.values()];
+  }
+}
+
+/** A batch's identity, and the key `MoverMesh.meshes` files its three.js mesh under. */
+function batchKey(kind: SurfaceKind, texture: string): string {
+  return kind + ':' + texture;
+}
+
+/**
+ * One vertex into a batch's four attribute arrays. Scalars rather than a record, and the file's
+ * only signature this long: it runs once per emitted vertex, so a point parameter would allocate
+ * one per vertex — docs/conventions.md § Named arguments.
+ */
+function pushVertex(
+  b: Batch,
+  x: number,
+  y: number,
+  z: number,
+  u: number,
+  v: number,
+  c: number,
+  alpha = 1,
+  /**
+   * -1 leaves the leaf unresolved: wall quads get theirs from `fillWallCells` once the occluders
+   * exist.
+   */
+  cell = -1,
+): void {
+  b.positions.push(x, y, z);
+  b.uvs.push(u, v);
+  b.colors.push(c, c, c, alpha);
+  b.cells.push(cell);
+}
+
+/**
+ * Resolves each wall quad's leaf and stamps it onto that quad's vertices, so the dynamic-light
+ * shader can ask whether a light reached the room this wall faces. Runs once the quads exist
+ * rather than inside `addWall`, for a value the occluder records anyway. Without
+ * `MapMeshOptions.subsectorAt` (tests, tools) the quads stay at -1, which the shader reads as an
+ * empty light list — unlit. docs/lights.md § Light stops at walls.
+ */
+function fillWallCells(build: Build): void {
+  const { subsectorAt, batches } = build;
+  if (!subsectorAt) return;
+  const probe: Pos2 = { x: 0, y: 0 };
+  for (const o of build.occluders) {
+    if (Math.hypot(o.bx - o.ax, o.by - o.ay) < 1e-6) continue;
+    wallProbePoint(o.ax, o.ay, o.bx, o.by, probe);
+    o.subsector = subsectorAt(probe.x, probe.y);
+    const cells = batches.byKey(o.key)?.cells;
+    if (!cells) continue;
+    for (let v = 0; v < o.vertexCount; v++) cells[o.vertexStart + v] = o.subsector;
+  }
 }
 
 type SizeFn = (kind: SurfaceKind, name: string) => Size | null;
@@ -1253,6 +1232,20 @@ interface FlatSpec {
 }
 
 /**
+ * How much water a Boom 242 sector needs before its surface is drawn over a pool bottom rather
+ * than simply *being* the drawn floor. **Tuned by feel** against the artifact it stops: two fans
+ * a map unit apart z-fight (BOOMEDIT MAP01 sector 405). docs/specials.md § Deep water.
+ */
+const WATER_MIN_DEPTH = 8;
+
+/**
+ * `processFlat`'s two loop bodies, hoisted out of a function a mover rebuild runs per subsector per
+ * tic.
+ */
+const FLOOR_ONLY = [false];
+const FLOOR_AND_CEILING = [false, true];
+
+/**
  * Which fans one leaf draws and with what — every decision `processFlat` makes before a vertex
  * exists, written into `out` (grown as needed) and counted back. Split out from the emission so a
  * refresh can re-decide without re-dicing. docs/render.md § Mover meshes.
@@ -1773,6 +1766,12 @@ function ceilingFacing(transfers: SectorTransfers, other: Sector, otherIndex: nu
 /** `addTwoSidedSide`'s own scratch — it is not reentrant, so one record serves every side. */
 const sideBands: DrawnBands = { lowerBot: 0, lowerTop: 0, upperBot: 0, upperTop: 0, skyPair: false };
 
+/**
+ * How opaque a Boom 260 midtexture draws: `tran_filter_pct`'s default of 66 (`m_misc.c`'s config
+ * table), the percentage Boom generates its `TRANMAP` at. Every 260 line gets this one value —
+ * docs/specials.md § Translucent midtextures.
+ */
+const TRANSLUCENT_ALPHA = 0.66;
 function addTwoSidedSide(build: Build, line: LineView, view: SideView): void {
   const { size, transfers } = build;
   const { a, b, side, secIndex, sec, otherIndex, other } = view;

@@ -149,10 +149,10 @@ What is its own:
   `FolderNode.total`, deliberately two fields answering two questions. `sources` is what the file
   pane shows, so a folder behaves like a folder; `total` is the row's count *and* what decides
   whether the row is drawn, which is what keeps a pure container folder (one holding nothing but
-  subfolders) on screen instead of orphaning the rows nested under it. `topdoom` and the library
-  root are exactly that. That is also why `selectedFolder` cannot *start* on a container row — it
-  would open on an empty pane. `buildFolderTree` is pure and separate from `LibraryUi` so all of
-  this is testable without a DOM.
+  subfolders) on screen instead of orphaning the rows nested under it. A served folder holding only
+  subfolders, and the library root, are exactly that. That is also why `selectedFolder` cannot
+  *start* on a container row — it would open on an empty pane. `buildFolderTree` is pure and
+  separate from `LibraryUi` so all of this is testable without a DOM.
 - **A folder holding a picked WAD is highlighted**, and so is every folder above it, so a folded
   parent still says something inside it is in the set. The mark walks up `parent` from each row
   whose own `sources` contain a pick — never by ID prefix, for the `library:mega` /
@@ -193,11 +193,12 @@ What is its own:
   render quadratic in the row count, on every keystroke in the filter box. `rootedSubtree` is one
   pass for the same reason: it files each source under its own path and counts it against every
   folder above it, rather than scanning `sources` once per folder.
-- **The three top-level rows start open, everything below them folded.** `LibraryUi` tracks
+- **The four top-level rows start open, everything below them folded.** `LibraryUi` tracks
   *expanded* IDs rather than collapsed ones precisely so the default is a property of that one set:
   a collapsed-ID set could not express it, since a folder the player has never touched is absent
-  from it and would read as open. The set is seeded with `SERVER_ROOT`/`LIBRARY_ROOT`/`UPLOADS` —
-  folding those too would open the overlay on two or three bare headings with nothing to act on.
+  from it and would read as open. The set is seeded with `TOP_LEVEL_FOLDERS` — the two served roots,
+  the library root and `Dropped on the menu` — since folding those too would open the overlay on a
+  few bare headings with nothing to act on.
   `selectedFolder` starts on a **top-level** row for the same reason: any deeper default would be a
   row nobody can see. Which one: the served **add-ons**. A game WAD is already picked by the time
   anyone opens this — the New Game tab's select carries it — so add-ons are what the overlay is

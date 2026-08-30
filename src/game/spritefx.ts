@@ -10,7 +10,7 @@ import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import { Tracer } from '../render/tracer.ts';
 import { effectEmitterId, type DynamicLights, type Tint } from '../render/lights.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
-import type { AudioEngine } from '../audio/audio.ts';
+import type { SoundEmitter } from '../audio/sfx.ts';
 import type { ShotPath, World } from './world.ts';
 import { transfersOf } from './specials/transfers.ts';
 import { triangularDraw } from '../util/random.ts';
@@ -21,10 +21,9 @@ import type { TeleportFogState } from './snapshot.ts';
 import type { Placement, Pos3 } from '../types.ts';
 
 /**
- * Where the arch-vile's warning flame should sit this frame, or null if it
- * should stay put — see `SpriteFxLayer.updateImpacts`. Resolved by the caller
- * because it depends on live monster/player state this layer has no reason to
- * know about.
+ * Where the arch-vile's warning flame should sit this frame, or null to leave it where it is. The
+ * caller resolves it, holding the live monster and player state — docs/monster-archvile.md § The
+ * windup flame.
  */
 export type VileFlameResolver = (vileId: number, targetId: number | null) => Pos3 | null;
 
@@ -34,20 +33,28 @@ export type VileFlameResolver = (vileId: number, targetId: number | null) => Pos
  */
 export type FogVisibility = (subsector: number) => boolean;
 
+/** What the layer is built with: the banks it draws through, and the two questions above. */
+export interface SpriteFxLayerOptions {
+  spriteBank: SpriteBank;
+  spriteMaterials: SpriteMaterialCache;
+  audio: SoundEmitter;
+  resolveVileFlame: VileFlameResolver;
+  fogVisible: FogVisibility;
+  lights?: DynamicLights;
+}
+
 /**
  * One lifecycle for every transient visual: spawned by some other system, animated for a fixed
- * time, dropped on finish, cleared wholesale on level change. The player is deliberately *not* in
- * the shared batch — it needs `SpriteActor.setOpacity`, which has no per-instance equivalent
- * (docs/combat.md § Effects and their batching). Every effect is animated wherever it was spawned
- * but only *drawn* where the player has already seen (`fogVisible`), the gate `PosedThing.visible`
- * uses. Only the teleport fog is saved —
- * docs/savegames.md § What is saved and what is deliberately not.
+ * time, dropped on finish, cleared wholesale on level change. Every effect is animated wherever it
+ * was spawned but only *drawn* where the player has already seen (`fogVisible`). The player itself
+ * is deliberately not in this batch — docs/combat.md § Effects and their batching. Only the
+ * teleport fog is saved — docs/savegames.md § What is saved and what is deliberately not.
  */
 export class SpriteFxLayer {
   private scene: THREE.Scene;
   private spriteBank: SpriteBank;
   private spriteMaterials: SpriteMaterialCache;
-  private audio: AudioEngine;
+  private audio: SoundEmitter;
   private resolveVileFlame: VileFlameResolver;
   private fogVisible: FogVisibility;
   /**
@@ -82,31 +89,21 @@ export class SpriteFxLayer {
   private emitterIds = new WeakMap<SpriteAnimator, number>();
   private nextEmitterId = 1;
 
-  constructor(
-    scene: THREE.Scene,
-    spriteBank: SpriteBank,
-    spriteMaterials: SpriteMaterialCache,
-    audio: AudioEngine,
-    resolveVileFlame: VileFlameResolver,
-    fogVisible: FogVisibility,
-    lights?: DynamicLights,
-  ) {
+  constructor(scene: THREE.Scene, options: SpriteFxLayerOptions) {
     this.scene = scene;
-    this.spriteBank = spriteBank;
-    this.spriteMaterials = spriteMaterials;
-    this.audio = audio;
-    this.resolveVileFlame = resolveVileFlame;
-    this.fogVisible = fogVisible;
-    this.lights = lights ?? null;
+    this.spriteBank = options.spriteBank;
+    this.spriteMaterials = options.spriteMaterials;
+    this.audio = options.audio;
+    this.resolveVileFlame = options.resolveVileFlame;
+    this.fogVisible = options.fogVisible;
+    this.lights = options.lights ?? null;
     scene.add(this.batch.group);
   }
 
   /**
-   * Points the layer at the newly loaded level and drops everything still
-   * alive from the last one — a fog puff or impact explosion mid-animation
-   * when the map changes (e.g. a teleporter onto an exit line) would otherwise
-   * keep animating over the new level, and a tracer's line would be left in a
-   * scene nothing clears it from.
+   * Points the layer at the newly loaded level and drops everything still alive from the last one:
+   * an effect mid-animation when the map changes would otherwise keep playing over the new level,
+   * and a tracer's line would be left in a scene nothing clears it from.
    */
   beginLevel(world: World): void {
     this.world = world;
@@ -122,20 +119,16 @@ export class SpriteFxLayer {
   }
 
   dispose(): void {
-    // Tracers own per-instance geometry (unlike sprite actors, whose geometry comes
-    // from the shared SpriteMaterialCache); their material is shared and outlives them.
+    // A tracer owns its geometry; its material is shared and outlives it.
     for (const t of this.tracers) t.dispose();
-    // The batch's instance buffers and cloned materials are its own; the
-    // geometry/textures behind them are spriteMaterials'.
+    // The batch owns its instance buffers and cloned materials, not the textures behind them.
     this.batch.dispose();
   }
 
   /**
-   * Spawns a one-shot sprite animation and returns it, or null if the sprite
-   * has no art — checked here, once, by resolving the first frame, so the
-   * update passes never have to carry a "this one turned out to have no lump"
-   * case through every frame. The caller decides which list it joins;
-   * `spawnImpact` is the common "spawn it and forget it" case.
+   * Spawns a one-shot sprite animation and returns it, or null if the sprite has no art — resolved
+   * once here so no update pass has to carry a missing-lump case per frame. The caller decides
+   * which list it joins; `spawnImpact` is the spawn-and-forget case.
    */
   spawn(sprite: string, frames: string[], frameSeconds: number, at: Pos3): OneShotEffect | null {
     const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
@@ -178,22 +171,18 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Vanilla's `P_SpawnBlood`: the splash a hitscan or melee hit leaves on a
-   * body, scattered ±`HIT_Z_JITTER` vertically and playing fewer frames the
-   * weaker the hit was. Silent — `MT_BLOOD` has no sound of its own. The
-   * caller owns the `MF_NOBLOOD` question (`ThingLayer.bleeds`); by the time
-   * it gets here the hit is known to bleed. See docs/combat.md § Blood.
+   * Vanilla's `P_SpawnBlood`: the splash a hitscan or melee hit leaves on a body. Silent, and the
+   * hit is known to bleed by the time it arrives — the caller owns that question. See
+   * docs/combat.md § Blood.
    */
   spawnBlood(at: Pos3, damage: number): void {
     this.spawnImpact('BLUD', bloodFrames(damage), BLOOD_FRAME_SECONDS, { x: at.x, y: at.y, z: this.jitter(at.z) });
   }
 
   /**
-   * Vanilla's `P_SpawnPuff`: the little cloud a bullet leaves where it stopped
-   * — a wall, or a body carrying `MF_NOBLOOD` (only the barrel). `sparkless`
-   * is the punch's own case, starting two frames in. Silent, like the blood.
-   * The caller places it; nothing here knows what was hit. See docs/combat.md
-   * § Bullet puffs.
+   * Vanilla's `P_SpawnPuff`: the little cloud a bullet leaves where it stopped. `sparkless` is the
+   * punch's own case, starting two frames in. Silent, and the caller places it — nothing here knows
+   * what was hit. See docs/combat.md § Bullet puffs.
    */
   spawnPuff(at: Pos3, sparkless = false): void {
     const frames = sparkless ? PUFF_MELEE_FRAMES : PUFF_FRAMES;
@@ -201,11 +190,9 @@ export class SpriteFxLayer {
   }
 
   /**
-   * The bullet puff a hitscan shot leaves where it stopped against geometry —
-   * `PTR_ShootTraverse`'s `hitline` branch, shared by the player's pellets and
-   * a monster's bolt. Nothing is drawn for a shot that simply ran out of range
-   * (`lineIndex === null`) or for one that hit sky. See docs/combat.md §
-   * Bullet puffs.
+   * The bullet puff a hitscan shot leaves against geometry — `PTR_ShootTraverse`'s `hitline`
+   * branch. Nothing is drawn for a shot that ran out of range or hit sky. See docs/combat.md
+   * § Bullet puffs.
    */
   spawnWallPuff(path: ShotPath, angleRad: number): void {
     if (path.lineIndex === null || this.world.hitsSky(path.lineIndex, path.z)) return;
@@ -218,30 +205,17 @@ export class SpriteFxLayer {
   }
 
   /**
-   * `P_SpawnBlood`/`P_SpawnPuff`'s shared opening line — the same triangular draw every other
-   * random fuzz in the game uses.
-   */
-  private jitter(z: number): number {
-    return z + triangularDraw(HIT_Z_JITTER);
-  }
-
-  /**
-   * The teleport fogs still playing, for a savegame. The only transient this
-   * layer saves: at 10 frames of 6 tics it runs ~1.7 s, long enough to save
-   * inside, where an impact puff or tracer is gone in a fraction of that.
-   * docs/savegames.md § What is saved and what is deliberately not.
+   * The teleport fogs still playing, for a savegame — the only transient here long-lived enough to
+   * be worth saving. docs/savegames.md § What is saved and what is deliberately not.
    */
   snapshotTeleportFogs(): TeleportFogState[] {
     return this.teleportFogs.map((e) => ({ x: e.x, y: e.y, z: e.z, elapsed: e.elapsed }));
   }
 
   /**
-   * Rebuilds them on the freshly loaded level. Goes through the ordinary
-   * `spawn`, so the animator, the sector light and `drawPrev*` are re-derived
-   * rather than restored — then the animator is fast-forwarded by `elapsed` in
-   * one `advance`, whose own frame loop lands it on the frame the save was
-   * taken on. Silent, unlike `spawnTeleportFog`: `telept` played when the
-   * teleport happened, and a load is not a second teleport.
+   * Rebuilds them on the freshly loaded level through the ordinary `spawn`, so everything but
+   * `elapsed` is re-derived rather than restored, then fast-forwards the animator to it. Silent,
+   * unlike `spawnTeleportFog`: a load is not a second teleport.
    */
   restoreTeleportFogs(states: TeleportFogState[]): void {
     for (const s of states) {
@@ -263,12 +237,9 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Vanilla `P_Teleport`'s pair: a puff where the thing stood, and another
-   * `TFOG_SPAWN_OFFSET` ahead of where it lands along the direction it now
-   * faces. Vanilla spawns these for any thing that teleports, so the player's
-   * own trip and a monster's go through here alike — `destZ` is the landing
-   * floor, which only the caller can resolve (the player's own `z` after
-   * `teleportTo`, a `groundFloor` sample for a monster).
+   * Vanilla `P_Teleport`'s pair, for anything that teleports: a puff where the thing stood and
+   * another ahead of where it lands. `destZ` is the landing floor, which only the caller can
+   * resolve. See docs/specials.md § Teleporters.
    */
   spawnTeleportPair(from: Pos3, dest: Placement, destZ: number): void {
     this.spawnTeleportFog(from);
@@ -356,6 +327,25 @@ export class SpriteFxLayer {
   }
 
   /**
+   * Draws both one-shot lists, interpolated `alpha` of the way through the last
+   * tic. Runs inside the caller's `beginFrame`/`endFrame` pair alongside
+   * `ProjectileLayer.draw`. docs/frameloop.md § Interpolation.
+   */
+  draw(alpha: number): void {
+    this.drawList(this.teleportFogs, alpha);
+    // Last, so an explosion spawned by an arrival this tic is drawn on it rather than a frame late.
+    this.drawList(this.impacts, alpha);
+  }
+
+  /**
+   * `P_SpawnBlood`/`P_SpawnPuff`'s shared opening line — the same triangular draw every other
+   * random fuzz in the game uses.
+   */
+  private jitter(z: number): number {
+    return z + triangularDraw(HIT_Z_JITTER);
+  }
+
+  /**
    * Advances a one-shot list in place and drops the ones that finished, matching every other list's
    * remaining-array pattern here.
    */
@@ -369,11 +359,8 @@ export class SpriteFxLayer {
       e.drawPrevY = e.y;
       e.drawPrevZ = e.z;
       if (e.followTargetId !== undefined && e.vileSourceId !== undefined) {
-        // Vanilla's own A_Fire: "don't move it if the vile lost sight" — a
-        // broken sightline (or a dead/stale vile or target) just leaves the
-        // flame exactly where it last was, matching A_Fire's early return,
-        // rather than hiding it or popping it early. It's about to expire on
-        // its own anyway if the shot fizzles.
+        // A resolver that answers null leaves the flame where it last was, matching `A_Fire`'s
+        // early return — docs/monster-archvile.md § The windup flame.
         const front = this.resolveVileFlame(e.vileSourceId, e.followTargetId);
         if (front) {
           e.x = front.x;
@@ -392,23 +379,10 @@ export class SpriteFxLayer {
     return remaining;
   }
 
-  /**
-   * Draws both one-shot lists, interpolated `alpha` of the way through the last
-   * tic. Runs inside the caller's `beginFrame`/`endFrame` pair alongside
-   * `ProjectileLayer.draw`. docs/frameloop.md § Interpolation.
-   */
-  draw(alpha: number): void {
-    this.drawList(this.teleportFogs, alpha);
-    // After the fogs and (at the call site) after the projectiles, so an
-    // explosion or smoke puff spawned by an arrival this tic is drawn on it
-    // rather than a frame late.
-    this.drawList(this.impacts, alpha);
-  }
-
   private drawList(list: OneShotEffect[], alpha: number): void {
     for (const e of list) {
-      // Skipped, not dropped, so a room revealed mid-animation still shows the
-      // rest of it — docs/fogofwar.md § How reveal reaches the geometry.
+      // Skipped, not dropped: a room revealed mid-animation still shows the rest of it —
+      // docs/fogofwar.md § How reveal reaches the geometry.
       if (!this.fogVisible(e.subsector)) continue;
       this.drawAt.x = e.drawPrevX + (e.x - e.drawPrevX) * alpha;
       this.drawAt.y = e.drawPrevY + (e.y - e.drawPrevY) * alpha;

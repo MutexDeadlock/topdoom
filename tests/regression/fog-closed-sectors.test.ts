@@ -20,7 +20,7 @@ describe('Regressions · fog and closed sectors', () => {
     const grid = gridMap(['...', '.#.', '...']);
     const world = new World(grid.map);
     const start = grid.centre(0, 1);
-    const fog = new FogOfWar(world, [], start.x, start.y);
+    const fog = new FogOfWar(world, [], start);
 
     const pillar = grid.centre(1, 1);
     assert.equal(fog.isVisible(world.subsectorAt(pillar.x, pillar.y)), true);
@@ -30,7 +30,7 @@ describe('Regressions · fog and closed sectors', () => {
     const grid = gridMap(['.#.']);
     const world = new World(grid.map);
     const start = grid.centre(0, 0);
-    const fog = new FogOfWar(world, [], start.x, start.y);
+    const fog = new FogOfWar(world, [], start);
 
     const block = grid.centre(1, 0);
     const behind = grid.centre(2, 0);
@@ -48,7 +48,7 @@ describe('Regressions · fog and closed sectors', () => {
 
     const world = new World(map);
     const start = grid.centre(0, 0);
-    const fog = new FogOfWar(world, [], start.x, start.y);
+    const fog = new FogOfWar(world, [], start);
 
     const leaf = grid.centre(1, 0);
     const behind = grid.centre(2, 0);
@@ -64,7 +64,7 @@ describe('Regressions · fog and closed sectors', () => {
 
     const world = new World(map);
     const start = grid.centre(0, 0);
-    const fog = new FogOfWar(world, [], start.x, start.y);
+    const fog = new FogOfWar(world, [], start);
 
     // The opening test is live, so raising the ceiling is all it takes.
     map.sectors[door].ceilHeight = 128;
@@ -80,7 +80,7 @@ describe('Regressions · fog and closed sectors', () => {
     const grid = gridMap(['.#.', '...'], { heights: { '#': { floor: 0, ceil: 8 } } });
     const world = new World(grid.map);
     const start = grid.centre(0, 1);
-    const fog = new FogOfWar(world, [], start.x, start.y);
+    const fog = new FogOfWar(world, [], start);
 
     const low = grid.centre(1, 0);
     assert.equal(fog.isVisible(world.subsectorAt(low.x, low.y)), true, 'a low sector is seen normally');

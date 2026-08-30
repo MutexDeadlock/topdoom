@@ -1,9 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { buildThingSprites } from '../../src/game/things.ts';
-import { SpriteFxLayer } from '../../src/game/spritefx.ts';
 import { TFOG_FRAMES, TFOG_FRAME_SECONDS } from '../../src/game/spritefx/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { THING_SPRITES } from '../../src/game/things/tables.ts';
@@ -11,10 +9,8 @@ import { DynamicLights } from '../../src/render/lights.ts';
 import { parseGldefs } from '../../src/wad/gldefs.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
-import { MATERIALS, ROT0_BANK } from '../fixtures/spritestubs.ts';
-import type { AudioEngine } from '../../src/audio/audio.ts';
+import { MATERIALS, ROT0_BANK, fxLayer } from '../fixtures/spritestubs.ts';
 
-const SILENT = { play: () => {} } as unknown as AudioEngine;
 
 /** What `offer` was called with, in draw order. */
 interface Offer {
@@ -84,15 +80,7 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
   test('a one-shot effect offers through batchSprite, under an id of its own', () => {
     const lights = new RecordingLights(DEFS);
     const revealed = new Set([GRID.index(ROOM.col, ROOM.row)]);
-    const layer = new SpriteFxLayer(
-      new THREE.Scene(),
-      ROT0_BANK,
-      MATERIALS,
-      SILENT,
-      () => null,
-      (subsector) => revealed.has(subsector),
-      lights,
-    );
+    const layer = fxLayer({ fogVisible: (subsector) => revealed.has(subsector), lights });
     layer.beginLevel(new World(GRID.map));
     const at = GRID.centre(ROOM.col, ROOM.row);
     layer.spawnTeleportFog({ x: at.x, y: at.y, z: 0 });
@@ -115,15 +103,7 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
     // The id is what a light's flicker phase and its `dontlightself` key off, so it has to be
     // stable for an effect's whole life.
     const lights = new RecordingLights(DEFS);
-    const layer = new SpriteFxLayer(
-      new THREE.Scene(),
-      ROT0_BANK,
-      MATERIALS,
-      SILENT,
-      () => null,
-      () => true,
-      lights,
-    );
+    const layer = fxLayer({ fogVisible: () => true, lights });
     layer.beginLevel(new World(GRID.map));
     const a = GRID.centre(ROOM.col, ROOM.row);
     const b = GRID.centre(CLOSET.col, CLOSET.row);
@@ -152,15 +132,7 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
     // player has never seen lights nothing — docs/fogofwar.md § How reveal reaches the geometry.
     const lights = new RecordingLights(DEFS);
     const revealed = new Set([GRID.index(ROOM.col, ROOM.row)]);
-    const layer = new SpriteFxLayer(
-      new THREE.Scene(),
-      ROT0_BANK,
-      MATERIALS,
-      SILENT,
-      () => null,
-      (subsector) => revealed.has(subsector),
-      lights,
-    );
+    const layer = fxLayer({ fogVisible: (subsector) => revealed.has(subsector), lights });
     layer.beginLevel(new World(GRID.map));
     const hidden = GRID.centre(CLOSET.col, CLOSET.row);
     layer.spawnTeleportFog({ x: hidden.x, y: hidden.y, z: 0 });

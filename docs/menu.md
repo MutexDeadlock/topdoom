@@ -834,12 +834,13 @@ needed). It gates three things — two in `ui/devmode/` and one in `ui/menu/menu
 player has no legitimate reason to reach for them:
 
 - **What `#hud` says** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, the
-  element shows only the fps counter; on, the full map/pos/sector/camera-state/awake-monster-count
-  block. `DEVMODE` decides how much that text says, **not** whether it shows at all — that is the
-  player's own setting (§ FPS counter below), which is why the `visible` check sits ahead of the
-  `!DEVMODE` branch. **Everything it prints is live state.** The last line is the auto camera's own
-  readout — `AutoCamera.readout` in `game/autocamera.ts`, which owns the smoothed state it prints
-  rather than exposing it to `game.ts` (docs/camera.md § Auto camera), and reads `manual` in the
+  element shows only the fps counter; on, the full
+  map/pos/sector/camera-state/awake-monster-count/sound-channel block. `DEVMODE` decides how much
+  that text says, **not** whether it shows at all — that is the player's own setting (§ FPS counter
+  below), which is why the `visible` check sits ahead of the `!DEVMODE` branch. **Everything it
+  prints is live state.** The last line is the auto camera's own readout — `AutoCamera.readout` in
+  `game/autocamera.ts`, which owns the smoothed state it prints rather than exposing it to
+  `game.ts` (docs/camera.md § Auto camera), and reads `manual` in the
   other camera mode. It used to end with two static hotkey hint lines as well, which were the game's
   only controls reference and so invisible to exactly the players who needed them; that list is now
   the menu's Settings tab (docs/menu.md § Settings tab).
@@ -858,7 +859,9 @@ overlay below).
 
 `Game.debugLines` reports `ThingLayer.awakeMonsterCount()` — the number of living monsters
 currently alerted (chasing/attacking, or mid-`reactionTicks` delay) — useful for judging whether a
-level's population has actually noticed the player.
+level's population has actually noticed the player. Its sound-channel line is
+`AudioEngine.channelUsage` — voices in flight over the pool size (`CHANNELS`, docs/audio.md § The
+mixer model) — which is how you see a scene running the pool dry and cutting sounds off.
 
 ## FPS counter
 

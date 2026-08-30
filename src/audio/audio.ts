@@ -157,6 +157,15 @@ export class AudioEngine implements SoundEmitter {
     return this._masterVolume;
   }
 
+  /** Voices in flight and the pool they came from — DEVMODE's status text. */
+  get channelUsage(): { playing: number; total: number } {
+    let playing = 0;
+    for (const voice of this.voices) {
+      if (voice) playing++;
+    }
+    return { playing, total: this.voices.length };
+  }
+
   /**
    * 0-1; persisted, so it survives a reload. There is no separate mute: 0 *is*
    * the mute, so it does everything mute did — `play` short-circuits on it

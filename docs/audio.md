@@ -73,7 +73,8 @@ and one stereo panner per voice, both computed the way `S_AdjustSoundParams` com
   *origin* was already playing, take a free channel, else evict the **first** channel whose
   priority is no higher than the new sound's, else drop the sound. "First, not oldest or
   quietest" is vanilla's, and it is why a crowd of same-priority sight sounds fights over one
-  channel instead of flushing the pool.
+  channel instead of flushing the pool. `AudioEngine.channelUsage` reports how much of the pool
+  is live, printed as the DEVMODE status text's sound-channel line (docs/menu.md § Dev mode).
 - **Origins** are vanilla's `origin` mobj pointer as a numeric key (`monsterOrigin`,
   `sectorOrigin`, `PLAYER_ORIGIN`, in disjoint ranges). One sound per origin at a time is
   what makes a held chaingun trigger sound like a chaingun instead of a dozen layered shots

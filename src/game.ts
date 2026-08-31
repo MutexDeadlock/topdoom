@@ -182,7 +182,7 @@ export interface GameOptions {
    */
   onCampaignEnd?: (() => void) | null;
   /**
-   * The stock GLDEFS text (`public/gldefs.txt`), fetched by the session layer alongside the WAD
+   * The stock GLDEFS text (`public/game/gldefs.txt`), fetched by the session layer alongside the WAD
    * files. A loaded set's own GLDEFS lumps layer over it; an empty string means no lights at all.
    * docs/lights.md.
    */

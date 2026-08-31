@@ -362,14 +362,14 @@ export function gldefsFromWad(wad: Wad, base: Gldefs): Gldefs {
   return merged;
 }
 
-/** Where the stock definitions are served from; `plugins/` copies `public/` to the site root. */
-const STOCK_URL = '/gldefs.txt';
+/** Where the stock definitions are served from; Vite copies `public/` to the site root. */
+const STOCK_URL = '/game/gldefs.txt';
 
 /** Memoized: the file is a fixed asset, and every level load would otherwise re-fetch it. */
 let stockText: Promise<string> | null = null;
 
 /**
- * The stock GZDoom light definitions shipped in `public/gldefs.txt`, as text for `parseGldefs`.
+ * The stock GZDoom light definitions shipped in `public/game/gldefs.txt`, as text for `parseGldefs`.
  * A fetch that fails resolves to an empty string rather than rejecting: no lights is a worse
  * looking game, not a broken one, and it must never keep a level from starting.
  */

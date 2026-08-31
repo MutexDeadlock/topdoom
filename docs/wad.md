@@ -226,7 +226,7 @@ A `GLDEFS` (or `DOOMDEFS`) lump defines GZDoom's dynamic lights and binds them t
 Like `DEHACKED` and unlike the MAPINFO family (§ Level names), **every** such lump in the set is
 read, in load order, layering: a later definition of the same light name or frame binding replaces
 the earlier one, which is GZDoom's own rule (`gldefs.cpp: LoadGLDefs`). They layer over the stock
-definitions the engine ships in `public/gldefs.txt` rather than replacing them wholesale.
+definitions the engine ships in `public/game/gldefs.txt` rather than replacing them wholesale.
 
 `wad/gldefs.ts` owns the reading and docs/lights.md the format, including which of GZDoom's block
 types are read and which are skipped.

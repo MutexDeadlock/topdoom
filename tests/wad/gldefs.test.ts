@@ -204,7 +204,7 @@ describe('GLDEFS · binding a light to a frame', () => {
 describe('GLDEFS · the stock file', () => {
   // Read from `public/` deliberately: this is a committed text asset the feature ships with, not
   // game content — the "tests never read public/wads" rule is about WADs.
-  const STOCK = fileURLToPath(new URL('../../public/gldefs.txt', import.meta.url));
+  const STOCK = fileURLToPath(new URL('../../public/game/gldefs.txt', import.meta.url));
 
   test('the shipped definitions parse, and spot checks land on the right light', () => {
     const g = parseGldefs(readFileSync(STOCK, 'latin1'));

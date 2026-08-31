@@ -286,7 +286,7 @@ center-screen message. Vanilla plays no sound for a secret at all, so this is a 
 addition, not a fidelity reproduction — docs/hud.md § Center messages.
 
 It is the one sound that is **not** a WAD lump: `audio.ts`'s `ASSETS` table maps it to
-`public/secret.ogg`, and `playAsset` starts it. It can't be an `SfxId` — `SFX` is `sounds.c`
+`public/game/secret.ogg`, and `playAsset` starts it. It can't be an `SfxId` — `SFX` is `sounds.c`
 verbatim and a name vanilla never had would quietly turn that table into an approximation — and
 sourcing it from a lump would mean either a made-up `DS*` name no WAD carries or borrowing an
 unrelated one (`DSRADIO`, DOOM 2's inter-level chatter, which is what this used to play and which

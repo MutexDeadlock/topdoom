@@ -18,7 +18,7 @@ import { WadFont, COLOR_YELLOW, type WadFontRecolor } from './wadfont.ts';
 const MESSAGE_SECONDS = 3;
 
 /**
- * Shown with the engine's own `secret` sound (`public/secret.ogg`, not a WAD lump at all), so both
+ * Shown with the engine's own `secret` sound (`public/game/secret.ogg`, not a WAD lump at all), so both
  * the message and the sound are this engine's own. Vanilla announces a
  * secret nowhere at all: the status bar's `S` count just ticks up. Lives here rather than with the
  * `specials/sectoreffects.ts` rule that detects one, because it is a line of display text and this

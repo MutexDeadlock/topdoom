@@ -103,7 +103,7 @@ const ASSETS = {
    * Entering a secret sector. Priority is `getpow`'s 60: an announcement, cut off by almost
    * nothing.
    */
-  secret: { url: '/secret.ogg', priority: 60 },
+  secret: { url: '/game/secret.ogg', priority: 60 },
 } as const;
 
 export type AssetSfxId = keyof typeof ASSETS;

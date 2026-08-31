@@ -39,7 +39,7 @@ import {
 import { getAutoSwitchWeapon, getPistolStart, setAutoSwitchWeapon, setPistolStart } from '../../game/inventory.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
-import { getProfilerVisible, setProfilerVisible } from '../devmode/profilerhud.ts';
+import { getProfilerVisible, setProfilerVisible } from '../hud/profiler.ts';
 import { getFpsVisible, setFpsVisible } from '../devmode/debughud.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import { DEVMODE, VERSION } from '../../constants.ts';

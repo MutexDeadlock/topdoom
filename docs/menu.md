@@ -716,7 +716,7 @@ Each is a module-level value behind an exported `get`/`set` pair — not an inst
 | `topdoom.cameraMode` | `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) | docs/camera.md § Auto camera |
 | `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
 | `topdoom.fps` | `ui/devmode/debughud.ts` (`getFpsVisible`/`setFpsVisible`) | § FPS counter below |
-| `topdoom.profiler` | `ui/devmode/profilerhud.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
+| `topdoom.profiler` | `ui/hud/profiler.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
 | `topdoom.dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
 | `topdoom.playerSprites` | `wad/playerskin.ts` (`getPlayerSpriteMode`/`setPlayerSpriteMode`) | docs/sprites.md § When the skins apply |
 | `topdoom.infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
@@ -886,7 +886,7 @@ player's own machine rather than the one `BUILD_MS_PER_KB` was measured on.
 
 `DEVMODE` reads `import.meta.env.VITE_DEVMODE`, defaulting to `false`; set `VITE_DEVMODE=true` in a
 git-ignored `.env.local` at the repo root to turn it on (Vite loads `.env.local` itself, no plugin
-needed). It gates three things — two in `ui/devmode/` and one in `ui/menu/menu.ts` — all because a
+needed). It gates three things — `ui/devmode/debughud.ts`, `ui/hud/profiler.ts` and `ui/menu/menu.ts` — all because a
 player has no legitimate reason to reach for them:
 
 - **What `#hud` says** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, the
@@ -966,7 +966,7 @@ Monsters [=         ]  0.80
 gpu 20.1 ms  (49 fps eq.)
 ```
 
-That layout is `profilerhud.html`'s, not the class's: the panel ships the two total lines and the
+That layout is `profiler.html`'s, not the class's: the panel ships the two total lines and the
 `#profiler-rows` container between them as static markup, and `ProfilerHud` only fills them in — so
 moving a line is an edit to the markup rather than to append order in `update()`.
 
@@ -1029,7 +1029,7 @@ walks the BSP for the player's sector and must not run when the *debug* text is 
 
 **The checkbox alone decides whether the panel is up** — General's `Debug / Dev` section
 (`#profiler-checkbox`), in every build, since the overlay covers the top-right corner of the level.
-The setting is `profilerhud.ts`'s own (`topdoom.profiler`,
+The setting is `profiler.ts`'s own (`topdoom.profiler`,
 `getProfilerVisible`/`setProfilerVisible`) and **defaults to `DEVMODE`**: on in a dev build, as it
 behaved before the checkbox existed, off in a shipped one — a stored `'1'`/`'0'` overrides that
 either way. `applyProfilerVisible` is the single writer of `#profiler-hud`'s `visible` class, called

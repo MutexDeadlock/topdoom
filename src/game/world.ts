@@ -1159,7 +1159,7 @@ export class World {
    * The lowest ceiling a body of this radius must clear, standing here — the
    * mirror of `groundFloor`: the local sector's ceiling, lowered to the top
    * of any two-sided opening its box currently spans. Exists so a
-   * rising floor's headroom check (`game.ts: blocksFloorRise`) can see a
+   * rising floor's headroom check (`specials/moverblocking.ts: blocksFloorRise`) can see a
    * lower-ceilinged neighbor sector the player's box still overlaps, not
    * just the rising sector's own ceiling — see docs/movement.md § Collision.
    */

@@ -4,8 +4,6 @@ Features and improvements
   - weapon-matching player skins! Doomguy only, but can be forced for WADs which 
     customize the player sprites, all tuneable in Settings / Visuals
   - a crowd of monsters waking at once no longer floods the sound channels
-  - the lights, the secret chime and the player skins ship as one built topdoom.wad
-    - WADs are served from public/game/ instead of public/wads/
   - starting a game shows a loading screen with the WAD download's progress
 
 Fixed bugs

@@ -6,7 +6,6 @@
 
 @import './ui/base.css';
 @import './ui/devmode/debughud.css';
-@import './ui/devmode/profilerhud.css';
 @import './ui/hud/hud.css';
 @import './ui/hud/screeneffects.css';
 @import './ui/hud/message.css';
@@ -14,6 +13,7 @@
 @import './ui/hud/intermission.css';
 @import './ui/hud/endcard.css';
 @import './ui/hud/deathoverlay.css';
+@import './ui/hud/profiler.css';
 @import './ui/fatalerror.css';
 @import './ui/menu/menu.css';
 @import './ui/menu/hold.css';

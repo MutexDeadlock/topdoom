@@ -47,7 +47,7 @@ export function setProfilerVisible(on: boolean): void {
 
 /**
  * Puts the setting on `#profiler-hud`'s class, which is both what
- * profilerhud.css shows the panel by and what `ProfilerHud.update` reads to
+ * profiler.css shows the panel by and what `ProfilerHud.update` reads to
  * skip its work — so the two can't disagree about whether the overlay is up.
  * Safe to call before any `ProfilerHud` exists: the element is static markup.
  */
@@ -56,7 +56,7 @@ export function applyProfilerVisible(): void {
 }
 
 /**
- * The per-category timing overlay (top-right — see profilerhud.css). Renders `FrameProfiler`'s
+ * The per-category timing overlay (top-right — see profiler.css). Renders `FrameProfiler`'s
  * smoothed samples as bars sized against one 60fps frame's budget rather than against each other,
  * so bar *length* alone says whether a category is the reason a frame is being missed.
  * docs/menu.md § Profiling overlay.

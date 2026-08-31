@@ -5,8 +5,9 @@
 `src/ui/hud/screeneffects.ts`, `src/game/besttimes.ts`, `src/game.ts`
 
 Everything on screen that isn't the world. What the readouts *report* — the inventory, pickups and
-powerups behind them — is docs/items.md. The one other thing drawn over a running level,
-`src/ui/hud/deathoverlay.ts`, is documented with what raises it: docs/death.md § Player death.
+powerups behind them — is docs/items.md. The two other things drawn over a running level are
+documented where they are raised: `src/ui/hud/deathoverlay.ts` in docs/death.md § Player death, and
+the profiling overlay `src/ui/hud/profiler.ts` in docs/menu.md § Profiling overlay.
 
 ## The HUD
 

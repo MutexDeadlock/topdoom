@@ -1,9 +1,9 @@
 /**
- * The "who is standing in this mover" callbacks `SpecialsController` calls back into: crush
- * damage, and the two obstruction tests that stall or reverse a mover. It owns the moving
- * geometry but has no idea who is in it, so it hands back a sector index — plus, for the two
- * obstruction tests, the height its next step would put the plane at. See docs/specials.md
- * § Crushers and § Every other mover stops instead.
+ * The "who is standing in this mover" answers `SpecialsController` reaches the level's bodies
+ * through (`Occupancy`): crush damage, and the two obstruction tests that stall or
+ * reverse a mover. The controller owns the moving geometry and knows only a sector index — plus,
+ * for the two obstruction tests, the height its next step would put the plane at. See
+ * docs/specials.md § Crushers and § Every other mover stops instead.
  */
 import type { DoomMap, Sector } from '../../wad/map.ts';
 import type { Pos2 } from '../../types.ts';
@@ -13,6 +13,180 @@ import { TALLEST_BODY_HEIGHT } from '../monsters/tables.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
 import { neighborSectorIndices } from '../world.ts';
 import { CRUSH_DAMAGE } from './defs.ts';
+
+/**
+ * The three "who is in this mover" answers `SpecialsController` asks per tic. It owns the moving
+ * geometry and reaches the level's bodies through this; the rig in `tests/fixtures/specialsrig.ts`
+ * supplies its own to drive a mover into an obstruction with no body anywhere near the sector.
+ * docs/specials.md § Crushers and § Every other mover stops instead.
+ */
+export interface Occupancy {
+  /** A closing door or lowering ceiling — see `blocksCeilingLower`. */
+  blocksCeilingLower(sectorIndex: number, ceilingHeight: number): boolean;
+  /** A rising lift or floor — see `blocksFloorRise`. */
+  blocksFloorRise(sectorIndex: number, floorHeight: number): boolean;
+  /**
+   * Deals `CRUSH_DAMAGE` when `dealDamage`, and reports vanilla's `nofit` either way — the crusher
+   * slowdown keys off it every tic, not only on a damage one. See `applyCrushDamage`.
+   */
+  crush(sectorIndex: number, dealDamage: boolean): boolean;
+}
+
+/** Where `MoverOccupancy` finds the bodies a mover could catch. */
+export interface OccupancySources {
+  /**
+   * The thing layer, as a getter: `game.ts`'s `loadMap` builds it *after* the
+   * `SpecialsController`, so an instance passed at construction would be the null one forever.
+   */
+  things: () => ThingLayer | null;
+  /** The live player position — read every tic, so it must be the player object itself. */
+  player: Pos2;
+  /** The level's voodoo dolls (`game/voodoo.ts`): a crusher catching one hurts the real player. */
+  dolls: readonly Pos2[];
+  /** Crush damage to the player. The cause is fixed per wiring site, so the caller binds it. */
+  damagePlayer: (amount: number) => void;
+}
+
+/** The `Occupancy` of a level with nothing in it — `SpecialsOptions.occupants`' default. */
+export const NOBODY: Occupancy = {
+  blocksCeilingLower: () => false,
+  blocksFloorRise: () => false,
+  crush: () => false,
+};
+
+/** Per map, per sector: `crushNeighborhood`'s answer, memoized as `world.ts`'s `sectorLines` is. */
+const neighborhoods = new WeakMap<DoomMap, Map<number, Set<Sector>>>();
+
+/**
+ * A closing door or a lowering `CeilingMover`. The sector's floor doesn't move here, so it's read
+ * straight off the map.
+ */
+export function blocksCeilingLower(
+  world: World,
+  things: ThingLayer | null,
+  player: Pos2,
+  sectorIndex: number,
+  ceilingHeight: number,
+): boolean {
+  const floorHeight = world.map.sectors[sectorIndex].floorHeight;
+  return headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight });
+}
+
+/**
+ * A rising lift or non-crushing `FloorMover`. The sector's ceiling doesn't move
+ * here, so it's read straight off the map for the monster fallback. The player
+ * additionally gets `groundCeiling`'s straddle-aware overhead: standing half on
+ * the rising sector and half in a lower-ceilinged neighbor, `groundFloor`
+ * already pins the player's `z` to this sector's rising floor, so the
+ * neighbor's own (unmoving) ceiling — not this sector's — is what would
+ * actually crush them. Without this the player could be carried up into it.
+ */
+export function blocksFloorRise(
+  world: World,
+  things: ThingLayer | null,
+  player: Pos2,
+  sectorIndex: number,
+  floorHeight: number,
+): boolean {
+  // Voodoo dolls deliberately do **not** obstruct movers. Vanilla's
+  // `PIT_ChangeSector` would let one stall a rising floor, but a doll is parked
+  // by the mapper precisely where the script needs it and is usually meant to be
+  // crushed there — having it silently jam the level's own machinery is the
+  // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
+  const map = world.map;
+  const ceilingHeight = map.sectors[sectorIndex].ceilHeight;
+  if (headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight })) return true;
+  if (boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) {
+    const ceiling = world.groundCeiling(player.x, player.y, PLAYER_RADIUS);
+    if (floorHeight + PLAYER_HEIGHT > ceiling) return true;
+  }
+  return false;
+}
+
+/**
+ * What `Occupancy.crush` does: deals `CRUSH_DAMAGE` to the player and to every
+ * crushable body the sector's moving plane has left without the headroom to stand in. Gated on
+ * `crushed` rather than on merely standing in the sector, so a crusher parked at the top of its
+ * travel deals none. Monsters and barrels share one loop, matching `PIT_ChangeSector` treating any
+ * shootable mobj the same. docs/specials.md § Crushers.
+ */
+export function applyCrushDamage(
+  world: World,
+  things: ThingLayer | null,
+  player: Pos2,
+  sectorIndex: number,
+  damagePlayer: (amount: number) => void,
+  dealDamage: boolean,
+  /**
+   * The level's voodoo dolls: each is a player mobj, so a crusher catching one hurts the real
+   * player.
+   */
+  dolls: readonly Pos2[] = [],
+): boolean {
+  const map = world.map;
+  const sector = map.sectors[sectorIndex];
+  const gap = sector.ceilHeight - sector.floorHeight;
+  // `nofit`: something shootable is in the sector and doesn't fit the gap. It is
+  // reported whether or not this tic is a damage tic, because the crusher
+  // slowdown keys off it every tic — see `SpecialsController.tickCrush`.
+  let caught = false;
+  // Both gates are the mover's own gap, and are the cheap "could this plane be
+  // squeezing anyone at all" pre-filter for the per-body measurement below:
+  // headroom shorter than a body's height somewhere *next* to the mover is that
+  // neighbor's business, not this mover's.
+  if (gap < PLAYER_HEIGHT) {
+    // The doll and the player are the same mobj as far as `PIT_ChangeSector` is
+    // concerned — and a crusher over a doll is the classic instant-death script,
+    // so this is not an edge case. Damage is dealt once per body caught, exactly
+    // as vanilla's per-mobj loop does. docs/specials.md § Voodoo dolls.
+    for (const body of dolls) {
+      if (!crushed(world, body.x, body.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) continue;
+      caught = true;
+      if (dealDamage) damagePlayer(CRUSH_DAMAGE);
+    }
+    if (crushed(world, player.x, player.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) {
+      caught = true;
+      if (dealDamage) damagePlayer(CRUSH_DAMAGE);
+    }
+  }
+  if (gap < TALLEST_BODY_HEIGHT) {
+    for (const m of things?.crushablesInSectors(crushNeighborhood(map, sectorIndex)) ?? []) {
+      // Per body, not one shared band: a barrel is 42 tall against a
+      // cyberdemon's 110, so the ceiling reaches them at very different points
+      // of the same descent.
+      if (!crushed(world, m.x, m.y, m.radius, m.height, sectorIndex, true)) continue;
+      caught = true;
+      if (dealDamage) things?.damage(m.id, CRUSH_DAMAGE);
+    }
+  }
+  return caught;
+}
+
+/** `Occupancy` over a real level: the three functions above, bound to whoever is in it. */
+export class MoverOccupancy implements Occupancy {
+  private world: World;
+  private sources: OccupancySources;
+
+  constructor(world: World, sources: OccupancySources) {
+    this.world = world;
+    this.sources = sources;
+  }
+
+  blocksCeilingLower(sectorIndex: number, ceilingHeight: number): boolean {
+    const { things, player } = this.sources;
+    return blocksCeilingLower(this.world, things(), player, sectorIndex, ceilingHeight);
+  }
+
+  blocksFloorRise(sectorIndex: number, floorHeight: number): boolean {
+    const { things, player } = this.sources;
+    return blocksFloorRise(this.world, things(), player, sectorIndex, floorHeight);
+  }
+
+  crush(sectorIndex: number, dealDamage: boolean): boolean {
+    const { things, player, damagePlayer, dolls } = this.sources;
+    return applyCrushDamage(this.world, things(), player, sectorIndex, damagePlayer, dealDamage, dolls);
+  }
+}
 
 /**
  * The eight points of a `radius`-box's rim that `boxOverlapsSector` samples —
@@ -81,55 +255,6 @@ function headroomBlocked(world: World, things: ThingLayer | null, player: Pos2, 
 }
 
 /**
- * A closing door or a lowering `CeilingMover`. The sector's floor doesn't move here, so it's read
- * straight off the map.
- */
-export function blocksCeilingLower(
-  world: World,
-  things: ThingLayer | null,
-  player: Pos2,
-  sectorIndex: number,
-  ceilingHeight: number,
-): boolean {
-  const floorHeight = world.map.sectors[sectorIndex].floorHeight;
-  return headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight });
-}
-
-/**
- * A rising lift or non-crushing `FloorMover`. The sector's ceiling doesn't move
- * here, so it's read straight off the map for the monster fallback. The player
- * additionally gets `groundCeiling`'s straddle-aware overhead: standing half on
- * the rising sector and half in a lower-ceilinged neighbor, `groundFloor`
- * already pins the player's `z` to this sector's rising floor, so the
- * neighbor's own (unmoving) ceiling — not this sector's — is what would
- * actually crush them. Without this the player could be carried up into it.
- */
-export function blocksFloorRise(
-  world: World,
-  things: ThingLayer | null,
-  player: Pos2,
-  sectorIndex: number,
-  floorHeight: number,
-): boolean {
-  // Voodoo dolls deliberately do **not** obstruct movers. Vanilla's
-  // `PIT_ChangeSector` would let one stall a rising floor, but a doll is parked
-  // by the mapper precisely where the script needs it and is usually meant to be
-  // crushed there — having it silently jam the level's own machinery is the
-  // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
-  const map = world.map;
-  const ceilingHeight = map.sectors[sectorIndex].ceilHeight;
-  if (headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight })) return true;
-  if (boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) {
-    const ceiling = world.groundCeiling(player.x, player.y, PLAYER_RADIUS);
-    if (floorHeight + PLAYER_HEIGHT > ceiling) return true;
-  }
-  return false;
-}
-
-/** Per map, per sector: `crushNeighborhood`'s answer, memoized as `world.ts`'s `sectorLines` is. */
-const neighborhoods = new WeakMap<DoomMap, Map<number, Set<Sector>>>();
-
-/**
  * The sectors a body caught by the mover in `sectorIndex` can be standing in:
  * that sector and everything across a two-sided line from it. Vanilla's
  * `P_ChangeSector` walks the blockmap blocks covering the sector's *bounding
@@ -159,7 +284,7 @@ function crushNeighborhood(map: DoomMap, sectorIndex: number): ReadonlySet<Secto
  * centre point — a body pinned half under a descending ceiling is crushed. Height first: it rejects
  * everyone in an ordinary room for one box walk. docs/specials.md § Crushers.
  *
- * The box stays **scalars**, matching `world.headroom` and `boxOverlapsSector` below — the
+ * The box stays **scalars**, matching `world.headroom` and `boxOverlapsSector` — the
  * coordinate exception in docs/conventions.md § Named arguments; a record here would only move the
  * boundary one call deeper.
  */
@@ -173,63 +298,4 @@ function crushed(
   forMonster: boolean,
 ): boolean {
   return world.headroom(x, y, radius, forMonster) < height && boxOverlapsSector(world, x, y, radius, sectorIndex);
-}
-
-/**
- * `SpecialsController`'s `onCrush` callback: deals `CRUSH_DAMAGE` to the player and to every
- * crushable body the sector's moving plane has left without the headroom to stand in. Gated on
- * `crushed` rather than on merely standing in the sector, so a crusher parked at the top of its
- * travel deals none. Monsters and barrels share one loop, matching `PIT_ChangeSector` treating any
- * shootable mobj the same. docs/specials.md § Crushers.
- */
-export function applyCrushDamage(
-  world: World,
-  things: ThingLayer | null,
-  player: Pos2,
-  sectorIndex: number,
-  damagePlayer: (amount: number) => void,
-  dealDamage: boolean,
-  /**
-   * The level's voodoo dolls: each is a player mobj, so a crusher catching one hurts the real
-   * player.
-   */
-  dolls: readonly Pos2[] = [],
-): boolean {
-  const map = world.map;
-  const sector = map.sectors[sectorIndex];
-  const gap = sector.ceilHeight - sector.floorHeight;
-  // `nofit`: something shootable is in the sector and doesn't fit the gap. It is
-  // reported whether or not this tic is a damage tic, because the crusher
-  // slowdown keys off it every tic — see `SpecialsController.tickCrush`.
-  let caught = false;
-  // Both gates are the mover's own gap, and are the cheap "could this plane be
-  // squeezing anyone at all" pre-filter for the per-body measurement below:
-  // headroom shorter than a body's height somewhere *next* to the mover is that
-  // neighbor's business, not this mover's.
-  if (gap < PLAYER_HEIGHT) {
-    // The doll and the player are the same mobj as far as `PIT_ChangeSector` is
-    // concerned — and a crusher over a doll is the classic instant-death script,
-    // so this is not an edge case. Damage is dealt once per body caught, exactly
-    // as vanilla's per-mobj loop does. docs/specials.md § Voodoo dolls.
-    for (const body of dolls) {
-      if (!crushed(world, body.x, body.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) continue;
-      caught = true;
-      if (dealDamage) damagePlayer(CRUSH_DAMAGE);
-    }
-    if (crushed(world, player.x, player.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) {
-      caught = true;
-      if (dealDamage) damagePlayer(CRUSH_DAMAGE);
-    }
-  }
-  if (gap < TALLEST_BODY_HEIGHT) {
-    for (const m of things?.crushablesInSectors(crushNeighborhood(map, sectorIndex)) ?? []) {
-      // Per body, not one shared band: a barrel is 42 tall against a
-      // cyberdemon's 110, so the ceiling reaches them at very different points
-      // of the same descent.
-      if (!crushed(world, m.x, m.y, m.radius, m.height, sectorIndex, true)) continue;
-      caught = true;
-      if (dealDamage) things?.damage(m.id, CRUSH_DAMAGE);
-    }
-  }
-  return caught;
 }

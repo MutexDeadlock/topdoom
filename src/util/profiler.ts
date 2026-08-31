@@ -37,7 +37,7 @@ const OFF_FRAME_PENDING_CAP = 32;
 
 /**
  * Per-frame wall-clock breakdown the profiler overlay reads from
- * (`ui/devmode/profilerhud.ts`). A single frame's timing is noisy (GC pauses, OS
+ * (`ui/hud/profiler.ts`). A single frame's timing is noisy (GC pauses, OS
  * scheduling, browser compositing) — showing it raw would make the overlay's
  * bars flicker too fast to read anything useful out of them, so every label
  * is smoothed with a plain exponential moving average instead, the same

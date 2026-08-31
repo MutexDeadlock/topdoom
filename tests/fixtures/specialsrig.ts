@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
-import { SpecialsController, type TeleportDest } from '../../src/game/specials.ts';
+import { SpecialsController, type Occupancy, type TeleportDest } from '../../src/game/specials.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { buildMapMesh, type BuiltMap } from '../../src/render/mapmesh.ts';
@@ -57,13 +57,13 @@ export interface SpecialsRigOptions {
   onExit?: (secret: boolean) => void;
   onTeleport?: (dest: TeleportDest) => void;
   /** Whether a body is under the closing ceiling, and the hook for counting crush damage pulses. */
-  onCrush?: (sectorIndex: number, dealDamage: boolean) => boolean;
+  onCrush?: Occupancy['crush'];
   /**
    * Whether a body would be left without headroom at `floorHeight`. Defaults
    * to "nothing is ever in the way"; a test that wants a mover refused
    * supplies its own, without needing a real body anywhere near the sector.
    */
-  blocksFloorRise?: (sectorIndex: number, floorHeight: number) => boolean;
+  blocksFloorRise?: Occupancy['blocksFloorRise'];
   /** Where the controller's sounds go. Defaults to `SILENT`; `soundLog()` is the recorder a test that asserts on them wants. */
   sfx?: SoundEmitter;
 }
@@ -124,11 +124,13 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     meshOptions: { transfers, movingSectors },
     onExit: options.onExit ?? (() => {}),
     onTeleport: options.onTeleport ?? (() => {}),
-    onCrush: options.onCrush ?? (() => false),
-    // The two "is the player in the way" predicates. No test drives a *ceiling*
-    // into the player yet, so that one stands at "nothing ever blocks one".
-    blocksCeilingLower: () => false,
-    blocksFloorRise: options.blocksFloorRise ?? (() => false),
+    // Stands in for the level's bodies, of which the rig has none: nothing is ever in the way
+    // unless a test says so. No test drives a *ceiling* into the player yet, so that one is fixed.
+    occupancy: {
+      blocksCeilingLower: () => false,
+      blocksFloorRise: options.blocksFloorRise ?? (() => false),
+      crush: options.onCrush ?? (() => false),
+    },
     playerAt: at,
     movableSectors,
     sfx: options.sfx,

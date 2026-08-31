@@ -303,19 +303,13 @@ layer's barrel *and* its implementation, which is what keeps its public surface 
 
 ## Known deviations
 
-Pending, not precedent:
+Pending, not precedent: none.
 
-- `specials.ts` re-exports `SectorEffects` and the three `moverblocking.ts` functions purely so it
-  stays the layer's one entry point. Both are driven by `game.ts`, not by `SpecialsController`, so
-  the pass-through carries no meaning of its own; the tidier shape is for the controller to own
-  them, which is a real change rather than a move.
+A layer entry point re-exporting its own is not a deviation — `specials.ts` hands out
+`SectorEffects`, which cannot be `SpecialsController`'s because it is built before the `World` the
+controller needs (docs/savegames.md § Apply order). The test: an export that leaves the layer only
+to be handed straight back in is a round trip, and belongs to the layer instead.
 
-- `ui/devmode/profilerhud.*` is no longer dev-mode-only — the overlay is a player-facing setting and
-  `DEVMODE` only picks its default (docs/menu.md § Profiling overlay) — so it sits in a directory
-  named for a gate it does not obey, and nothing else in `ui/devmode/` imports it. Its home would be
-  `ui/hud/profiler.*`, which is a rename across `styles.css`, `index.html` and two importers rather
-  than anything behavioral.
-
-That is the whole list. Every `src/` file opens with a header block carrying a `docs/` pointer;
+Every `src/` file opens with a header block carrying a `docs/` pointer;
 `src/constants.ts` and `src/types.ts` are the two that point at CLAUDE.md instead, because they are
 cross-cutting and the rules governing them genuinely live there rather than in any subsystem doc.

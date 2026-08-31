@@ -387,7 +387,7 @@ linedef carrying their tag at all and hit this: DOOM2 MAP32's Keen door (sector 
 MAP07's Arachnotron platform (sector 1, tag 667).
 
 **Split across three files, the same "system reports, `game.ts` realizes" shape as
-`onCrush`/`onExit`/`crossLines`:**
+`onExit`/`onTeleport`/`crossLines`:**
 
 - `game/things.ts`'s `damage()` death branch is the only place that can answer "is this the last
   living one of its type" — it already has `posed` in scope, the same array the pain elemental's

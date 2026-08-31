@@ -27,8 +27,9 @@ consumes them, and the controller forwards its own options rather than restating
 That mutation is direct — `Sector.floorHeight`/`ceilHeight`/`light` change on the `DoomMap` itself,
 and `World` never caches them, so collision, sight-blocking and resting heights pick a mover's
 change up on their very next query with no invalidation step. The controller also has no idea who is
-standing where: crush damage, obstruction, exits and teleports all reach `game.ts` through callbacks
-(`onCrush`/`onExit`/`onTeleport`, `game/specials/moverblocking.ts`). And a stair builder is not its
+standing where: exits and teleports reach `game.ts` through callbacks (`onExit`/`onTeleport`), and
+crush damage and obstruction go through `Occupancy` (`game/specials/moverblocking.ts`) — the layer's
+own tests, over the bodies `game.ts` hands it as `SpecialsOptions.occupants`. And a stair builder is not its
 own mover type: each step is a plain `FloorMover` rising to a fixed height, over the chain of
 sectors `findStairChain` discovered at load time by the same texture-matched adjacency walk
 vanilla's `EV_BuildStairs` does at runtime.
@@ -204,9 +205,9 @@ forever, with no hold/rest state.
 
 They — and the vanilla `raiseFloorCrush` floor family (55/56/65/94) — deal `CRUSH_DAMAGE` every
 `CRUSH_DAMAGE_INTERVAL` (vanilla's 10 HP every 4 tics) to the player or any body the moving plane
-has left without the headroom to stand in, via `SpecialsController`'s `onCrush` callback into
-`specials/moverblocking.ts: applyCrushDamage` — the same "hand back a sector index, let someone else
-work out who is standing in it" split as the two obstruction callbacks beside it, since
+has left without the headroom to stand in, via `Occupancy.crush` into
+`specials/moverblocking.ts: applyCrushDamage` — the same "start from a sector index, work out who is
+standing in it" split as the two obstruction tests beside it, since
 `SpecialsController` mutates geometry but has no idea where anyone is. The headroom gate matters
 even for someone in the mover's own sector footprint: standing under a crusher parked at the top of
 its swing, or before it's descended far enough to reach you, must not deal damage —
@@ -280,7 +281,7 @@ first, which is what vanilla and GZDoom both do. Three details are load-bearing:
   fast type falls past it.
 
 Because the slowdown keys off `crushed` every tic while the damage is rationed on `leveltime&3`, the
-`onCrush` callback carries both rates: it is asked every tic, returns whether anything is caught
+`Occupancy.crush` carries both rates: it is asked every tic, returns whether anything is caught
 (vanilla's `nofit`), and takes a flag for whether this tic is also a damage tic.
 
 **A stop line freezes a crusher mid-stroke, and a restart resumes that direction.** 57/74
@@ -333,7 +334,7 @@ Unlike vanilla, the door check applies uniformly regardless of speed — this en
 `tickDoor` already had this for a closing door; the same rule now also applies to a lowering
 `CeilingMover` (real vanilla never sets `crush=true` for this mover) and to a rising `LiftMover` or
 `crush: false` `FloorMover` (covering every ordinary raise, `raiseToTexture`, `lowerAndChange`, the
-donut's ring, and stair builders — stairs never set `crush` either). Two callbacks carry this out —
+donut's ring, and stair builders — stairs never set `crush` either). Two `Occupancy` answers do it —
 `game/specials/moverblocking.ts`'s `blocksCeilingLower`/`blocksFloorRise`, both routed through the
 shared `headroomBlocked` helper there. A *rising* `CeilingMover` is deliberately not checked at all
 — it only ever opens headroom, and vanilla's ceiling-up code never reverts on contact either.

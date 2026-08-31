@@ -52,14 +52,7 @@ import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { AutoCamera, getCameraMode } from './game/autocamera.ts';
-import {
-  applyCrushDamage,
-  blocksCeilingLower,
-  blocksFloorRise,
-  SectorEffects,
-  SpecialsController,
-  type TeleportDest,
-} from './game/specials.ts';
+import { SectorEffects, SpecialsController, type TeleportDest } from './game/specials.ts';
 import { scanSectors } from './game/specials/mapscan.ts';
 import type { ShootAim } from './game/specials/shootaim.ts';
 import { Forces } from './game/specials/forces.ts';
@@ -82,7 +75,7 @@ import { applyDehacked, resetDehacked } from './game/dehacked/apply.ts';
 import { LevelProgression } from './wad/campaign/progression.ts';
 import { CenterMessage, lockedLineMessage, SECRET_MESSAGE } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
-import { getProfilerVisible, ProfilerHud } from './ui/devmode/profilerhud.ts';
+import { getProfilerVisible, ProfilerHud } from './ui/hud/profiler.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { DeathOverlay } from './ui/hud/deathoverlay.ts';
 import { FrameProfiler } from './util/profiler.ts';
@@ -1047,23 +1040,15 @@ export class Game {
         else camera.turnYaw((dest.rotateBy * 180) / Math.PI);
         camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
       },
-      onCrush: (sectorIndex, dealDamage) =>
-        applyCrushDamage(
-          this.world,
-          this.things,
-          this.player,
-          sectorIndex,
-          // The cause is fixed per wiring site, so the callbacks these two
-          // helpers take stay `(amount) => void` and bind it here instead.
-          (amount) => this.damagePlayer(amount, undefined, undefined, 'crush'),
-          dealDamage,
-          // A crusher over a voodoo doll kills the player it stands for.
-          this.voodoo.dolls,
-        ),
-      blocksCeilingLower: (sectorIndex, ceilingHeight) =>
-        blocksCeilingLower(this.world, this.things, this.player, sectorIndex, ceilingHeight),
-      blocksFloorRise: (sectorIndex, floorHeight) =>
-        blocksFloorRise(this.world, this.things, this.player, sectorIndex, floorHeight),
+      // Who a mover can catch. The tests over them are the specials layer's own; this hands over
+      // the bodies and nothing else — `things` as a getter because it is built further down.
+      occupants: {
+        things: () => this.things,
+        player: this.player,
+        // A crusher over a voodoo doll kills the player it stands for.
+        dolls: this.voodoo.dolls,
+        damagePlayer: (amount) => this.damagePlayer(amount, undefined, undefined, 'crush'),
+      },
       playerAt: this.player,
       movableSectors,
       sfx: this.audio,

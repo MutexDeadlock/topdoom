@@ -497,8 +497,8 @@ export interface ThingLayer {
    * Living monsters standing in exactly `sector` — a reference-equality check
    * against the same mutable `Sector` object `PosedThing.sector` was seeded
    * from (see that field's doc), not a sector-index lookup this layer has no
-   * way to perform on its own. Backs crush damage (game.ts's `onCrush`
-   * callback into `SpecialsController`) and the headroom-blocked check every
+   * way to perform on its own. Backs crush damage
+   * (`specials/moverblocking.ts: applyCrushDamage`) and the headroom-blocked check every
    * non-crushing mover uses to stop rather than clip through a monster
    * (`game/specials/moverblocking.ts`'s `headroomBlocked`) — either way, a mover only knows which
    * sector it's squeezing, not who's standing in it.

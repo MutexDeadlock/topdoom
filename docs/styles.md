@@ -27,6 +27,7 @@ src/ui/hud/           everything drawn over the running level (docs/hud.md's own
     levelcard.*       #level-card
     intermission.*    #intermission
     deathoverlay.*    #death-overlay
+    profiler.*        #profiler-hud, and its #profiler-cpu/#profiler-rows/#profiler-gpu children
 src/ui/menu/
     menu.css/.html    #menu
     about.*           #about, the About/Changelog popup inside #menu, and its
@@ -36,7 +37,6 @@ src/ui/menu/
     hold.css          .hold/.holding, the press-and-hold confirm on any #menu button
 src/ui/devmode/
     debughud.*        #hud
-    profilerhud.*     #profiler-hud, and its #profiler-cpu/#profiler-rows/#profiler-gpu children
 ```
 
 The one thing that doesn't live in a module's own file is a **shared class** — `.hidden`,

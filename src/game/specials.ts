@@ -16,6 +16,7 @@ import {
   type SwitchEntry,
 } from './specials/mapscan.ts';
 import { MoverGeometry, type MoverGeometryOptions } from './specials/movergeometry.ts';
+import { MoverOccupancy, NOBODY, type Occupancy, type OccupancySources } from './specials/moverblocking.ts';
 import { pickShootAim, type ShootAim } from './specials/shootaim.ts';
 import { lookupSpecial } from './specials/tables.ts';
 import { decodeSectorType } from './specials/sectortypes.ts';
@@ -78,15 +79,14 @@ import { sectorOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sf
 import { DOOM_TIC } from '../constants.ts';
 
 export {
-  // Re-exported so `./specials.ts` stays the specials layer's one public entry
-  // point, the same arrangement `things.ts` makes for `things/`. Both of these
-  // are driven by `game.ts` rather than by `SpecialsController`, so this is a
-  // plain pass-through and nothing more: the tidier shape is for the controller
-  // to own the two outright, which is a bigger change than moving the files was.
+  // Re-exported so `./specials.ts` stays the specials layer's one public entry point, the same
+  // arrangement `things.ts` makes for `things/`. `SectorEffects` is driven by `game.ts` rather
+  // than by `SpecialsController` — it has to exist before the `World` this controller needs
+  // (docs/savegames.md § Apply order) — so the layer's entry point is where it reaches its caller.
   SectorEffects,
   type SectorEffectResult,
 } from './specials/sectoreffects.ts';
-export { applyCrushDamage, blocksCeilingLower, blocksFloorRise } from './specials/moverblocking.ts';
+export type { Occupancy, OccupancySources } from './specials/moverblocking.ts';
 
 export interface LightState {
   pattern: LightPattern;
@@ -389,9 +389,16 @@ const NO_SOURCE: Placement = { x: 0, y: 0, angle: 0 };
 export interface SpecialsOptions extends MoverGeometryOptions {
   onExit: (secret: boolean) => void;
   onTeleport: (dest: TeleportDest) => void;
-  onCrush: (sectorIndex: number, dealDamage: boolean) => boolean;
-  blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean;
-  blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean;
+  /**
+   * Who a mover could catch — the bodies, not the tests over them, which are this layer's own
+   * (`specials/moverblocking.ts`). Absent, nothing is ever in the way.
+   */
+  occupants?: OccupancySources;
+  /**
+   * Overrides what `occupants` would be answered through. The seam
+   * `tests/fixtures/specialsrig.ts` drives a mover into an obstruction with, no bodies needed.
+   */
+  occupancy?: Occupancy;
   /** Where the player stands as the level opens, seeding the first `update`'s crossing test. */
   playerAt: Pos2;
   sfx?: SoundEmitter;
@@ -416,9 +423,8 @@ export class SpecialsController {
   private geometry: MoverGeometry;
   private onExit: (secret: boolean) => void;
   private onTeleport: (dest: TeleportDest) => void;
-  private onCrush: (sectorIndex: number, dealDamage: boolean) => boolean;
-  private blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean;
-  private blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean;
+  /** Who is standing in a mover — see `specials/moverblocking.ts`. */
+  private occupancy: Occupancy;
   private sfx: SoundEmitter;
   /** `A_BossDeath`'s per-map table, resolved once from `map.name` — see `notifyBossDeath`. */
   private bossDeathTriggers: BossDeathTrigger[];
@@ -514,9 +520,8 @@ export class SpecialsController {
       bank,
       onExit,
       onTeleport,
-      onCrush,
-      blocksCeilingLower,
-      blocksFloorRise,
+      occupants,
+      occupancy,
       playerAt,
       sfx = SILENT,
       switchPairs = switchPairTexture,
@@ -529,9 +534,7 @@ export class SpecialsController {
     this.bank = bank;
     this.onExit = onExit;
     this.onTeleport = onTeleport;
-    this.onCrush = onCrush;
-    this.blocksCeilingLower = blocksCeilingLower;
-    this.blocksFloorRise = blocksFloorRise;
+    this.occupancy = occupancy ?? (occupants ? new MoverOccupancy(world, occupants) : NOBODY);
     this.sfx = sfx;
     this.bossDeathTriggers = bossDeathTriggersFor(map.name);
     this.prev = { x: playerAt.x, y: playerAt.y };
@@ -1000,7 +1003,7 @@ export class SpecialsController {
       }
     } else if (mover.state === 'lowering') {
       const next = Math.max(mover.closeHeight, sector.ceilHeight - mover.effect.speed * dt);
-      if (this.blocksCeilingLower(mover.sectorIndex, next)) {
+      if (this.occupancy.blocksCeilingLower(mover.sectorIndex, next)) {
         // Vanilla's T_MovePlane/PIT_ChangeSector: closing further would leave
         // whoever's standing under it with no headroom, so the door bounces
         // back open instead of sliding shut through them — this tick's move
@@ -1075,7 +1078,7 @@ export class SpecialsController {
         : Math.min(mover.restHeight, sector.floorHeight + mover.effect.speed * dt);
       if (mover.crush) {
         this.tickCrush(mover.sectorIndex);
-      } else if (this.blocksFloorRise(mover.sectorIndex, next)) {
+      } else if (this.occupancy.blocksFloorRise(mover.sectorIndex, next)) {
         // T_PlatRaise's own `res == crushed && !plat->crush` branch: unlike a
         // plain rising FloorMover/CeilingMover, which just stalls in place
         // (T_MoveFloor/T_MoveCeiling have no such branch), a lift immediately
@@ -1119,13 +1122,13 @@ export class SpecialsController {
       // direction is reached in the step it starts and put straight back if a
       // body no longer fits — the `pastdest` revert has no `crush` exception,
       // unlike the per-step one below. docs/specials.md § Inverted plane moves.
-      if (!this.blocksFloorRise(mover.sectorIndex, mover.target)) sector.floorHeight = mover.target;
+      if (!this.occupancy.blocksFloorRise(mover.sectorIndex, mover.target)) sector.floorHeight = mover.target;
       this.finishFloor(mover);
       if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
       return;
     }
     const next = sector.floorHeight + dir * mover.speed * dt;
-    if (dir > 0 && !mover.crush && this.blocksFloorRise(mover.sectorIndex, next)) {
+    if (dir > 0 && !mover.crush && this.occupancy.blocksFloorRise(mover.sectorIndex, next)) {
       // Same un-crush rule as the lift above, but only while `crush` is false:
       // the raiseFloorCrush family (55/56/65/94) keeps grinding through
       // instead, damaging via tickCrush below. docs/specials.md § Crushers.
@@ -1153,7 +1156,7 @@ export class SpecialsController {
   /**
    * One-way ceiling move — see `CeilingMover`'s doc for why there's no
    * hold/reversal state, unlike a door. A *lowering* move stalls on whoever is
-   * underneath (`blocksCeilingLower`, the same callback a closing door uses);
+   * underneath (`blocksCeilingLower`, the same test a closing door makes);
    * a rising one never blocks.
    * docs/specials.md § Every other mover stops instead.
    */
@@ -1165,7 +1168,7 @@ export class SpecialsController {
     if (dir > 0 ? mover.target < sector.ceilHeight : mover.target > sector.ceilHeight) {
       // `T_MovePlane`'s clamp branch, `tickFloor`'s exactly — the plane is
       // shared in vanilla. docs/specials.md § Inverted plane moves.
-      if (!this.blocksCeilingLower(mover.sectorIndex, mover.target)) sector.ceilHeight = mover.target;
+      if (!this.occupancy.blocksCeilingLower(mover.sectorIndex, mover.target)) sector.ceilHeight = mover.target;
       this.finishCeiling(mover);
       if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
       return;
@@ -1175,7 +1178,7 @@ export class SpecialsController {
     // `T_MoveCeiling`'s `crushed` branch pointedly leaves `genCeiling` out of
     // the crusher types' slow-down, and `T_MovePlane` with crush=true never
     // refuses the move. Damage is rationed below like every crusher.
-    if (dir < 0 && !mover.crush && this.blocksCeilingLower(mover.sectorIndex, next)) return;
+    if (dir < 0 && !mover.crush && this.occupancy.blocksCeilingLower(mover.sectorIndex, next)) return;
     sector.ceilHeight = next;
     // T_MoveCeiling grinds on the same shared clock, in both directions. It has
     // no arrival sound: only vanilla's *silent* crusher gets a `pstop` at an end
@@ -1208,12 +1211,12 @@ export class SpecialsController {
     const dir = mover.floorTarget > sector.floorHeight ? 1 : -1;
     if (dir < 0) {
       const nextCeil = Math.max(mover.ceilTarget, sector.ceilHeight - step);
-      if (this.blocksCeilingLower(mover.sectorIndex, nextCeil)) return;
+      if (this.occupancy.blocksCeilingLower(mover.sectorIndex, nextCeil)) return;
       sector.ceilHeight = nextCeil;
       sector.floorHeight = Math.max(mover.floorTarget, sector.floorHeight - step);
     } else {
       const nextFloor = Math.min(mover.floorTarget, sector.floorHeight + step);
-      if (this.blocksFloorRise(mover.sectorIndex, nextFloor)) return;
+      if (this.occupancy.blocksFloorRise(mover.sectorIndex, nextFloor)) return;
       sector.floorHeight = nextFloor;
       sector.ceilHeight = Math.min(mover.ceilTarget, sector.ceilHeight + step);
     }
@@ -1279,13 +1282,13 @@ export class SpecialsController {
   }
 
   /**
-   * Asks `onCrush` whether anything in `sectorIndex` is caught under the mover, dealing
+   * Asks `Occupancy` whether anything in `sectorIndex` is caught under the mover, dealing
    * `CRUSH_DAMAGE` at the same time only on the shared `crushDamageDue` clock — two rates in one
    * call because vanilla has two, and the damage one is level-wide rather than per mover.
    * See docs/specials.md § Crushers.
    */
   private tickCrush(sectorIndex: number): boolean {
-    return this.onCrush(sectorIndex, this.crushDamageDue);
+    return this.occupancy.crush(sectorIndex, this.crushDamageDue);
   }
 
   /** The slot a class's movers live in — see `moverClass`. */

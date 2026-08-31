@@ -159,6 +159,12 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   deathFrameCount: number;
   /**
+   * Set once a moving plane has crunched this corpse to giblets — `PIT_ChangeSector`'s
+   * `P_SetMobjState(thing, S_GIBS)`. Read by `enterDeathPose`, which is what makes the pool the
+   * pose a restored save comes back holding. docs/specials.md § Crushed corpses.
+   */
+  crushed: boolean;
+  /**
    * This type's resurrection frames (`MONSTER_RAISE_FRAMES`), resolved once
    * at spawn for the same reason `attackPose`/`painFrames` are — and
    * doubles as the arch-vile's own eligibility test: `undefined` means this
@@ -511,6 +517,18 @@ export interface ThingLayer {
    * deliberately stays on `monstersInSector` alone. docs/specials.md § Crushers.
    */
   crushablesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
+  /**
+   * The monster corpses lying in `sectors` that no plane has crunched yet, over the same sector
+   * set `crushablesInSectors` takes. `height` is each body's living `mobjinfo.height`; a corpse's
+   * own is a quarter of it (`CORPSE_HEIGHT_FRACTION`). docs/specials.md § Crushed corpses.
+   */
+  corpsesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
+  /**
+   * Crunches the corpse `id` to a pool of blood — `PIT_ChangeSector`'s `S_GIBS` branch. A no-op on
+   * a stale or already-crunched id, and on a WAD set carrying no `CORPSE_GIB_SPRITE` art, which
+   * would leave the corpse drawing nothing at all. docs/specials.md § Crushed corpses.
+   */
+  crushCorpse(id: number): void;
   /**
    * Applies `amount` damage to `id`, switching to the death animation at 0 —
    * gibbed or plain per `P_KillMobj`'s overkill rule (docs/death.md § Monster

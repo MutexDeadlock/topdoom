@@ -85,19 +85,22 @@ export function drawnLumps(layer: SpriteFxLayer, alpha = 1): string[] {
 }
 
 /**
- * `BANK`, plus the frame letter of every lump it is asked for — which is how a
- * test reads back the pose a thing is actually drawn on, the frame letter being
- * the one part of a lump name that the animator, not the caller, chooses.
+ * `BANK`, plus what every lump it is asked for was asked as — which is how a test reads back the
+ * pose a thing is actually drawn on. `asked` is the frame letter alone, the one part of a lump name
+ * the animator rather than the caller chooses; `askedSprites` prefixes the sprite name, for a test
+ * whose subject is a pose switching to another sprite's art entirely.
  */
-export function recordingBank(): { bank: SpriteBank; asked: string[] } {
+export function recordingBank(): { bank: SpriteBank; asked: string[]; askedSprites: string[] } {
   const asked: string[] = [];
+  const askedSprites: string[] = [];
   const bank = {
     lookup(sprite: string, frame: string, digit: number) {
       asked.push(frame);
+      askedSprites.push(sprite + frame);
       return { lump: `${sprite}${frame}${digit}`, flip: false };
     },
   } as unknown as SpriteBank;
-  return { bank, asked };
+  return { bank, asked, askedSprites };
 }
 
 /**

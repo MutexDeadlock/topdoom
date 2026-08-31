@@ -124,6 +124,21 @@ export const BLOOD_FRAME_SECONDS = 8 * DOOM_TIC;
 export const HIT_Z_JITTER = 4;
 
 /**
+ * `MT_BLOOD`'s whole chain from `S_BLOOD1` on — what a spawn that goes through `P_SpawnMobj`
+ * directly rather than through `P_SpawnBlood` gets, since only the latter skips states by damage.
+ * The crusher's spray (`SpriteFxLayer.spawnCrushBlood`) is the one such caller.
+ */
+export const BLOOD_FRAMES = ['C', 'B', 'A'];
+
+/**
+ * How fast a crusher's spray flies out of the body it came from, map units a second at the extreme
+ * of its triangular draw — `PIT_ChangeSector`'s own `(P_Random()-P_Random())<<12`, which is 15.9
+ * units a *tic*. It falls from there under `GRAVITY`, `MT_BLOOD` carrying no `MF_NOGRAVITY`.
+ * See docs/specials.md § Crushers.
+ */
+export const CRUSH_BLOOD_SPEED = (255 * 0x1000) / 0x10000 / DOOM_TIC;
+
+/**
  * Which of `MT_BLOOD`'s three states the splash starts in, from the damage the
  * hit dealt: `P_SpawnBlood` skips straight to `S_BLOOD2`/`S_BLOOD3` for a
  * weaker hit, so a pistol shot shows one frame of blood and a shotgun blast at

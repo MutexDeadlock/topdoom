@@ -172,6 +172,7 @@ export const MONSTER_SAVE_KEYS = [
   'spawnY',
   'spawnAngle',
   'deadTime',
+  'crushed',
   'barrelExploded',
   'explodeSource',
   'velX',
@@ -237,6 +238,9 @@ export const MONSTER_FIELD_DEFAULTS: {
   >]: MonsterFields[K];
 } = {
   deadTime: 0,
+  // Absent from a block written before crushed corpses existed, which reads back as a corpse no
+  // plane has caught — the behavior those saves were written under.
+  crushed: false,
   barrelExploded: false,
   explodeSource: null,
   velX: 0,

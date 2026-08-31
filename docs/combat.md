@@ -582,8 +582,16 @@ whose north wall (lines 22-25) puts every impact in subsector 184 behind it.
 (`spawnPlayerShot`), the fist/chainsaw swing (its melee branch) and a monster's hitscan bolt
 (`game/monsters/attacks.ts: MonsterAttacks.resolveHitscan`) all splash, and everything reaching
 `P_DamageMobj` by another route does not: a projectile's direct hit, splash, the BFG spray
-(`A_BFGSpray` damages and spawns `MT_EXTRABFG` itself, never blood), a crusher, a damage floor.
+(`A_BFGSpray` damages and spawns `MT_EXTRABFG` itself, never blood), a damage floor.
 Don't "fix" the missing cases — a rocket that made a monster bleed would be wrong.
+
+**The crusher is the one exception, and it is vanilla's own.** `PIT_ChangeSector` spawns `MT_BLOOD`
+itself, beside the `P_DamageMobj` call in its crush branch — not through `P_SpawnBlood`, so the
+splash starts at `S_BLOOD1` whatever the damage, it comes out of the body's middle rather than where
+a trace stopped, and it is **thrown**: `momx`/`momy` off the random table, and a fall to the floor,
+`MT_BLOOD` carrying no `MF_NOGRAVITY`. `SpriteFxLayer.spawnCrushBlood` is that one and
+`OneShotEffect.motion` is the only moving-effect machinery here besides the arch-vile's following
+flame; docs/specials.md § Crushers owns the rest.
 
 `SpriteFxLayer.spawnBlood` is one `OneShotEffect` like any other. Two details are vanilla's and look
 arbitrary: the frame letters run **backwards** (`S_BLOOD1`-`3` are `BLUD` C, B, A at 8 tics each),
@@ -593,9 +601,10 @@ and the hit's damage picks which state the splash *starts* in (`bloodFrames`: un
 with the identical line), drawn off the random table like every other fuzz in the game
 (docs/random.md § The triangular draw), and is what keeps a shotgun's pellets from stacking their
 splashes into one sprite — the table has no two adjacent entries equal, so the jitter is never
-exactly zero. `MT_BLOOD`'s brief upward hop (`momz = 2` falling back under gravity) is deliberately
-**not** reproduced: it peaks about 3 units in a top-down view, and every other `OneShotEffect` is
-fixed in place.
+exactly zero. `P_SpawnBlood`'s brief upward hop (`momz = 2` falling back under gravity) is
+deliberately **not** reproduced: it peaks about 3 units, which from overhead is nothing, and a
+splash that stays put is one `OneShotEffect.motion` less to integrate. The *crusher's* splash does
+move, and its `momx`/`momy` are far too big to drop — § below.
 
 **`ThingLayer.bleeds` is vanilla's `MF_NOBLOOD` flag**, which in all of stock DOOM exactly one thing
 carries — `MT_BARREL`, which takes a bullet puff instead. It is keyed by ID rather than type because

@@ -8,6 +8,7 @@ import { MONSTER_HEALTH } from '../../src/game/things/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { crushSources } from '../fixtures/specialsrig.ts';
 
 /**
  * `PIT_ChangeSector` crushes a body whose *clipped headroom* is under its own
@@ -21,8 +22,6 @@ import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 
 const KNIGHT = MONSTER_STATS[ThingType.hellKnight];
 const CELL = 128;
-/** Far enough away that the player is nobody's business here. */
-const PLAYER = { x: -1000, y: -1000 };
 
 /**
  * A two-cell room, each cell its own sector, with the west one crushing: its
@@ -44,14 +43,7 @@ function scene(inset: number) {
 
 /** One crush pulse over the crushing sector; reports `nofit` and what the monster has left. */
 function pulse(room: ReturnType<typeof scene>): { caught: boolean; health: number } {
-  const caught = applyCrushDamage(
-    room.world,
-    room.things,
-    PLAYER,
-    room.crusher,
-    () => assert.fail('the player is nowhere near this crusher'),
-    true,
-  );
+  const caught = applyCrushDamage(room.world, crushSources({ things: () => room.things }), room.crusher, true);
   return { caught, health: healthOf(room.things) };
 }
 

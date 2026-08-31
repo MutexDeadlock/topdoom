@@ -5,10 +5,12 @@
  * hang mover meshes on, and a real `FogOfWar` — which is what makes this the fixture rather than a
  * mock: everything below the stubs is the production object. docs/testing.md § The specials rig.
  */
+import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
 import { SpecialsController, type Occupancy, type TeleportDest } from '../../src/game/specials.ts';
+import type { OccupancySources } from '../../src/game/specials/moverblocking.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { buildMapMesh, type BuiltMap } from '../../src/render/mapmesh.ts';
@@ -33,6 +35,28 @@ export const BANK = {
   get: (_kind: string, name: string) =>
     new THREE.MeshBasicMaterial({ alphaTest: name.toUpperCase() === MASKED_TEXTURE ? 0.5 : 0 }),
 } as unknown as MaterialBank;
+
+/**
+ * Far enough from every sector under test that the player is nobody's business in it — the
+ * position a crush test gives the player when the subject is somebody else.
+ */
+export const AWAY = { x: -1000, y: -1000, z: 0 };
+
+/**
+ * The `OccupancySources` an `applyCrushDamage`/`MoverOccupancy` test needs, with the members it
+ * isn't about defaulted to "nobody there, and nothing should reach me". Override only what the
+ * test is actually saying.
+ */
+export function crushSources(over: Partial<OccupancySources> = {}): OccupancySources {
+  return {
+    things: () => null,
+    player: AWAY,
+    dolls: [],
+    damagePlayer: () => assert.fail('nothing in this test should damage the player'),
+    sprayBlood: () => {},
+    ...over,
+  };
+}
 
 /** Nothing held, nothing clicked — the input a test that isn't about the use key wants. */
 export const NO_INPUT = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
@@ -64,6 +88,13 @@ export interface SpecialsRigOptions {
    * supplies its own, without needing a real body anywhere near the sector.
    */
   blocksFloorRise?: Occupancy['blocksFloorRise'];
+  /**
+   * The whole `Occupancy`, built over the `World` the rig owns — for a test whose subject is the
+   * controller's *binding* to a level's bodies rather than one answer, i.e. a real
+   * `MoverOccupancy`. A factory because that `World` doesn't exist until the rig builds it.
+   * Overrides the three stubs above.
+   */
+  occupancy?: (world: World) => Occupancy;
   /** Where the controller's sounds go. Defaults to `SILENT`; `soundLog()` is the recorder a test that asserts on them wants. */
   sfx?: SoundEmitter;
 }
@@ -126,10 +157,12 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     onTeleport: options.onTeleport ?? (() => {}),
     // Stands in for the level's bodies, of which the rig has none: nothing is ever in the way
     // unless a test says so. No test drives a *ceiling* into the player yet, so that one is fixed.
-    occupancy: {
+    occupancy: options.occupancy?.(world) ?? {
       blocksCeilingLower: () => false,
       blocksFloorRise: options.blocksFloorRise ?? (() => false),
       crush: options.onCrush ?? (() => false),
+      // The rig has no bodies of its own, so it has no corpses to crunch either.
+      squash: () => {},
     },
     playerAt: at,
     movableSectors,

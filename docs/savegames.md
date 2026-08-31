@@ -173,8 +173,11 @@ nearly so:
   by `deadTime`; the replay goes through `enterDeathPose`, the same function `damageThing` uses —
   `P_KillMobj`'s overkill-gib rule has exactly one implementation, so a corpse can't look different
   after a load than before it (docs/death.md § Monster death). This is why `health` is saved with
-  its negative overkill intact. **The exception is an attack pose with shots still pending**
-  (`restoreAttackPose`), replayed and fast-forwarded the same way off
+  its negative overkill intact — and why the corpse's `crushed` flag *is* an ordinary AI-block
+  field: a squashed corpse's pool is `enterDeathPose`'s answer like any other pose
+  (docs/specials.md § Crushed corpses). It defaults to false, so a save written before it existed
+  restores an uncrushed corpse and needs no `SAVE_VERSION` bump. **The exception is an attack pose
+  with shots still pending** (`restoreAttackPose`), replayed and fast-forwarded the same way off
   `AttackStats.duration - attackPause` — the same "long enough to save inside and notice" argument
   the teleport fog above makes, and for the same reason it is the *only* pose that gets it: the
   arch-vile's cast is 94 tics, most of them after its warning flame appears, so a save taken

@@ -3,6 +3,8 @@ v0.17.0 (2026-0?-??)
 Features and improvements
   - weapon-matching player skins! Doomguy only, but can be forced for WADs which 
     customize the player sprites, all tuneable in Settings / Visuals
+  - a corpse under a door, floor or crusher is squashed to a pool of blood
+    - a crusher sprays blood out of whoever it is grinding
   - a crowd of monsters waking at once no longer floods the sound channels
   - starting a game shows a loading screen with the WAD download's progress
   - menu / WAD Library: Shortened 'DEHACKED' to 'DEH'

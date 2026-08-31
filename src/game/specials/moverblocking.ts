@@ -1,24 +1,25 @@
 /**
  * The "who is standing in this mover" answers `SpecialsController` reaches the level's bodies
- * through (`Occupancy`): crush damage, and the two obstruction tests that stall or
- * reverse a mover. The controller owns the moving geometry and knows only a sector index — plus,
+ * through (`Occupancy`): crush damage, the corpse squish, and the two obstruction tests that stall
+ * or reverse a mover. The controller owns the moving geometry and knows only a sector index — plus,
  * for the two obstruction tests, the height its next step would put the plane at. See
- * docs/specials.md § Crushers and § Every other mover stops instead.
+ * docs/specials.md § Crushers, § Crushed corpses and § Every other mover stops instead.
  */
 import type { DoomMap, Sector } from '../../wad/map.ts';
-import type { Pos2 } from '../../types.ts';
+import type { Pos2, Pos3 } from '../../types.ts';
 import type { World } from '../world.ts';
 import type { ThingLayer } from '../things.ts';
 import { TALLEST_BODY_HEIGHT } from '../monsters/tables.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
 import { neighborSectorIndices } from '../world.ts';
-import { CRUSH_DAMAGE } from './defs.ts';
+import { CORPSE_HEIGHT_FRACTION, CRUSH_DAMAGE } from './defs.ts';
 
 /**
- * The three "who is in this mover" answers `SpecialsController` asks per tic. It owns the moving
- * geometry and reaches the level's bodies through this; the rig in `tests/fixtures/specialsrig.ts`
- * supplies its own to drive a mover into an obstruction with no body anywhere near the sector.
- * docs/specials.md § Crushers and § Every other mover stops instead.
+ * The three "who is in this mover" answers `SpecialsController` asks per tic, plus the corpse
+ * squish it commands. It owns the moving geometry and reaches the level's bodies through this; the
+ * rig in `tests/fixtures/specialsrig.ts` supplies its own to drive a mover into an obstruction with
+ * no body anywhere near the sector.
+ * docs/specials.md § Crushers, § Crushed corpses and § Every other mover stops instead.
  */
 export interface Occupancy {
   /** A closing door or lowering ceiling — see `blocksCeilingLower`. */
@@ -30,6 +31,11 @@ export interface Occupancy {
    * slowdown keys off it every tic, not only on a damage one. See `applyCrushDamage`.
    */
   crush(sectorIndex: number, dealDamage: boolean): boolean;
+  /**
+   * Crunches to giblets whatever corpse the sector's planes have left no room for —
+   * `squashCorpses`.
+   */
+  squash(sectorIndex: number): void;
 }
 
 /** Where `MoverOccupancy` finds the bodies a mover could catch. */
@@ -39,12 +45,20 @@ export interface OccupancySources {
    * `SpecialsController`, so an instance passed at construction would be the null one forever.
    */
   things: () => ThingLayer | null;
-  /** The live player position — read every tic, so it must be the player object itself. */
-  player: Pos2;
+  /**
+   * The live player position — read every tic, so it must be the player object itself. `z` is the
+   * feet height the crusher's spray is measured up from.
+   */
+  player: Pos3;
   /** The level's voodoo dolls (`game/voodoo.ts`): a crusher catching one hurts the real player. */
   dolls: readonly Pos2[];
   /** Crush damage to the player. The cause is fixed per wiring site, so the caller binds it. */
   damagePlayer: (amount: number) => void;
+  /**
+   * `PIT_ChangeSector`'s blood spray, at the caught body's middle —
+   * `SpriteFxLayer.spawnCrushBlood`, which lives in `game.ts` like every other effect.
+   */
+  sprayBlood: (at: Pos3) => void;
 }
 
 /** The `Occupancy` of a level with nothing in it — `SpecialsOptions.occupants`' default. */
@@ -52,6 +66,7 @@ export const NOBODY: Occupancy = {
   blocksCeilingLower: () => false,
   blocksFloorRise: () => false,
   crush: () => false,
+  squash: () => {},
 };
 
 /** Per map, per sector: `crushNeighborhood`'s answer, memoized as `world.ts`'s `sectorLines` is. */
@@ -104,25 +119,20 @@ export function blocksFloorRise(
 }
 
 /**
- * What `Occupancy.crush` does: deals `CRUSH_DAMAGE` to the player and to every
- * crushable body the sector's moving plane has left without the headroom to stand in. Gated on
- * `crushed` rather than on merely standing in the sector, so a crusher parked at the top of its
- * travel deals none. Monsters and barrels share one loop, matching `PIT_ChangeSector` treating any
- * shootable mobj the same. docs/specials.md § Crushers.
+ * What `Occupancy.crush` does: deals `CRUSH_DAMAGE` to the player and to every crushable body the
+ * sector's moving plane has left without the headroom to stand in, and sprays blood out of each.
+ * Gated on `crushed` rather than on merely standing in the sector, so a crusher parked at the top
+ * of its travel deals none. Monsters and barrels share one loop, matching `PIT_ChangeSector`
+ * treating any shootable mobj the same. docs/specials.md § Crushers.
  */
 export function applyCrushDamage(
   world: World,
-  things: ThingLayer | null,
-  player: Pos2,
+  sources: OccupancySources,
   sectorIndex: number,
-  damagePlayer: (amount: number) => void,
   dealDamage: boolean,
-  /**
-   * The level's voodoo dolls: each is a player mobj, so a crusher catching one hurts the real
-   * player.
-   */
-  dolls: readonly Pos2[] = [],
 ): boolean {
+  const { player, dolls, damagePlayer, sprayBlood } = sources;
+  const things = sources.things();
   const map = world.map;
   const sector = map.sectors[sectorIndex];
   const gap = sector.ceilHeight - sector.floorHeight;
@@ -138,7 +148,9 @@ export function applyCrushDamage(
     // The doll and the player are the same mobj as far as `PIT_ChangeSector` is
     // concerned — and a crusher over a doll is the classic instant-death script,
     // so this is not an edge case. Damage is dealt once per body caught, exactly
-    // as vanilla's per-mobj loop does. docs/specials.md § Voodoo dolls.
+    // as vanilla's per-mobj loop does. A doll sprays no blood, unlike the player it stands for:
+    // `dolls` carries no height to spray it at, and a doll is drawn as nothing anyway.
+    // docs/specials.md § Voodoo dolls.
     for (const body of dolls) {
       if (!crushed(world, body.x, body.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) continue;
       caught = true;
@@ -146,7 +158,10 @@ export function applyCrushDamage(
     }
     if (crushed(world, player.x, player.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) {
       caught = true;
-      if (dealDamage) damagePlayer(CRUSH_DAMAGE);
+      if (dealDamage) {
+        damagePlayer(CRUSH_DAMAGE);
+        sprayBlood({ x: player.x, y: player.y, z: player.z + PLAYER_HEIGHT / 2 });
+      }
     }
   }
   if (gap < TALLEST_BODY_HEIGHT) {
@@ -156,13 +171,38 @@ export function applyCrushDamage(
       // of the same descent.
       if (!crushed(world, m.x, m.y, m.radius, m.height, sectorIndex, true)) continue;
       caught = true;
-      if (dealDamage) things?.damage(m.id, CRUSH_DAMAGE);
+      if (!dealDamage) continue;
+      // Before the damage, as `PTR_ShootTraverse` does it: whatever this blow kills still
+      // bleeds. `bleeds` is `MF_NOBLOOD`, so a barrel takes the pulse without spraying —
+      // vanilla checks no flag here at all (docs/specials.md § Crushers).
+      if (things?.bleeds(m.id)) sprayBlood({ x: m.x, y: m.y, z: m.z + m.height / 2 });
+      things?.damage(m.id, CRUSH_DAMAGE);
     }
   }
   return caught;
 }
 
-/** `Occupancy` over a real level: the three functions above, bound to whoever is in it. */
+/**
+ * `PIT_ChangeSector`'s corpse branch: every corpse the sector's planes have left less room than a
+ * corpse's own height is crunched to a pool of blood. Unlike crush damage this is not rationed on
+ * the damage clock and not the crushers' alone — vanilla runs it from `P_ChangeSector` after *any*
+ * plane move, which is what squashes a body under an ordinary closing door.
+ * docs/specials.md § Crushed corpses.
+ */
+export function squashCorpses(world: World, things: ThingLayer | null, sectorIndex: number): void {
+  if (!things) return;
+  const map = world.map;
+  const sector = map.sectors[sectorIndex];
+  // The same cheap pre-filter `applyCrushDamage` opens with, against the shortest corpse this
+  // mover could be squeezing rather than the tallest body.
+  if (sector.ceilHeight - sector.floorHeight >= TALLEST_BODY_HEIGHT * CORPSE_HEIGHT_FRACTION) return;
+  for (const m of things.corpsesInSectors(crushNeighborhood(map, sectorIndex))) {
+    if (!crushed(world, m.x, m.y, m.radius, m.height * CORPSE_HEIGHT_FRACTION, sectorIndex, true)) continue;
+    things.crushCorpse(m.id);
+  }
+}
+
+/** `Occupancy` over a real level: the functions above, bound to whoever is in it. */
 export class MoverOccupancy implements Occupancy {
   private world: World;
   private sources: OccupancySources;
@@ -183,8 +223,11 @@ export class MoverOccupancy implements Occupancy {
   }
 
   crush(sectorIndex: number, dealDamage: boolean): boolean {
-    const { things, player, damagePlayer, dolls } = this.sources;
-    return applyCrushDamage(this.world, things(), player, sectorIndex, damagePlayer, dealDamage, dolls);
+    return applyCrushDamage(this.world, this.sources, sectorIndex, dealDamage);
+  }
+
+  squash(sectorIndex: number): void {
+    squashCorpses(this.world, this.sources.things(), sectorIndex);
   }
 }
 

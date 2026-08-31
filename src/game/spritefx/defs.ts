@@ -11,6 +11,17 @@ import type { Pos3 } from '../../types.ts';
 import { segmentEntersBox } from '../../util/geom.ts';
 
 /**
+ * Map units a second, for the one effect kind that carries momentum — the crusher's blood spray,
+ * integrated by `SpriteFxLayer.updateImpacts`. Boxed rather than flat `velX`/`velY`/`velZ` fields
+ * so its presence is the "is this one flying" flag. See docs/specials.md § Crushers.
+ */
+export interface EffectMotion {
+  velX: number;
+  velY: number;
+  velZ: number;
+}
+
+/**
  * A transient, one-shot sprite animation: plays through `frames` once at a
  * fixed spot and then removes itself. Used for the teleport-fog puff, a
  * projectile's impact explosion, the smoke trail and the vile's flame —
@@ -44,6 +55,13 @@ export interface OneShotEffect extends Pos3 {
    * (`A_Fire`'s `P_CheckSight` gate). Always set alongside `followTargetId`.
    */
   vileSourceId?: number;
+  /**
+   * Set only for an effect thrown with momentum of its own — the crusher's blood spray
+   * (`spawnCrushBlood`). Cleared where it lands, which is what ends the per-tic arithmetic; every
+   * other effect here is fixed where it spawned and leaves this undefined.
+   * See docs/specials.md § Crushers.
+   */
+  motion?: EffectMotion;
   /**
    * Position at the end of the previous tic, for the render layer to interpolate
    * from. Every effect carries it although only the arch-vile's following flame

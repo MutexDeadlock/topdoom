@@ -672,6 +672,10 @@ export class SpecialsController {
     this.crushDamageDue = this.crushDamageTimer <= 0;
     if (this.crushDamageDue) this.crushDamageTimer += CRUSH_DAMAGE_INTERVAL;
     this.tickMovers(dt, dirty);
+    // `P_ChangeSector` after every plane that actually moved, which is what `dirty` already is —
+    // corpses are crunched by an ordinary door or floor, not only by a crusher, and on no clock.
+    // docs/specials.md § Crushed corpses.
+    for (const sectorIndex of dirty) this.occupancy.squash(sectorIndex);
     this.lastTeleport = null;
     // Read once, up front: `player` is the live `Player`, and a use-triggered teleport moves it
     // inside `handleUseTrigger`. Both the walk pass and the reseed below mean where the player

@@ -234,6 +234,28 @@ bounding box; the layer finds them by comparing against the exact same mutable `
 references `PosedThing.sector` was seeded from, the same trick `tryPickup`'s live-height read relies
 on.
 
+**Every damage pulse also sprays blood**, `PIT_ChangeSector`'s `P_SpawnMobj(…, MT_BLOOD)` beside its
+`P_DamageMobj` call — out of the body's middle (`z + height/2`), for the player as readily as for a
+monster, and never on a tic that only measures `nofit`. Two departures, both narrow:
+
+- **A barrel sprays nothing.** Vanilla checks no flag here, so its barrels do bleed; this follows
+  `ThingLayer.bleeds` (`MF_NOBLOOD`) as ZDoom's `P_DoCrunch` does, so a barrel goes on taking a puff
+  everywhere and blood nowhere (docs/combat.md § Blood).
+- **A voodoo doll sprays nothing either**, where vanilla would spray at the doll: `dolls` carries no
+  height to spray at, and a doll draws as nothing, so blood would appear in mid-air in an empty
+  room.
+
+**The splash is thrown, not placed.** `PIT_ChangeSector` gives it `(P_Random()-P_Random())<<12` of
+horizontal momentum — `CRUSH_BLOOD_SPEED`, 15.9 units a tic at the extreme of the draw — and
+`MT_BLOOD` carries no `MF_NOGRAVITY`, so it arcs out of the body's middle and falls to the floor
+(`OneShotEffect.motion`, integrated under the same `GRAVITY` a corpse falls at). Without that the
+spray hangs in mid-air at chest height for its whole 24 tics, which is what it looked like before.
+
+It **sticks where it lands**, where vanilla goes on sliding it under `FRICTION`: nothing in this
+layer collides with anything, so a sliding splash would slide through the wall it was sprayed
+against. Landing also clears `motion`, so a splash costs its BSP descent only while it is in the
+air.
+
 **A barrel takes the same crush damage as a monster**, via `crushablesInSectors` (`monstersInSector`
 plus any living barrel in those sectors) — vanilla's `PIT_ChangeSector` doesn't distinguish
 `MT_BARREL` from any other `MF_SHOOTABLE` mobj, so a barrel under a crusher dies and explodes
@@ -319,6 +341,45 @@ asks these stairs to crush.
 exactly: it keeps hurting whoever's in the way every interval until they leave or die, rather than
 stopping, reversing early, or getting stuck. That grind-through behavior is the part of the vanilla
 feel that matters for a crusher reading as a hazard.
+
+## Crushed corpses
+
+`PIT_ChangeSector`'s first branch, ahead of every crush rule above: a **corpse** the moved plane
+leaves without headroom is crunched to a pool of blood (`S_GIBS`, sprite `POL5`) instead of being
+damaged, and never counts toward `nofit`. `squashCorpses` (`specials/moverblocking.ts`) is that
+branch, over `ThingLayer.corpsesInSectors`/`crushCorpse`.
+
+Three properties come from it running in `P_ChangeSector` rather than in the crush path:
+
+- **Any mover squashes, not just a crusher** — an ordinary closing door or rising floor does it too.
+  The call site is one loop over `SpecialsController.update`'s `dirty` set, which is already exactly
+  the sectors whose plane moved this tic.
+- **No damage clock.** It lands on the tic the plane reaches the corpse, not on `leveltime&3`.
+- **A corpse never blocks or stalls the mover it is under**, in any direction — the branch returns
+  before `nofit` is set.
+
+**A corpse is a quarter of its living height** (`P_KillMobj`'s `target->height >>= 2`,
+`CORPSE_HEIGHT_FRACTION`), so an imp's corpse squashes at a 14-unit gap where the live imp is caught
+at 56. That fraction is the squish test's alone: corpses block nothing here, so nothing else needs a
+corpse height.
+
+Three deliberate departures from `PIT_ChangeSector`:
+
+- **Radius and height are left alone** where vanilla zeroes both. Nothing here reads a corpse's
+  radius for blocking, and zeroing it would leak into the nightmare respawn's fit test and into the
+  corpse's own resting height. It also means an arch-vile raising a squashed corpse gets an
+  ordinary monster rather than vanilla's radius-0, height-0 **ghost** — Boom's own fix
+  (`p_enemy.c`, "fix Ghost bug"). `crushed` is cleared by both `reviveCorpse` and `respawnCorpse`.
+- **Barrel debris is not squashed**, though vanilla's `health <= 0` branch catches it: it is a
+  transient that removes itself a few tics later (docs/death.md § Exploding barrels).
+- **The player's corpse is not squashed either.** It is `game.ts`'s `playerActor`, not one of
+  `ThingLayer`'s bodies, and the player is looking at the death overlay by then
+  (docs/death.md § Player death).
+
+The pool is entered through `enterDeathPose`, the single owner of every death pose, so a save
+restores holding it. `PosedThing.crushed` is a new `MONSTER_SAVE_KEYS` field defaulting to false —
+absent from an older save, which reads back as an uncrushed corpse (docs/savegames.md § The format
+and its version). A WAD set with no `POL5` art keeps the corpse it has rather than drawing nothing.
 
 ## Every other mover stops instead
 

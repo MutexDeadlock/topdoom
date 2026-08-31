@@ -223,7 +223,10 @@ sixteenth argument was a five-file edit.
 The rig has no bodies, so it supplies the controller's `Occupancy` outright — nothing is ever in a
 mover's way unless a test says so. The one predicate a test is likely to want back is
 `blocksFloorRise`: `inverted-moves.test.ts` holds a mover against a body without headroom by
-supplying it, rather than putting a real body near the sector.
+supplying it, rather than putting a real body near the sector. A test whose subject is that binding
+itself passes the whole `occupancy` instead — a real `MoverOccupancy` over a real thing layer, which
+is how `corpse-squish.test.ts` closes a door on a corpse with every layer in between production
+code.
 
 `tick(dt, x, y)` mirrors `update`'s own argument order and defaults to one `TIC` at the rig's start
 position: a test that moves nobody writes `tick()`, one that walks the player writes

@@ -8,7 +8,8 @@ import { PLAYER_HEIGHT } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
-import type { Pos2 } from '../../src/types.ts';
+import { AWAY, crushSources } from '../fixtures/specialsrig.ts';
+import type { Pos3 } from '../../src/types.ts';
 
 /**
  * `MoverOccupancy` is the binding `SpecialsController` reaches a level's bodies through, and the
@@ -18,8 +19,6 @@ import type { Pos2 } from '../../src/types.ts';
  */
 
 const CELL = 128;
-/** Far enough from every sector under test that the player is nobody's business in it. */
-const AWAY = { x: -1000, y: -1000 };
 
 /** A one-cell room whose ceiling is already down far enough to catch a player-height body. */
 function crushingRoom() {
@@ -38,12 +37,7 @@ describe('Mover occupancy · the bodies a mover reaches', () => {
     // `game.ts`'s `loadMap` builds the thing layer *after* the `SpecialsController`, so the
     // getter starts out answering null exactly as it does for the level's first construction.
     let things: ThingLayer | null = null;
-    const occupancy = new MoverOccupancy(world, {
-      things: () => things,
-      player: AWAY,
-      dolls: [],
-      damagePlayer: () => assert.fail('the player is nowhere near this crusher'),
-    });
+    const occupancy = new MoverOccupancy(world, crushSources({ things: () => things }));
     assert.equal(occupancy.crush(sector, true), false, 'no layer yet, so nobody is in the way');
 
     things = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
@@ -64,12 +58,10 @@ describe('Mover occupancy · the bodies a mover reaches', () => {
     const dolls = new VoodooDolls(world);
     assert.equal(dolls.dolls.length, 1);
     let dealt = 0;
-    const occupancy = new MoverOccupancy(world, {
-      things: () => null,
-      player: stands,
-      dolls: dolls.dolls,
-      damagePlayer: (amount) => (dealt += amount),
-    });
+    const occupancy = new MoverOccupancy(
+      world,
+      crushSources({ player: { ...stands, z: 0 }, dolls: dolls.dolls, damagePlayer: (amount) => (dealt += amount) }),
+    );
     assert.equal(occupancy.crush(sector, true), true);
     assert.ok(dealt > 0, 'the doll’s crushing should have reached the real player');
   });
@@ -79,13 +71,8 @@ describe('Mover occupancy · the bodies a mover reaches', () => {
     const sector = grid.index(1, 1);
     grid.map.sectors[sector].ceilHeight = 64;
     const world = new World(grid.map);
-    const player: Pos2 = { ...AWAY };
-    const occupancy = new MoverOccupancy(world, {
-      things: () => null,
-      player,
-      dolls: [],
-      damagePlayer: () => assert.fail('a blocked rise deals no damage'),
-    });
+    const player: Pos3 = { ...AWAY };
+    const occupancy = new MoverOccupancy(world, crushSources({ player }));
     // A floor this high leaves a standing player less than `PLAYER_HEIGHT` under the ceiling.
     const tooHigh = 64 - PLAYER_HEIGHT + 1;
     assert.equal(occupancy.blocksFloorRise(sector, tooHigh), false, 'nobody is standing there yet');

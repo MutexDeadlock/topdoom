@@ -353,6 +353,16 @@ export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {};
 export const MONSTER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
 
 /**
+ * The pool of blood a corpse becomes when a moving plane leaves it no headroom — `S_GIBS`, which
+ * `PIT_ChangeSector` sets on any corpse it catches. One held frame, that state holding `tics = -1`.
+ * Read off `states[]` by name rather than transcribed: no `mobjinfo` chain points at it, so the
+ * walker below never reaches it. See docs/specials.md § Crushed corpses.
+ */
+const GIBS_STATE = STATES.find((s) => s[5] === 'S_GIBS');
+export const CORPSE_GIB_SPRITE = SPRITE_NAMES[GIBS_STATE?.[0] ?? 0];
+export const CORPSE_GIB_FRAMES = [frameLetter(GIBS_STATE?.[1] ?? 0)];
+
+/**
  * The two monster types whose corpse doesn't stay on screen once its death animation finishes:
  * `S_SKULL_DIE6` and `S_PAIN_DIE6` are the only final death states that expire into `S_NULL`. This
  * is also what makes a dead pain elemental unresurrectable despite its real `raisestate`, needing

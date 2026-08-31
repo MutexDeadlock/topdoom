@@ -51,6 +51,8 @@ export {
 import {
   attackPoseFrameSeconds,
   CEILING_HUNG_HEIGHT,
+  CORPSE_GIB_FRAMES,
+  CORPSE_GIB_SPRITE,
   COUNTITEM_TYPES,
   COUNTKILL_TYPES,
   FULLBRIGHT_FRAMES,
@@ -765,6 +767,28 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     return out;
   }
 
+  function corpsesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[] {
+    const out: MonsterRef[] = [];
+    for (const p of posed) {
+      if (!p.dead || p.crushed || p.hidden || !MONSTER_TYPES.has(p.type)) continue;
+      if (!p.sector || !sectors.has(p.sector)) continue;
+      out.push(monsterRef(p));
+    }
+    return out;
+  }
+
+  function crushCorpse(id: number): void {
+    const p = posed[id];
+    if (!p || p.crushed) return;
+    // A set without the pool's own art would draw nothing where the corpse was, so the corpse is
+    // left as it is — the same "no art, don't pose it" rule `pushThing` applies at spawn.
+    if (!bank.lookup(CORPSE_GIB_SPRITE, CORPSE_GIB_FRAMES[0], 1)) return;
+    p.crushed = true;
+    // `deadTime` deliberately keeps running: the corpse has been lying there just as long, which
+    // is what the arch-vile's settle gate and the nightmare respawn delay both measure.
+    enterDeathPose(p);
+  }
+
   function damage(id: number, amount: number, hit?: DamageHit): void {
     const p = posed[id];
     if (p) damageThing(p, amount, hit);
@@ -1329,6 +1353,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     p.dead = false;
     p.health = MONSTER_HEALTH[p.type] ?? p.health;
     p.hidden = false;
+    // A crunched corpse is raisable in vanilla too, and comes back at its own full size here —
+    // vanilla's own raise leaves it at the zeroed radius/height `PIT_ChangeSector` wrote, which is
+    // where its ghost monsters come from. docs/specials.md § Crushed corpses.
+    p.crushed = false;
     // Clears any stale knockback velocity from however it died: it would otherwise sit unread
     // for the rest of the level and then jump on revival.
     p.velX = 0;
@@ -1399,6 +1427,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     p.deadTime = 0;
     p.health = MONSTER_HEALTH[p.type] ?? p.health;
     p.hidden = false;
+    p.crushed = false;
     p.velX = 0;
     p.velY = 0;
     p.velZ = 0;
@@ -1470,6 +1499,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     awakeMonsters,
     monstersInSector,
     crushablesInSectors,
+    corpsesInSectors,
+    crushCorpse,
     damage,
     spawnMonster,
     raycastMonster,
@@ -1500,6 +1531,13 @@ function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
     p.deathFrameCount = BARREL_CHAIN.deathFrames.length;
     p.anim.die(BARREL_CHAIN.deathFrames, BARREL_CHAIN.deathFrameSeconds, BARREL_CHAIN.deathSprite);
     if (deadTime > 0) p.anim.advance(deadTime, false);
+    return false;
+  }
+  if (p.crushed) {
+    // Whatever it died of, a plane has since crunched it flat — one held `S_GIBS` frame, and the
+    // pose a save restores to. docs/specials.md § Crushed corpses.
+    p.deathFrameCount = CORPSE_GIB_FRAMES.length;
+    p.anim.die(CORPSE_GIB_FRAMES, MONSTER_DEATH_FRAME_SECONDS, CORPSE_GIB_SPRITE);
     return false;
   }
   const maxHealth = MONSTER_HEALTH[p.type] ?? 0;

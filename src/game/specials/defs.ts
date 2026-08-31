@@ -61,6 +61,12 @@ export const CRUSH_DAMAGE_INTERVAL = 4 * DOOM_TIC;
  * `CrusherEffect.slowsWhenCrushing`.
  */
 export const CRUSH_SLOWDOWN = 8;
+/**
+ * How tall a corpse is against the living body's `mobjinfo.height` — `P_KillMobj`'s
+ * `target->height >>= 2`. Only the squish test reads it (`squashCorpses`): a corpse blocks nothing
+ * here, so nothing else in this engine cares how tall one is. docs/specials.md § Crushed corpses.
+ */
+export const CORPSE_HEIGHT_FRACTION = 1 / 4;
 
 /** Gap vanilla leaves between an open door's ceiling and the lowest neighboring ceiling. */
 export const DOOR_OPEN_GAP = 4;

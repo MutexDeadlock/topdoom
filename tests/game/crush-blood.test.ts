@@ -1,0 +1,131 @@
+import { describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { World } from '../../src/game/world.ts';
+import { buildThingSprites } from '../../src/game/things.ts';
+import { applyCrushDamage } from '../../src/game/specials/moverblocking.ts';
+import { BLOOD_FRAMES, CRUSH_BLOOD_SPEED } from '../../src/game/spritefx/tables.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
+import { PLAYER_HEIGHT } from '../../src/game/player.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
+import { clearRandom } from '../../src/util/random.ts';
+import type { Pos3 } from '../../src/types.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
+import { gridMap, thingAt } from '../fixtures/gridmap.ts';
+import { BANK, MATERIALS, drawnLumps, drawnSprites, fxLayer } from '../fixtures/spritestubs.ts';
+import { AWAY, crushSources } from '../fixtures/specialsrig.ts';
+
+/**
+ * `PIT_ChangeSector`'s other half: every crush pulse also sprays `MT_BLOOD` out of the body it
+ * damaged, at that body's middle. docs/specials.md § Crushers.
+ */
+
+const DEMON = MONSTER_STATS[ThingType.demon];
+
+/** A one-cell room with its ceiling already down far enough to catch anything standing in it. */
+function crushingRoom(type?: number) {
+  const grid = gridMap(['###', '#.#', '###'], { cell: 128 });
+  if (type !== undefined) grid.map.things.push(thingAt(grid, 1, 1, type));
+  const sectorIndex = grid.index(1, 1);
+  grid.map.sectors[sectorIndex].ceilHeight = 8;
+  const world = new World(grid.map);
+  const things = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
+  const sprayed: Pos3[] = [];
+  const pulse = (dealDamage = true, player = AWAY) =>
+    applyCrushDamage(
+      world,
+      crushSources({ things: () => things, player, damagePlayer: () => {}, sprayBlood: (at) => void sprayed.push(at) }),
+      sectorIndex,
+      dealDamage,
+    );
+  return { sprayed, pulse, centre: grid.centre(1, 1) };
+}
+
+describe('A crusher sprays blood', () => {
+  test('out of the middle of the body it caught, once a pulse', () => {
+    const room = crushingRoom(ThingType.demon);
+    assert.ok(room.pulse(), 'the demon is caught');
+    assert.equal(room.sprayed.length, 1, 'one splash for one pulse');
+    // `thing->x`, `thing->y`, `thing->z + thing->height/2` — the splash is thrown from the body's
+    // own middle and carries itself outwards from there (§ The crusher's splash itself, below).
+    assert.deepEqual(room.sprayed[0], { x: room.centre.x, y: room.centre.y, z: DEMON.height / 2 });
+
+    room.pulse();
+    assert.equal(room.sprayed.length, 2, 'and again on the next pulse');
+  });
+
+  test('but not on a tic that only measures whether anything is caught', () => {
+    const room = crushingRoom(ThingType.demon);
+    assert.ok(room.pulse(false), 'still caught — `nofit` is reported every tic');
+    assert.deepEqual(room.sprayed, [], 'the spray rides the damage, not the tic');
+  });
+
+  test('never out of a barrel, which carries MF_NOBLOOD', () => {
+    const room = crushingRoom(ThingType.barrel);
+    assert.ok(room.pulse(), 'the barrel is caught and takes the damage');
+    assert.deepEqual(room.sprayed, [], 'a barrel takes a puff elsewhere and nothing here');
+  });
+
+  test('and out of the player as readily as out of a monster', () => {
+    const room = crushingRoom();
+    const player = { ...room.centre, z: 0 };
+    assert.ok(room.pulse(true, player), 'the player is caught');
+    assert.equal(room.sprayed.length, 1);
+    assert.equal(room.sprayed[0].z, PLAYER_HEIGHT / 2);
+  });
+});
+
+/** A splash thrown into a room with its floor at 0, and where it is drawn after `dt`. */
+function thrown(from: Pos3) {
+  clearRandom();
+  const grid = gridMap(['####', '#..#', '####'], { cell: 128 });
+  const world = new World(grid.map);
+  assert.equal(grid.map.sectors[grid.index(1, 1)].floorHeight, 0, 'the floor this splash lands on');
+  const layer = fxLayer({ fogVisible: () => true });
+  layer.beginLevel(world);
+  layer.spawnCrushBlood(from);
+  return {
+    layer,
+    /** Where the one splash is drawn, in DOOM space — `drawnSprites` hands back three.js axes. */
+    at() {
+      const drawn = drawnSprites(layer);
+      assert.equal(drawn.length, 1, 'one splash');
+      return { x: drawn[0].x, z: drawn[0].y };
+    },
+    run(seconds: number) {
+      for (let i = 0; i < Math.round(seconds / DOOM_TIC); i++) layer.updateImpacts(DOOM_TIC);
+    },
+  };
+}
+
+describe('The crusher’s splash itself', () => {
+  test('starts at S_BLOOD1, where a damage-scaled P_SpawnBlood would skip ahead', () => {
+    const fx = thrown({ x: 100, y: 100, z: 20 });
+    assert.deepEqual(drawnLumps(fx.layer), [`BLUD${BLOOD_FRAMES[0]}0`], 'the whole chain, C first');
+  });
+
+  test('flies out of the body and falls to the floor instead of hanging where it spawned', () => {
+    const fx = thrown({ x: 100, y: 100, z: DEMON.height / 2 });
+    const spawn = fx.at();
+    assert.equal(spawn.z, DEMON.height / 2, 'it starts at the body’s middle');
+
+    fx.run(2 * DOOM_TIC);
+    const airborne = fx.at();
+    assert.ok(airborne.z < spawn.z, `falling (${airborne.z} under ${spawn.z})`);
+    assert.notEqual(airborne.x, spawn.x, 'and carrying itself sideways as it goes');
+    // Nothing here approaches the extreme of the draw, but nothing may pass it either.
+    const reach = CRUSH_BLOOD_SPEED * 2 * DOOM_TIC;
+    assert.ok(Math.abs(airborne.x - spawn.x) <= reach, `within two tics of travel (${airborne.x})`);
+  });
+
+  test('and sticks where it lands rather than sliding on for the rest of its animation', () => {
+    const fx = thrown({ x: 100, y: 100, z: DEMON.height / 2 });
+    // Well past the ~0.19 s a 28-unit drop takes under this engine's gravity, and inside the
+    // splash's own 24-tic life.
+    fx.run(0.4);
+    const landed = fx.at();
+    assert.equal(landed.z, 0, 'lying on the floor');
+
+    fx.run(0.2);
+    assert.deepEqual(fx.at(), landed, 'and not travelling any further');
+  });
+});

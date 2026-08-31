@@ -12,11 +12,12 @@ import { effectEmitterId, type DynamicLights, type Tint } from '../render/lights
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { SoundEmitter } from '../audio/sfx.ts';
 import type { ShotPath, World } from './world.ts';
-import { transfersOf } from './specials/transfers.ts';
+import { GRAVITY } from './player.ts';
+import { transfersOf, type Transfers } from './specials/transfers.ts';
 import { triangularDraw } from '../util/random.ts';
 import { type OneShotEffect } from './spritefx/defs.ts';
 import { FULLBRIGHT_FRAMES } from './things/tables.ts';
-import { BLOOD_FRAME_SECONDS, bloodFrames, HIT_Z_JITTER, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
+import { BLOOD_FRAME_SECONDS, BLOOD_FRAMES, bloodFrames, CRUSH_BLOOD_SPEED, HIT_Z_JITTER, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
 import type { TeleportFogState } from './snapshot.ts';
 import type { Placement, Pos3 } from '../types.ts';
 
@@ -62,6 +63,8 @@ export class SpriteFxLayer {
    * `beginLevel`.
    */
   private world!: World;
+  /** The level's render transfers, resolved once per level rather than per effect per tic. */
+  private transfers!: Transfers;
 
   private batch = new SpriteBatch();
   /**
@@ -107,6 +110,7 @@ export class SpriteFxLayer {
    */
   beginLevel(world: World): void {
     this.world = world;
+    this.transfers = transfersOf(world.map);
     // Dropping the lists is the whole of it for the batched sprites: nothing
     // is added to the batch for an effect that isn't in one of them.
     this.teleportFogs = [];
@@ -133,15 +137,9 @@ export class SpriteFxLayer {
   spawn(sprite: string, frames: string[], frameSeconds: number, at: Pos3): OneShotEffect | null {
     const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
     if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return null;
-    const subsector = this.world.subsectorAt(at.x, at.y);
-    const sectorIndex = this.world.sectorIndexOfSubsector(subsector);
-    const light =
-      this.world.map.sectors[sectorIndex] !== undefined
-        ? transfersOf(this.world.map).spriteLight(sectorIndex)
-        : 128;
     // drawPrev seeded to the spawn point: a one-shot's first drawn frame must
     // sit where it was spawned, not interpolate in from the world origin.
-    return {
+    const effect: OneShotEffect = {
       anim,
       x: at.x,
       y: at.y,
@@ -149,11 +147,14 @@ export class SpriteFxLayer {
       drawPrevX: at.x,
       drawPrevY: at.y,
       drawPrevZ: at.z,
-      light,
-      subsector,
+      // `resettle` fills both in; 128 is the fallback it leaves standing for a point in no sector.
+      light: 128,
+      subsector: 0,
       elapsed: 0,
       lifetime: frames.length * frameSeconds,
     };
+    this.resettle(effect);
+    return effect;
   }
 
   /**
@@ -177,6 +178,18 @@ export class SpriteFxLayer {
    */
   spawnBlood(at: Pos3, damage: number): void {
     this.spawnImpact('BLUD', bloodFrames(damage), BLOOD_FRAME_SECONDS, { x: at.x, y: at.y, z: this.jitter(at.z) });
+  }
+
+  /**
+   * The spray a crushing mover wrings out of a body every damage pulse — thrown from `at`, the
+   * body's middle, rather than placed, and starting at `S_BLOOD1` whatever the damage.
+   * See docs/specials.md § Crushers.
+   */
+  spawnCrushBlood(at: Pos3): void {
+    const effect = this.spawn('BLUD', BLOOD_FRAMES, BLOOD_FRAME_SECONDS, at);
+    if (!effect) return;
+    effect.motion = { velX: triangularDraw(CRUSH_BLOOD_SPEED), velY: triangularDraw(CRUSH_BLOOD_SPEED), velZ: 0 };
+    this.addImpact(effect);
   }
 
   /**
@@ -355,6 +368,37 @@ export class SpriteFxLayer {
   }
 
   /**
+   * Re-reads where a moved effect now is: the leaf its fog gate reads and the sector light it
+   * draws at. Returns that sector's floor height, which is what a falling effect lands on — one
+   * BSP descent answering both. Null where the point resolved to no real sector at all.
+   */
+  private resettle(e: OneShotEffect): number | null {
+    e.subsector = this.world.subsectorAt(e.x, e.y);
+    const sectorIndex = this.world.sectorIndexOfSubsector(e.subsector);
+    const sector = this.world.map.sectors[sectorIndex];
+    if (sector === undefined) return null;
+    e.light = this.transfers.spriteLight(sectorIndex);
+    return sector.floorHeight;
+  }
+
+  /**
+   * One tic of an effect thrown with momentum — the crusher's blood. Flies at its own speed, falls
+   * under `GRAVITY`, and sticks where it lands rather than sliding on. docs/specials.md § Crushers.
+   */
+  private fly(e: OneShotEffect, dt: number): void {
+    const motion = e.motion;
+    if (!motion) return;
+    e.x += motion.velX * dt;
+    e.y += motion.velY * dt;
+    e.z += motion.velZ * dt;
+    motion.velZ -= GRAVITY * dt;
+    const floor = this.resettle(e);
+    if (floor === null || e.z > floor) return;
+    e.z = floor;
+    e.motion = undefined;
+  }
+
+  /**
    * Advances a one-shot list in place and drops the ones that finished, matching every other list's
    * remaining-array pattern here.
    */
@@ -375,12 +419,10 @@ export class SpriteFxLayer {
           e.x = front.x;
           e.y = front.y;
           e.z = front.z;
-          e.subsector = this.world.subsectorAt(e.x, e.y);
-          const sectorIndex = this.world.sectorIndexOfSubsector(e.subsector);
-          if (this.world.map.sectors[sectorIndex] !== undefined) {
-            e.light = transfersOf(this.world.map).spriteLight(sectorIndex);
-          }
+          this.resettle(e);
         }
+      } else if (e.motion) {
+        this.fly(e, dt);
       }
       e.anim.advance(dt, true);
       remaining.push(e);

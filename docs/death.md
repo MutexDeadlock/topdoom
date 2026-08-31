@@ -33,6 +33,9 @@ means a corpse still participates in fog-of-war fading exactly as it did alive.
 — subtracts health and calls `die` at 0; `pickMonster` skips anything already dead so a corpse can't
 be re-targeted.
 
+**A corpse is not the end of it**: a door, floor or crusher that leaves it no headroom crunches it
+to a pool of blood — docs/specials.md § Crushed corpses.
+
 **A corpse left in the air falls.** `P_KillMobj` strips `MF_NOGRAVITY` from everything it kills
 except `MT_SKULL`, so a cacodemon shot off its hover (docs/monster-ai.md § Floating monsters) or a
 body caught mid-launch by an arch-vile drops to the floor instead of hanging there; a lost soul

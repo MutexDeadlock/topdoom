@@ -730,23 +730,41 @@ export class Game {
     this.screenEffects.reset();
     // Like `screenEffects`, these elements outlive the Game that drove them — without
     // this the menu (and the next level started from it) inherits the line.
+    this.clearOverlays();
+    this.playerActor.dispose();
+    this.disposeLevelGeometry();
+    this.effects.dispose();
+    this.materials.dispose();
+    this.spriteMaterials.dispose();
+    this.playerSkins?.dispose();
+  }
+
+  /** Clears the per-level 2D overlays, shared by `dispose` and every map load. */
+  private clearOverlays(): void {
     this.deathOverlay.clear();
     this.message.clear();
     this.levelCard.clear();
     this.intermission.clear();
     this.endCard.clear();
-    this.playerActor.dispose();
+  }
+
+  /**
+   * Releases the current level's scene content: the mover-owned meshes (`specials`), the static
+   * batches and the thing sprites. The batched sprite meshes/materials are per-level; the
+   * geometry and textures behind them belong to `spriteMaterials`, which outlives a map.
+   */
+  private disposeLevelGeometry(): void {
     this.specials?.dispose();
-    this.built?.group.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) obj.geometry.dispose();
-    });
-    // Both sprite batches' instance buffers and cloned materials are their
-    // own; the geometry/textures behind them are spriteMaterials'.
-    this.things?.dispose();
-    this.effects.dispose();
-    this.materials.dispose();
-    this.spriteMaterials.dispose();
-    this.playerSkins?.dispose();
+    if (this.built) {
+      this.scene.remove(this.built.group);
+      this.built.group.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+      });
+    }
+    if (this.things) {
+      this.scene.remove(this.things.group);
+      this.things.dispose();
+    }
   }
 
   /**
@@ -845,7 +863,6 @@ export class Game {
     clearRandom();
     // A slow load is not simulation time, same as a pause — see `resume`.
     this.accumulator = 0;
-    // Keys don't survive a level transition in vanilla DOOM; health/armor/ammo do.
     finishLevel(this.inventory);
     // Whatever was still ringing belongs to the level being torn down — a door
     // closing, a monster's death cry — and its origins are about to be reused.
@@ -856,12 +873,8 @@ export class Game {
     // just reborn the inventory for it) and `restart`'s "reload the same map"
     // call, defensively in one place rather than duplicated at each caller.
     this.playerDead = false;
-    this.deathOverlay.clear();
+    this.clearOverlays();
     this.screenEffects.clearPain();
-    this.message.clear();
-    this.levelCard.clear();
-    this.intermission.clear();
-    this.endCard.clear();
     this.popup = null;
     this.pendingEnd = null;
     this.playerActor.revive();
@@ -871,19 +884,7 @@ export class Game {
     // and `play` is a no-op when the level being entered wants the same one.
     this.audio.music.play(this.levelMusic.trackFor(name));
 
-    if (this.built) {
-      this.scene.remove(this.built.group);
-      this.built.group.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) obj.geometry.dispose();
-      });
-    }
-    if (this.things) {
-      this.scene.remove(this.things.group);
-      // The batched sprite meshes/materials are per-level; the geometry and
-      // textures behind them belong to spriteMaterials, which outlives a map.
-      this.things.dispose();
-    }
-    this.specials?.dispose();
+    this.disposeLevelGeometry();
 
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
@@ -1019,7 +1020,7 @@ export class Game {
         this.pendingExit = secret ? 'secret' : 'normal';
       },
       onTeleport: (dest) => {
-        // `P_TeleportMove` stomps whatever is standing on the landing pad; the
+        // Whatever stands on the landing pad is stomped (`P_TeleportMove`); the
         // player always stomps, so this arrival is never refused — docs/death.md § Telefrag.
         this.things?.telefragAt(dest, PLAYER_RADIUS, true);
         // The origin puff's position has to be captured before teleportTo
@@ -1048,6 +1049,7 @@ export class Game {
         // A crusher over a voodoo doll kills the player it stands for.
         dolls: this.voodoo.dolls,
         damagePlayer: (amount) => this.damagePlayer(amount, undefined, undefined, 'crush'),
+        sprayBlood: (at) => this.effects.spawnCrushBlood(at),
       },
       playerAt: this.player,
       movableSectors,
@@ -1814,12 +1816,12 @@ export class Game {
     // Called after player.update so player.angle already reflects this frame's aim.
     this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
     const shots = this.weaponSystem.fire(input.mouseDown, this.inventory, this.player.angle);
-    // Vanilla's P_FireWeapon calls P_NoiseAlert every time a shot is actually
-    // fired (ammo/cooldown allowed it) — this is what lets a monster with no
-    // line of sight to the player still wake up on gunfire (World.noiseAlert,
-    // game/world.ts). Melee swings count: P_FireWeapon is the same entry
-    // point for every weapon, so swinging a fist in an empty room wakes the
-    // neighbours the same as firing a pistol would.
+    // Every shot actually fired (ammo/cooldown allowed it) raises a noise
+    // alert, which is what lets a monster with no line of sight to the player
+    // still wake up on gunfire (World.noiseAlert, game/world.ts; vanilla's
+    // P_FireWeapon calls P_NoiseAlert). Melee swings count: it is the same
+    // entry point for every weapon, so swinging a fist in an empty room wakes
+    // the neighbours the same as firing a pistol would.
     if (shots.length > 0) {
       this.world.noiseAlert(this.player.x, this.player.y);
       this.playerActor.playOnce(PLAYER_ATTACK_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
@@ -1875,8 +1877,8 @@ export class Game {
       // Unattenuated, like a pickup: it's an announcement to the player, not a sound in the world.
       this.audio.playAsset('secret');
     }
-    // Vanilla's sector type 11 calls `G_ExitLevel`, not `G_SecretExitLevel` — a damage floor that
-    // ends the level never leads to the secret one.
+    // A damage floor that ends the level never leads to the secret exit
+    // (vanilla's sector type 11 calls `G_ExitLevel`, not `G_SecretExitLevel`).
     if (sectorEffect.exit) this.pendingExit = 'normal';
   }
 
@@ -2079,13 +2081,13 @@ export class Game {
     let dAngle = p.angle - p.prevAngle;
     dAngle = Math.atan2(Math.sin(dAngle), Math.cos(dAngle));
     const facingDeg = ((p.prevAngle + dAngle * alpha) * 180) / Math.PI;
-    const sector = this.world.sectorAt(x, y);
+    const sectorIndex = this.world.sectorIndexAt(x, y);
     // player.update (and with it, velX/velY) stops running once dead, so
     // this must not read possibly-stale velocity from the moment of death —
     // not that it would matter anyway, since setPose ignores `animating`
     // entirely once `die()` has been called (see SpriteActor's doc).
     const walking = !this.playerDead && Math.hypot(this.player.velX, this.player.velY) > 1;
-    const light = sector ? transfersOf(this.world.map).spriteLight(this.world.sectorIndexAt(x, y)) : 128;
+    const light = this.world.map.sectors[sectorIndex] ? this.transfers.spriteLight(sectorIndex) : 128;
     // The player is an emitter too — `PLAY F`, the firing frame, is the muzzle flash GLDEFS binds
     // `ZOMBIEATK` to, the same light the zombieman's own `POSS F` gets. `PLAYER_EMITTER_ID` keeps
     // it clear of `PosedThing.id` (a plain array index) and of the effects' negative IDs.

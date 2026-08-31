@@ -551,8 +551,7 @@ export class AudioEngine implements SoundEmitter {
   /**
    * Decodes `ASSETS` out of the shipped WAD once the context exists. Failure is
    * logged and cached as null, like an undecodable lump: the sound is simply
-   * never heard. The lump bytes are copied before `decodeAudioData`, which
-   * detaches the buffer it is handed — and that buffer is the whole WAD.
+   * never heard.
    */
   private loadAssets(): void {
     const ctx = this.ctx;
@@ -562,7 +561,7 @@ export class AudioEngine implements SoundEmitter {
       this.assetBuffers.set(id, null);
       const name = ASSETS[id].lump;
       void shippedLump(name)
-        .then((bytes) => (bytes ? ctx.decodeAudioData(bytes.slice().buffer) : Promise.reject(new Error('lump missing'))))
+        .then((lump) => (lump ? ctx.decodeAudioData(lump) : Promise.reject(new Error('lump missing'))))
         .then((buffer) => this.assetBuffers.set(id, buffer))
         .catch((err: unknown) => console.warn(`${name}: could not be loaded`, err));
     }

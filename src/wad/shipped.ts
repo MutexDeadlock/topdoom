@@ -4,11 +4,13 @@
  * time by `plugins/game-wad.ts`, fetched once per session, and never merged into the loaded set.
  * See docs/wad.md § The WAD the engine ships.
  */
-import { Wad, WadFile } from './wad.ts';
+import { WadFile } from './wad.ts';
 
 /**
  * Where the built file is served from, without the leading `/`: also the name the Vite plugin emits
- * it under, so producer and consumer cannot drift.
+ * it under, so producer and consumer cannot drift. Its first segment is deliberately `library.ts`'s
+ * `WAD_DIR` — one `Disallow:` in `robots.txt` covers everything served under it, this included —
+ * but it is not built from it: this is the engine's own asset, not a served WAD folder.
  */
 export const SHIPPED_WAD_PATH = 'game/topdoom.wad';
 
@@ -16,9 +18,11 @@ export const SHIPPED_WAD_PATH = 'game/topdoom.wad';
 export const SHIPPED_GLDEFS = 'GLDEFS';
 export const SHIPPED_SECRET = 'SECRET';
 
+/** What `shippedLump` may be asked for — the file's own two, not any name a caller invents. */
+export type ShippedLump = typeof SHIPPED_GLDEFS | typeof SHIPPED_SECRET;
+
 /** Memoized: a fixed asset, and every level load would otherwise re-fetch and re-parse it. */
 let shipped: Promise<WadFile | null> | null = null;
-let index: Promise<Wad | null> | null = null;
 
 /**
  * The shipped WAD, parsed once per session. A fetch or a parse that fails resolves to **null**
@@ -37,14 +41,14 @@ export function shippedWad(): Promise<WadFile | null> {
 }
 
 /**
- * One lump out of it, as bytes — for the two readers that want a single lump rather than the file.
- * The returned view is into the shared buffer, so a caller handing it to an API that takes
- * ownership (`decodeAudioData`) must copy first.
+ * One lump out of it, for the two readers that want a lump rather than the file. A **copy**, not a
+ * view: the one buffer behind it also backs the player skins, and `decodeAudioData` detaches what
+ * it is handed — a view would take lights and skins down with the chime. Both lumps are tens of KB
+ * and both callers memoize what they decode, so the copy is paid twice a session.
  */
-export function shippedLump(name: string): Promise<Uint8Array | null> {
-  index ??= shippedWad().then((file) => (file ? new Wad(file) : null));
-  return index.then((wad) => {
-    const lump = wad?.find(name);
-    return wad && lump ? wad.data(lump) : null;
+export function shippedLump(name: ShippedLump): Promise<ArrayBuffer | null> {
+  return shippedWad().then((file) => {
+    const entry = file?.entries.find((e) => e.name === name);
+    return file && entry ? file.buffer.slice(entry.offset, entry.offset + entry.size) : null;
   });
 }

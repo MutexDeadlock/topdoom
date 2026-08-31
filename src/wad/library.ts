@@ -6,6 +6,7 @@
 import { WadFile, type WadType } from './wad.ts';
 import { idOf } from './checksum.ts';
 import { bytesOf, describeWad } from './describe.ts';
+import type { Progress } from './library/disk.ts';
 import type { WadSupport } from './support.ts';
 import { levelTitleFor, missionOf } from './campaign/names.ts';
 
@@ -29,9 +30,19 @@ export {
   restoreLibrary,
   type LibrarySkip,
   type PickerBlock,
+  type Progress,
 } from './library/disk.ts';
 
-const MANIFEST_URL = '/game/index.json';
+/**
+ * The folder game WADs are served from, without slashes — `public/<WAD_DIR>/{iwad,pwad}` on disk,
+ * `/<WAD_DIR>/…` as a URL. Declared here, with the code that fetches through it, and imported by
+ * `plugins/wad-manifest.ts` rather than restated there: the two must name the same folder or the
+ * menu lists files it cannot then load. docs/wad.md § The `public/game/` manifest.
+ */
+export const WAD_DIR = 'game';
+
+/** The manifest's path under that folder — also the name the plugin emits it as. */
+export const MANIFEST_PATH = `${WAD_DIR}/index.json`;
 
 /**
  * A WAD the menu can offer, whether it sits on the server or was picked from
@@ -81,8 +92,20 @@ export interface WadSource {
    * an upload, which sits in no folder at all.
    */
   folder?: string;
-  bytes(): Promise<ArrayBuffer>;
+  /**
+   * `onProgress` is reported as the bytes arrive, and only by a source that actually downloads —
+   * a file already in memory has nothing to report and calls it not at all. It is ignored on every
+   * call after the first, which is what the memo hands back.
+   */
+  bytes(onProgress?: DownloadProgress): Promise<ArrayBuffer>;
 }
+
+/**
+ * How many of a source's `size` bytes have arrived. A source that is going to download calls this
+ * with 0 before it starts — that first call is what declares it, so `loadWadFiles` can total up
+ * everything that will download before any of it arrives. One already in memory never calls it.
+ */
+export type DownloadProgress = (loaded: number) => void;
 
 /**
  * Where a source's bytes come from, which is also how long they last: `server` and `library` files
@@ -210,13 +233,18 @@ function serverSource(entry: ManifestEntry): WadSource {
     size: entry.size,
     origin: 'server',
     folder: entry.folder,
-    bytes() {
+    bytes(onProgress) {
+      // Announced before the fetch, not on the first chunk: `loadWadFiles` calls every source in
+      // one tick, so declaring here is what lets it fix the total before any byte lands.
+      if (!cached) onProgress?.(0);
       // `folder` is a path now, not one segment — each segment is encoded on its own so the
       // separators survive (docs/wad.md § The `public/game/` manifest).
       const dir = entry.folder.split('/').map(encodeURIComponent).join('/');
-      cached ??= fetch(`/game/${dir}/${encodeURIComponent(entry.file)}`).then(async (res) => {
+      cached ??= fetch(`/${WAD_DIR}/${dir}/${encodeURIComponent(entry.file)}`).then(async (res) => {
         if (!res.ok) throw new Error(`${entry.file}: HTTP ${res.status}`);
-        return res.arrayBuffer();
+        // Streamed only when someone is watching: an unwatched load has no reason to pay for
+        // chunk bookkeeping over up to 28 MB.
+        return onProgress && res.body ? drain(res.body, entry.size, onProgress) : res.arrayBuffer();
       });
       return cached;
     },
@@ -257,7 +285,7 @@ export async function ensureWadId(source: WadSource): Promise<string> {
 /** WADs the server offers under public/game/. Empty if the manifest is missing. */
 export async function fetchLibrary(): Promise<WadSource[]> {
   try {
-    const res = await fetch(MANIFEST_URL);
+    const res = await fetch(`/${MANIFEST_PATH}`);
     if (!res.ok) return [];
     const entries = (await res.json()) as ManifestEntry[];
     if (!Array.isArray(entries)) return [];
@@ -310,9 +338,76 @@ export function mergedMaps(iwad: WadSource, pwads: WadSource[]): MergedMap[] {
   });
 }
 
-/** Loads the selected files in the order the engine has to merge them. */
-export async function loadWadFiles(iwad: WadSource, pwads: WadSource[]): Promise<WadFile[]> {
+/**
+ * Loads the selected files in the order the engine has to merge them.
+ *
+ * `onProgress` reports the whole set at once — bytes arrived against bytes expected — because that
+ * is the one number a progress bar can show while several files download in parallel. Every source
+ * that will download declares itself in this same tick (`DownloadProgress`), so the total is the
+ * sum of their manifest `size`s and is fixed before the first byte: the bar only ever moves
+ * forward. A source already in memory (an upload, a second start on the same set) declares nothing
+ * and is left out, which is why a warm start shows no bar rather than a full one.
+ * docs/menu.md § The loading screen.
+ */
+export async function loadWadFiles(iwad: WadSource, pwads: WadSource[], onProgress?: Progress): Promise<WadFile[]> {
   const sources = [iwad, ...pwads];
-  const buffers = await Promise.all(sources.map((s) => s.bytes()));
+  const loaded = sources.map(() => 0);
+  let total = 0;
+
+  const buffers = await Promise.all(
+    sources.map((s, i) => {
+      if (!onProgress) return s.bytes();
+      let counted = false;
+      return s.bytes((got) => {
+        // The declaring call (0 bytes) only joins the total — reporting it would show a fraction of
+        // a denominator the sources declared after this one have not been added to yet.
+        if (!counted) {
+          counted = true;
+          total += s.size;
+          return;
+        }
+        loaded[i] = got;
+        onProgress(
+          loaded.reduce((sum, n) => sum + n, 0),
+          total,
+        );
+      });
+    }),
+  );
   return sources.map((s, i) => new WadFile(buffers[i], s.label));
+}
+
+/**
+ * Reads a response body chunk by chunk, reporting the running total. Written straight into one
+ * buffer of the size the manifest already promised, rather than collected and joined: for a 28 MB
+ * IWAD that would be a second full copy on the one path that always runs. A body that turns out to
+ * be a different length than promised — a re-encoded file the manifest predates — is trimmed or
+ * rejoined then, where the copy is the price of being wrong rather than the standing cost.
+ */
+async function drain(body: ReadableStream<Uint8Array>, expected: number, onProgress: DownloadProgress): Promise<ArrayBuffer> {
+  const reader = body.getReader();
+  const out = new Uint8Array(expected);
+  const overflow: Uint8Array[] = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    // A chunk straddling the promised end is split, so `out` stays contiguous and `overflow` holds
+    // exactly what came after it.
+    const fits = Math.min(value.length, Math.max(0, expected - loaded));
+    if (fits > 0) out.set(value.subarray(0, fits), loaded);
+    if (fits < value.length) overflow.push(value.subarray(fits));
+    loaded += value.length;
+    onProgress(loaded);
+  }
+  if (loaded === expected) return out.buffer;
+
+  const joined = new Uint8Array(loaded);
+  joined.set(out.subarray(0, Math.min(loaded, expected)));
+  let at = expected;
+  for (const chunk of overflow) {
+    joined.set(chunk, at);
+    at += chunk.length;
+  }
+  return joined.buffer;
 }

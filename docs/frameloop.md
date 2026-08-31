@@ -222,3 +222,19 @@ resize resizes the canvas, a DPR change, a tab restore), and the menu now draws 
 **`dispose` calls `stop`, not `pause`.** Both clear `running`, but `pause` sets `paused` and
 schedules `stillFrame`; going through it from `dispose` would leave that loop redrawing a scene
 whose geometry and materials have just been released.
+
+**`pause` flushes a parked level load** before it freezes, and `resume` shares `resyncClock` with
+the frame that performs one — see § A parked level load.
+
+## A parked level load (`game.ts: loadLevel`, `pendingLoad`)
+
+A level whose build is predicted to be slow is not built inside the tic that asked for it: the
+loading screen goes up, the load is parked as a thunk, and the **next** `frame` runs it before
+anything else — deliberately ahead of `dueThisFrame`, since a capped frame skipping it would leave
+the overlay up over nothing. That frame then calls `resyncClock`, for the same reason `resume` does:
+the build is real time but not simulation time, and `accumulator` must not run it back as a burst
+of tics.
+
+Reordering `frame` must keep both properties — the check ahead of the cap, and the resync after the
+build. Why the load is parked rather than awaited, and what decides "slow", is
+docs/menu.md § The loading screen.

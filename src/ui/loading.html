@@ -1,2 +1,8 @@
 <!-- No `hidden`, unlike every other overlay: up from the first paint, and main.ts takes it down. -->
-<div id="loading" class="overlay">Loading …</div>
+<div id="loading" class="overlay">
+  <div id="loading-panel">
+    <div id="loading-title">Loading</div>
+    <div id="loading-bar" class="hidden"><div id="loading-fill"></div></div>
+    <div id="loading-detail"></div>
+  </div>
+</div>

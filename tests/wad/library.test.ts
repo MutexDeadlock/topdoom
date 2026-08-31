@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergedMaps, type WadSource } from '../../src/wad/library.ts';
+import { loadWadFiles, mergedMaps, type WadSource } from '../../src/wad/library.ts';
+import { writePwad } from '../../src/wad/write.ts';
 
 /**
  * The menu's level list is built from the manifest alone — no WAD is downloaded to fill it in — so
@@ -66,5 +67,54 @@ describe('WAD parsing · the menu level list', () => {
     const epic = source('EPIC.WAD', 'PWAD', ['MAP01'], { MAP17: '17 - the miners' });
     const maps = mergedMaps(source('DOOM2.WAD', 'IWAD', ['MAP01', 'MAP17']), [epic]);
     assert.deepEqual(maps[1], { name: 'MAP17', provider: 'DOOM2.WAD', title: '17 - the miners' });
+  });
+});
+
+/**
+ * What the loading screen's bar is fed while a set downloads — the aggregate across files, against
+ * a total that must be known before the first byte and must not move.
+ * See docs/menu.md § The loading screen.
+ */
+describe('WAD parsing · download progress', () => {
+  /**
+   * A source shaped like `serverSource`'s download: it declares itself with a synchronous 0, then
+   * awaits — as a real one does on its response — before reporting chunks.
+   */
+  function streaming(label: string, size: number, chunks: number): WadSource {
+    const wad = writePwad([{ name: 'MARKER', bytes: new Uint8Array(0) }]);
+    return {
+      ...source(label, 'PWAD', []),
+      size,
+      bytes: (onProgress) => {
+        onProgress?.(0);
+        return (async () => {
+          for (let i = 1; i <= chunks; i++) {
+            await Promise.resolve();
+            onProgress?.((size / chunks) * i);
+          }
+          return wad.slice().buffer;
+        })();
+      },
+    };
+  }
+
+  test('the total is fixed before any byte arrives, and the bar only moves forward', async () => {
+    const seen: [number, number][] = [];
+    await loadWadFiles(streaming('IWAD.WAD', 1000, 2), [streaming('ADD.WAD', 3000, 3)], (got, total) => seen.push([got, total]));
+
+    assert.deepEqual(new Set(seen.map(([, total]) => total)), new Set([4000]));
+    assert.deepEqual(seen.at(-1), [4000, 4000]);
+    for (let i = 1; i < seen.length; i++) assert.ok(seen[i][0] >= seen[i - 1][0], 'the bar went backwards');
+  });
+
+  test('a source already in memory declares nothing and stays out of the total', async () => {
+    const seen: [number, number][] = [];
+    const warm: WadSource = {
+      ...source('UPLOAD.WAD', 'PWAD', []),
+      size: 9999,
+      bytes: () => Promise.resolve(writePwad([{ name: 'MARKER', bytes: new Uint8Array(0) }]).slice().buffer),
+    };
+    await loadWadFiles(streaming('IWAD.WAD', 1000, 1), [warm], (got, total) => seen.push([got, total]));
+    assert.deepEqual(seen, [[1000, 1000]]);
   });
 });

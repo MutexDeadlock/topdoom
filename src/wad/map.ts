@@ -187,6 +187,20 @@ function mapLumps(wad: Wad, name: string): Map<string, number> {
 }
 
 /**
+ * The size of a map's `LINEDEFS` lump, without reading a byte of it — a directory lookup and the
+ * entry's own length. `game.ts` estimates what building the map will cost from this, which is why
+ * it must stay a lookup: the point is to answer *before* the map is loaded.
+ * See docs/menu.md § The loading screen.
+ */
+export function mapLinedefBytes(wad: Wad, name: string): number {
+  // `mapLumps` throws where the marker is missing; a caller asking about a map that isn't there
+  // wants an estimate of zero, not a load failure it has no way to act on.
+  if (!wad.find(name)) return 0;
+  const index = mapLumps(wad, name).get('LINEDEFS');
+  return index === undefined ? 0 : wad.lumpAt(index)!.size;
+}
+
+/**
  * The REJECT lump, or `undefined` when consulting it could not change an
  * answer: absent, too short for `sectorCount²` bits, or all-zero.
  *

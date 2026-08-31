@@ -1,12 +1,12 @@
 /**
- * The weapon-matching player art this engine ships itself (`assets/playerskins.wad`), the
- * question of whether a loaded set draws the player its own way, and the setting that decides when
- * the shipped art stands in. See docs/sprites.md § Weapon-matching player sprites.
+ * The weapon-matching player art this engine ships itself (`assets/playerskins.wad`, the
+ * `S_START`..`S_END` block of the WAD `wad/shipped.ts` fetches), the question of whether a loaded
+ * set draws the player its own way, and the setting that decides when the shipped art stands in.
+ * See docs/sprites.md § Weapon-matching player sprites.
  */
 import { hashBytes } from './checksum.ts';
-import { shippedWad } from './shipped.ts';
 import { spriteLumpFor } from './sprites.ts';
-import type { Wad, WadFile } from './wad.ts';
+import type { Wad } from './wad.ts';
 
 /**
  * The frames a skin file has to resolve: walk, attack and pain (`PLAY`'s own `A`-`G`) at all eight
@@ -39,16 +39,6 @@ export function getPlayerSpriteMode(): PlayerSpriteMode {
 export function setPlayerSpriteMode(mode: PlayerSpriteMode): void {
   playerSpriteMode = mode;
   globalThis.localStorage?.setItem(MODE_STORAGE_KEY, mode);
-}
-
-/**
- * The shipped art: the WAD the engine ships, whose `S_START`..`S_END` block is these sprites and
- * nothing else, so `SpriteBank` over the whole file indexes exactly them. **null** when it could not
- * be loaded — the player then draws the set's own `PLAY` art, which is the game as it was before
- * this file existed rather than a broken one.
- */
-export function stockPlayerSkins(): Promise<WadFile | null> {
-  return shippedWad();
 }
 
 /** `PLAY` + a frame letter + a rotation digit — a player sprite lump, and not `PLAYPAL`. */

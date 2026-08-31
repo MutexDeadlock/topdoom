@@ -6,6 +6,7 @@ Features and improvements
   - a crowd of monsters waking at once no longer floods the sound channels
   - the lights, the secret chime and the player skins ship as one built topdoom.wad
     - WADs are served from public/game/ instead of public/wads/
+  - starting a game shows a loading screen with the WAD download's progress
 
 Fixed bugs
   - rockets, plasma and BFG balls now leave the body instead of the player's head

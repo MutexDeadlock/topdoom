@@ -3,10 +3,8 @@ import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { bytesOf, describeWad } from '../src/wad/describe.ts';
 import { hashBytes } from '../src/wad/checksum.ts';
-import type { ManifestEntry } from '../src/wad/library.ts';
+import { MANIFEST_PATH, WAD_DIR, type ManifestEntry } from '../src/wad/library.ts';
 import type { WadSupport } from '../src/wad/support.ts';
-
-export const MANIFEST_PATH = 'game/index.json';
 
 /** The two folders that are scanned, and what a file found under each is offered as. */
 export type WadRoot = 'iwad' | 'pwad';
@@ -120,10 +118,10 @@ async function scanFolder(dir: string, folder: WadFolder, root: WadRoot, depth =
       const entry = await describeCached(path, folder, stat.mtimeMs, stat.size);
       if (!entry) continue;
       // The root is what decides how the file is used; a signature mismatch
-      // (e.g. a PWAD dropped into game/iwad/) still gets listed, just flagged.
+      // (e.g. a PWAD dropped into the `iwad` folder) still gets listed, just flagged.
       if ((root === 'iwad') !== (entry.type === 'IWAD')) {
         console.warn(
-          `[topdoom] ${path}: ${entry.type} signature but placed in game/${root}/ — ` +
+          `[topdoom] ${path}: ${entry.type} signature but placed in ${WAD_DIR}/${root}/ — ` +
             `serving it as ${root} anyway`,
         );
       }
@@ -147,7 +145,7 @@ async function scan(root: string): Promise<WadManifestEntry[]> {
  * can offer the WADs already on disk. Served live in dev, baked into the
  * output on build.
  */
-export function wadManifest(root = 'public/game'): Plugin {
+export function wadManifest(root = join('public', WAD_DIR)): Plugin {
   return {
     name: 'topdoom:wad-manifest',
 

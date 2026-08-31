@@ -1,5 +1,5 @@
 /*
- * The boot screen, up until the menu or a deep-linked level takes the screen (main.ts). Same
+ * The loading screen: the boot overlay, then whatever level load follows it (ui/loading.ts). Same
  * `--backdrop` as #menu and #fatal-error, so whichever follows it changes the text, not the page.
  */
 #loading {
@@ -9,4 +9,37 @@
   font-size: 14px;
   letter-spacing: 6px;
   text-transform: uppercase;
+}
+
+#loading-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  /* Wide enough for the bar, and fixed so the byte counter's digits don't shuffle the column. */
+  width: 320px;
+}
+
+/* The bar and the counter are `hidden`/empty on the boot screen, which knows no sizes to report. */
+#loading-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--inset-bg);
+  border: 1px solid var(--border);
+}
+
+#loading-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  /* Eases the jump between chunks; the fill still lands exactly on each reported fraction. */
+  transition: width 120ms linear;
+}
+
+#loading-detail {
+  /* Reserved whether or not there is a line to show, so the panel doesn't jump when one appears. */
+  min-height: 1.2em;
+  letter-spacing: 2px;
+  font-size: 12px;
+  color: var(--fg-dim);
 }

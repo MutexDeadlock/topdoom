@@ -286,14 +286,14 @@ center-screen message. Vanilla plays no sound for a secret at all, so this is a 
 addition, not a fidelity reproduction — docs/hud.md § Center messages.
 
 It is the one sound that comes from **no game WAD**: `audio.ts`'s `ASSETS` table maps it to the
-`SECRET` lump of the WAD the engine ships (`assets/secret.ogg`,
-docs/wad.md § The WAD the engine ships), and `playAsset` starts it. It can't be an `SfxId` — `SFX` is `sounds.c`
+`SECRET` lump of the WAD the engine ships (`assets/secret.ogg`, docs/wad.md § The WAD the engine
+ships), and `playAsset` starts it. It can't be an `SfxId` — `SFX` is `sounds.c`
 verbatim and a name vanilla never had would quietly turn that table into an approximation — and
 sourcing it from a lump would mean either a made-up `DS*` name no WAD carries or borrowing an
 unrelated one (`DSRADIO`, DOOM 2's inter-level chatter, which is what this used to play and which
 the shareware `DOOM1.WAD` doesn't even have). Everything downstream is shared with lump sounds: the
 same channel pool, priority (60, `getpow`'s), sfx bus and volume. Loading is a `decodeAudioData`
-over a copy of the lump kicked off when the `AudioContext` comes up, and a failure is cached as null and
+over the lump, kicked off when the `AudioContext` comes up, and a failure is cached as null and
 logged — the message then shows silently, the same way a missing lump degrades.
 
 ## Volume and the context

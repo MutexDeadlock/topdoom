@@ -373,6 +373,6 @@ let stockText: Promise<string> | null = null;
  * never keep a level from starting. See docs/wad.md § The WAD the engine ships.
  */
 export function stockGldefs(): Promise<string> {
-  stockText ??= shippedLump(SHIPPED_GLDEFS).then((bytes) => (bytes ? DECODER.decode(bytes) : ''));
+  stockText ??= shippedLump(SHIPPED_GLDEFS).then((lump) => (lump ? DECODER.decode(lump) : ''));
   return stockText;
 }

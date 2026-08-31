@@ -20,7 +20,8 @@ import {
 import { Game } from './game.ts';
 import { loadBestTimes } from './game/besttimes.ts';
 import { stockGldefs } from './wad/gldefs.ts';
-import { stockPlayerSkins } from './wad/playerskin.ts';
+import { shippedWad } from './wad/shipped.ts';
+import { LoadingScreen } from './ui/loading.ts';
 import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
 import type { Pos2 } from './types.ts';
@@ -43,6 +44,11 @@ async function boot(): Promise<void> {
    * context itself waits for the first `resume`, i.e. for a user gesture.
    */
   const audio = new AudioEngine();
+  /**
+   * Session-level like the AudioEngine, and already on screen: `#loading` is the boot overlay, and
+   * every level load after it takes the same screen (docs/menu.md § The loading screen).
+   */
+  const loading = new LoadingScreen();
   let game: Game | null = null;
 
   /**
@@ -57,15 +63,24 @@ async function boot(): Promise<void> {
     // Start button's own click handler, which is the safest moment a browser
     // will let an AudioContext start.
     audio.resume();
-    menu.setStatus('Loading …');
+    // Over the menu rather than in its status line: a 28 MB IWAD is tens of seconds, and the menu
+    // behind it is one the player can no longer use.
+    loading.show(`Loading ${selection.map}`);
+    menu.setStatus('');
     try {
       const [files, gldefsText, playerSkins] = await Promise.all([
-        loadWadFiles(selection.iwad, selection.pwads),
+        loadWadFiles(selection.iwad, selection.pwads, (got, total) => loading.progress(got, total)),
         stockGldefs(),
-        stockPlayerSkins(),
+        // The shipped WAD itself: its sprite block is the player art, and `stockGldefs` above
+        // resolves from the same one fetch (docs/wad.md § The WAD the engine ships).
+        shippedWad(),
       ]);
       const wad = new Wad(files);
       if (save) verifySaveWads(wad, save);
+      // Awaited: on a big map this line is what the player reads for as long as the build takes,
+      // and `painted` is what gets it there first.
+      loading.detail(`Building ${selection.map} …`);
+      await loading.painted();
 
       // Cleared before the old level is torn down, so a constructor that throws
       // (a WAD with no maps, a mesh build failure) can't leave `game` pointing at
@@ -92,12 +107,14 @@ async function boot(): Promise<void> {
         },
         gldefsText,
         playerSkins,
+        loading,
       });
 
-      menu.setStatus('');
       menu.close();
+      loading.hide();
       game.resume();
     } catch (err) {
+      loading.hide();
       menu.setStatus((err as Error).message, true);
       // The previous level is gone by now, so re-sync the menu: with nothing
       // left to return to, it must stop offering it.
@@ -218,8 +235,9 @@ async function boot(): Promise<void> {
   }
 
   // Whatever just took the screen replaces `#loading`, which is in the page from
-  // the first paint (docs/menu.md § Session lifecycle).
-  document.getElementById('loading')!.classList.add('hidden');
+  // the first paint (docs/menu.md § Session lifecycle). A deep link's own load has already put it
+  // back up and taken it down again by now; this is the boot screen's own hand-over.
+  loading.hide();
 }
 
 

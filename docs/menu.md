@@ -791,10 +791,11 @@ Rules that hold this together:
 - **The page boots showing `#loading`, not the HUD.** Every other overlay is in the markup already
   `hidden`; the boot screen (`ui/loading.html`) is the one that starts visible, because the static
   HUD markup would otherwise be what the player sees — placeholder `100` health over an empty
-  level — for as long as the WAD manifest takes. `boot` takes it down at exactly one point, after
-  whatever replaces it is up: the menu, or a `?map=` level, which is why that branch **awaits**
-  `menu.submit()` — the deep link never opens the menu, so the boot screen is also what covers its
-  WAD load. The failure path needs no call of its own: `#fatal-error` is a rung above `#loading`.
+  level — for as long as the WAD manifest takes. `boot` takes it down once whatever replaces it is
+  up: the menu, or a `?map=` level, which is why that branch **awaits** `menu.submit()` — the deep
+  link never opens the menu, so the same overlay covers its WAD load, and `startLevel` has already
+  raised and lowered it by the time `boot` calls `hide` (§ The loading screen). The failure path
+  needs no call of its own: `#fatal-error` is a rung above `#loading`.
 - **`new Viewport` is wrapped in `try`/`catch`** and routed to `#fatal-error`: three.js throws a raw
   `Error` when the browser can't create a WebGL2 context, and without this the page is left sitting
   on `Loading …` forever, which reads as "hung" rather than "your browser can't run this". The
@@ -832,6 +833,54 @@ Rules that hold this together:
 - `ESC` works during the intermission popup too. `pause()`/`stillFrame` keep drawing, the menu sits
   over the popup, and `resume()`'s `input.reset()` drops the keypress that would otherwise dismiss
   it the moment the game comes back.
+
+## The loading screen
+
+`#loading` (`ui/loading.ts`) is one overlay with two jobs: the boot screen that is up from the first
+paint, and what covers every level load after it. It sits at `--z-loading`, above the menu, so
+starting a game covers the menu rather than closing it first.
+
+**Starting a game shows the download, not a spinner.** `startLevel` puts the overlay up and feeds it
+`loadWadFiles`' aggregate progress — bytes arrived over bytes expected, across the whole selected
+set at once, because several files download in parallel and one bar is what the player can read. The
+total comes from each source's manifest `size`, so it is known before the first byte and never
+moves. Two consequences worth knowing:
+
+- **A source already in memory reports nothing and is left out of the total.** Restarting the same
+  WAD set is served from `serverSource`'s memo, so the bar never appears rather than flashing to
+  100%.
+- **Only a download streams.** `bytes()` reads the body in chunks only when a progress callback is
+  given; without one it stays on `res.arrayBuffer()`, which saves reassembling up to 28 MB.
+
+The bar covers the WAD set alone. `topdoom.wad` (§ docs/wad.md § The WAD the engine ships) loads in
+the same `Promise.all` and is not counted — 651 KB against a 14 MB IWAD would only make the number
+lie in the other direction.
+
+**A level load shows nothing unless it is predicted to be slow.** `Game.loadLevel` is the one
+decision point — an exit, `R` after death, a checkpoint reload and the DEVMODE map jump all go
+through it — and it estimates the build from the map's `LINEDEFS` lump size (`mapLinedefBytes`, a
+directory lookup) times `buildMsPerKb`. Only above `SLOW_LOAD_MS` does the overlay go up. An
+ordinary level change is a few frames, and an overlay up that briefly is a flicker, not feedback.
+
+**The estimate exists because the build cannot be interrupted.** `loadMapByIndex` is one synchronous
+block, so nothing paints while it runs and a "show it if it takes long" timer would fire into a
+frozen main thread. The decision therefore has to be made *before* the build, from what is cheap to
+know. Four rules follow:
+
+- **The load is parked, not awaited.** `pendingLoad` holds the caller's own body as a thunk; the tic
+  ends, the browser paints, and the next `frame` runs it. Merely awaiting would let the loop keep
+  simulating tics into a level about to be replaced. `main.ts` has no loop of its own yet, so its
+  own first load uses `LoadingScreen.painted` instead — the same "let it paint first" rule, one
+  frame at a time rather than one load.
+- **That frame runs ahead of the FPS cap**, or a capped frame would skip it and leave the overlay up
+  for nothing.
+- **It resyncs the frame clock afterwards** (`resyncClock`, shared with `resume`): build time is not
+  simulation time, and `accumulator` must not pay it back as a burst of tics.
+- **`pause` flushes a parked load** rather than leaving the overlay — which outranks the menu —
+  covering the screen the pause exists to show.
+
+`buildMsPerKb` is re-measured from every build, so after the first level the prediction is the
+player's own machine rather than the one `BUILD_MS_PER_KB` was measured on.
 
 ## Dev mode (`DEVMODE`)
 

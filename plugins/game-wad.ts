@@ -2,15 +2,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { SHIPPED_GLDEFS, SHIPPED_SECRET, SHIPPED_WAD_PATH } from '../src/wad/shipped.ts';
-import { WadFile } from '../src/wad/wad.ts';
+import { Wad, WadFile } from '../src/wad/wad.ts';
 import { writePwad, type LumpSource } from '../src/wad/write.ts';
 
-/** The sources under `assets/`, in the order their lumps are written. */
-const GLDEFS_FILE = 'gldefs.txt';
-const SECRET_FILE = 'secret.ogg';
-const SKINS_FILE = 'playerskins.wad';
-
-function bytesOf(path: string): Uint8Array {
+/** Node pools small reads into a shared buffer, which `WadFile` must never be handed. */
+function readBytes(path: string): Uint8Array {
   const buf = readFileSync(path);
   return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
 }
@@ -24,15 +20,12 @@ function bytesOf(path: string): Uint8Array {
  * is what makes an edited `gldefs.txt` show up on reload.
  */
 export function buildGameWad(root = 'assets'): Uint8Array {
-  const skins = bytesOf(join(root, SKINS_FILE));
-  const file = new WadFile(skins.buffer.slice(skins.byteOffset, skins.byteOffset + skins.byteLength) as ArrayBuffer, SKINS_FILE);
-
-  const lumps: LumpSource[] = [
-    { name: SHIPPED_GLDEFS, bytes: bytesOf(join(root, GLDEFS_FILE)) },
-    { name: SHIPPED_SECRET, bytes: bytesOf(join(root, SECRET_FILE)) },
-    ...file.entries.map((entry) => ({ name: entry.name, bytes: skins.subarray(entry.offset, entry.offset + entry.size) })),
-  ];
-  return writePwad(lumps);
+  const skins = new Wad(new WadFile(readBytes(join(root, 'playerskins.wad')).slice().buffer, 'playerskins.wad'));
+  return writePwad([
+    { name: SHIPPED_GLDEFS, bytes: readBytes(join(root, 'gldefs.txt')) },
+    { name: SHIPPED_SECRET, bytes: readBytes(join(root, 'secret.ogg')) },
+    ...skins.lumps.map((lump): LumpSource => ({ name: lump.name, bytes: skins.data(lump) })),
+  ]);
 }
 
 /**
@@ -45,7 +38,7 @@ export function gameWad(root = 'assets'): Plugin {
     name: 'topdoom:game-wad',
 
     configureServer(server) {
-      // Registered here, so it runs before Vite's static handler would 404.
+      // Registered in `configureServer` for the reason `wad-manifest.ts` gives.
       server.middlewares.use((req, res, next) => {
         if (req.url?.split('?')[0] !== '/' + SHIPPED_WAD_PATH) return next();
         try {

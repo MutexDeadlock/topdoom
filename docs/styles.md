@@ -16,8 +16,10 @@ src/styles.css        the stylesheet entry, and the only one index.html links
 src/ui/base.css       page reset, #app, canvas, the shared classes and page-wide scrollbar
                       look, and the tokens below
 src/ui/fatalerror.*   #fatal-error — owned by src/main.ts, hence not in a subfolder
-src/ui/loading.*      #loading, the boot screen — main.ts's too, and the one element in the
-                      markup that starts visible (docs/menu.md § Session lifecycle)
+src/ui/loading.*      #loading and its panel (#loading-title, #loading-bar/#loading-fill,
+                      #loading-detail) — the boot screen and every level load after it, main.ts's
+                      too, and the one element in the markup that starts visible
+                      (docs/menu.md § The loading screen)
 src/ui/hud/           everything drawn over the running level (docs/hud.md's own file list)
     hud.*             #hud-bar, #game-hud, #hud-levelstats, #hud-timer
     screeneffects.*   #screen-tint, #colormap-tint, #pain-flash
@@ -151,7 +153,7 @@ One further documented exception:
 `--z-tint: 5` (`#screen-tint`, `#colormap-tint`, `#pain-flash`) → `--z-hud: 10` (`#hud`,
 `#profiler-hud`, `#hud-bar`) → `--z-message: 12` (`#hud-message`, `#level-card`) → `--z-overlay: 15`
 (`#intermission`, `#death-overlay`, which can never be up at the same time) → `--z-menu: 20` →
-`--z-loading: 25` (`#loading`, over the menu it hands the page to) → `--z-fatal: 30`.
+`--z-loading: 25` (`#loading`, over the menu it covers while a level loads) → `--z-fatal: 30`.
 
 A new overlay picks its rung by reading that one block rather than grepping for `z-index`.
 

@@ -247,8 +247,8 @@ the other two lumps must stay outside it.
 `secret.ogg`, `playerskins.wad`, the last built from a PK3 by `scripts/build-playerskins.ts`), and
 `plugins/game-wad.ts` folds them into `/game/topdoom.wad` — served live in dev, emitted at build,
 using `wad/write.ts`. It shares the `/game/` prefix with the served WAD folders and the manifest
-(§ The `public/game/` manifest) but is not a file under `public/`. Lump names and the served path are `wad/shipped.ts`'s constants, imported by
-the plugin, so producer and consumer cannot drift.
+(§ The `public/game/` manifest) but is not a file under `public/`. Lump names and the served path
+are `wad/shipped.ts`'s constants, imported by the plugin, so producer and consumer cannot drift.
 
 **Every reader degrades on its own.** A load that fails leaves lights off, the player drawing the
 set's own `PLAY` art, and secrets silent; none of it may keep a level from starting.
@@ -694,6 +694,13 @@ further and re-describes a file whose row has no verdict, since re-reading a dir
 a permanent blank is not.
 
 ## The `public/game/` manifest
+
+**The folder is named once.** `library.ts` declares `WAD_DIR` and `MANIFEST_PATH`, and
+`plugins/wad-manifest.ts` imports both — for the folder it scans (`public/<WAD_DIR>`), the URL it
+answers on and the name it emits — the same producer-imports-from-consumer rule `ManifestEntry`
+follows, and for the same reason: a plugin serving from one folder while the menu fetches from
+another lists files it cannot load. `shipped.ts`'s own path repeats the segment on purpose
+(§ The WAD the engine ships).
 
 The Vite plugin scans `public/game/{iwad,pwad}/`, parsing each file's header and directory plus its
 MAPINFO and `DEHACKED` lumps if it has them, and hashing its bytes for the content ID (§ Content ID)

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildGameWad } from '../../plugins/game-wad.ts';
-import { parseGldefs } from '../../src/wad/gldefs.ts';
 import { SHIPPED_GLDEFS, SHIPPED_SECRET } from '../../src/wad/shipped.ts';
 import { SpriteBank } from '../../src/wad/sprites.ts';
 import { Wad, WadFile } from '../../src/wad/wad.ts';
@@ -31,9 +30,11 @@ describe('The shipped WAD · what the build folds together', () => {
   });
 
   test('the sprite block holds the player art and nothing else', () => {
-    // What keeps `SpriteBank` from ever indexing GLDEFS or the chime as a sprite frame.
+    // What keeps `SpriteBank` from ever indexing GLDEFS or the chime as a sprite frame: everything
+    // but those two, and the two markers themselves, is inside the block.
     const marked = wad.markedRange(/^S_START$/, /^S_END$/);
-    assert.equal(marked.length, wad.lumps.length - 4);
+    const outside = [SHIPPED_GLDEFS, SHIPPED_SECRET, 'S_START', 'S_END'];
+    assert.equal(marked.length, wad.lumps.length - outside.length);
     for (const lump of marked) assert.match(lump.name, /^PLA[1-9][A-N][0-8]([A-N][0-8])?$/);
 
     const bank = new SpriteBank(wad);
@@ -42,10 +43,11 @@ describe('The shipped WAD · what the build folds together', () => {
     }
   });
 
-  test('GLDEFS survives the round trip and parses to the source’s lights', () => {
+  test('GLDEFS survives the round trip', () => {
+    // Byte-identical to the source is the whole claim; that the source itself parses is
+    // `tests/wad/gldefs.test.ts`'s.
     const source = readFileSync(new URL('gldefs.txt', `file://${ASSETS}`), 'latin1');
     assert.equal(new TextDecoder('latin1').decode(wad.data(wad.find(SHIPPED_GLDEFS)!)), source);
-    assert.equal(parseGldefs(source).lights.size, 104);
   });
 
   test('the secret chime is the Ogg file, byte for byte', () => {

@@ -9,7 +9,7 @@ import { mapProvider, wadId, wadSetId } from './wad/checksum.ts';
 import { bestTimeKey, recordBestTime, type BestTimeResult } from './game/besttimes.ts';
 import { GraphicsBank } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
-import { loadMap, type DoomMap } from './wad/map.ts';
+import { loadMap, mapLinedefBytes, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
 import { DynamicLights, PLAYER_EMITTER_ID } from './render/lights.ts';
 import { gldefsFromWad, parseGldefs } from './wad/gldefs.ts';
@@ -19,6 +19,7 @@ import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { LightVisibility } from './render/lightvis.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import { PlayerSkins } from './render/playerskin.ts';
+import type { LoadingScreen } from './ui/loading.ts';
 import type { Viewport } from './render/viewport.ts';
 import type { TopDownCamera } from './render/camera.ts';
 import type { Input } from './game/input.ts';
@@ -130,6 +131,21 @@ import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
  */
 const MAX_TICS_PER_FRAME = 5;
 
+/**
+ * What a level build costs per KB of `LINEDEFS`, and only the seed for `buildMsPerKb`, which
+ * re-measures from every build this session. **Tuned by feel** in that sense: it has to be right
+ * enough to put the first level of a session on the correct side of `SLOW_LOAD_MS`, and the
+ * measurements it came from are in the commit that added it.
+ */
+const BUILD_MS_PER_KB = 1.1;
+
+/**
+ * How slow a level load has to be predicted to be before it gets the loading screen rather than
+ * just happening. **Tuned by feel**: below this the overlay is up for fewer frames than it takes to
+ * read, which is a flicker rather than feedback. docs/menu.md § The loading screen.
+ */
+const SLOW_LOAD_MS = 200;
+
 const FPS_CAP_STORAGE_KEY = 'topdoom.fpsCap';
 
 /** The frame rates the menu offers; `0` is no cap, and the default. */
@@ -184,18 +200,24 @@ export interface GameOptions {
    */
   onCampaignEnd?: (() => void) | null;
   /**
-   * The stock GLDEFS text (`public/game/gldefs.txt`), fetched by the session layer alongside the WAD
-   * files. A loaded set's own GLDEFS lumps layer over it; an empty string means no lights at all.
-   * docs/lights.md.
+   * The stock GLDEFS text (`assets/gldefs.txt`, via the shipped WAD), fetched by the session layer
+   * alongside the WAD files. A loaded set's own GLDEFS lumps layer over it; an empty string means
+   * no lights at all. docs/lights.md.
    */
   gldefsText?: string;
   /**
-   * The shipped weapon-matching player art (`public/game/playerskins.wad`), fetched by the session
-   * layer alongside the WAD files and deliberately **never** added to `wad` — see
+   * The shipped weapon-matching player art (`assets/playerskins.wad`, via the shipped WAD), fetched
+   * by the session layer alongside the WAD files and deliberately **never** added to `wad` — see
    * `buildPlayerSkins`. Null when the fetch failed, which draws the set's own `PLAY` art.
    * docs/sprites.md § Weapon-matching player sprites.
    */
   playerSkins?: WadFile | null;
+  /**
+   * The session's loading screen, so a level too big to build between two frames can put it up
+   * first. A port like `checkpoint`: absent means the load simply happens inline.
+   * docs/menu.md § The loading screen.
+   */
+  loading?: LoadingScreen | null;
 }
 
 /** One loaded WAD set, playing one level at a time. */
@@ -350,6 +372,17 @@ export class Game {
    */
   private accumulator = 0;
   /**
+   * A level load parked for the next frame with the loading screen up, as the thunk that performs
+   * it — every caller's own body differs, and only `loadLevel` decides whether to park one.
+   * docs/frameloop.md § A parked level load.
+   */
+  private pendingLoad: (() => void) | null = null;
+  /**
+   * `BUILD_MS_PER_KB` re-measured from the builds this session, so the prediction is *this*
+   * machine's speed rather than the reference machine's after the first level.
+   */
+  private buildMsPerKb = BUILD_MS_PER_KB;
+  /**
    * Timestamp of the previous rendering opportunity, skipped ones included — the display's own
    * period. See `dueThisFrame`.
    */
@@ -420,6 +453,8 @@ export class Game {
   private checkpoint: CheckpointStore | null;
   /** What the last exit of the last level calls — see the constructor parameter. */
   private onCampaignEnd: (() => void) | null;
+  /** The session's loading screen, or null where nothing offers one (the tests). */
+  private loading: LoadingScreen | null;
   /**
    * Whether *this session* has written a checkpoint, i.e. has advanced a level
    * at least once. What stops `restart` from restoring a checkpoint left in the
@@ -465,6 +500,7 @@ export class Game {
       onCampaignEnd = null,
       gldefsText = '',
       playerSkins = null,
+      loading = null,
     } = options;
     this.view = view;
     this.audio = audio;
@@ -474,6 +510,7 @@ export class Game {
     this.startPos = startPos;
     this.checkpoint = checkpoint;
     this.onCampaignEnd = onCampaignEnd;
+    this.loading = loading;
     this.savedState = restore;
     // From the save when restoring: a `?pos=` run must not become eligible for
     // best times by being saved and loaded back (docs/hud.md § Best times).
@@ -648,6 +685,20 @@ export class Game {
     this.savedState = capture.state;
   }
 
+  /**
+   * Starts the frame clock over: whatever real time just passed — paused behind the menu, or spent
+   * building a level — is not simulation time, and running it back as a catch-up burst of tics is
+   * exactly what `accumulator` must not carry. `nextFrameAt` is zeroed rather than advanced, since
+   * the first frame after is always due and `dueThisFrame` resyncs off its own timestamp.
+   * docs/frameloop.md § The accumulator.
+   */
+  private resyncClock(): void {
+    this.lastTime = performance.now();
+    this.lastRaf = this.lastTime;
+    this.accumulator = 0;
+    this.nextFrameAt = 0;
+  }
+
   resume(): void {
     if (this.running) return;
     // Reached from the Start button or ESC, i.e. from a real user gesture —
@@ -655,14 +706,7 @@ export class Game {
     this.audio.resume();
     this.paused = false;
     this.running = true;
-    this.lastTime = performance.now();
-    this.lastRaf = this.lastTime;
-    // Time spent paused is not simulation time: without this the level would
-    // run a catch-up burst of tics the moment the menu closes.
-    this.accumulator = 0;
-    // Zero, not `lastTime + interval`: the first frame back is always due, and
-    // `dueThisFrame` resyncs the deadline off its own timestamp.
-    this.nextFrameAt = 0;
+    this.resyncClock();
     // Music kept playing behind the menu, and no frame was there to report what
     // it cost; charging all of it to the first frame back would spike the
     // profiler's `Music` bar for seconds. Discarded like the accumulator above.
@@ -675,6 +719,9 @@ export class Game {
     if (this.paused) return; // a second call would leave two `stillFrame` loops running
     this.stop();
     this.paused = true;
+    // ESC landing in the one frame a parked load waits out: the pause screen is about to show the
+    // level behind it, so build that level now rather than leaving the overlay covering the menu.
+    this.flushPendingLoad();
     requestAnimationFrame(this.stillFrame);
   }
 
@@ -825,7 +872,7 @@ export class Game {
     this.popup = null;
     this.pendingEnd = null;
     this.playerActor.revive();
-    this.mapIndex = (index + this.mapNames.length) % this.mapNames.length;
+    this.mapIndex = this.wrapIndex(index);
     const name = this.mapNames[this.mapIndex];
     // Before the map is built rather than after: the track outlives the load,
     // and `play` is a no-op when the level being entered wants the same one.
@@ -1087,11 +1134,17 @@ export class Game {
     // have made next — docs/savegames.md § Apply order.
     if (restore) setRandomCursors(restore.rng);
 
+    // What the next `estimatedBuildMs` predicts from — this machine's own speed, from the map it
+    // just built. Guarded against a map with no linedefs, which would divide the ratio away.
+    const buildMs = performance.now() - t0;
+    const linedefKb = mapLinedefBytes(this.wad, name) / 1024;
+    if (linedefKb > 0) this.buildMsPerKb = buildMs / linedefKb;
+
     const provider = this.wad.providerOf(name)?.name ?? '?';
     console.info(
       `${name} (${provider}): ${map.sectors.length} sectors, ${map.linedefs.length} linedefs, ` +
         `${map.things.length} things (${this.things.count} rendered), ` +
-        `${this.built.triangles} tris in ${Math.round(performance.now() - t0)} ms`,
+        `${this.built.triangles} tris in ${Math.round(buildMs)} ms`,
     );
     if (this.built.missingTextures.length > 0) {
       console.warn('missing textures:', this.built.missingTextures.join(', '));
@@ -1265,6 +1318,52 @@ export class Game {
    * (docs/items.md § Pistol start) — read here, so toggling it applies to the run in progress.
    */
   private enterLevel(index: number, reborn = false): void {
+    this.loadLevel(index, () => this.runEnterLevel(index, reborn));
+  }
+
+  /**
+   * Every level load that happens while the loop is running goes through here: `run` at once, or
+   * parked for the next frame with the loading screen up when the map is big enough that building
+   * it would freeze visibly. The constructor's own first load does not — there is no frame to defer
+   * to yet, and nothing on screen to freeze. docs/menu.md § The loading screen.
+   */
+  private loadLevel(index: number, run: () => void): void {
+    if (this.loading && this.estimatedBuildMs(index) > SLOW_LOAD_MS) {
+      this.loading.show(`Loading ${this.mapNameAt(index)}`);
+      this.pendingLoad = run;
+      return;
+    }
+    run();
+  }
+
+  /** Performs a parked load and takes the loading screen back down. */
+  private flushPendingLoad(): void {
+    const run = this.pendingLoad;
+    this.pendingLoad = null;
+    run?.();
+    this.loading?.hide();
+  }
+
+  /** Indices wrap, so `N` past the last map lands on the first — `mapIndex` is always this. */
+  private wrapIndex(index: number): number {
+    return (index + this.mapNames.length) % this.mapNames.length;
+  }
+
+  private mapNameAt(index: number): string {
+    return this.mapNames[this.wrapIndex(index)];
+  }
+
+  /**
+   * What building the map at `index` is predicted to cost, from its `LINEDEFS` size and what the
+   * builds so far actually took. Only ever consulted to decide whether the loading screen is worth
+   * putting up, so being wrong costs a flicker or a silent freeze, never correctness.
+   */
+  private estimatedBuildMs(index: number): number {
+    return (mapLinedefBytes(this.wad, this.mapNameAt(index)) / 1024) * this.buildMsPerKb;
+  }
+
+  /** `enterLevel`'s body, run either at once or on the frame after the overlay is up. */
+  private runEnterLevel(index: number, reborn: boolean): void {
     // Before the load, which hands this very object to `weaponSystem.beginLevel`.
     if (this.playerDead || reborn || getPistolStart()) this.inventory = createInventory();
     // A savegame belongs to the level it was taken on; the checkpoint written
@@ -1356,7 +1455,8 @@ export class Game {
     // it came from this very session, so there is nothing to match against
     // (docs/death.md § Player death).
     if (this.savedState) {
-      this.loadMapByIndex(this.mapIndex, this.savedState);
+      const state = this.savedState;
+      this.loadLevel(this.mapIndex, () => this.loadMapByIndex(this.mapIndex, state));
       return;
     }
     this.restarting = true;
@@ -1371,7 +1471,8 @@ export class Game {
    * inventory and a plain reload, which is what `R` has always done.
    * `loadMapByIndex` resets the player/world/specials/fog and, via the doc on
    * its own top, `playerDead`/the death overlay/`playerActor` too; on the
-   * restore path the inventory comes out of the snapshot instead.
+   * restore path the inventory comes out of the snapshot instead. Both reloads go through
+   * `loadLevel`, so `R` on a map slow enough to freeze gets the loading screen an exit would.
    */
   private async resumeFromCheckpoint(): Promise<void> {
     const save = this.hasCheckpoint && this.checkpoint ? await this.checkpoint.read() : null;
@@ -1379,11 +1480,12 @@ export class Game {
     // menu can have started another level (and disposed this Game) meanwhile.
     if (this.disposed || !this.playerDead) return;
     if (save && this.matchesSession(save)) {
-      this.loadMapByIndex(this.mapIndex, save.state);
+      const state = save.state;
+      this.loadLevel(this.mapIndex, () => this.loadMapByIndex(this.mapIndex, state));
       return;
     }
     this.inventory = createInventory();
-    this.loadMapByIndex(this.mapIndex);
+    this.loadLevel(this.mapIndex, () => this.loadMapByIndex(this.mapIndex));
   }
 
   /**
@@ -1417,6 +1519,14 @@ export class Game {
 
   private frame = (now: number) => {
     if (!this.running) return;
+    // Ahead of the FPS cap, and resynced after — both load-bearing, docs/frameloop.md § A parked
+    // level load.
+    if (this.pendingLoad) {
+      this.flushPendingLoad();
+      this.resyncClock();
+      requestAnimationFrame(this.frame);
+      return;
+    }
     if (!this.dueThisFrame(now)) {
       requestAnimationFrame(this.frame);
       return;

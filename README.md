@@ -56,7 +56,7 @@ does (autorun and the right mouse button), so both are there while you play — 
 
 | Key | |
 |---|---|
-| `W` `A` `S` `D` or the arrow keys | move (screen-relative: `W` always moves away from the camera) |
+| `W` `A` `S` `D` or the arrow keys | move |
 | `Shift` | run |
 | `Space` | use — opens doors, throws switches, calls lifts |
 | right mouse | switch to your previous weapon, use, or nothing — pick one in the menu's Settings tab (default: previous weapon) |

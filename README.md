@@ -12,8 +12,8 @@ source. Movement, collision and the camera are the deliberate exceptions, rebuil
 
 ```bash
 npm install
-cp /path/to/DOOM.WAD public/wads/iwad/       # the game WADs
-cp /path/to/SomeMod.wad public/wads/pwad/    # any add-ons you want on the menu
+cp /path/to/DOOM.WAD public/game/iwad/       # the game WADs
+cp /path/to/SomeMod.wad public/game/pwad/    # any add-ons you want on the menu
 npm run dev                                  # http://localhost:5173
 ```
 
@@ -22,12 +22,12 @@ can point at a folder of your own instead, without anything being moved or uploa
 
 ## Start menu
 
-Everything under `public/wads/iwad/` and `public/wads/pwad/` shows up on the **New Game** tab
+Everything under `public/game/iwad/` and `public/game/pwad/` shows up on the **New Game** tab
 automatically:
 
-- **Game WAD** — offered from `public/wads/iwad/`. Normally an IWAD, but a PWAD carrying maps
+- **Game WAD** — offered from `public/game/iwad/`. Normally an IWAD, but a PWAD carrying maps
   works too if you put it there.
-- **Add-ons** — offered from `public/wads/pwad/`, any number, merged in the order they were
+- **Add-ons** — offered from `public/game/pwad/`, any number, merged in the order they were
   ticked. An add-on whose maps clash with the selected game WAD's naming scheme is disabled
   automatically; ones with no maps of their own (textures, sounds, ...) always stay selectable.
 - **Level** — every map in the resulting set, grouped by episode for DOOM 1.
@@ -165,8 +165,8 @@ saves — is documented in depth.
 ## Checking a WAD without a browser
 
 ```bash
-node scripts/inspect-wad.ts public/wads/iwad/DOOM.WAD E1M1
-node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SCYTHE.WAD
+node scripts/inspect-wad.ts public/game/iwad/DOOM.WAD E1M1
+node scripts/inspect-wad.ts public/game/iwad/DOOM2.WAD MAP05 public/game/pwad/SCYTHE.WAD
 ```
 
 Reports lump and map counts, which file a map came from, whether this engine can run each file,
@@ -241,7 +241,7 @@ is covered:**
   its own BSD 3-clause terms: redistributable, but the copyright notice travels with it.
   `public/og.jpg`, the link-preview card, is a Freedoom screenshot and carries the same.
 - **The shareware `DOOM1.WAD`**, where it is bundled, stays under id Software's shareware terms.
-- **`public/game/playerskins.wad`**, the weapon-matching player sprites, is the ZDoom community's
+- **`assets/playerskins.wad`**, the weapon-matching player sprites, is the ZDoom community's
   *WeaponMatchingPlayerSkin* pack converted to WAD lumps — edits of id's own marine art by Mark
   Quinn, Xenaero, Grimm, Xim, Anthony Cole, CaptainToenail, TokeGameInfo and the Skulltag team,
   credited on the About screen. Same footing as the shareware data above.

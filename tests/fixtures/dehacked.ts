@@ -1,7 +1,7 @@
 /**
  * The two real DEHACKED lumps the parser is exercised against, as text rather than as WADs: the
  * parser is a pure function of a string, so a committed `.deh` reads in a diff where a WAD does
- * not. Both were lifted out of `public/wads/`, which a test may never read directly.
+ * not. Both were lifted out of `public/game/`, which a test may never read directly.
  * See docs/testing.md § The fixtures.
  */
 import { readFileSync } from 'node:fs';

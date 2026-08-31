@@ -56,7 +56,7 @@ Three parse details are load-bearing:
   torch flame on the floor and shifts it sideways instead. It is measured up from the thing's
   **feet**, which is what every position in this engine is (`PosedThing.z`, a projectile's `drawZ`,
   an effect's `z`).
-- **Block comments must be stripped.** The stock `public/game/gldefs.txt` block-comments out its
+- **Block comments must be stripped.** The stock `assets/gldefs.txt` block-comments out its
   `object Spectre` binding; parsing it anyway would light every spectre in the game.
 - **`size` is clamped to 1..1024**, GZDoom's own range.
 
@@ -481,11 +481,12 @@ immediately with no reload. Turned off, `commit` uploads a count of zero and `ti
 
 ## Where the definitions come from
 
-`public/game/gldefs.txt` (GZDoom's stock Doom lights) is fetched once per session by `main.ts` and
-parsed as the base. Every `GLDEFS` and `DOOMDEFS` lump in the loaded WAD set then layers over it in
+`assets/gldefs.txt` (GZDoom's stock Doom lights) is the `GLDEFS` lump of the WAD the engine ships
+(docs/wad.md § The WAD the engine ships), fetched once per session by `main.ts` and parsed as the
+base. Every `GLDEFS` and `DOOMDEFS` lump in the loaded WAD set then layers over it in
 lump order, a later definition of the same light name or frame binding replacing the earlier —
 GZDoom reads all such lumps rather than the first (`gldefs.cpp: LoadGLDefs`), unlike the MAPINFO
-family, where a file's several lumps are alternatives (docs/wad.md § Level names). A fetch that
+family, where a file's several lumps are alternatives (docs/wad.md § Level names). A load that
 fails leaves the base empty and the game unlit rather than unplayable.
 
 ## Profiling

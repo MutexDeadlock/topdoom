@@ -80,7 +80,7 @@ interface StoredSelection {
 
 /**
  * The start screen: pick a game WAD, stack any add-ons on top, choose a level.
- * WADs come from public/wads/, from the player's own library folder, or straight
+ * WADs come from public/game/, from the player's own library folder, or straight
  * off their disk — all three list and behave identically (`LibraryUi`,
  * docs/menu.md § WAD Library). It doubles as the pause screen once a level is
  * running — see `open` and docs/menu.md.
@@ -230,7 +230,7 @@ export class Menu {
    * stored selection is next, and failing both the first game WAD on offer.
    */
   async init(defaults: MenuDefaults): Promise<void> {
-    this.setStatus('Scanning public/wads/ …');
+    this.setStatus('Scanning public/game/ …');
     // The player's own folder is restored from its memo, then rescanned where the permission
     // already stands — both prompt for nothing, because this is the boot path
     // (docs/wad.md § The player's own library).

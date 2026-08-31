@@ -6,13 +6,13 @@ import { hashBytes } from '../src/wad/checksum.ts';
 import type { ManifestEntry } from '../src/wad/library.ts';
 import type { WadSupport } from '../src/wad/support.ts';
 
-export const MANIFEST_PATH = 'wads/index.json';
+export const MANIFEST_PATH = 'game/index.json';
 
 /** The two folders that are scanned, and what a file found under each is offered as. */
 export type WadRoot = 'iwad' | 'pwad';
 
 /**
- * Where a WAD sits under `public/wads/`, relative to it and `/`-separated — also the URL path it is
+ * Where a WAD sits under `public/game/`, relative to it and `/`-separated — also the URL path it is
  * served under. A root on its own (`pwad`), or a subfolder below one (`pwad/megawads`): both roots
  * are scanned recursively, so a collection can be filed the same way it would be on disk and the
  * menu shows it as a tree (docs/menu.md § WAD Library).
@@ -93,7 +93,7 @@ function describeCached(
 const MAX_DEPTH = 8;
 
 /**
- * One folder and everything under it. `folder` is the path relative to `public/wads/`, which is both
+ * One folder and everything under it. `folder` is the path relative to `public/game/`, which is both
  * how the menu groups the file and the URL it is served from — so a subfolder needs no extra
  * bookkeeping, it just carries a longer path.
  */
@@ -120,10 +120,10 @@ async function scanFolder(dir: string, folder: WadFolder, root: WadRoot, depth =
       const entry = await describeCached(path, folder, stat.mtimeMs, stat.size);
       if (!entry) continue;
       // The root is what decides how the file is used; a signature mismatch
-      // (e.g. a PWAD dropped into wads/iwad/) still gets listed, just flagged.
+      // (e.g. a PWAD dropped into game/iwad/) still gets listed, just flagged.
       if ((root === 'iwad') !== (entry.type === 'IWAD')) {
         console.warn(
-          `[topdoom] ${path}: ${entry.type} signature but placed in wads/${root}/ — ` +
+          `[topdoom] ${path}: ${entry.type} signature but placed in game/${root}/ — ` +
             `serving it as ${root} anyway`,
         );
       }
@@ -143,11 +143,11 @@ async function scan(root: string): Promise<WadManifestEntry[]> {
 }
 
 /**
- * Publishes the contents of public/wads/{iwad,pwad} as JSON so the start menu
+ * Publishes the contents of public/game/{iwad,pwad} as JSON so the start menu
  * can offer the WADs already on disk. Served live in dev, baked into the
  * output on build.
  */
-export function wadManifest(root = 'public/wads'): Plugin {
+export function wadManifest(root = 'public/game'): Plugin {
   return {
     name: 'topdoom:wad-manifest',
 

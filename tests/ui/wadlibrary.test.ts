@@ -46,7 +46,7 @@ describe('Menu · the WAD Library tree', () => {
       [
         source('DOOM2.WAD', { type: 'IWAD', folder: 'iwad' }),
         source('SCYTHE.WAD', { folder: 'pwad' }),
-        // A PWAD-signed mapset placed in wads/iwad/ is a game WAD — docs/wad.md § The `public/wads/` manifest.
+        // A PWAD-signed mapset placed in game/iwad/ is a game WAD — docs/wad.md § The `public/game/` manifest.
         source('EPIC.WAD', { type: 'PWAD', folder: 'iwad' }),
       ],
       'Your library',
@@ -212,7 +212,7 @@ describe('Menu · the WAD Library tree', () => {
     assert.equal(byId(nodes, 'library/a/b').parent, 'library/a');
   });
 
-  /** `public/wads/pwad/` is scanned recursively now, so a served folder nests exactly like the
+  /** `public/game/pwad/` is scanned recursively now, so a served folder nests exactly like the
       player's own — one `rootedSubtree` builds both. */
   test('a served folder shows its subdirectories, rooted under Add-ons', () => {
     const nodes = buildFolderTree(

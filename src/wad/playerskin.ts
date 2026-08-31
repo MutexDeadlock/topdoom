@@ -1,11 +1,12 @@
 /**
- * The weapon-matching player art this engine ships itself (`public/game/playerskins.wad`), the
+ * The weapon-matching player art this engine ships itself (`assets/playerskins.wad`), the
  * question of whether a loaded set draws the player its own way, and the setting that decides when
  * the shipped art stands in. See docs/sprites.md § Weapon-matching player sprites.
  */
 import { hashBytes } from './checksum.ts';
+import { shippedWad } from './shipped.ts';
 import { spriteLumpFor } from './sprites.ts';
-import { WadFile, type Wad } from './wad.ts';
+import type { Wad, WadFile } from './wad.ts';
 
 /**
  * The frames a skin file has to resolve: walk, attack and pain (`PLAY`'s own `A`-`G`) at all eight
@@ -15,9 +16,6 @@ import { WadFile, type Wad } from './wad.ts';
  */
 export const SKIN_ROTATED_FRAMES = 'ABCDEFG';
 export const SKIN_FLAT_FRAMES = 'HIJKLMN';
-
-/** Where the shipped art is served from; Vite copies `public/` to the site root. */
-const SKIN_URL = '/game/playerskins.wad';
 
 /**
  * When the player's billboard draws the shipped weapon-matching art: only where the loaded set has
@@ -43,24 +41,14 @@ export function setPlayerSpriteMode(mode: PlayerSpriteMode): void {
   globalThis.localStorage?.setItem(MODE_STORAGE_KEY, mode);
 }
 
-/** Memoized: a fixed asset, and every level load would otherwise re-fetch and re-parse it. */
-let stock: Promise<WadFile | null> | null = null;
-
 /**
- * The shipped art, parsed once per session. A fetch or a parse that fails resolves to **null**
- * rather than rejecting: the player then draws the set's own `PLAY` art, which is the game as it
- * was before this file existed rather than a broken one, and it must never keep a level from
- * starting.
+ * The shipped art: the WAD the engine ships, whose `S_START`..`S_END` block is these sprites and
+ * nothing else, so `SpriteBank` over the whole file indexes exactly them. **null** when it could not
+ * be loaded — the player then draws the set's own `PLAY` art, which is the game as it was before
+ * this file existed rather than a broken one.
  */
 export function stockPlayerSkins(): Promise<WadFile | null> {
-  stock ??= fetch(SKIN_URL)
-    .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(`HTTP ${res.status}`))))
-    .then((buffer) => new WadFile(buffer, 'playerskins.wad'))
-    .catch((err) => {
-      console.warn('Could not load playerskins.wad; the player draws vanilla PLAY instead:', err);
-      return null;
-    });
-  return stock;
+  return shippedWad();
 }
 
 /** `PLAY` + a frame letter + a rotation digit — a player sprite lump, and not `PLAYPAL`. */

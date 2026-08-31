@@ -517,7 +517,8 @@ the setting and whether the loaded set draws its own player are `wad/playerskin.
 `render/playerskin.ts`'s `PlayerSkins` owns the banks and answers which skin to draw.
 
 The art is the ZDoom **WeaponMatchingPlayerSkin 1.1** pack, converted to
-`public/game/playerskins.wad` by `scripts/build-playerskins.ts` — 426 lumps, ~589 KB. Only frames
+`assets/playerskins.wad` by `scripts/build-playerskins.ts` — 426 lumps, ~589 KB — and folded into
+the WAD the engine ships (docs/wad.md § The WAD the engine ships) at build time. Only frames
 `A`-`N` are converted: the letters this engine animates (walk `A`-`D`, attack `E`/`F`, pain `G`,
 death `H`-`N`). `O`-`W` is xdeath and the `PL1C`…`PL9C` sets are crouch art, neither of which this
 engine has. The converter fails on a pixel outside PLAYPAL rather than picking a nearest colour, and

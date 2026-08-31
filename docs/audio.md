@@ -31,7 +31,7 @@ A sfx name maps to lump `DS<NAME>` (`i_sound.c`'s own `sprintf(name, "ds%s", …
   are kept rather than trimmed.
 - **A browser container** (Ogg Vorbis, WAV, FLAC, MP3) — not vanilla, but what a
   sound-replacement PWAD built in the last two decades holds, and what
-  `public/wads/pwad/fauler_sound.wad` holds. The bytes go to `decodeAudioData`, which is
+  `public/game/pwad/fauler_sound.wad` holds. The bytes go to `decodeAudioData`, which is
   asynchronous: the engine kicks those off when the bank is set (`setBank`) so the first shot
   isn't silent, and a name still decoding simply doesn't play that once.
 
@@ -285,14 +285,15 @@ Entering a secret sector plays the **`secret` chime**, also unattenuated, alongs
 center-screen message. Vanilla plays no sound for a secret at all, so this is a deliberate
 addition, not a fidelity reproduction — docs/hud.md § Center messages.
 
-It is the one sound that is **not** a WAD lump: `audio.ts`'s `ASSETS` table maps it to
-`public/game/secret.ogg`, and `playAsset` starts it. It can't be an `SfxId` — `SFX` is `sounds.c`
+It is the one sound that comes from **no game WAD**: `audio.ts`'s `ASSETS` table maps it to the
+`SECRET` lump of the WAD the engine ships (`assets/secret.ogg`,
+docs/wad.md § The WAD the engine ships), and `playAsset` starts it. It can't be an `SfxId` — `SFX` is `sounds.c`
 verbatim and a name vanilla never had would quietly turn that table into an approximation — and
 sourcing it from a lump would mean either a made-up `DS*` name no WAD carries or borrowing an
 unrelated one (`DSRADIO`, DOOM 2's inter-level chatter, which is what this used to play and which
 the shareware `DOOM1.WAD` doesn't even have). Everything downstream is shared with lump sounds: the
-same channel pool, priority (60, `getpow`'s), sfx bus and volume. Loading is a `fetch` +
-`decodeAudioData` kicked off when the `AudioContext` comes up, and a failure is cached as null and
+same channel pool, priority (60, `getpow`'s), sfx bus and volume. Loading is a `decodeAudioData`
+over a copy of the lump kicked off when the `AudioContext` comes up, and a failure is cached as null and
 logged — the message then shows silently, the same way a missing lump degrades.
 
 ## Volume and the context

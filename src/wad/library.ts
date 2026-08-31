@@ -31,7 +31,7 @@ export {
   type PickerBlock,
 } from './library/disk.ts';
 
-const MANIFEST_URL = '/wads/index.json';
+const MANIFEST_URL = '/game/index.json';
 
 /**
  * A WAD the menu can offer, whether it sits on the server or was picked from
@@ -77,7 +77,7 @@ export interface WadSource {
   /**
    * Which folder the file sits in, and so which group the WAD Library overlay files it under:
    * `iwad`/`pwad` for a server file (the folder decides how it is served — docs/wad.md § The
-   * `public/wads/` manifest), a path relative to the library root for a library file, absent for
+   * `public/game/` manifest), a path relative to the library root for a library file, absent for
    * an upload, which sits in no folder at all.
    */
   folder?: string;
@@ -95,12 +95,12 @@ export type WadOrigin = 'server' | 'upload' | 'library';
  * One `index.json` row — the manifest's wire format, declared **here and only here**. The
  * build-time producer (`plugins/wad-manifest.ts`) imports this same interface rather than restating
  * it: the two had drifted on `folder` alone, and a shape the consumer casts raw JSON to is one the
- * producer must be checked against. See docs/wad.md § The `public/wads/` manifest.
+ * producer must be checked against. See docs/wad.md § The `public/game/` manifest.
  */
 export interface ManifestEntry {
   file: string;
   /**
-   * Where the file sits under `public/wads/`, relative to it and `/`-separated — also the URL path
+   * Where the file sits under `public/game/`, relative to it and `/`-separated — also the URL path
    * it is served under. A root on its own (`pwad`), or a subfolder below one (`pwad/megawads`):
    * both roots are scanned recursively, so a collection can be filed the way it would be on disk
    * and the menu shows it as a tree. `servedFolder` is what splits the root back off.
@@ -141,7 +141,7 @@ export interface ManifestEntry {
 
 /**
  * Splits a served file's `folder` into the root it was served from and the path below it — the one
- * place that knows the first segment *is* the root (docs/wad.md § The `public/wads/` manifest), so
+ * place that knows the first segment *is* the root (docs/wad.md § The `public/game/` manifest), so
  * the menu can group by both halves without decoding the path itself. The fallback covers a source
  * carrying no folder at all: its own signature is the root it would have been served from.
  */
@@ -212,9 +212,9 @@ function serverSource(entry: ManifestEntry): WadSource {
     folder: entry.folder,
     bytes() {
       // `folder` is a path now, not one segment — each segment is encoded on its own so the
-      // separators survive (docs/wad.md § The `public/wads/` manifest).
+      // separators survive (docs/wad.md § The `public/game/` manifest).
       const dir = entry.folder.split('/').map(encodeURIComponent).join('/');
-      cached ??= fetch(`/wads/${dir}/${encodeURIComponent(entry.file)}`).then(async (res) => {
+      cached ??= fetch(`/game/${dir}/${encodeURIComponent(entry.file)}`).then(async (res) => {
         if (!res.ok) throw new Error(`${entry.file}: HTTP ${res.status}`);
         return res.arrayBuffer();
       });
@@ -254,7 +254,7 @@ export async function ensureWadId(source: WadSource): Promise<string> {
   return source.id;
 }
 
-/** WADs the server offers under public/wads/. Empty if the manifest is missing. */
+/** WADs the server offers under public/game/. Empty if the manifest is missing. */
 export async function fetchLibrary(): Promise<WadSource[]> {
   try {
     const res = await fetch(MANIFEST_URL);

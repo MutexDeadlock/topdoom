@@ -15,10 +15,9 @@ import { PLAYER_WEAPON_SPRITES } from '../../src/render/playerskin.ts';
  * or re-encoded copy. docs/sprites.md § Weapon-matching player sprites.
  */
 describe('Player skins · the shipped file', () => {
-  // Read from `public/` deliberately, like the stock GLDEFS text: a committed asset the feature
-  // ships with, not game content — the "tests never read public/wads" rule is about WADs a player
-  // supplies.
-  const SKINS = fileURLToPath(new URL('../../public/game/playerskins.wad', import.meta.url));
+  // The source under `assets/`, which is sprites and nothing else; what the game fetches is the WAD
+  // `plugins/game-wad.ts` folds this into (`tests/wad/shipped.test.ts`).
+  const SKINS = fileURLToPath(new URL('../../assets/playerskins.wad', import.meta.url));
   const bytes = readFileSync(SKINS);
   const file = new WadFile(
     bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,

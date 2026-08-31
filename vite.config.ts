@@ -1,12 +1,13 @@
 import { defineConfig } from 'vite';
+import { gameWad } from './plugins/game-wad.ts';
 import { wadManifest } from './plugins/wad-manifest.ts';
 import { htmlPartials } from './plugins/html-partials.ts';
 
 export default defineConfig({
-  plugins: [wadManifest(), htmlPartials()],
+  plugins: [gameWad(), wadManifest(), htmlPartials()],
   server: {
     port: 5173,
-    // WADs live under public/ and are not checked into the repo.
+    // Game WADs live under public/ and are not checked into the repo.
     fs: { strict: true },
   },
   build: {

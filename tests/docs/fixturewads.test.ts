@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * No test reads `public/wads/`. That directory is the game's own content — what
+ * No test reads `public/game/`. That directory is the game's own content — what
  * a player drops WADs into — so a test reaching into it couples the suite to
  * the shipped set, and a WAD added or removed there for gameplay reasons breaks
  * tests that have nothing to do with it. Real WAD bytes come from
@@ -30,13 +30,13 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe('Suite hygiene · WAD fixtures', () => {
-  test('no test file mentions public/wads', () => {
+  test('no test file mentions public/game', () => {
     const offenders: string[] = [];
     for (const path of walk('tests')) {
       readFileSync(path, 'utf8')
         .split('\n')
         .forEach((line, i) => {
-          if (line.includes('public/wads') && !COMMENT.test(line)) offenders.push(`${path}:${i + 1}`);
+          if (line.includes('public/game') && !COMMENT.test(line)) offenders.push(`${path}:${i + 1}`);
         });
     }
     assert.deepEqual(offenders, [], 'read WAD bytes from tests/fixtures/wads/ instead');

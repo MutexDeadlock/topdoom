@@ -2,6 +2,7 @@
  * WebAudio playback: the channel pool and vanilla's cutoff/priority model, distance attenuation,
  * pan, and volume/mute. See docs/audio.md § The mixer model.
  */
+import { SHIPPED_SECRET, shippedLump } from '../wad/shipped.ts';
 import type { SoundBank } from '../wad/sound.ts';
 import type { Pos2 } from '../types.ts';
 import {
@@ -90,11 +91,11 @@ const VOLUME_STORAGE_KEY = 'topdoom.sfxVolume';
 const MASTER_VOLUME_STORAGE_KEY = 'topdoom.masterVolume';
 
 /**
- * Sounds this engine ships itself, as `public/` URLs → the priority they take
- * in the same channel pool `SFX` priorities are read on. Not WAD lumps: a
+ * Sounds this engine ships itself, as lumps of its own WAD (`wad/shipped.ts`) → the priority they
+ * take in the same channel pool `SFX` priorities are read on. Not lumps of the *loaded set*: a
  * secret's chime has no vanilla original at all (docs/audio.md § Player and
  * pickups), so it cannot be an `SfxId` without a made-up name in what is
- * otherwise `sounds.c` verbatim. Fetched and decoded once, when the context
+ * otherwise `sounds.c` verbatim. Decoded once, when the context
  * comes up — long before a level's first secret, so the first one isn't the
  * one that plays silently.
  */
@@ -103,7 +104,7 @@ const ASSETS = {
    * Entering a secret sector. Priority is `getpow`'s 60: an announcement, cut off by almost
    * nothing.
    */
-  secret: { url: '/game/secret.ogg', priority: 60 },
+  secret: { lump: SHIPPED_SECRET, priority: 60 },
 } as const;
 
 export type AssetSfxId = keyof typeof ASSETS;
@@ -548,8 +549,10 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * Fetches and decodes `ASSETS` once the context exists. Failure is logged and
-   * cached as null, like an undecodable lump: the sound is simply never heard.
+   * Decodes `ASSETS` out of the shipped WAD once the context exists. Failure is
+   * logged and cached as null, like an undecodable lump: the sound is simply
+   * never heard. The lump bytes are copied before `decodeAudioData`, which
+   * detaches the buffer it is handed — and that buffer is the whole WAD.
    */
   private loadAssets(): void {
     const ctx = this.ctx;
@@ -557,11 +560,11 @@ export class AudioEngine implements SoundEmitter {
     for (const id of Object.keys(ASSETS) as AssetSfxId[]) {
       if (this.assetBuffers.has(id)) continue;
       this.assetBuffers.set(id, null);
-      void fetch(ASSETS[id].url)
-        .then((res) => res.arrayBuffer())
-        .then((bytes) => ctx.decodeAudioData(bytes))
+      const name = ASSETS[id].lump;
+      void shippedLump(name)
+        .then((bytes) => (bytes ? ctx.decodeAudioData(bytes.slice().buffer) : Promise.reject(new Error('lump missing'))))
         .then((buffer) => this.assetBuffers.set(id, buffer))
-        .catch((err: unknown) => console.warn(`${ASSETS[id].url}: could not be loaded`, err));
+        .catch((err: unknown) => console.warn(`${name}: could not be loaded`, err));
     }
   }
 

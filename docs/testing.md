@@ -297,15 +297,17 @@ Two matching rules it deliberately encodes, because both shapes are all over the
 
 ## WAD-backed tests
 
-**A test never reads `public/wads/`, and every WAD a test reads lives in `tests/fixtures/wads/`.**
+**A test never reads `public/game/`, and every WAD a test reads lives in `tests/fixtures/wads/`.**
 That directory is the *game's* content — what a player drops WADs into and what the manifest plugin
 serves — so a test reaching into it couples the suite to the shipped set, and a WAD added or removed
 there for gameplay reasons breaks tests that have nothing to do with it. It also means no test has
 to guard itself against a missing file: everything under `tests/fixtures/wads/` is committed, so a
 WAD-backed test runs everywhere, unconditionally. `tests/docs/fixturewads.test.ts` enforces both
-halves — no `public/wads` path outside a comment anywhere in `tests/`, and no committed fixture WAD
-that nothing loads. `public/game/` is a different matter: `gldefs.txt` and `playerskins.wad` are
-assets the engine ships itself, and the tests that read them are testing those very files.
+halves — no `public/game` path outside a comment anywhere in `tests/`, and no committed fixture WAD
+that nothing loads. `assets/` is a different matter: `gldefs.txt`, `secret.ogg` and
+`playerskins.wad` are what the engine ships itself, and the tests that read them
+(`tests/wad/gldefs.test.ts`, `playerskin.test.ts`, `shipped.test.ts`) are testing those very files
+and the WAD the build folds them into.
 
 Fixture WADs are loaded through **`fixtureWad(name)`** (`fixtures/wadfile.ts`), which resolves the
 name against `./wads/` with `new URL(…, import.meta.url)` so the suite is cwd-independent and slices
@@ -378,7 +380,7 @@ length.
 
 `tests/fixtures/dehacked/` holds two real patches as **text**, not as WADs, loaded through
 `dehFixture(name)`. The parser is a pure function of a string, so a committed `.deh` reads in a
-diff where a WAD does not; and both of these were lifted out of `public/wads/`, which a test may
+diff where a WAD does not; and both of these were lifted out of `public/game/`, which a test may
 never read directly.
 
 | File | Holds | Covers |

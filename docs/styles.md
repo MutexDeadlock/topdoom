@@ -92,13 +92,14 @@ site root unchanged:
 | `favicon.ico` | the tab icon, 16/32/48 in one file |
 | `apple-touch-icon.png` | 180×180, the logo at full detail — the source the `.ico` is cut from |
 | `og.jpg` | 1200×630, the `og:image` card |
-| `robots.txt` | `Disallow: /wads/`, and the `Sitemap:` line |
+| `robots.txt` | `Disallow: /game/`, and the `Sitemap:` line |
 | `sitemap.xml` | the one URL there is |
 
-Those five are all `public/` holds at its root. Everything else there is game data in a subfolder,
-fetched by URL at runtime: `public/wads/` (docs/wad.md) and `public/game/` — the assets the engine
-ships itself because no WAD has them, `gldefs.txt` (docs/lights.md), `secret.ogg`
-(docs/audio.md) and `playerskins.wad` (docs/sprites.md).
+Those five are all `public/` holds at its root. The only subfolder is `public/game/{iwad,pwad}/`
+(docs/wad.md), the game data fetched by URL at runtime. Two more things are served under `/game/`
+without being files there, both emitted by a Vite plugin: the WAD manifest and `topdoom.wad`, what
+the engine ships itself because no WAD has it — light definitions, secret chime, player skins —
+built from `assets/` (docs/wad.md § The WAD the engine ships).
 
 **The canonical origin is written out literally, in every one of them.** `canonical`, `og:url`,
 `og:image`, the JSON-LD `url`/`image`, `robots.txt`'s `Sitemap:` and `sitemap.xml`'s `<loc>` each
@@ -106,7 +107,7 @@ spell out `https://topdoom.vercel.app` — absolute URLs are what a crawler need
 `%VITE_%` substitution would leave the literal placeholder in the page whenever the variable is
 unset. Moving the site means grepping the origin and changing every hit.
 
-`robots.txt` excludes `/wads/` because a build ships whatever is in `public/wads/` — tens of
+`robots.txt` excludes `/game/` because a build ships whatever is in `public/game/` — tens of
 megabytes of game data with nothing to index, and not ours to serve to a crawler.
 
 **The `.ico` carries different artwork per size, which is what the format is for.** 48 px is the

@@ -2,6 +2,6 @@
 .env.local
 node_modules
 dist
-public/wads/iwad/DOOM.WAD
-public/wads/iwad/DOOM2.WAD
+public/game/iwad/DOOM.WAD
+public/game/iwad/DOOM2.WAD
 .DS_Store

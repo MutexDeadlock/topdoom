@@ -907,7 +907,7 @@ function* ancestors(tree: TreeIndex, id: string | undefined): Generator<string> 
 /**
  * One root row plus a row for every folder beneath it. Shared by the two served folders and the
  * player's library, which differ only in where their paths are rooted — so subfolders behave
- * identically in `public/wads/pwad/` and in the folder the player nominated.
+ * identically in `public/game/pwad/` and in the folder the player nominated.
  *
  * Ancestors are synthesized: a file whose path is `mega/scythe` names only that, and without a
  * `mega` row its own would be indented under a parent that isn't there and would have nothing to

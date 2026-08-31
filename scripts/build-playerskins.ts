@@ -1,7 +1,8 @@
 /**
- * Builds `public/game/playerskins.wad` from the WeaponMatchingPlayerSkin pack's PNGs — the art the
+ * Builds `assets/playerskins.wad` from the WeaponMatchingPlayerSkin pack's PNGs — the art the
  * player's billboard draws for the weapon in hand. Only the frames this engine animates are
- * converted: `A`-`N`, no xdeath (`O`-`W`) and no crouch set (`PL1C`…`PL9C`).
+ * converted: `A`-`N`, no xdeath (`O`-`W`) and no crouch set (`PL1C`…`PL9C`). The file is a source
+ * asset, not what the game fetches: `plugins/game-wad.ts` folds it into the shipped WAD.
  * See docs/sprites.md § Weapon-matching player sprites.
  *
  *   node scripts/build-playerskins.ts <sprites-dir> [iwad] [out]
@@ -14,11 +15,12 @@ import { GraphicsBank, readPalette } from '../src/wad/graphics.ts';
 import { SKIN_FLAT_FRAMES, SKIN_ROTATED_FRAMES } from '../src/wad/playerskin.ts';
 import { SpriteBank } from '../src/wad/sprites.ts';
 import { Wad, WadFile } from '../src/wad/wad.ts';
+import { writePwad } from '../src/wad/write.ts';
 
 /** Lump names to convert: the pack's own `SSSSFR`/`SSSSFRfr` names, frames `A`-`N` only. */
 const WANTED = /^(PLA[1-9][A-N][0-8]([A-N][0-8])?)\.png$/i;
 
-const [spritesDir, iwadPath = 'public/wads/iwad/DOOM2.WAD', outPath = 'public/game/playerskins.wad'] =
+const [spritesDir, iwadPath = 'public/game/iwad/DOOM2.WAD', outPath = 'assets/playerskins.wad'] =
   process.argv.slice(2);
 
 if (!spritesDir) {
@@ -248,21 +250,7 @@ for (const source of sources) {
 }
 lumps.push({ name: 'S_END', bytes: Buffer.alloc(0) });
 
-const body = lumps.reduce((sum, lump) => sum + lump.bytes.length, 0);
-const out = Buffer.alloc(12 + body + lumps.length * 16);
-out.write('PWAD', 0, 'latin1');
-out.writeInt32LE(lumps.length, 4);
-out.writeInt32LE(12 + body, 8);
-let offset = 12;
-let dir = 12 + body;
-for (const lump of lumps) {
-  lump.bytes.copy(out, offset);
-  out.writeInt32LE(lump.bytes.length ? offset : 12, dir);
-  out.writeInt32LE(lump.bytes.length, dir + 4);
-  out.write(lump.name.padEnd(8, '\0'), dir + 8, 8, 'latin1');
-  offset += lump.bytes.length;
-  dir += 16;
-}
+const out = writePwad(lumps);
 
 // The same read path the game takes, before anything is written: a file that cannot resolve every
 // frame the player animates is not worth shipping.

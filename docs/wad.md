@@ -226,14 +226,32 @@ A `GLDEFS` (or `DOOMDEFS`) lump defines GZDoom's dynamic lights and binds them t
 Like `DEHACKED` and unlike the MAPINFO family (§ Level names), **every** such lump in the set is
 read, in load order, layering: a later definition of the same light name or frame binding replaces
 the earlier one, which is GZDoom's own rule (`gldefs.cpp: LoadGLDefs`). They layer over the stock
-definitions the engine ships in `public/game/gldefs.txt` rather than replacing them wholesale.
+definitions the engine ships (§ The WAD the engine ships) rather than replacing them wholesale.
 
 `wad/gldefs.ts` owns the reading and docs/lights.md the format, including which of GZDoom's block
 types are read and which are skipped.
 
-`public/game/playerskins.wad` is the other asset shipped that way, and the one case where the engine
-supplies *art* a set does not have: the player's weapon-matching sprites, loaded as a `Wad` of its
-own and deliberately never merged into the set (docs/sprites.md § Weapon-matching player sprites).
+## The WAD the engine ships
+
+Three things no game WAD provides — GZDoom's stock light definitions, the secret chime
+(docs/audio.md § Player and pickups), and the weapon-matching player sprites
+(docs/sprites.md § Weapon-matching player sprites) — ship as one PWAD, `topdoom.wad`, fetched once
+per session by `wad/shipped.ts`.
+
+**It is never merged into the loaded set.** It is a `WadFile` of its own, read by name, so nothing
+in it can override a lump a player supplied — and nothing a player supplies can shadow it. That is
+also why the sprites keep their own `S_START`..`S_END` block: it is what `SpriteBank` indexes, and
+the other two lumps must stay outside it.
+
+**Nothing is committed.** The three sources stay editable under `assets/` (`gldefs.txt`,
+`secret.ogg`, `playerskins.wad`, the last built from a PK3 by `scripts/build-playerskins.ts`), and
+`plugins/game-wad.ts` folds them into `/game/topdoom.wad` — served live in dev, emitted at build,
+using `wad/write.ts`. It shares the `/game/` prefix with the served WAD folders and the manifest
+(§ The `public/game/` manifest) but is not a file under `public/`. Lump names and the served path are `wad/shipped.ts`'s constants, imported by
+the plugin, so producer and consumer cannot drift.
+
+**Every reader degrades on its own.** A load that fails leaves lights off, the player drawing the
+set's own `PLAY` art, and secrets silent; none of it may keep a level from starting.
 
 ## Colormap lumps
 
@@ -369,7 +387,7 @@ reads the set's lumps **once** and projects them — titles for `LevelNames`, ex
 `LevelProgression`, `D_*` lumps for `LevelMusic` (docs/music.md § Which track a level plays) — so
 the three consumers of one lump family don't each re-tokenize it. The menu can't build one — it
 hasn't downloaded anything yet — so it resolves off the manifest instead, which is why
-`ManifestEntry` carries each file's own MAPINFO titles (§ The `public/wads/` manifest) and
+`ManifestEntry` carries each file's own MAPINFO titles (§ The `public/game/` manifest) and
 `mergedMaps` (`library.ts`) merges them the same way, later files winning.
 
 ## Par times
@@ -493,7 +511,7 @@ already building every mesh in the level rather than on the frame a level ends.
 differ on purpose:
 
 - A **server file** is hashed at build time by the manifest plugin, whose bytes are in memory
-  anyway — the alternative is downloading every WAD in `public/wads/` to draw the save list.
+  anyway — the alternative is downloading every WAD in `public/game/` to draw the save list.
 - An **upload** is hashed as it is added, in `uploadedSource`: the bytes are already in memory, and
   the save list matches by ID and renders synchronously.
 - A **library file** is hashed only when it is picked (`library.ts: ensureWadId`, then
@@ -585,7 +603,7 @@ Three rules that are easy to get wrong:
 
 The walk is depth-capped at 8 and count-capped at 2000, so a player who points this at their home
 directory gets a truncated list rather than a hung menu. `.wad` files only, case-insensitively —
-the same filter `scanFolder` applies to `public/wads/`. On the `webkitdirectory` path all three caps
+the same filter `scanFolder` applies to `public/game/`. On the `webkitdirectory` path all three caps
 are `acceptableWads`, exported so the overlay can say how many files it is about to read **by the
 rule the scan itself applies**: a count taken by a second, looser copy promises files the scan then
 drops.
@@ -675,17 +693,17 @@ get a glyph are the ones that are broken, so the column looks like it works. The
 further and re-describes a file whose row has no verdict, since re-reading a directory is cheap and
 a permanent blank is not.
 
-## The `public/wads/` manifest
+## The `public/game/` manifest
 
-The Vite plugin scans `public/wads/{iwad,pwad}/`, parsing each file's header and directory plus its
+The Vite plugin scans `public/game/{iwad,pwad}/`, parsing each file's header and directory plus its
 MAPINFO and `DEHACKED` lumps if it has them, and hashing its bytes for the content ID (§ Content ID)
 — the file is already in memory, so the ID costs one pass and nothing extra to read. That is served
-as `/wads/index.json` (dev middleware and build-time `emitFile`), so the menu can list
+as `/game/index.json` (dev middleware and build-time `emitFile`), so the menu can list
 types/sizes/map counts, name levels, and know each file's *identity* without downloading anything —
 the last being what lets a savegame's WAD set resolve while the save list renders (docs/savegames.md
 § WAD-set identity). The dev middleware re-scans on every request for the manifest, so `describeWad`
 is memoized on each file's mtime and size (`statSync` is already being called for the listing):
-without it every page reload would re-read and re-hash every WAD in `public/wads/` — tens of MB, on
+without it every page reload would re-read and re-hash every WAD in `public/game/` — tens of MB, on
 the path that gates `Menu.init`. Editing a WAD still re-describes it. Bytes are only fetched when a
 level actually starts, and `library.ts: serverSource` memoizes them, so restarting the same WAD set
 costs no download. A WAD picked from disk has no manifest entry, so `uploadedSource` parses its
@@ -701,7 +719,7 @@ mod placed in `wads/iwad/` becomes a selectable game WAD (useful for a PWAD that
 maps); the plugin warns on mismatch but still serves it.
 
 **Both roots are scanned recursively**, depth-capped at 8, and `ManifestEntry.folder` is the path
-relative to `public/wads/` rather than one segment — `pwad`, or `pwad/megawads`. It is still exactly
+relative to `public/game/` rather than one segment — `pwad`, or `pwad/megawads`. It is still exactly
 the URL the file is served from, so a subfolder costs no extra bookkeeping; `serverSource` encodes
 each segment separately so the separators survive. What it buys is that a collection can be filed on
 disk the way it is thought about, and the menu shows it as a tree (docs/menu.md § WAD Library) — the

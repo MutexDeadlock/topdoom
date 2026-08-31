@@ -35,7 +35,7 @@ retunes one monster does not repeal an earlier one that renamed the levels. Late
 **per key**, which falls out of the merge order.
 
 Only the in-WAD lump is read. Standalone `.deh`/`.bex` files are not loadable: that would mean
-widening the `public/wads/` manifest, `WadSource`, `loadWadFiles` and the menu's upload filter,
+widening the `public/game/` manifest, `WadSource`, `loadWadFiles` and the menu's upload filter,
 none of which a WAD-embedded lump needs.
 
 ## The two entry points

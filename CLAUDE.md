@@ -22,12 +22,12 @@ clean. See [docs/testing.md](docs/testing.md) for what is covered and how to add
 
 ### Headless WAD inspection
 
-Game WADs go in `public/wads/iwad/`, add-ons in `public/wads/pwad/` — see [docs/wad.md](docs/wad.md)
+Game WADs go in `public/game/iwad/`, add-ons in `public/game/pwad/` — see [docs/wad.md](docs/wad.md)
 for why the folder matters.
 
 ```bash
-node scripts/inspect-wad.ts public/wads/iwad/DOOM.WAD E1M1
-node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SCYTHE.WAD
+node scripts/inspect-wad.ts public/game/iwad/DOOM.WAD E1M1
+node scripts/inspect-wad.ts public/game/iwad/DOOM2.WAD MAP05 public/game/pwad/SCYTHE.WAD
 ```
 
 Runs under Node's native TS support, no browser: lump/map counts and provenance, each file's
@@ -63,8 +63,9 @@ src/wad/       WAD files, merged lump directory, content IDs (checksum), map lum
                + sprite + sound + music decoding, Boom's ANIMATED/SWITCHES/colormap lumps, GZDoom's
                dynamic-light definitions (gldefs), what the text lumps share before each grammar
                takes over (textlump), whether this engine can run a file at all (support), what a
-               file holds without loading it (describe), the shipped player art and when it stands
-               in (playerskin), the menu's WAD library
+               file holds without loading it (describe), the one WAD the engine ships itself
+               (shipped) and writing one (write), the shipped player art and when it stands in
+               (playerskin), the menu's WAD library
 src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it can't ask the tree
                for (sectorprobe), the solids a map draws as void (solids), mesh building, materials
                + texture animation, occlusion fading, Boom's scrolling surfaces (scroller), sprite
@@ -89,7 +90,9 @@ src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DO
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 src/styles.css     the stylesheet index.html links; @imports the .css beside each ui module
 index.html         the page skeleton; @includes the .html beside each one
-plugins/       Vite plugins: the public/wads/{iwad,pwad} manifest, index.html's @include expansion
+plugins/       Vite plugins: the public/game/{iwad,pwad} manifest, the WAD built from assets/
+               (game-wad), index.html's @include expansion
+assets/        the sources that WAD is built from: gldefs.txt, secret.ogg, playerskins.wad
 scripts/       headless inspection of a WAD (scripts/inspect-wad.ts) and of a savegame file
                (scripts/inspect-save.ts)
 ```
@@ -101,7 +104,7 @@ relevant one before changing that subsystem** — several rules there look like 
 
 | Doc | Covers |
 |---|---|
-| [wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD override rules, level names, the `public/wads/` manifest |
+| [wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD override rules, level names, the `public/game/` manifest |
 | [dehacked.md](docs/dehacked.md) | DEHACKED/BEX patches: the record grammar, the index bridges, units, `Bits`, the unsupported corners |
 | [menu.md](docs/menu.md) | The menu as launcher and pause screen, the WAD Library, difficulty, persisted settings, URL parameters, `main.ts`'s session lifecycle, `DEVMODE` |
 | [frameloop.md](docs/frameloop.md) | `game.ts`'s frame: the delta, the FPS cap, pausing |

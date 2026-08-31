@@ -2,8 +2,8 @@
  * Headless sanity check: parses a WAD set and reports what the renderer will get.
  *
  *   node scripts/inspect-wad.ts <iwad> [map] [pwad ...]
- *   node scripts/inspect-wad.ts public/wads/DOOM.WAD E1M1
- *   node scripts/inspect-wad.ts public/wads/DOOM2.WAD MAP01 ~/wads/scythe.wad
+ *   node scripts/inspect-wad.ts public/game/DOOM.WAD E1M1
+ *   node scripts/inspect-wad.ts public/game/DOOM2.WAD MAP01 ~/wads/scythe.wad
  */
 import { readFileSync } from 'node:fs';
 import { Wad, WadFile } from '../src/wad/wad.ts';
@@ -38,7 +38,7 @@ function readWad(path: string): WadFile {
   return new WadFile(buffer, path.split('/').pop()!);
 }
 
-const [iwadPath = 'public/wads/iwad/DOOM.WAD', mapArg, ...pwadPaths] = process.argv.slice(2);
+const [iwadPath = 'public/game/iwad/DOOM.WAD', mapArg, ...pwadPaths] = process.argv.slice(2);
 
 const files = [readWad(iwadPath), ...pwadPaths.map(readWad)];
 const wad = new Wad(files);

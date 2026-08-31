@@ -1,6 +1,6 @@
 User-agent: *
 Allow: /
 # The WAD folders are tens of megabytes of game data with nothing to index.
-Disallow: /wads/
+Disallow: /game/
 
 Sitemap: https://topdoom.vercel.app/sitemap.xml

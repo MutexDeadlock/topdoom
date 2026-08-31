@@ -242,7 +242,7 @@ What is its own:
   *outside* its own scroller, or it would scroll away from the rows it names.
 - **Both panels are folder trees of the same shape**, built by one `rootedSubtree`. `Game WADs` and
   `Add-ons` are rooted at `iwad/` and `pwad/` and show whatever subfolders those hold, now that the
-  manifest scans them recursively (docs/wad.md § The `public/wads/` manifest); the player's library
+  manifest scans them recursively (docs/wad.md § The `public/game/` manifest); the player's library
   is rooted at the folder they nominated. Only a served file's **first** path segment decides which
   of the two it belongs to. Anything dropped on the menu gets a `Dropped on the menu` group, so
   nothing the menu knows about is invisible here.
@@ -525,7 +525,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 
 ## Picking a WAD set
 
-The lists are fed by `/wads/index.json` (docs/wad.md § The `public/wads/` manifest) plus anything
+The lists are fed by `/game/index.json` (docs/wad.md § The `public/game/` manifest) plus anything
 loaded from disk. Semantics worth knowing before touching `menu.ts`:
 
 - **Game WAD** (`renderIwads`) only offers sources with `type === 'IWAD'`. A PWAD mapset can still
@@ -549,7 +549,7 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
   bodies the single-pick handlers use, and draws once for the whole drop.
 - **Add-ons are filtered by game, and never dropped for it.** An add-on that doesn't fit the
   selected game WAD (`library.ts: fitsGameWad`, over `mapStyle` — see docs/wad.md § The
-  `public/wads/` manifest for what style means) is rendered **disabled** rather than hidden — a
+  `public/game/` manifest for what style means) is rendered **disabled** rather than hidden — a
   mapset that's simply for the other game is still worth seeing, just not pickable. Switching game
   WAD **keeps** every pick that no longer matches, greyed out and unticked, so switching back
   restores the set intact; what keeps the merged map list (`mergedMaps`) from silently mixing an
@@ -743,7 +743,7 @@ level (docs/savegames.md § The format and its version).
 
 `topdoom.selection` holds `{ iwad, pwads, map }` as `WadSource.key`s. Precedence when `init`
 resolves it is **URL > stored > first IWAD on offer**, and every key is resolved against the current
-library, so a WAD that has since left `public/wads/` is silently dropped (an unknown map falls back
+library, so a WAD that has since left `public/game/` is silently dropped (an unknown map falls back
 to the set's first, via `selectLevel`'s no-op). Restoring can pair a stored add-on with a
 `?wad=`-forced game WAD it doesn't suit; that pick is **kept**, refused rather than dropped, so the
 stored set survives a deep link (§ Picking a WAD set).
@@ -761,7 +761,7 @@ value either. A **library** file is stored like a server one — its key is `lib
 which is stable across visits precisely because the folder is remembered
 (docs/wad.md § The player's own library), so a picked mapset survives a reload. Where the browser
 can't remember the folder, `init` restores nothing from it and the stored keys simply don't resolve,
-which is the same silent drop a WAD that has left `public/wads/` gets.
+which is the same silent drop a WAD that has left `public/game/` gets.
 
 ## URL parameters
 

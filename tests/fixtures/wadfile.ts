@@ -52,7 +52,7 @@ export function wadFile(type: 'IWAD' | 'PWAD', name: string, lumps: readonly Lum
  * module rather than the cwd, so the suite runs from anywhere, and sliced out of
  * the pooled buffer `readFileSync` returns — passing `.buffer` raw would hand
  * `WadFile` the whole pool. Tests read their WADs from here and never from
- * `public/wads/`; docs/testing.md § WAD-backed tests says why.
+ * `public/game/`; docs/testing.md § WAD-backed tests says why.
  */
 export function fixtureWad(file: string): WadFile {
   const bytes = readFileSync(new URL(`./wads/${file}`, import.meta.url));

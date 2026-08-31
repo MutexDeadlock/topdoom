@@ -4,6 +4,7 @@
  * every frame it draws. See docs/lights.md.
  */
 import type { Wad } from './wad.ts';
+import { SHIPPED_GLDEFS, shippedLump } from './shipped.ts';
 import { stripComments } from './textlump.ts';
 
 /**
@@ -362,23 +363,16 @@ export function gldefsFromWad(wad: Wad, base: Gldefs): Gldefs {
   return merged;
 }
 
-/** Where the stock definitions are served from; Vite copies `public/` to the site root. */
-const STOCK_URL = '/game/gldefs.txt';
-
-/** Memoized: the file is a fixed asset, and every level load would otherwise re-fetch it. */
+/** Memoized: the lump is a fixed asset, and every level load would otherwise re-decode it. */
 let stockText: Promise<string> | null = null;
 
 /**
- * The stock GZDoom light definitions shipped in `public/game/gldefs.txt`, as text for `parseGldefs`.
- * A fetch that fails resolves to an empty string rather than rejecting: no lights is a worse
- * looking game, not a broken one, and it must never keep a level from starting.
+ * The stock GZDoom light definitions as text for `parseGldefs`: the `GLDEFS` lump of the WAD the
+ * engine ships, built from `assets/gldefs.txt`. A file that fails to load resolves to an empty
+ * string rather than rejecting — no lights is a worse looking game, not a broken one, and it must
+ * never keep a level from starting. See docs/wad.md § The WAD the engine ships.
  */
 export function stockGldefs(): Promise<string> {
-  stockText ??= fetch(STOCK_URL)
-    .then((res) => (res.ok ? res.text() : Promise.reject(new Error(`HTTP ${res.status}`))))
-    .catch((err) => {
-      console.warn('Could not load gldefs.txt; dynamic lights are off:', err);
-      return '';
-    });
+  stockText ??= shippedLump(SHIPPED_GLDEFS).then((bytes) => (bytes ? DECODER.decode(bytes) : ''));
   return stockText;
 }

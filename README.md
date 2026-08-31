@@ -207,6 +207,13 @@ translucent midtextures and custom colormaps. What is deliberately **not** in: M
 nothing draws sky in a top-down view. See [docs/specials.md](docs/specials.md) for the per-number
 detail.
 
+**UDMF maps load** (experimental): a `TEXTMAP` map parses into the same records a binary map
+yields, with its BSP read from the `ZNODES` lump — there is no node builder, so a map saved
+without nodes won't load. A map in the `doom` namespace plays in full, Boom specials included;
+other namespaces (`zdoom` and friends) draw, collide and fight, but their ZDoom-style action
+specials don't run — so the WAD is flagged red in the library while staying **pickable**, for
+walking a map whose doors won't open. See [docs/wad.md](docs/wad.md#udmf).
+
 **`DEHACKED`/BEX patches are read** from a WAD that ships one: level titles, par times, monster,
 weapon and ammo stats, `Frame` records and repointed monster and weapon frames — applied by
 re-deriving the engine's sprite lists and its fire rates from vanilla's frame table — and

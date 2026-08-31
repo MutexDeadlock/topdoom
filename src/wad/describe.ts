@@ -7,10 +7,12 @@
  */
 import { Reader } from './reader.ts';
 import { MAP_MARKER, type WadType } from './wad.ts';
+import { sniffUdmfNamespace } from './map.ts';
 import { MAPINFO_LUMPS, parseMapInfoNames, preferredMapInfoLump } from './campaign/mapinfo.ts';
 import { mergeLevelTitles, titleLookupFor } from './campaign/names.ts';
 import { MAP_GROUP_LUMPS, wadSupport, type MapLumpSummary, type WadSupport } from './support.ts';
 import { parseDehacked } from '../game/dehacked.ts';
+import { decodeTextLump } from './textlump.ts';
 
 /**
  * A file's bytes, addressable by range. Deliberately not "an ArrayBuffer": a library scan reads
@@ -45,8 +47,12 @@ export interface WadDescription {
 const HEADER_BYTES = 12;
 const DIRECTORY_ENTRY_BYTES = 16;
 
-/** Text lumps are 8-bit, the same as every other string a WAD carries. */
-const DECODER = new TextDecoder('latin1');
+/**
+ * How much of a TEXTMAP the namespace sniff reads. The `namespace` assignment is the file's
+ * first statement (udmf.txt § II.C), so a head this size only misses it behind an outsized
+ * comment block — and missing it just downgrades the verdict, never the load.
+ */
+const UDMF_SNIFF_BYTES = 1024;
 
 /**
  * `ByteRanges` over bytes already in memory — the manifest plugin's file and an upload's buffer.
@@ -91,26 +97,42 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
   }
 
   // Every map summary is filled in during the walk itself — the verdict needs nothing from a map
-  // but which lumps follow its marker and how big each one is.
+  // but which lumps follow its marker and how big each one is (plus, for a UDMF map, a namespace
+  // sniffed off the head of its TEXTMAP below).
   const groups: MapLumpSummary[] = [];
   const dehLumps: Entry[] = [];
   const mapInfoLumps = new Map<string, Entry>();
+  const textmaps: { summary: MapLumpSummary; head: Entry }[] = [];
   const dir = reader(await src.read(dirOffset, lumpCount * DIRECTORY_ENTRY_BYTES));
   // The group a map marker opened, until a lump that isn't part of one closes it again — the same
-  // "the lumps follow the marker" rule `map.ts: mapLumps` reads a level by.
-  let group: Map<string, number> | null = null;
+  // "the lumps follow the marker" rule `map.ts: mapLumps` reads a level by, UDMF's bracketed
+  // TEXTMAP … ENDMAP group included. docs/wad.md § UDMF.
+  let group: { summary: MapLumpSummary; lumps: Map<string, number> } | null = null;
   for (let i = 0; i < lumpCount; i++) {
     const offset = dir.i32();
     const size = dir.i32();
     const lump = dir.name8();
     if (MAP_MARKER.test(lump)) {
-      group = new Map();
-      groups.push({ name: lump, lumps: group });
+      const lumps = new Map<string, number>();
+      group = { summary: { name: lump, lumps }, lumps };
+      groups.push(group.summary);
+      continue;
+    }
+    // TEXTMAP as the group's first lump is what switches it to the bracketed rule; the group's
+    // own lumps hold that state, so there is no second flag to keep in step with them.
+    if (group !== null && lump === 'TEXTMAP' && group.lumps.size === 0) {
+      group.lumps.set(lump, size);
+      textmaps.push({ summary: group.summary, head: { offset, size: Math.min(size, UDMF_SNIFF_BYTES) } });
+      continue;
+    }
+    if (group !== null && group.lumps.has('TEXTMAP')) {
+      if (!group.lumps.has(lump)) group.lumps.set(lump, size);
+      if (lump === 'ENDMAP') group = null;
       continue;
     }
     if (group !== null && MAP_GROUP_LUMPS.has(lump)) {
       // First one wins, as in `mapLumps`: a repeated name inside one group is a leftover.
-      if (!group.has(lump)) group.set(lump, size);
+      if (!group.lumps.has(lump)) group.lumps.set(lump, size);
       continue;
     }
     group = null;
@@ -128,6 +150,12 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
   const [mapInfoText, dehBodies] = await Promise.all([
     wanted ? text(src, mapInfoLumps.get(wanted)!) : Promise.resolve(null),
     Promise.all(dehLumps.map((lump) => text(src, lump))),
+    Promise.all(
+      textmaps.map(async (t) => {
+        const head = await text(src, t.head);
+        t.summary.udmfNamespace = head === null ? '' : sniffUdmfNamespace(head);
+      }),
+    ),
   ]);
   const mapInfoTitles = mapInfoText === null ? [] : parseMapInfoNames(mapInfoText);
 
@@ -167,7 +195,7 @@ interface Entry {
 /** A lump's text, or null when its directory entry points outside the file. */
 async function text(src: ByteRanges, lump: Entry): Promise<string | null> {
   if (lump.offset < 0 || lump.size < 0 || lump.offset + lump.size > src.size) return null;
-  return DECODER.decode(await src.read(lump.offset, lump.size));
+  return decodeTextLump(await src.read(lump.offset, lump.size));
 }
 
 /** `Reader` over a slice, which may be a view into a larger buffer. */

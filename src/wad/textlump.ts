@@ -1,9 +1,22 @@
 /**
  * What the WAD's text lumps share before each grammar takes over. GZDoom's text-lump family
  * (MAPINFO, GLDEFS, …) all carry C-style comments over otherwise unrelated syntaxes, so the
- * comment strip is here and each parser keeps its own tokenizer.
+ * comment strip is here and each parser keeps its own tokenizer, and every one of them reaches
+ * its text through `decodeTextLump`.
  * See docs/wad.md and docs/lights.md § The grammar.
  */
+
+/** Text lumps are 8-bit, the same as every other string a WAD carries. */
+const DECODER = new TextDecoder('latin1');
+
+/**
+ * A lump's bytes as text — a view into the merged WAD, or a whole buffer as `shipped.ts` hands
+ * one over. Absent bytes decode to `''`: a caller asking for a lump the WAD hasn't got wants an
+ * empty grammar, not a crash.
+ */
+export function decodeTextLump(bytes: Uint8Array | ArrayBuffer | undefined): string {
+  return DECODER.decode(bytes);
+}
 
 /**
  * Drops line (`//`) and block (`/* *\/`) comments, leaving quoted strings alone.

@@ -12,6 +12,7 @@
 import type { Wad, WadFile } from '../wad/wad.ts';
 import type { DehPatch, DehShortfall } from './dehacked/defs.ts';
 import { parseDehacked, WarningLog } from './dehacked/parse.ts';
+import { decodeTextLump } from '../wad/textlump.ts';
 
 export { parseDehacked } from './dehacked/parse.ts';
 
@@ -25,9 +26,6 @@ export interface LoadedDehacked extends DehPatch {
   /** In load order. The savegame's WAD-set identity keys off these — docs/savegames.md. */
   sources: readonly WadFile[];
 }
-
-/** Latin-1, matching `campaign/mapinfo.ts`: a DEHACKED lump is bytes, not UTF-8. */
-const DECODER = new TextDecoder('latin1');
 
 /**
  * Every `DEHACKED` lump in the set, parsed in load order and merged, or null if the set has none.
@@ -62,7 +60,7 @@ export function readDehacked(
   const sources: WadFile[] = [];
 
   for (const lump of lumps) {
-    const patch = parseDehacked(DECODER.decode(wad.data(lump)), titleLookup);
+    const patch = parseDehacked(decodeTextLump(wad.data(lump)), titleLookup);
     thingEdits.push(...patch.thingEdits);
     ammoEdits.push(...patch.ammoEdits);
     weaponEdits.push(...patch.weaponEdits);

@@ -66,7 +66,8 @@ console.log(
     `${map.linedefs.length} lines, ${map.sidedefs.length} sides,\n` +
     `  ${map.sectors.length} sectors, ${map.segs.length} segs, ${map.subsectors.length} subsectors,\n` +
     `  ${map.nodes.length} nodes (${map.nodeFormat}), ${map.things.length} things,\n` +
-    `  ${map.format} map format`,
+    `  ${map.format} map format` +
+    (map.format === 'udmf' ? ` (namespace "${map.udmfNamespace}")` : ''),
 );
 console.log(`  bounds x[${map.bounds.minX}..${map.bounds.maxX}] y[${map.bounds.minY}..${map.bounds.maxY}]`);
 
@@ -238,11 +239,12 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
 {
   // The classification itself is `tables.ts`'s (`classifyLineSpecial`), so this
   // report can't drift out of step with what the engine actually resolves.
-  // A Hexen action special is a different number namespace, not a `SpecialClass` — the
+  // A Hexen/ZDoom action special is a different number namespace, not a `SpecialClass` — the
   // synthetic row stays local to this report rather than widening the engine's classifier.
+  // A UDMF map outside the Doom-specials namespaces parks its actions the same way.
   type ReportClass = SpecialClass | 'hexen';
   const LABELS: Record<ReportClass, string> = {
-    hexen: 'HEXEN ACTION (unsupported, nothing dispatches these)',
+    hexen: 'HEXEN/ZDOOM ACTION (unsupported, nothing dispatches these)',
     none: 'none',
     vanilla: 'vanilla',
     boom: 'boom',

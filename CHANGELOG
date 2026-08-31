@@ -1,14 +1,18 @@
 v0.17.0 (2026-0?-??)
 
 Features and improvements
-  - weapon-matching player skins! Doomguy only, but can be forced for WADs which 
+  - UDMF maps load (needs ZNODES): the doom namespace plays in full, ZDoom-style
+    namespaces are flagged red but stay pickable (geometry yes, specials no)
+  - weapon-matching player skins! Doomguy only, but can be forced for WADs which
     customize the player sprites, all tuneable in Settings / Visuals
   - a corpse under a door, floor or crusher is squashed to a pool of blood
     - a crusher sprays blood out of whoever it is grinding
     - a DEH patch repointing S_GIBS moves the pool with it
   - a crowd of monsters waking at once no longer floods the sound channels
   - starting a game shows a loading screen with the WAD download's progress
-  - menu / WAD Library: Shortened 'DEHACKED' to 'DEH'
+  - menu / WAD Library: 
+    - shortened 'DEHACKED' to 'DEH'
+    - a support tooltip names at most 3 maps per reason, sorted
 
 Fixed bugs
   - rockets, plasma and BFG balls now leave the body instead of the player's head

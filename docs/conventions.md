@@ -33,8 +33,9 @@ to know which file inside `things/` a type happens to live in, and `map.ts` does
 `SUBSECTOR_BIT`, `NO_LINE` and `NodeFormat` so `render/bsp.ts` reads a seg and a node without
 reaching into `map/nodes.ts`.
 
-`wad/map/` holds the two lump *formats* a map can ship in rather than roles — `nodes.ts` for the
-BSP encodings, `hexen.ts` for Hexen's own LINEDEFS/THINGS. `campaign/` is the same shape:
+`wad/map/` holds the lump *formats* a map can ship in rather than roles — `nodes.ts` for the
+BSP encodings, `hexen.ts` for Hexen's own LINEDEFS/THINGS, `udmf.ts` for TEXTMAP. `campaign/` is
+the same shape:
 where a directory groups sub-topics rather than stages of one pipeline, the sub-topic is the name.
 
 The one exception is `game/dehacked.ts` + `game/dehacked/`, which has **two** entry points, split

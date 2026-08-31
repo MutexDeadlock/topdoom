@@ -1,21 +1,25 @@
 /**
  * The map lumps decoded into a `DoomMap`: vertices, linedefs/sidedefs, sectors, the BSP
  * (nodes/segs/subsectors, any format `map/nodes.ts` knows) and THINGS. Everything but the
- * BSP and, on a Hexen-format map, the two lumps `map/hexen.ts` re-decodes is stored exactly as
- * the WAD encodes it. This file is the layer's one entry point (docs/conventions.md § File names):
- * `map/` holds the two format seams and nothing else reaches into them. See docs/wad.md.
+ * BSP, the two lumps a Hexen-format map re-encodes (`map/hexen.ts`) and a UDMF map's one
+ * TEXTMAP lump (`map/udmf.ts`) is stored exactly as the WAD encodes it. This file is the
+ * layer's one entry point (docs/conventions.md § File names): `map/` holds the three
+ * format seams and nothing else reaches into them. See docs/wad.md.
  */
-import type { Wad } from './wad.ts';
+import { MAP_MARKER, type Wad } from './wad.ts';
 import { records, type Reader } from './reader.ts';
 import * as hexen from './map/hexen.ts';
-import { readBsp, type NodeFormat } from './map/nodes.ts';
+import * as udmf from './map/udmf.ts';
+import { readBsp, readBspZnodes, type BspData, type NodeFormat } from './map/nodes.ts';
+import { decodeTextLump } from './textlump.ts';
 
 export { NO_LINE, SUBSECTOR_BIT, type NodeFormat } from './map/nodes.ts';
+export { sniffUdmfNamespace, udmfDoomSpecials } from './map/udmf.ts';
 
 export const NO_SIDE = 0xffff;
 
-/** Which encoding a map's LINEDEFS and THINGS lumps use. docs/wad.md § Map formats. */
-export type MapFormat = 'doom' | 'hexen';
+/** Which encoding a map's geometry lumps use. docs/wad.md § Map formats and § UDMF. */
+export type MapFormat = 'doom' | 'hexen' | 'udmf';
 
 /**
  * DOOM's sky flat. A sector using it as its ceiling texture renders no ceiling
@@ -24,6 +28,22 @@ export type MapFormat = 'doom' | 'hexen';
  * renderer that draws it.
  */
 export const SKY_FLAT = 'F_SKY1';
+
+/**
+ * DOOM's sentinel for "no texture assigned" in a sidedef's texture slot. Lives here beside
+ * `SKY_FLAT` for the same reason: it is what the WAD writes, read by the renderer and by
+ * `game/specials.ts` alike, not a decision either of them makes.
+ */
+export const NO_TEXTURE = '-';
+
+/**
+ * Whether a texture slot names art to look up. The empty string is a second spelling of the
+ * sentinel — a binary map's `name8` yields it for an all-zero slot — so nothing may test
+ * `!== NO_TEXTURE` alone.
+ */
+export function isTextured(name: string): boolean {
+  return name !== NO_TEXTURE && name !== '';
+}
 
 export interface Vertex {
   x: number;
@@ -137,6 +157,8 @@ export interface DoomMap {
   format: MapFormat;
   /** Which on-disk BSP encoding the map shipped (`readBsp` normalizes them all). */
   nodeFormat: NodeFormat;
+  /** A UDMF map's namespace, lowercased (`''` when TEXTMAP named none); absent otherwise. */
+  udmfNamespace?: string;
   vertexes: Vertex[];
   sectors: Sector[];
   sidedefs: SideDef[];
@@ -172,11 +194,89 @@ export const MAP_LUMPS = [
   'BEHAVIOR', // Hexen only, and always last — its presence is what names the format
 ];
 
+/**
+ * Roughly how many binary `LINEDEFS` bytes a TEXTMAP byte stands for, keeping
+ * `mapLinedefBytes`'s unit the same whichever format a map ships in: text encodes the whole
+ * map at about ten times the binary size, of which linedefs are about a quarter. Tuned by
+ * feel — it only ever moves a loading-screen estimate.
+ */
+const TEXTMAP_BYTES_PER_LINEDEF_BYTE = 40;
+
+/**
+ * The size of a map's `LINEDEFS` lump — for a UDMF map, its `TEXTMAP` scaled to the same
+ * unit — without reading a byte of it: a directory lookup and the entry's own length.
+ * `game.ts` estimates what building the map will cost from this, which is why it must stay
+ * a lookup: the point is to answer *before* the map is loaded.
+ * See docs/menu.md § The loading screen.
+ */
+export function mapLinedefBytes(wad: Wad, name: string): number {
+  // `mapLumps` throws where the marker is missing; a caller asking about a map that isn't there
+  // wants an estimate of zero, not a load failure it has no way to act on.
+  if (!wad.find(name)) return 0;
+  const lumps = mapLumps(wad, name);
+  const textmap = lumps.get('TEXTMAP');
+  if (textmap !== undefined) return wad.lumpAt(textmap)!.size / TEXTMAP_BYTES_PER_LINEDEF_BYTE;
+  const index = lumps.get('LINEDEFS');
+  return index === undefined ? 0 : wad.lumpAt(index)!.size;
+}
+
+export function loadMap(wad: Wad, name: string): DoomMap {
+  const lumps = mapLumps(wad, name);
+  const rawLump: RawLump = (lumpName) => {
+    const idx = lumps.get(lumpName);
+    return idx === undefined ? undefined : wad.data(wad.lumpAt(idx)!);
+  };
+
+  // A TEXTMAP lump is a UDMF map, tested first — such a map may carry a BEHAVIOR lump too.
+  // Otherwise a BEHAVIOR lump — compiled ACS, which only a Hexen map carries — is what names
+  // the encoding LINEDEFS and THINGS shipped in, the same signal gzdoom's `LoadLevel` uses;
+  // record-size arithmetic is not a substitute. docs/wad.md § Map formats.
+  let geometry: MapGeometry;
+  if (lumps.has('TEXTMAP')) {
+    // ENDMAP is the group's required closing lump (udmf.txt § II.B); without it there is no
+    // saying which of the lumps that follow are the map's.
+    if (!lumps.has('ENDMAP')) throw new Error(`map ${name}: a TEXTMAP with no closing ENDMAP`);
+    geometry = readUdmfGeometry(rawLump);
+  } else {
+    geometry = readBinaryGeometry(lumps.has('BEHAVIOR') ? 'hexen' : 'doom', rawLump);
+  }
+
+  const { vertexes, sectors, bsp } = geometry;
+  return {
+    name,
+    format: geometry.format,
+    udmfNamespace: geometry.udmfNamespace,
+    nodeFormat: bsp.format,
+    vertexes,
+    sectors,
+    sidedefs: geometry.sidedefs,
+    linedefs: geometry.linedefs,
+    segs: bsp.segs,
+    subsectors: bsp.subsectors,
+    nodes: bsp.nodes,
+    things: geometry.things,
+    reject: readReject(wad, lumps, sectors.length),
+    bounds: boundsOf(vertexes),
+  };
+}
+
 /** Finds the lumps belonging to a map marker; they follow it directly in the directory. */
 function mapLumps(wad: Wad, name: string): Map<string, number> {
   const marker = wad.find(name);
   if (!marker) throw new Error(`map ${name} not found in WAD`);
   const out = new Map<string, number>();
+  // A UDMF group is bracketed rather than listed, so it is walked to its ENDMAP whatever the
+  // lumps between are named; the next map marker bounds the walk where ENDMAP is missing.
+  // docs/wad.md § UDMF.
+  if (wad.lumpAt(marker.index + 1)?.name === 'TEXTMAP') {
+    for (let i = marker.index + 1; ; i++) {
+      const l = wad.lumpAt(i);
+      if (!l || MAP_MARKER.test(l.name)) break;
+      if (!out.has(l.name)) out.set(l.name, i);
+      if (l.name === 'ENDMAP') break;
+    }
+    return out;
+  }
   for (let i = marker.index + 1; i <= marker.index + MAP_LUMPS.length; i++) {
     const l = wad.lumpAt(i);
     if (!l) break;
@@ -184,20 +284,6 @@ function mapLumps(wad: Wad, name: string): Map<string, number> {
     if (!out.has(l.name)) out.set(l.name, i);
   }
   return out;
-}
-
-/**
- * The size of a map's `LINEDEFS` lump, without reading a byte of it — a directory lookup and the
- * entry's own length. `game.ts` estimates what building the map will cost from this, which is why
- * it must stay a lookup: the point is to answer *before* the map is loaded.
- * See docs/menu.md § The loading screen.
- */
-export function mapLinedefBytes(wad: Wad, name: string): number {
-  // `mapLumps` throws where the marker is missing; a caller asking about a map that isn't there
-  // wants an estimate of zero, not a load failure it has no way to act on.
-  if (!wad.find(name)) return 0;
-  const index = mapLumps(wad, name).get('LINEDEFS');
-  return index === undefined ? 0 : wad.lumpAt(index)!.size;
 }
 
 /**
@@ -217,16 +303,55 @@ function readReject(wad: Wad, lumps: Map<string, number>, sectorCount: number): 
   return bytes.some((b) => b !== 0) ? bytes : undefined;
 }
 
-export function loadMap(wad: Wad, name: string): DoomMap {
-  const lumps = mapLumps(wad, name);
-  // A BEHAVIOR lump — compiled ACS, which only a Hexen map carries — is what names the encoding
-  // LINEDEFS and THINGS shipped in, the same signal gzdoom's `LoadLevel` uses; record-size
-  // arithmetic is not a substitute. docs/wad.md § Map formats.
-  const format: MapFormat = lumps.has('BEHAVIOR') ? 'hexen' : 'doom';
-  const rawLump = (lumpName: string): Uint8Array | undefined => {
-    const idx = lumps.get(lumpName);
-    return idx === undefined ? undefined : wad.data(wad.lumpAt(idx)!);
+function boundsOf(vertexes: Vertex[]): DoomMap['bounds'] {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const v of vertexes) {
+    if (v.x < minX) minX = v.x;
+    if (v.y < minY) minY = v.y;
+    if (v.x > maxX) maxX = v.x;
+    if (v.y > maxY) maxY = v.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+/** One map's lump bytes by name, `undefined` where the group has no such lump. */
+type RawLump = (lumpName: string) => Uint8Array | undefined;
+
+/**
+ * What a format seam yields: the records it decoded plus the BSP its own node lumps carry.
+ * `loadMap` assembles the `DoomMap` from this alone, so the two seams share one tail rather
+ * than each writing out the whole map.
+ */
+interface MapGeometry {
+  format: MapFormat;
+  udmfNamespace?: string;
+  vertexes: Vertex[];
+  sectors: Sector[];
+  sidedefs: SideDef[];
+  linedefs: LineDef[];
+  things: Thing[];
+  bsp: BspData;
+}
+
+function readUdmfGeometry(rawLump: RawLump): MapGeometry {
+  const parsed = udmf.parseTextmap(decodeTextLump(rawLump('TEXTMAP')));
+  return {
+    format: 'udmf',
+    udmfNamespace: parsed.namespace,
+    vertexes: parsed.vertexes,
+    sectors: parsed.sectors,
+    sidedefs: parsed.sidedefs,
+    linedefs: parsed.linedefs,
+    things: parsed.things,
+    // May append vertexes (split vertexes ride in the payload), so runs before the bounds pass.
+    bsp: readBspZnodes(parsed.vertexes, rawLump('ZNODES')),
   };
+}
+
+function readBinaryGeometry(format: MapFormat, rawLump: RawLump): MapGeometry {
   const read = <T>(lumpName: string, recordSize: number, fn: (r: Reader) => T): T[] =>
     records(rawLump(lumpName), 0, recordSize, fn);
 
@@ -279,30 +404,5 @@ export function loadMap(wad: Wad, name: string): DoomMap {
           flags: r.u16(),
         }));
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const v of vertexes) {
-    if (v.x < minX) minX = v.x;
-    if (v.y < minY) minY = v.y;
-    if (v.x > maxX) maxX = v.x;
-    if (v.y > maxY) maxY = v.y;
-  }
-
-  return {
-    name,
-    format,
-    nodeFormat: bsp.format,
-    vertexes,
-    sectors,
-    sidedefs,
-    linedefs,
-    segs: bsp.segs,
-    subsectors: bsp.subsectors,
-    nodes: bsp.nodes,
-    things,
-    reject: readReject(wad, lumps, sectors.length),
-    bounds: { minX, minY, maxX, maxY },
-  };
+  return { format, vertexes, sectors, sidedefs, linedefs, things, bsp };
 }

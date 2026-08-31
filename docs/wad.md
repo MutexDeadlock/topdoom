@@ -28,13 +28,15 @@ don't assume synthetic WADs will catch a regression here.
 
 ## Map formats
 
-Beside the BSP encoding, a map has a **lump format**: Doom or Hexen, `DoomMap.format`. Detection is
-the presence of a **BEHAVIOR** lump in the map's own lump group, which is how gzdoom's `LoadLevel`
-tells them apart and the only reliable signal — several Hexen maps' LINEDEFS lump size divides
-evenly by 14 as well as 16, so record-size arithmetic alone mis-detects them (`Mock2.wad` MAP26 and
-MAP34 both do). Read wrong, a Hexen map is not subtly off: linedefs come out pointing at vertexes
-and sidedefs that don't exist, and the map draws as garbage while sectors, sidedefs, vertexes and
-nodes all look perfectly sane. That asymmetry is the tell.
+Beside the BSP encoding, a map has a **lump format**: Doom, Hexen or UDMF, `DoomMap.format`. A
+**TEXTMAP** lump directly after the marker is UDMF (§ UDMF), tested first — a UDMF map may carry a
+BEHAVIOR lump too. Otherwise detection is the presence of a **BEHAVIOR** lump in the map's own lump
+group, which is how gzdoom's `LoadLevel` tells Doom from Hexen and the only reliable signal —
+several Hexen maps' LINEDEFS lump size divides evenly by 14 as well as 16, so record-size
+arithmetic alone mis-detects them (`Mock2.wad` MAP26 and MAP34 both do). Read wrong, a Hexen map is
+not subtly off: linedefs come out pointing at vertexes and sidedefs that don't exist, and the map
+draws as garbage while sectors, sidedefs, vertexes and nodes all look perfectly sane. That
+asymmetry is the tell.
 
 Only **LINEDEFS** and **THINGS** differ. SECTORS, SIDEDEFS, VERTEXES, SEGS, SSECTORS, NODES, REJECT
 and BLOCKMAP are byte-identical in both, so a Hexen map still gets the full node-format treatment
@@ -83,6 +85,42 @@ Hexen map draws, collides and fights correctly; its doors, lifts and switches do
 
 A Hexen thing's **`z`** (its height above the floor) is also ignored — things spawn on the floor, or
 under the ceiling for the `MF_SPAWNCEILING` types, exactly as in a Doom map.
+
+## UDMF
+
+A UDMF map (UDMF spec v1.1, `udmf.txt`) replaces the binary geometry lumps with one text lump: the
+group is **marker, TEXTMAP, any lumps at all, ENDMAP** (§ II.B — ENDMAP is required, and `loadMap`
+refuses a group without it, since nothing else says where the map's lumps stop). `mapLumps` and
+`describe.ts`'s walk both read a group this way the moment TEXTMAP directly follows the marker;
+binary groups keep the `MAP_LUMPS` list. `wad/map/udmf.ts` is the format's seam beside `hexen.ts`
+and `nodes.ts`: a single-pass parser (no token list — a TEXTMAP can run to tens of MB) that
+normalizes blocks to the same records and flag bits a Doom map yields, in declaration order, which
+*is* each record's index (§ II.A) and therefore the identity savegames and the first-match-wins
+scans key on. Field names, defaults and the flag translation are the spec's § III tables: linedef
+flag keys land on the `ML_` bits in the same order, `sideback` −1 becomes `NO_SIDE`, absent *and
+empty* textures become `-` (one spelling of "no texture" past the seam), `lightlevel` defaults to
+160, quoted names are upper-cased (every texture lookup keys on upper case), and a thing's `single`
+inverts to `MTF_NOTSINGLE` exactly as a Hexen thing's does. Unknown keys and blocks are skipped, as
+§ I requires of a compliant parser.
+
+**The namespace decides where specials go** (§ II.C). In `doom` (defined as v1.9 plus every Boom
+and MBF special) and `ZDoomTranslated` (gzdoom's `udmf_zdoom.txt` § II.C: "uses Doom-type
+specials"), `special` and the tag (`id`, written as both `id` and `arg0` by every compliant
+converter — § III's Tag/ID note) feed the vanilla/Boom tables and the map plays in full. Every
+other namespace — `zdoom`, `hexen`, `dsda` (a *subset of zdoom*, not of doom — dsda-doom
+`docs/udmf.md`), `heretic`/`strife` (Doom-shaped fields, their own games' special numbers), or none
+— parks `special`+`args` in `LineDef.action` with `special`/`tag` zeroed, exactly the Hexen
+treatment above: the map draws, collides and fights; its doors and lifts do not move. Sector `id`
+stays the tag in every namespace, so tag-only rules (the 666/667 boss-death scan) still fire.
+
+**The BSP must ship in ZNODES.** A UDMF map's nodes arrive as one `ZNODES` lump behind any of the
+eight extended signatures (`readBspZnodes` — there is no second lump to disambiguate against, so
+the one buffer is probed against the whole table). There is no node builder here: a UDMF map saved
+without ZNODES is `noBsp` (§ Will it run?), the same policy as a nodeless binary map. Ultimate Doom
+Builder writes ZNODES on save by default, so released UDMF WADs generally carry them.
+
+Free-form marker names (any lump followed by TEXTMAP) are **out of scope**: map discovery stays
+`MAP_MARKER` (`E#M#`/`MAP##`), so a UDMF map under another name is invisible, as before.
 
 ## Node formats
 
@@ -631,8 +669,9 @@ served and `entries.length` uploaded.
 It reads through a **`ByteRanges`** — `{ size, read(offset, length) }` — rather than taking a
 buffer, because a library scan describes hundreds of files it will never load. Over a `File`
 (`bytesOfFile`) that resolves to `slice().arrayBuffer()`, so describing a 14 MB IWAD reads the
-12-byte header, the directory, and at most two lumps: a few hundred KB, not the file. `bytesOf`
-wraps bytes already in memory, which is what the manifest plugin and an upload hand it.
+12-byte header, the directory, at most two lumps, and the first 1 KB of each TEXTMAP (the UDMF
+namespace sniff, § Will it run?): a few hundred KB, not the file. `bytesOf` wraps bytes already in
+memory, which is what the manifest plugin and an upload hand it.
 
 What it does **not** do is hash. The content ID is a pass over every byte (§ Content ID), and the
 three callers want it at three different moments — see there.
@@ -652,32 +691,42 @@ The `ok`/`partial`/`broken` level is **derived** (`supportLevel`), never stored.
 copies hold the reasons alone, so reclassifying a code in `SUPPORT_ISSUES` takes effect on rows
 written before the change, and no stored record can assert a level its own reasons contradict.
 
-The whole check runs **off the lump directory** — nothing in a map is read to reach it. That is the
-constraint the rule set is chosen under, not an implementation detail: a library scan describes
-hundreds of files it will never load (§ Describing a file without loading it), so anything needing
-LINEDEFS or SECTORS is out — including the linedef/sector special coverage `inspect-wad` reports,
-which is the sharper answer and stays the inspector's job. This column says whether a map **loads**
-and whether its **format** is one this engine plays fully; the inspector says which of its specials
-land.
+The whole check runs **off the lump directory** — with one exception: a UDMF map's verdict needs
+its namespace, which lives in the lump body, so `describeWad` reads the first 1 KB of each TEXTMAP
+(the `namespace` assignment is the file's first statement, udmf.txt § II.C) alongside the MAPINFO
+and DEHACKED lumps it already reads. Nothing else in a map is read. That constraint is what the
+rule set is chosen under, not an implementation detail: a library scan describes hundreds of files
+it will never load (§ Describing a file without loading it), so anything needing LINEDEFS or
+SECTORS is out — including the linedef/sector special coverage `inspect-wad` reports, which is the
+sharper answer and stays the inspector's job. This column says whether a map **loads** and whether
+its **format** is one this engine plays fully; the inspector says which of its specials land.
 
-Which lumps belong to a map is `map.ts: MAP_LUMPS` — the same list `loadMap` reads a level by, not a
-second copy — widened by `MAP_GROUP_LUMPS` with the lumps a UDMF map carries instead, so the walk
-steps over them and reaches `TEXTMAP` rather than reporting a map with no lumps.
+Which lumps belong to a map is `map.ts: MAP_LUMPS` — the same list `loadMap` reads a level by, not
+a second copy. A UDMF group is bracketed instead (TEXTMAP … ENDMAP, any lump names between — §
+UDMF), which both walks handle as their own state; `MAP_GROUP_LUMPS` widens the binary list with
+the stragglers a Hexen map trails after BEHAVIOR (SCRIPTS, DIALOGUE).
 
-**`broken` — the map will not load.** One per map, first match winning, so a UDMF map is reported as
-UDMF rather than as the missing LINEDEFS that follow from it:
+**`broken` — the map will not run as its author built it.** One per map, first match winning, and a
+UDMF map is judged by its own lumps rather than the missing binary ones that follow from its format:
 
 | Code | Signal | Why |
 |---|---|---|
-| `udmf` | a `TEXTMAP` lump in the group | Text-format maps are not read here at all. `mapLumps` stops at the first lump that isn't one of `MAP_LUMPS`, so such a map loads as an empty world rather than failing loudly. |
-| `incomplete` | THINGS, LINEDEFS, SIDEDEFS, VERTEXES or SECTORS missing or zero-length | There is no level without them, and no player start without THINGS. |
-| `noBsp` | **both** NODES and SSECTORS empty | A map left for the port to build nodes for — or one whose GL nodes ship in a `GL_<map>` group of their own, which this engine does not read. Either lump alone is enough: an extended BSP fills one of them and leaves the other empty (NODES for XNOD/ZNOD, SSECTORS for the GL family), and a map convex enough to be a single subsector has no NODES record to write. |
+| `incomplete` | THINGS, LINEDEFS, SIDEDEFS, VERTEXES or SECTORS missing or zero-length; for a UDMF map, no ENDMAP | There is no level without them, and no player start without THINGS. ENDMAP is UDMF's required closing lump (udmf.txt § II.B) and `loadMap` refuses a group without it. |
+| `noBsp` | **both** NODES and SSECTORS empty; for a UDMF map, ZNODES missing or empty | A map left for the port to build nodes for — or one whose GL nodes ship in a `GL_<map>` group of their own, which this engine does not read. Either binary lump alone is enough: an extended BSP fills one of them and leaves the other empty (NODES for XNOD/ZNOD, SSECTORS for the GL family), and a map convex enough to be a single subsector has no NODES record to write. A UDMF map's whole BSP rides in ZNODES (§ UDMF). |
+| `udmf` **(`loads`)** | a `TEXTMAP` whose namespace is not a Doom-specials one | The map draws, collides and fights, but its action specials park undispatched (§ UDMF), so its progression cannot be played through. A `doom`/`ZDoomTranslated` map raises nothing — it plays in full. Only raised for a map that isn't already refused. |
+
+**`loads` is the one qualifier on a broken code**, and `udmf` is its only holder: the map *does*
+load and is walkable, and is flagged red for what will not run in it rather than for failing to
+open. So it is left out of `nothingLoads`'s refusal count — **the file stays pickable**, the player
+choosing to walk a map whose doors won't open — and out of the tooltip's "will not load" headline,
+which such a file would make a lie. Everything else `broken` yields an empty world: a level with no
+floor to stand on.
 
 **`partial` — it loads and plays, but not as its author built it.**
 
 | Code | Signal | Why |
 |---|---|---|
-| `hexen` | a `BEHAVIOR` lump in the group | The map draws, collides and fights correctly, but its action specials and ACS do not run (§ What a Hexen map does not get), so anything gated behind a switch or a script cannot be reached. Only raised for a map that isn't already `broken`. |
+| `hexen` | a `BEHAVIOR` lump in a binary group | The map draws, collides and fights correctly, but its action specials and ACS do not run (§ What a Hexen map does not get), so anything gated behind a switch or a script cannot be reached. Only raised for a map that isn't already `broken`. |
 | `dehacked` | the patch raises a `DehSupport` **`unsupported`** warning | Action pointers and the MBF flags: things that change how an actor behaves. `noTarget` and `unknown` are deliberately **not** counted — the first is a finale screen or a pickup message, the second a line the parser didn't recognise, and neither changes how a level plays. Counting them turned EPIC.WAD amber over one misspelt `Radius` line. |
 
 A file's level is its worst issue, and a file with no maps at all (a texture or sound pack) is `ok`

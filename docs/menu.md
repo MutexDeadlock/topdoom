@@ -288,7 +288,9 @@ What is its own:
   after them. It is rendered **even when it says nothing**, or every column behind it would land
   somewhere different on each row, which is the whole thing they exist for.
 - **The last column says whether the file will run at all** — a green tick, an amber warning or a
-  red cross, with the reasons and the maps that raise them in its tooltip. The verdict itself is
+  red cross, with the reasons in its tooltip, each naming at most three of the maps that raise it
+  (sorted, then a count of the rest — a longer list stops being readable at a glance, and directory
+  order reads as no order at all). The verdict itself is
   `wad/support.ts`'s and is decided when the file is *described* (docs/wad.md § Will it run?), not
   here: it rides in on `WadSource.support` for a server file, an upload and a library file alike, so
   the same WAD cannot read differently in the three places it can come from. The menu's job is the
@@ -297,10 +299,12 @@ What is its own:
   docs/styles.md § Tokens.
 - **A file with nothing left to load is greyed out**, game WAD and add-on alike, and carries
   `won't load` in the badge column. The rule is `support.ts: nothingLoads`, deliberately **narrower
-  than the red glyph**: a megawad with one UDMF map among thirty-one that work still shows the red
+  than the red glyph**: a megawad with one nodeless map among thirty-one that work still shows the red
   cross, and is still perfectly pickable — refusing the whole file over one map would lock the
   player out of the rest of it. Only a file whose *every* map is refused is unpickable, and a
-  map-less add-on never is, having nothing that could fail to load.
+  map-less add-on never is, having nothing that could fail to load. A ZDoom-namespace UDMF file
+  shows the red cross and stays pickable however many of its maps raise it: those maps load and are
+  walkable, and the cross is about their doors and scripts not running (docs/wad.md § Will it run?).
   This lives in `LibraryUi`, **not** in `pwadsFor`: what a set costs is a rule about the game WAD
   and its add-ons, while "this file will not load" is a property of the file alone — folding it
   into the prune would silently drop files out of a stored selection and out of the set a savegame
@@ -860,7 +864,7 @@ lie in the other direction.
 **A level load shows nothing unless it is predicted to be slow.** `Game.loadLevel` is the one
 decision point — an exit, `R` after death, a checkpoint reload and the DEVMODE map jump all go
 through it — and it estimates the build from the map's `LINEDEFS` lump size (`mapLinedefBytes`, a
-directory lookup) times `buildMsPerKb`. Only above `SLOW_LOAD_MS` does the overlay go up. An
+directory lookup; a UDMF map's `TEXTMAP` size scaled to the same unit) times `buildMsPerKb`. Only above `SLOW_LOAD_MS` does the overlay go up. An
 ordinary level change is a few frames, and an overlay up that briefly is a flicker, not feedback.
 
 **The estimate exists because the build cannot be interrupted.** `loadMapByIndex` is one synchronous

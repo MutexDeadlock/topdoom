@@ -5,7 +5,7 @@
  */
 import type { Wad } from './wad.ts';
 import { SHIPPED_GLDEFS, shippedLump } from './shipped.ts';
-import { stripComments } from './textlump.ts';
+import { decodeTextLump, stripComments } from './textlump.ts';
 
 /**
  * The lump names carrying light definitions. GZDoom reads **every** one of these, in load order,
@@ -14,9 +14,6 @@ import { stripComments } from './textlump.ts';
  * the game-specific one GZDoom still accepts for Doom.
  */
 export const GLDEFS_LUMPS = ['GLDEFS', 'DOOMDEFS'];
-
-/** Text lumps are 8-bit, the same as every other string a WAD carries. */
-const DECODER = new TextDecoder('latin1');
 
 /**
  * How a light's radius moves over time. GZDoom's own four animated types
@@ -355,7 +352,7 @@ export function gldefsFromWad(wad: Wad, base: Gldefs): Gldefs {
   const lumps = GLDEFS_LUMPS.flatMap((name) => wad.findAll(name)).sort((a, b) => a.index - b.index);
   for (const lump of lumps) {
     try {
-      parseGldefs(DECODER.decode(wad.data(lump)), merged);
+      parseGldefs(decodeTextLump(wad.data(lump)), merged);
     } catch (err) {
       console.warn(`GLDEFS lump ${lump.name} could not be read:`, err);
     }
@@ -373,6 +370,6 @@ let stockText: Promise<string> | null = null;
  * never keep a level from starting. See docs/wad.md § The WAD the engine ships.
  */
 export function stockGldefs(): Promise<string> {
-  stockText ??= shippedLump(SHIPPED_GLDEFS).then((lump) => (lump ? DECODER.decode(lump) : ''));
+  stockText ??= shippedLump(SHIPPED_GLDEFS).then((lump) => (lump ? decodeTextLump(lump) : ''));
   return stockText;
 }

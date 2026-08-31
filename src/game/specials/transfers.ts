@@ -5,7 +5,7 @@
  * See docs/specials.md § Render transfers.
  */
 import type { DoomMap } from '../../wad/map.ts';
-import { NO_SIDE } from '../../wad/map.ts';
+import { isTextured, NO_SIDE } from '../../wad/map.ts';
 import { sectorsByTag, linesByTag, sectorLines } from '../world.ts';
 
 /** The colormap lump names a 242 control line's sidedef carries, by where the eye is. */
@@ -28,11 +28,6 @@ export interface TransferCounts {
 
 /** Looks a lump's byte length up by name, or null when the WAD has no such lump. */
 export type LumpSize = (name: string) => number | null;
-
-/**
- * The WAD's "no texture here" sidedef name, spelled out rather than imported from the render layer.
- */
-const NO_TEXTURE = '-';
 
 /**
  * A Boom translucency map is a 256×256 palette-blend table. The name of one is
@@ -321,7 +316,7 @@ export class Transfers {
       if (side) {
         this.colormaps.set(control, { bottom: side.lower, mid: side.middle, top: side.upper });
         for (const name of [side.lower, side.middle, side.upper]) {
-          if (name !== '' && name !== NO_TEXTURE && (lumpSize?.(name) ?? 0) >= COLORMAP_LUMP_SIZE) {
+          if (isTextured(name) && (lumpSize?.(name) ?? 0) >= COLORMAP_LUMP_SIZE) {
             this.colormapNames.add(name.toUpperCase());
           }
         }
@@ -430,7 +425,7 @@ export class Transfers {
       else for (const l of linesByTag(this.map, line.tag)) this.translucent.add(l);
 
       const name = this.map.sidedefs[line.right]?.middle ?? '';
-      if (name === '' || name === NO_TEXTURE) continue;
+      if (!isTextured(name)) continue;
       if (name.toUpperCase() === 'TRANMAP' || lumpSize?.(name) === TRANMAP_LUMP_SIZE) {
         this.suppressed.add(i);
       }

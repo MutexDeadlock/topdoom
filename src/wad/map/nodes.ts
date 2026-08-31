@@ -69,6 +69,35 @@ const EXTENDED: Record<string, Extended> = {
   ZGL3: { format: 'zgl3', gl: 3, compressed: true },
 };
 
+/**
+ * Reads a map's BSP in whatever format it ships. An extended one gets its extra
+ * vertexes appended to `vertexes` in place.
+ */
+export function readBsp(
+  vertexes: Vertex[],
+  segsData: Uint8Array | undefined,
+  ssectorsData: Uint8Array | undefined,
+  nodesData: Uint8Array | undefined,
+): BspData {
+  // DeePBSP signs NODES too, and its signature is not one of `EXTENDED`'s.
+  if (startsWith(nodesData, 'xNd4\0\0\0\0')) return readDeepV4(segsData, ssectorsData, nodesData);
+  const extended = extendedPayload(ssectorsData, nodesData);
+  if (!extended) return readVanilla(segsData, ssectorsData, nodesData);
+  return readExtendedLump(extended.entry, extended.data, vertexes);
+}
+
+/**
+ * A UDMF map's BSP: the whole payload in the one ZNODES lump, behind any of the eight
+ * extended signatures — plain or GL, there is no second lump to disambiguate against.
+ * Absent or unsigned data reads as no BSP at all; `wad/support.ts` is what warns about
+ * that before the map is picked. docs/wad.md § UDMF.
+ */
+export function readBspZnodes(vertexes: Vertex[], data: Uint8Array | undefined): BspData {
+  const entry = data && EXTENDED[signature(data)];
+  if (!entry) return { format: 'vanilla', segs: [], subsectors: [], nodes: [] };
+  return readExtendedLump(entry, data, vertexes);
+}
+
 function startsWith(data: Uint8Array | undefined, sig: string): boolean {
   if (!data || data.length < sig.length) return false;
   for (let i = 0; i < sig.length; i++) {
@@ -266,20 +295,8 @@ function readExtended(entry: Extended, payload: Uint8Array, vertexes: Vertex[]):
   return { format: entry.format, segs, subsectors, nodes };
 }
 
-/**
- * Reads a map's BSP in whatever format it ships. An extended one gets its extra
- * vertexes appended to `vertexes` in place.
- */
-export function readBsp(
-  vertexes: Vertex[],
-  segsData: Uint8Array | undefined,
-  ssectorsData: Uint8Array | undefined,
-  nodesData: Uint8Array | undefined,
-): BspData {
-  // DeePBSP signs NODES too, and its signature is not one of `EXTENDED`'s.
-  if (startsWith(nodesData, 'xNd4\0\0\0\0')) return readDeepV4(segsData, ssectorsData, nodesData);
-  const extended = extendedPayload(ssectorsData, nodesData);
-  if (!extended) return readVanilla(segsData, ssectorsData, nodesData);
-  const body = extended.data.subarray(4);
-  return readExtended(extended.entry, extended.entry.compressed ? inflateZlib(body) : body, vertexes);
+/** An extended payload past its four signature bytes, inflated where the signature says so. */
+function readExtendedLump(entry: Extended, data: Uint8Array, vertexes: Vertex[]): BspData {
+  const body = data.subarray(4);
+  return readExtended(entry, entry.compressed ? inflateZlib(body) : body, vertexes);
 }

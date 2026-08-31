@@ -41,6 +41,26 @@ function mapSummary(
 const codes = (support: WadSupport) => support.map((issue) => issue.code);
 
 /**
+ * A UDMF map group: the bracketed lumps `wadSupport` judges one by, with the namespace
+ * `describe.ts` would have sniffed off the TEXTMAP head already filled in.
+ */
+function udmfSummary(
+  name: string,
+  namespace: string,
+  over: Record<string, number> = {},
+  omit: readonly string[] = [],
+): MapLumpSummary {
+  const lumps = new Map<string, number>([
+    ['TEXTMAP', 400],
+    ['ZNODES', 100],
+    ['ENDMAP', 0],
+  ]);
+  for (const [lump, size] of Object.entries(over)) lumps.set(lump, size);
+  for (const lump of omit) lumps.delete(lump);
+  return { name, lumps, udmfNamespace: namespace };
+}
+
+/**
  * The lumps of one plain, loadable map, as `wadFile` takes them. `over` replaces a lump's bytes —
  * an empty `Uint8Array` for a lump that is present but says nothing.
  */
@@ -85,11 +105,25 @@ describe('WAD parsing · will it run?', () => {
     assert.equal(supportLevel(wadSupport([], false)), 'ok');
   });
 
-  test('a UDMF map is reported as UDMF, not as the map lumps it does not have', () => {
-    const udmf = mapSummary('MAP01', { TEXTMAP: 400 }, ['THINGS', 'LINEDEFS', 'SIDEDEFS', 'VERTEXES', 'SECTORS']);
+  test('a UDMF map is judged by its own lumps, not the binary ones it does not have', () => {
+    const udmf = udmfSummary('MAP01', 'zdoom');
     const verdict = wadSupport([udmf], false);
     assert.deepEqual(verdict, [{ code: 'udmf', maps: ['MAP01'] }]);
+    // Broken: its progression runs on specials that never fire. It still loads, so the player
+    // may pick it — `nothingLoads` below is what that costs.
     assert.equal(supportLevel(verdict), 'broken');
+  });
+
+  test('a UDMF map in a Doom-specials namespace plays in full', () => {
+    for (const namespace of ['doom', 'Doom', 'zdoomtranslated']) {
+      assert.deepEqual(wadSupport([udmfSummary('MAP01', namespace)], false), [], namespace);
+    }
+  });
+
+  test('a UDMF map without ZNODES has no BSP, and without ENDMAP no shape at all', () => {
+    assert.deepEqual(codes(wadSupport([udmfSummary('MAP01', 'doom', { ZNODES: 0 })], false)), ['noBsp']);
+    assert.deepEqual(codes(wadSupport([udmfSummary('MAP01', 'doom', {}, ['ZNODES'])], false)), ['noBsp']);
+    assert.deepEqual(codes(wadSupport([udmfSummary('MAP01', 'doom', {}, ['ENDMAP'])], false)), ['incomplete']);
   });
 
   test('a map missing a lump a level is made of will not load', () => {
@@ -129,8 +163,8 @@ describe('WAD parsing · will it run?', () => {
     assert.equal(supportLevel(verdict), 'partial');
   });
 
-  test('a map that will not load says so instead of also reporting its Hexen format', () => {
-    const both = mapSummary('MAP01', { BEHAVIOR: 200, TEXTMAP: 400 });
+  test('a UDMF map carrying a BEHAVIOR lump too is judged as UDMF, not Hexen', () => {
+    const both = udmfSummary('MAP01', 'zdoom', { BEHAVIOR: 200 });
     assert.deepEqual(codes(wadSupport([both], false)), ['udmf']);
   });
 
@@ -142,12 +176,12 @@ describe('WAD parsing · will it run?', () => {
 
   test('the worst issue decides the level, and issues are reported worst first', () => {
     const verdict = wadSupport(
-      [mapSummary('MAP01', { BEHAVIOR: 200 }), mapSummary('MAP02', { TEXTMAP: 400 }), mapSummary('MAP03')],
+      [mapSummary('MAP01', { BEHAVIOR: 200 }), udmfSummary('MAP02', 'doom', { ZNODES: 0 }), mapSummary('MAP03')],
       true,
     );
     assert.equal(supportLevel(verdict), 'broken');
     assert.deepEqual(verdict, [
-      { code: 'udmf', maps: ['MAP02'] },
+      { code: 'noBsp', maps: ['MAP02'] },
       { code: 'hexen', maps: ['MAP01'] },
       { code: 'dehacked', maps: [] },
     ]);
@@ -164,7 +198,29 @@ describe('WAD parsing · will it run?', () => {
  * `broken`: one bad map in a megawad must not cost the player the other thirty-one.
  */
 describe('WAD parsing · a file with nothing left to load', () => {
-  const udmf = (name: string) => mapSummary(name, { TEXTMAP: 400 });
+  // A UDMF map shipped without its ZNODES: refused, there being no node builder here.
+  const udmf = (name: string) => udmfSummary(name, 'doom', { ZNODES: 0 });
+
+  /**
+   * The `udmf` code is the one `broken` reason a file survives: such a map loads and is walkable,
+   * and is flagged for what will not run in it, so refusing the row would take away a file the
+   * player deliberately chose to try.
+   */
+  test('a ZDoom-namespace UDMF file is flagged broken but stays pickable', () => {
+    const maps = ['MAP01', 'MAP02'].map((name) => udmfSummary(name, 'zdoom'));
+    const verdict = wadSupport(maps, false);
+    assert.equal(supportLevel(verdict), 'broken');
+    assert.equal(nothingLoads(verdict, 2), false);
+    // And it does not claim the file will not load.
+    assert.match(describeSupport(verdict, 2), /^This WAD may not play as intended\n/);
+  });
+
+  test('a ZDoom-namespace map among refused ones does not save the file on its own', () => {
+    const verdict = wadSupport([udmf('MAP01'), udmfSummary('MAP02', 'zdoom')], false);
+    assert.equal(nothingLoads(verdict, 2), false);
+    // Every map refused for real is still a refused file, whatever else is flagged.
+    assert.equal(nothingLoads(wadSupport([udmf('MAP01'), udmf('MAP02')], false), 2), true);
+  });
 
   test('a file whose every map is refused has nothing to pick it for', () => {
     const verdict = wadSupport([udmf('MAP01'), udmf('MAP02')], false);
@@ -216,17 +272,29 @@ describe('WAD parsing · the support tooltip', () => {
     assert.match(describeSupport(wadSupport([mapSummary('MAP01')], true), 1), /^This WAD may not play/);
   });
 
-  test('each reason names the maps that raise it, and stops counting past eight', () => {
+  test('each reason names three maps and counts the rest', () => {
     const many = Array.from({ length: 11 }, (_, i) =>
       mapSummary(`MAP${String(i + 1).padStart(2, '0')}`, { BEHAVIOR: 1 }),
     );
     const text = describeSupport(wadSupport(many, false), 11);
-    assert.match(text, /• MAP01, MAP02, MAP03, MAP04, MAP05, MAP06, MAP07, MAP08 and 3 more: Hexen format/);
+    assert.match(text, /• MAP01, MAP02, MAP03 and 8 more: Hexen format/);
+  });
+
+  test('the maps a reason names are sorted, not in the order the directory found them', () => {
+    const maps = ['MAP20', 'MAP03', 'MAP11'].map((name) => mapSummary(name, { BEHAVIOR: 1 }));
+    assert.match(describeSupport(wadSupport(maps, false), 3), /• MAP03, MAP11, MAP20: Hexen format/);
+  });
+
+  test('exactly three maps are all named, with nothing left to count', () => {
+    const maps = ['MAP01', 'MAP02', 'MAP03'].map((name) => mapSummary(name, { BEHAVIOR: 1 }));
+    const text = describeSupport(wadSupport(maps, false), 4);
+    assert.match(text, /• MAP01, MAP02, MAP03: Hexen format/);
+    assert.doesNotMatch(text, /more/);
   });
 
   test('a broken file says it will not load', () => {
-    const broken = wadSupport([mapSummary('MAP01', { TEXTMAP: 4 })], false);
-    assert.match(describeSupport(broken, 1), /^This WAD will not load\n• MAP01: built in UDMF/);
+    const broken = wadSupport([udmfSummary('MAP01', 'doom', { ZNODES: 0 })], false);
+    assert.match(describeSupport(broken, 1), /^This WAD will not load\n• MAP01: no BSP nodes/);
   });
 });
 
@@ -240,9 +308,26 @@ describe('WAD parsing · reaching the verdict from a directory', () => {
     assert.deepEqual((await describeFixture('doom1_e1m1.wad')).support, []);
   });
 
-  test('a TEXTMAP after the marker is read as UDMF', async () => {
-    const verdict = await support('udmf.wad', ['MAP01', { name: 'TEXTMAP', text: 'namespace = "zdoom";' }, 'ENDMAP']);
-    assert.deepEqual(verdict, [{ code: 'udmf', maps: ['MAP01'] }]);
+  test('a TEXTMAP after the marker is read as UDMF, and its namespace off the lump head', async () => {
+    const group = (namespace: string): Lump[] => [
+      'MAP01',
+      { name: 'TEXTMAP', text: `// a comment first\nnamespace = "${namespace}";` },
+      { name: 'ZNODES', bytes: new Uint8Array(8) },
+      'ENDMAP',
+    ];
+    const zdoom = await support('udmf.wad', group('ZDoom'));
+    assert.deepEqual(zdoom, [{ code: 'udmf', maps: ['MAP01'] }]);
+    // A Doom-specials namespace raises nothing: the map plays in full.
+    assert.deepEqual(await support('udmfdoom.wad', group('Doom')), []);
+  });
+
+  test('a UDMF map shipped without ZNODES is caught', async () => {
+    const verdict = await support('udmfnobsp.wad', [
+      'MAP01',
+      { name: 'TEXTMAP', text: 'namespace = "doom";' },
+      'ENDMAP',
+    ]);
+    assert.deepEqual(codes(verdict), ['noBsp']);
   });
 
   test('a real GL-node fixture is found supported', async () => {
@@ -264,8 +349,24 @@ describe('WAD parsing · reaching the verdict from a directory', () => {
       'F_END',
       'MAP02',
       { name: 'TEXTMAP', text: 'namespace = "zdoom";' },
+      { name: 'ZNODES', bytes: new Uint8Array(8) },
+      'ENDMAP',
     ]);
     assert.deepEqual(verdict, [{ code: 'udmf', maps: ['MAP02'] }]);
+  });
+
+  /** UDMF brackets its group (udmf.txt § II.B): port lumps of any name up to ENDMAP belong to
+      the map, and the first lump after ENDMAP does not. */
+  test('a UDMF group keeps its oddly-named lumps and ends at ENDMAP', async () => {
+    const verdict = await support('bracket.wad', [
+      'MAP01',
+      { name: 'TEXTMAP', text: 'namespace = "doom";' },
+      'LIGHTMAP', // a port lump the walk must step over to reach ZNODES
+      { name: 'ZNODES', bytes: new Uint8Array(8) },
+      'ENDMAP',
+      ...okMap('MAP02'),
+    ]);
+    assert.deepEqual(verdict, []);
   });
 
   test('a marker with nothing behind it is a map missing everything', async () => {

@@ -3,7 +3,7 @@
  * movers, crushers, stair builders, teleporters, lights and exits. See docs/specials.md.
  */
 import * as THREE from 'three';
-import { LF, NO_SIDE, type DoomMap, type LineDef, type Sector } from '../wad/map.ts';
+import { isTextured, LF, NO_SIDE, type DoomMap, type LineDef, type Sector } from '../wad/map.ts';
 import type { SwitchPairLookup } from '../wad/switches.ts';
 import {
   bossDeathTriggersFor,
@@ -70,7 +70,6 @@ import { ThingType } from './things/doomednums.ts';
 import type { CrossingBody } from './things/defs.ts';
 import type { Input } from './input.ts';
 import { satisfiesLock, type KeySlot } from './inventory.ts';
-import { NO_TEXTURE } from '../render/mapmesh.ts';
 import type { Placement, Pos2 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
 import type { FadeParticipant } from '../render/occlusion.ts';
@@ -1629,7 +1628,7 @@ export class SpecialsController {
       if (front === undefined || back === undefined) continue;
       for (const side of [this.map.sidedefs[line.right], this.map.sidedefs[line.left]]) {
         const name = side?.[slot];
-        if (!side || name === NO_TEXTURE || name === '') continue;
+        if (!side || !isTextured(name)) continue;
         const h = this.bank.textureHeight(name);
         if (h !== null && h < minHeight) minHeight = h;
       }

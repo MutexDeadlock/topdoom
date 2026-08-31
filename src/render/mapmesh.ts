@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three';
 import {
+  isTextured,
   LF,
   NO_LINE,
   NO_SIDE,
@@ -22,12 +23,6 @@ import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { BRIGHTNESS_LIFT, WATER_SURFACE_ALPHA } from '../constants.ts';
 import { clipConvexPolygon, signedPolygonArea2 } from '../util/geom.ts';
-
-/**
- * DOOM's sentinel for "no texture assigned" in a sidedef texture slot — also used by
- * `game/specials.ts`'s `raiseToTexture` to skip unset bottom textures.
- */
-export const NO_TEXTURE = '-';
 
 /**
  * DOOM's map plane is (x, y) with z as height. three.js is y-up, so a DOOM
@@ -123,7 +118,8 @@ export function litColor(light: number, contrast = 0): number {
  * docs/render.md § The fade is a hole, not a wall.
  *
  * The *vertical* cut is the one a mover cannot always have, since the band count follows the
- * height: docs/render.md § A mover dices vertically only where nothing moves, and `Build.holdsStill`.
+ * height: docs/render.md § A mover dices vertically only where nothing moves, and
+ * `Build.holdsStill`.
  */
 export const WALL_CHUNK_LEN = 128;
 
@@ -328,7 +324,9 @@ export interface WallOccluder {
    * only side a scrolling special ever animates.
    */
   frontSide: boolean;
-  /** The BSP leaf this quad's face looks into, or -1 with no probe — resolved by `fillWallCells`. */
+  /**
+   * The BSP leaf this quad's face looks into, or -1 with no probe — resolved by `fillWallCells`.
+   */
   subsector: number;
   /**
    * Permanent translucency, multiplied into the vertex alpha the faders write
@@ -727,6 +725,10 @@ function beginBuild(map: DoomMap, polys: SubSectorPoly[], bank: MaterialBank, op
     bank,
     batches: new BatchSet(),
     size: (kind, name) => {
+      // `-`/`''` names no lump that could exist, so it answers without a lookup: the
+      // peg-reference probes ask before `addWall`'s own guard — routinely so on a UDMF map's
+      // untextured one-sided lines — and `buildMoverWalls` re-probes every tic a mover runs.
+      if (!isTextured(name)) return null;
       const s = bank.size(kind, name);
       // A 242 control line's sidedef names colormaps, not textures — absent art
       // there is the feature working, not a hole in the WAD.
@@ -1026,7 +1028,7 @@ function holeSeedLeaves(map: DoomMap): Int32Array {
       const own = map.sidedefs[segSide(line, seg.direction)];
       const back = map.sidedefs[segBackSide(line, seg.direction)];
       if (!own || !back || own.sector === back.sector) continue;
-      if (own.lower !== NO_TEXTURE && own.lower !== '') continue;
+      if (isTextured(own.lower)) continue;
       seeds.push(leaf);
       break;
     }
@@ -1207,7 +1209,7 @@ function holeStep(build: Build, leaf: number, i: number): typeof holeStepOut | n
   if (!other) return null;
   holeStepOut.height = other.floorHeight;
   holeStepOut.sector = back.sector;
-  holeStepOut.textured = own.lower !== NO_TEXTURE && own.lower !== '';
+  holeStepOut.textured = isTextured(own.lower);
   return holeStepOut;
 }
 
@@ -1282,7 +1284,7 @@ function flatSpecsOf(
   // Where the control sector has no flat to lend (sky, or an unset slot), falling back to the
   // sector's own keeps a pool with a floor rather than a hole in the level.
   const bottomTex =
-    bottom && bottom.floorTex !== SKY_FLAT && bottom.floorTex !== NO_TEXTURE ? bottom.floorTex : undefined;
+    bottom && bottom.floorTex !== SKY_FLAT && isTextured(bottom.floorTex) ? bottom.floorTex : undefined;
   const floorLightFrom = bottom ? control : poly.sector;
   const floorHeight = deep ? sector.floorHeight : (surfaceHeight ?? transfers.drawnFloor(poly.sector));
 
@@ -1453,7 +1455,7 @@ function diceOnGrid(ring: ArrayLike<number>, fan: (cell: ArrayLike<number>) => v
  * `planFlatRefresh`, which must reach the same verdict about a fan it is *not* emitting.
  */
 function flatArt(kind: SurfaceKind, texName: string, size: SizeFn): Size | null {
-  if (texName === SKY_FLAT || texName === NO_TEXTURE || texName === '') return null;
+  if (texName === SKY_FLAT || !isTextured(texName)) return null;
   return size(kind, texName);
 }
 
@@ -1554,7 +1556,7 @@ interface WallSpec {
  */
 function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean {
   if (spec.topH <= spec.botH) return false;
-  if (spec.texture === NO_TEXTURE || spec.texture === '') return false;
+  if (!isTextured(spec.texture)) return false;
   const dim = build.size('wall', spec.texture);
   if (!dim) return false;
 
@@ -1601,7 +1603,7 @@ function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean
 
       // A = top-left, B = top-right, C = bottom-right, D = bottom-left, facing right of a→b
       // (DOOM's front side), as the triangles A-D-C and A-C-B. Written out rather than iterated:
-      // the dicing above makes up to `chunks * bands` of these, and a mover re-runs the lot per tic.
+      // the dicing above makes up to `chunks * bands` of these, and a mover re-runs them per tic.
       const vertexStart = batch.positions.length / 3;
       pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha); // A
       pushVertex(batch, cax, bandBot, -cay, cu0, bandVBot, color, alpha); // D
@@ -1836,7 +1838,7 @@ function addTwoSidedSide(build: Build, line: LineView, view: SideView): void {
   // Middle: optional masked texture (grates, bars) hung across the line. Boom's 260 makes one
   // translucent and overloads the same name to point at the translucency map, in which case there
   // is no texture to draw at all. docs/specials.md § Translucent midtextures.
-  if (side.middle !== NO_TEXTURE && side.middle !== '' && !transfers.midtexSuppressed(line.index)) {
+  if (isTextured(side.middle) && !transfers.midtexSuppressed(line.index)) {
     const dim = size('wall', side.middle);
     if (dim) {
       // What the midtexture is cut to: the tiers this side actually drew, so a step the mapper

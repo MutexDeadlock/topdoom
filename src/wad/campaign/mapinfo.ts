@@ -4,7 +4,7 @@
  * and the three consumers in this directory project it. See docs/wad.md § Level names.
  */
 import type { Wad, WadFile } from '../wad.ts';
-import { stripComments } from '../textlump.ts';
+import { decodeTextLump, stripComments } from '../textlump.ts';
 
 /**
  * What one `map` entry in a MAPINFO-family lump tells this engine. Every field is optional: most
@@ -150,9 +150,6 @@ export class MapInfo {
   }
 }
 
-/** Text lumps are 8-bit, the same as every other string a WAD carries. */
-const DECODER = new TextDecoder('latin1');
-
 /**
  * Every `map` entry the loaded WAD set defines: one lump per file (`MAPINFO_LUMPS`), files in load
  * order, a later file's entry replacing an earlier one outright rather than merging field by field.
@@ -173,7 +170,7 @@ function readEntries(wad: Wad): Map<string, MapInfoEntry> {
     const wanted = preferredMapInfoLump(present);
     const lump = wad.lumps.find((l) => l.source === file && l.name === wanted);
     if (!lump) continue;
-    for (const [map, entry] of parseMapInfo(DECODER.decode(wad.data(lump)))) maps.set(map, entry);
+    for (const [map, entry] of parseMapInfo(decodeTextLump(wad.data(lump)))) maps.set(map, entry);
   }
   return maps;
 }

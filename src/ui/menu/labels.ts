@@ -27,8 +27,11 @@ export interface SourceColumns {
   /** What the file actually contains: its maps, or its lump count when it has none. */
   content: string;
   /**
-   * `DEHACKED` or empty. Presence, not coverage: what a patch lands needs its bytes, and the menu
-   * lists a server file from the build-time manifest alone. docs/dehacked.md § The coverage report.
+   * `DEH` or empty — abbreviated because the column is worth a hint, not a whole spelled-out
+   * word of row width; `sourceColumnSpans` puts the full name in its tooltip. Presence, not
+   * coverage: what a patch lands needs its bytes, and the menu lists a server file from the
+   * build-time manifest alone.
+   * docs/dehacked.md § The coverage report.
    */
   dehacked: string;
 }
@@ -44,7 +47,7 @@ export function sourceColumns(src: WadSource): SourceColumns {
         : // No maps of its own (a texture/sound add-on) — the lump count is the
           // only sign there's actually something in the file.
           `${src.lumpCount} lump${src.lumpCount === 1 ? '' : 's'}`,
-    dehacked: src.dehacked ? 'DEHACKED' : '',
+    dehacked: src.dehacked ? 'DEH' : '',
   };
 }
 
@@ -107,7 +110,9 @@ export function sourceColumnSpans(src: WadSource): HTMLSpanElement[] {
     support.setAttribute('role', 'img');
     support.setAttribute('aria-label', support.title);
   }
-  return [metaSpan('size', size), metaSpan('content', content), metaSpan('deh', dehacked), support];
+  const deh = metaSpan('deh', dehacked);
+  if (dehacked) deh.title = 'Contains DEHACKED patch';
+  return [metaSpan('size', size), metaSpan('content', content), deh, support];
 }
 
 /** A WAD row's detail line, joined, for the one place too narrow to give each column its own space:

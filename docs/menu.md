@@ -270,7 +270,8 @@ What is its own:
 - **The detail column says what a file *is*, never where it sits.** `describeSource` used to append
   a library file's subfolder; the row is already under that folder in the tree, so repeating it only
   crowded the column. An upload's `from disk` stays, since it belongs to no folder at all.
-- **A file row is six columns** — name, badge, size, contents, DEHACKED, support — with the name
+- **A file row is six columns** — name, badge, size, contents, `DEH` (a DEHACKED patch, spelled
+  out in the column's tooltip), support — with the name
   taking the slack and the rest fixed-width and right-aligned, so sizes line up under sizes and map
   counts under map counts rather than each trailing whatever length its file name happened to be.
   `labels.ts: sourceColumns` returns the three detail values separately and `sourceColumnSpans`
@@ -387,7 +388,7 @@ What is its own:
 **The Add-ons list holds the picks, not the offer.** `renderPwads` lists `selectedPwads` alone, in
 merge order — browsing is the overlay's job now, so the list on the tab is short and is no longer a
 second picker that has to agree with the first about what is compatible. Each row is checkbox · name
-· [reason] · size · contents · DEHACKED · support · `#N` · `×` — the same detail columns the overlay
+· [reason] · size · contents · `DEH` · support · `#N` · `×` — the same detail columns the overlay
 lists, narrower — and the two controls mean **different things**:
 
 - **The checkbox disables, it does not remove.** An unticked add-on keeps its row and its place in

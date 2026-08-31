@@ -265,9 +265,9 @@
   width: 11ch;
 }
 
-/* 10ch, not 9: `DEHACKED` is all caps and just overruns a 9ch box. */
+/* 4ch, not 3: `DEH` is all caps and the `letter-spacing` puts it just over a 3ch box. */
 #wadlibrary .row .meta.deh {
-  width: 10ch;
+  width: 4ch;
 }
 
 /*

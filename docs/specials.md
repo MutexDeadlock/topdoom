@@ -381,6 +381,12 @@ restores holding it. `PosedThing.crushed` is a new `MONSTER_SAVE_KEYS` field def
 absent from an older save, which reads back as an uncrushed corpse (docs/savegames.md § The format
 and its version). A WAD set with no `POL5` art keeps the corpse it has rather than drawing nothing.
 
+`CORPSE_GIB` (`things/tables.ts`) is that sprite and frame, **walked out of the state table** like
+every other pose rather than transcribed — but reached by *name*, since no `mobjinfo` chain points
+at `S_GIBS` and the walker over `MOBJ_INFO` never visits it. So a DEHACKED patch that repoints the
+state moves the pool with it, and `resetDehacked` puts it back
+(docs/dehacked.md § Frames).
+
 ## Every other mover stops instead
 
 **The vastly more common case genuinely does stop rather than clip through whoever's in its way** —

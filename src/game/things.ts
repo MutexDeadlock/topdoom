@@ -51,8 +51,7 @@ export {
 import {
   attackPoseFrameSeconds,
   CEILING_HUNG_HEIGHT,
-  CORPSE_GIB_FRAMES,
-  CORPSE_GIB_SPRITE,
+  CORPSE_GIB,
   COUNTITEM_TYPES,
   COUNTKILL_TYPES,
   FULLBRIGHT_FRAMES,
@@ -748,33 +747,43 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     return out;
   }
 
-  function monstersInSector(sector: Sector): MonsterRef[] {
+  /**
+   * The one `posed` walk the three sector queries below share: every body standing in `where` — a
+   * single sector or a set of them — that is `dead` and that `accept` keeps. The predicates are the
+   * module-level constants beside `monsterRef`, so a call allocates no closure and `accept` stays
+   * one of three stable targets.
+   *
+   * `dead` is a parameter rather than part of `accept` because it is the one test cheap and
+   * selective enough to be worth making before the sector lookup: most of a level's bodies are on
+   * the wrong side of it, and rejecting them costs one boolean compare instead of a `Set` probe.
+   */
+  function refsIn(
+    where: Sector | ReadonlySet<Sector>,
+    dead: boolean,
+    accept: (p: PosedThing) => boolean,
+  ): MonsterRef[] {
     const out: MonsterRef[] = [];
+    const set = where instanceof Set ? where : null;
     for (const p of posed) {
-      if (p.dead || !MONSTER_TYPES.has(p.type) || p.sector !== sector) continue;
+      if (p.dead !== dead) continue;
+      const sector = p.sector;
+      if (!sector || (set ? !set.has(sector) : sector !== where)) continue;
+      if (!accept(p)) continue;
       out.push(monsterRef(p));
     }
     return out;
+  }
+
+  function monstersInSector(sector: Sector): MonsterRef[] {
+    return refsIn(sector, false, isMonsterType);
   }
 
   function crushablesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[] {
-    const out: MonsterRef[] = [];
-    for (const p of posed) {
-      if (p.dead || !p.sector || !sectors.has(p.sector)) continue;
-      if (!MONSTER_TYPES.has(p.type) && p.type !== ThingType.barrel) continue;
-      out.push(monsterRef(p));
-    }
-    return out;
+    return refsIn(sectors, false, isCrushableType);
   }
 
   function corpsesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[] {
-    const out: MonsterRef[] = [];
-    for (const p of posed) {
-      if (!p.dead || p.crushed || p.hidden || !MONSTER_TYPES.has(p.type)) continue;
-      if (!p.sector || !sectors.has(p.sector)) continue;
-      out.push(monsterRef(p));
-    }
-    return out;
+    return refsIn(sectors, true, isSquashableCorpse);
   }
 
   function crushCorpse(id: number): void {
@@ -782,7 +791,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     if (!p || p.crushed) return;
     // A set without the pool's own art would draw nothing where the corpse was, so the corpse is
     // left as it is — the same "no art, don't pose it" rule `pushThing` applies at spawn.
-    if (!bank.lookup(CORPSE_GIB_SPRITE, CORPSE_GIB_FRAMES[0], 1)) return;
+    if (!CORPSE_GIB.frames.length || !bank.lookup(CORPSE_GIB.sprite, CORPSE_GIB.frames[0], 1)) return;
     p.crushed = true;
     // `deadTime` deliberately keeps running: the corpse has been lying there just as long, which
     // is what the arch-vile's settle gate and the nightmare respawn delay both measure.
@@ -1536,8 +1545,8 @@ function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
   if (p.crushed) {
     // Whatever it died of, a plane has since crunched it flat — one held `S_GIBS` frame, and the
     // pose a save restores to. docs/specials.md § Crushed corpses.
-    p.deathFrameCount = CORPSE_GIB_FRAMES.length;
-    p.anim.die(CORPSE_GIB_FRAMES, MONSTER_DEATH_FRAME_SECONDS, CORPSE_GIB_SPRITE);
+    p.deathFrameCount = CORPSE_GIB.frames.length;
+    p.anim.die(CORPSE_GIB.frames, MONSTER_DEATH_FRAME_SECONDS, CORPSE_GIB.sprite);
     return false;
   }
   const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
@@ -1573,6 +1582,30 @@ function enterAttackPose(p: PosedThing, kind: 'melee' | 'ranged', spanSeconds: n
   p.anim.playOnce(pose.frames, attackPoseFrameSeconds(pose, spanSeconds));
   if (elapsed > 0) p.anim.advance(elapsed, false);
 }
+
+/**
+ * The three `refsIn` predicates. Module-level so a query allocates no closure, and separate
+ * because each says something different about what its caller is asking for.
+ */
+
+/** A monster — what a lowering ceiling measures itself against, over `refsIn`'s living bodies. */
+const isMonsterType = (p: PosedThing): boolean => MONSTER_TYPES.has(p.type);
+
+/**
+ * Anything a crusher can damage: a living monster or a still-standing barrel, matching
+ * `PIT_ChangeSector` treating any shootable mobj alike. docs/specials.md § Crushers.
+ */
+const isCrushableType = (p: PosedThing): boolean =>
+  MONSTER_TYPES.has(p.type) || p.type === ThingType.barrel;
+
+/**
+ * A corpse a plane could still crunch. `hidden` is checked here and in neither predicate above: a
+ * corpse that died with no death art is drawn as nothing, so there is nothing to turn into a pool.
+ * The only *living* things `hidden` marks are consumed pickups, which both live predicates already
+ * exclude by type. docs/specials.md § Crushed corpses.
+ */
+const isSquashableCorpse = (p: PosedThing): boolean =>
+  !p.crushed && !p.hidden && MONSTER_TYPES.has(p.type);
 
 /**
  * The `MonsterRef` view of `p` — what every query on `ThingLayer` hands back instead of the

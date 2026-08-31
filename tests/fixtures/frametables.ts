@@ -247,6 +247,12 @@ export const GOLDEN_MISSILES: Record<string, { flight: string[] | null; impact: 
 export const GOLDEN_BARREL = { idleFrames: ["A","B"], idleTics: 6, deathSprite: "BEXP", deathFrames: ["A","B","C","D","E"], explodeTics: 15 };
 
 /**
+ * `S_GIBS` as `info.c` writes it: `{SPR_POL5, 0, -1, NULL, S_NULL}` — sprite `POL5`, frame `A`,
+ * held forever. Reached by name, not by any `mobjinfo` chain — docs/specials.md § Crushed corpses.
+ */
+export const GOLDEN_GIBS = { sprite: "POL5", frames: ["A"] };
+
+/**
  * Each weapon's fire rate as read by hand off `info.c`'s psprite chains, in `weapontype_t` order —
  * the states summed named beside each. `shots` is how many firing actions one pass carries: the
  * chainsaw and chaingun call theirs twice, so their rate is one state's tics rather than the

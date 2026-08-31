@@ -259,6 +259,11 @@ export interface FrameTables {
     deathFrames: string[];
     explodeDelaySeconds: number | null;
   } | null;
+  /**
+   * `S_GIBS`' own art — the pool a crushed corpse becomes. Null where the chain draws nothing at
+   * all, which is a patch's doing: vanilla always has it. docs/specials.md § Crushed corpses.
+   */
+  gibs: { sprite: string; frames: string[] } | null;
 }
 
 /**
@@ -617,9 +622,30 @@ function isMonsterRow(i: number): boolean {
   return MOBJ_STATES[i].pain !== 0 && MOBJ_STATES[i].death !== 0;
 }
 
+/**
+ * `S_GIBS`' index, resolved by **name** off pristine `STATES`: no `mobjinfo` chain points at that
+ * state, so the walk over `MOBJ_INFO` below never reaches it the way it reaches every other pose.
+ * The index is stable under a patch — `patchStates` rewrites a row's columns, never its name, and
+ * a `Frame` record addresses rows by number. -1 only if the table itself lost the state.
+ */
+const GIBS_STATE = STATES.findIndex((row) => row[5] === 'S_GIBS');
+
+/**
+ * `S_GIBS`' chain off the patched table — one held frame in vanilla, and whatever a patch that
+ * repoints its sprite or gives it a tail leaves behind. docs/specials.md § Crushed corpses.
+ */
+function deriveGibs(states: readonly StateRow[]): FrameTables['gibs'] {
+  if (GIBS_STATE < 0) return null;
+  const chain = walkChain(states, GIBS_STATE);
+  const sprite = spriteOf(states, chain.indices);
+  return sprite === undefined ? null : { sprite, frames: distinctLetters(states, chain.indices) };
+}
+
 /** Every table the walker can derive, off one frame table and one set of state pointers. */
 export function deriveFrameTables({ states, mobjStates, weaponStates, args }: PatchedStates): FrameTables {
-  const tables: FrameTables = { monsters: {}, weapons: {}, sprites: {}, anims: {}, missiles: {}, barrel: null };
+  const tables: FrameTables = {
+    monsters: {}, weapons: {}, sprites: {}, anims: {}, missiles: {}, barrel: null, gibs: deriveGibs(states),
+  };
   for (let i = 0; i < weaponStates.length; i++) tables.weapons[i] = deriveWeapon(states, weaponStates[i]);
   for (let i = 0; i < MOBJ_INFO.length; i++) {
     const row = MOBJ_INFO[i];

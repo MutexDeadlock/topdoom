@@ -12,6 +12,7 @@ import {
 } from '../monsters/tables.ts';
 import {
   CEILING_HUNG_HEIGHT,
+  CORPSE_GIB,
   COUNTITEM_TYPES,
   COUNTKILL_TYPES,
   FUZZ_TYPES,
@@ -144,6 +145,7 @@ const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(IMPACT_EFFECTS),
   patchable(PROJECTILE_SOUNDS),
   patchable(BARREL_CHAIN),
+  patchable(CORPSE_GIB),
 ];
 
 /**
@@ -494,6 +496,12 @@ export function applyFrames(
   }
   for (const sprite of Object.keys(after.missiles)) {
     if (!same(before.missiles[sprite], after.missiles[sprite])) writeMissile(sprite, before.missiles[sprite], after.missiles[sprite]);
+  }
+  // A patch that repoints `S_GIBS` moves what a crushed corpse is drawn as — the one derived pose
+  // no `mobjinfo` chain reaches. docs/specials.md § Crushed corpses.
+  if (after.gibs && !same(before.gibs, after.gibs)) {
+    CORPSE_GIB.sprite = after.gibs.sprite;
+    CORPSE_GIB.frames = after.gibs.frames;
   }
   if (after.barrel && !same(before.barrel, after.barrel)) {
     BARREL_CHAIN.idleFrames = after.barrel.idleFrames;

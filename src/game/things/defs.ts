@@ -525,7 +525,7 @@ export interface ThingLayer {
   corpsesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
   /**
    * Crunches the corpse `id` to a pool of blood — `PIT_ChangeSector`'s `S_GIBS` branch. A no-op on
-   * a stale or already-crunched id, and on a WAD set carrying no `CORPSE_GIB_SPRITE` art, which
+   * a stale or already-crunched id, and on a WAD set carrying no `CORPSE_GIB` art, which
    * would leave the corpse drawing nothing at all. docs/specials.md § Crushed corpses.
    */
   crushCorpse(id: number): void;

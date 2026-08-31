@@ -280,6 +280,11 @@ spawn shooter) are skipped by number.
   sprite, and the blast delay, which is the tics before the first `A_Explode` state. Re-reading that
   chain is what found vanilla's action on `S_BEXP4`, fifteen tics in, where a hand-written comment
   had put it on the third state.
+- **The crushed corpse's** pool is `CORPSE_GIB`, the same shape. It is the one entry point resolved
+  by **state name** rather than by walking a `mobjinfo` chain: nothing in `MOBJ_INFO` points at
+  `S_GIBS`, so the walk over the thing rows never reaches it. The index is stable under a patch —
+  a `Frame` record addresses rows by number and `patchStates` never rewrites a row's name — so
+  repointing the state moves the pool. docs/specials.md § Crushed corpses.
 
 **The four overrides.** Where the walker's rule and the hand transcription genuinely disagree, the
 shipped reading wins and says so at its declaration — `FRAME_OVERRIDES` in `monsters/tables.ts` plus
@@ -309,8 +314,8 @@ that would make the check circular and throw away the only thing it is for.
 
 1. **The walker reproduces it.** Deriving from pristine `STATES` must equal the fixture — every pose
    list, `painDuration`, both attack durations, `chaseInterval` and `speed` for all twenty monster
-   types, `THING_SPRITES`, every `THING_ANIM_FRAMES` entry, the nine missiles and the barrel — bar
-   the overrides above, which it lists and requires to still differ.
+   types, `THING_SPRITES`, every `THING_ANIM_FRAMES` entry, the nine missiles, the barrel and the
+   crushed corpse's pool — bar the overrides above, which it lists and requires to still differ.
 2. **The tables the engine uses are the shipped reading**, overrides included. Without this second
    test a divergence the walker is *expected* to have would reach the game silently: deriving
    `MONSTER_ATTACK_POSE` dropped the SS's wind-up frame exactly that way, and test 1 passed

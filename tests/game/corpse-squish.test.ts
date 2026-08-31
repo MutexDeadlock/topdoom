@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
 import { buildThingSprites, type ThingLayer } from '../../src/game/things.ts';
 import { MoverOccupancy, squashCorpses } from '../../src/game/specials/moverblocking.ts';
-import { CORPSE_GIB_FRAMES, CORPSE_GIB_SPRITE, MONSTER_HEALTH } from '../../src/game/things/tables.ts';
+import { CORPSE_GIB, MONSTER_HEALTH } from '../../src/game/things/tables.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
@@ -19,7 +19,7 @@ import { crushSources, specialsRig, TIC } from '../fixtures/specialsrig.ts';
  */
 
 const DEMON = MONSTER_STATS[ThingType.demon];
-const POOL = CORPSE_GIB_SPRITE + CORPSE_GIB_FRAMES[0];
+const POOL = CORPSE_GIB.sprite + CORPSE_GIB.frames[0];
 
 /** One closed room with a single demon in it, and the ceiling as the plane that moves. */
 function room(restore?: ThingsSnapshot) {

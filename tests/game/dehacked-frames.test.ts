@@ -10,6 +10,7 @@ import { FF_FULLBRIGHT, frameLetter, MOBJ_STATES, SPRITE_NAMES, STATES } from '.
 import { MOBJ_INFO, WEAPON_ORDER } from '../../src/game/dehacked/tables.ts';
 import { WEAPONS } from '../../src/game/weapons.ts';
 import {
+  CORPSE_GIB,
   FULLBRIGHT_FRAMES,
   MONSTER_ATTACK_POSE,
   MONSTER_CORPSE_VANISHES,
@@ -30,6 +31,7 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
 import {
   GOLDEN_ANIMS,
   GOLDEN_BARREL,
+  GOLDEN_GIBS,
   GOLDEN_MISSILES,
   GOLDEN_MONSTERS,
   GOLDEN_SPRITES,
@@ -147,6 +149,9 @@ describe('DEHACKED · the frame walker reproduces the shipped tables', () => {
       deathFrames: t.barrel.deathFrames,
       explodeTics: inTics(t.barrel.explodeDelaySeconds),
     });
+
+    assert.ok(t.gibs, 'S_GIBS was reached, though no mobjinfo chain points at it');
+    cmp('gibs', GOLDEN_GIBS, t.gibs);
 
     const unexpected = [...mismatches].filter(([label]) => !EXCEPTIONS.has(label));
     assert.deepEqual(unexpected, [], 'the walker and the shipped tables disagree somewhere not in EXCEPTIONS');
@@ -323,6 +328,7 @@ describe('DEHACKED · the derived tables the engine uses are the shipped reading
       cmp(`${id} cooldown`, GOLDEN_WEAPONS[i].tics, inTics(WEAPONS[id].cooldown));
     }
 
+    cmp('gibs', GOLDEN_GIBS, { sprite: CORPSE_GIB.sprite, frames: CORPSE_GIB.frames });
     cmp('barrel', GOLDEN_BARREL, {
       idleFrames: BARREL_CHAIN.idleFrames,
       idleTics: inTics(BARREL_CHAIN.idleFrameSeconds),

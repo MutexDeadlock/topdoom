@@ -10,6 +10,7 @@ import {
 } from '../../src/game/monsters/tables.ts';
 import {
   CEILING_HUNG_HEIGHT,
+  CORPSE_GIB,
   COUNTKILL_TYPES,
   FULLBRIGHT_FRAMES,
   FUZZ_TYPES,
@@ -433,6 +434,20 @@ describe('DEHACKED · applying', () => {
     resetDehacked();
     assert.equal(FULLBRIGHT_FRAMES.has('POSSF'), false);
     assert.equal(FULLBRIGHT_FRAMES.has('CANDA'), true);
+  });
+
+  /**
+   * `S_GIBS` is reached by name, not by walking a `mobjinfo` chain — no thing's states point at it
+   * — so it is the one derived pose that could silently miss a patch. docs/specials.md § Crushed
+   * corpses.
+   */
+  test('a repointed S_GIBS moves what a crushed corpse is drawn as', () => {
+    assert.deepEqual({ ...CORPSE_GIB }, { sprite: 'POL5', frames: ['A'] });
+    // `SPR_SARG` with frame letter C — the demon's own art, standing in for the pool.
+    apply(`Frame ${stateNamed('S_GIBS')}\nSprite number = 39\nSprite subnumber = 2\n`);
+    assert.deepEqual({ ...CORPSE_GIB }, { sprite: 'SARG', frames: ['C'] });
+    resetDehacked();
+    assert.deepEqual({ ...CORPSE_GIB }, { sprite: 'POL5', frames: ['A'] });
   });
 
   test("the barrel's blast delay follows A_Explode's place in its patched chain", () => {

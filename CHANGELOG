@@ -15,6 +15,7 @@ Fixed bugs
   - shots no longer slip through a crusher that has come down
   - a silent teleporter no longer strands a camera turn (Q/E) part-way through
   - the camera yaw wraps at ±180° instead of counting up
+  - the DEVMODE yaw readout no longer flips between -180 and 180 for one angle
 
 
 ===============================================================================

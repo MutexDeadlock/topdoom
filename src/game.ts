@@ -2106,12 +2106,13 @@ export class Game {
     const { camera } = this.view;
     const sector = this.world.sectorIndexAt(this.player.x, this.player.y);
     const channels = this.audio.channelUsage;
+    const cameraDeg = ((Math.round(camera.yawDeg) % 360) + 360) % 360;
     return [
       `${this.currentMap}   ${this.title}`,
       `${fps} fps   ${this.built?.triangles ?? 0} tris   monsters awake ${this.things?.awakeMonsterCount() ?? 0}`,
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
       `Sound channels: ${channels.playing}/${channels.total} (${channels.dropped} burst-dropped)`,
-      `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${camera.yawDeg.toFixed(0)}°yaw`,
+      `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${cameraDeg}°yaw`,
       getCameraMode() === 'auto' ? this.autoCamera.readout() : 'manual',
     ];
   }

@@ -50,6 +50,10 @@ of them — but a lone wrapped field would leave the target or the previous tic 
 the camera the long way round. A stored `cameraYawDeg` from an older save needs nothing: the setter
 wraps it on the way in.
 
+The DEVMODE readout rounds *before* wrapping, to [0°, 360°) (`game.ts: debugLines`). The orbit settles
+a hair either side of its lattice, so wrapping the raw float labels one physical angle `180` or
+`-180` (and yaw 0 `-0`) depending on which way it was turned into.
+
 All of that input handling lives in `TopDownCamera.applyYawInput`, which `game.ts` calls once a
 **tic**. Holding Q/E auto-repeats the same 45° `stepYaw` every `KEY_YAW_REPEAT_INTERVAL` —
 `qHoldTime`/`eHoldTime` accumulate `dt` while `Input.held` is true and fire+reset once the interval

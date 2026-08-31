@@ -20,6 +20,7 @@ import {
 import { Game } from './game.ts';
 import { loadBestTimes } from './game/besttimes.ts';
 import { stockGldefs } from './wad/gldefs.ts';
+import { stockPlayerSkins } from './wad/playerskin.ts';
 import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
 import type { Pos2 } from './types.ts';
@@ -58,9 +59,10 @@ async function boot(): Promise<void> {
     audio.resume();
     menu.setStatus('Loading …');
     try {
-      const [files, gldefsText] = await Promise.all([
+      const [files, gldefsText, playerSkins] = await Promise.all([
         loadWadFiles(selection.iwad, selection.pwads),
         stockGldefs(),
+        stockPlayerSkins(),
       ]);
       const wad = new Wad(files);
       if (save) verifySaveWads(wad, save);
@@ -89,6 +91,7 @@ async function boot(): Promise<void> {
           menu.open(false);
         },
         gldefsText,
+        playerSkins,
       });
 
       menu.setStatus('');

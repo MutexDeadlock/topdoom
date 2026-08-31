@@ -286,12 +286,21 @@ one *without* the bit is the real single-player pickup.
   honours `UNPACK_FLIP_Y_WEBGL` for image-source uploads, not the typed array every `DataTexture`
   uses — so the V axis is inverted through `texture.repeat`/`offset` instead. (Wall/flat UVs in
   `mapmesh.ts` dodge this differently: they're built by hand with V running downward.)
-- **The patch's `top` hotspot is not trusted for floor placement.** DOOM anchors a sprite at
+- **The patch's `top` hotspot is not trusted for *floor* placement.** DOOM anchors a sprite at
   `thing.z + top` and gets away with the slack because its software renderer floor-clips every
   column and the camera sits near floor height. Neither safety net exists in an unclipped 3D
   top-down view, so a patch whose `top` is less than its full height (common, worst on small
-  pickups) would draw with its feet below the floor. The bottom edge is anchored to the floor
-  outright; `left` is still used as-is for horizontal centring.
+  pickups) would draw with its feet below the floor — 5 units for a zombieman, an imp, a demon or
+  the player. Art that stands on the floor — every map thing (`ThingLayer`) and the player's own
+  `SpriteActor` — has its bottom edge anchored to the floor outright; `left` is still used as-is
+  for horizontal centring.
+- **Art in mid-air hangs from `top` after all**, because there is no floor to stand on and vanilla's
+  own placement is what looks right: `CachedSprite.bottomOffset` is `top - height`, and
+  `SpriteFxLayer.batchSprite` — the one funnel for missiles in flight, explosions, blood, puffs and
+  the Icon of Sin's cubes — adds it to the drawn z. Without it a rocket's blast (`MISLB0`, 60 tall,
+  hanging 31 below its point) bloomed straight up out of the impact instead of around it, and every
+  missile left the shooter a few units high (docs/combat.md § Where a missile starts). The light a
+  sprite offers is still keyed to its unshifted point: where the thing is, not where its art hangs.
 - **Rotation frame (which of the 8 sprite angles) is picked from the live viewer angle** every frame
   (`pickRotationDigit`), same as the plane's own yaw.
 
@@ -312,11 +321,10 @@ vanilla's own size reads as oversized rather than more readable.
 
 Carried per instance (`pickupScaleFor` in `game/things/defs.ts` → `PosedThing.scale` →
 `SpriteBatch.add`) rather than baked into the shared per-lump geometry, since scale varies by thing
-type even when two types reuse art. `SpriteActor.setScale` is the same value applied to a real
-`mesh.scale` for the one unbatched sprite, the player — which never takes `PICKUP_SCALE`. It
-composes safely with floor-anchoring: geometry is translated so the plane's bottom-center sits at
-local `(0, 0)` *before* `scale` is applied, so scaling stretches the plane upward and outward from
-that point instead of moving its anchor.
+type even when two types reuse art. It composes safely with floor-anchoring: geometry is translated
+so the plane's bottom-center sits at local `(0, 0)` *before* `scale` is applied, so scaling stretches
+the plane upward and outward from that point instead of moving its anchor. The one unbatched sprite,
+the player, never takes `PICKUP_SCALE` at all.
 
 Animation (`SpriteActorOptions.animFrames`, `SpritePose.animating`) is a plain frame-letter cycle
 with no separate idle art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D` as its
@@ -368,7 +376,8 @@ they would have glowed the whole way across a room. The chaingunner's two firing
 dim alternating through its refire loop) and the pain elemental's death frames (its never-played
 raise frames, dimmed) tie and stay bright. `tests/game/dehacked-frames.test.ts` pins the list.
 Logical rather than lump, because a `[SPRITES]` rename changes which lump `SpriteBank` hands back
-and the set is keyed by the name the animator was given.
+and the set is keyed by the name the animator was given — and, for the same reason, because a skin
+draws the player's frames out of another file entirely (§ Weapon-matching player sprites).
 
 **`SpriteAnimator.frameKey`** is how the draw sites know what was drawn: the `SPRITE + LETTER`
 the last `resolve` resolved, rebuilt only in the branch that re-fetches the material when the lump
@@ -498,3 +507,56 @@ stagger). The player's own letters (`things/tables.ts`'s
 `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived and WAD-checked the same way) trigger
 analogously: attack whenever `WeaponSystem.fire` returns a nonempty `Shot[]`, pain inside
 `damagePlayer` whenever the player survives a hit.
+
+## Weapon-matching player sprites
+
+The player's billboard draws the weapon it is holding: `render/playerskin.ts`'s
+`PLAYER_WEAPON_SPRITES` (`fist` → `PLA1` … `supershotgun` → `PLA9`), picked per frame from
+`inventory.currentWeapon`. Not vanilla, which draws one `PLAY` body for all nine. The file itself,
+the setting and whether the loaded set draws its own player are `wad/playerskin.ts`'s;
+`render/playerskin.ts`'s `PlayerSkins` owns the banks and answers which skin to draw.
+
+The art is the ZDoom **WeaponMatchingPlayerSkin 1.1** pack, converted to
+`public/game/playerskins.wad` by `scripts/build-playerskins.ts` — 426 lumps, ~589 KB. Only frames
+`A`-`N` are converted: the letters this engine animates (walk `A`-`D`, attack `E`/`F`, pain `G`,
+death `H`-`N`). `O`-`W` is xdeath and the `PL1C`…`PL9C` sets are crouch art, neither of which this
+engine has. The converter fails on a pixel outside PLAYPAL rather than picking a nearest colour, and
+re-reads its own output through `SpriteBank`/`GraphicsBank` before writing, asserting every weapon
+resolves at all eight rotations for `A`-`G` and at rotation 0 for `H`-`N`.
+
+**The skin file is never added to the loaded `Wad`.** `wadSetId` turns every entry of `wad.files`
+into a savegame's WAD-set identity, so a set it joined would refuse every existing save and stamp a
+phantom file onto new ones (docs/savegames.md § WAD-set identity). `PlayerSkins` gives it a
+`Wad`/`SpriteBank`/`GraphicsBank`/`SpriteMaterialCache` of its own instead. It ships no PLAYPAL
+and borrows the loaded set's through `GraphicsBank`'s optional palette argument, so a WAD with its
+own palette recolours the skins along with everything else. Nothing about the skin is saved —
+`currentWeapon` already restores it.
+
+**The drawn lump is `PLA2A1`; `frameKey` stays `PLAYA`.** `SpriteAnimator.setSkin` swaps the bank,
+material cache and sprite name a `resolve` looks up, and deliberately leaves the frame key on the
+name the animator was given: `FULLBRIGHT_FRAMES` holds `PLAYF` and GLDEFS binds the muzzle flash to
+that key (docs/lights.md § The frame key), and both stop matching the moment the skin name leaks
+into it. `lastKey` carries a `:s` marker while a skin answered, because the same lump name can live
+in both material caches and that one key gates both the cached sprite and `frameKey`. A frame the
+skin has no lump for falls back to the animator's own art.
+
+`setSkin` touches no sequence state: a weapon swapped mid-stride must not restart the walk cycle,
+one swapped mid-death must not restart the death chain (§ The animation index must always be valid).
+A corpse goes on holding the weapon it died with.
+
+### When the skins apply
+
+`topdoom.playerSprites` (docs/menu.md § Persisted settings) is `auto`, `always` or `never`, read per
+drawn frame so the menu applies it to the running level. `auto`, the default, stands the skins down
+where `setDrawsOwnPlayer(wad)` says the set draws the player its own way:
+
+- a DEHACKED `[SPRITES]` line pointing `PLAY` elsewhere (`spriteLumpFor`), or
+- a file after the game WAD shipping a `/^PLAY[A-W][0-8]/` lump — the rotation digit is what keeps
+  `PLAYPAL` out of that pattern, and losing it would stand the skins down on every set, or
+- a game WAD whose own `PLAYA1`/`PLAYE1` do not hash to vanilla's, which is what leaves Freedoom's
+  marine alone (both lumps are byte-identical in `DOOM1.WAD` and `DOOM2.WAD`).
+
+A false positive is the safe direction: it only leaves that set's player drawing its own art.
+
+A fetch that fails resolves to null and the player draws `PLAY`, silently — the game as it was
+before the file existed, and never a reason a level cannot start.

@@ -63,13 +63,14 @@ src/wad/       WAD files, merged lump directory, content IDs (checksum), map lum
                + sprite + sound + music decoding, Boom's ANIMATED/SWITCHES/colormap lumps, GZDoom's
                dynamic-light definitions (gldefs), what the text lumps share before each grammar
                takes over (textlump), whether this engine can run a file at all (support), what a
-               file holds without loading it (describe), the menu's WAD library
+               file holds without loading it (describe), the shipped player art and when it stands
+               in (playerskin), the menu's WAD library
 src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it can't ask the tree
                for (sectorprobe), the solids a map draws as void (solids), mesh building, materials
                + texture animation, occlusion fading, Boom's scrolling surfaces (scroller), sprite
-               billboards + their instanced batching, GLDEFS dynamic lights (lights) and which
-               subsectors one reaches (lightvis), shot tracers, camera, viewport, the GPU's own
-               frame time (gputimer)
+               billboards + their instanced batching, the weapon-matching player skins in drawable
+               form (playerskin), GLDEFS dynamic lights (lights) and which subsectors one reaches
+               (lightvis), shot tracers, camera, viewport, the GPU's own frame time (gputimer)
 src/game/      spatial queries + collision, player controller, input, the auto camera, what each
                skill level changes (skill), thing world state, fog of war, inventory/pickups,
                weapons and firing, shots in flight + splash, damage/death, transient effects,

@@ -97,8 +97,8 @@ site root unchanged:
 
 Those five are all `public/` holds at its root. Everything else there is game data in a subfolder,
 fetched by URL at runtime: `public/wads/` (docs/wad.md) and `public/game/` — the assets the engine
-ships itself because no WAD has them, `gldefs.txt` (docs/lights.md) and `secret.ogg`
-(docs/audio.md).
+ships itself because no WAD has them, `gldefs.txt` (docs/lights.md), `secret.ogg`
+(docs/audio.md) and `playerskins.wad` (docs/sprites.md).
 
 **The canonical origin is written out literally, in every one of them.** `canonical`, `og:url`,
 `og:image`, the JSON-LD `url`/`image`, `robots.txt`'s `Sitemap:` and `sitemap.xml`'s `<loc>` each

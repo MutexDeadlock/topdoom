@@ -231,6 +231,10 @@ definitions the engine ships in `public/game/gldefs.txt` rather than replacing t
 `wad/gldefs.ts` owns the reading and docs/lights.md the format, including which of GZDoom's block
 types are read and which are skipped.
 
+`public/game/playerskins.wad` is the other asset shipped that way, and the one case where the engine
+supplies *art* a set does not have: the player's weapon-matching sprites, loaded as a `Wad` of its
+own and deliberately never merged into the set (docs/sprites.md § Weapon-matching player sprites).
+
 ## Colormap lumps
 
 Beside `COLORMAP` itself, a Boom WAD can ship **named colormap lumps** — 34 rows of 256 palette

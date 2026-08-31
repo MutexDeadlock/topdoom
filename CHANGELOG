@@ -1,9 +1,12 @@
 v0.17.0 (2026-0?-??)
 
 Features and improvements
+  - weapon-matching player skins! Doomguy only, but can be forced for WADs which 
+    customize the player sprites, all tuneable in Settings -> Visuals
   - a crowd of monsters waking at once no longer floods the sound channels
 
 Fixed bugs
+  - rockets, plasma and BFG balls now leave the body instead of the player's head
   - shots no longer slip through a crusher that has come down
   - a silent teleporter no longer strands a camera turn (Q/E) part-way through
   - the camera yaw wraps at ±180° instead of counting up

@@ -4,7 +4,7 @@
  * into the simulation order. See docs/frameloop.md.
  */
 import * as THREE from 'three';
-import type { Wad } from './wad/wad.ts';
+import type { Wad, WadFile } from './wad/wad.ts';
 import { mapProvider, wadId, wadSetId } from './wad/checksum.ts';
 import { bestTimeKey, recordBestTime, type BestTimeResult } from './game/besttimes.ts';
 import { GraphicsBank } from './wad/graphics.ts';
@@ -13,10 +13,12 @@ import { loadMap, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
 import { DynamicLights, PLAYER_EMITTER_ID } from './render/lights.ts';
 import { gldefsFromWad, parseGldefs } from './wad/gldefs.ts';
+import { setDrawsOwnPlayer } from './wad/playerskin.ts';
 import { AnimatedTextures } from './render/textureanim.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { LightVisibility } from './render/lightvis.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
+import { PlayerSkins } from './render/playerskin.ts';
 import type { Viewport } from './render/viewport.ts';
 import type { TopDownCamera } from './render/camera.ts';
 import type { Input } from './game/input.ts';
@@ -187,6 +189,13 @@ export interface GameOptions {
    * docs/lights.md.
    */
   gldefsText?: string;
+  /**
+   * The shipped weapon-matching player art (`public/game/playerskins.wad`), fetched by the session
+   * layer alongside the WAD files and deliberately **never** added to `wad` — see
+   * `buildPlayerSkins`. Null when the fetch failed, which draws the set's own `PLAY` art.
+   * docs/sprites.md § Weapon-matching player sprites.
+   */
+  playerSkins?: WadFile | null;
 }
 
 /** One loaded WAD set, playing one level at a time. */
@@ -200,6 +209,10 @@ export class Game {
   private lights: DynamicLights;
   private spriteBank: SpriteBank;
   private spriteMaterials: SpriteMaterialCache;
+  /** The shipped weapon-matching art, or null where the file never arrived (render/playerskin.ts). */
+  private playerSkins: PlayerSkins | null = null;
+  /** Whether the loaded set draws the player its own way — resolved once, per `setDrawsOwnPlayer`. */
+  private setDrawsPlayer = false;
   private mapNames: string[];
   private mapIndex = 0;
 
@@ -451,6 +464,7 @@ export class Game {
       checkpoint = null,
       onCampaignEnd = null,
       gldefsText = '',
+      playerSkins = null,
     } = options;
     this.view = view;
     this.audio = audio;
@@ -516,6 +530,10 @@ export class Game {
     this.animatedTextures = new AnimatedTextures(gfx, this.materials, animated ?? undefined);
     this.spriteBank = new SpriteBank(wad);
     this.spriteMaterials = new SpriteMaterialCache(gfx, view.renderer);
+    // After `applyDehacked`, which both the bank and the predicate read: a patch may have pointed
+    // `PLAY` somewhere else.
+    this.setDrawsPlayer = setDrawsOwnPlayer(wad);
+    if (playerSkins) this.playerSkins = new PlayerSkins(playerSkins, gfx.palette, view.renderer);
     this.hud = new Hud(gfx);
     this.message = new CenterMessage(gfx);
     this.levelCard = new LevelCard(gfx);
@@ -688,6 +706,7 @@ export class Game {
     this.effects.dispose();
     this.materials.dispose();
     this.spriteMaterials.dispose();
+    this.playerSkins?.dispose();
   }
 
   /**
@@ -1697,13 +1716,6 @@ export class Game {
    * docs/combat.md § Auto-aim.
    */
   private fireWeapons(input: Input, monster: MonsterRef | null, shootLine: ShootAim | null): void {
-    // A shot always *starts* at the player's own fire height — never the
-    // target's, or a tracer/projectile would visibly begin mid-air instead
-    // of at the player. The locked-on monster travels with it as the body to
-    // aim at; see world.ts's shotPath/blocksShot for why a locked shot is
-    // allowed to clear the floor steps a free one is stopped by.
-    const fireStartZ = this.player.z + AIM_HEIGHT_OFFSET;
-
     // Called after player.update so player.angle already reflects this frame's aim.
     this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
     const shots = this.weaponSystem.fire(input.mouseDown, this.inventory, this.player.angle);
@@ -1725,7 +1737,10 @@ export class Game {
       if (fire) this.audio.play(fire, this.player, PLAYER_ORIGIN);
     }
     for (const shot of shots) {
-      this.projectiles.spawnPlayerShot(shot, fireStartZ, monster, shootLine);
+      // The fire height is `spawnPlayerShot`'s own to pick. The locked-on monster travels with the
+      // shot as the body to aim at; see world.ts's shotPath/blocksShot for why a locked shot is
+      // allowed to clear the floor steps a free one is stopped by.
+      this.projectiles.spawnPlayerShot(shot, monster, shootLine);
     }
   }
 
@@ -1957,6 +1972,9 @@ export class Game {
    * own frame chain is what times it.
    */
   private posePlayer(alpha: number, rawDt: number, viewAngleDeg: number): void {
+    // Chosen before the pose that reads it. The setting is read per frame rather than captured, so
+    // the menu applies it to the level already running.
+    this.playerActor.setSkin(this.playerSkins?.skinFor(this.inventory.currentWeapon, this.setDrawsPlayer) ?? null);
     const p = this.player;
     const x = p.prevX + (p.x - p.prevX) * alpha;
     const y = p.prevY + (p.y - p.prevY) * alpha;

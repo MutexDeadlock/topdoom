@@ -39,9 +39,14 @@ export class GraphicsBank {
 
   private wad: Wad;
 
-  constructor(wad: Wad) {
+  /**
+   * `palette` overrides the file's own PLAYPAL, for a bank over a WAD that ships none: the player
+   * skins (`wad/playerskin.ts`) are palette indices with no palette of their own and borrow the
+   * loaded set's. docs/sprites.md § Weapon-matching player sprites.
+   */
+  constructor(wad: Wad, palette?: Uint8Array) {
     this.wad = wad;
-    this.palette = readPalette(wad);
+    this.palette = palette ?? readPalette(wad);
     this.texDefs = readAllTextures(wad);
 
     // The ranges nest and later entries win — docs/wad.md § Loading and merging.

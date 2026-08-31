@@ -31,6 +31,15 @@ export function setSpriteLump(name: string, to: string): void {
   SPRITE_RENAMES.set(name.toUpperCase(), to.toUpperCase());
 }
 
+/**
+ * The lump prefix `sprite` resolves through — itself, unless a `[SPRITES]` patch moved it. Lets a
+ * caller ask whether the loaded set redirected a sprite without reaching into the rename map.
+ */
+export function spriteLumpFor(sprite: string): string {
+  const name = sprite.toUpperCase();
+  return SPRITE_RENAMES.get(name) ?? name;
+}
+
 /** Forgets every `[SPRITES]` rename, back to every sprite drawing its own lumps. */
 export function resetSpriteLumps(): void {
   SPRITE_RENAMES.clear();

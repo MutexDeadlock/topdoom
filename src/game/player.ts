@@ -30,6 +30,14 @@ export const PLAYER_MASS = 100;
 export const AIM_HEIGHT_OFFSET = PLAYER_HEIGHT / 2 + 8;
 
 /**
+ * Height above the feet a *missile* leaves from, four units below the hitscan height above:
+ * vanilla spawns one at `z = source->z + 4*8*FRACUNIT` in `P_SpawnPlayerMissile` (`p_mobj.c`)
+ * where `P_LineAttack` traces from `shootz` (`p_map.c`). Only the start moves — the shot still
+ * slopes toward the crosshair's own plane. docs/combat.md § Where a missile starts.
+ */
+export const MISSILE_HEIGHT_OFFSET = 32;
+
+/**
  * Vanilla's own ticcmd move tables (`g_game.c`'s `forwardmove`/`sidemove`),
  * indexed `[walk, run]`, and its `MAXPLMOVE` clamp. Everything below is
  * expressed in these units and scaled once by `MOVE_UNIT_SPEED`, rather than

@@ -167,22 +167,6 @@ export class TopDownCamera {
   }
 
   /**
-   * Brings `yawDeg` back into (-180°, 180°] by shifting **every** yaw field — the target, both
-   * interpolation ends — by the *same* whole turn. Each of those is read only as a difference or
-   * through trig, so a shared turn changes nothing; wrapping one alone would leave the others a
-   * turn away and send the camera the long way round. docs/camera.md § Camera orbit.
-   */
-  private normaliseYaw(): void {
-    const turns = Math.ceil((this._yawDeg - 180) / 360);
-    if (turns === 0) return;
-    const shift = turns * 360;
-    this._yawDeg -= shift;
-    this.targetYawDeg -= shift;
-    this.prevYawDeg -= shift;
-    this.viewYawDeg -= shift;
-  }
-
-  /**
    * Queues a relative yaw change (the Q/E 45° snap) to animate smoothly
    * towards over the next few frames, rather than jumping instantly the way
    * a plain `yawDeg` assignment does.
@@ -436,6 +420,22 @@ export class TopDownCamera {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
     return raycaster.ray;
+  }
+
+  /**
+   * Brings `yawDeg` back into (-180°, 180°] by shifting **every** yaw field — the target, both
+   * interpolation ends — by the *same* whole turn. Each of those is read only as a difference or
+   * through trig, so a shared turn changes nothing; wrapping one alone would leave the others a
+   * turn away and send the camera the long way round. docs/camera.md § Camera orbit.
+   */
+  private normaliseYaw(): void {
+    const turns = Math.ceil((this._yawDeg - 180) / 360);
+    if (turns === 0) return;
+    const shift = turns * 360;
+    this._yawDeg -= shift;
+    this.targetYawDeg -= shift;
+    this.prevYawDeg -= shift;
+    this.viewYawDeg -= shift;
   }
 
   /** The followed point in three.js space — DOOM's `(x, y, z)` is three's `(x, z, -y)`. */

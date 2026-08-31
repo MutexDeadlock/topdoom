@@ -120,13 +120,17 @@ const VARIANT_GROUPS: readonly SfxId[][] = [
   ['bgdth1', 'bgdth2'],
 ];
 
+/** The family `id` belongs to, or null where it plays exactly what it was given. */
+function variantGroup(id: SfxId): readonly SfxId[] | null {
+  for (const group of VARIANT_GROUPS) if (group.includes(id)) return group;
+  return null;
+}
+
 export function randomVariant(id: SfxId): SfxId {
-  for (const group of VARIANT_GROUPS) {
-    // `pRandom`, not `mRandom`: vanilla picks these inside the play simulation
-    // (`A_Look`/`A_Scream`'s `P_Random()%3` / `%2`), unlike the pitch wobble above.
-    if (group.includes(id)) return group[pRandom() % group.length];
-  }
-  return id;
+  const group = variantGroup(id);
+  // `pRandom`, not `mRandom`: vanilla picks these inside the play simulation
+  // (`A_Look`/`A_Scream`'s `P_Random()%3` / `%2`), unlike the pitch wobble above.
+  return group ? group[pRandom() % group.length] : id;
 }
 
 /**
@@ -135,10 +139,7 @@ export function randomVariant(id: SfxId): SfxId {
  * budget on the lump would give one wake three budgets. docs/audio.md § Same-tic bursts.
  */
 export function sampleGroup(id: SfxId): string {
-  for (const group of VARIANT_GROUPS) {
-    if (group.includes(id)) return group[0];
-  }
-  return id;
+  return variantGroup(id)?.[0] ?? id;
 }
 
 /**

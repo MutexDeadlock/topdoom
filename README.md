@@ -241,3 +241,7 @@ is covered:**
   its own BSD 3-clause terms: redistributable, but the copyright notice travels with it.
   `public/og.jpg`, the link-preview card, is a Freedoom screenshot and carries the same.
 - **The shareware `DOOM1.WAD`**, where it is bundled, stays under id Software's shareware terms.
+- **`public/game/playerskins.wad`**, the weapon-matching player sprites, is the ZDoom community's
+  *WeaponMatchingPlayerSkin* pack converted to WAD lumps — edits of id's own marine art by Mark
+  Quinn, Xenaero, Grimm, Xim, Anthony Cole, CaptainToenail, TokeGameInfo and the Skulltag team,
+  credited on the About screen. Same footing as the shareware data above.

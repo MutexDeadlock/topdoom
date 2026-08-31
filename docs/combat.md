@@ -539,6 +539,27 @@ radius, skips anyone `hasLineOfSight` says is blocked, and falls off linearly to
 edge, matching `P_RadiusAttack`. It uses `hasLineOfSight`, deliberately not `shotPath` — that models
 a directed weapon's own blocking rules, not "does this omnidirectional blast reach that point".
 
+## Where a missile starts
+
+**A missile leaves at `MISSILE_HEIGHT_OFFSET` (feet + 32), four units below the height a bullet
+traces from.** Vanilla splits the two: `P_SpawnPlayerMissile` (`p_mobj.c`) spawns at
+`source->z + 4*8*FRACUNIT`, while `P_LineAttack` traces from `shootz` = `z + height/2 + 8`
+(`p_map.c`) — which is `AIM_HEIGHT_OFFSET`, and stays the plane the cursor is projected onto
+(docs/camera.md § Aim lead). One deliberate departure: the slope is resolved from where the missile
+actually starts rather than from `shootz`, so it still arrives under the crosshair. Vanilla, which
+never shows you your own body, resolves the slope from `shootz` and launches four units under it.
+
+**Every missile is then moved half a tic of its own momentum forward before anything draws or tests
+it** — `ProjectileLayer.checkMissileSpawn`, vanilla's `P_CheckMissileSpawn` (`th->x += th->momx>>1`,
+`p_mobj.c`). That is 12.5 map units for a plasma bolt or a BFG ball (`mobjinfo` speed 25) and 10 for
+a rocket (20). The nudge is clamped to the flight `shotPath` resolved, which stands in for vanilla's
+`P_TryMove` failing there: a missile launched at a wall a few units off arrives on its first step
+and explodes against it. The gap it skips is never swept for bodies, exactly as vanilla's own
+`P_TryMove` tests only the destination.
+
+Both rules are invisible in vanilla and not here: this view draws the shooter's own body, so a
+missile born at the centre of the player's billboard reads as coming out of the marine's head.
+
 ## Where an impact sits
 
 **A missile that ends against a wall explodes `PROJECTILE_RADIUS` back along its flight**

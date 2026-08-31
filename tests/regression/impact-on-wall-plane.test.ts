@@ -70,7 +70,7 @@ function rig(): { effects: SpriteFxLayer; projectiles: ProjectileLayer; world: W
 
 /** Fires one rocket north and advances until it has arrived. */
 function fireIntoTheWall(rigged: ReturnType<typeof rig>): void {
-  rigged.projectiles.spawnPlayerShot(ROCKET, 41, null, null);
+  rigged.projectiles.spawnPlayerShot(ROCKET, null, null);
   for (let i = 0; i < 60; i++) rigged.projectiles.update(DOOM_TIC);
   rigged.effects.updateImpacts(0);
 }

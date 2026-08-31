@@ -29,6 +29,19 @@ export function pickRotationDigit(facingDeg: number, viewerAngleDeg = VIEWER_ANG
   return (Math.floor((diff + 22.5) / 45) % 8) + 1;
 }
 
+/**
+ * A second bank, its material cache and the sprite name to resolve under: an actor's frames drawn
+ * from another file's art. All three travel together because none is usable without the others —
+ * the cache reads pictures out of the bank's own wad, and the name only exists in it. The player's
+ * weapon-matching skins are the one user (`wad/playerskin.ts`).
+ * docs/sprites.md § Weapon-matching player sprites.
+ */
+export interface SpriteSkin {
+  bank: SpriteBank;
+  materials: SpriteMaterialCache;
+  spriteName: string;
+}
+
 export interface CachedSprite {
   material: THREE.MeshBasicMaterial;
   geometry: THREE.BufferGeometry;
@@ -43,6 +56,17 @@ export interface CachedSprite {
    * `intersectBillboard`, for `ThingLayer.pickMonster`.
    */
   quad: { minX: number; maxX: number; height: number };
+  /**
+   * Where vanilla hangs this patch's bottom edge, relative to the thing's own z: `topoffset -
+   * height`, `R_ProjectSprite`'s `gzt = z + topoffset` read from the bottom up. Zero or a few units
+   * negative for floor-standing art, deeply negative for anything meant to straddle its point (a
+   * rocket's explosion is 60 tall and hangs 31 below it).
+   *
+   * A caller adds it to the drawn z where the sprite is airborne; one drawing something that rests
+   * on the floor ignores it and keeps the plane's own bottom anchor.
+   * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
+   */
+  bottomOffset: number;
 }
 
 /**
@@ -147,8 +171,9 @@ export class SpriteMaterialCache {
       texture.repeat.y = -1;
       texture.offset.y = 1;
 
-      // Horizontal centring takes the patch's `left` hotspot; the bottom edge is anchored to the
-      // floor outright rather than trusting `top`, which this view has no floor clip to cover for.
+      // Horizontal centring takes the patch's `left` hotspot; the plane's bottom edge sits at the
+      // thing's own z rather than at `top`, which this view has no floor clip to cover for. What
+      // `top` says is kept as `bottomOffset` for the callers drawing art in mid-air.
       // docs/sprites.md § Why upright planes, not `THREE.Sprite`.
       const left = bmp.left ?? bmp.width / 2;
       let offsetX = bmp.width / 2 - left;
@@ -189,6 +214,7 @@ export class SpriteMaterialCache {
         material,
         geometry,
         quad: { minX: offsetX - bmp.width / 2, maxX: offsetX + bmp.width / 2, height: bmp.height },
+        bottomOffset: (bmp.top ?? bmp.height) - bmp.height,
       };
     }
     this.cache.set(key, result);
@@ -264,6 +290,13 @@ export class SpriteAnimator {
    */
   private deathSpriteName: string | null = null;
 
+  /**
+   * Art drawn instead of this animator's own bank and sprite name, or null for its own. Unlike
+   * `deathSpriteName` it covers every sequence, death included — a corpse goes on holding the
+   * weapon it died with. `frameKey` stays this animator's own either way (see `resolve`).
+   */
+  private skin: SpriteSkin | null = null;
+
   constructor(
     bank: SpriteBank,
     materials: SpriteMaterialCache,
@@ -326,18 +359,36 @@ export class SpriteAnimator {
    */
   resolve(facingDeg: number, viewerAngleDeg: number): CachedSprite | null {
     const frames = this.death.frames ?? this.override.frames ?? this.animFrames;
+    const letter = frames[this.animIndex];
     const spriteName = this.death.frames && this.deathSpriteName ? this.deathSpriteName : this.spriteName;
     const digit = pickRotationDigit(facingDeg, viewerAngleDeg);
-    const found = this.bank.lookup(spriteName, frames[this.animIndex], digit);
+    // A skin with no lump for this frame falls through to the animator's own art, so a partial
+    // skin file draws the set's sprite rather than nothing.
+    const skin = this.skin;
+    const skinFound = skin ? skin.bank.lookup(skin.spriteName, letter, digit) : undefined;
+    const found = skinFound ?? this.bank.lookup(spriteName, letter, digit);
     if (!found) return null;
 
-    const key = found.lump + (found.flip ? ':f' : '');
+    // The `:s` marker is what keeps the memo honest across two material caches: the same lump name
+    // can exist in both, and `lastKey` gates the cached sprite and `frameKey` alike.
+    const key = found.lump + (found.flip ? ':f' : '') + (skinFound ? ':s' : '');
     if (key !== this.lastKey) {
-      this.cached = this.materials.get(found.lump, found.flip);
+      this.cached = (skin && skinFound ? skin.materials : this.materials).get(found.lump, found.flip);
       this.lastKey = key;
-      this.frameKey = spriteName + frames[this.animIndex];
+      // Logical, never the skin's name: `FULLBRIGHT_FRAMES` holds `PLAYF` and GLDEFS binds the
+      // muzzle flash to that key, so both must keep matching while a skin draws the lump.
+      this.frameKey = spriteName + letter;
     }
     return this.cached;
+  }
+
+  /**
+   * Draws from `skin`'s bank and sprite name from the next `resolve` on, or from this animator's
+   * own with null. Deliberately touches no sequence state: a weapon swapped mid-stride must not
+   * restart the walk cycle, one swapped mid-death must not restart the death chain.
+   */
+  setSkin(skin: SpriteSkin | null): void {
+    this.skin = skin;
   }
 
   /**
@@ -501,6 +552,15 @@ export class SpriteActor {
    */
   setOpacity(opacity: number): void {
     this.opacity = opacity;
+  }
+
+  /**
+   * Draws this actor's frames from another file's art from the next `setPose` on — the player's
+   * weapon-matching skin — or from the loaded set's own with null.
+   * docs/sprites.md § Weapon-matching player sprites.
+   */
+  setSkin(skin: SpriteSkin | null): void {
+    this.anim.setSkin(skin);
   }
 
   die(frames: string[], frameDuration: number): void {

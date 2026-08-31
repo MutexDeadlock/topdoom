@@ -304,7 +304,8 @@ there for gameplay reasons breaks tests that have nothing to do with it. It also
 to guard itself against a missing file: everything under `tests/fixtures/wads/` is committed, so a
 WAD-backed test runs everywhere, unconditionally. `tests/docs/fixturewads.test.ts` enforces both
 halves — no `public/wads` path outside a comment anywhere in `tests/`, and no committed fixture WAD
-that nothing loads.
+that nothing loads. `public/game/` is a different matter: `gldefs.txt` and `playerskins.wad` are
+assets the engine ships itself, and the tests that read them are testing those very files.
 
 Fixture WADs are loaded through **`fixtureWad(name)`** (`fixtures/wadfile.ts`), which resolves the
 name against `./wads/` with `new URL(…, import.meta.url)` so the suite is cwd-independent and slices
@@ -324,9 +325,9 @@ beside them in `tests/fixtures/` (or, for the newest, inside the one test that u
 | `pinky_above_test.wad` | same, far floor **+88** (ledge) | `pinky.ts` | vertical melee reach |
 | `caco_pit_test.wad` | one room split at `y=32`, far floor **-48**, cacodemon in it (`E1M1`) | in-test | floating monsters over a ledge |
 
-Plus seven holding **real lumps**, for the assertions whose whole point is that a shipped WAD's own
+Plus eight holding **real lumps**, for the assertions whose whole point is that a shipped WAD's own
 bytes decode the way the engine claims. `boomedit.wad` is TeamTNT's BOOMEDIT.WAD copied verbatim —
-the Boom feature exerciser, and the only fixture that is a whole WAD; five more were lifted out of
+the Boom feature exerciser, and the only fixture that is a whole WAD; six more were lifted out of
 `DOOM1.WAD`, `freedoom2.wad` and `Mock2.wad` lump by lump, so each is the lumps its test names and
 nothing else; the last is a node builder's output over one of those:
 
@@ -335,6 +336,7 @@ nothing else; the last is a node builder's output over one of those:
 | `boomedit.wad` | all of BOOMEDIT.WAD | `ANIMATED`/`SWITCHES` as a real WAD ships them, its named colormaps |
 | `doom1_lumps.wad` | `PLAYPAL`, `COLORMAP`, `GENMIDI`, `D_E1M1` | colormap tints against a real palette; the OPL bank and a real MUS score |
 | `doom1_e1m1.wad` | E1M1's eleven map lumps | solid-structure lids through the whole mesh builder |
+| `doom1_player.wad` | `PLAYA1`, `PLAYE1` | the one set that is *not* drawing its own player (docs/sprites.md § When the skins apply) |
 | `freedoom_map01.wad` | freedoom2 MAP01's eleven map lumps | the diagonal blocking line, below |
 | `freedoom_d_runnin.wad` | freedoom2's `GENMIDI` + `D_RUNNIN` | a real MIDI-format score, dense enough to land chunk boundaries mid-envelope |
 | `mock2_map02_hexen.wad` | Mock2.wad MAP02's twelve lumps | the Hexen map format end to end (docs/wad.md § Map formats) |

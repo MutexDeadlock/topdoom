@@ -31,6 +31,11 @@ import { getCameraMode, setCameraMode, type CameraMode } from '../../game/autoca
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
 import { getInfiniteTallActors, setInfiniteTallActors } from '../../game/world.ts';
 import { getDynamicLights, setDynamicLights } from '../../render/lights.ts';
+import {
+  getPlayerSpriteMode,
+  setPlayerSpriteMode,
+  type PlayerSpriteMode,
+} from '../../wad/playerskin.ts';
 import { getAutoSwitchWeapon, getPistolStart, setAutoSwitchWeapon, setPistolStart } from '../../game/inventory.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
@@ -101,6 +106,7 @@ export class Menu {
   private rightMouseSelect = el<HTMLSelectElement>('rightmouse-select');
   private cameraModeSelect = el<HTMLSelectElement>('cameramode-select');
   private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
+  private playerSpritesSelect = el<HTMLSelectElement>('playersprites-select');
   private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private dynLightsCheckbox = el<HTMLInputElement>('dynlights-checkbox');
   private pistolStartCheckbox = el<HTMLInputElement>('pistolstart-checkbox');
@@ -206,6 +212,7 @@ export class Menu {
     this.installFpsCap();
     this.installInfiniteTall();
     this.installDynamicLights();
+    this.installPlayerSprites();
     this.installPistolStart();
     this.installAutoSwitch();
     this.installFps();
@@ -532,6 +539,18 @@ export class Menu {
     this.dynLightsCheckbox.checked = getDynamicLights();
     this.dynLightsCheckbox.addEventListener('change', () => {
       setDynamicLights(this.dynLightsCheckbox.checked);
+    });
+  }
+
+  /**
+   * When the player's billboard draws the shipped weapon-matching art rather than the loaded set's
+   * own `PLAY` — `auto` by default, and read per drawn frame, so a change applies to the level
+   * already running. docs/sprites.md § Weapon-matching player sprites.
+   */
+  private installPlayerSprites(): void {
+    this.playerSpritesSelect.value = getPlayerSpriteMode();
+    this.playerSpritesSelect.addEventListener('change', () => {
+      setPlayerSpriteMode(this.playerSpritesSelect.value as PlayerSpriteMode);
     });
   }
 

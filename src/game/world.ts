@@ -1643,29 +1643,19 @@ export class World {
       return t < 0 ? null : t;
     };
 
-    /**
-     * Walks the trace at one fixed slope and stops it at the nearest line that refuses it — the
-     * free shot's whole test, and the locked branch's fallback below.
-     *
-     * Walked along the trace, not gathered from a radius box around its start: a missile's
-     * `range` is the whole map (see `World.mapSpan`), and `linesNear` is O(range²) in cells for
-     * what is one thin line.
-     */
-    const traceRay = (raySlope: number): void => {
-      nearestT = 1;
-      blockingLine = null;
+    if (!lock) {
+      // The free shot's whole test: the nearest line along the trace that refuses it at the aim
+      // slope. Walked along the trace, not gathered from a radius box around its start — a
+      // missile's `range` is the whole map (see `World.mapSpan`), and `linesNear` is O(range²) in
+      // cells for what is one thin line.
       this.forEachLineAlongSegment(x, y, tx, ty, (i) => {
         const t = crossingT(i);
         if (t === null || t >= nearestT) return;
-        if (this.blocksShot(i, z + raySlope * maxRange * t)) {
+        if (this.blocksShot(i, z + slope * maxRange * t)) {
           nearestT = t;
           blockingLine = i;
         }
       });
-    };
-
-    if (!lock) {
-      traceRay(slope);
     } else {
       // Vanilla's P_AimLineAttack wedge — see this function's doc. Crossings have
       // to be walked nearest-first for the narrowing to mean anything, so unlike
@@ -1716,7 +1706,18 @@ export class World {
         // (`p_map.c`). The shot is fired flat and re-traced flat, so it ends
         // where a flat shot stops. docs/combat.md § shotPath.
         aimSlope = lock.slopeOffset;
-        traceRay(0);
+        // Re-traced over the crossings already gathered above rather than through a second
+        // blockmap walk: same segment, same lines, and they are already nearest-first.
+        nearestT = 1;
+        blockingLine = null;
+        for (const { t, i } of crossings) {
+          if (t >= 1) break;
+          if (this.blocksShot(i, z)) {
+            nearestT = t;
+            blockingLine = i;
+            break;
+          }
+        }
       } else {
         // `PTR_AimTraverse`'s `aimslope`, the middle of what survived, plus the
         // pellet's own jitter — docs/combat.md § shotPath for why the shot is aimed

@@ -608,8 +608,9 @@ not move to General with the rest.
 stacked full width, with `Debug / Dev` following them. Level start leads because it is the one of
 the two a player picks *before* a run rather than sets once and forgets.
 
-**Visuals is Camera, Frame rate, Lighting** — everything that changes what the running level *looks*
-like, in that order: the camera first, being the one a player actually goes looking for.
+**Visuals is Camera, Frame rate, Lighting, Player sprites** — everything that changes what the
+running level *looks* like, in that order: the camera first, being the one a player actually goes
+looking for.
 
 **Camera** is `#cameramode-select`, whose `<option>` values are the `CameraMode` strings themselves
 (`auto`, the default, vs `manual`); it is owned by `game/autocamera.ts`
@@ -624,6 +625,11 @@ The frame limit is `#fpscap-select`, and its `<option>` values *are* the capped 
 docs/frameloop.md § The FPS cap for how a cap is actually held. Lighting is the one
 `#dynlights-checkbox`, on by default and likewise read per frame, so it too takes effect without a
 reload (docs/lights.md § The toggle).
+
+**Player sprites** is `#playersprites-select`, whose `<option>` values are the `PlayerSpriteMode`
+strings themselves (`auto` — the default — `always`, `never`); it is owned by `wad/playerskin.ts`
+and read per drawn frame, so it too applies to the running level. What each mode decides is
+docs/sprites.md § When the skins apply.
 
 **Audio is one Volume section of three sliders** — `General` (`#master-volume-slider`, the master),
 `Effects` (`#volume-slider`) and `Music` (`#music-volume-slider`) — each with a `.label` wide enough
@@ -712,6 +718,7 @@ Each is a module-level value behind an exported `get`/`set` pair — not an inst
 | `topdoom.fps` | `ui/devmode/debughud.ts` (`getFpsVisible`/`setFpsVisible`) | § FPS counter below |
 | `topdoom.profiler` | `ui/devmode/profilerhud.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
 | `topdoom.dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
+| `topdoom.playerSprites` | `wad/playerskin.ts` (`getPlayerSpriteMode`/`setPlayerSpriteMode`) | docs/sprites.md § When the skins apply |
 | `topdoom.infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
 | `topdoom.pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
 | `topdoom.autoSwitchWeapon` | `game/inventory.ts` (`getAutoSwitchWeapon`/`setAutoSwitchWeapon`) | docs/weapons.md § Automatic weapon switching |

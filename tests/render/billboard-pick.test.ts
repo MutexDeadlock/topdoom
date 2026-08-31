@@ -32,6 +32,7 @@ function sprite(width: number, height: number, left = width / 2): CachedSprite {
     material: new THREE.MeshBasicMaterial(),
     geometry,
     quad: { minX: offsetX - width / 2, maxX: offsetX + width / 2, height },
+    bottomOffset: 0,
   };
 }
 

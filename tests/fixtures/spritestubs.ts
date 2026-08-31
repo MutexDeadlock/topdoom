@@ -19,15 +19,26 @@ export const BANK = {
   lookup: (sprite: string, frame: string, digit: number) => ({ lump: `${sprite}${frame}${digit}`, flip: false }),
 } as unknown as SpriteBank;
 
-/** Throwaway three.js objects, with the lump name echoed back on them — `drawnLumps` is what reads it. */
-export const MATERIALS = {
-  get: (lump: string) => ({
-    lump,
-    material: new THREE.MeshBasicMaterial(),
-    geometry: new THREE.BufferGeometry(),
-    quad: { minX: -16, maxX: 16, height: 56 },
-  }),
-} as unknown as SpriteMaterialCache;
+/**
+ * Throwaway three.js objects, with the lump name echoed back on them — `drawnSprites` is what reads
+ * it. `bottomOffset` is what a test about where airborne art hangs varies, and `tag` marks which
+ * cache answered, for a test running two of them against each other.
+ */
+export function materialsStub(over: { bottomOffset?: number; tag?: string } = {}): SpriteMaterialCache {
+  const { bottomOffset = 0, tag } = over;
+  return {
+    get: (lump: string) => ({
+      tag,
+      lump,
+      material: new THREE.MeshBasicMaterial(),
+      geometry: new THREE.BufferGeometry(),
+      quad: { minX: -16, maxX: 16, height: 56 },
+      bottomOffset,
+    }),
+  } as unknown as SpriteMaterialCache;
+}
+
+export const MATERIALS = materialsStub();
 
 /**
  * `BANK` with the rotation digit pinned to 0 — the one-shot effects really are
@@ -39,22 +50,38 @@ export const ROT0_BANK = {
   lookup: (sprite: string, frame: string) => ({ lump: `${sprite}${frame}0`, flip: false }),
 } as unknown as SpriteBank;
 
+/** One `batch.add` a frame made: the lump, and the three.js point it was placed at. */
+export interface DrawnSprite {
+  lump: string;
+  x: number;
+  /** World Y, which is DOOM z — `mapmesh.doomToWorld`. */
+  y: number;
+  z: number;
+}
+
 /**
- * The lumps one frame of a `SpriteFxLayer` actually draws. Reached through the
- * layer's own `draw` with its batch stubbed to record instead of paint, because
- * that is the only place the animator's current frame surfaces — nothing the
- * layer exposes names it.
+ * What one frame of a `SpriteFxLayer` actually draws. Reached through the layer's
+ * own `draw` with its batch stubbed to record instead of paint, because that is
+ * the only place the animator's current frame surfaces — nothing the layer
+ * exposes names it.
  */
-export function drawnLumps(layer: SpriteFxLayer, alpha = 1): string[] {
-  const lumps: string[] = [];
-  const batch = (layer as unknown as { batch: { add: (cached: { lump: string }) => void } }).batch;
+export function drawnSprites(layer: SpriteFxLayer, alpha = 1): DrawnSprite[] {
+  const drawn: DrawnSprite[] = [];
+  const batch = (layer as unknown as {
+    batch: { add: (cached: { lump: string }, x: number, y: number, z: number) => void };
+  }).batch;
   const realAdd = batch.add;
-  batch.add = (cached: { lump: string }) => void lumps.push(cached.lump);
+  batch.add = (cached, x, y, z) => void drawn.push({ lump: cached.lump, x, y, z });
   layer.beginFrame(VIEWER_ANGLE_DEG);
   layer.draw(alpha);
   layer.endFrame();
   batch.add = realAdd;
-  return lumps;
+  return drawn;
+}
+
+/** `drawnSprites`, for the tests that only ask which frames a layer drew. */
+export function drawnLumps(layer: SpriteFxLayer, alpha = 1): string[] {
+  return drawnSprites(layer, alpha).map((d) => d.lump);
 }
 
 /**
@@ -79,7 +106,11 @@ export function recordingBank(): { bank: SpriteBank; asked: string[] } {
  * still `beginLevel` it themselves, since which `World` a layer runs over is part
  * of what those tests are saying.
  */
-export function fxLayer(options: { fogVisible: FogVisibility; lights?: DynamicLights }): SpriteFxLayer {
+export function fxLayer(options: {
+  fogVisible: FogVisibility;
+  lights?: DynamicLights;
+  spriteMaterials?: SpriteMaterialCache;
+}): SpriteFxLayer {
   return new SpriteFxLayer(new THREE.Scene(), {
     spriteBank: ROT0_BANK,
     spriteMaterials: MATERIALS,

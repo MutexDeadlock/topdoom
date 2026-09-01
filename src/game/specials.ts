@@ -20,39 +20,7 @@ import { MoverOccupancy, NOBODY, type Occupancy, type OccupancySources } from '.
 import { pickShootAim, type ShootAim } from './specials/shootaim.ts';
 import { lookupSpecial } from './specials/tables.ts';
 import { decodeSectorType } from './specials/sectortypes.ts';
-import {
-  DOOR_SPEED,
-  DOOR_SPEED_FAST,
-  DOOR_WAIT,
-  DOOR_OPEN_GAP,
-  DOOR_CLOSE_WAIT_SECONDS,
-  DOOR_RAISE_WAIT_SECONDS,
-  EIGHT_UNIT_GAP,
-  CRUSH_DAMAGE_INTERVAL,
-  CRUSH_SLOWDOWN,
-  SWITCH_FLASH_SECONDS,
-  FLOOR_SPEED,
-  type Activator,
-  type Effect,
-  type LockRule,
-  type ChangeOnlyEffect,
-  type DoorEffect,
-  type ElevatorEffect,
-  type LiftEffect,
-  type FloorEffect,
-  type CrusherEffect,
-  type StairsEffect,
-  type CeilingEffect,
-  type CeilingTarget,
-  type LightChangeEffect,
-  type MoveTarget,
-  type LightPattern,
-  type SectorDoorTimer,
-  switchPairTexture,
-  type SpecialDef,
-  type SurfaceChange,
-  type TeleportEffect,
-} from './specials/defs.ts';
+import * as defs from './specials/defs.ts';
 import {
   World,
   neighborSectorIndices,
@@ -88,7 +56,7 @@ export {
 export type { Occupancy, OccupancySources } from './specials/moverblocking.ts';
 
 export interface LightState {
-  pattern: LightPattern;
+  pattern: defs.LightPattern;
   baseLight: number;
   darkLight: number;
   timer: number;
@@ -136,7 +104,7 @@ export interface TeleportDest extends Placement {
  * (`P_CanUnlockGenDoor`'s `PD_*` picks). docs/items.md § Locked doors and use triggers.
  */
 export interface LockedLine {
-  lock: LockRule;
+  lock: defs.LockRule;
   kind: 'door' | 'switch';
 }
 
@@ -208,7 +176,7 @@ type DoorState = 'raising' | 'hold' | 'holdClosed' | 'lowering' | 'open' | 'clos
 interface DoorMover {
   kind: 'door';
   sectorIndex: number;
-  effect: DoorEffect;
+  effect: defs.DoorEffect;
   openHeight: number;
   closeHeight: number;
   state: DoorState;
@@ -225,7 +193,7 @@ type LiftState = 'lowering' | 'hold' | 'raising' | 'rest' | 'stasis';
 interface LiftMover {
   kind: 'lift';
   sectorIndex: number;
-  effect: LiftEffect;
+  effect: defs.LiftEffect;
   restHeight: number;
   downHeight: number;
   state: LiftState;
@@ -480,7 +448,7 @@ export class SpecialsController {
    * Counts down to the next crush-damage pulse, and whether one is due this frame — see
    * `tickCrush`.
    */
-  private crushDamageTimer = CRUSH_DAMAGE_INTERVAL;
+  private crushDamageTimer = defs.CRUSH_DAMAGE_INTERVAL;
   private crushDamageDue = false;
 
   /**
@@ -569,7 +537,7 @@ export class SpecialsController {
       occupancy,
       playerAt,
       sfx = SILENT,
-      switchPairs = switchPairTexture,
+      switchPairs = defs.switchPairTexture,
     } = options;
     // Taken off `World` rather than passed alongside it: the two must describe the same level, and
     // a second parameter is a second chance to disagree.
@@ -754,7 +722,7 @@ export class SpecialsController {
     // Same reasoning, one shared clock for every crusher's damage pulse — see tickCrush.
     this.crushDamageTimer -= dt;
     this.crushDamageDue = this.crushDamageTimer <= 0;
-    if (this.crushDamageDue) this.crushDamageTimer += CRUSH_DAMAGE_INTERVAL;
+    if (this.crushDamageDue) this.crushDamageTimer += defs.CRUSH_DAMAGE_INTERVAL;
     this.advanceMoverWindows();
     this.tickMovers(dt, dirty);
     // `P_ChangeSector` after every plane that actually moved, which is what `dirty` already is —
@@ -936,9 +904,9 @@ export class SpecialsController {
    * neither vanilla type is `openOnly`/`closeThenOpen` once it actually
    * starts moving (see `SECTOR_DOOR_SPECIALS`'s own doc).
    */
-  private spawnSectorDoorTimer(sectorIndex: number, timer: SectorDoorTimer): void {
+  private spawnSectorDoorTimer(sectorIndex: number, timer: defs.SectorDoorTimer): void {
     const sector = this.map.sectors[sectorIndex];
-    const effect: DoorEffect = { kind: 'door', speed: DOOR_SPEED, waitSeconds: DOOR_WAIT, mode: 'openClose' };
+    const effect: defs.DoorEffect = { kind: 'door', speed: defs.DOOR_SPEED, waitSeconds: defs.DOOR_WAIT, mode: 'openClose' };
     if (timer === 'closeIn30') {
       this.setMover(sectorIndex, {
         kind: 'door',
@@ -947,17 +915,17 @@ export class SpecialsController {
         openHeight: sector.ceilHeight,
         closeHeight: sector.floorHeight,
         state: 'hold',
-        holdRemaining: DOOR_CLOSE_WAIT_SECONDS,
+        holdRemaining: defs.DOOR_CLOSE_WAIT_SECONDS,
       });
     } else {
       this.setMover(sectorIndex, {
         kind: 'door',
         sectorIndex,
         effect,
-        openHeight: this.world.lowestNeighborCeiling(sectorIndex) - DOOR_OPEN_GAP,
+        openHeight: this.world.lowestNeighborCeiling(sectorIndex) - defs.DOOR_OPEN_GAP,
         closeHeight: sector.floorHeight,
         state: 'holdClosed',
-        holdRemaining: DOOR_RAISE_WAIT_SECONDS,
+        holdRemaining: defs.DOOR_RAISE_WAIT_SECONDS,
       });
     }
   }
@@ -1161,7 +1129,7 @@ export class SpecialsController {
           sector.ceilHeight = mover.closeHeight;
           if (mover.effect.mode === 'closeThenOpen') {
             mover.state = 'holdClosed';
-            mover.holdRemaining = mover.effect.closeWaitSeconds ?? DOOR_CLOSE_WAIT_SECONDS;
+            mover.holdRemaining = mover.effect.closeWaitSeconds ?? defs.DOOR_CLOSE_WAIT_SECONDS;
           } else {
             mover.state = 'closed';
             // A blazing door clacks a *second* `bdcls` as it lands — vanilla
@@ -1169,7 +1137,7 @@ export class SpecialsController {
             // T_VerticalDoor's own `pastdest` branch, which is where the fast
             // door's double thud comes from. A normal door is silent on
             // arrival.
-            if (mover.effect.speed >= DOOR_SPEED_FAST) this.playSector(mover.sectorIndex, 'bdcls');
+            if (mover.effect.speed >= defs.DOOR_SPEED_FAST) this.playSector(mover.sectorIndex, 'bdcls');
           }
         }
       }
@@ -1384,7 +1352,7 @@ export class SpecialsController {
     const wasLowering = mover.state === 'lowering';
     // `T_MoveCeiling` drops a crushing descent to `CEILSPEED / 8` for as long as
     // it is actually grinding through a body — see `CrusherEffect.slowsWhenCrushing`.
-    const speed = mover.slowed ? mover.speed / CRUSH_SLOWDOWN : mover.speed;
+    const speed = mover.slowed ? mover.speed / defs.CRUSH_SLOWDOWN : mover.speed;
     if (mover.state === 'lowering') {
       sector.ceilHeight = Math.max(mover.bottomHeight, sector.ceilHeight - speed * dt);
       if (sector.ceilHeight <= mover.bottomHeight) {
@@ -1484,8 +1452,8 @@ export class SpecialsController {
   }
 
   /** Which pair of door sounds this door uses — see `DOOR_SOUNDS`. */
-  private doorSounds(effect: DoorEffect): { open: SfxId; close: SfxId } {
-    return DOOR_SOUNDS[effect.speed >= DOOR_SPEED_FAST ? 'fast' : 'normal'];
+  private doorSounds(effect: defs.DoorEffect): { open: SfxId; close: SfxId } {
+    return DOOR_SOUNDS[effect.speed >= defs.DOOR_SPEED_FAST ? 'fast' : 'normal'];
   }
 
   /**
@@ -1495,7 +1463,7 @@ export class SpecialsController {
    * than reused, and only a `reverseWhenMoving` press touches a door still in
    * motion. See docs/specials.md § Retriggering a door.
    */
-  private triggerDoor(sectorIndex: number, effect: DoorEffect, activator: Activator = 'player'): boolean {
+  private triggerDoor(sectorIndex: number, effect: defs.DoorEffect, activator: defs.Activator = 'player'): boolean {
     // `ceilingActive` is vanilla's `sec->specialdata`, so a settled
     // ('open'/'closed') record falls through to a new mover below.
     if (this.ceilingActive(sectorIndex)) {
@@ -1526,7 +1494,7 @@ export class SpecialsController {
     // wherever it already sits — vanilla's own `door->topheight =
     // sec->ceilingheight;` (p_doors.c), unlike every other DoorMode here,
     // which always computes a fresh neighbor-ceiling target.
-    const openHeight = closeThenOpen ? sector.ceilHeight : this.world.lowestNeighborCeiling(sectorIndex) - DOOR_OPEN_GAP;
+    const openHeight = closeThenOpen ? sector.ceilHeight : this.world.lowestNeighborCeiling(sectorIndex) - defs.DOOR_OPEN_GAP;
     this.setMover(sectorIndex, {
       kind: 'door',
       sectorIndex,
@@ -1550,7 +1518,7 @@ export class SpecialsController {
    * this trigger's own effect rather than restarted in place — see
    * docs/specials.md § Retriggering a door.
    */
-  private triggerLift(sectorIndex: number, effect: LiftEffect): boolean {
+  private triggerLift(sectorIndex: number, effect: defs.LiftEffect): boolean {
     const target = effect.target ?? 'lowestNeighborFloor';
     const existing = this.floorMovers.get(sectorIndex);
     // P_ActivateInStasis: only the perpetual and toggle triggers wake a
@@ -1659,7 +1627,7 @@ export class SpecialsController {
     return true;
   }
 
-  private triggerFloor(sectorIndex: number, effect: FloorEffect, line?: LineDef): boolean {
+  private triggerFloor(sectorIndex: number, effect: defs.FloorEffect, line?: LineDef): boolean {
     if (this.floorActive(sectorIndex)) return false;
     // `line` is only actually needed for `changeTexture` — the only caller without a real
     // linedef (`triggerTag`, for a boss-death `lowerFloorToLowest`) never sets that flag.
@@ -1739,7 +1707,7 @@ export class SpecialsController {
    */
   private resolveFloorChange(
     sectorIndex: number,
-    effect: FloorEffect,
+    effect: defs.FloorEffect,
     target: number,
     line?: LineDef,
   ): FloorMover['arrivalTexture'] {
@@ -1808,7 +1776,7 @@ export class SpecialsController {
    * that sector because stasis never cleared its `specialdata`, so `rtn` stays 0 and the switch
    * neither flips nor is spent. docs/specials.md § Crushers.
    */
-  private triggerCrusher(sectorIndex: number, effect: CrusherEffect): boolean {
+  private triggerCrusher(sectorIndex: number, effect: defs.CrusherEffect): boolean {
     const existing = this.ceilingMovers.get(sectorIndex);
     if (existing && existing.kind === 'crusher') {
       if (existing.state === 'stopped') {
@@ -1824,7 +1792,7 @@ export class SpecialsController {
       sectorIndex,
       speed: effect.speed,
       topHeight: sector.ceilHeight,
-      bottomHeight: sector.floorHeight + EIGHT_UNIT_GAP,
+      bottomHeight: sector.floorHeight + defs.EIGHT_UNIT_GAP,
       state: 'lowering',
       silent: effect.silent,
       slowsWhenCrushing: effect.slowsWhenCrushing,
@@ -1850,7 +1818,7 @@ export class SpecialsController {
    * unlike doors/lifts/floors above, there's no interactive re-trigger behavior worth having for a
    * one-way move.
    */
-  private triggerCeiling(sectorIndex: number, effect: CeilingEffect, line?: LineDef): boolean {
+  private triggerCeiling(sectorIndex: number, effect: defs.CeilingEffect, line?: LineDef): boolean {
     if (this.ceilingActive(sectorIndex)) return false;
     const target = resolveCeilingTarget(this.world, sectorIndex, effect.target, () =>
       this.shortestTextureAround(sectorIndex, 'upper'),
@@ -1874,7 +1842,7 @@ export class SpecialsController {
    */
   private resolveCeilingChange(
     sectorIndex: number,
-    effect: CeilingEffect,
+    effect: defs.CeilingEffect,
     target: number,
     line?: LineDef,
   ): CeilingMover['arrivalTexture'] {
@@ -1891,7 +1859,7 @@ export class SpecialsController {
    * height; no model applies nothing, but the sector still counts as hit
    * (vanilla's `rtn = 1` runs before the model search), so switches flip.
    */
-  private triggerChangeOnly(sectorIndex: number, effect: ChangeOnlyEffect, line?: LineDef): boolean {
+  private triggerChangeOnly(sectorIndex: number, effect: defs.ChangeOnlyEffect, line?: LineDef): boolean {
     const sector = this.map.sectors[sectorIndex];
     const model = this.modelSector(sectorIndex, effect.model, 'floor', sector.floorHeight, line);
     if (model) this.applyArrivalChange(sectorIndex, { floorTex: model.floorTex, special: model.special });
@@ -1903,7 +1871,7 @@ export class SpecialsController {
    * floor up/down, or the activating line's front-sector floor
    * (`elevateCurrent`) — and the ceiling target preserves the sector's gap.
    */
-  private triggerElevator(sectorIndex: number, effect: ElevatorEffect, line?: LineDef): boolean {
+  private triggerElevator(sectorIndex: number, effect: defs.ElevatorEffect, line?: LineDef): boolean {
     // Both slots, matching `EV_DoElevator`'s own
     // `if (sec->floordata || sec->ceilingdata) continue;` — it is the one
     // trigger that claims a sector's floor *and* ceiling (see `moverClass`).
@@ -1945,7 +1913,7 @@ export class SpecialsController {
     this.setMover(sectorIndex, {
       kind: 'floor',
       sectorIndex,
-      speed: FLOOR_SPEED,
+      speed: defs.FLOOR_SPEED,
       target,
       state: 'moving',
       crush: false,
@@ -1973,7 +1941,7 @@ export class SpecialsController {
     this.setMover(sectorIndex, {
       kind: 'floor',
       sectorIndex,
-      speed: FLOOR_SPEED,
+      speed: defs.FLOOR_SPEED,
       target,
       state: 'moving',
       crush: false,
@@ -2005,7 +1973,7 @@ export class SpecialsController {
     this.setMover(ringIndex, {
       kind: 'floor',
       sectorIndex: ringIndex,
-      speed: FLOOR_SPEED / 2,
+      speed: defs.FLOOR_SPEED / 2,
       target: outer.floorHeight,
       state: 'moving',
       crush: false,
@@ -2017,7 +1985,7 @@ export class SpecialsController {
     this.setMover(holeIndex, {
       kind: 'floor',
       sectorIndex: holeIndex,
-      speed: FLOOR_SPEED / 2,
+      speed: defs.FLOOR_SPEED / 2,
       target: outer.floorHeight,
       state: 'moving',
       crush: false,
@@ -2033,7 +2001,7 @@ export class SpecialsController {
    * sector on demand, which is exactly what `recolorSector` already handles
    * generically — the only new piece here is computing the new level itself.
    */
-  private triggerLightChange(sectorIndex: number, effect: LightChangeEffect): boolean {
+  private triggerLightChange(sectorIndex: number, effect: defs.LightChangeEffect): boolean {
     const sector = this.map.sectors[sectorIndex];
     switch (effect.mode) {
       case 'setLevel':
@@ -2075,7 +2043,7 @@ export class SpecialsController {
    * machinery per step rather than a dedicated mover kind, since a single
    * step is exactly a floor rising to a fixed target height.
    */
-  private triggerStairs(startSectorIndex: number, effect: StairsEffect): boolean {
+  private triggerStairs(startSectorIndex: number, effect: defs.StairsEffect): boolean {
     if (this.floorActive(startSectorIndex)) return false; // vanilla's sec->specialdata guard
     for (const step of findStairChain(this.map, startSectorIndex, effect.stepHeight, effect.direction, effect.ignoreTexture)) {
       if (this.floorActive(step.sectorIndex)) continue; // EV_BuildStairs' own per-step `tsec->specialdata` skip
@@ -2122,10 +2090,10 @@ export class SpecialsController {
    */
   private teleportArrival(
     lineIndex: number,
-    def: SpecialDef,
-    effect: TeleportEffect,
+    def: defs.SpecialDef,
+    effect: defs.TeleportEffect,
     at: Placement,
-    activator: Activator,
+    activator: defs.Activator,
   ): TeleportDest | null {
     if (effect.destination === 'line') return this.lineArrival(lineIndex, effect, at, activator);
     const dest = this.findTeleportDestination(resolveTargets(this.map, this.map.linedefs[lineIndex], def));
@@ -2158,9 +2126,9 @@ export class SpecialsController {
    */
   private lineArrival(
     lineIndex: number,
-    effect: TeleportEffect,
+    effect: defs.TeleportEffect,
     at: Placement,
-    activator: Activator,
+    activator: defs.Activator,
   ): TeleportDest | null {
     const line = this.map.linedefs[lineIndex];
     const from = { a: this.map.vertexes[line.v1], b: this.map.vertexes[line.v2] };
@@ -2236,7 +2204,7 @@ export class SpecialsController {
    * "you need the X key" message and `oof`) and stays where they belong.
    * See `SpecialDef.requiresTag`.
    */
-  private stillFires(lineIndex: number, def: SpecialDef): boolean {
+  private stillFires(lineIndex: number, def: defs.SpecialDef): boolean {
     if (!def.repeatable && this.usedOnce.has(lineIndex)) return false;
     if (def.requiresTag && this.map.linedefs[lineIndex].tag === 0) return false;
     return true;
@@ -2257,7 +2225,7 @@ export class SpecialsController {
   private trigger(
     lineIndex: number,
     ownedKeys: ReadonlySet<KeySlot>,
-    activator: Activator = 'player',
+    activator: defs.Activator = 'player',
     fromBackSide = false,
     at: Placement = NO_SOURCE,
   ): TeleportDest | null {
@@ -2357,7 +2325,7 @@ export class SpecialsController {
    * `activator` reaches only the door, the one effect that acts differently for a monster — see
    * `triggerDoor`.
    */
-  private applyEffect(sectorIndex: number, effect: Effect, activator: Activator, line?: LineDef): boolean {
+  private applyEffect(sectorIndex: number, effect: defs.Effect, activator: defs.Activator, line?: LineDef): boolean {
     switch (effect.kind) {
       case 'door':
         return this.triggerDoor(sectorIndex, effect, activator);
@@ -2411,7 +2379,7 @@ export class SpecialsController {
   private crossLines(
     from: Pos2,
     to: Placement,
-    activator: Activator,
+    activator: defs.Activator,
     ownedKeys: ReadonlySet<KeySlot>,
   ): TeleportDest | null {
     const { x: prevX, y: prevY } = from;
@@ -2454,7 +2422,7 @@ export class SpecialsController {
         case 'lowerFloorToLowest':
           this.triggerFloor(i, {
             kind: 'floor',
-            speed: FLOOR_SPEED,
+            speed: defs.FLOOR_SPEED,
             target: 'lowestNeighborFloor',
             direction: 'down',
             changeTexture: false,
@@ -2465,11 +2433,11 @@ export class SpecialsController {
           this.triggerRaiseToTexture(i);
           break;
         case 'blazeOpen':
-          this.triggerDoor(i, { kind: 'door', speed: DOOR_SPEED_FAST, waitSeconds: DOOR_WAIT, mode: 'openOnly' });
+          this.triggerDoor(i, { kind: 'door', speed: defs.DOOR_SPEED_FAST, waitSeconds: defs.DOOR_WAIT, mode: 'openOnly' });
           break;
         case 'open':
           // A_KeenDie's `EV_DoDoor(&junk, open)` — ordinary VDOORSPEED, opens and stays.
-          this.triggerDoor(i, { kind: 'door', speed: DOOR_SPEED, waitSeconds: DOOR_WAIT, mode: 'openOnly' });
+          this.triggerDoor(i, { kind: 'door', speed: defs.DOOR_SPEED, waitSeconds: defs.DOOR_WAIT, mode: 'openOnly' });
           break;
       }
     }
@@ -2551,7 +2519,7 @@ export class SpecialsController {
     // after BUTTONTIME so it can visibly be pressed again. A one-shot switch is
     // given no button at all and stays showing its on-texture for the rest of
     // the level. docs/specials.md § A switch only flips when it acts.
-    if (useAgain) this.switchFlashes.set(lineIndex, SWITCH_FLASH_SECONDS);
+    if (useAgain) this.switchFlashes.set(lineIndex, defs.SWITCH_FLASH_SECONDS);
   }
 
   private updateSwitchFlashes(dt: number): void {
@@ -2641,9 +2609,9 @@ const FLICKER_STEP = 16;
  * The four patterns `P_SpawnStrobeFlash` spawns, and so the only ones carrying
  * its `minlight == maxlight` rule — see `makeLightState`.
  */
-const STROBE_PATTERNS = new Set<LightPattern>(['blink05', 'blink1', 'syncBlink05', 'syncBlink1']);
+const STROBE_PATTERNS = new Set<defs.LightPattern>(['blink05', 'blink1', 'syncBlink05', 'syncBlink1']);
 
-function makeLightState(pattern: LightPattern, baseLight: number, minLight: number): LightState {
+function makeLightState(pattern: defs.LightPattern, baseLight: number, minLight: number): LightState {
   // A strobe with nothing darker around it blinks to black instead of standing
   // still: `P_SpawnStrobeFlash`'s `if (minlight == maxlight) minlight = 0`, and
   // its alone — `P_SpawnLightFlash`, `P_SpawnGlowingLight` and
@@ -2720,7 +2688,7 @@ function tickLight(s: LightState, dt: number): number {
  * texture-only change (`FChgTxt`), cleared for `FChgZero`, the model's own for
  * `FChgTyp` — `p_genlin.c`'s three `*ChgT` cases.
  */
-function changedSpecial(change: SurfaceChange, model: Sector): number | undefined {
+function changedSpecial(change: defs.SurfaceChange, model: Sector): number | undefined {
   if (change.type === 'texOnly') return undefined;
   return change.type === 'texZeroType' ? 0 : model.special;
 }
@@ -2734,7 +2702,7 @@ function changedSpecial(change: SurfaceChange, model: Sector): number | undefine
 function resolveFloorTarget(
   world: World,
   sectorIndex: number,
-  target: MoveTarget,
+  target: defs.MoveTarget,
   shortestTexture: () => number,
 ): number {
   const map = world.map;
@@ -2756,14 +2724,14 @@ function resolveFloorTarget(
       return world.highestNeighborCeiling(sectorIndex);
     case 'lowestNeighborCeilingMinus8':
       return (
-        Math.min(world.lowestNeighborCeiling(sectorIndex), map.sectors[sectorIndex].ceilHeight) - EIGHT_UNIT_GAP
+        Math.min(world.lowestNeighborCeiling(sectorIndex), map.sectors[sectorIndex].ceilHeight) - defs.EIGHT_UNIT_GAP
       );
     case 'turboLower': {
       // `p_floor.c`'s `case turboLower` adds the 8 only where the found height differs from the
       // sector's own; unconditionally it hands a lowering mover a target *above* its floor.
       // docs/specials.md § The turboLower quad.
       const highest = world.highestNeighborFloor(sectorIndex);
-      return highest === map.sectors[sectorIndex].floorHeight ? highest : highest + EIGHT_UNIT_GAP;
+      return highest === map.sectors[sectorIndex].floorHeight ? highest : highest + defs.EIGHT_UNIT_GAP;
     }
     case 'plus24':
       return map.sectors[sectorIndex].floorHeight + 24;
@@ -2789,7 +2757,7 @@ function resolveFloorTarget(
 function resolveCeilingTarget(
   world: World,
   sectorIndex: number,
-  target: CeilingTarget,
+  target: defs.CeilingTarget,
   shortestTexture: () => number,
 ): number {
   const map = world.map;
@@ -2797,7 +2765,7 @@ function resolveCeilingTarget(
     case 'highestNeighborCeiling':
       return world.highestNeighborCeiling(sectorIndex);
     case 'floorPlus8':
-      return map.sectors[sectorIndex].floorHeight + EIGHT_UNIT_GAP;
+      return map.sectors[sectorIndex].floorHeight + defs.EIGHT_UNIT_GAP;
     case 'lowestNeighborCeiling':
       return world.lowestNeighborCeiling(sectorIndex);
     case 'nextHigherCeiling':

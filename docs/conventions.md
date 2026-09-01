@@ -309,6 +309,16 @@ ESM resolution means `from './wad/reader'` does not resolve. There are no `index
 anywhere, and adding one would break the entry-point rule above: `game/things.ts` is the thing
 layer's barrel *and* its implementation, which is what keeps its public surface an explicit list.
 
+**Names arrive named; a namespace import is for three cases**: a package with one obvious name
+(`THREE`), two modules whose exports collide (`wad/map.ts`'s `hexen`/`udmf`), and a `defs.ts` a file
+takes 30-odd shapes from at once and reads each of them a handful of times — `specials.ts` reads
+`defs.` and is the only one. It costs the `noUnusedLocals` check on that module: a namespace is
+always used, so a name that falls out of use rots silently. Two things keep a file on named
+imports: use sites dense enough that the prefix becomes the noise (`specials/tables.ts` reads those
+same shapes 157 times, `DOOR_SPEED` 25 times, inside table rows the constants are the vocabulary
+of), and importing from two `defs.ts` at once — `game/things.ts` would need
+`thingDefs.`/`monsterDefs.`, repeating the domain its directory already names.
+
 ## Known deviations
 
 Pending, not precedent: none.

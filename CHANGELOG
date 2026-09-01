@@ -21,12 +21,16 @@ Features and improvements
     - a support tooltip names at most 3 maps per reason, sorted
 
 Fixed bugs
-  - weapon projectiles now leave the body instead of the player's head
+  - aiming and shooting:
+    - a monster shooting through a window now aims through it, like the player
+      does, instead of firing into its frame
+    - a monster's shot sits at the original's own heights: a hitscan leaves at
+      its species' fire height, a fireball 32 units up at both ends
+    - weapon projectiles now leave the body instead of the player's head
   - knockback is now capped: a BFG-hit corpse no longer rockets out of the map
   - shots no longer slip through a crusher that has come down
   - a silent teleporter no longer strands a camera turn (Q/E) part-way through
   - the camera yaw wraps at ±180° instead of counting up
-  - the DEVMODE yaw readout no longer flips between -180 and 180 for one angle
 
 
 ===============================================================================

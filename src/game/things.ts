@@ -8,7 +8,14 @@ import * as THREE from 'three';
 import type { Sector } from '../wad/map.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { SectorTouchCache, World } from './world.ts';
-import { clampMomentum, GRAVITY, MAX_MOMENTUM_SPEED, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
+import {
+  clampMomentum,
+  GRAVITY,
+  MAX_MOMENTUM_SPEED,
+  MISSILE_HEIGHT_OFFSET,
+  PLAYER_HEIGHT,
+  PLAYER_RADIUS,
+} from './player.ts';
 import { pRandom } from '../util/random.ts';
 import { DOOM_TIC } from '../constants.ts';
 import {
@@ -82,9 +89,9 @@ import { ThingType } from './things/doomednums.ts';
 import { fastMonsters, isAmbush, isMultiplayerOnly, respawnMonsters, spawnAngleDeg, spawnsAtSkill, type Skill } from './skill.ts';
 import {
   DI_NODIR,
-  MONSTER_FIRE_HEIGHT,
   BODY_HEIGHT_FALLBACK,
   MONSTER_HIT_RADIUS,
+  monsterShootZ,
   thrustSpeed,
   type MonsterAttackEvent,
   type MonsterBody,
@@ -523,7 +530,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
                 ...result,
                 x: p.x,
                 y: p.y,
-                z: p.z + MONSTER_FIRE_HEIGHT,
+                z: p.z + (result.projectiles ? MISSILE_HEIGHT_OFFSET : monsterShootZ(p.bodyHeight)),
                 sourceId: p.id,
                 sourceType: p.type,
                 sourceRadius: p.blockRadius,

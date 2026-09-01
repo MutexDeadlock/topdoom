@@ -25,7 +25,7 @@ export const PLAYER_MASS = 100;
  * have to match, or a tracer/projectile would visibly start from a different
  * height than where the crosshair appears to be. The value is vanilla's `shootz`
  * (`p_map.c`) — docs/combat.md § shotPath. A monster's own equivalent is
- * `game/monsters/defs.ts`'s `MONSTER_FIRE_HEIGHT`.
+ * `game/monsters/defs.ts`'s `monsterShootZ`, the same formula on its body height.
  */
 export const AIM_HEIGHT_OFFSET = PLAYER_HEIGHT / 2 + 8;
 
@@ -33,7 +33,8 @@ export const AIM_HEIGHT_OFFSET = PLAYER_HEIGHT / 2 + 8;
  * Height above the feet a *missile* leaves from, four units below the hitscan height above:
  * vanilla spawns one at `z = source->z + 4*8*FRACUNIT` in `P_SpawnPlayerMissile` (`p_mobj.c`)
  * where `P_LineAttack` traces from `shootz` (`p_map.c`). Only the start moves — the shot still
- * slopes toward the crosshair's own plane. docs/combat.md § Where a missile starts.
+ * slopes toward the crosshair's own plane. A monster's missile leaves from the same height,
+ * since `P_SpawnMissile` spawns at that same `+ 4*8`. docs/combat.md § Where a missile starts.
  */
 export const MISSILE_HEIGHT_OFFSET = 32;
 

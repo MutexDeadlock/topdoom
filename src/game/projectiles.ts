@@ -10,7 +10,6 @@ import { playerShotRange } from './world.ts';
 import { transfersOf } from './specials/transfers.ts';
 import { AIM_HEIGHT_OFFSET, MISSILE_HEIGHT_OFFSET, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
-  MONSTER_FIRE_HEIGHT,
   MONSTER_LOCK_HEIGHT,
   MONSTER_HIT_RADIUS,
   sameSpecies,
@@ -262,9 +261,12 @@ export class ProjectileLayer {
     if (!atk.projectiles) return;
     const { world, things, player } = this.ctx;
     const victim = atk.targetId === null ? null : things?.monsterById(atk.targetId);
-    const target = victim
-      ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
-      : { x: player.x, y: player.y, z: player.z + AIM_HEIGHT_OFFSET };
+    // The aim point rides `MISSILE_HEIGHT_OFFSET` above the target's feet, which is
+    // the launch's own height above the shooter's — so the flight is parallel to
+    // `P_SpawnMissile`'s feet-to-feet slope and passes the target that same height
+    // up. docs/monster-attacks.md § Monster projectiles in flight.
+    const body = victim ?? player;
+    const target = { x: body.x, y: body.y, z: body.z + MISSILE_HEIGHT_OFFSET };
     // Almost always one entry; the mancubus fires two per volley (see `MonsterAttack.projectiles`),
     // each spawned independently. `target` is loop-invariant, so the pair shares one slope and only
     // its heading is deflected. docs/monster-attacks.md § Monster projectiles in flight.

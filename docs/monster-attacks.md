@@ -119,6 +119,16 @@ volley, matching `A_SPosAttack`'s own `slope = P_AimLineAttack(...)` sitting abo
 same goes for the partial-invisibility fuzz (`applyShadowAim`): vanilla fuzzes `actor->angle` inside
 `A_FaceTarget`, so `bangle` is already fuzzed and every pellet spreads off that one fuzzed aim.
 
+**That slope is the auto-aim wedge's, not the raw line to the target** — `A_PosAttack`,
+`A_SPosAttack` and `A_CPosAttack` each take their `slope` from `P_AimLineAttack`, the same
+`ShotLock` pass a player's clicked shot gets (docs/combat.md § shotPath), aimed at the middle of the
+target's own `mobjinfo.height`. `resolveHitscan` makes that one aim pass and then hands every bullet
+a fixed ray on the surviving slope, which is `P_LineAttack`'s own split. Without it a monster shot
+through any opening the centre-line misses hit the frame instead: on Freedoom E1M2 the gunners in
+sector 130 fired into the lip of the 32-unit slit (sectors 273/281, floor 48, ceiling 80) that the
+player was shooting them through. A wedge stopped short of the target aims flat, exactly as
+`P_AimLineAttack` returns 0 with no `linetarget`.
+
 Each bolt is traced out to the full `WEAPON_RANGE` (`shotPath`'s `range` parameter, separate from
 the target it takes its slope from — docs/combat.md § shotPath), not merely to the target, so a
 bullet the spread throws wide keeps going: it can still hit a wall or another monster *behind*
@@ -243,7 +253,14 @@ collide too loosely" was: fireballs detonating a body-width away and reading as 
 distance — and the thing then flies on under its own momentum until `P_XYMovement`, `P_ZMovement` or
 `PIT_CheckThing` stops it. So `spawnMonsterShot` passes the target to `shotPath` for the slope and
 `World.mapSpan` for the distance — the two are separate parameters precisely so this can be said
-(see docs/combat.md § shotPath). **A missile has no range budget**: `MISSILERANGE` is
+(see docs/combat.md § shotPath).
+
+**Both ends of that slope are feet, and the launch sits `MISSILE_HEIGHT_OFFSET` above the
+shooter's** — so the flight runs *parallel* to the feet-to-feet line and passes the target that
+same 32 units up, chest height on a player rather than its feet. `spawnMonsterShot` lifts its aim
+point by the same offset to get it; an aim point at any other height tilts the whole flight.
+
+**A missile has no range budget**: `MISSILERANGE` is
 `P_LineAttack`'s bound on a bullet, and lending it to missiles too made them burst in mid-air 2048
 units out, which is what NUTS.WAD's arachnotrons showed. Letting the target set both, as this engine
 earlier did, made `maxDist` the launch-time distance to the player, so **every missile burst exactly

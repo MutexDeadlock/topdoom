@@ -7,14 +7,14 @@
  * docs/monster-attacks.md § Resolving an attack.
  */
 import { WEAPON_RANGE } from '../world.ts';
-import { AIM_HEIGHT_OFFSET, PLAYER_RADIUS } from '../player.ts';
+import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
 import { traceHitsBox } from '../../util/geom.ts';
 import { triangularSpread } from '../../util/random.ts';
 import type { CombatContext } from '../combat.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
 import type { ProjectileLayer } from '../projectiles.ts';
 import { MONSTER_TRACER_COLOR } from '../spritefx/tables.ts';
-import { MONSTER_FIRE_HEIGHT, type MonsterAttackEvent } from './defs.ts';
+import type { MonsterAttackEvent } from './defs.ts';
 import { resolveVileBlast, spawnWindupFire, vileFlameFor } from './vile.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import type { Pos3 } from '../../types.ts';
@@ -137,19 +137,24 @@ export class MonsterAttacks {
    * `MonsterAttack.bullets` entry, each thrown off by its own
    * `MONSTER_BULLET_SPREAD_DEG` draw and carrying its own damage roll, so a
    * shotgun guy's three pellets land independently. All of them share the one
-   * aim slope, matching `A_SPosAttack` computing `slope` once before its loop.
+   * aim slope, matching `A_SPosAttack` computing `slope` once before its loop,
+   * and that slope is `P_AimLineAttack`'s wedge — docs/monster-attacks.md
+   * § Hitscan vs. projectile.
    */
   private resolveHitscan(atk: MonsterAttackEvent): void {
-    // Sloped from the monster's fire height to the target's, the way
-    // P_AimLineAttack works out a slope before P_LineAttack traces it — what
-    // lets a zombieman on a ledge shoot down at you.
-    const player = this.ctx.player;
-    const victim = atk.targetId === null ? null : this.ctx.things?.monsterById(atk.targetId);
-    const aim = victim
-      ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
-      : { x: player.x, y: player.y, z: player.z + AIM_HEIGHT_OFFSET };
+    const { world, things, player } = this.ctx;
+    const victim = atk.targetId === null ? null : things?.monsterById(atk.targetId);
+    const halfHeight = (victim ? victim.height : PLAYER_HEIGHT) / 2;
+    const body = victim ?? player;
+    const aim = { x: body.x, y: body.y, z: body.z + halfHeight };
+    const aimed = world.shotPath(atk, atk.angleRad, aim, undefined, { halfHeight, slopeOffset: 0 });
+    const slope = aimed.dist > 0 ? (aimed.z - atk.z) / aimed.dist : 0;
+    // `resolveBullet` takes a point to slope toward, so the volley's shared slope
+    // reaches it as the aim point lifted onto that slope.
+    const toAim = Math.hypot(aim.x - atk.x, aim.y - atk.y);
+    const sloped = { x: aim.x, y: aim.y, z: atk.z + slope * toAim };
     for (const damage of atk.bullets)
-      this.resolveBullet(atk, atk.angleRad + triangularSpread(MONSTER_BULLET_SPREAD_DEG), damage, aim);
+      this.resolveBullet(atk, atk.angleRad + triangularSpread(MONSTER_BULLET_SPREAD_DEG), damage, sloped);
   }
 
   /**
@@ -170,10 +175,11 @@ export class MonsterAttacks {
     // Vertically it is `PTR_ShootTraverse`, not an aim: this bolt already has a
     // slope (`shotPath` sloped it toward `aim`), so a body only blocks it where
     // the bolt actually passes through that body's own height.
+    const slope = path.dist > 0 ? (path.z - atk.z) / path.dist : 0;
     const blocker = things?.raycastMonster(atk, angleRad, path.dist, {
       ignoreId: atk.sourceId,
       includeHidden: true,
-      slope: path.dist > 0 ? (path.z - atk.z) / path.dist : 0,
+      slope,
     });
     const dirX = Math.cos(angleRad);
     const dirY = Math.sin(angleRad);
@@ -193,7 +199,9 @@ export class MonsterAttacks {
       things?.damage(blocker.id, damage, { source: { id: atk.sourceId, type: atk.sourceType }, from: atk });
       endX = blocker.x;
       endY = blocker.y;
-      endZ = blocker.z + MONSTER_FIRE_HEIGHT;
+      // Puff and blood go where the bolt was when it landed, the height
+      // `PTR_ShootTraverse` spawns them at.
+      endZ = atk.z + slope * blocker.dist;
       const hitAt = { x: endX, y: endY, z: endZ };
       if (things?.bleeds(blocker.id)) this.effects.spawnBlood(hitAt, damage);
       else this.effects.spawnPuff(hitAt);
@@ -201,7 +209,7 @@ export class MonsterAttacks {
       this.ctx.damagePlayer(damage, atk.x, atk.y, atk.sourceType);
       endX = player.x;
       endY = player.y;
-      endZ = player.z + AIM_HEIGHT_OFFSET;
+      endZ = atk.z + slope * playerAlong;
       // The player carries no MF_NOBLOOD either, so a bolt that reaches them
       // splashes exactly as one landing on a monster does — and unlike the
       // pain flash this isn't gated on the damage actually landing, matching

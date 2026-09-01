@@ -590,10 +590,15 @@ export const DIR_X = [1, 0.71716, 0, -0.71716, -1, -0.71716, 0, 0.71716];
 export const DIR_Y = [0, 0.71716, 1, 0.71716, 0, -0.71716, -1, -0.71716];
 
 /**
- * Height above a monster's feet a ranged attack's tracer is drawn from — the
- * monster's own equivalent of `game/player.ts`'s `AIM_HEIGHT_OFFSET`.
+ * Height above a monster's feet its hitscan leaves from, on this species' own
+ * body height: vanilla's `shootz`, `z + (height>>1) + 8` (`p_map.c`).
+ * `game/player.ts`'s `AIM_HEIGHT_OFFSET` is the same formula on `PLAYER_HEIGHT`;
+ * a *missile* leaves from `MISSILE_HEIGHT_OFFSET`, which `P_SpawnMissile` and
+ * `P_SpawnPlayerMissile` share.
  */
-export const MONSTER_FIRE_HEIGHT = 40;
+export function monsterShootZ(bodyHeight: number): number {
+  return bodyHeight / 2 + 8;
+}
 
 /**
  * The width `spawnPlayerShot`'s **locked-on** test uses, and the fallback

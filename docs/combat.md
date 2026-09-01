@@ -38,14 +38,12 @@ impassable like a real wall, when `PTR_ShootTraverse` never reads `ML_BLOCKING` 
 movement does. DOOM2 MAP01's east imp closet (sector 38) has exactly this kind of fence, and the bug
 blocked both the player's shots at the imp and the imp's fireballs back through it.
 
-**Locked-on shot** (auto-aim target, or a monster's own shot at the player): slopes from the
-shooter's fire height to the target's over exactly the distance between them, and stops *at* the
-target. A separate `lockedOn` parameter (default: on whenever a `target` is given) switches the
-blocking test from the single fixed ray to a **slope wedge** — vanilla's `P_AimLineAttack`: start
-from the span of slopes reaching any part of the target, narrow `[bottomSlope, topSlope]` against
-every opening crossed in increasing distance order, and stop at the first line where the wedge
-collapses. A monster's own fired shot passes `lockedOn: false`: it needs the slope-toward-target
-behavior but has no "you clicked it" promise to honor, so it stays on the strict single ray.
+**Locked-on shot** (a player's auto-aim target, or a monster's aim pass at what it is shooting at):
+slopes from the shooter's fire height to the target's over exactly the distance between them, and
+stops *at* the target. A `ShotLock` switches the blocking test from the single fixed ray to a
+**slope wedge** — vanilla's `P_AimLineAttack`: start from the span of slopes reaching any part of
+the target, narrow `[bottomSlope, topSlope]` against every opening crossed in increasing distance
+order, and stop at the first line where the wedge collapses.
 
 **The wedge that survives is also the slope fired** — `PTR_AimTraverse`'s `aimslope`, the middle of
 `[bottomSlope, topSlope]` after every opening has cut into it. This is not cosmetic: firing the raw
@@ -72,8 +70,10 @@ middle of it; a fixed half-`PLAYER_HEIGHT` band around a fixed 32 units above th
 was — got the imp about right and put a cyberdemon's aim at its knees.
 
 Passing a `ShotLock` at all is what selects the wedge: it and the old separate `lockedOn` flag were
-the same bit at every call site, since only a player's clicked shot has a body to aim at. A
-monster's own shot passes none and stays on the single ray.
+the same bit at every call site. **A monster's hitscan takes the wedge too** — one aim pass for the
+slope, then a fixed-ray trace per bullet (docs/monster-attacks.md § Hitscan vs. projectile). A
+monster's *missile* still passes none: `P_SpawnMissile` slopes straight at the target and never
+aims.
 
 `ShotLock.slopeOffset` (the super shotgun's per-pellet jitter) is added **after** that clamp,
 because `A_FireShotgun2` adds it to the finished `bulletslope`: vanilla jitters the shot, not the
@@ -96,8 +96,12 @@ expected, since sight samples sector floors/ceilings at discrete points while th
 against exact line openings.
 
 Both modes start at the shooter's own height, never the target's — using the target's made tracers
-and projectiles visibly begin in mid-air rather than at the gun. For the player that height is
-`AIM_HEIGHT_OFFSET` (`game/player.ts`), vanilla's `shootz` = `z + (height>>1) + 8` = 36, which is
+and projectiles visibly begin in mid-air rather than at the gun. That height is vanilla's `shootz`
+= `z + (height>>1) + 8` for every shooter: `AIM_HEIGHT_OFFSET` (`game/player.ts`) is it on
+`PLAYER_HEIGHT` = 36, `monsterShootZ` (`game/monsters/defs.ts`) is it on the species' own
+`mobjinfo.height`, so a spider mastermind fires from 58 and a zombieman from 36. A **missile**
+leaves from `MISSILE_HEIGHT_OFFSET` instead, on both sides — `P_SpawnPlayerMissile` and
+`P_SpawnMissile` share the same `+ 4*8`. The player's shootz is
 also the plane the cursor is projected onto (docs/camera.md § Aim lead). The flat 32 it was is 4
 units low and sits *exactly on* any floor 32 above the shooter's own — MAP04's crusher corridor, so
 every shot crossing it fitted under the shut crusher. Blocking is evaluated at the

@@ -74,6 +74,13 @@ hoisted to module scope in `world.ts` would be read during that cycle's initiali
 `[z2, z2 + PLAYER_HEIGHT]` span rather than a single point, so any part of that range clearing every
 opening crossed is enough.
 
+**Sight is not symmetric, and that is `P_CheckSight`, not a bug.** The wedge is anchored at the
+viewer's eye and each opening narrows it at that opening's distance *from the viewer*, so through a
+window whose top is below eye height the far actor sees the near one and not the reverse. Freedoom
+E1M2: standing north of the 32-unit slit (sectors 273/281, floor 48, ceiling 80) the player sees the
+gunners in sector 130 at their chests, while the two standing within ~35 units of the slit have to
+look down past its lip so steeply that the ray is under the floor before it reaches the player.
+
 **The wedge narrows at two different things, and both are load-bearing.** The primary one walks the
 same line candidates `forEachLineAlongSegment` already finds for the wall-blocking test and, for
 every *open* two-sided line among them (skipping a flat pass-through — equal floors and equal

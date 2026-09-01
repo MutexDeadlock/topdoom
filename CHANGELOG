@@ -7,6 +7,9 @@ Features and improvements
     which customize the player sprites, all tuneable in Settings / Visuals
   - mover interpolation: moveable areas draw interpolated between tics 
     instead of stepping at 35 Hz
+  - maps are now divided into "islands": Only the current island is visible, 
+    so areas seperated from the current one (fake "room-over-room" areas 
+    accessed by silent teleports etc.) stay invisible
   - a corpse under a door, floor or crusher is squashed to a pool of blood
     - a crusher sprays blood out of whoever it is grinding
     - a DEH patch repointing S_GIBS moves the pool with it

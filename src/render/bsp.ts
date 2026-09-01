@@ -4,11 +4,13 @@
  * seg was filed into the wrong side of its own line, and redirecting a leaf hidden behind
  * self-referencing lines to the sector that encloses it. All of these ask `sectorprobe.ts`
  * where a point is, since the BSP is what is being rebuilt here. Over those polygons it also
- * answers which leaves border which, the adjacency vanilla SEGS carries no minisegs to state.
+ * answers which leaves border which, the adjacency vanilla SEGS carries no minisegs to state,
+ * and which of them form one connected region.
  * See docs/render.md § BSP polygon reconstruction, § Walls that stop inside their cell,
- * § Segs on the wrong side of their leaf, § Self-referencing sectors and § Leaf adjacency.
+ * § Segs on the wrong side of their leaf, § Self-referencing sectors, § Leaf adjacency and
+ * § Islands.
  */
-import { NO_LINE, segSide, SUBSECTOR_BIT, type DoomMap, type Seg, type Vertex } from '../wad/map.ts';
+import { NO_LINE, NO_SIDE, segSide, SUBSECTOR_BIT, type DoomMap, type Seg, type Vertex } from '../wad/map.ts';
 import { clipConvexPolygon as clip, polygonCentroid } from '../util/geom.ts';
 import { SectorProbe, selfReferencing } from './sectorprobe.ts';
 
@@ -498,9 +500,10 @@ export function sectorOfSubSector(map: DoomMap, ssIndex: number): number {
 }
 
 /**
- * How far past a leaf's edge the neighbour probe samples, in map units. **Tuned by feel**: a
- * robustness value, far enough out to clear the clip's float noise and the overhang
- * `segClipTolerance` leaves, short enough not to step over a sliver leaf whole.
+ * How far past an edge the neighbour probes sample, in map units — `buildLeafGraph`'s and
+ * `buildIslands`'. **Tuned by feel**: a robustness value, far enough out to clear the clip's float
+ * noise and the overhang `segClipTolerance` leaves, short enough not to step over a sliver leaf
+ * whole.
  */
 const NEIGHBOUR_PROBE = 0.5;
 
@@ -577,4 +580,104 @@ function rebuildLeafGraph(map: DoomMap): LeafGraph {
   }
   starts[polys.length] = leaves.length;
   return { starts, leaves: Int32Array.from(leaves) };
+}
+
+/** One rebuild per map, like `buildLeafGraph`, and weak on it for the same reason. */
+const islands = new WeakMap<DoomMap, Int32Array>();
+
+/**
+ * Which connected region each leaf belongs to, as an island per subsector: two leaves share one
+ * where a two-sided line or a BSP split joins them, so a map is usually a single island and a
+ * second is space only a teleporter reaches. Both union rules below err toward joining, since a
+ * link too many only fails to hide something while a link missing is a hole in the view.
+ * docs/render.md § Islands, docs/fogofwar.md § Islands for what reads it.
+ */
+export function buildIslands(map: DoomMap): Int32Array {
+  const cached = islands.get(map);
+  if (cached) return cached;
+  const built = rebuildIslands(map);
+  islands.set(map, built);
+  return built;
+}
+
+function rebuildIslands(map: DoomMap): Int32Array {
+  const polys = buildSubSectorPolys(map);
+  const parent = new Int32Array(polys.length);
+  for (let i = 0; i < polys.length; i++) parent[i] = i;
+  const find = (a: number): number => {
+    while (parent[a] !== a) {
+      parent[a] = parent[parent[a]];
+      a = parent[a];
+    }
+    return a;
+  };
+  const union = (a: number, b: number): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  };
+
+  // Every two-sided seg joins what lies across it. Both sides are probed because a seg can sit
+  // anywhere along its line, so the leaf it was filed under need not be either of them.
+  for (let ss = 0; ss < map.subsectors.length; ss++) {
+    const { first, count } = map.subsectors[ss];
+    for (let k = first; k < first + count; k++) {
+      const seg = map.segs[k];
+      if (!seg || seg.linedef === NO_LINE) continue;
+      const line = map.linedefs[seg.linedef];
+      if (!line || line.left === NO_SIDE || line.right === NO_SIDE) continue;
+      const a = map.vertexes[seg.v1];
+      const b = map.vertexes[seg.v2];
+      if (!a || !b) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const length = Math.hypot(dx, dy);
+      if (length < 1e-6) continue;
+      const step = NEIGHBOUR_PROBE / length;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      for (let side = -1; side <= 1; side += 2) {
+        const other = subsectorAtPoint(map, mx - dy * step * side, my + dx * step * side);
+        if (other >= 0 && other !== ss) union(ss, other);
+      }
+    }
+  }
+
+  // Which sector pairs a two-sided line joins anywhere on the map: what tells the pass below a
+  // leaf boundary inside one room from the void between two of them.
+  const sectorCount = map.sectors.length;
+  const joined = new Set<number>();
+  for (const line of map.linedefs) {
+    if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
+    const front = map.sidedefs[line.right]?.sector;
+    const back = map.sidedefs[line.left]?.sector;
+    if (front === undefined || back === undefined || front === back) continue;
+    joined.add(front * sectorCount + back);
+    joined.add(back * sectorCount + front);
+  }
+
+  // A BSP split inside one sector has no seg between its halves, so those joins come off the
+  // geometric adjacency instead.
+  const graph = buildLeafGraph(map);
+  for (let i = 0; i < polys.length; i++) {
+    const si = polys[i].physicalSector;
+    for (let k = graph.starts[i]; k < graph.starts[i + 1]; k++) {
+      const j = graph.leaves[k];
+      const sj = polys[j].physicalSector;
+      if (si === sj || joined.has(si * sectorCount + sj)) union(i, j);
+    }
+  }
+
+  const result = new Int32Array(polys.length);
+  const ids = new Map<number, number>();
+  for (let i = 0; i < polys.length; i++) {
+    const root = find(i);
+    let id = ids.get(root);
+    if (id === undefined) {
+      id = ids.size;
+      ids.set(root, id);
+    }
+    result[i] = id;
+  }
+  return result;
 }

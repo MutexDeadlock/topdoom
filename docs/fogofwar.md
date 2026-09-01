@@ -286,6 +286,45 @@ solid mass split across several subsectors lights only the near one. The BSP spl
 minisegs, which are not blockers at all, and the camera hangs above: the player looks down on the
 whole cap of a block at once, so lighting part of it is the same hole this section exists to close.
 
+## Islands
+
+**Only the region the player is standing in is drawn.** `explored` is ANDed with the island gate
+everywhere it is read — `isVisible` and `updateFade`'s target — so a place reachable only through a
+teleporter is hidden while the player is somewhere else. The partition is
+`bsp.ts: buildIslands`, docs/render.md § Islands.
+
+Reveal is sticky and the camera reaches `VIEW_DISTANCE` in every direction, so without this a
+detached region stays lit beside the level once visited. BOOMEDIT MAP01 is the reported case: the
+pool room (sectors 92/93, x 768..2048) is a box in the void east of the map, joined to it only by
+the tag-50 silent teleports on lines 589/652 — Boom's line-to-line pair, reusing sectors 96 and 100
+on both sides so the seam is invisible in play. Coming back up from underwater left sector 92 on
+screen next to the level.
+
+**`explored` itself is untouched**, so the savegame format and `SAVE_VERSION` are unaffected: the
+gate sits on top of it and the island comes from geometry, which a save does not carry.
+
+**The island being left cuts to black rather than fading out** (`enterIsland` snaps every alpha to
+its new target, as the spawn seed does), and whatever is already explored in the one being entered
+is lit at once; leaves the sweep reveals after arriving fade in as they always do. Arriving in an
+island means a teleport, which the camera cuts for too — docs/specials.md § Silent and line-to-line
+teleporters.
+
+**A sample ray that reveals a leaf in another island merges the two** (`mergeIsland`), and that is
+the only merge rule. A ray cannot cross a one-sided wall, so reaching one is proof the partition was
+wrong. It costs nothing: the sweep already tests every unexplored leaf in range, and an explored one
+is never re-tested for this. It is also enough — a wrongly split *connected* region is in sight from
+its own boundary, so it merges before the player walks through, and what is left is at worst
+geometry going dark that the player has already seen. A merge is not saved: it is rediscovered
+while leaves are still unexplored, not after a restore into a fully explored level.
+
+A leaf the BSP clip left degenerate is exempt (`NO_ISLAND`): it draws nothing and has nowhere to be
+disconnected from, and a wall probe landing in one must not be pinned invisible.
+
+Two accepted consequences. The **computer area map** reveals the island the player is in, not the
+whole level. And a start room left by teleporter goes dark: DOOM2 MAP30's (sector 11, its own island
+of 11 leaves) and GoingDown MAP01's start elevator both do, which is the same rule doing the same
+job.
+
 ## How reveal reaches the geometry
 
 Reveal drives the *same* per-vertex alpha channel the dithered-discard technique already reads (see

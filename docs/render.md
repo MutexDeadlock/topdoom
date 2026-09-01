@@ -201,6 +201,35 @@ units (§ Cracks between subsectors), so an edge midpoint may already sit outsid
 to. Both cost a link or add a wrong one; neither is load-bearing anywhere the graph is used, since
 `closedHoleFill` treats an unexplained neighbour as grounds to give the whole region up.
 
+### Islands (`bsp.ts: buildIslands`)
+
+Which leaves form one connected region, as an island id per leaf — what the fog draws and hides by
+(docs/fogofwar.md § Islands). Two rules union, and **both err toward connected**: a spurious link
+only fails to hide something, a missing one is a permanent black hole in the view.
+
+- **Every two-sided seg** joins whatever `subsectorAtPoint` finds `NEIGHBOUR_PROBE` past its
+  midpoint on *both* sides. Neither side is necessarily the leaf the seg was filed under: a seg can
+  sit anywhere along its line.
+- **A leaf-adjacency neighbour** (§ Leaf adjacency) whose physical sector is the same, or is one a
+  two-sided line joins to it anywhere on the map. A BSP split inside a sector leaves no seg between
+  the halves at all, so the first rule cannot see it; the sector-pair test is what keeps the probe
+  from stepping across a void into an unrelated room.
+
+Rejecting an adjacency the way `closedHoleFill` does — a one-sided line cutting the probe pair —
+**must not** be used instead: `segClipTolerance` lets a polygon overhang its cell by up to 32 units
+(§ Cracks between subsectors), so an edge midpoint can sit outside the leaf it belongs to, and every
+stock map measured came apart into single-leaf islands.
+
+The partition is checked against sight, which cannot cross a one-sided wall: a leaf revealed from a
+vantage in another island is an error. With a vantage on every leaf centroid, 0 errors on E1M1,
+E1M3, DOOM2 MAP01/MAP02/MAP15/MAP29/MAP30, freedoom1 E1M1, freedoom2 MAP03/MAP16, BOOMEDIT MAP01,
+mbfedit!.wad and GoingDown MAP01/MAP03. Every stock map is one island; BOOMEDIT MAP01 is 27, DOOM2
+MAP30 three.
+
+Built once per map, weak on it, beside the polygons. The union passes cost 0.5 ms on DOOM2 MAP15's
+875 leaves, 2.1 ms on BOOMEDIT MAP01's 1549 and 3.7 ms on GoingDown MAP01's 2232; the leaf graph
+they walk is the one `mapmesh.ts` already builds.
+
 ## Mesh building (`mapmesh.ts`)
 
 Walls are built per linedef from sidedefs: one-sided lines get their middle texture over the full

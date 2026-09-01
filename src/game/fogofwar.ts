@@ -1,8 +1,8 @@
 /**
- * Fog of war: hides the parts of the level the player hasn't seen yet, revealing per subsector,
- * sticky on sight. See docs/fogofwar.md.
+ * Fog of war: hides the parts of the level the player hasn't seen yet, and the regions they are
+ * not in, revealing per subsector and sticky on sight. See docs/fogofwar.md.
  */
-import { buildSubSectorPolys } from '../render/bsp.ts';
+import { buildIslands, buildSubSectorPolys } from '../render/bsp.ts';
 import { polygonCentroid, segmentCrossT } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { decodeRuns, encodeRuns } from './snapshot.ts';
@@ -65,6 +65,12 @@ const ORDER_ANCHOR_SLACK = 256;
 /** How far a boundary sample is pulled toward the centroid, to keep it off the walls. */
 const BOUNDARY_INSET = 0.25;
 
+/**
+ * The island of a leaf that is nowhere — one the BSP clip left degenerate. It draws nothing and has
+ * no place to be disconnected from, so it passes the island gate whatever the player's is.
+ */
+const NO_ISLAND = -1;
+
 interface SubSectorSight {
   /**
    * Sample points as x,y pairs: centroid first, then every corner and every
@@ -79,7 +85,8 @@ interface SubSectorSight {
 
 /**
  * Per-subsector reveal state, sticky on sight, with sight as the only rule (no special case for
- * secret-flagged sectors) — each of those three choices is load-bearing; see docs/fogofwar.md.
+ * secret-flagged sectors) and only the player's own island drawn — each of those four choices is
+ * load-bearing; see docs/fogofwar.md.
  */
 export class FogOfWar {
   private world: World;
@@ -90,6 +97,17 @@ export class FogOfWar {
   private wallSubsector: Int32Array;
   /** Which sector each subsector belongs to — what `closedTarget` reads to spot a solid one. */
   private sectorOf: Int32Array;
+  /**
+   * Which connected region each subsector belongs to (`bsp.ts: buildIslands`), or `NO_ISLAND`. A
+   * copy of the shared table, because a sight reveal across two ids merges them for this level.
+   * docs/fogofwar.md § Islands.
+   */
+  private island: Int32Array;
+  /**
+   * The island the player is standing in: the only one drawn, and the only one `isVisible` admits.
+   * docs/fogofwar.md § Islands.
+   */
+  private currentIsland = NO_ISLAND;
   /**
    * Sectors a special can drive (`scanSectors`' `movable`) — the half of "no vertical opening"
    * that is shut space rather than solid geometry, and so excluded from `closedTarget`'s waiver.
@@ -282,6 +300,16 @@ export class FogOfWar {
 
     this.pending = this.sights.reduce((n, s) => n + (s ? 1 : 0), 0);
 
+    // Copied rather than shared with the rest of the engine, because `mergeIsland` rewrites it.
+    this.island = Int32Array.from(buildIslands(map));
+    // A wall probe landing in a degenerate leaf must not be pinned invisible by the island such a
+    // leaf only nominally has.
+    for (let ss = 0; ss < this.island.length; ss++) {
+      if (!this.sights[ss]) this.island[ss] = NO_ISLAND;
+    }
+    const startSS = world.subsectorAt(start.x, start.y);
+    this.currentIsland = startSS >= 0 ? this.island[startSS] : NO_ISLAND;
+
     this.order = new Int32Array(polys.length);
     // One ring per `ORDER_RING` up to the farthest key `ringOf` admits, inclusive. Sized off
     // `VIEW_DISTANCE` rather than the map, so it is a handful of entries however large the level
@@ -313,7 +341,7 @@ export class FogOfWar {
     // everything visible from spawn rather than leaving some of it to fade in
     // over the first few tics. The alpha snap below skips the fade itself.
     this.sweep(start.x, start.y, Infinity, Infinity);
-    this.alpha.set(this.explored);
+    this.snapAlpha();
   }
 
   /** The `explored` bitmap, run-length encoded for a savegame (`snapshot.ts: encodeRuns`). */
@@ -333,9 +361,7 @@ export class FogOfWar {
     for (let ss = 0; ss < this.sights.length; ss++) {
       if (this.sights[ss] && !this.explored[ss]) this.pending++;
     }
-    this.alpha.set(this.explored);
-    this.wallsAllChanged = true;
-    this.boundsAllChanged = true;
+    this.snapAlpha();
   }
 
   /**
@@ -357,7 +383,7 @@ export class FogOfWar {
     this.changedWallCount = 0;
     this.changedAny = false;
     for (let ss = 0; ss < this.alpha.length; ss++) {
-      const target = this.explored[ss];
+      const target = this.targetAlpha(ss);
       if (this.alpha[ss] === target) continue;
       this.alpha[ss] = dampen(this.alpha[ss], target, FADE_SPEED, dt, SNAP_EPS);
       // Where the reveal is happening, for `changedBounds`.
@@ -422,13 +448,14 @@ export class FogOfWar {
    * how many frames the fade has had. docs/fogofwar.md § What gameplay reads.
    */
   isVisible(subsector: number): boolean {
-    return this.explored[subsector] !== 0;
+    return this.explored[subsector] !== 0 && this.inCurrentIsland(subsector);
   }
 
   /**
    * Marks the whole level explored — the computer area map powerup (vanilla's `pw_allmap`, which
    * here reveals the play view itself). Only `explored` is set, not `alpha`, so the level fades in
-   * rather than snapping on. See docs/items.md § Powerups and the backpack.
+   * rather than snapping on; the island gate still applies, so it reveals the region the player is
+   * in. See docs/items.md § Powerups and the backpack.
    */
   revealAll(): void {
     this.explored.fill(1);
@@ -461,9 +488,12 @@ export class FogOfWar {
    */
   private sweep(playerX: number, playerY: number, subsectorBudget: number, workBudget: number): void {
     const currentSS = this.world.subsectorAt(playerX, playerY);
-    if (currentSS >= 0 && currentSS < this.explored.length && !this.explored[currentSS]) {
-      this.explored[currentSS] = 1;
-      this.pending--;
+    if (currentSS >= 0 && currentSS < this.explored.length) {
+      this.enterIsland(this.island[currentSS]);
+      if (!this.explored[currentSS]) {
+        this.explored[currentSS] = 1;
+        this.pending--;
+      }
     }
     if (this.pending <= 0) return;
 
@@ -496,6 +526,11 @@ export class FogOfWar {
         if (this.sightClear(playerX, playerY, s.samples[i], s.samples[i + 1])) {
           this.explored[ss] = 1;
           this.pending--;
+          // A ray reached it, so the two are one place and the partition was wrong: the only
+          // merge rule there is, docs/fogofwar.md § Islands.
+          if (this.island[ss] !== this.currentIsland && this.island[ss] !== NO_ISLAND) {
+            this.mergeIsland(this.island[ss]);
+          }
           break;
         }
       }
@@ -637,5 +672,52 @@ export class FogOfWar {
     return (
       sides[line.right]?.sector === this.rayTargetSector || sides[line.left]?.sector === this.rayTargetSector
     );
+  }
+
+  /**
+   * Whether a subsector is in the region the player is standing in — the island gate `explored` is
+   * ANDed with everywhere it is read. A leaf that is nowhere passes it always.
+   * docs/fogofwar.md § Islands.
+   */
+  private inCurrentIsland(subsector: number): boolean {
+    const id = this.island[subsector];
+    return id === NO_ISLAND || id === this.currentIsland;
+  }
+
+  /** What `updateFade` damps toward: explored **and** in the player's own island. */
+  private targetAlpha(subsector: number): number {
+    return this.explored[subsector] !== 0 && this.inCurrentIsland(subsector) ? 1 : 0;
+  }
+
+  /**
+   * Puts every drawn alpha on its target with no fade, and reports the change as wholesale: this
+   * bypasses the damping loop that files what moved. The spawn seed, a restore and an island change
+   * all end on it.
+   */
+  private snapAlpha(): void {
+    for (let ss = 0; ss < this.alpha.length; ss++) this.alpha[ss] = this.targetAlpha(ss);
+    this.wallsAllChanged = true;
+    this.boundsAllChanged = true;
+  }
+
+  /**
+   * Follows the player into another island, cutting rather than fading — arriving in one means a
+   * teleport. docs/fogofwar.md § Islands.
+   */
+  private enterIsland(next: number): void {
+    if (next === NO_ISLAND || next === this.currentIsland) return;
+    this.currentIsland = next;
+    this.snapAlpha();
+  }
+
+  /**
+   * Folds another island into the player's: a sight ray reaching one is proof the two are a single
+   * place. Relabelling in one pass keeps the per-leaf gate a single compare, and a level has only
+   * as many merges to do as it has islands. docs/fogofwar.md § Islands.
+   */
+  private mergeIsland(other: number): void {
+    for (let ss = 0; ss < this.island.length; ss++) {
+      if (this.island[ss] === other) this.island[ss] = this.currentIsland;
+    }
   }
 }

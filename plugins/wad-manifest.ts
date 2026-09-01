@@ -3,9 +3,8 @@ import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { bytesOf, describeWad } from '../src/wad/describe.ts';
 import { hashBytes } from '../src/wad/checksum.ts';
-import { MANIFEST_PATH, WAD_DIR, type ManifestEntry } from '../src/wad/library.ts';
+import { isTextFile, MANIFEST_PATH, siblingTextFile, WAD_DIR, type ManifestEntry } from '../src/wad/library.ts';
 import type { WadSupport } from '../src/wad/support.ts';
-import { isTextFile, siblingTextFile } from '../src/wad/textfile.ts';
 
 /** The two folders that are scanned, and what a file found under each is offered as. */
 export type WadRoot = 'iwad' | 'pwad';

@@ -51,11 +51,6 @@ export function keySlotColor(slot: KeySlot): KeyColor {
   return (slot.startsWith('blue') ? 'blue' : slot.startsWith('red') ? 'red' : 'yellow') as KeyColor;
 }
 
-/** Whether a card *or* skull of `color` is owned — vanilla's every-lock-tests-both rule. */
-export function hasKeyColor(keys: ReadonlySet<KeySlot>, color: KeyColor): boolean {
-  return keys.has(`${color}Card`) || keys.has(`${color}Skull`);
-}
-
 /**
  * Whether `keys` opens `lock` — the one lock check every trigger path uses.
  * Lives here rather than beside `LockRule` (`specials/defs.ts`) because it is
@@ -108,7 +103,7 @@ export function tickPowers(inv: Inventory, dt: number): void {
 }
 
 /** Item pickup radius (map units) vanilla uses for most pickups (health/armor/ammo/keys). */
-export const ITEM_PICKUP_RADIUS = 20;
+const ITEM_PICKUP_RADIUS = 20;
 
 /**
  * `PIT_CheckThing`'s `blockdist` for the player against an item (map units):
@@ -467,4 +462,9 @@ function givePower(inv: Inventory, power: PowerId): boolean {
   }
   inv.powers[power] = POWER_SECONDS[power];
   return true;
+}
+
+/** Whether a card *or* skull of `color` is owned — vanilla's every-lock-tests-both rule. */
+function hasKeyColor(keys: ReadonlySet<KeySlot>, color: KeyColor): boolean {
+  return keys.has(`${color}Card`) || keys.has(`${color}Skull`);
 }

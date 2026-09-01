@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeTextFile, siblingTextFile } from '../../src/wad/textfile.ts';
+import { decodeTextFile, siblingTextFile } from '../../src/wad/library.ts';
 
 /**
  * The `.txt` a release ships beside its WAD (docs/wad.md § The text file beside a WAD): which name

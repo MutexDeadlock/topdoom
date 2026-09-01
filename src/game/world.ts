@@ -29,7 +29,7 @@ export const ANY_HEIGHT = Infinity;
  * projectiles here, sight blockers in `game/fogofwar.ts`. The extended endpoints themselves are
  * precomputed in `lineOverlapEnds`.
  */
-export const WALL_OVERLAP = 0.25;
+const WALL_OVERLAP = 0.25;
 
 export interface Opening {
   top: number;
@@ -57,10 +57,6 @@ export interface HeightsStamp {
   sectors: number[];
   /** floorHeight, ceilHeight per stamped sector, interleaved. */
   heights: number[];
-}
-
-export function makeHeightsStamp(): HeightsStamp {
-  return { sectors: [], heights: [] };
 }
 
 /**
@@ -2019,4 +2015,8 @@ function openingRefuses(openTop: number, openBottom: number, z: number, zFinite:
   if (openTop - openBottom < PLAYER_HEIGHT) return true;
   if (!zFinite) return false;
   return openBottom - z > MAX_STEP_UP || openTop - z < PLAYER_HEIGHT;
+}
+
+function makeHeightsStamp(): HeightsStamp {
+  return { sectors: [], heights: [] };
 }

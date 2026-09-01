@@ -26,16 +26,23 @@ never a flat `thingtables.ts` — the directory already said which domain it is.
 
 **Where a `<domain>.ts` sits beside a `<domain>/`, the parent file is the layer's one public entry
 point** for the rest of the engine and the directory holds its internals. `game/things.ts` +
-`game/things/`, `game/specials.ts` + `game/specials/` and `wad/map.ts` + `wad/map/` are all this
-shape. The parent may re-export out of the directory to keep that true — `things.ts` does exactly
-that for `ThingLayer`, `MonsterRef` and `BarrelExplosion`, so `game.ts` and `combat.ts` never have
-to know which file inside `things/` a type happens to live in, and `map.ts` does it for
-`SUBSECTOR_BIT`, `NO_LINE` and `NodeFormat` so `render/bsp.ts` reads a seg and a node without
-reaching into `map/nodes.ts`.
+`game/things/`, `game/specials.ts` + `game/specials/`, `wad/map.ts` + `wad/map/` and
+`wad/library.ts` + `wad/library/` are all this shape. The parent may re-export out of the directory
+to keep that true — `things.ts` does exactly that for `ThingLayer`, `MonsterRef` and
+`BarrelExplosion`, so `game.ts` and `combat.ts` never have to know which file inside `things/` a
+type happens to live in, and `map.ts` does it for `SUBSECTOR_BIT`, `NO_LINE` and `segSide` so
+`render/bsp.ts` reads a seg and a node without reaching into `map/defs.ts`.
 
-`wad/map/` holds the lump *formats* a map can ship in rather than roles — `nodes.ts` for the
-BSP encodings, `hexen.ts` for Hexen's own LINEDEFS/THINGS, `udmf.ts` for TEXTMAP. `campaign/` is
-the same shape:
+**A shape the directory's own files share goes in `<domain>/defs.ts`, never in the parent.** The
+parent imports every child, so a child taking a type back out of it is a cycle — one that survives
+only while the edge stays `import type` and is erased. `wad/library/defs.ts` and `wad/map/defs.ts`
+are the worked cases: `library/`'s `disk.ts` and `manifest.ts` both take `WadSource` from the
+first, `map/`'s three format seams take their records from the second, and each parent re-exports
+what moved.
+
+`wad/map/` holds `defs.ts` plus the lump *formats* a map can ship in rather than roles —
+`nodes.ts` for the BSP encodings, `hexen.ts` for Hexen's own LINEDEFS/THINGS, `udmf.ts` for
+TEXTMAP. `campaign/` is the same shape:
 where a directory groups sub-topics rather than stages of one pipeline, the sub-topic is the name.
 
 The one exception is `game/dehacked.ts` + `game/dehacked/`, which has **two** entry points, split

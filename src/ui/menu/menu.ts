@@ -12,12 +12,14 @@ import {
   mergedMaps,
   pwadsFor,
   rememberLibraryId,
+  isTextFile,
   rescanIfPermitted,
   restoreLibrary,
+  siblingTextFile,
+  textFileIndex,
   uploadedSource,
   type WadSource,
 } from '../../wad/library.ts';
-import { isTextFile, siblingTextFile, textFileIndex } from '../../wad/textfile.ts';
 import { badge, describeMap, describeSource, rowButton, sourceColumnSpans } from './labels.ts';
 import { AboutUi } from './about.ts';
 import { LibraryUi } from './library.ts';

@@ -6,7 +6,7 @@
  * Doom/Boom special numbers follows its § II.C and gzdoom's udmf_zdoom.txt § II.C.
  * See docs/wad.md § UDMF.
  */
-import type { LineDef, Sector, SideDef, Thing, Vertex } from '../map.ts';
+import type { LineDef, Sector, SideDef, Thing, Vertex } from './defs.ts';
 
 /** Everything a TEXTMAP lump holds that this engine reads. */
 export interface UdmfMap {

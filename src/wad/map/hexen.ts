@@ -5,7 +5,7 @@
  * follow gzdoom's `doomdata.h`. See docs/wad.md § Map formats.
  */
 import { records } from '../reader.ts';
-import type { LineDef, Thing } from '../map.ts';
+import type { LineDef, Thing } from './defs.ts';
 
 /** `maplinedef2_t`: two bytes more than Doom's, `special` and `args` where the tag was. */
 const LINEDEF_SIZE = 16;

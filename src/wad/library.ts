@@ -1,19 +1,38 @@
 /**
- * The menu's WAD library: `WadSource` (a server-manifest file, a disk upload, or a file in the
- * player's own library folder), which maps a game-WAD + add-on selection yields, and loading the
- * picked set into `WadFile`s. See docs/wad.md and docs/menu.md.
+ * The menu's WAD library, and this layer's one entry point: what a source is and where one comes
+ * from (`library/`), which maps a game-WAD + add-on selection yields, and loading the picked set
+ * into `WadFile`s. See docs/wad.md and docs/menu.md.
  */
-import { WadFile, type WadType } from './wad.ts';
+import { WadFile } from './wad.ts';
 import { idOf } from './checksum.ts';
 import { bytesOf, describeWad } from './describe.ts';
-import type { Progress } from './library/disk.ts';
-import type { WadSupport } from './support.ts';
-import { decodeTextFile, type WadTextFile } from './textfile.ts';
+import { decodeTextFile } from './library/textfile.ts';
 import { levelTitleFor, missionOf } from './campaign/names.ts';
+import type { Progress, WadSource } from './library/defs.ts';
 
-// This file is the layer's one entry point (docs/conventions.md § File names); `library/` holds
-// the player's own folder, which only the menu drives. The edge runs one way — `library/disk.ts`
-// takes `WadSource` as a type alone, so re-exporting it here makes no cycle.
+// `library/` holds the shapes, the three places a source comes from, and the text file beside one;
+// nothing outside this directory reaches into it (docs/conventions.md § File names).
+export {
+  fitsGameWad,
+  mapStyle,
+  pwadsFor,
+  servedFolder,
+  type DownloadProgress,
+  type ManifestEntry,
+  type Progress,
+  type WadSource,
+} from './library/defs.ts';
+
+export { fetchLibrary, MANIFEST_PATH, WAD_DIR } from './library/manifest.ts';
+
+export {
+  decodeTextFile,
+  isTextFile,
+  siblingTextFile,
+  textFileIndex,
+  type WadTextFile,
+} from './library/textfile.ts';
+
 export {
   acceptableWads,
   adoptFolderFiles,
@@ -30,258 +49,13 @@ export {
   rescanLibrary,
   restoreLibrary,
   type LibrarySkip,
-  type PickerBlock,
-  type Progress,
 } from './library/disk.ts';
 
-/**
- * The folder game WADs are served from, without slashes — `public/<WAD_DIR>/{iwad,pwad}` on disk,
- * `/<WAD_DIR>/…` as a URL. Declared here, with the code that fetches through it, and imported by
- * `plugins/wad-manifest.ts` rather than restated there: the two must name the same folder or the
- * menu lists files it cannot then load. docs/wad.md § The `public/game/` manifest.
- */
-export const WAD_DIR = 'game';
-
-/** The manifest's path under that folder — also the name the plugin emits it as. */
-export const MANIFEST_PATH = `${WAD_DIR}/index.json`;
-
-/**
- * A WAD the menu can offer, whether it sits on the server or was picked from
- * the user's disk. Bytes are only pulled in when something actually needs them.
- */
-export interface WadSource {
-  /**
-   * Where the file lives: the UI's handle for it, and what ?wad= / ?pwad= name. Not an identity — a
-   * rename changes it, and the same bytes have different keys as a server file and as an upload.
-   */
-  key: string;
-  /**
-   * Content ID of the bytes (`hashBytes`), known without downloading them: the
-   * manifest carries it for a server file, an upload is hashed as it is added.
-   * *This* is the file's identity — what a savegame's WAD set is matched
-   * against (docs/savegames.md § WAD-set identity).
-   *
-   * Empty until `ensureWadId` fills it in for a library file, which is the one source that has
-   * *not* read its bytes yet — an empty ID matches no savegame rather than matching wrongly.
-   * docs/wad.md § The player's own library.
-   */
-  id: string;
-  label: string;
-  type: WadType;
-  /** Map markers this file defines. */
-  maps: string[];
-  /** Total lump count — shown for map-less add-ons so they don't look empty. */
-  lumpCount: number;
-  /** Whether the file carries a `DEHACKED` lump — docs/dehacked.md § The coverage report. */
-  dehacked?: boolean;
-  /**
-   * Every reason this engine can't fully run the file; absent is *unknown* — docs/wad.md § Will it
-   * run?
-   */
-  support?: WadSupport;
-  /**
-   * Level titles this file's MAPINFO defines, keyed by map lump name — see docs/wad.md § Level
-   * names.
-   */
-  levelNames: Record<string, string>;
-  size: number;
-  origin: WadOrigin;
-  /**
-   * Which folder the file sits in, and so which group the WAD Library overlay files it under:
-   * `iwad`/`pwad` for a server file (the folder decides how it is served — docs/wad.md § The
-   * `public/game/` manifest), a path relative to the library root for a library file, absent for
-   * an upload, which sits in no folder at all.
-   */
-  folder?: string;
-  /**
-   * The text file sitting beside this WAD, when there is one — `SCYTHE.TXT` next to `SCYTHE.WAD`.
-   * Its presence is known without reading anything (the manifest carries the name, a library scan
-   * and an upload pair the two by name), which is what lets both WAD lists draw their info column
-   * off the same listing they draw the rest of the row from. docs/wad.md § The text file beside a
-   * WAD.
-   */
-  textFile?: WadTextFile;
-  /**
-   * `onProgress` is reported as the bytes arrive, and only by a source that actually downloads —
-   * a file already in memory has nothing to report and calls it not at all. It is ignored on every
-   * call after the first, which is what the memo hands back.
-   */
-  bytes(onProgress?: DownloadProgress): Promise<ArrayBuffer>;
-}
-
-/**
- * How many of a source's `size` bytes have arrived. A source that is going to download calls this
- * with 0 before it starts — that first call is what declares it, so `loadWadFiles` can total up
- * everything that will download before any of it arrives. One already in memory never calls it.
- */
-export type DownloadProgress = (loaded: number) => void;
-
-/**
- * Where a source's bytes come from, which is also how long they last: `server` and `library` files
- * outlive the session and can be named in a stored selection, an `upload` cannot
- * (docs/menu.md § Remembered selection).
- */
-export type WadOrigin = 'server' | 'upload' | 'library';
-
-/**
- * One `index.json` row — the manifest's wire format, declared **here and only here**. The
- * build-time producer (`plugins/wad-manifest.ts`) imports this same interface rather than restating
- * it: the two had drifted on `folder` alone, and a shape the consumer casts raw JSON to is one the
- * producer must be checked against. See docs/wad.md § The `public/game/` manifest.
- */
-export interface ManifestEntry {
-  file: string;
-  /**
-   * Where the file sits under `public/game/`, relative to it and `/`-separated — also the URL path
-   * it is served under. A root on its own (`pwad`), or a subfolder below one (`pwad/megawads`):
-   * both roots are scanned recursively, so a collection can be filed the way it would be on disk
-   * and the menu shows it as a tree. `servedFolder` is what splits the root back off.
-   */
-  folder: string;
-  size: number;
-  type: WadType;
-  /** Map markers the file defines, so the menu can list levels without downloading it. */
-  maps: string[];
-  /** Total lump count, shown for map-less add-ons so they don't look empty. */
-  lumpCount: number;
-  /** Whether the file carries a `DEHACKED` lump. Presence only — what a patch actually changes
-      needs the bytes, which the menu hasn't downloaded. docs/dehacked.md § The coverage report. */
-  dehacked?: boolean;
-  /**
-   * The support verdict, written on every row. Optional for the same reason `id` is, and only that
-   * reason: an `index.json` cached from before the field reads as unknown — docs/wad.md § Will it
-   * run?
-   */
-  support?: WadSupport;
-  /**
-   * `hashBytes` content ID, so the menu knows a file's identity without downloading it — what a
-   * savegame's WAD set is matched against (docs/savegames.md § WAD-set identity). Computed at build
-   * time because those bytes are already in memory; the alternative is fetching every WAD in the
-   * library just to draw the save list.
-   *
-   * Optional because a cached `index.json` can predate the field, which is what the `?? ''` below
-   * degrades to: a source with no ID matches no savegame rather than matching wrongly.
-   */
-  id?: string;
-  /**
-   * The name of the `.txt` sitting beside the WAD in the same served folder, absent when there is
-   * none — spelled as it is on disk, since that is the name the fetch has to ask for.
-   */
-  textFile?: string;
-  /**
-   * Each map's title, so the menu can name levels without downloading the file — the same reason
-   * `maps` is here. What the file's own MAPINFO defines, and where it defines nothing, what its
-   * `DEHACKED` patch names. Absent when it has neither, which is most of them.
-   */
-  levelNames?: Record<string, string>;
-}
-
-/**
- * Splits a served file's `folder` into the root it was served from and the path below it — the one
- * place that knows the first segment *is* the root (docs/wad.md § The `public/game/` manifest), so
- * the menu can group by both halves without decoding the path itself. The fallback covers a source
- * carrying no folder at all: its own signature is the root it would have been served from.
- */
-export function servedFolder(source: WadSource): { root: string; under: string } {
-  const path = source.folder ?? (source.type === 'IWAD' ? 'iwad' : 'pwad');
-  const cut = path.indexOf('/');
-  return cut < 0 ? { root: path, under: '' } : { root: path.slice(0, cut), under: path.slice(cut + 1) };
-}
-
-/** Which DOOM's map-naming convention a WAD's maps follow, if any. */
-export type MapStyle = 'doom1' | 'doom2' | null;
-
-/**
- * DOOM names maps `E<episode>M<mission>`, DOOM II `MAP<nn>` — the two schemes
- * never mix within one game, so a WAD's own maps (if it has any) say which
- * game it belongs to. A WAD with no maps of its own (a texture/sound add-on)
- * has no style and is compatible with either.
- */
-export function mapStyle(source: WadSource): MapStyle {
-  if (source.maps.some((m) => /^E\dM\d$/.test(m))) return 'doom1';
-  if (source.maps.some((m) => /^MAP\d\d$/.test(m))) return 'doom2';
-  return null;
-}
-
-/**
- * Whether an add-on can be merged with a game WAD: a map-less add-on (a texture or sound pack) has
- * no style of its own and fits either game, one carrying maps only makes sense beside a game WAD
- * naming its maps the same way, and a game WAD with no maps constrains nothing.
- *
- * **The one statement of that rule.** The menu prunes its picks with it and the WAD Library greys
- * its rows out with it; two copies is how the overlay comes to offer a row the prune then silently
- * drops.
- */
-export function fitsGameWad(iwad: WadSource | null, pwad: WadSource): boolean {
-  const style = iwad && mapStyle(iwad);
-  if (!style) return true;
-  const own = mapStyle(pwad);
-  return own === null || own === style;
-}
-
-/**
- * The add-ons a game WAD leaves standing: the ones it can be merged with (`fitsGameWad`), minus the
- * file that *is* the game WAD, which cannot also be an add-on to itself.
- *
- * **What a set costs to pick, in one statement.** The menu applies it to its own selection and the
- * WAD Library previews it against the draft the player is assembling; two copies is how the overlay
- * comes to show a set that Apply then quietly produces differently.
- */
-export function pwadsFor(iwad: WadSource | null, pwads: readonly WadSource[]): WadSource[] {
-  return pwads.filter((p) => p.key !== iwad?.key && fitsGameWad(iwad, p));
-}
-
-/**
- * The URL one served file sits at. `folder` is a path, not one segment — each segment is encoded on
- * its own so the separators survive (docs/wad.md § The `public/game/` manifest).
- */
-function servedPath(folder: string, file: string): string {
-  const dir = folder.split('/').map(encodeURIComponent).join('/');
-  return `/${WAD_DIR}/${dir}/${encodeURIComponent(file)}`;
-}
-
-/**
- * A served text file as text — the sibling `.txt` a WAD row offers, fetched only when the player
- * opens it. Decoded by `decodeTextFile` rather than `res.text()`, which would assume UTF-8 and turn
- * a DOS-era file's box art into replacement characters.
- */
-async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return decodeTextFile(await res.arrayBuffer());
-}
-
-/** Wraps a server-side file; the fetched bytes are kept so restarts are instant. */
-function serverSource(entry: ManifestEntry): WadSource {
-  let cached: Promise<ArrayBuffer> | null = null;
-  const text = entry.textFile;
-  return {
-    key: entry.file,
-    id: entry.id ?? '',
-    label: entry.file,
-    type: entry.type,
-    maps: entry.maps,
-    lumpCount: entry.lumpCount,
-    dehacked: entry.dehacked,
-    support: entry.support,
-    levelNames: entry.levelNames ?? {},
-    size: entry.size,
-    origin: 'server',
-    folder: entry.folder,
-    ...(text ? { textFile: { name: text, read: () => fetchText(servedPath(entry.folder, text)) } } : {}),
-    bytes(onProgress) {
-      // Announced before the fetch, not on the first chunk: `loadWadFiles` calls every source in
-      // one tick, so declaring here is what lets it fix the total before any byte lands.
-      if (!cached) onProgress?.(0);
-      cached ??= fetch(servedPath(entry.folder, entry.file)).then(async (res) => {
-        if (!res.ok) throw new Error(`${entry.file}: HTTP ${res.status}`);
-        // Streamed only when someone is watching: an unwatched load has no reason to pay for
-        // chunk bookkeeping over up to 28 MB.
-        return onProgress && res.body ? drain(res.body, entry.size, onProgress) : res.arrayBuffer();
-      });
-      return cached;
-    },
-  };
+/** One row of the menu's level list. `title` is absent when nothing in the set names the level. */
+export interface MergedMap {
+  name: string;
+  provider: string;
+  title?: string;
 }
 
 /**
@@ -320,26 +94,6 @@ export async function ensureWadId(source: WadSource): Promise<string> {
   if (source.id) return source.id;
   source.id = idOf(await source.bytes());
   return source.id;
-}
-
-/** WADs the server offers under public/game/. Empty if the manifest is missing. */
-export async function fetchLibrary(): Promise<WadSource[]> {
-  try {
-    const res = await fetch(`/${MANIFEST_PATH}`);
-    if (!res.ok) return [];
-    const entries = (await res.json()) as ManifestEntry[];
-    if (!Array.isArray(entries)) return [];
-    return entries.map(serverSource);
-  } catch {
-    return [];
-  }
-}
-
-/** One row of the menu's level list. `title` is absent when nothing in the set names the level. */
-export interface MergedMap {
-  name: string;
-  provider: string;
-  title?: string;
 }
 
 /**
@@ -415,39 +169,4 @@ export async function loadWadFiles(iwad: WadSource, pwads: WadSource[], onProgre
     }),
   );
   return sources.map((s, i) => new WadFile(buffers[i], s.label));
-}
-
-/**
- * Reads a response body chunk by chunk, reporting the running total. Written straight into one
- * buffer of the size the manifest already promised, rather than collected and joined: for a 28 MB
- * IWAD that would be a second full copy on the one path that always runs. A body that turns out to
- * be a different length than promised — a re-encoded file the manifest predates — is trimmed or
- * rejoined then, where the copy is the price of being wrong rather than the standing cost.
- */
-async function drain(body: ReadableStream<Uint8Array>, expected: number, onProgress: DownloadProgress): Promise<ArrayBuffer> {
-  const reader = body.getReader();
-  const out = new Uint8Array(expected);
-  const overflow: Uint8Array[] = [];
-  let loaded = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    // A chunk straddling the promised end is split, so `out` stays contiguous and `overflow` holds
-    // exactly what came after it.
-    const fits = Math.min(value.length, Math.max(0, expected - loaded));
-    if (fits > 0) out.set(value.subarray(0, fits), loaded);
-    if (fits < value.length) overflow.push(value.subarray(fits));
-    loaded += value.length;
-    onProgress(loaded);
-  }
-  if (loaded === expected) return out.buffer;
-
-  const joined = new Uint8Array(loaded);
-  joined.set(out.subarray(0, Math.min(loaded, expected)));
-  let at = expected;
-  for (const chunk of overflow) {
-    joined.set(chunk, at);
-    at += chunk.length;
-  }
-  return joined.buffer;
 }

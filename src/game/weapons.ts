@@ -73,8 +73,6 @@ const SSG_RELOAD_TICS = 48;
  */
 const SSG_RELOAD_CHECK_TIC = 14;
 
-export type WeaponKind = 'melee' | 'hitscan' | 'projectile';
-
 export interface WeaponDef {
   /** Ammo class this weapon spends, or null for the ammo-less melee weapons. */
   ammoType: AmmoType | null;
@@ -85,7 +83,7 @@ export interface WeaponDef {
    * own tics. docs/weapons.md § Fire rates.
    */
   cooldown: number;
-  kind: WeaponKind;
+  kind: 'melee' | 'hitscan' | 'projectile';
   /** Hitscan only: bullets/pellets fired per trigger pull. */
   pellets: number;
   /** Each pellet's (or melee swing's) random spread off the aim line, in degrees. */

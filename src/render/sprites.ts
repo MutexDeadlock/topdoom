@@ -21,15 +21,6 @@ import type { Pos3 } from '../types.ts';
 export const VIEWER_ANGLE_DEG = -90;
 
 /**
- * Which of a sprite's 8 rotation frames (1-8) faces this viewer angle, given the thing's own
- * facing.
- */
-export function pickRotationDigit(facingDeg: number, viewerAngleDeg = VIEWER_ANGLE_DEG): number {
-  const diff = (((viewerAngleDeg - facingDeg) % 360) + 360) % 360;
-  return (Math.floor((diff + 22.5) / 45) % 8) + 1;
-}
-
-/**
  * A second bank, its material cache and the sprite name to resolve under: an actor's frames drawn
  * from another file's art. All three travel together because none is usable without the others —
  * the cache reads pictures out of the bank's own wad, and the name only exists in it. The player's
@@ -655,4 +646,13 @@ class FrameSequence {
     if (typeof this.durations === 'number') return this.durations;
     return this.durations[Math.min(index, this.durations.length - 1)] ?? 0;
   }
+}
+
+/**
+ * Which of a sprite's 8 rotation frames (1-8) faces this viewer angle, given the thing's own
+ * facing.
+ */
+function pickRotationDigit(facingDeg: number, viewerAngleDeg = VIEWER_ANGLE_DEG): number {
+  const diff = (((viewerAngleDeg - facingDeg) % 360) + 360) % 360;
+  return (Math.floor((diff + 22.5) / 45) % 8) + 1;
 }

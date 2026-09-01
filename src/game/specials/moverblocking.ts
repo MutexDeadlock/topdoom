@@ -73,52 +73,6 @@ export const NOBODY: Occupancy = {
 const neighborhoods = new WeakMap<DoomMap, Map<number, Set<Sector>>>();
 
 /**
- * A closing door or a lowering `CeilingMover`. The sector's floor doesn't move here, so it's read
- * straight off the map.
- */
-export function blocksCeilingLower(
-  world: World,
-  things: ThingLayer | null,
-  player: Pos2,
-  sectorIndex: number,
-  ceilingHeight: number,
-): boolean {
-  const floorHeight = world.map.sectors[sectorIndex].floorHeight;
-  return headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight });
-}
-
-/**
- * A rising lift or non-crushing `FloorMover`. The sector's ceiling doesn't move
- * here, so it's read straight off the map for the monster fallback. The player
- * additionally gets `groundCeiling`'s straddle-aware overhead: standing half on
- * the rising sector and half in a lower-ceilinged neighbor, `groundFloor`
- * already pins the player's `z` to this sector's rising floor, so the
- * neighbor's own (unmoving) ceiling — not this sector's — is what would
- * actually crush them. Without this the player could be carried up into it.
- */
-export function blocksFloorRise(
-  world: World,
-  things: ThingLayer | null,
-  player: Pos2,
-  sectorIndex: number,
-  floorHeight: number,
-): boolean {
-  // Voodoo dolls deliberately do **not** obstruct movers. Vanilla's
-  // `PIT_ChangeSector` would let one stall a rising floor, but a doll is parked
-  // by the mapper precisely where the script needs it and is usually meant to be
-  // crushed there — having it silently jam the level's own machinery is the
-  // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
-  const map = world.map;
-  const ceilingHeight = map.sectors[sectorIndex].ceilHeight;
-  if (headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight })) return true;
-  if (boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) {
-    const ceiling = world.groundCeiling(player.x, player.y, PLAYER_RADIUS);
-    if (floorHeight + PLAYER_HEIGHT > ceiling) return true;
-  }
-  return false;
-}
-
-/**
  * What `Occupancy.crush` does: deals `CRUSH_DAMAGE` to the player and to every crushable body the
  * sector's moving plane has left without the headroom to stand in, and sprays blood out of each.
  * Gated on `crushed` rather than on merely standing in the sector, so a crusher parked at the top
@@ -229,6 +183,52 @@ export class MoverOccupancy implements Occupancy {
   squash(sectorIndex: number): void {
     squashCorpses(this.world, this.sources.things(), sectorIndex);
   }
+}
+
+/**
+ * A closing door or a lowering `CeilingMover`. The sector's floor doesn't move here, so it's read
+ * straight off the map.
+ */
+function blocksCeilingLower(
+  world: World,
+  things: ThingLayer | null,
+  player: Pos2,
+  sectorIndex: number,
+  ceilingHeight: number,
+): boolean {
+  const floorHeight = world.map.sectors[sectorIndex].floorHeight;
+  return headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight });
+}
+
+/**
+ * A rising lift or non-crushing `FloorMover`. The sector's ceiling doesn't move
+ * here, so it's read straight off the map for the monster fallback. The player
+ * additionally gets `groundCeiling`'s straddle-aware overhead: standing half on
+ * the rising sector and half in a lower-ceilinged neighbor, `groundFloor`
+ * already pins the player's `z` to this sector's rising floor, so the
+ * neighbor's own (unmoving) ceiling — not this sector's — is what would
+ * actually crush them. Without this the player could be carried up into it.
+ */
+function blocksFloorRise(
+  world: World,
+  things: ThingLayer | null,
+  player: Pos2,
+  sectorIndex: number,
+  floorHeight: number,
+): boolean {
+  // Voodoo dolls deliberately do **not** obstruct movers. Vanilla's
+  // `PIT_ChangeSector` would let one stall a rising floor, but a doll is parked
+  // by the mapper precisely where the script needs it and is usually meant to be
+  // crushed there — having it silently jam the level's own machinery is the
+  // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
+  const map = world.map;
+  const ceilingHeight = map.sectors[sectorIndex].ceilHeight;
+  if (headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight })) return true;
+  if (boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) {
+    const ceiling = world.groundCeiling(player.x, player.y, PLAYER_RADIUS);
+    if (floorHeight + PLAYER_HEIGHT > ceiling) return true;
+  }
+  return false;
 }
 
 /**

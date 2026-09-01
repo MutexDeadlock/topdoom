@@ -46,16 +46,6 @@ export function setProfilerVisible(on: boolean): void {
 }
 
 /**
- * Puts the setting on `#profiler-hud`'s class, which is both what
- * profiler.css shows the panel by and what `ProfilerHud.update` reads to
- * skip its work — so the two can't disagree about whether the overlay is up.
- * Safe to call before any `ProfilerHud` exists: the element is static markup.
- */
-export function applyProfilerVisible(): void {
-  document.getElementById('profiler-hud')?.classList.toggle('visible', getProfilerVisible());
-}
-
-/**
  * The per-category timing overlay (top-right — see profiler.css). Renders `FrameProfiler`'s
  * smoothed samples as bars sized against one 60fps frame's budget rather than against each other,
  * so bar *length* alone says whether a category is the reason a frame is being missed.
@@ -140,4 +130,14 @@ export class ProfilerHud {
  */
 function msRow(label: string, ms: number): string {
   return `${label} ${ms.toFixed(1)} ms  (${Math.round(1000 / Math.max(ms, 0.001))} fps eq.)`;
+}
+
+/**
+ * Puts the setting on `#profiler-hud`'s class, which is both what
+ * profiler.css shows the panel by and what `ProfilerHud.update` reads to
+ * skip its work — so the two can't disagree about whether the overlay is up.
+ * Safe to call before any `ProfilerHud` exists: the element is static markup.
+ */
+function applyProfilerVisible(): void {
+  document.getElementById('profiler-hud')?.classList.toggle('visible', getProfilerVisible());
 }

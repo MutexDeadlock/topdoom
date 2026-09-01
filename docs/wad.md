@@ -28,6 +28,13 @@ don't assume synthetic WADs will catch a regression here.
 
 ## Map formats
 
+`map.ts` is the layer's one entry point and `map/` holds the rest, split by what a file owns rather
+than by role: `defs.ts` the records themselves (`Vertex`, `Sector`, `SideDef`, `LineDef`, `Seg`,
+`SubSector`, `Node`, `Thing`, `DoomMap`) plus the sentinels the WAD encodes them with (`NO_SIDE`,
+`NO_LINE`, `SUBSECTOR_BIT`, `SKY_FLAT`, `LF`), and `hexen.ts`/`udmf.ts`/`nodes.ts` one lump format
+each. `defs.ts` imports nothing, which is what lets all three seams take their records from it;
+`map.ts` re-exports the lot, so nothing outside `map/` names a file inside it.
+
 Beside the BSP encoding, a map has a **lump format**: Doom, Hexen or UDMF, `DoomMap.format`. A
 **TEXTMAP** lump directly after the marker is UDMF (§ UDMF), tested first — a UDMF map may carry a
 BEHAVIOR lump too. Otherwise detection is the presence of a **BEHAVIOR** lump in the map's own lump
@@ -562,9 +569,25 @@ differ on purpose:
 ## The player's own library
 
 A folder on the player's disk, listed in the menu beside the server's own WADs and remembered
-between visits — `wad/library/`, driven by `ui/menu/library.ts` (docs/menu.md § WAD Library).
-`library.ts` stays the layer's one entry point and re-exports the directory's surface; the edge
-runs one way, since `library/disk.ts` takes `WadSource` as a type alone.
+between visits — `library/disk.ts` and `library/store.ts`, driven by `ui/menu/library.ts`
+(docs/menu.md § WAD Library).
+
+`library.ts` is the layer's one entry point and re-exports everything under `library/`; nothing
+outside the directory imports into it. The split is by where a source comes from, over the shapes
+they share:
+
+| File | Owns |
+|---|---|
+| `library/defs.ts` | `WadSource`, `ManifestEntry`, `Progress`, and the pure rules over them — `servedFolder`, `mapStyle`, `fitsGameWad`, `pwadsFor` |
+| `library/manifest.ts` | the server's own files: `WAD_DIR`, `MANIFEST_PATH`, `fetchLibrary`, the streaming download |
+| `library/disk.ts` | the player's folder: picking it, the permission, the scan |
+| `library/store.ts` | where that folder and its scan memo are remembered |
+| `library/textfile.ts` | the `.txt` beside a WAD — § The text file beside a WAD |
+| `library.ts` | uploads, `ensureWadId`, `mergedMaps`, `loadWadFiles` |
+
+**The shapes live in `defs.ts`, not in the parent.** A child taking `WadSource` from `library.ts`
+would import back out of its own entry point, and `library.ts` imports every child — a cycle that
+only survived because the edge was `import type` and got erased.
 
 **Storage is IndexedDB, and there is no choice about it.** A `FileSystemDirectoryHandle` is
 structured-cloneable but not JSON-serializable — `JSON.stringify(handle)` yields `{}` — so
@@ -656,9 +679,9 @@ written by index, not pushed, so a pool finishing out of order doesn't scramble 
 ## The text file beside a WAD
 
 A release's `.txt` — `SCYTHE.TXT` next to `SCYTHE.WAD` — offered from the info column of both WAD
-lists and read in the popup (docs/menu.md § The text file popup). `wad/textfile.ts` owns both
-halves: `siblingTextFile` finds the name, `decodeTextFile` turns the bytes into text. It reaches
-the menu as `WadSource.textFile`, a name plus a `read()`.
+lists and read in the popup (docs/menu.md § The text file popup). `wad/library/textfile.ts` owns
+both halves: `siblingTextFile` finds the name, `decodeTextFile` turns the bytes into text. It
+reaches the menu as `WadSource.textFile`, a name plus a `read()`.
 
 - **Matched on the base name, case-insensitively, in the WAD's own folder.** `DOOM2.WAD` takes
   `doom2.txt` as readily as `DOOM2.TXT`, and the name that comes back is the one spelled on disk —
@@ -777,7 +800,7 @@ a permanent blank is not.
 
 ## The `public/game/` manifest
 
-**The folder is named once.** `library.ts` declares `WAD_DIR` and `MANIFEST_PATH`, and
+**The folder is named once.** `library/manifest.ts` declares `WAD_DIR` and `MANIFEST_PATH`, and
 `plugins/wad-manifest.ts` imports both — for the folder it scans (`public/<WAD_DIR>`), the URL it
 answers on and the name it emits — the same producer-imports-from-consumer rule `ManifestEntry`
 follows, and for the same reason: a plugin serving from one folder while the menu fetches from
@@ -817,14 +840,15 @@ iwad-vs-pwad, so everything under `pwad/` is an add-on however deeply it is nest
 is the one place that split is made — the menu groups by the two halves it hands back rather than
 decoding the path itself.
 
-**`ManifestEntry` is declared once**, in `src/wad/library.ts` — the module that casts the fetched
-JSON to it — and `plugins/wad-manifest.ts` imports that same interface rather than restating it. The
+**`ManifestEntry` is declared once**, in `src/wad/library/defs.ts` — beside the `WadSource` the
+module that casts the fetched JSON to it produces — and `plugins/wad-manifest.ts` imports that same
+interface through `library.ts` rather than restating it. The
 two used to be separate declarations and had already drifted on `folder` (the producer emitting
 paths while the consumer's type still said `'iwad' | 'pwad'`), which nothing could catch: a shape a
 consumer casts raw JSON to is one the producer has to be checked against.
 
-**A WAD's own maps say which game it belongs to** (`library.ts: mapStyle`): `ExMy` → DOOM 1, `MAPxx`
-→ DOOM II, and the two never mix within one game. A WAD with no maps of its own (textures, sounds,
+**A WAD's own maps say which game it belongs to** (`library/defs.ts: mapStyle`): `ExMy` → DOOM 1,
+`MAPxx` → DOOM II, and the two never mix within one game. A WAD with no maps of its own (textures, sounds,
 …) has no style and fits either — `describeSource` (`ui/menu/labels.ts`) shows its lump count
 instead of a map count so it doesn't read as an empty file. What the menu *does* with that is
 docs/menu.md § Picking a WAD set.

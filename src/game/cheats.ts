@@ -22,7 +22,7 @@ export const CHEAT_MESSAGES: Record<string, string> = {
 };
 
 /** Which cheat one code fires. */
-export type CheatId = 'god' | 'ammoKeys' | 'noclip';
+type CheatId = 'god' | 'ammoKeys' | 'noclip';
 
 /**
  * The codes, `st_stuff.c`'s `cheat_*_seq[]` tables descrambled. Both noclip spellings are live at

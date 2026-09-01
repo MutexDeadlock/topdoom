@@ -23,7 +23,7 @@ function formatSize(bytes: number): string {
  * The support verdict is deliberately **not** one of these: it is a coloured glyph, not text, and
  * the `<select>` holds only text. A game WAD's verdict is on its WAD Library row instead.
  */
-export interface SourceColumns {
+interface SourceColumns {
   size: string;
   /** What the file actually contains: its maps, or its lump count when it has none. */
   content: string;
@@ -35,21 +35,6 @@ export interface SourceColumns {
    * docs/dehacked.md § The coverage report.
    */
   dehacked: string;
-}
-
-export function sourceColumns(src: WadSource): SourceColumns {
-  return {
-    size: formatSize(src.size),
-    content:
-      src.maps.length > 0
-        ? src.maps.length === 1
-          ? src.maps[0]
-          : `${src.maps.length} maps`
-        : // No maps of its own (a texture/sound add-on) — the lump count is the
-          // only sign there's actually something in the file.
-          `${src.lumpCount} lump${src.lumpCount === 1 ? '' : 's'}`,
-    dehacked: src.dehacked ? 'DEH' : '',
-  };
 }
 
 /**
@@ -179,4 +164,19 @@ export function describeMap(map: MergedMap, iwadLabel: string): string {
     parts.push(map.provider);
   }
   return parts.join('  —  ');
+}
+
+function sourceColumns(src: WadSource): SourceColumns {
+  return {
+    size: formatSize(src.size),
+    content:
+      src.maps.length > 0
+        ? src.maps.length === 1
+          ? src.maps[0]
+          : `${src.maps.length} maps`
+        : // No maps of its own (a texture/sound add-on) — the lump count is the
+          // only sign there's actually something in the file.
+          `${src.lumpCount} lump${src.lumpCount === 1 ? '' : 's'}`,
+    dehacked: src.dehacked ? 'DEH' : '',
+  };
 }

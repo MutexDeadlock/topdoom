@@ -79,7 +79,7 @@ export type ScrollTarget = 'side' | 'floorTex' | 'ceilTex' | 'carry';
  * displacement control sector's previous `floor + ceiling`. `affectee` is a
  * linedef index for `side` and a sector index for the rest.
  */
-export interface Scroller {
+interface Scroller {
   target: ScrollTarget;
   dx: number;
   dy: number;
@@ -117,7 +117,7 @@ export interface Vec2 {
  * current are made of. `x`/`y`, `magnitude` and `away` are `point`'s alone —
  * the union member the `kind` tag selects.
  */
-export type Pusher = { sector: number } & (
+type Pusher = { sector: number } & (
   | { kind: 'wind' | 'current'; xMag: number; yMag: number }
   | {
       kind: 'point';

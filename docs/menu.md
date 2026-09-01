@@ -148,7 +148,7 @@ What is its own:
   read and hash a whole file and no two touch each other — keeps the `disabledPwads` off-flags of
   the add-ons that were in the set before *and* still are (anything picked again after being dropped
   starts on, the rule `takeAsPwad` keeps for a single tick), then replaces the selection outright.
-- **What a game WAD costs the add-ons is one function**, `library.ts: pwadsFor` — `fitsGameWad`
+- **What a game WAD costs the add-ons is one function**, `library/defs.ts: pwadsFor` — `fitsGameWad`
   (§ Picking a WAD set) plus dropping the file that *is* the game WAD. **Nothing prunes with it**:
   `Menu.activePwads` filters through it to decide what a start actually merges, and the two lists
   grey out the rows it drops, so a pick a game WAD can't take is refused rather than removed
@@ -593,7 +593,7 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
   with it. `addFiles` applies the pick through `takeAsIwad`/`takeAsPwad`, the same render-free
   bodies the single-pick handlers use, and draws once for the whole drop.
 - **Add-ons are filtered by game, and never dropped for it.** An add-on that doesn't fit the
-  selected game WAD (`library.ts: fitsGameWad`, over `mapStyle` — see docs/wad.md § The
+  selected game WAD (`library/defs.ts: fitsGameWad`, over `mapStyle` — see docs/wad.md § The
   `public/game/` manifest for what style means) is rendered **disabled** rather than hidden — a
   mapset that's simply for the other game is still worth seeing, just not pickable. Switching game
   WAD **keeps** every pick that no longer matches, greyed out and unticked, so switching back

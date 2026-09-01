@@ -87,17 +87,6 @@ export function wadLabel(wad: SaveWad): string {
 export type SaveWadSet = Pick<SaveMeta, 'map' | 'wads' | 'mapWad' | 'patchWads'>;
 
 /**
- * Whether this save falls back to demanding its **whole** set: its `mapWad` is
- * blank, or names a file the set doesn't have. The **one** definition of that
- * condition — every gate below reads it, so none of them can disagree about
- * which saves are in the narrow regime, and an unusable field can then only
- * ever be too strict. docs/savegames.md § WAD-set identity.
- */
-export function requiresWholeSet(wads: SaveWad[], mapWad: string): boolean {
-  return mapWad === '' || !wads.some((wad) => wad.id === mapWad);
-}
-
-/**
  * Which entries of a save's set a load actually requires back, positionally:
  * the game WAD (`[0]`), and the file `mapWad` names. Everything else supplied
  * textures, sprites or sounds at most — never an index the snapshot keys
@@ -580,4 +569,15 @@ export async function importSave(text: string): Promise<SaveMeta> {
   const meta: SaveMeta = { ...asMeta(raw, await freshId()), version: SAVE_VERSION };
   await putSave(meta, { id: meta.id, encoding: STATE_ENCODING, bytes });
   return meta;
+}
+
+/**
+ * Whether this save falls back to demanding its **whole** set: its `mapWad` is
+ * blank, or names a file the set doesn't have. The **one** definition of that
+ * condition — every gate reads it, so none of them can disagree about
+ * which saves are in the narrow regime, and an unusable field can then only
+ * ever be too strict. docs/savegames.md § WAD-set identity.
+ */
+function requiresWholeSet(wads: SaveWad[], mapWad: string): boolean {
+  return mapWad === '' || !wads.some((wad) => wad.id === mapWad);
 }

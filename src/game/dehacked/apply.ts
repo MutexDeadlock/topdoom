@@ -458,7 +458,7 @@ function put<T>(table: Record<number | string, T>, key: number | string, value: 
  * A patch with no frame edits at all returns before cloning the 967-row table: `resetDehacked`
  * runs immediately before this and has already refilled every sink from vanilla.
  */
-export function applyFrames(
+function applyFrames(
   frameEdits: readonly DehFrameEdit[],
   thingEdits: readonly DehThingEdit[],
   weaponEdits: readonly DehWeaponEdit[] = [],

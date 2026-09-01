@@ -3,177 +3,38 @@
  * (nodes/segs/subsectors, any format `map/nodes.ts` knows) and THINGS. Everything but the
  * BSP, the two lumps a Hexen-format map re-encodes (`map/hexen.ts`) and a UDMF map's one
  * TEXTMAP lump (`map/udmf.ts`) is stored exactly as the WAD encodes it. This file is the
- * layer's one entry point (docs/conventions.md § File names): `map/` holds the three
- * format seams and nothing else reaches into them. See docs/wad.md.
+ * layer's one entry point (docs/conventions.md § File names): `map/` holds the records
+ * themselves (`map/defs.ts`) and the three format seams, and nothing else reaches into it.
+ * See docs/wad.md.
  */
 import { MAP_MARKER, type Wad } from './wad.ts';
 import { records, type Reader } from './reader.ts';
 import * as hexen from './map/hexen.ts';
 import * as udmf from './map/udmf.ts';
-import { readBsp, readBspZnodes, type BspData, type NodeFormat } from './map/nodes.ts';
+import { readBsp, readBspZnodes, type BspData } from './map/nodes.ts';
 import { decodeTextLump } from './textlump.ts';
+import type { DoomMap, LineDef, MapFormat, Sector, SideDef, Thing, Vertex } from './map/defs.ts';
 
-export { NO_LINE, SUBSECTOR_BIT, type NodeFormat } from './map/nodes.ts';
+export {
+  isTextured,
+  LF,
+  NO_LINE,
+  NO_SIDE,
+  SKY_FLAT,
+  segBackSide,
+  segSide,
+  SUBSECTOR_BIT,
+  type DoomMap,
+  type LineDef,
+  type Node,
+  type Sector,
+  type Seg,
+  type SideDef,
+  type SubSector,
+  type Thing,
+  type Vertex,
+} from './map/defs.ts';
 export { sniffUdmfNamespace, udmfDoomSpecials } from './map/udmf.ts';
-
-export const NO_SIDE = 0xffff;
-
-/** Which encoding a map's geometry lumps use. docs/wad.md § Map formats and § UDMF. */
-export type MapFormat = 'doom' | 'hexen' | 'udmf';
-
-/**
- * DOOM's sky flat. A sector using it as its ceiling texture renders no ceiling
- * at all, and vanilla's own "don't shoot the sky" rule keys off the same name
- * (`World.hitsSky`), which is why this lives with the map rather than with the
- * renderer that draws it.
- */
-export const SKY_FLAT = 'F_SKY1';
-
-/**
- * DOOM's sentinel for "no texture assigned" in a sidedef's texture slot. Lives here beside
- * `SKY_FLAT` for the same reason: it is what the WAD writes, read by the renderer and by
- * `game/specials.ts` alike, not a decision either of them makes.
- */
-export const NO_TEXTURE = '-';
-
-/**
- * Whether a texture slot names art to look up. The empty string is a second spelling of the
- * sentinel — a binary map's `name8` yields it for an all-zero slot — so nothing may test
- * `!== NO_TEXTURE` alone.
- */
-export function isTextured(name: string): boolean {
-  return name !== NO_TEXTURE && name !== '';
-}
-
-export interface Vertex {
-  x: number;
-  y: number;
-}
-
-export interface Sector {
-  floorHeight: number;
-  ceilHeight: number;
-  floorTex: string;
-  ceilTex: string;
-  light: number;
-  special: number;
-  tag: number;
-}
-
-export interface SideDef {
-  xOffset: number;
-  yOffset: number;
-  upper: string;
-  lower: string;
-  middle: string;
-  sector: number;
-}
-
-/**
- * A Hexen line's action special and its five arguments, kept raw. Nothing dispatches
- * one. docs/wad.md § What a Hexen map does not get.
- */
-export interface LineAction {
-  special: number;
-  args: readonly number[];
-}
-
-export interface LineDef {
-  v1: number;
-  v2: number;
-  flags: number;
-  /** The Doom/Boom special. Always 0 on a Hexen-format map — see `action`. */
-  special: number;
-  tag: number;
-  right: number; // sidedef index, or NO_SIDE
-  left: number;
-  /** Hexen-format maps only; `undefined` on a Doom-format one. */
-  action?: LineAction;
-}
-
-export interface Seg {
-  v1: number;
-  v2: number;
-  angle: number;
-  /** The line this edge runs on, or `NO_LINE` on a GL miniseg. docs/wad.md § GL nodes. */
-  linedef: number;
-  /** 0 = same direction as the linedef, 1 = opposite. */
-  direction: number;
-  offset: number;
-}
-
-/**
- * The sidedef a seg uses, and the one across the line from it (`NO_SIDE` on a
- * one-sided line) — the one home for `Seg.direction`'s winding convention.
- */
-export function segSide(line: LineDef, direction: number): number {
-  return direction === 0 ? line.right : line.left;
-}
-
-export function segBackSide(line: LineDef, direction: number): number {
-  return direction === 0 ? line.left : line.right;
-}
-
-export interface SubSector {
-  count: number;
-  first: number;
-}
-
-export interface Node {
-  x: number;
-  y: number;
-  dx: number;
-  dy: number;
-  rightChild: number;
-  leftChild: number;
-}
-
-export interface Thing {
-  x: number;
-  y: number;
-  angle: number;
-  type: number;
-  flags: number;
-}
-
-/** Linedef flags (subset). */
-export const LF = {
-  BLOCKING: 0x0001,
-  BLOCK_MONSTERS: 0x0002,
-  TWO_SIDED: 0x0004,
-  UPPER_UNPEGGED: 0x0008,
-  LOWER_UNPEGGED: 0x0010,
-  SECRET: 0x0020,
-  BLOCK_SOUND: 0x0040,
-  NEVER_ON_MAP: 0x0080,
-  ALWAYS_ON_MAP: 0x0100,
-  /** Boom: a use action goes on to lines behind this one (`doomdata.h: ML_PASSUSE`). */
-  PASSUSE: 0x0200,
-} as const;
-
-export interface DoomMap {
-  name: string;
-  /** Which on-disk encoding LINEDEFS and THINGS shipped in (`loadMap`). */
-  format: MapFormat;
-  /** Which on-disk BSP encoding the map shipped (`readBsp` normalizes them all). */
-  nodeFormat: NodeFormat;
-  /** A UDMF map's namespace, lowercased (`''` when TEXTMAP named none); absent otherwise. */
-  udmfNamespace?: string;
-  vertexes: Vertex[];
-  sectors: Sector[];
-  sidedefs: SideDef[];
-  linedefs: LineDef[];
-  segs: Seg[];
-  subsectors: SubSector[];
-  nodes: Node[];
-  things: Thing[];
-  /**
-   * The REJECT matrix — one bit per ordered sector pair — or `undefined` when the map has none
-   * worth consulting (`readReject`).
-   */
-  reject: Uint8Array | undefined;
-  bounds: { minX: number; minY: number; maxX: number; maxY: number };
-}
 
 /**
  * The lumps that belong to a map, in the order they follow its marker. Exported because

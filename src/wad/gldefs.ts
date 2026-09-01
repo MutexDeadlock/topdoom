@@ -13,7 +13,7 @@ import { decodeTextLump, stripComments } from './textlump.ts';
  * lumps are alternatives and only the first is read. `GLDEFS` is the modern name; `DOOMDEFS` is
  * the game-specific one GZDoom still accepts for Doom.
  */
-export const GLDEFS_LUMPS = ['GLDEFS', 'DOOMDEFS'];
+const GLDEFS_LUMPS = ['GLDEFS', 'DOOMDEFS'];
 
 /**
  * How a light's radius moves over time. GZDoom's own four animated types

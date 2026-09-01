@@ -174,7 +174,7 @@ export interface Projectile {
  * target.height`. That band is deliberately asymmetric about the target's feet
  * — see docs/monster-attacks.md § Monster projectiles in flight.
  */
-export const PROJECTILE_HEIGHT = 8;
+const PROJECTILE_HEIGHT = 8;
 
 /**
  * Turns `from` toward `to` (radians) by at most `maxDelta`, the short way

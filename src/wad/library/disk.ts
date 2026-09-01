@@ -5,9 +5,9 @@
  * mtime, so re-opening the library costs no reads at all.
  * See docs/wad.md § The player's own library.
  */
-import type { WadSource } from '../library.ts';
+import type { Progress, WadSource } from './defs.ts';
 import { bytesOfFile, describeWad } from '../describe.ts';
-import { decodeTextFile, isTextFile, siblingTextFile, textFileIndex } from '../textfile.ts';
+import { decodeTextFile, isTextFile, siblingTextFile, textFileIndex } from './textfile.ts';
 import {
   clearRoot,
   readDescriptors,
@@ -82,9 +82,7 @@ const state: LibraryState = { handle: null, files: new Map(), descriptors: [], n
  * `''` doubles as "this browser can remember the folder between visits": the persistence and the
  * picker are the same API, so they are one predicate rather than two names for it.
  */
-export type PickerBlock = '' | 'unsupported' | 'framed';
-
-export function pickerBlock(): PickerBlock {
+export function pickerBlock(): '' | 'unsupported' | 'framed' {
   if (!('showDirectoryPicker' in globalThis)) return 'unsupported';
   return inCrossOriginFrame() ? 'framed' : '';
 }
@@ -241,9 +239,6 @@ export async function adoptFolderFiles(files: readonly File[], onProgress?: Prog
   state.name = wads.length > 0 ? (wads[0].webkitRelativePath.split('/')[0] ?? 'Your library') : '';
   state.descriptors = await describeAll(entries, new Map(), onProgress);
 }
-
-/** How far a scan has got, so the overlay can say something while a big folder is read. */
-export type Progress = (done: number, total: number) => void;
 
 /**
  * Walks the remembered folder and re-describes whatever changed, then writes the memo back. The

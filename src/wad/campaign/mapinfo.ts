@@ -43,65 +43,6 @@ export function preferredMapInfoLump(present: readonly string[]): string | null 
   return MAPINFO_LUMPS.find((name) => present.includes(name)) ?? null;
 }
 
-/**
- * Every `map` entry one MAPINFO/ZMAPINFO/UMAPINFO lump's text defines, keyed by map lump name:
- * the three syntaxes that name a level, plus the `PROPERTY_KEYS` properties in both the `{ … }`
- * block form and the old brace-less one. Anything else in the file is not a `map` keyword followed
- * by a name and is walked past. See docs/wad.md § Level names for the syntaxes and for why a
- * `lookup` title records nothing.
- */
-export function parseMapInfo(text: string): Map<string, MapInfoEntry> {
-  const maps = new Map<string, MapInfoEntry>();
-  const tokens = tokenize(stripComments(text));
-  for (let i = 0; i < tokens.length; i++) {
-    if (tokens[i].quoted || tokens[i].text.toLowerCase() !== 'map') continue;
-    const nameToken = tokens[i + 1];
-    if (!nameToken || nameToken.text === '{') continue;
-    const mapName = normalizeMapName(nameToken.text);
-    i++;
-
-    const entry: MapInfoEntry = {};
-    const next = tokens[i + 1];
-    if (next && !next.quoted && next.text.toLowerCase() === 'lookup') {
-      i += 2; // the `lookup` and the string-table ID after it
-    } else if (next && next.quoted) {
-      entry.title = next.text;
-      i++;
-    }
-
-    // A property block may still hold the name (UMAPINFO) — and has to be walked past either way
-    // so a nested `map` property can't be mistaken for the next level.
-    if (tokens[i + 1]?.text === '{') {
-      i += 2;
-      for (let depth = 1; i < tokens.length && depth > 0; i++) {
-        const token = tokens[i];
-        if (token.quoted) continue;
-        if (token.text === '{') depth++;
-        else if (token.text === '}') depth--;
-        else if (depth !== 1) continue;
-        else if (token.text.toLowerCase() === 'levelname' && tokens[i + 1]?.text === '=' && tokens[i + 2]?.quoted) {
-          entry.title = tokens[i + 2].text;
-        } else {
-          readProperty(entry, tokens, i);
-        }
-      }
-      i--; // the loop above stopped one past the closing brace
-    } else {
-      // Old brace-less ZDoom form: the level's properties are the bare lines between this `map`
-      // and the next one. Read-only lookahead — the outer loop still walks these tokens itself.
-      for (let j = i + 1; j < tokens.length; j++) {
-        const token = tokens[j];
-        if (token.quoted) continue;
-        if (token.text.toLowerCase() === 'map' || token.text === '{') break;
-        readProperty(entry, tokens, j);
-      }
-    }
-
-    if (Object.keys(entry).length > 0) maps.set(mapName, entry);
-  }
-  return maps;
-}
-
 /** Just the titles out of `parseMapInfo` — what the menu's map list and `LevelNames` want. */
 export function parseMapInfoNames(text: string): Map<string, string> {
   const names = new Map<string, string>();
@@ -268,4 +209,63 @@ function endValue(token: Token | undefined): string | undefined {
 function musicValue(token: Token | undefined): string | undefined {
   if (!token || token.text === '{' || token.text === '}' || token.text === '=') return undefined;
   return token.text.toUpperCase();
+}
+
+/**
+ * Every `map` entry one MAPINFO/ZMAPINFO/UMAPINFO lump's text defines, keyed by map lump name:
+ * the three syntaxes that name a level, plus the `PROPERTY_KEYS` properties in both the `{ … }`
+ * block form and the old brace-less one. Anything else in the file is not a `map` keyword followed
+ * by a name and is walked past. See docs/wad.md § Level names for the syntaxes and for why a
+ * `lookup` title records nothing.
+ */
+function parseMapInfo(text: string): Map<string, MapInfoEntry> {
+  const maps = new Map<string, MapInfoEntry>();
+  const tokens = tokenize(stripComments(text));
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].quoted || tokens[i].text.toLowerCase() !== 'map') continue;
+    const nameToken = tokens[i + 1];
+    if (!nameToken || nameToken.text === '{') continue;
+    const mapName = normalizeMapName(nameToken.text);
+    i++;
+
+    const entry: MapInfoEntry = {};
+    const next = tokens[i + 1];
+    if (next && !next.quoted && next.text.toLowerCase() === 'lookup') {
+      i += 2; // the `lookup` and the string-table ID after it
+    } else if (next && next.quoted) {
+      entry.title = next.text;
+      i++;
+    }
+
+    // A property block may still hold the name (UMAPINFO) — and has to be walked past either way
+    // so a nested `map` property can't be mistaken for the next level.
+    if (tokens[i + 1]?.text === '{') {
+      i += 2;
+      for (let depth = 1; i < tokens.length && depth > 0; i++) {
+        const token = tokens[i];
+        if (token.quoted) continue;
+        if (token.text === '{') depth++;
+        else if (token.text === '}') depth--;
+        else if (depth !== 1) continue;
+        else if (token.text.toLowerCase() === 'levelname' && tokens[i + 1]?.text === '=' && tokens[i + 2]?.quoted) {
+          entry.title = tokens[i + 2].text;
+        } else {
+          readProperty(entry, tokens, i);
+        }
+      }
+      i--; // the loop above stopped one past the closing brace
+    } else {
+      // Old brace-less ZDoom form: the level's properties are the bare lines between this `map`
+      // and the next one. Read-only lookahead — the outer loop still walks these tokens itself.
+      for (let j = i + 1; j < tokens.length; j++) {
+        const token = tokens[j];
+        if (token.quoted) continue;
+        if (token.text.toLowerCase() === 'map' || token.text === '{') break;
+        readProperty(entry, tokens, j);
+      }
+    }
+
+    if (Object.keys(entry).length > 0) maps.set(mapName, entry);
+  }
+  return maps;
 }

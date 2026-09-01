@@ -8,34 +8,7 @@
  */
 import { Reader, records } from '../reader.ts';
 import { inflateZlib } from '../../util/inflate.ts';
-import type { Node, Seg, SubSector, Vertex } from '../map.ts';
-
-/**
- * Bit in a node child that marks a subsector reference instead of a node.
- * PrBoom+'s `NF_SUBSECTOR`: the 32-bit position vanilla's 0x8000 disk flag is
- * normalized to at load, so consumers never see a format difference.
- */
-export const SUBSECTOR_BIT = 0x80000000;
-
-/**
- * `Seg.linedef` on a GL miniseg — the edge a BSP split introduced, which lies on no
- * linedef at all. -1 rather than either format's own 0xFFFF/0xFFFFFFFF: it indexes
- * `linedefs` as `undefined` whatever the map's line count, which is what the field's
- * readers already do with a line that isn't there. docs/wad.md § GL nodes.
- */
-export const NO_LINE = -1;
-
-export type NodeFormat =
-  | 'vanilla'
-  | 'deep-v4'
-  | 'xnod'
-  | 'znod'
-  | 'xgln'
-  | 'zgln'
-  | 'xgl2'
-  | 'zgl2'
-  | 'xgl3'
-  | 'zgl3';
+import { NO_LINE, SUBSECTOR_BIT, type Node, type NodeFormat, type Seg, type SubSector, type Vertex } from './defs.ts';
 
 export interface BspData {
   format: NodeFormat;

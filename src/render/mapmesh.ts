@@ -71,17 +71,6 @@ const LIGHT_GAIN = Array.from({ length: 16 }, (_, seg) => {
 });
 
 /**
- * Sector light level (0..255) as a **linear-light** vertex colour — not a display value, since the
- * renderer's `outputColorSpace` encodes the fragment on the way out. `contrast` is the
- * fake-contrast offset in light units, of which ±16 is vanilla's ±1 segment.
- * docs/render.md § Sector lighting.
- */
-export function lightToColor(light: number, contrast = 0): number {
-  const clamped = Math.max(0, Math.min(255, light + contrast));
-  return LIGHT_GAIN[clamped >> 4];
-}
-
-/**
  * The fake-contrast offset for a wall running from (ax,ay) to (bx,by) — the
  * one true copy, so `addWall` and `SpecialsController.recolorSector` (which
  * needs to redo this per-quad when a sector's light changes at runtime) can't
@@ -91,16 +80,6 @@ export function wallContrast(ax: number, ay: number, bx: number, by: number): nu
   const dx = bx - ax;
   const dy = by - ay;
   return dy === 0 ? -16 : dx === 0 ? 16 : 0;
-}
-
-/**
- * A "lift" toward full brightness: pushes `linear` up by a fraction `lift` of its remaining
- * headroom `(1 - linear)`, so the darker a surface already is the more it moves. `lift = 0` is a
- * no-op, `lift = 1` flattens everything to full bright. docs/render.md § Sector lighting.
- */
-export function applyBrightnessLift(linear: number, lift: number): number {
-  const l = Math.max(0, Math.min(1, lift));
-  return linear + l * (1 - linear);
 }
 
 /**
@@ -1870,4 +1849,25 @@ function addTwoSidedSide(build: Build, line: LineView, view: SideView): void {
       );
     }
   }
+}
+
+/**
+ * Sector light level (0..255) as a **linear-light** vertex colour — not a display value, since the
+ * renderer's `outputColorSpace` encodes the fragment on the way out. `contrast` is the
+ * fake-contrast offset in light units, of which ±16 is vanilla's ±1 segment.
+ * docs/render.md § Sector lighting.
+ */
+function lightToColor(light: number, contrast = 0): number {
+  const clamped = Math.max(0, Math.min(255, light + contrast));
+  return LIGHT_GAIN[clamped >> 4];
+}
+
+/**
+ * A "lift" toward full brightness: pushes `linear` up by a fraction `lift` of its remaining
+ * headroom `(1 - linear)`, so the darker a surface already is the more it moves. `lift = 0` is a
+ * no-op, `lift = 1` flattens everything to full bright. docs/render.md § Sector lighting.
+ */
+function applyBrightnessLift(linear: number, lift: number): number {
+  const l = Math.max(0, Math.min(1, lift));
+  return linear + l * (1 - linear);
 }

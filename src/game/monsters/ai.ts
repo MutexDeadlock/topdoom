@@ -155,19 +155,6 @@ const standingCheck: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, d
 const probeCollider = makeCollider({ radius: 0, z: 0, height: 0, forMonster: true });
 
 /**
- * `P_LookForPlayers`'s field-of-view gate: the forward ~180°, unless the player is within
- * `MELEERANGE`. Initial wake-up only — `A_Chase` never re-applies it to an already-hunting
- * monster. docs/monster-ai.md § Waking up.
- */
-export function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: number, playerX: number, playerY: number): boolean {
-  const dist = Math.hypot(playerX - monsterX, playerY - monsterY);
-  if (dist <= MELEE_RANGE) return true;
-  const toPlayerDeg = (Math.atan2(playerY - monsterY, playerX - monsterX) * 180) / Math.PI;
-  const diff = Math.abs((((toPlayerDeg - facingDeg + 180) % 360) + 360) % 360 - 180);
-  return diff <= 90;
-}
-
-/**
  * The idle `A_Look`, called once per unalerted monster on `ThingLayer.update`'s `LOOK_INTERVAL`
  * throttle: sound, ambush/deaf things and the ordinary FOV+sight path all land here. On success
  * mutates `body.alerted` and seeds `reactionTicks`, the same "mutate the body, report what
@@ -843,4 +830,17 @@ function settleVertical(c: Chase): void {
   const clamped = Math.min(Math.max(body.z, groundZ), ceilZ);
   if (clamped !== body.z) body.velZ = 0;
   body.z = clamped;
+}
+
+/**
+ * `P_LookForPlayers`'s field-of-view gate: the forward ~180°, unless the player is within
+ * `MELEERANGE`. Initial wake-up only — `A_Chase` never re-applies it to an already-hunting
+ * monster. docs/monster-ai.md § Waking up.
+ */
+function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: number, playerX: number, playerY: number): boolean {
+  const dist = Math.hypot(playerX - monsterX, playerY - monsterY);
+  if (dist <= MELEE_RANGE) return true;
+  const toPlayerDeg = (Math.atan2(playerY - monsterY, playerX - monsterX) * 180) / Math.PI;
+  const diff = Math.abs((((toPlayerDeg - facingDeg + 180) % 360) + 360) % 360 - 180);
+  return diff <= 90;
 }

@@ -9,7 +9,7 @@ import { DOOM_TIC } from '../constants.ts';
 import type { Pos3 } from '../types.ts';
 
 /** Total lifetime of a hitscan tracer, in seconds. */
-export const TRACER_LIFETIME = 0.15;
+const TRACER_LIFETIME = 0.15;
 /** How often the tracer toggles on/off during its lifetime, in seconds per toggle. */
 const BLINK_INTERVAL = 0.03;
 /**

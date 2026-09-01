@@ -61,15 +61,6 @@ export function setFpsVisible(on: boolean): void {
   applyFpsVisible();
 }
 
-/**
- * Puts the setting on `#hud`'s class — what debughud.css shows the text by and
- * what `DebugHud.update` reads to skip its work, so the two can't disagree.
- * Safe to call before any `DebugHud` exists: the element is static markup.
- */
-export function applyFpsVisible(): void {
-  document.getElementById('hud')?.classList.toggle('visible', getFpsVisible());
-}
-
 export class DebugHud {
   private el = document.getElementById('hud')!;
   private accum = 0;
@@ -106,4 +97,13 @@ export class DebugHud {
     if (!this.el.classList.contains('visible')) return;
     this.el.textContent = DEVMODE ? details(this.fps).join('\n') : `${this.fps} fps`;
   }
+}
+
+/**
+ * Puts the setting on `#hud`'s class — what debughud.css shows the text by and
+ * what `DebugHud.update` reads to skip its work, so the two can't disagree.
+ * Safe to call before any `DebugHud` exists: the element is static markup.
+ */
+function applyFpsVisible(): void {
+  document.getElementById('hud')?.classList.toggle('visible', getFpsVisible());
 }

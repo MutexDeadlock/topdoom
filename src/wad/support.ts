@@ -40,7 +40,7 @@ export type WadSupport = SupportIssue[];
  * red for what will not run in it — `refusesToLoad` is what reads the pair. A `partial` map plays,
  * just not the way its author built it. docs/wad.md § Will it run?
  */
-export const SUPPORT_ISSUES: Record<
+const SUPPORT_ISSUES: Record<
   SupportCode,
   { level: Exclude<SupportLevel, 'ok'>; text: string; loads?: true }
 > = {

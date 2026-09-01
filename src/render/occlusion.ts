@@ -87,11 +87,6 @@ export interface FadeBox {
   maxY: number;
 }
 
-/** An inverted box, which `stretchBox` turns into the bound of whatever it is then given. */
-export function emptyBox(): FadeBox {
-  return { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-}
-
 /** Grows `box` to hold one more point. */
 export function stretchBox(box: FadeBox, x: number, y: number): void {
   if (x < box.minX) box.minX = x;
@@ -1573,4 +1568,9 @@ function maxFadeRadius(targets: readonly FadeTarget[]): number {
   let radius = 0;
   for (const t of targets) if (t.fadeRadius > radius) radius = t.fadeRadius;
   return radius;
+}
+
+/** An inverted box, which `stretchBox` turns into the bound of whatever it is then given. */
+function emptyBox(): FadeBox {
+  return { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
 }

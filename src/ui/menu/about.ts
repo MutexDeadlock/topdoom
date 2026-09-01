@@ -3,6 +3,8 @@
  * its second tab. Owned by `Menu`, which opens it from the two links in the menu header and closes
  * it with everything else. See docs/menu.md § About.
  */
+import { OverlayShell, type MenuOverlay } from './overlay.ts';
+
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /**
@@ -19,8 +21,8 @@ const rot13 = (text: string) =>
 /** The popup's tabs; `Menu` names one when it opens, since each header link opens its own. */
 export type AboutTab = 'about' | 'changelog';
 
-export class AboutUi {
-  private root = el<HTMLDivElement>('about');
+export class AboutUi implements MenuOverlay {
+  private shell = new OverlayShell(el('about'), el('about-close'), () => this.close());
   private changelogText = el<HTMLPreElement>('changelog-text');
   private changelogLoaded = false;
   private tabButtons = {
@@ -36,10 +38,6 @@ export class AboutUi {
     for (const tab of Object.keys(this.tabButtons) as AboutTab[]) {
       this.tabButtons[tab].addEventListener('click', () => this.setTab(tab));
     }
-    el<HTMLButtonElement>('about-close').addEventListener('click', () => this.close());
-    this.root.addEventListener('click', (e) => {
-      if (e.target === this.root) this.close();
-    });
     const mail = el<HTMLAnchorElement>('about-mail');
     mail.textContent = rot13(MAIL);
     mail.href = `mailto:${rot13(MAIL)}`;
@@ -48,7 +46,7 @@ export class AboutUi {
 
   /** Brings the popup up on one tab — which one is the link the player clicked, not a memo. */
   open(tab: AboutTab): void {
-    this.root.classList.remove('hidden');
+    this.shell.show();
     this.setTab(tab);
   }
 
@@ -58,13 +56,11 @@ export class AboutUi {
    * paused level) alone. The same explicit hand-off `LibraryUi.close` gets.
    */
   close(): boolean {
-    if (!this.isOpen) return false;
-    this.root.classList.add('hidden');
-    return true;
+    return this.shell.hide();
   }
 
   get isOpen(): boolean {
-    return !this.root.classList.contains('hidden');
+    return this.shell.isOpen;
   }
 
   private setTab(tab: AboutTab): void {

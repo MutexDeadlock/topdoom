@@ -65,6 +65,25 @@ takes precedence exactly as it does for `ESC`, and `F2` with no level loaded doe
 than opening the menu on the Save tab `open` hides. `preventDefault` is called only when the key
 actually did something, so a refused press still reaches the browser's own binding.
 
+## The overlays over the menu
+
+`ui/menu/overlay.ts`. `AboutUi`, `LibraryUi` and `WadInfoUi` each hold an `OverlayShell` over their
+own root: show, hide, `isOpen`, the close button, and the backdrop click guarded on
+`e.target === root` so only the backdrop dismisses. Named for the behavior rather than an element,
+the way `hold.ts` is (docs/styles.md § One owner per element).
+
+- **`close()` reports whether it *was* up**, which is what makes one `ESC` dismiss one thing:
+  `main.ts` asks `Menu.closeTopOverlay()` before acting on the menu itself. An explicit hand-off,
+  never two window listeners racing over one key — that would depend on registration order.
+- **`Menu.overlays` is the order**, topmost first — `close`, `closeTopOverlay` and `hasOverlay` all
+  walk that one list, so another overlay is one edit. The reader leads because it opens from a row
+  *inside* the WAD Library; its `z-index` rung states the same relation in CSS
+  (docs/styles.md § Tokens) and nothing but this ties the two.
+- **The shell takes elements, not IDs**, so each popup still looks its own markup up in its field
+  initializers and a renamed ID fails at construction (§ One screen, two jobs).
+- **What a dismissal *means* stays the popup's own**: each passes its own `close` in, so the reader
+  drops its pending read and the WAD Library throws its draft away whichever route was taken.
+
 ## About
 
 The header's two links open `#about` (`about.ts`, `AboutUi`), a popup with a tab each: **ABOUT**
@@ -80,10 +99,7 @@ Load-bearing:
   the main one. `import` rather than `fetch`, because the file lives at the repo root rather than
   under `public/`, so a fetch would resolve in dev and 404 in a build. A failed load is reported in
   the panel and leaves the popup unmarked as loaded, so reopening retries.
-- **`ESC` is handed off explicitly**, not raced. `main.ts`'s `ESC` listener calls
-  `menu.closeTopOverlay()` first, which dismisses whichever overlay is up and reports whether there
-  was one — so one `ESC` dismisses the popup and leaves the menu (and a paused level) alone. A
-  second window listener in `Menu` would have made that depend on registration order.
+- **`ESC` is handed off explicitly**, not raced — § The overlays over the menu.
 - The tabs are `#menu`'s own `.tabs`/`.tab-panels` markup, so the popup inherits the tab bar and
   the one-grid-cell panel stacking (§ One screen, two jobs) rather than restating either. Each
   panel is its own scroller, which is what keeps the CHANGELOG inside the panel instead of
@@ -109,13 +125,10 @@ reload.
 
 Structurally it is `#about`'s twin, and deliberately so (§ About): a child of `#menu` so
 closing the menu can never leave it up, at `z-index: 5` **local to `#menu`'s own stacking context**
-rather than a rung of `base.css`'s global ladder, dismissed by its close button, by a backdrop click
-guarded with `e.target === root`, or by `ESC`. `Close` sits beside `Apply` in the footer rather than
-in the header: both end the same visit, so they belong to the same corner — but they are **not** the
-same call (see *Ticking stages, Apply commits* below). `ESC` is **handed off explicitly** from
-`main.ts`, which asks `menu.closeTopOverlay()` before closing the menu, so one `ESC` closes one
-thing and the answer doesn't depend on listener registration order. The overlay order lives in
-`Menu`, not the caller.
+rather than a rung of `base.css`'s global ladder, and dismissed the three ways every overlay is
+(§ The overlays over the menu). `Close` sits beside `Apply` in the footer rather than in the header:
+both end the same visit, so they belong to the same corner — but they are **not** the same call
+(see *Ticking stages, Apply commits* below).
 
 What is its own:
 
@@ -442,10 +455,8 @@ text, is docs/wad.md § The text file beside a WAD; this is only what the menu d
 - **A disabled row keeps a live info button.** Reading what a file is about is exactly what a player
   does with one the set can't take — the badge rule (§ WAD Library) extended one column.
 - **It is the menu's overlay, not the WAD Library's**, at `z-index: 6` local to `#menu` — one rung
-  above `#wadlibrary`, because it opens from a row inside it and has to cover it. That order is
-  `Menu.overlays`, topmost first: `close`, `closeTopOverlay` and `hasOverlay` all derive from that
-  one list rather than each naming the overlays again, so one `ESC` closes one thing and another
-  overlay is one edit. The CSS rung follows the list; nothing ties them but this sentence.
+  above `#wadlibrary`, because it opens from a row inside it and has to cover it. It leads
+  `Menu.overlays` for the same reason (§ The overlays over the menu).
 - **The read is per-open and cancellable by the next one.** `WadInfoUi.token` rises on every open and
   on close; a read that lands under a stale token is dropped, so a second file opened while the first
   is still in flight is not overwritten by it, and nothing lands in a closed popup.

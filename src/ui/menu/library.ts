@@ -26,6 +26,7 @@ import {
 } from '../../wad/library.ts';
 import { nothingLoads } from '../../wad/support.ts';
 import { confirmOnHold } from './hold.ts';
+import { OverlayShell, type MenuOverlay } from './overlay.ts';
 import { badge, sourceColumnSpans } from './labels.ts';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -213,8 +214,8 @@ export function scanResult(found: number, skipped: readonly LibrarySkip[]): [str
     : [`Found ${wads}.`, false];
 }
 
-export class LibraryUi {
-  private root = el<HTMLDivElement>('wadlibrary');
+export class LibraryUi implements MenuOverlay {
+  private shell = new OverlayShell(el('wadlibrary'), el('wadlibrary-close'), () => this.close());
   private servedEl = el<HTMLDivElement>('wadlibrary-served');
   private servedHeader = el<HTMLHeadingElement>('wadlibrary-served-header');
   private libraryHeader = el<HTMLHeadingElement>('wadlibrary-library-header');
@@ -255,11 +256,7 @@ export class LibraryUi {
   constructor(hooks: LibraryHooks) {
     this.hooks = hooks;
 
-    el<HTMLButtonElement>('wadlibrary-close').addEventListener('click', () => this.close());
     el<HTMLButtonElement>('wadlibrary-done').addEventListener('click', () => void this.apply());
-    this.root.addEventListener('click', (e) => {
-      if (e.target === this.root) this.close();
-    });
     this.filterInput.addEventListener('input', () => {
       this.filter = this.filterInput.value.trim().toLowerCase();
       // A filter re-aims the file pane: the row that was selected is often still on screen as a
@@ -274,7 +271,7 @@ export class LibraryUi {
   }
 
   open(): void {
-    this.root.classList.remove('hidden');
+    this.shell.show();
     this.filterInput.value = '';
     this.filter = '';
     this.draftIwad = this.hooks.iwad();
@@ -290,13 +287,11 @@ export class LibraryUi {
    * racing over one key.
    */
   close(): boolean {
-    if (this.root.classList.contains('hidden')) return false;
-    this.root.classList.add('hidden');
-    return true;
+    return this.shell.hide();
   }
 
   get isOpen(): boolean {
-    return !this.root.classList.contains('hidden');
+    return this.shell.isOpen;
   }
 
   /**

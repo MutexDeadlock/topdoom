@@ -26,6 +26,20 @@ export function isTextFile(name: string): boolean {
 }
 
 /**
+ * A flat batch's text files, keyed by whatever the caller matches its WADs under — plain names for
+ * an upload batch, paths relative to the library root for a picked folder, which is what scopes a
+ * match to the WAD's own folder. `siblingTextFile` over the keys is the lookup.
+ */
+export function textFileIndex<T>(files: readonly T[], keyOf: (file: T) => string): Map<string, T> {
+  const index = new Map<string, T>();
+  for (const file of files) {
+    const key = keyOf(file);
+    if (isTextFile(key)) index.set(key, file);
+  }
+  return index;
+}
+
+/**
  * The sibling of `NAME.WAD` among `names`, or undefined. Matched case-insensitively and on the
  * base name alone: `SCYTHE.WAD` is shipped beside `scythe.txt` as often as beside `SCYTHE.TXT`,
  * and the name that comes back is the one that will actually open.

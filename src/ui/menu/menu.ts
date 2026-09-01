@@ -17,11 +17,12 @@ import {
   uploadedSource,
   type WadSource,
 } from '../../wad/library.ts';
-import { isTextFile, siblingTextFile } from '../../wad/textfile.ts';
+import { isTextFile, siblingTextFile, textFileIndex } from '../../wad/textfile.ts';
 import { badge, describeMap, describeSource, rowButton, sourceColumnSpans } from './labels.ts';
 import { AboutUi } from './about.ts';
 import { LibraryUi } from './library.ts';
 import { WadInfoUi } from './wadinfo.ts';
+import type { MenuOverlay } from './overlay.ts';
 import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../../game/skill.ts';
 import { getAutorun, setAutorun } from '../../game/player.ts';
 import {
@@ -61,16 +62,6 @@ export interface MenuDefaults {
 }
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-
-/**
- * What `Menu` needs of a popup that can cover it: `close` reports whether it *was* up, so one ESC
- * dismisses exactly one thing. `AboutUi`, `LibraryUi` and `WadInfoUi` each satisfy it already —
- * naming it is what lets `Menu` hold them in one ordered list instead of three `||` chains.
- */
-interface MenuOverlay {
-  close(): boolean;
-  readonly isOpen: boolean;
-}
 
 /** The menu's top-level tabs; exported for the F2/F3/F4 hotkeys in `main.ts`. */
 export type MenuTab = 'newgame' | 'save' | 'load' | 'settings';
@@ -1076,7 +1067,7 @@ export class Menu {
     // An upload sits in no folder, so a WAD's text file can only reach it in the same batch — a
     // `.txt` picked or dropped beside it. One that names no WAD here is simply not a WAD and is
     // dropped, rather than being reported as one that failed to parse.
-    const texts = new Map(files.filter((f) => isTextFile(f.name)).map((f) => [f.name, f]));
+    const texts = textFileIndex(files, (f) => f.name);
     for (const file of files) {
       if (isTextFile(file.name)) continue;
       try {

@@ -7,7 +7,7 @@
  */
 import type { WadSource } from '../library.ts';
 import { bytesOfFile, describeWad } from '../describe.ts';
-import { decodeTextFile, isTextFile, siblingTextFile } from '../textfile.ts';
+import { decodeTextFile, isTextFile, siblingTextFile, textFileIndex } from '../textfile.ts';
 import {
   clearRoot,
   readDescriptors,
@@ -226,7 +226,7 @@ export async function adoptFolderFiles(files: readonly File[], onProgress?: Prog
   // matched `.txt` is kept in `state.files` alongside the WADs; an unmatched one is dropped rather
   // than retained, since nothing could ever ask for it and the walk's caps are `acceptableWads`'
   // alone. docs/wad.md § The text file beside a WAD.
-  const texts = new Map(files.filter((f) => isTextFile(f.name)).map((f) => [relativePath(f), f]));
+  const texts = textFileIndex(files, relativePath);
   const kept: File[] = [];
   const entries = wads.map((f) => {
     const path = relativePath(f);

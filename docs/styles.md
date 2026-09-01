@@ -56,7 +56,9 @@ rules it sits alongside; the two set disjoint properties, so the order is for re
 Two modules drive parts of markup they don't own the *element* of, and so have no `.html`:
 `savegames.ts` fills panels inside `#menu`, and `library.ts` drives `#wadlibrary`, whose markup sits
 in `menu.html` beside the `@include` of `about.html`. `crosshair.ts` and `wadfont.ts` have neither
-file — one writes a data-URI cursor, the other only rasterizes glyphs.
+file — one writes a data-URI cursor, the other only rasterizes glyphs, and `overlay.ts` is `hold.ts`'s
+sibling: a behavior shared by the three popups, handed the elements they own
+(docs/menu.md § The overlays over the menu).
 
 ## Assembling the page
 

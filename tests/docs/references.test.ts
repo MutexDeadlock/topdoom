@@ -1,7 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { filesUnder } from '../fixtures/files.ts';
 
 /**
  * Every `docs/<name>.md § Heading` pointer in the tree has to resolve. CLAUDE.md's comment rule
@@ -26,15 +27,6 @@ const SELF = join('tests', 'docs', 'references.test.ts');
 const REFERENCE = /docs\/([a-z0-9-]+)\.md(?:\s*§\s*([^\n]*))?/g;
 /** CLAUDE.md's comment rule spells the shape out as `docs/x.md § heading`; that one names no file. */
 const PLACEHOLDER = 'docs/x.md';
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) walk(path, out);
-    else if (CODE.test(entry) && path !== SELF) out.push(path);
-  }
-  return out;
-}
 
 /** Heading text of every `#`-line in a doc, hashes and trailing whitespace stripped. */
 function headingsOf(doc: string): string[] {
@@ -84,7 +76,7 @@ function continuationOf(line: string | undefined): string {
 
 function references(): Reference[] {
   const found: Reference[] = [];
-  for (const file of [...ROOTS.flatMap((r) => walk(r)), ...ROOT_DOCS]) {
+  for (const file of [...ROOTS.flatMap((root) => filesUnder(root, (path) => CODE.test(path) && path !== SELF)), ...ROOT_DOCS]) {
     const lines = readFileSync(file, 'utf8').split('\n');
     lines.forEach((text, i) => {
       for (const m of text.matchAll(REFERENCE)) {
@@ -100,7 +92,7 @@ function references(): Reference[] {
   return found;
 }
 
-describe('docs · every § pointer resolves', () => {
+describe('Suite hygiene · every § pointer resolves', () => {
   const refs = references();
 
   test('the scan actually finds pointers', () => {

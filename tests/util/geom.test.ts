@@ -203,7 +203,7 @@ describe('Geometry · convex polygons', () => {
   });
 });
 
-describe('geometry · signed area', () => {
+describe('Geometry · signed area', () => {
   test('the sign is the winding and the magnitude is twice the area', () => {
     const ccw = [0, 0, 10, 0, 10, 10, 0, 10];
     const cw = [0, 0, 0, 10, 10, 10, 10, 0];

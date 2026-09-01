@@ -10,7 +10,7 @@ import { NO_SIDE, type DoomMap, type LineDef, type Sector, type SideDef, type Ve
  * variants, and 254's rotation into the target wall's own frame.
  * See docs/specials.md § Scrollers and conveyors.
  */
-describe('Boom scrollers', () => {
+describe('Specials · Boom scrollers', () => {
   const TICS = 35;
 
   interface Spec {

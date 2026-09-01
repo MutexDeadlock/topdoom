@@ -9,11 +9,11 @@ import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { applySectors, sectorBaseline, snapshotSectors } from '../../src/game/snapshot.ts';
 import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
-import type { Input } from '../../src/game/input.ts';
 import type { SfxId, SoundEmitter } from '../../src/audio/sfx.ts';
 import type { Pos2 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { PREV_WEAPON_INPUT } from '../fixtures/input.ts';
 
 /**
  * Savegame round-trips for the headless-constructible subsystems: a specials
@@ -21,12 +21,6 @@ import { BANK, specialsRig, TIC } from '../fixtures/specialsrig.ts';
  * original would have, and the leaf snapshot/restore pairs must be lossless.
  * See docs/savegames.md § Apply order.
  */
-
-/** Right-clicking with the button bound to "switch to previous weapon", nothing else pressed. */
-const PREV_CLICK = {
-  pressed: () => false,
-  rightMousePressed: (a: string) => a === 'previousweapon',
-} as unknown as Input;
 
 const ART = ['####', '#.L#', '####'] as const;
 const LIFT_FLOOR = 64;
@@ -158,7 +152,7 @@ describe('Savegames · specials round-trip', () => {
     // `sawidl` is expected and correct — the saw is the ready weapon with a
     // restored timer of 0. Only the bring-up would be a phantom switch.
     assert.ok(!played.includes('sawup'), 'a restored chainsaw is not brought up again');
-    ws.handleSwitching(PREV_CLICK, inv, 0);
+    ws.handleSwitching(PREV_WEAPON_INPUT, inv, 0);
     assert.equal(inv.currentWeapon, 'shotgun', 'the restored previousWeapon survived the first frame');
   });
 

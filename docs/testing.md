@@ -30,7 +30,7 @@ Node runs **one process per test file**, which is what contains `player.ts`'s mo
 
 ```
 tests/
-  util/  wad/  game/  ui/  render/  audio/   one file per src/ module under test
+  util/  wad/  game/  ui/  render/  audio/   one file per subject: a src/ module, or one behavior of it
   regression/            one file per fixed bug, named after the bug
   fixtures/              builders and test data, never tests
   docs/                  the tree-wide guards: doc pointers, WAD fixtures, layer splits
@@ -41,6 +41,8 @@ tests/
 `Vanilla tables · monsters`, `Regressions · fog reveal radius`. That is what turns the run into
 grouped output instead of forty flat lines, and it is why a file big enough to span two subjects
 (`tables.test.ts`, `geom.test.ts`) carries more than one block rather than one vague heading.
+The subject is uppercase-first and one of the existing ones where one fits (`Specials`, `Rendering`,
+`Regressions`, …); `tests/docs/describenames.test.ts` enforces the shape on every top-level `describe`.
 
 Because the directories mirror `src/`, each subject area comes out contiguous, and the ordering is
 stable run to run — node walks the glob in order and buffers each file's output. Nothing depends on
@@ -208,19 +210,16 @@ declaring its own. `rig.tick` runs `update` and then `drawMovers(1)` — the fra
 the tic-exact pose (docs/frameloop.md § Interpolation) — so mover meshes read back after a tick are
 up to date; a test calling `specials.update` directly gets no mesh refresh until one lands.
 
-Those two are `pressed`-shaped, for the use key. The movement half lives in
-`tests/fixtures/input.ts`: `heldInput('KeyW')` builds an `Input` holding exactly the keys named and
-`IDLE_INPUT` holds nothing, which is all `Player.update` ever asks its input for. Any test driving
-the player takes one of those rather than casting its own object literal — there were three
-byte-identical copies of that cast before.
+`NO_INPUT` and `USE_INPUT` are re-exports from `tests/fixtures/input.ts`, which holds every fake `Input`: `heldInput('KeyW')`/
+`IDLE_INPUT` for `Player.update`, which asks only for `held`; `NO_INPUT`/`USE_INPUT`/`PREV_WEAPON_INPUT`
+for the specials controller and weapon switching, which ask for `pressed`/`rightMousePressed`. A test
+takes one of those rather than casting its own object literal.
 
 **It is a rig, not a mock.** The controller, `World`, `FogOfWar` and the built mesh below it are all
 the production objects; only the `MaterialBank` and `Input` are stubs, and only because the first
 wants a GL context and the second a keyboard. What the rig removes is the boilerplate, not the
-behavior under test — which is why the five tests that drive specials (`specials-snapshot`,
-`switch-gating`, `strobing-lift-light`, `teleport-back-side`, `boss-death-over-corpse`) all go
-through it. Every one of them had its own byte-identical copy of that constructor call before, so a
-sixteenth argument was a five-file edit.
+behavior under test — which is why every test that drives specials goes through it, and a new
+`SpecialsOptions` argument is a one-file edit.
 
 The rig has no bodies, so it supplies the controller's `Occupancy` outright — nothing is ever in a
 mover's way unless a test says so. The one predicate a test is likely to want back is
@@ -249,6 +248,21 @@ would answer about the wrong wall.
 The dials are still *read* from the source rather than mirrored (docs/render.md § The fade is a
 hole, not a wall). The readbacks are the half worth sharing: they encode `addWall`'s vertex layout,
 and there were three copies of that walk before.
+
+## Shared helpers
+
+`tests/fixtures/monsterbody.ts`'s `monsterBody(at, over?)` is the `MonsterBody` a test hands
+`stepMonsterAI`: at rest — awake, nothing in progress, `movedir` at `DI_NODIR` so nothing walks before
+the first chase call — with `over` for what the test varies (`angle`, `movedir`, `movecount`,
+`justHit`). Every test that steps the AI by hand, and `pinky.ts`, builds its body here, so a field
+added to `MonsterBody` is a one-file edit.
+
+`tests/fixtures/tics.ts` runs it: `stepFor(seconds, step, done?)` calls `step` once per whole tic
+(`ticsIn(seconds)`, rounded) and stops early once `done` holds, returning the seconds run. Every
+"run the simulation for N seconds" loop goes through it rather than rounding its own.
+
+`tests/fixtures/files.ts`'s `filesUnder(dir, keep?)` is the recursive file walker the tree-wide
+guards in `tests/docs/` and `markup.test.ts` share.
 
 ## Markup partials
 

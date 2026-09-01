@@ -8,7 +8,7 @@ import type { SpecialsSnapshot } from '../../src/game/snapshot.ts';
  * Boom's instant toggle plats, 211 (SR) and 212 (WR) — `EV_DoPlat(toggleUpDn)`.
  * See docs/specials.md § Toggle plats.
  */
-describe('specials · toggle plats', () => {
+describe('Specials · toggle plats', () => {
   /**
    * One tagged cell whose floor starts at 0 and ceiling at 128, with the
    * toggle on its west edge. The special is triggered directly: what is under

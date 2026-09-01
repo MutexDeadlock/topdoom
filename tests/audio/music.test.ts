@@ -34,7 +34,7 @@ function midiLump(track: number[], division = 96): Uint8Array {
   return new Uint8Array([...header, ...chunk, ...track]);
 }
 
-describe('music · MUS scores', () => {
+describe('Music · MUS scores', () => {
   test('a note keeps the last volume when the event omits one', () => {
     const song = decodeMus(
       musLump([
@@ -84,7 +84,7 @@ describe('music · MUS scores', () => {
   });
 });
 
-describe('music · MIDI files', () => {
+describe('Music · MIDI files', () => {
   test('running status, a velocity-0 note-off and the tempo map', () => {
     const song = decodeMidi(
       midiLump([
@@ -140,7 +140,7 @@ describe('music · MIDI files', () => {
   });
 });
 
-describe('music · the WAD side', () => {
+describe('Music · the WAD side', () => {
   test('a track is classified by its magic', () => {
     const wad = new Wad([
       wadFile('PWAD', 'test.wad', [
@@ -188,7 +188,7 @@ describe('music · the WAD side', () => {
   });
 });
 
-describe('music · which track a level plays', () => {
+describe('Music · which track a level plays', () => {
   test("vanilla's own per-map choice", () => {
     assert.equal(vanillaMusicFor('MAP01'), 'D_RUNNIN');
     assert.equal(vanillaMusicFor('MAP08'), 'D_DDTBLU');
@@ -247,7 +247,7 @@ function render(chip: OplChip, frames: number): { left: Float32Array; right: Flo
   return { left, right, rms: Math.sqrt(left.reduce((sum, v) => sum + v * v, 0) / frames) };
 }
 
-describe('music · the synth', () => {
+describe('Music · the synth', () => {
   test('a note is programmed an octave above itself, as DMX does', () => {
     // DMX's own frequency table puts MIDI note 69 (A4) at block 5, F-number 580
     // — 880 Hz, an octave up, which GENMIDI's ×0.5 carrier multiplier halves back.
@@ -370,10 +370,13 @@ describe('music · the synth', () => {
 
     const whole = play(frames);
     const chunked = play(Math.round(rate / 20));
-    for (let i = 0; i < frames; i++) {
-      assert.equal(chunked.left[i], whole.left[i], `left channel differs at sample ${i}`);
-      assert.equal(chunked.right[i], whole.right[i], `right channel differs at sample ${i}`);
+    // A plain scan, then one assert: a per-sample `assert.equal` builds its message on every
+    // passing sample too, 576k times over.
+    let differs = -1;
+    for (let i = 0; i < frames && differs < 0; i++) {
+      if (chunked.left[i] !== whole.left[i] || chunked.right[i] !== whole.right[i]) differs = i;
     }
+    assert.equal(differs, -1, `chunked output differs from one-pass output at sample ${differs}`);
   });
 
   test("channels 6-8 receive their operator writes like any other channel", () => {

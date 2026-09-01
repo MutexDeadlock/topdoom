@@ -12,7 +12,7 @@ import { PLAYER_RADIUS } from '../../src/game/player.ts';
  * changes it, and the two gates — the sector's own push bit and, for a point
  * source, line of sight. See docs/specials.md § Pushers.
  */
-describe('Boom pushers', () => {
+describe('Specials · Boom pushers', () => {
   const TICS = 35;
   /** `PUSH_FACTOR` 7: a constant pusher's impulse is its line vector over 128, per tic. */
   const PUSH_DIVISOR = 128;

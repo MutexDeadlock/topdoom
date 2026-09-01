@@ -11,7 +11,7 @@ import { inflateZlib } from '../../src/util/inflate.ts';
  * three RFC 1951 block types. See docs/wad.md § Node formats for why this
  * exists at all.
  */
-describe('util · inflate', () => {
+describe('Inflate · raw DEFLATE', () => {
   const patterns: [string, Uint8Array][] = [
     ['empty', new Uint8Array(0)],
     ['one byte', Uint8Array.from([42])],

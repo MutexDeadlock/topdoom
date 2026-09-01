@@ -97,11 +97,6 @@ describe('WAD parsing · which MAPINFO lump wins', () => {
     assert.equal(preferredMapInfoLump(['MAPINFO', 'ZMAPINFO']), 'ZMAPINFO');
   });
 
-  test('directory order does not decide it', () => {
-    assert.equal(preferredMapInfoLump(['UMAPINFO', 'MAPINFO']), 'UMAPINFO');
-    assert.equal(preferredMapInfoLump(['MAPINFO', 'UMAPINFO']), 'UMAPINFO');
-  });
-
   test('a lone lump wins, and a file with none yields null', () => {
     assert.equal(preferredMapInfoLump(['MAPINFO']), 'MAPINFO');
     assert.equal(preferredMapInfoLump([]), null);

@@ -7,6 +7,7 @@ import { PLAYER_RADIUS } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { fixtureWad } from './wadfile.ts';
+import { monsterBody } from './monsterbody.ts';
 
 /** Doomednum of the demon/pinky (`MT_SERGEANT`). */
 const DEMON_TYPE = ThingType.demon;
@@ -56,36 +57,8 @@ export function loadPinky(which: PinkyMap): PinkyFixture {
     demon,
     ledgeFloor: demon.z,
     playerAt: (y) => ({ x: 0, y, z: world.groundFloor(0, y, PLAYER_RADIUS) }),
-    demonBody: () => ({
-      ...demon,
-      id: 0,
-      velZ: 0,
-      // Facing the player, i.e. due south — `A_FaceTarget` would set this
-      // anyway, but a chase call that has to turn first is a worse test.
-      angle: -Math.PI / 2,
-      // Everything below is "awake, idle, nothing in progress": no attack
-      // playing out, no pain stagger, no charge, and `justAttacked` clear so
-      // the chase call reaches its melee decision instead of re-routing.
-      attackPause: 0,
-      burstLeft: 0,
-      burstTimer: 0,
-      swinging: false,
-      chargeTimer: 0,
-      chargeAngle: 0,
-      painTimer: 0,
-      inFloat: false,
-      movedir: 6, // south, toward the player
-      movecount: 8,
-      chaseTimer: 0,
-      moveBlocked: false,
-      threshold: 0,
-      justHit: false,
-      justAttacked: false,
-      reactionTicks: 0,
-      refiring: false,
-      homingBias: false,
-      walkSoundTimer: 0,
-      walkSoundStep: 0,
-    }),
+    // Facing the player, due south, and already headed that way (`movedir` 6): a chase call that
+    // has to turn first is a worse test.
+    demonBody: () => monsterBody(demon, { angle: -Math.PI / 2, movedir: 6, movecount: 8 }),
   };
 }

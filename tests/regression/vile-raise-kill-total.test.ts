@@ -9,6 +9,7 @@ import { DOOM_TIC } from '../../src/constants.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { stepFor } from '../fixtures/tics.ts';
 
 /**
  * The kill counter against an arch-vile. Vanilla's `P_KillMobj` counts every death with no
@@ -47,11 +48,7 @@ function arena(): { layer: ThingLayer; player: Pos3 } {
 
 /** Runs up to `seconds` of simulation at the fixed tic, stopping early once `done` holds. */
 function run(layer: ThingLayer, player: Pos3, seconds: number, done?: () => boolean): void {
-  const tics = Math.round(seconds / DOOM_TIC);
-  for (let i = 0; i < tics; i++) {
-    layer.update(DOOM_TIC, player);
-    if (done?.()) return;
-  }
+  stepFor(seconds, () => layer.update(DOOM_TIC, player), done);
 }
 
 /** The imp's live health, read off the snapshot's sparse block — an absent `health` is the spawn default. */

@@ -2,12 +2,14 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { makeCollider, type ThingBlocker, World } from '../../src/game/world.ts';
-import { DIR_X, DIR_Y, DI_NODIR, type MonsterBody } from '../../src/game/monsters/defs.ts';
+import { DIR_X, DIR_Y, type MonsterBody } from '../../src/game/monsters/defs.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
+import { monsterBody } from '../fixtures/monsterbody.ts';
+import { stepFor } from '../fixtures/tics.ts';
 
 /**
  * A monster whose *approved* chase step lands clear, but whose per-tic sub-step
@@ -53,34 +55,7 @@ function scene(): { world: World; body: MonsterBody; blockers: ThingBlocker[]; t
   const grid = gridMap(['#######', '#.....#', '#.....#', '#.....#', '#.....#', '#.....#', '#######'], { cell: 128 });
   const world = new World(grid.map);
   const at = grid.centre(3, 3);
-  const body: MonsterBody = {
-    id: 1,
-    x: at.x,
-    y: at.y,
-    z: 0,
-    velZ: 0,
-    angle: 0,
-    attackPause: 0,
-    burstLeft: 0,
-    burstTimer: 0,
-    swinging: false,
-    chargeTimer: 0,
-    chargeAngle: 0,
-    painTimer: 0,
-    inFloat: false,
-    movedir: DI_NODIR,
-    movecount: 0,
-    chaseTimer: 0,
-    moveBlocked: false,
-    threshold: 0,
-    justHit: false,
-    justAttacked: false,
-    reactionTicks: 0,
-    refiring: false,
-    homingBias: false,
-    walkSoundTimer: 0,
-    walkSoundStep: 0,
-  };
+  const body = monsterBody({ ...at, z: 0 });
   return {
     world,
     body,
@@ -105,9 +80,7 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
     const { world, body, blockers, target } = scene();
     const startX = body.x;
     const startY = body.y;
-    for (let tic = 0; tic < Math.round(2 / DOOM_TIC); tic++) {
-      stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers });
-    }
+    stepFor(2, () => stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers }));
     assert.ok(Math.hypot(body.x - startX, body.y - startY) > 100, 'must cover real ground in two seconds');
     assert.equal(
       world.positionBlocked(body.x, body.y, asMonster(body.z, blockers)),
@@ -148,9 +121,7 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
     body.x = at.x;
     body.y = at.y;
     assert.ok(world.positionBlocked(body.x, body.y, asMonster(0)), 'boxed in');
-    for (let tic = 0; tic < Math.round(2 / DOOM_TIC); tic++) {
-      stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target: { x: at.x + 400, y: at.y, z: 0 }, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
-    }
+    stepFor(2, () => stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target: { x: at.x + 400, y: at.y, z: 0 }, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT }));
     assert.equal(body.x, at.x, 'goes nowhere');
     assert.equal(body.y, at.y, 'goes nowhere');
   });

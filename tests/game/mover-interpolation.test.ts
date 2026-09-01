@@ -21,7 +21,7 @@ function hasHeightNear(heights: number[], expected: number): boolean {
   return heights.some((h) => Math.abs(h - expected) < 1e-3);
 }
 
-describe('specials · mover interpolation', () => {
+describe('Specials · mover interpolation', () => {
   /** A raised lift (SR 62, tag 1) beside a floor-0 neighbour, mid-stroke after one tic. */
   function loweringLift() {
     const grid = gridMap(['la'], {

@@ -8,6 +8,8 @@ import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import type { MonsterBody } from '../../src/game/monsters/defs.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
+import { monsterBody } from '../fixtures/monsterbody.ts';
+import { stepFor } from '../fixtures/tics.ts';
 
 /**
  * A zombieman placed flush against a wall woke and shot but never took a step.
@@ -37,34 +39,7 @@ function scene(overlap: number): { world: World; body: MonsterBody; target: { x:
   // The left wall's face is the boundary between cell 0 and cell 1.
   const wallX = CELL;
   const y = grid.centre(1, 0).y;
-  const body: MonsterBody = {
-    id: 1,
-    x: wallX + stats.radius - overlap,
-    y,
-    z: 0,
-    velZ: 0,
-    angle: 0,
-    attackPause: 0,
-    burstLeft: 0,
-    burstTimer: 0,
-    swinging: false,
-    chargeTimer: 0,
-    chargeAngle: 0,
-    painTimer: 0,
-    inFloat: false,
-    movedir: 8,
-    movecount: 0,
-    chaseTimer: 0,
-    moveBlocked: false,
-    threshold: 0,
-    justHit: false,
-    justAttacked: false,
-    reactionTicks: 0,
-    refiring: false,
-    homingBias: false,
-    walkSoundTimer: 0,
-    walkSoundStep: 0,
-  };
+  const body = monsterBody({ x: wallX + stats.radius - overlap, y, z: 0 });
   return { world, body, target: { x: grid.centre(4, 0).x, y, z: 0 } };
 }
 
@@ -72,9 +47,7 @@ function scene(overlap: number): { world: World; body: MonsterBody; target: { x:
 function travelled(world: World, body: MonsterBody, target: { x: number; y: number; z: number }, seconds: number): number {
   const startX = body.x;
   const startY = body.y;
-  for (let f = 0; f < Math.round(seconds / DOOM_TIC); f++) {
-    stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
-  }
+  stepFor(seconds, () => stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT }));
   return Math.hypot(body.x - startX, body.y - startY);
 }
 

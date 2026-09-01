@@ -59,7 +59,7 @@ function rig(row: number) {
   return { projectiles, effects, player, at };
 }
 
-describe('Regression · where a missile is born', () => {
+describe('Regressions · where a missile is born', () => {
   test('half a tic of its own momentum ahead of the shooter, at the missile fire height', () => {
     const { projectiles, player, at } = rig(3);
     projectiles.spawnPlayerShot(PLASMA, null, null);

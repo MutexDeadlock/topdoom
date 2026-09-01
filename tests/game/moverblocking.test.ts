@@ -28,7 +28,7 @@ function crushingRoom() {
   return { grid, sector };
 }
 
-describe('Mover occupancy · the bodies a mover reaches', () => {
+describe('Specials · the bodies a mover reaches', () => {
   test('the thing layer is read per call, so one built after the controller still counts', () => {
     const { grid, sector } = crushingRoom();
     const centre = grid.centre(1, 1);

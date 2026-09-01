@@ -16,7 +16,7 @@ import { specialsRig, NO_INPUT, TIC } from '../fixtures/specialsrig.ts';
  * mechanisms they introduce — elevators and the motionless change.
  * See docs/specials.md § Scope and § Elevators.
  */
-describe('specials · extended Boom table', () => {
+describe('Specials · extended Boom table', () => {
   test('the vanilla table holds all 138 vanilla dispatch cases, gaps closed', () => {
     // The union of P_CrossSpecialLine + P_UseSpecialLine + P_ShootSpecialLine
     // case numbers in linuxdoom-1.10 — verified by a mechanical diff during
@@ -62,7 +62,7 @@ describe('specials · extended Boom table', () => {
   });
 });
 
-describe('specials · elevators and motionless changes', () => {
+describe('Specials · elevators and motionless changes', () => {
   test('an elevator moves floor and ceiling in lockstep to the next floor', () => {
     const grid = gridMap(['amb'], {
       heights: {

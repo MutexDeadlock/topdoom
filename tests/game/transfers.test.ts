@@ -10,7 +10,7 @@ import { NO_SIDE } from '../../src/wad/map.ts';
  * tests/render/water.test.ts and tests/render/translucency.test.ts.
  * See docs/specials.md § Render transfers.
  */
-describe('specials · render transfer scan', () => {
+describe('Specials · render transfer scan', () => {
   test('213 and 261 point a sector at the control sector behind the line', () => {
     const { map } = gridMap(['..']);
     map.sectors[0].tag = 4;

@@ -1,13 +1,16 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { DI_NODIR, type MonsterBody } from '../../src/game/monsters/defs.ts';
+import { type MonsterBody } from '../../src/game/monsters/defs.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
+import { monsterBody } from '../fixtures/monsterbody.ts';
+import { stepFor } from '../fixtures/tics.ts';
 
 /**
  * A cacodemon whose box straddles a block too short to stand on was pinned to
@@ -63,43 +66,15 @@ function loadBlock(type: number = ThingType.cacodemon): { world: World; body: Mo
   return {
     world,
     player: { x, y: grid.centre(2, 4).y, z: ROOM_FLOOR },
-    body: {
-      id: 0,
-      x,
-      y,
-      z: ROOM_FLOOR, // `pushThing`'s spawn height: the *centre* sector's floor
-      velZ: 0,
-      angle: -Math.PI / 2, // facing the player, as `A_FaceTarget` would leave it
-      attackPause: 0,
-      burstLeft: 0,
-      burstTimer: 0,
-      swinging: false,
-      chargeTimer: 0,
-      chargeAngle: 0,
-      painTimer: 0,
-      inFloat: false,
-      movedir: DI_NODIR,
-      movecount: 0,
-      chaseTimer: 0,
-      moveBlocked: false,
-      threshold: 0,
-      justHit: false,
-      justAttacked: false,
-      reactionTicks: 0,
-      refiring: false,
-      homingBias: false,
-      walkSoundTimer: 0,
-      walkSoundStep: 0,
-    },
+    // At `pushThing`'s spawn height — the *centre* sector's floor — facing the player as
+    // `A_FaceTarget` would leave it.
+    body: monsterBody({ x, y, z: ROOM_FLOOR }, { angle: -Math.PI / 2 }),
   };
 }
 
 /** Steps the monster at a fixed 35 fps for `seconds`. */
 function run(f: ReturnType<typeof loadBlock>, seconds: number): void {
-  const dt = 1 / 35;
-  for (let t = 0; t < seconds; t += dt) {
-    stepMonsterAI(f.body, CACO, f.world, { dt, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
-  }
+  stepFor(seconds, () => stepMonsterAI(f.body, CACO, f.world, { dt: DOOM_TIC, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT }));
 }
 
 describe('Regressions · a floater straddling a block it cannot fit on', () => {
@@ -116,7 +91,7 @@ describe('Regressions · a floater straddling a block it cannot fit on', () => {
 
   test('the ceiling wins over the floor, so it is never pushed into the gap', () => {
     const f = loadBlock();
-    run(f, 1 / 35);
+    run(f, DOOM_TIC);
     assert.equal(f.body.z, CEILING - CACO.height, 'clamped to the ceiling, below the block top');
   });
 
@@ -132,10 +107,7 @@ describe('Regressions · a floater straddling a block it cannot fit on', () => {
     test(`a ${name} gets out instead of hanging on the block forever`, () => {
       const f = loadBlock(type);
       const start = { x: f.body.x, y: f.body.y };
-      const dt = 1 / 35;
-      for (let t = 0; t < 3; t += dt) {
-        stepMonsterAI(f.body, stats, f.world, { dt, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
-      }
+      stepFor(3, () => stepMonsterAI(f.body, stats, f.world, { dt: DOOM_TIC, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT }));
       const moved = Math.hypot(f.body.x - start.x, f.body.y - start.y);
       assert.ok(moved > stats.radius, `left the block (moved ${moved.toFixed(1)} units)`);
       assert.ok(f.body.z <= CEILING - stats.height, `still fits under the ceiling (z = ${f.body.z})`);

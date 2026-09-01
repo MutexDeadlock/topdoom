@@ -13,7 +13,7 @@ import { PLAYER_WEAPON_SPRITES } from '../../src/render/playerskin.ts';
  * guards that build step — the file is generated, never committed — so these are the assertions
  * that catch a source the plugin folds in wrong. docs/wad.md § The WAD the engine ships.
  */
-describe('The shipped WAD · what the build folds together', () => {
+describe('Shipped WAD · what the build folds together', () => {
   const ASSETS = fileURLToPath(new URL('../../assets/', import.meta.url));
   const bytes = buildGameWad(ASSETS);
   const file = new WadFile(bytes.slice().buffer, 'topdoom.wad');

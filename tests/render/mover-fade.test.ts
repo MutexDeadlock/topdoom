@@ -88,7 +88,7 @@ function fadePass(
  * after the player walks off. See docs/render.md § Mover meshes a frame cannot
  * touch.
  */
-describe('render · mover meshes a frame cannot touch', () => {
+describe('Rendering · mover meshes a frame cannot touch', () => {
   const CELL = WALL_CHUNK_LEN * 4;
 
   /**
@@ -199,7 +199,7 @@ describe('render · mover meshes a frame cannot touch', () => {
  * player is behind is the one slab the hole opens around.
  * See docs/render.md § One hole, whichever mesh it lands in.
  */
-describe('render · one hole, whichever mesh it lands in', () => {
+describe('Rendering · one hole, whichever mesh it lands in', () => {
   /** Cells one chunk wide, so a crossing in one is well inside `FADE_CORE` of the next. */
   const CELL = WALL_CHUNK_LEN;
 

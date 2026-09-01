@@ -13,6 +13,7 @@ import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS, drawnLumps, drawnSprites, fxLayer } from '../fixtures/spritestubs.ts';
 import { AWAY, crushSources } from '../fixtures/specialsrig.ts';
+import { stepFor } from '../fixtures/tics.ts';
 
 /**
  * `PIT_ChangeSector`'s other half: every crush pulse also sprays `MT_BLOOD` out of the body it
@@ -40,7 +41,7 @@ function crushingRoom(type?: number) {
   return { sprayed, pulse, centre: grid.centre(1, 1) };
 }
 
-describe('A crusher sprays blood', () => {
+describe('Death · a crusher sprays blood', () => {
   test('out of the middle of the body it caught, once a pulse', () => {
     const room = crushingRoom(ThingType.demon);
     assert.ok(room.pulse(), 'the demon is caught');
@@ -92,12 +93,12 @@ function thrown(from: Pos3) {
       return { x: drawn[0].x, z: drawn[0].y };
     },
     run(seconds: number) {
-      for (let i = 0; i < Math.round(seconds / DOOM_TIC); i++) layer.updateImpacts(DOOM_TIC);
+      stepFor(seconds, () => layer.updateImpacts(DOOM_TIC));
     },
   };
 }
 
-describe('The crusher’s splash itself', () => {
+describe('Death · the crusher’s splash itself', () => {
   test('starts at S_BLOOD1, where a damage-scaled P_SpawnBlood would skip ahead', () => {
     const fx = thrown({ x: 100, y: 100, z: 20 });
     assert.deepEqual(drawnLumps(fx.layer), [`BLUD${BLOOD_FRAMES[0]}0`], 'the whole chain, C first');

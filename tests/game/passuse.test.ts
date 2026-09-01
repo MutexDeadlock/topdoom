@@ -12,7 +12,7 @@ import { LF } from '../../src/wad/map.ts';
  * rather than a hardcoded set. See docs/specials.md § Scope.
  */
 
-describe('specials · PASSUSE', () => {
+describe('Specials · PASSUSE', () => {
   /**
    * Four cells in a row, cell size 32, the player near cell 0's east edge
    * facing east. The edge at x=32 carries 138 (light -> 255, tag 7) and the
@@ -48,7 +48,7 @@ describe('specials · PASSUSE', () => {
   });
 });
 
-describe('specials · monster activation', () => {
+describe('Specials · monster activation', () => {
   /**
    * The two vanilla allow-lists `monsterActivate` carries, audited together
    * because they are one flag: `P_CrossSpecialLine`'s seven walk numbers, and
@@ -98,7 +98,7 @@ describe('specials · monster activation', () => {
   });
 });
 
-describe('specials · shoot triggers', () => {
+describe('Specials · shoot triggers', () => {
   /** Two open cells, the middle edge carrying a shoot special that opens the tagged door cell. */
   function shotRig(special: number) {
     const grid = gridMap(['..+']);
@@ -166,7 +166,7 @@ describe('specials · shoot triggers', () => {
  * player, and a line with no opening ends the press where it stands.
  * See docs/specials.md § The use trace.
  */
-describe('specials · the use trace stops at walls', () => {
+describe('Specials · the use trace stops at walls', () => {
   /**
    * Three cells in a row, cell size 32, the player near cell 0's east edge facing
    * east. Cell 2's west edge (x=64) carries 138 (light -> 255, tag 7) on the cell

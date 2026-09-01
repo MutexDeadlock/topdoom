@@ -13,7 +13,7 @@ import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
  * player collect an item sitting in an alcove they can never walk into
  * (ksutra.wad MAP04, the shells in sector 233). docs/items.md § Collecting things.
  */
-describe('Regression · pickup reach is a box, not a circle', () => {
+describe('Regressions · pickup reach is a box, not a circle', () => {
   /** One open cell with a shell box at `(x, y)`, and the layer built over it. */
   function arena(x: number, y: number) {
     const grid = gridMap(['#####', '#...#', '#...#', '#####'], { cell: 128 });

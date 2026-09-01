@@ -131,7 +131,7 @@ const lowestAlphaOf = (built: ReturnType<typeof pool>['built'], f: FlatSurface) 
   return lowest;
 };
 
-describe('render · deep water planes', () => {
+describe('Rendering · deep water planes', () => {
   test('a water sector draws a pool bottom and a translucent surface over it', () => {
     const { control, built, fans } = pool();
     assert.equal(fans.length, 2, 'two fans, one subsector');

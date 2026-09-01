@@ -81,7 +81,7 @@ function frame(timer: GpuTimer): void {
   timer.end();
 }
 
-describe('GpuTimer · the frame\'s GPU milliseconds', () => {
+describe('GPU timer · the frame\'s GPU milliseconds', () => {
   test('without the extension it reports nothing and touches no query', () => {
     // Browsers have disabled `EXT_disjoint_timer_query_webgl2` on and off, and some drivers lack
     // it — so this is the ordinary case, not an error, and the overlay says `n/a` rather than 0.

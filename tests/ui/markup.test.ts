@@ -1,8 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { assemblePage } from '../../plugins/html-partials.ts';
+import { filesUnder } from '../fixtures/files.ts';
 
 /**
  * Every id a module looks up has to exist in the assembled page, and every id in the markup has
@@ -19,15 +20,6 @@ const ID = /\bid="([^"]+)"/g;
 /** `#some-id` anywhere in a stylesheet, and `'#some-id ...'` selectors in code. */
 const SELECTOR = /#([a-zA-Z][\w-]*)/g;
 
-function walk(dir: string, ext: RegExp, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) walk(path, ext, out);
-    else if (ext.test(entry)) out.push(path);
-  }
-  return out;
-}
-
 function matches(text: string, re: RegExp): string[] {
   return [...text.matchAll(re)].map((m) => m[1]);
 }
@@ -35,8 +27,8 @@ function matches(text: string, re: RegExp): string[] {
 const { html, included } = assemblePage();
 const markupIds = new Set(matches(html, ID));
 
-const code = walk(SRC, /\.ts$/).map((path) => ({ path, text: readFileSync(path, 'utf8') }));
-const styles = walk(SRC, /\.css$/).map((path) => readFileSync(path, 'utf8'));
+const code = filesUnder(SRC, (path) => /\.ts$/.test(path)).map((path) => ({ path, text: readFileSync(path, 'utf8') }));
+const styles = filesUnder(SRC, (path) => /\.css$/.test(path)).map((path) => readFileSync(path, 'utf8'));
 
 describe('UI markup · ids and partials', () => {
   test('every id a module looks up exists in the assembled page', () => {
@@ -59,7 +51,7 @@ describe('UI markup · ids and partials', () => {
   });
 
   test('every partial beside a UI module is included in the page', () => {
-    const onDisk = walk('src/ui', /\.html$/).map((path) => join(process.cwd(), path));
+    const onDisk = filesUnder('src/ui', (path) => /\.html$/.test(path)).map((path) => join(process.cwd(), path));
     const pulled = [...included];
     const dropped = onDisk.filter((path) => !pulled.includes(path));
     assert.deepEqual(dropped, [], `partials nothing @includes:\n${dropped.join('\n')}`);

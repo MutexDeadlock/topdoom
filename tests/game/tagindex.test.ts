@@ -10,7 +10,7 @@ import type { DoomMap } from '../../src/wad/map.ts';
  * teleport takes whichever match comes *first*.
  * See docs/world.md § The tag indexes.
  */
-describe('world · tag indexes', () => {
+describe('World · tag indexes', () => {
   /** The scans they replaced: ascending index order, vanilla's `P_Find*FromLineTag`. */
   function scanSectors(map: DoomMap, tag: number): number[] {
     const out: number[] = [];

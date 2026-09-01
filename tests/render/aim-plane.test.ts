@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TopDownCamera } from '../../src/render/camera.ts';
 import { AIM_HEIGHT_OFFSET, EYE_HEIGHT } from '../../src/game/player.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
 
 /**
  * The aim plane is derived from the camera's own follow height, so a fall
@@ -9,7 +10,6 @@ import { AIM_HEIGHT_OFFSET, EYE_HEIGHT } from '../../src/game/player.ts';
  * See docs/camera.md § Aim lead.
  */
 
-const TIC = 1 / 35;
 const NDC_X = 0.4;
 const NDC_Y = -0.25;
 
@@ -22,7 +22,7 @@ function cursorPoints(camera: TopDownCamera, playerZ: number) {
   };
 }
 
-describe('render · the aim plane during a fall', () => {
+describe('Rendering · the aim plane during a fall', () => {
   test('a pure vertical fall leaves the cursor where it was', () => {
     const camera = new TopDownCamera(16 / 9, { yawDeg: 0 });
     camera.snapTo({ x: 0, y: 0, z: EYE_HEIGHT });
@@ -35,7 +35,7 @@ describe('render · the aim plane during a fall', () => {
     // Drop 160 units, as walking into one of BOOMEDIT's pools does, and run the
     // single tic the camera needs to notice. The player has not moved in x/y.
     const fallenZ = -160;
-    camera.tick(TIC, { x: 0, y: 0, z: fallenZ + EYE_HEIGHT }, null);
+    camera.tick(DOOM_TIC, { x: 0, y: 0, z: fallenZ + EYE_HEIGHT }, null);
     const falling = cursorPoints(camera, fallenZ);
     assert.ok(falling.fromCamera && falling.fromPlayer);
 

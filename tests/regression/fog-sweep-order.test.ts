@@ -6,8 +6,12 @@ import { gridMap } from '../fixtures/gridmap.ts';
 
 /** Grid cell size this fixture measures its distances in. */
 const CELL = 128;
-/** Side of the open room, in cells. Big enough that one tic's budget cannot clear it. */
-const ROOM = 64;
+/**
+ * Side of the open room, in cells. Big enough that one tic's budget cannot clear it, and that the
+ * far corner sits well past what one tic reveals; below ~40 the corner bound below fails on a
+ * correct sweep.
+ */
+const ROOM = 48;
 
 interface Cell {
   subsector: number;

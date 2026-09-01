@@ -23,7 +23,7 @@ const lumpOf = (cached: unknown): string => (cached as { lump: string }).lump;
  * answer, and what stays untouched while they do.
  * docs/sprites.md § Weapon-matching player sprites.
  */
-describe('SpriteAnimator · a skin', () => {
+describe('Sprites · a skin', () => {
   test('draws the skin’s lump while frameKey stays the animator’s own', () => {
     const anim = new SpriteAnimator(BANK, MATERIALS, 'PLAY', ['A']);
     anim.setSkin({ bank: bankOf('ABCDEFG'), materials: materialsStub({ tag: 'skin' }), spriteName: 'PLA3' });

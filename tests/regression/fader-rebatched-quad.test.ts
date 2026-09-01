@@ -16,7 +16,7 @@ import type { WallOccluder } from '../../src/render/mapmesh.ts';
  * go on writing a door's alpha into the batch it no longer draws in.
  * docs/render.md § Mover meshes.
  */
-describe('regression · a fader follows its quad to a new batch', () => {
+describe('Regressions · a fader follows its quad to a new batch', () => {
   /** One batch's colour buffer, six vertices' worth — `addWall`'s [A, D, C, A, C, B]. */
   function batchMesh(): THREE.Mesh {
     const geom = new THREE.BufferGeometry();

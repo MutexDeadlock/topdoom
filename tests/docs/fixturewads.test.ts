@@ -1,7 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { filesUnder } from '../fixtures/files.ts';
 
 /**
  * No test reads `public/game/`. That directory is the game's own content — what
@@ -20,19 +21,13 @@ const COMMENT = /^\s*(\/\/|\/?\*)/;
 /** This file spells the banned path out in code; scanning it would flag itself, as `references.test.ts` is too. */
 const SELF = join('tests', 'docs', 'fixturewads.test.ts');
 
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) walk(path, out);
-    else if (entry.endsWith('.ts') && path !== SELF) out.push(path);
-  }
-  return out;
-}
+/** Every `.ts` under `tests/`, this file excepted. */
+const testSources = (): string[] => filesUnder('tests', (path) => path.endsWith('.ts') && path !== SELF);
 
 describe('Suite hygiene · WAD fixtures', () => {
   test('no test file mentions public/game', () => {
     const offenders: string[] = [];
-    for (const path of walk('tests')) {
+    for (const path of testSources()) {
       readFileSync(path, 'utf8')
         .split('\n')
         .forEach((line, i) => {
@@ -43,7 +38,7 @@ describe('Suite hygiene · WAD fixtures', () => {
   });
 
   test('every committed fixture is loaded by something', () => {
-    const sources = walk('tests').map((path) => readFileSync(path, 'utf8'));
+    const sources = testSources().map((path) => readFileSync(path, 'utf8'));
     // Both directories a test takes real bytes from: WAD fixtures, and the DEHACKED patches
     // lifted out as text (docs/testing.md § The DEHACKED fixtures).
     for (const dir of ['wads', 'dehacked']) {

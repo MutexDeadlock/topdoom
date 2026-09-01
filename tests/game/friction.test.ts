@@ -11,7 +11,7 @@ import { PLAYER_RADIUS } from '../../src/game/player.ts';
  * mapping onto this engine's movement model.
  * See docs/specials.md § Friction and docs/movement.md § Friction.
  */
-describe('Boom friction', () => {
+describe('Specials · Boom friction', () => {
   const ORIG_FRICTION = 0xe800 / 0x10000;
   /** Boom's generalized friction bit, `p_spec.h`'s `FRICTION_MASK`. */
   const FRICTION_MASK = 0x100;

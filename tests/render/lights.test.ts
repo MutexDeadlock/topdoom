@@ -80,7 +80,7 @@ const sizeOf = (l: DynamicLights, i = 0): number => radiusOf(l, i) / RADIUS_SCAL
  * `DynamicLights` animates GLDEFS radii on the render clock, uploads what fits, and samples the
  * same falloff back for sprites. docs/lights.md.
  */
-describe('DynamicLights · what reaches the uniforms', () => {
+describe('Dynamic lights · what reaches the uniforms', () => {
   test('an offered frame with a light lands in the buffer; one without does not', () => {
     const l = frame(new DynamicLights(DEFS), 0, [
       ['AAAA', 100, 200, 0, 1],
@@ -140,7 +140,7 @@ describe('DynamicLights · what reaches the uniforms', () => {
   });
 });
 
-describe('DynamicLights · animation', () => {
+describe('Dynamic lights · animation', () => {
   test('a point light never moves', () => {
     const l = new DynamicLights(DEFS);
     frame(l, 0, [['AAAA', 0, 0, 0, 1]]);
@@ -222,7 +222,7 @@ describe('DynamicLights · animation', () => {
   });
 });
 
-describe('DynamicLights · the sprite tint', () => {
+describe('Dynamic lights · the sprite tint', () => {
   test('falloff is linear from the centre and gone at the radius', () => {
     const l = new DynamicLights(DEFS);
     // Committed on the frame before the one that samples it — the tint is a frame behind.
@@ -286,7 +286,7 @@ describe('DynamicLights · the sprite tint', () => {
   });
 });
 
-describe('DynamicLights · the toggle', () => {
+describe('Dynamic lights · the toggle', () => {
   test('switched off, nothing is uploaded and nothing is tinted', () => {
     const was = getDynamicLights();
     try {
@@ -311,7 +311,7 @@ describe('DynamicLights · the toggle', () => {
  * geometry shader fetches, and `tintAt`'s reading of the same bits. docs/lights.md § Light stops
  * at walls.
  */
-describe('DynamicLights · a light bound to a level', () => {
+describe('Dynamic lights · a light bound to a level', () => {
   /** Two closets either side of a solid cell, with a light standing in the left one. */
   function walled(): { lights: DynamicLights; here: number; there: number; at: { x: number; y: number } } {
     const grid = gridMap(['#####', '#.#.#', '#####'], { cell: 128 });
@@ -408,7 +408,7 @@ describe('DynamicLights · a light bound to a level', () => {
  * What the memo must never do is answer a question that has changed.
  * docs/lights.md § What a light remembers between frames.
  */
-describe('DynamicLights · what a light remembers between frames', () => {
+describe('Dynamic lights · what a light remembers between frames', () => {
   /** A corridor of three cells, its middle one able to close. */
   function corridor() {
     const grid = gridMap(['.M.'], { cell: 128, heights: { M: { floor: 0, ceil: 128 } } });
@@ -528,7 +528,7 @@ describe('DynamicLights · what a light remembers between frames', () => {
  * this a map like E1M1 sits at `MAX_DYN_LIGHTS` every frame and pays a full fragment loop for
  * lights nowhere near the view. docs/lights.md § What reaches the shader.
  */
-describe('DynamicLights · the frustum cull', () => {
+describe('Dynamic lights · the frustum cull', () => {
   test('a light under the camera survives and one outside the view does not', () => {
     const view = lookingDown(500);
     const lights = new DynamicLights(DEFS);

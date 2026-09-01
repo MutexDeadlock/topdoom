@@ -58,7 +58,7 @@ function crushed(things: ThingLayer): boolean {
   return things.snapshot().things[0].monster?.crushed === true;
 }
 
-describe('Corpses under a mover', () => {
+describe('Death · corpses under a mover', () => {
   test('a corpse the ceiling has no room for becomes a pool of blood', () => {
     const fx = room();
     kill(fx.things);

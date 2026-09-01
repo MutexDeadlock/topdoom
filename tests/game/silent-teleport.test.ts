@@ -12,7 +12,7 @@ import type { TeleportDest } from '../../src/game/specials.ts';
  * fog, a rotation rather than an absolute facing, and a preserved height.
  * See docs/specials.md § Silent and line-to-line teleporters.
  */
-describe('specials · silent teleporters', () => {
+describe('Specials · silent teleporters', () => {
   /**
    * A corridor with a landing marker at cell 4, and the special on the west
    * edge of cell 2 — so walking east across it is a front-side crossing.
@@ -151,7 +151,7 @@ describe('specials · silent teleporters', () => {
   });
 });
 
-describe('specials · line-to-line teleporters', () => {
+describe('Specials · line-to-line teleporters', () => {
   /**
    * Two parallel north-south walls far apart: the player crosses the entry
    * line in cell 1 and comes out along the tag-matched exit line in cell 4.
@@ -225,19 +225,11 @@ describe('specials · line-to-line teleporters', () => {
     assert.ok(Math.abs(Math.abs(north.arrivals[0].y - south.arrivals[0].y) - 80) < 1e-6);
   });
 
-  test('a tag matching no two-sided linedef teleports nobody', () => {
+  test('a tag whose only match is the trigger line itself teleports nobody', () => {
     const rig = lineRig(244);
+    // With the exit untagged, the entry line is the only line carrying tag 7, so the search finds
+    // nothing but itself — which `EV_SilentLineTeleport` explicitly skips (`l != line`).
     rig.map.linedefs[rig.exit].tag = 0;
-    rig.cross();
-    assert.equal(rig.arrivals.length, 0);
-  });
-
-  test('the trigger line is never its own exit', () => {
-    const rig = lineRig(244);
-    // Only the entry line carries the tag now, so the search finds nothing but
-    // itself — which `EV_SilentLineTeleport` explicitly skips (`l != line`).
-    rig.map.linedefs[rig.exit].tag = 0;
-    rig.map.linedefs[rig.entry].tag = 7;
     rig.cross();
     assert.equal(rig.arrivals.length, 0);
   });

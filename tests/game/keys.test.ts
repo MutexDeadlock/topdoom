@@ -15,7 +15,7 @@ import { specialsRig, USE_INPUT, TIC } from '../fixtures/specialsrig.ts';
 
 const keys = (...slots: KeySlot[]): ReadonlySet<KeySlot> => new Set(slots);
 
-describe('keys · pickups land in exact slots', () => {
+describe('Keys · pickups land in exact slots', () => {
   test('each key thing fills its own card/skull slot', () => {
     const inv = createInventory();
     applyPickup(inv, ThingType.blueSkullKey);
@@ -24,7 +24,7 @@ describe('keys · pickups land in exact slots', () => {
   });
 });
 
-describe('keys · satisfiesLock', () => {
+describe('Keys · satisfiesLock', () => {
   test('color locks accept card or skull of the color, nothing else', () => {
     const lock = { kind: 'color', color: 'blue' } as const;
     assert.ok(satisfiesLock(keys('blueCard'), lock));
@@ -58,7 +58,7 @@ describe('keys · satisfiesLock', () => {
   });
 });
 
-describe('keys · refusal messages', () => {
+describe('Keys · refusal messages', () => {
   const text = (runs: ReturnType<typeof lockedLineMessage>): string =>
     runs.map((r) => (typeof r === 'string' ? r : r.text)).join('');
 
@@ -88,7 +88,7 @@ describe('keys · refusal messages', () => {
   });
 });
 
-describe('keys · locked lines in the controller', () => {
+describe('Keys · locked lines in the controller', () => {
   /** One open cell and a shut manual door behind its east edge, special 32 (D1 blue). */
   function lockedDoorRig() {
     const grid = gridMap(['.+'], { cell: 64 });

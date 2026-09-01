@@ -12,7 +12,7 @@ import { DAMAGE_FLOOR_INTERVAL } from '../../src/game/specials/tables.ts';
  * P_SpawnSpecials / P_PlayerInSpecialSector) in front of the vanilla tables.
  * See docs/specials.md § Generalized sector types.
  */
-describe('specials · generalized sector types', () => {
+describe('Specials · generalized sector types', () => {
   test('vanilla numbers pass through untouched', () => {
     assert.equal(decodeSectorType(9).secret, true);
     assert.equal(decodeSectorType(9).damage, null);

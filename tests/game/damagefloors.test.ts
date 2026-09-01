@@ -11,7 +11,7 @@ import { DOOM_TIC } from '../../src/constants.ts';
  * Sector special 11, E1M8's finale floor: the one damage floor that also ends the level.
  * See docs/specials.md § Damage floors.
  */
-describe('specials · the E1M8 exit-damage floor', () => {
+describe('Specials · the E1M8 exit-damage floor', () => {
   /** A one-cell map whose floor carries `special`, plus everything `SectorEffects.update` needs. */
   function pit(special: number) {
     const grid = gridMap(['.']);

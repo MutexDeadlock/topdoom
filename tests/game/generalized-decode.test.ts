@@ -12,7 +12,7 @@ import { specialsRig, NO_INPUT, USE_INPUT, TIC } from '../fixtures/specialsrig.t
  * Worked examples are hand-assembled from the field layout.
  * See docs/specials.md § Generalized linedefs.
  */
-describe('specials · generalized decode', () => {
+describe('Specials · generalized decode', () => {
   test('the range boundaries', () => {
     assert.equal(decodeGeneralized(0x2f7f), null);
     assert.notEqual(decodeGeneralized(0x2f80), null);
@@ -98,7 +98,7 @@ describe('specials · generalized decode', () => {
   });
 });
 
-describe('specials · generalized end-to-end', () => {
+describe('Specials · generalized end-to-end', () => {
   test('a Push (manual) generalized door opens its back sector', () => {
     const grid = gridMap(['.+'], { cell: 64 });
     const { map } = grid;

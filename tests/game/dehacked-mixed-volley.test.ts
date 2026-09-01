@@ -4,13 +4,13 @@ import { applyDehacked, resetDehacked } from '../../src/game/dehacked/apply.ts';
 import { parseDehacked } from '../../src/game/dehacked.ts';
 import { MONSTER_STATS, monsterStatsFor } from '../../src/game/monsters/tables.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
-import { DI_NODIR, type MonsterBody } from '../../src/game/monsters/defs.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { World } from '../../src/game/world.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { soundLog } from '../fixtures/specialsrig.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
+import { monsterBody } from '../fixtures/monsterbody.ts';
 
 /**
  * A missile chain used to be read for its *first* damaging action alone, so every later shot of a
@@ -39,36 +39,9 @@ function volleySprites(type: number): string[] {
   const world = new World(grid.map);
   const stats = monsterStatsFor(false)[type];
   const at = grid.centre(1, 0);
-  const body: MonsterBody = {
-    id: 1,
-    x: at.x,
-    y: at.y,
-    z: 0,
-    velZ: 0,
-    angle: 0,
-    attackPause: 0,
-    burstLeft: 0,
-    burstTimer: 0,
-    swinging: false,
-    chargeTimer: 0,
-    chargeAngle: 0,
-    painTimer: 0,
-    inFloat: false,
-    movedir: DI_NODIR,
-    movecount: 8,
-    chaseTimer: 0,
-    moveBlocked: false,
-    threshold: 0,
-    // `MF_JUSTHIT`: the next missile check fires regardless of the range roll, which is what makes
-    // this deterministic — `P_CheckMissileRange` is otherwise a `P_Random` draw.
-    justHit: true,
-    justAttacked: false,
-    reactionTicks: 0,
-    refiring: false,
-    homingBias: false,
-    walkSoundTimer: 0,
-    walkSoundStep: 0,
-  };
+  // `MF_JUSTHIT`: the next missile check fires regardless of the range roll, which is what makes
+  // this deterministic — `P_CheckMissileRange` is otherwise a `P_Random` draw.
+  const body = monsterBody({ ...at, z: 0 }, { movecount: 8, justHit: true });
   const target = { x: grid.centre(4, 0).x, y: at.y, z: 0 };
   const log = soundLog();
   const sprites: string[] = [];

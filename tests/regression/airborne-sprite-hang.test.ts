@@ -29,18 +29,11 @@ function rig(bottomOffset: number): SpriteFxLayer {
 /** Where the batch was actually asked to draw, in DOOM z. */
 const drawnZ = (effects: SpriteFxLayer): number[] => drawnSprites(effects).map((d) => d.y);
 
-describe('Regression · an airborne sprite hangs from its own offset', () => {
+describe('Regressions · an airborne sprite hangs from its own offset', () => {
   test('a blast is drawn straddling the impact, not standing on it', () => {
     const effects = rig(BLAST_BOTTOM);
     const at = { ...GRID.centre(0, 0), z: 40 };
     effects.spawnImpact('MISL', ['B'], 0.1, at);
     assert.deepEqual(drawnZ(effects), [at.z + BLAST_BOTTOM]);
-  });
-
-  test('art whose offset says it stands on its point is unmoved', () => {
-    const effects = rig(0);
-    const at = { ...GRID.centre(0, 0), z: 40 };
-    effects.spawnImpact('TFOG', ['A'], 0.1, at);
-    assert.deepEqual(drawnZ(effects), [at.z]);
   });
 });

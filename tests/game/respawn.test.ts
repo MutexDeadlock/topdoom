@@ -10,6 +10,7 @@ import type { Skill } from '../../src/game/skill.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { stepFor } from '../fixtures/tics.ts';
 
 /**
  * Nightmare's respawning monsters: `P_MobjThinker`'s respawn branch and `P_NightmareRespawn`
@@ -45,12 +46,7 @@ const alive = (layer: ReturnType<typeof arena>['layer']) =>
 
 /** Runs `seconds` of simulation at the fixed tic, stopping early once `done` holds. */
 function run(layer: ReturnType<typeof arena>['layer'], player: Pos3, seconds: number, done?: () => boolean): number {
-  const tics = Math.round(seconds / DOOM_TIC);
-  for (let i = 0; i < tics; i++) {
-    layer.update(DOOM_TIC, player);
-    if (done?.()) return (i + 1) * DOOM_TIC;
-  }
-  return seconds;
+  return stepFor(seconds, () => layer.update(DOOM_TIC, player), done);
 }
 
 describe('Monster AI · nightmare respawn', () => {

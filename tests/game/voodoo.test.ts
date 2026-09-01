@@ -18,7 +18,7 @@ import type { DoomMap } from '../../src/wad/map.ts';
  * line, and the two ways damage to a doll reaches the real player.
  * See docs/specials.md § Voodoo dolls.
  */
-describe('Voodoo dolls', () => {
+describe('Specials · voodoo dolls', () => {
   function addStart(map: DoomMap, x: number, y: number): void {
     map.things.push({ x, y, angle: 0, type: ThingType.playerStart, flags: 0 });
   }

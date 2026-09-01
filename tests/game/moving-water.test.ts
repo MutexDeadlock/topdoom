@@ -126,7 +126,7 @@ function poolWithChangingFlat() {
   return { map, grid, control, pool };
 }
 
-describe('specials · moving water', () => {
+describe('Specials · moving water', () => {
   test('a movable control sector makes the water it drives movable too', () => {
     const { map, pool, control } = risingPool();
     const movable = scanSectors(map).movable;

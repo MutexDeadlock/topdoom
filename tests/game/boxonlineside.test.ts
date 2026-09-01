@@ -65,7 +65,7 @@ function world(): World {
   ]);
 }
 
-describe('Collision narrowphase · P_BoxOnLineSide', () => {
+describe('Collision · P_BoxOnLineSide', () => {
   test('a horizontal line: south is the front side, and the direction flips it', () => {
     const w = world();
     // An east-going line's right side is south, so a box below it is side 0.
@@ -122,7 +122,7 @@ describe('Collision narrowphase · P_BoxOnLineSide', () => {
   });
 });
 
-describe('Collision narrowphase · the line-bbox reject', () => {
+describe('Collision · the line-bbox reject', () => {
   test('exactly flush is not an overlap', () => {
     const w = world();
     // The north line spans x = 0, y = 0..64. A box whose right edge lands

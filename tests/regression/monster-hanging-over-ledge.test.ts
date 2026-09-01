@@ -9,6 +9,8 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import type { Pos2, Pos3 } from '../../src/types.ts';
+import { ticsIn } from '../fixtures/tics.ts';
+import { monsterBody } from '../fixtures/monsterbody.ts';
 
 /**
  * A monster whose box already hangs over a ledge froze solid. Vanilla judges
@@ -39,37 +41,9 @@ function pitGrid(open: number, cell: number) {
   });
 }
 
-/** Awake, idle, nothing in progress — the "ready for a chase call" shape the sibling monster tests use. */
+/** A demon on the floor at `at`, headed east, with `extra` over the resting body. */
 function demonBody(at: Pos2, world: World, extra: Partial<MonsterBody> = {}): MonsterBody {
-  return {
-    id: 0,
-    x: at.x,
-    y: at.y,
-    z: world.groundFloor(at.x, at.y, stats.radius, true),
-    velZ: 0,
-    angle: 0,
-    attackPause: 0,
-    burstLeft: 0,
-    burstTimer: 0,
-    swinging: false,
-    chargeTimer: 0,
-    chargeAngle: 0,
-    painTimer: 0,
-    inFloat: false,
-    movedir: 0,
-    movecount: 0,
-    chaseTimer: 0,
-    moveBlocked: false,
-    threshold: 0,
-    justHit: false,
-    justAttacked: false,
-    reactionTicks: 0,
-    refiring: false,
-    homingBias: false,
-    walkSoundTimer: 0,
-    walkSoundStep: 0,
-    ...extra,
-  };
+  return monsterBody({ ...at, z: world.groundFloor(at.x, at.y, stats.radius, true) }, { movedir: 0, ...extra });
 }
 
 /** The E1M5 shape: a one-cell alcove the demon cannot stand clear of either edge of. */
@@ -89,9 +63,7 @@ function alcove(): { world: World; body: MonsterBody; target: Pos3; edge: number
   };
 }
 
-const tics = (seconds: number): number => Math.round(seconds / DOOM_TIC);
-
-describe('a monster already hanging over a ledge', () => {
+describe('Regressions · a monster already hanging over a ledge', () => {
   test('is standing over a dropoff to begin with', () => {
     const { world, body } = alcove();
     assert.equal(body.z, 0, 'the straddled opening pins it to the high side');
@@ -104,7 +76,7 @@ describe('a monster already hanging over a ledge', () => {
     let travelled = 0;
     let lowest = body.z;
     let westmost = body.x;
-    for (let i = 0; i < tics(30); i++) {
+    for (let i = 0; i < ticsIn(30); i++) {
       stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers: [] });
       travelled = Math.max(travelled, Math.hypot(body.x - start.x, body.y - start.y));
       lowest = Math.min(lowest, body.z);
@@ -129,7 +101,7 @@ describe('a monster already hanging over a ledge', () => {
     const edge = 2 * 128; // the pit's near edge
     const body = demonBody({ x: edge + 5, y: grid.centre(2, 2).y }, world, { movedir: 4 });
     const target = { x: edge - 256, y: body.y, z: PIT_FLOOR };
-    for (let i = 0; i < tics(20); i++) {
+    for (let i = 0; i < ticsIn(20); i++) {
       stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers: [] });
       assert.equal(body.z, 0, `stepped into the pit at frame ${i}`);
       assert.ok(body.x >= edge, `centre crossed the ledge by ${(edge - body.x).toFixed(1)} units at frame ${i}`);
@@ -144,7 +116,7 @@ describe('a monster already hanging over a ledge', () => {
     const at = grid.centre(3, 2); // the far column, a clear body-width from the pit
     const body = demonBody(at, world, { movedir: 4 });
     const target = { x: at.x - 4 * 128, y: at.y, z: PIT_FLOOR }; // straight across the pit
-    for (let i = 0; i < tics(8); i++) {
+    for (let i = 0; i < ticsIn(8); i++) {
       stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers: [] });
       assert.equal(body.z, 0, `stepped into the pit at frame ${i}`);
     }

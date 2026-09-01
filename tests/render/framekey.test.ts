@@ -12,7 +12,7 @@ import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
  * the animator can be in, including a death sequence drawn in another sprite.
  * docs/sprites.md § Fullbright frames.
  */
-describe('SpriteAnimator · frameKey', () => {
+describe('Sprites · frameKey', () => {
   test('names the sprite and letter of the frame resolve drew, through every sequence', () => {
     const anim = new SpriteAnimator(BANK, MATERIALS, 'TROO', ['A', 'B'], 4 * DOOM_TIC);
     assert.equal(anim.frameKey, '');

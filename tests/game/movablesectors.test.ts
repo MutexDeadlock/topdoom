@@ -11,7 +11,7 @@ import { gridMap } from '../fixtures/gridmap.ts';
  * first of those stops `render/mapmesh.ts` dicing its walls vertically.
  * See docs/render.md § Mover meshes.
  */
-describe('specials · movable versus moving sectors', () => {
+describe('Specials · movable versus moving sectors', () => {
   /** The line between two grid cells, whichever way round its sidedefs happen to sit. */
   function boundary(map: DoomMap, a: number, b: number): number {
     const i = map.linedefs.findIndex((l) => {

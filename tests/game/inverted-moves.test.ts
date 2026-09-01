@@ -10,7 +10,7 @@ import { specialsRig, type SpecialsRigOptions } from '../fixtures/specialsrig.ts
  * a body no longer fits, rather than travelling there at mover speed. See
  * docs/specials.md § Inverted plane moves.
  */
-describe('specials · inverted plane moves', () => {
+describe('Specials · inverted plane moves', () => {
   /**
    * Two cells: the tagged one at floor `start`, its neighbor at floor 128. WR
    * 83 ("lower floor to highest floor") on the boundary, triggered directly —
@@ -86,7 +86,7 @@ describe('specials · inverted plane moves', () => {
  * makes a new number answer the question independently. One whose case
  * disagrees passes `floor()`'s `direction` option instead — none does today.
  */
-describe('specials · plane directions', () => {
+describe('Specials · plane directions', () => {
   /** `lowerFloor`, `lowerFloorToLowest`, `turboLower`, and Boom's `lowerFloorToNearest`. */
   const LOWERING = [19, 45, 83, 102, 23, 38, 60, 82, 36, 70, 71, 98, 219, 220, 221, 222];
   /**

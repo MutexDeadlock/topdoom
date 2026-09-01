@@ -52,7 +52,7 @@ function inOneCell(ring: ArrayLike<number>): boolean {
   );
 }
 
-describe('render · flats are diced on a world grid', () => {
+describe('Rendering · flats are diced on a world grid', () => {
   test('the cells tile the leaf exactly: no overlap, and no hole', () => {
     // The whole point of the dicing is invisible if it leaks — a missing cell is a gap in the
     // floor with the void showing through, and an overlapping one z-fights.

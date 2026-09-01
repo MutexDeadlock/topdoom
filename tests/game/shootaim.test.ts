@@ -13,7 +13,7 @@ import type { Pos3 } from '../../src/types.ts';
  * only heights a shot is actually *stopped* at, since a line that lets the shot
  * through never fires its special.
  */
-describe('game · shoot-line auto-aim', () => {
+describe('Combat · shoot-line auto-aim', () => {
   /** The cursor ray through two DOOM-space points, in the three.js space `TopDownCamera.rayFor` hands over. */
   function rayThrough(from: Pos3, to: Pos3): THREE.Ray {
     const origin = new THREE.Vector3(from.x, from.z, -from.y);

@@ -9,6 +9,7 @@ import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { clearRandom, pRandom } from '../../src/util/random.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
+import { monsterBody } from '../fixtures/monsterbody.ts';
 
 /**
  * The simulation advances only in whole `DOOM_TIC` steps, so the same elapsed
@@ -33,34 +34,7 @@ function scene(): { world: World; body: MonsterBody; target: { x: number; y: num
   });
   const world = new World(grid.map);
   const start = grid.centre(1, 1);
-  const body: MonsterBody = {
-    id: 1,
-    x: start.x,
-    y: start.y,
-    z: 0,
-    velZ: 0,
-    angle: 0,
-    attackPause: 0,
-    burstLeft: 0,
-    burstTimer: 0,
-    swinging: false,
-    chargeTimer: 0,
-    chargeAngle: 0,
-    painTimer: 0,
-    inFloat: false,
-    movedir: 8,
-    movecount: 0,
-    chaseTimer: 0,
-    moveBlocked: false,
-    threshold: 0,
-    justHit: false,
-    justAttacked: false,
-    reactionTicks: 0,
-    refiring: false,
-    homingBias: false,
-    walkSoundTimer: 0,
-    walkSoundStep: 0,
-  };
+  const body = monsterBody({ ...start, z: 0 });
   const goal = grid.centre(7, 5);
   return { world, body, target: { x: goal.x, y: goal.y, z: 0 } };
 }

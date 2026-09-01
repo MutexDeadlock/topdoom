@@ -9,7 +9,7 @@ import type { DoomMap } from '../../src/wad/map.ts';
  * numbers this engine gained only with the Boom work.
  * See docs/specials.md § Perpetual lifts and the stop line.
  */
-describe('specials · perpetual lifts', () => {
+describe('Specials · perpetual lifts', () => {
   /**
    * Three cells: floors 64 / 0 / 32, so the middle sector's perpetual travel
    * is 0..64. The a|middle edge carries the perpetual trigger (87, WR), the

@@ -18,7 +18,7 @@ import { heldInput } from '../fixtures/input.ts';
  * box stops: out of the 36-unit reach box at rest, inside it while running.
  * docs/items.md § Collecting things.
  */
-describe('Regression · a pickup reaches where the move was headed', () => {
+describe('Regressions · a pickup reaches where the move was headed', () => {
   const CELL = 256;
   const LEDGE = 32; // Over MAX_STEP_UP, so the player never gets in.
 

@@ -55,7 +55,7 @@ function shape(mesh: MoverMesh) {
   };
 }
 
-describe('render · mover meshes', () => {
+describe('Rendering · mover meshes', () => {
   test('a refresh after a height change matches a mesh built from scratch', () => {
     const { map, sector, build, refresh } = level();
     const mesh = build();

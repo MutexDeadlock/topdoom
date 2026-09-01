@@ -62,7 +62,7 @@ const deadEndFacingHall = () =>
     { cell: 256 },
   );
 
-describe('game · auto camera openness', () => {
+describe('Auto camera · auto camera openness', () => {
   test('a corridor reads shut-in, an open room reads open', () => {
     const c = corridor();
     const pc = c.centre(4, 1);
@@ -272,7 +272,7 @@ const eyeAt = (from: Pos3, tiltDeg: number, distance: number) => {
   };
 };
 
-describe('game · the buried-eye rescue', () => {
+describe('Auto camera · the buried-eye rescue', () => {
   const TILT = 60;
   const SOUTH_YAW = 0;
   const NORTH_YAW = 180;
@@ -352,7 +352,7 @@ const shaftMouth = () =>
     heights: { '.': { floor: 0, ceil: 512 }, H: { floor: 320, ceil: 512 } },
   });
 
-describe('game · a framing pulled in leans further over', () => {
+describe('Auto camera · a framing pulled in leans further over', () => {
   const SOUTH_YAW = 0;
 
   test('the lean is nothing at the openness mapping’s own narrow end and full at the occluded floor', () => {
@@ -408,7 +408,7 @@ describe('game · a framing pulled in leans further over', () => {
   });
 });
 
-describe('game · the buried-eye rescue searches both dials', () => {
+describe('Auto camera · the buried-eye rescue searches both dials', () => {
   const TILT = 60;
   const SOUTH_YAW = 0;
   const LIMIT = 720;
@@ -556,7 +556,7 @@ const lowWallToTheSouth = () =>
     { heights: { '.': { floor: 0, ceil: 256 } } },
   );
 
-describe('game · framing past an occluder', () => {
+describe('Auto camera · framing past an occluder', () => {
   const TILT = 60;
   /** The tilt the auto camera reaches over open ground — what the far-wall case is framed at. */
   const WIDE_TILT = 70;
@@ -685,7 +685,7 @@ describe('game · framing past an occluder', () => {
  * across from one reaches far lower than `ceilHeight` says. Reading the raw
  * heights here made the camera blind to exactly that stretch.
  */
-describe('game · framing past an occluder drawn by a render transfer', () => {
+describe('Auto camera · framing past an occluder drawn by a render transfer', () => {
   const TILT = 60;
   const SOUTH_YAW = 0;
 

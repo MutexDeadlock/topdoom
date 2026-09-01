@@ -48,7 +48,7 @@ function grate(setup: (map: DoomMap, line: number) => void, grid: string[] = ['.
 
 const round = (v: readonly [number, number]) => [Number(v[0].toFixed(4)), Number(v[1].toFixed(4))];
 
-describe('render · midtexture placement', () => {
+describe('Rendering · midtexture placement', () => {
   test('top-pegged: the texture hangs from the ceiling, the opening below it stays empty', () => {
     const { band, v } = grate(() => {});
     assert.deepEqual(band, [128 - TEX_H, 128]);

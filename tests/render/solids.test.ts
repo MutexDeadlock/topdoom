@@ -70,7 +70,7 @@ const square = (cx: number, cy: number, r: number): [number, number][] => [
   [cx - r, cy + r],
 ];
 
-describe('render · solid structure lids', () => {
+describe('Rendering · solid structure lids', () => {
   test('a pillar gets one lid, at the ceiling, in its own wall texture', () => {
     const map = mapWith([{ points: square(0, 0, 64) }]);
     const caps = findSolidCaps(map, []);

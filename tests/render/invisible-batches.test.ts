@@ -26,7 +26,7 @@ function walled() {
   return buildMapMesh(map, BANK, { transfers: new Transfers(map) });
 }
 
-describe('render · invisible batches report themselves', () => {
+describe('Rendering · invisible batches report themselves', () => {
   test('a wall batch reports its fog alpha, and zero only when everything is hidden', () => {
     const b = walled();
     assert.ok(b.occluders.length > 1, 'the fixture should build several wall quads in one batch');

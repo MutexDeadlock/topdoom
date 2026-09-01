@@ -3,13 +3,15 @@ import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { specialsRig, soundLog, TIC } from '../fixtures/specialsrig.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
-import { DI_NODIR, type MonsterBody } from '../../src/game/monsters/defs.ts';
+import { type MonsterBody } from '../../src/game/monsters/defs.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { LF } from '../../src/wad/map.ts';
 import type { CrossingBody } from '../../src/game/things/defs.ts';
 import type { SfxId } from '../../src/audio/sfx.ts';
+import { monsterBody } from '../fixtures/monsterbody.ts';
+import { stepFor } from '../fixtures/tics.ts';
 
 /**
  * `P_Move`'s `spechit` pass: the door a chasing monster walks into, opened.
@@ -49,34 +51,7 @@ function doorRig(special: number, flags = 0): DoorRig {
   const start = grid.centre(0, 0);
   const { sfx, played } = soundLog();
   const rig = specialsRig(map, start, { sfx });
-  const body: MonsterBody = {
-    id: 1,
-    x: start.x,
-    y: start.y,
-    z: 0,
-    velZ: 0,
-    angle: 0,
-    attackPause: 0,
-    burstLeft: 0,
-    burstTimer: 0,
-    swinging: false,
-    chargeTimer: 0,
-    chargeAngle: 0,
-    painTimer: 0,
-    inFloat: false,
-    movedir: DI_NODIR,
-    movecount: 0,
-    chaseTimer: 0,
-    moveBlocked: false,
-    threshold: 0,
-    justHit: false,
-    justAttacked: false,
-    reactionTicks: 0,
-    refiring: false,
-    homingBias: false,
-    walkSoundTimer: 0,
-    walkSoundStep: 0,
-  };
+  const body = monsterBody({ ...start, z: 0 });
   const asCrossing = (): CrossingBody => ({ x: body.x, y: body.y, id: 1, type: ThingType.demon, blockRadius: stats.radius, angle: body.angle });
   const target = { ...grid.centre(3, 0), z: 0 };
   const s = rig.specials as unknown as {
@@ -90,7 +65,7 @@ function doorRig(special: number, flags = 0): DoorRig {
     state: () => s.ceilingMovers.get(door)?.state,
     press: (who) => s.trigger(line, new Set(), who),
     run: (seconds) => {
-      for (let i = 0; i < Math.round(seconds / TIC); i++) {
+      stepFor(seconds, () => {
         stepMonsterAI(body, stats, rig.world, {
           dt: TIC,
           target,
@@ -99,12 +74,12 @@ function doorRig(special: number, flags = 0): DoorRig {
           useLines: (_body, x, y) => rig.specials.useMonster(asCrossing(), x, y, new Set()),
         });
         rig.tick();
-      }
+      });
     },
   };
 }
 
-describe('monsters · opening doors', () => {
+describe('Monster AI · opening doors', () => {
   test('a chasing monster walks a manual door (1) open and through it', () => {
     const d = doorRig(1);
     d.run(1.5);

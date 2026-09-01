@@ -14,7 +14,7 @@ import { specialsRig, BANK, TIC } from '../fixtures/specialsrig.ts';
 const OWN_LIGHT = 160; // gridMap's default
 const LAVA_LIGHT = 255;
 
-describe('specials · transferred lighting', () => {
+describe('Specials · transferred lighting', () => {
   test('213 lights a sector’s floor from the control sector, and leaves its walls alone', () => {
     const grid = gridMap(['#####', '#...#', '#####']);
     const map = grid.map;

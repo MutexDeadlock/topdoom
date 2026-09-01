@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TopDownCamera } from '../../src/render/camera.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
 
 /**
  * The camera's orbit: a Q/E step animates towards its target, a `yawDeg`
@@ -9,19 +10,18 @@ import { TopDownCamera } from '../../src/render/camera.ts';
  * See docs/camera.md § Camera orbit.
  */
 
-const TIC = 1 / 35;
 const AT = { x: 0, y: 0, z: 41 };
 
-describe('render · camera orbit', () => {
+describe('Rendering · camera orbit', () => {
   test('a Q/E step animates towards its target and settles on the 45° lattice', () => {
     const camera = new TopDownCamera(16 / 9);
     camera.snapTo(AT);
     camera.stepYaw(45);
 
-    camera.tick(TIC, AT, null);
+    camera.tick(DOOM_TIC, AT, null);
     assert.ok(camera.yawDeg > 0 && camera.yawDeg < 45, 'one tic moves partway');
 
-    for (let i = 0; i < 200; i++) camera.tick(TIC, AT, null);
+    for (let i = 0; i < 200; i++) camera.tick(DOOM_TIC, AT, null);
     assert.ok(Math.abs(camera.yawDeg - 45) < 1e-6, 'the step arrives');
   });
 
@@ -29,7 +29,7 @@ describe('render · camera orbit', () => {
     const camera = new TopDownCamera(16 / 9);
     camera.snapTo(AT);
     camera.stepYaw(45);
-    camera.tick(TIC, AT, null); // partway through the smoothing
+    camera.tick(DOOM_TIC, AT, null); // partway through the smoothing
     const partway = camera.yawDeg;
 
     // A silent teleporter through an identically-aligned line pair: no rotation
@@ -37,7 +37,7 @@ describe('render · camera orbit', () => {
     camera.turnYaw(0);
     camera.snapTo(AT);
     assert.equal(camera.yawDeg, partway, 'a zero turn moves nothing on the spot');
-    for (let i = 0; i < 200; i++) camera.tick(TIC, AT, null);
+    for (let i = 0; i < 200; i++) camera.tick(DOOM_TIC, AT, null);
     assert.ok(Math.abs(camera.yawDeg - 45) < 1e-6, 'the pending step survives the trip');
   });
 
@@ -45,11 +45,11 @@ describe('render · camera orbit', () => {
     const camera = new TopDownCamera(16 / 9);
     camera.snapTo(AT);
     camera.stepYaw(45);
-    camera.tick(TIC, AT, null);
+    camera.tick(DOOM_TIC, AT, null);
 
     camera.turnYaw(90); // a line pair a quarter turn apart
     camera.snapTo(AT);
-    for (let i = 0; i < 200; i++) camera.tick(TIC, AT, null);
+    for (let i = 0; i < 200; i++) camera.tick(DOOM_TIC, AT, null);
     assert.ok(Math.abs(camera.yawDeg - 135) < 1e-6, 'the turn adds to the step, it does not eat it');
   });
 
@@ -57,11 +57,11 @@ describe('render · camera orbit', () => {
     const camera = new TopDownCamera(16 / 9);
     camera.snapTo(AT);
     camera.stepYaw(45);
-    camera.tick(TIC, AT, null);
+    camera.tick(DOOM_TIC, AT, null);
 
     camera.yawDeg = 180; // the destination thing's own angle
     camera.snapTo(AT);
-    for (let i = 0; i < 200; i++) camera.tick(TIC, AT, null);
+    for (let i = 0; i < 200; i++) camera.tick(DOOM_TIC, AT, null);
     assert.equal(camera.yawDeg, 180, 'the arrival angle is the whole answer');
   });
 
@@ -89,7 +89,7 @@ describe('render · camera orbit', () => {
 
     let previous = camera.yawDeg;
     for (let i = 0; i < 200; i++) {
-      camera.tick(TIC, AT, null);
+      camera.tick(DOOM_TIC, AT, null);
       // Each tic is a small step in one direction — never the 350° lurch a lone wrapped field
       // would produce, and never back the way it came.
       const stepped = ((camera.yawDeg - previous + 540) % 360) - 180;

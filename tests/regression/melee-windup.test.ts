@@ -6,10 +6,11 @@ import { World } from '../../src/game/world.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
-import { DI_NODIR, MELEE_RANGE, meleeThreshold, type MonsterBody, type MonsterStats } from '../../src/game/monsters/defs.ts';
+import { MELEE_RANGE, meleeThreshold, type MonsterBody, type MonsterStats } from '../../src/game/monsters/defs.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import type { Pos3 } from '../../src/types.ts';
+import { monsterBody } from '../fixtures/monsterbody.ts';
 
 /**
  * A monster's claw used to land on the chase call that chose it, so touching a
@@ -51,34 +52,7 @@ function scene(type: number): Scene {
   const world = new World(grid.map);
   const stats = MONSTER_STATS[type];
   const at = grid.centre(2, 0);
-  const body: MonsterBody = {
-    id: 1,
-    x: at.x,
-    y: at.y,
-    z: 0,
-    velZ: 0,
-    angle: 0,
-    attackPause: 0,
-    burstLeft: 0,
-    burstTimer: 0,
-    swinging: false,
-    chargeTimer: 0,
-    chargeAngle: 0,
-    painTimer: 0,
-    inFloat: false,
-    movedir: DI_NODIR,
-    movecount: 8,
-    chaseTimer: 0,
-    moveBlocked: false,
-    threshold: 0,
-    justHit: false,
-    justAttacked: false,
-    reactionTicks: 0,
-    refiring: false,
-    homingBias: false,
-    walkSoundTimer: 0,
-    walkSoundStep: 0,
-  };
+  const body = monsterBody({ ...at, z: 0 }, { movecount: 8 });
   const target: Pos3 = { x: at.x + REACH - 2, y: at.y, z: 0 };
   const log = soundLog();
   let tic = 0;

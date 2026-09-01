@@ -8,7 +8,7 @@ import { specialsRig, soundLog, TIC } from '../fixtures/specialsrig.ts';
  * door, which takes over the one already running, and which is refused.
  * See docs/specials.md § Retriggering a door.
  */
-describe('specials · doors', () => {
+describe('Specials · doors', () => {
   /**
    * Two cells at floor 0 / ceiling 128: the east one is the door, tagged 1 and
    * carrying the manual raise (1) on its own west edge, since `EV_VerticalDoor`

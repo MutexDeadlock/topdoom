@@ -5,6 +5,8 @@ import { createInventory, setAutoSwitchWeapon, type Inventory, type WeaponId } f
 import type { Input } from '../../src/game/input.ts';
 import { SILENT, type SfxId, type SoundEmitter } from '../../src/audio/sfx.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
+import { NO_INPUT, PREV_WEAPON_INPUT } from '../fixtures/input.ts';
+import { stepFor } from '../fixtures/tics.ts';
 
 /**
  * The right button's "switch to previous weapon" binding. What's worth pinning is
@@ -15,18 +17,12 @@ import { DOOM_TIC } from '../../src/constants.ts';
 
 const AT = { x: 0, y: 0, z: 0 };
 
-/** Right-clicking with the button bound to `previousweapon`, and nothing else pressed. */
-const CLICK = {
-  pressed: () => false,
-  rightMousePressed: (a: string) => a === 'previousweapon',
-} as unknown as Input;
-const IDLE = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
 
 /**
  * One frame of the switch path: the input (nothing pressed by default) and any
  * wheel scroll, then the `update` that notices what ended up selected.
  */
-function settle(weapons: WeaponSystem, inv: Inventory, input: Input = IDLE, wheel = 0): WeaponId {
+function settle(weapons: WeaponSystem, inv: Inventory, input: Input = NO_INPUT, wheel = 0): WeaponId {
   weapons.handleSwitching(input, inv, wheel);
   weapons.update(DOOM_TIC, false, inv, SILENT, AT);
   return inv.currentWeapon;
@@ -46,7 +42,7 @@ function started(inv: Inventory): WeaponSystem {
 
 /** One frame with digit key `n` down, and what it selected. */
 function press(weapons: WeaponSystem, inv: Inventory, n: number): WeaponId {
-  const key = { ...IDLE, pressed: (code: string) => code === `Digit${n}` } as unknown as Input;
+  const key = { ...NO_INPUT, pressed: (code: string) => code === `Digit${n}` } as unknown as Input;
   return settle(weapons, inv, key);
 }
 
@@ -57,13 +53,13 @@ describe('Weapons · switch to previous weapon', () => {
     assert.equal(inv.currentWeapon, 'pistol');
 
     selectDirectly(weapons, inv, 'fist');
-    weapons.handleSwitching(CLICK, inv, 0);
+    weapons.handleSwitching(PREV_WEAPON_INPUT, inv, 0);
     assert.equal(inv.currentWeapon, 'pistol');
 
     // The same frame's update records the weapon just left, so the next
     // click goes the other way rather than sticking on the pistol.
     weapons.update(0.016, false, inv, SILENT, AT);
-    weapons.handleSwitching(CLICK, inv, 0);
+    weapons.handleSwitching(PREV_WEAPON_INPUT, inv, 0);
     assert.equal(inv.currentWeapon, 'fist');
   });
 
@@ -72,7 +68,7 @@ describe('Weapons · switch to previous weapon', () => {
     const weapons = started(inv);
 
     settle(weapons, inv);
-    weapons.handleSwitching(CLICK, inv, 0);
+    weapons.handleSwitching(PREV_WEAPON_INPUT, inv, 0);
     assert.equal(inv.currentWeapon, 'pistol');
   });
 
@@ -84,7 +80,7 @@ describe('Weapons · switch to previous weapon', () => {
     // Only reachable by starting a new game, but the guard is what keeps a
     // stale `previousWeapon` from selecting a weapon with no `WeaponDef` state.
     inv.weapons.delete('pistol');
-    weapons.handleSwitching(CLICK, inv, 0);
+    weapons.handleSwitching(PREV_WEAPON_INPUT, inv, 0);
     assert.equal(inv.currentWeapon, 'fist');
   });
 
@@ -94,7 +90,7 @@ describe('Weapons · switch to previous weapon', () => {
 
     selectDirectly(weapons, inv, 'fist');
     weapons.beginLevel(inv);
-    weapons.handleSwitching(CLICK, inv, 0);
+    weapons.handleSwitching(PREV_WEAPON_INPUT, inv, 0);
     assert.equal(inv.currentWeapon, 'fist');
   });
 });
@@ -194,7 +190,7 @@ describe('Weapons · per-slot memory', () => {
 describe('Weapons · mouse wheel', () => {
   /** One notch, positive scrolling down the list, and what it selected. */
   function scroll(weapons: WeaponSystem, inv: Inventory, dir: number): WeaponId {
-    return settle(weapons, inv, IDLE, dir);
+    return settle(weapons, inv, NO_INPUT, dir);
   }
 
   test('one notch is one weapon, and weapons not owned are skipped', () => {
@@ -273,9 +269,11 @@ describe('Game rules · fire rates', () => {
     inv.currentWeapon = weapon;
     for (const ammo of Object.keys(inv.ammo) as (keyof typeof inv.ammo)[]) inv.ammo[ammo] = 999_999;
     ws.beginLevel(inv);
-    for (let i = 0; i < Math.round(idleSeconds / DOOM_TIC); i++) ws.fire(false, inv, 0);
+    stepFor(idleSeconds, () => ws.fire(false, inv, 0));
     const fired: number[] = [];
-    for (let i = 0; i < Math.round(seconds / DOOM_TIC); i++) if (ws.fire(true, inv, 0).length > 0) fired.push(i);
+    stepFor(seconds, (i) => {
+      if (ws.fire(true, inv, 0).length > 0) fired.push(i);
+    });
     return fired;
   }
 

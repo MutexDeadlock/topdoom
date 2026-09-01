@@ -16,10 +16,10 @@ import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { buildMapMesh, type BuiltMap } from '../../src/render/mapmesh.ts';
 import type { DoomMap } from '../../src/wad/map.ts';
 import type { MaterialBank } from '../../src/render/textures.ts';
-import type { Input } from '../../src/game/input.ts';
 import type { SfxId, SoundEmitter } from '../../src/audio/sfx.ts';
 import type { Pos2 } from '../../src/types.ts';
 import type { CrossingBody } from '../../src/game/things/defs.ts';
+import { NO_INPUT, USE_INPUT } from './input.ts';
 
 /**
  * The one texture name `BANK` hands back a **masked** material for — a grate,
@@ -58,11 +58,8 @@ export function crushSources(over: Partial<OccupancySources> = {}): OccupancySou
   };
 }
 
-/** Nothing held, nothing clicked — the input a test that isn't about the use key wants. */
-export const NO_INPUT = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
-
-/** The use key held — what a test drives a switch or manual door with. */
-export const USE_INPUT = { pressed: (k: string) => k === 'Space', rightMousePressed: () => false } as unknown as Input;
+/** The `pressed`-shaped inputs live in `input.ts`; re-exported so a specials test imports one fixture. */
+export { NO_INPUT, USE_INPUT };
 
 /** One vanilla tic, the step `game.ts` drives specials at and this rig's default. */
 export const TIC = 1 / 35;

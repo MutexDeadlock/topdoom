@@ -23,7 +23,7 @@ function scanAll(map: DoomMap, sectorIndex: number): number[] {
   return out;
 }
 
-describe('world · sector→lines index', () => {
+describe('World · sector→lines index', () => {
   test('matches a full scan, in linedef order, for every sector', () => {
     const { map } = gridMap([
       '.....',

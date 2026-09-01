@@ -11,7 +11,7 @@ import type { SpecialsSnapshot } from '../../src/game/snapshot.ts';
  * only do their whole job because of it.
  * See docs/specials.md § One mover per sector.
  */
-describe('specials · mover classes', () => {
+describe('Specials · mover classes', () => {
   /** Reaches the controller's two private slots, the way the crusher tests already do. */
   function slots(specials: unknown) {
     return specials as unknown as {

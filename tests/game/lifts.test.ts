@@ -8,7 +8,7 @@ import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
  * already finished its stroke. See docs/specials.md § Retriggering a door,
  * whose rule the lift shares.
  */
-describe('specials · lifts', () => {
+describe('Specials · lifts', () => {
   /**
    * Three cells in a row: the middle one is the lift, tagged 1, with a low
    * neighbour west (floor 0) and a higher one east (floor 48), so

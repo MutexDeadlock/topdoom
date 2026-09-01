@@ -34,7 +34,7 @@ function room(...blind: readonly (readonly [number, number])[]) {
 const CORNER = cellIndex(0, 0);
 const FAR = cellIndex(3, 1);
 
-describe('world · REJECT', () => {
+describe('World · REJECT', () => {
   test('with no table the open room is fully visible', () => {
     const { world, at } = room();
     assert.equal(world.hasLineOfSight(at(0, 0), at(3, 1)), true);

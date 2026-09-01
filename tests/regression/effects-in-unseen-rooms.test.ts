@@ -31,7 +31,7 @@ function fogAt(layer: SpriteFxLayer, cell: { col: number; row: number }): void {
   layer.spawnTeleportFog({ x: at.x, y: at.y, z: 0 });
 }
 
-describe('Regression · effects in rooms the player has not seen', () => {
+describe('Regressions · effects in rooms the player has not seen', () => {
   test('a teleport fog in an unexplored room is not drawn, the one in sight is', () => {
     const layer = layerOn(new Set([GRID.index(ROOM.col, ROOM.row)]));
     fogAt(layer, CLOSET);

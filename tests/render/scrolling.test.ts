@@ -18,7 +18,7 @@ import { NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
  * texture's own width, the **front sidedef only**, and horizontally only.
  * See docs/render.md § Scrolling textures.
  */
-describe('Scrolling textures · special 48', () => {
+describe('Rendering · scrolling textures, special 48', () => {
   const TEX_WIDTH = 64;
   const TEX_HEIGHT = 128;
 

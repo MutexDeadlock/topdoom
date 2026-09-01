@@ -8,6 +8,7 @@ import {
   MIN_TILT_DEG,
   TopDownCamera,
 } from '../../src/render/camera.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
 
 /**
  * The camera's animated framing: `targetDistance`/`targetTiltDeg` glide on the
@@ -15,7 +16,6 @@ import {
  * assignment jumps. See docs/camera.md § Auto camera.
  */
 
-const TIC = 1 / 35;
 
 /** The three.js eye height above the follow point — a pure function of tilt and distance. */
 function eyeHeight(camera: TopDownCamera, alpha: number): number {
@@ -23,18 +23,18 @@ function eyeHeight(camera: TopDownCamera, alpha: number): number {
   return camera.camera.position.y;
 }
 
-describe('render · camera framing', () => {
+describe('Rendering · camera framing', () => {
   test('a target glides and settles exactly, with no asymptotic residue', () => {
     const camera = new TopDownCamera(16 / 9);
     camera.snapTo({ x: 0, y: 0, z: 41 });
     camera.targetDistance = 360;
     camera.targetTiltDeg = 50;
 
-    camera.tick(TIC, { x: 0, y: 0, z: 41 }, null);
+    camera.tick(DOOM_TIC, { x: 0, y: 0, z: 41 }, null);
     assert.ok(camera.distance < 480 && camera.distance > 360, 'one tic moves partway');
     assert.ok(camera.tiltDeg < 60 && camera.tiltDeg > 50);
 
-    for (let i = 0; i < 200; i++) camera.tick(TIC, { x: 0, y: 0, z: 41 }, null);
+    for (let i = 0; i < 200; i++) camera.tick(DOOM_TIC, { x: 0, y: 0, z: 41 }, null);
     assert.equal(camera.distance, 360, 'the damper snaps to the target exactly');
     assert.equal(camera.tiltDeg, 50);
   });
@@ -43,7 +43,7 @@ describe('render · camera framing', () => {
     const camera = new TopDownCamera(16 / 9);
     camera.snapTo({ x: 0, y: 0, z: 41 });
     camera.targetTiltDeg = 20; // pull well off vertical so the eye height moves a lot
-    camera.tick(TIC, { x: 0, y: 0, z: 41 }, null);
+    camera.tick(DOOM_TIC, { x: 0, y: 0, z: 41 }, null);
 
     const atPrev = eyeHeight(camera, 0);
     const atHalf = eyeHeight(camera, 0.5);
@@ -81,12 +81,12 @@ describe('render · camera framing', () => {
   test('snapFraming jumps with nothing left to interpolate or glide', () => {
     const camera = new TopDownCamera(16 / 9);
     camera.snapTo({ x: 0, y: 0, z: 41 });
-    camera.tick(TIC, { x: 0, y: 0, z: 41 }, null);
+    camera.tick(DOOM_TIC, { x: 0, y: 0, z: 41 }, null);
     camera.snapFraming(700, 30);
     assert.equal(camera.targetDistance, 700, 'the target follows the jump');
     assert.equal(camera.targetTiltDeg, 30);
     assert.ok(Math.abs(eyeHeight(camera, 0) - eyeHeight(camera, 1)) < 1e-9, 'no interpolation window remains');
-    camera.tick(TIC, { x: 0, y: 0, z: 41 }, null);
+    camera.tick(DOOM_TIC, { x: 0, y: 0, z: 41 }, null);
     assert.equal(camera.distance, 700, 'and the next tic has nothing to glide to');
   });
 });

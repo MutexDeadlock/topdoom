@@ -118,7 +118,7 @@ function cornerList(meshes: Map<string, THREE.Mesh>, o: WallOccluder) {
 /** One long `dt`, so `dampen` snaps to its target and the test reads the steady state. */
 const SETTLE = 10;
 
-describe('render · a wall is cut into chunks the fade can window', () => {
+describe('Rendering · a wall is cut into chunks the fade can window', () => {
   test('a long wall builds one quad per chunk, tiling the line end to end', () => {
     const b = walledRow();
     // The middle cell's north edge: y = 2 * CELL, x from CELL to 2 * CELL.
@@ -170,7 +170,7 @@ describe('render · a wall is cut into chunks the fade can window', () => {
  * `fadeFloor` is 1 fades nothing but still stretches the box, which is what lets a test switch the
  * reject off without changing what should be drawn. docs/render.md § The fade is a hole, not a wall.
  */
-describe('render · the sightline box rejects only what it must', () => {
+describe('Rendering · the sightline box rejects only what it must', () => {
   /** Both faders run over the same targets, then the alpha of every vertex they wrote. */
   function alphasFor(b: ReturnType<typeof walledRow>, camX: number, camY: number, camZ: number, ts: FadeTarget[]) {
     const walls = new WallFader(b.occluders, b.wallMeshes);
@@ -211,7 +211,7 @@ describe('render · the sightline box rejects only what it must', () => {
   });
 });
 
-describe('render · the fade is a hole, not a wall', () => {
+describe('Rendering · the fade is a hole, not a wall', () => {
   /**
    * Camera due north of the wall looking south at a target due south of it, so
    * the sightline crosses at a known x — `where` — and at a height inside the
@@ -346,7 +346,7 @@ describe('render · the fade is a hole, not a wall', () => {
   });
 });
 
-describe('render · what the fade still refuses to touch', () => {
+describe('Rendering · what the fade still refuses to touch', () => {
   /**
    * Camera and target the same height, either side of the wall and equally far
    * from it — so the sightline is level and the sprite reaches exactly
@@ -438,7 +438,7 @@ function narrowRoom() {
   return { grid, ...built, world: new World(grid.map) };
 }
 
-describe('render · the hole stops at the target', () => {
+describe('Rendering · the hole stops at the target', () => {
   /** Camera due north, looking south past the near wall at a target `targetY`. */
   function faded(b: ReturnType<typeof narrowRoom>, targetY: number, line: number) {
     const fader = new WallFader(b.occluders, b.wallMeshes);
@@ -491,7 +491,7 @@ describe('render · the hole stops at the target', () => {
   });
 });
 
-describe('render · a monster fades less of a wall than the player does', () => {
+describe('Rendering · a monster fades less of a wall than the player does', () => {
   const player = { x: 0, y: 0, z: 0 };
 
   test('a monster opens the narrower hole of the two', () => {
@@ -568,7 +568,7 @@ describe('render · a monster fades less of a wall than the player does', () => 
   });
 });
 
-describe('render · flats fade around the sightline too', () => {
+describe('Rendering · flats fade around the sightline too', () => {
   /** A raised platform of nine cells, with open floor to the south to stand on. */
   function platform() {
     const grid = gridMap(['...', '...', '...'], {
@@ -771,7 +771,7 @@ describe('render · flats fade around the sightline too', () => {
   });
 });
 
-describe('render · commit writes only what moved', () => {
+describe('Rendering · commit writes only what moved', () => {
   /** `needsUpdate` is write-only in three.js; the upload it schedules shows up as a bumped `version`. */
   function uploads(attr: THREE.BufferAttribute, act: () => void): boolean {
     const before = attr.version;
@@ -809,7 +809,7 @@ describe('render · commit writes only what moved', () => {
   });
 });
 
-describe('render · fade targets', () => {
+describe('Rendering · fade targets', () => {
   test('every target is centred in its own body, not in a shared one', () => {
     // A monster brings its `mobjinfo.height`, so its wedge spans exactly the
     // body: feet to crown, centre halfway. docs/render.md § The target is the
@@ -870,7 +870,7 @@ describe('render · fade targets', () => {
  * case here is about that last one holding the same picture as a full pass.
  * See docs/render.md § Nothing per-frame is per-quad.
  */
-describe('render · a frame’s work follows the hole, not the map', () => {
+describe('Rendering · a frame’s work follows the hole, not the map', () => {
   /** Camera north of the middle cell's north wall, target south of it — the rig every case here fades with. */
   function crossing() {
     const b = walledRow();

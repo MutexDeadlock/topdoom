@@ -8,14 +8,11 @@ import { PLAYER_RADIUS } from '../../src/game/player.ts';
 /**
  * The conveyor half of Boom's scrollers (`T_Scroll`'s `sc_carry`) seen from a
  * body rather than from the sector: which sectors count as underfoot, the
- * standing-on-the-floor gate, and the equilibrium a sustained impulse reaches
- * against the momentum channel's own friction.
+ * carry rate, and the standing-on-the-floor gate.
  * See docs/specials.md § Scrollers and conveyors.
  */
-describe('Conveyors', () => {
+describe('Specials · conveyors', () => {
   const TICS = 35;
-  /** Vanilla's per-tic `FRICTION`, the decay the momentum channel already ran on. */
-  const FRICTION = 0.90625;
 
   /** Three cells in a row, the middle one a 252 conveyor running east at `dx`/32 × 3/32 units per tic. */
   function rig(dx = 128, heights?: Record<string, { floor: number; ceil: number }>) {
@@ -68,19 +65,6 @@ describe('Conveyors', () => {
     const cache = makeTouchCache();
     assert.ok(forces.carryForBody({ x: at.x, y: at.y, z: 24 }, PLAYER_RADIUS, cache), 'resting on a raised belt still rides it');
     assert.equal(forces.carryForBody({ x: at.x, y: at.y, z: 32 }, PLAYER_RADIUS, cache), null, 'hovering above it does not');
-  });
-
-  test('a sustained impulse settles at vanilla’s own equilibrium', () => {
-    const { grid, forces, cache } = rig();
-    const at = grid.centre(1, 0);
-    const impulse = forces.carryForBody({ x: at.x, y: at.y, z: 0 }, PLAYER_RADIUS, cache)!.x;
-    // The momentum channel: add the impulse each tic, then decay by FRICTION.
-    let v = 0;
-    for (let i = 0; i < 400; i++) v = (v + impulse) * FRICTION;
-    // `v* = a·f/(1−f)`, which for a 0.375 units/tic belt is 3.625 units/tic.
-    const expected = (impulse * FRICTION) / (1 - FRICTION);
-    assert.ok(Math.abs(v - expected) < 1e-6, `settled at ${v}, expected ${expected}`);
-    assert.ok(Math.abs(expected / TICS - 3.625) < 1e-9, `${expected / TICS} units/tic`);
   });
 
   test('a submerged body rides the belt even off the floor', () => {

@@ -28,7 +28,7 @@ function grate(setup: (map: DoomMap, line: number) => void, lumpSize?: (n: strin
   return { map, line, built, quads: built.occluders.filter((o) => o.line === line && o.key === 'wall:' + GRATE) };
 }
 
-describe('render · translucent midtextures', () => {
+describe('Rendering · translucent midtextures', () => {
   test('a plain midtexture is opaque, a 260 one is not', () => {
     const plain = grate(() => {});
     assert.equal(plain.quads.length, 1);

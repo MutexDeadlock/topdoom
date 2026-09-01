@@ -5,6 +5,7 @@ import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
 
 /**
  * `P_TryMove`'s `tmceilingz - tmfloorz < thing->height` — a monster that
@@ -14,7 +15,6 @@ import { gridMap } from '../fixtures/gridmap.ts';
  * See docs/monster-ai.md § Movement.
  */
 
-const TIC = 1 / 35;
 const STATS = MONSTER_STATS[ThingType.hellKnight];
 
 /** A two-cell room; the monster stands in the right cell, the player in the left. */
@@ -57,7 +57,7 @@ function walkFor(ceil: number, stats = STATS): number {
   const startX = body.x;
   const startY = body.y;
   for (let i = 0; i < 35; i++) {
-    stepMonsterAI(body, stats, world, { dt: TIC, target, targetRadius: 16, targetHeight: 56 });
+    stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: 16, targetHeight: 56 });
   }
   return Math.hypot(body.x - startX, body.y - startY);
 }

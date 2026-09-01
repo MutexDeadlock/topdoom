@@ -10,6 +10,9 @@ import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { fixtureWad } from '../fixtures/wadfile.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
+import { monsterBody } from '../fixtures/monsterbody.ts';
+import { stepFor } from '../fixtures/tics.ts';
 
 /**
  * A cacodemon parked in a pit could never leave it. Fliers were exempt from the
@@ -40,45 +43,17 @@ function loadCacoPit(): { world: World; body: MonsterBody; player: Pos3 } {
   return {
     world,
     player: { x: start.x, y: start.y, z: world.groundFloor(start.x, start.y, PLAYER_RADIUS) },
-    body: {
-      id: 0,
-      x: thing.x,
-      y: thing.y,
-      z: world.groundFloor(thing.x, thing.y, stats.radius),
-      velZ: 0,
-      angle: -Math.PI / 2, // facing the player, as `A_FaceTarget` would leave it
-      // Awake, idle, nothing in progress — the same "ready for a chase call"
-      // shape as the pinky fixture's body.
-      attackPause: 0,
-      burstLeft: 0,
-      burstTimer: 0,
-      swinging: false,
-      chargeTimer: 0,
-      chargeAngle: 0,
-      painTimer: 0,
-      inFloat: false,
-      movedir: 6, // south, toward the player
-      movecount: 8,
-      chaseTimer: 0,
-      moveBlocked: false,
-      threshold: 0,
-      justHit: false,
-      justAttacked: false,
-      reactionTicks: 0,
-      refiring: false,
-      homingBias: false,
-      walkSoundTimer: 0,
-      walkSoundStep: 0,
-    },
+    // Facing the player as `A_FaceTarget` would leave it, and already headed south toward it.
+    body: monsterBody(
+      { x: thing.x, y: thing.y, z: world.groundFloor(thing.x, thing.y, stats.radius) },
+      { angle: -Math.PI / 2, movedir: 6, movecount: 8 },
+    ),
   };
 }
 
 /** Steps the monster at a fixed 35 fps for `seconds`. */
 function run(f: ReturnType<typeof loadCacoPit>, seconds: number): void {
-  const dt = 1 / 35;
-  for (let t = 0; t < seconds; t += dt) {
-    stepMonsterAI(f.body, MONSTER_STATS[ThingType.cacodemon], f.world, { dt, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
-  }
+  stepFor(seconds, () => stepMonsterAI(f.body, MONSTER_STATS[ThingType.cacodemon], f.world, { dt: DOOM_TIC, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT }));
 }
 
 describe('Regressions · floating monsters over a ledge', () => {
@@ -121,10 +96,7 @@ describe('Regressions · floating monsters over a ledge', () => {
     // The demon: same class of body, no MF_FLOAT. It must stay in the pit.
     const demon = MONSTER_STATS[ThingType.demon];
     assert.equal(demon.flies, undefined);
-    const dt = 1 / 35;
-    for (let t = 0; t < 5; t += dt) {
-      stepMonsterAI(f.body, demon, f.world, { dt, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
-    }
+    stepFor(5, () => stepMonsterAI(f.body, demon, f.world, { dt: DOOM_TIC, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT }));
     assert.ok(f.body.y > LEDGE_Y, `still in the pit (y = ${f.body.y})`);
     assert.equal(f.body.z, PIT_FLOOR, 'and still on its floor');
   });

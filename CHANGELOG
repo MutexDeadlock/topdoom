@@ -8,6 +8,8 @@ Features and improvements
   - a corpse under a door, floor or crusher is squashed to a pool of blood
     - a crusher sprays blood out of whoever it is grinding
     - a DEH patch repointing S_GIBS moves the pool with it
+  - mover interpolation: moveable areas draw interpolated between tics 
+    instead of stepping at 35 Hz
   - a crowd of monsters waking at once no longer floods the sound channels
   - starting a game shows a loading screen with the WAD download's progress
   - menu / WAD Library: 

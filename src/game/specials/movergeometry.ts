@@ -114,6 +114,8 @@ export class MoverGeometry {
   private movableSectors: Set<number>;
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
   private movableNeighbors = new Map<number, Set<number>>();
+  /** `rebuildAround`'s working set, reused so a mid-stroke frame allocates nothing. */
+  private rebuildScratch = new Set<number>();
   private moverMeshes = new Map<number, MoverEntry>();
   /** This frame's fade reach, refilled once per `collectFadeHits` — see `fadeReach`. */
   private reach: FadeBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
@@ -221,8 +223,11 @@ export class MoverGeometry {
    */
   rebuildAround(dirty: Set<number>): void {
     if (dirty.size === 0) return;
-    const rebuild = new Set(dirty);
+    // Reused scratch, not a fresh Set: this runs per frame while any plane is mid-stroke.
+    const rebuild = this.rebuildScratch;
+    rebuild.clear();
     for (const sectorIndex of dirty) {
+      rebuild.add(sectorIndex);
       for (const n of this.movableNeighbors.get(sectorIndex) ?? []) rebuild.add(n);
     }
     for (const sectorIndex of rebuild) this.rebuild(sectorIndex);

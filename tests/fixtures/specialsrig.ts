@@ -68,6 +68,21 @@ export const USE_INPUT = { pressed: (k: string) => k === 'Space', rightMousePres
 export const TIC = 1 / 35;
 
 /**
+ * Every drawn vertex height in the meshes whose batch key `wanted` accepts — how a test reads a
+ * mover's geometry back off the rig's `scene` (only mover meshes hang there). Key it with
+ * `'flat:'`/`'wall:'` prefixes or an exact `'wall:TEXTURE'` name.
+ */
+export function vertexHeights(scene: THREE.Object3D, wanted: (key: string) => boolean): number[] {
+  const out: number[] = [];
+  scene.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh) || !wanted(obj.name)) return;
+    const pos = obj.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) out.push(pos.getY(i));
+  });
+  return out;
+}
+
+/**
  * A `CrossingBody` for `SpecialsController.crossMonster`, which wants a whole
  * monster where a test usually only cares about the position it walked to.
  * `angle` matters only to Boom's silent teleports, which rotate relative to it.
@@ -130,6 +145,11 @@ export interface SpecialsRig {
    * The facing only matters to Boom's silent teleports, which rotate the body relative to it.
    */
   tick(dt?: number, x?: number, y?: number, angle?: number): void;
+  /**
+   * Fires one line's special the way a press or crossing would, keys in hand — the one place the
+   * cast onto the controller's private `trigger` lives, instead of once per test file.
+   */
+  trigger(lineIndex: number): void;
 }
 
 /**
@@ -175,6 +195,13 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     built,
     movableSectors,
     /** `angle` is the player's facing in radians — what Boom's silent teleports rotate relative to. */
-    tick: (dt = TIC, x = at.x, y = at.y, angle = 0) => specials.update(dt, { x, y, angle }, NO_INPUT, new Set()),
+    tick: (dt = TIC, x = at.x, y = at.y, angle = 0) => {
+      specials.update(dt, { x, y, angle }, NO_INPUT, new Set());
+      // The frame's own follow-up, at alpha 1: mover geometry is brought up to date on the draw
+      // path now (docs/frameloop.md § Interpolation), and these tests assert tic-exact meshes.
+      specials.drawMovers(1);
+    },
+    trigger: (lineIndex) =>
+      (specials as unknown as { trigger(line: number, keys: Set<never>): unknown }).trigger(lineIndex, new Set()),
   };
 }

@@ -1708,6 +1708,9 @@ export class Game {
     this.lights.beginFrame(rawDt, camera.followX, camera.followY, camera.viewFrustum);
     this.profiler.time('Sprites', () => this.things?.draw(alpha, camera.viewAngleDeg));
     this.drawEffects(alpha, camera.viewAngleDeg);
+    // Moving planes are drawn `alpha` through the last tic like everything else. Must land before
+    // the fade pass below: the refresh rewrites the mover buffers its commits write into.
+    this.profiler.time('Movers', () => this.specials?.drawMovers(alpha));
     this.updateFading(rawDt, camera);
     this.posePlayer(alpha, rawDt, camera.viewAngleDeg);
     this.profiler.time('Lights', () => this.lights.commit());

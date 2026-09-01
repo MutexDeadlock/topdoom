@@ -1,9 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
+import type * as THREE from 'three';
 import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { gridMap, addTransferLine } from '../fixtures/gridmap.ts';
-import { specialsRig, USE_INPUT, TIC } from '../fixtures/specialsrig.ts';
+import { specialsRig, vertexHeights, USE_INPUT, TIC } from '../fixtures/specialsrig.ts';
 import type { Pos2 } from '../../src/types.ts';
 
 /**
@@ -34,17 +34,6 @@ function risingPool() {
   map.linedefs[sw].special = 15;
   map.linedefs[sw].tag = 7;
   return { map, grid, pool, control };
-}
-
-/** Every drawn vertex height in the meshes whose batch key `wanted` accepts. */
-function vertexHeights(scene: THREE.Object3D, wanted: (key: string) => boolean): number[] {
-  const out: number[] = [];
-  scene.traverse((obj) => {
-    if (!(obj instanceof THREE.Mesh) || !wanted(obj.name)) return;
-    const pos = obj.geometry.getAttribute('position');
-    for (let i = 0; i < pos.count; i++) out.push(pos.getY(i));
-  });
-  return out;
 }
 
 /** The heights of every flat fan drawn for `sector`, static batches and mover meshes alike. */

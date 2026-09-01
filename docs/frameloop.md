@@ -154,6 +154,7 @@ Everything drawn carries where it was at the end of the previous tic, and `draw`
 | `Projectile` | `drawPrevX/Y/Z` + `drawX/Y/Z` |
 | `OneShotEffect`, `SpawnCube` | `drawPrevX/Y/Z` |
 | `TopDownCamera` | `prevSmoothed`, `prevYawDeg`, plus `snapTo()` for level loads |
+| moving sectors | `SpecialsController.moverLerp` — `prevFloor/prevCeil` per sector, see below |
 
 Five rules:
 
@@ -180,10 +181,19 @@ Five rules:
   player** freezes only `player.update`, which is what writes `prev*`, so `damagePlayer` collapses
   that one window with `syncInterpolation` on the killing hit. Both shipped as a visible shake.
 
-**Movers are deliberately not interpolated.** Doors, lifts, floors and crushers write
-`sector.floorHeight`/`ceilHeight` and rebuild geometry per tic — which is exactly the rate vanilla
-ran them at, and a lift is a large slow object where 35 Hz reads far less than it does on a sprite.
-docs/specials.md § Lights covers the light patterns' own tic timing.
+**Movers interpolate through the map itself.** Doors, lifts, floors and crushers write
+`sector.floorHeight`/`ceilHeight` per tic; `SpecialsController.moverLerp` keeps each moving
+sector's previous-tic heights, and `drawMovers(alpha)` — called by `draw` ahead of the fade pass —
+writes the lerped heights into the sectors, refreshes their meshes (`MoverGeometry.rebuildAround`,
+docs/render.md § Mover meshes), and restores the tic-exact values before returning. The simulation
+never sees a fractional-tic plane; collision, saves and `moverblocking` all read exact heights. A
+one-tic jump — a toggle plat's stroke, `T_MovePlane`'s clamp branch — collapses its window and
+draws as the instant move vanilla shows (rule two above); `trackPlaneMove` detects it as a tic
+that travelled further than the mover's own speed allows, so no per-branch marking exists to
+forget. A frozen
+simulation is covered by the alpha-1 rule: `drawMovers(1)` is the tic-exact pose, and a window
+whose ends match is skipped, not re-refreshed. docs/specials.md § Lights covers the light
+patterns' own tic timing.
 
 ## The FPS cap (`game.ts: dueThisFrame`, `getFpsCap`)
 

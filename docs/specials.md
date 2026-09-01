@@ -894,18 +894,17 @@ Both reuse existing `DoorState`s: 10 is seeded straight into `'hold'` (already "
 then stop"), 14 into a new `'holdClosed'` — the wait-at-the-*bottom* mirror of `'hold'`, which
 16/76's post-close wait also uses.
 
-## Movers run at the tic rate
+## Movers simulate at the tic rate, draw interpolated
 
-Doors, lifts, floors, ceilings and crushers write `sector.floorHeight`/`ceilHeight` and rebuild
-their mover geometry once per simulation tic, and that motion is **deliberately not interpolated**
-for display the way sprite positions are (docs/frameloop.md § Interpolation). 35 Hz is the rate
-vanilla ran them at, a lift is a large slow object where the stepping reads far less than it does on
-a sprite, and interpolating would mean lerping heights and rebuilding meshes on the render clock —
-the most invasive change available in the riskiest code here. If a door ever *does* need smoothing,
-that is its own change, not an oversight to be fixed in passing.
+Doors, lifts, floors, ceilings and crushers write `sector.floorHeight`/`ceilHeight` once per
+simulation tic — 35 Hz, the rate vanilla ran them at — and everything that *reads* those planes
+(collision, `moverblocking`, saves) sees only tic-exact values. Their drawn geometry is refreshed
+per frame at interpolated heights by `SpecialsController.drawMovers`; the window bookkeeping, the
+map-write-and-restore trick, and which moves snap instead of glide are
+docs/frameloop.md § Interpolation.
 
-What that per-tic rebuild is allowed to cost is a rendering matter, and it is a real constraint on
-heavily scripted maps, where hundreds of sectors move at once — docs/render.md § Mover meshes.
+What that per-frame refresh is allowed to cost is a rendering matter, and it is a real constraint
+on heavily scripted maps, where hundreds of sectors move at once — docs/render.md § Mover meshes.
 
 ## Lights
 

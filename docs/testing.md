@@ -204,7 +204,9 @@ partition convention (a node's right side is `cross <= 0`) is easy to get backwa
 scan the constructor's own `SpecialsOptions` expects. It also exports the two stubs that go with it
 (`BANK`, `NO_INPUT`)
 and `TIC`, so a test needing a mesh or an input for something else takes them from here rather than
-declaring its own.
+declaring its own. `rig.tick` runs `update` and then `drawMovers(1)` — the frame's own follow-up at
+the tic-exact pose (docs/frameloop.md § Interpolation) — so mover meshes read back after a tick are
+up to date; a test calling `specials.update` directly gets no mesh refresh until one lands.
 
 Those two are `pressed`-shaped, for the use key. The movement half lives in
 `tests/fixtures/input.ts`: `heldInput('KeyW')` builds an `Input` holding exactly the keys named and

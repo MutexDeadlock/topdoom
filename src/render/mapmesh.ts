@@ -149,7 +149,7 @@ const WALL_PROBE_OFFSET = 1.5;
  * The point a wall quad's leaf is probed at: the face's midpoint, stepped `WALL_PROBE_OFFSET` off
  * the front side (`addWall` builds every quad facing right of a→b). The one definition, so fog of
  * war cannot disagree about which room a quad faces — docs/fogofwar.md § Mover wall quads. Writes
- * into `out`: the fog path runs it per mover quad per tic.
+ * into `out`: the fog path runs it per mover quad per refresh.
  */
 export function wallProbePoint(ax: number, ay: number, bx: number, by: number, out: Pos2): void {
   const dx = bx - ax;
@@ -727,7 +727,7 @@ function beginBuild(map: DoomMap, polys: SubSectorPoly[], bank: MaterialBank, op
     size: (kind, name) => {
       // `-`/`''` names no lump that could exist, so it answers without a lookup: the
       // peg-reference probes ask before `addWall`'s own guard — routinely so on a UDMF map's
-      // untextured one-sided lines — and `buildMoverWalls` re-probes every tic a mover runs.
+      // untextured one-sided lines — and `buildMoverWalls` re-probes on every refresh while a mover runs.
       if (!isTextured(name)) return null;
       const s = bank.size(kind, name);
       // A 242 control line's sidedef names colormaps, not textures — absent art
@@ -793,7 +793,7 @@ interface FlatPlan {
   lightSector: number;
 }
 
-/** `planFlatRefresh`'s output, reused: a mover refresh happens per moving sector per tic. */
+/** `planFlatRefresh`'s output, reused: a mover refresh happens per moving sector per frame. */
 const flatPlan: FlatPlan[] = [];
 
 /**
@@ -878,7 +878,7 @@ function applyFlatRefresh(mesh: MoverMesh, plan: FlatPlan[]): void {
 /**
  * Copies a rebuilt quad over the live one, preserving what a rebuild cannot know: a mover changes
  * heights, never a footprint, so `subsector` keeps the leaf the build-time probe resolved rather
- * than the -1 `buildMoverWalls` emits — re-probing would be a BSP descent per quad per tic. Same
+ * than the -1 `buildMoverWalls` emits — re-probing would be a BSP descent per quad per refresh. Same
  * rule as `aLightCell` above, stated here so the next footprint-fixed field on `WallOccluder` is
  * handled where the exception already lives.
  */
@@ -907,7 +907,7 @@ function buildMoverFlats(build: Build, sectorIndex: number, index: MoverIndex): 
 }
 
 /**
- * The wall half, alone — the half `refreshMoverMesh` must rebuild every tic, because a moving
+ * The wall half, alone — the half `refreshMoverMesh` must rebuild on every refresh, because a moving
  * height changes not just where a quad's corners sit but *which* tiers exist (an upper step
  * shrinks to nothing as a door opens).
  */
@@ -1082,7 +1082,7 @@ function floorSignature(map: DoomMap): number {
 function beginHoleFills(build: Build): void {
   const leafCount = build.polys.length;
   const signature = floorSignature(build.map);
-  // Every mover redoing this per tic is most of a frame on a detailed map; nothing it reads has
+  // Every mover redoing this per refresh is most of a frame on a detailed map; nothing it reads has
   // moved since the last one unless a floor has.
   if (
     holeFills.map === build.map &&
@@ -1603,7 +1603,7 @@ function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean
 
       // A = top-left, B = top-right, C = bottom-right, D = bottom-left, facing right of a→b
       // (DOOM's front side), as the triangles A-D-C and A-C-B. Written out rather than iterated:
-      // the dicing above makes up to `chunks * bands` of these, and a mover re-runs them per tic.
+      // the dicing above makes up to `chunks * bands` of these, and a mover re-runs them per refresh.
       const vertexStart = batch.positions.length / 3;
       pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha); // A
       pushVertex(batch, cax, bandBot, -cay, cu0, bandVBot, color, alpha); // D

@@ -384,6 +384,44 @@ export type Mover = DoorMover | LiftMover | FloorMover | CrusherMover | CeilingM
 /** The `at` for a caller with no silent teleport in play — see `trigger`. */
 const NO_SOURCE: Placement = { x: 0, y: 0, angle: 0 };
 
+/** One moving sector's interpolation window — see `SpecialsController.moverLerp`. */
+interface MoverLerp {
+  /** Plane heights at the end of the previous tic — the interpolation source. */
+  prevFloor: number;
+  prevCeil: number;
+  /** Tic-exact heights, stashed by `drawMovers` while the map holds lerped ones. */
+  ticFloor: number;
+  ticCeil: number;
+  /**
+   * Heights `drawMovers` last refreshed the mesh at, so a frame whose lerp lands on the same
+   * values skips the refresh. Seeded to the pre-move heights when the window opens: with no
+   * window, the mesh last drew tic-exact — a window only ever closes with the mesh refreshed at
+   * its final heights. A rebuild from another path (a switch flash, an arrival texture) bakes
+   * tic-exact heights without updating this; the next frame's differing alpha refreshes over it,
+   * so the skip is at most one frame stale.
+   */
+  drawnFloor: number;
+  drawnCeil: number;
+}
+
+/**
+ * The most a mover may move a plane in one second — the per-kind speed field, exhaustive so a
+ * new `Mover` kind must decide its rate here. `trackPlaneMove` compares a tic's actual travel
+ * against it to tell a continuous stroke from a discontinuous jump.
+ */
+function moverSpeed(mover: Mover): number {
+  switch (mover.kind) {
+    case 'door':
+    case 'lift':
+      return mover.effect.speed;
+    case 'floor':
+    case 'ceiling':
+    case 'elevator':
+    case 'crusher':
+      return mover.speed;
+  }
+}
+
 /** What a `SpecialsController` needs beside the `World` it runs over. */
 export interface SpecialsOptions extends MoverGeometryOptions {
   onExit: (secret: boolean) => void;
@@ -452,6 +490,14 @@ export class SpecialsController {
    */
   private floorMovers = new Map<number, Mover>();
   private ceilingMovers = new Map<number, Mover>();
+  /**
+   * Presentation-only interpolation windows, one per sector whose planes moved last tic: what
+   * `drawMovers` lerps the drawn geometry through, opened on the tic path by `trackPlaneMove`
+   * and never saved. docs/frameloop.md § Interpolation.
+   */
+  private moverLerp = new Map<number, MoverLerp>();
+  /** `drawMovers`' per-frame rebuild set, reused so drawing allocates nothing. */
+  private drawDirty = new Set<number>();
   private usedOnce = new Set<number>();
   /**
    * Lines currently flipped from their authored special by `SpecialDef.retriggerXor`
@@ -639,6 +685,45 @@ export class SpecialsController {
   }
 
   /**
+   * Refreshes every moving sector's mesh at plane heights interpolated `alpha` of the way through
+   * the last tic — the mover half of docs/frameloop.md § Interpolation. The lerped heights are
+   * written into the map for the rebuild (a neighbour's quads read both sectors' heights) and
+   * restored before returning, so the simulation only ever sees tic-exact planes. Driven from
+   * `game.ts: draw` ahead of the fade pass, whose commits the refresh invalidates. A window whose
+   * ends have met and been drawn there is dropped here.
+   */
+  drawMovers(alpha: number): void {
+    if (this.moverLerp.size === 0) return;
+    const dirty = this.drawDirty;
+    dirty.clear();
+    for (const [sectorIndex, e] of this.moverLerp) {
+      const sector = this.map.sectors[sectorIndex];
+      e.ticFloor = sector.floorHeight;
+      e.ticCeil = sector.ceilHeight;
+      const floor = e.prevFloor + (sector.floorHeight - e.prevFloor) * alpha;
+      const ceil = e.prevCeil + (sector.ceilHeight - e.prevCeil) * alpha;
+      sector.floorHeight = floor;
+      sector.ceilHeight = ceil;
+      if (floor !== e.drawnFloor || ceil !== e.drawnCeil) {
+        e.drawnFloor = floor;
+        e.drawnCeil = ceil;
+        dirty.add(sectorIndex);
+      }
+    }
+    this.geometry.rebuildAround(dirty);
+    for (const [sectorIndex, e] of this.moverLerp) {
+      const sector = this.map.sectors[sectorIndex];
+      sector.floorHeight = e.ticFloor;
+      sector.ceilHeight = e.ticCeil;
+      // A window whose ends met stopped moving last tic; the lerp above then landed exactly on
+      // the tic heights and the refresh (or the drawn check) left the mesh there, so it is done.
+      if (e.prevFloor === e.ticFloor && e.prevCeil === e.ticCeil) {
+        this.moverLerp.delete(sectorIndex);
+      }
+    }
+  }
+
+  /**
    * The keyed line the player was refused this frame, if any — one read per attempt, so holding
    * `use` against a locked door re-announces it on every press and not in between. Call after
    * `update`, which is where every keyed line is reached from (all of them are `use` triggers).
@@ -670,6 +755,7 @@ export class SpecialsController {
     this.crushDamageTimer -= dt;
     this.crushDamageDue = this.crushDamageTimer <= 0;
     if (this.crushDamageDue) this.crushDamageTimer += CRUSH_DAMAGE_INTERVAL;
+    this.advanceMoverWindows();
     this.tickMovers(dt, dirty);
     // `P_ChangeSector` after every plane that actually moved, which is what `dirty` already is —
     // corpses are crunched by an ordinary door or floor, not only by a crusher, and on no clock.
@@ -682,7 +768,9 @@ export class SpecialsController {
     const at: Placement = { x: player.x, y: player.y, angle: player.angle };
     this.handleUseTrigger(at, input, ownedKeys);
     if (!noclip) this.handleWalkTriggers(at, ownedKeys);
-    this.geometry.rebuildAround(dirty);
+    // No mesh rebuild here: `tickMover` opened a window for every moved plane, and `drawMovers` —
+    // which the frame runs at the draw's interpolation alpha before anything renders — brings the
+    // geometry up to date from those.
     this.updateSwitchFlashes(dt);
     this.updateLights(dt);
     // See `lastTeleport`'s doc: a teleport this frame reseeds `prev` from the destination,
@@ -944,16 +1032,63 @@ export class SpecialsController {
   }
 
   /**
-   * An exhaustive `switch` rather than an if/else chain with a fallthrough:
-   * a new `Mover` kind must be a compile error here, the way it already is in
-   * `moverActive`, not something that silently ticks as a crusher.
+   * Advances every open interpolation window onto the tic about to run: `prev` becomes the
+   * heights the last tic ended on, which is where this tic's motion glides from.
    */
+  private advanceMoverWindows(): void {
+    for (const [sectorIndex, e] of this.moverLerp) {
+      const sector = this.map.sectors[sectorIndex];
+      e.prevFloor = sector.floorHeight;
+      e.prevCeil = sector.ceilHeight;
+    }
+  }
+
+  /**
+   * Opens the interpolation window of a sector whose planes a mover's dispatch just moved — and
+   * collapses it when the move outran the mover's own rate, so the jump draws at its end instead
+   * of glided across: `T_MovePlane`'s clamp branch and a toggle plat's instant stroke are
+   * discontinuities, and vanilla shows them within the tic. Derived from the travel distance
+   * rather than marked at each jumping branch, so a future mover kind is covered by
+   * construction; a jump shorter than the slack glides across less than two ordinary steps,
+   * which reads the same as continuous motion.
+   */
+  private trackPlaneMove(mover: Mover, preFloor: number, preCeil: number, dt: number): void {
+    const sector = this.map.sectors[mover.sectorIndex];
+    let e = this.moverLerp.get(mover.sectorIndex);
+    if (!e) {
+      e = {
+        prevFloor: preFloor,
+        prevCeil: preCeil,
+        ticFloor: sector.floorHeight,
+        ticCeil: sector.ceilHeight,
+        drawnFloor: preFloor,
+        drawnCeil: preCeil,
+      };
+      this.moverLerp.set(mover.sectorIndex, e);
+    }
+    // 1.5 steps rather than 1: a continuous stroke moves exactly speed·dt, so half a step of
+    // slack separates it from a clamp jump without float-edge misfires.
+    const step = moverSpeed(mover) * dt * 1.5;
+    if (Math.abs(sector.floorHeight - preFloor) > step || Math.abs(sector.ceilHeight - preCeil) > step) {
+      e.prevFloor = sector.floorHeight;
+      e.prevCeil = sector.ceilHeight;
+    }
+  }
+
   private tickMovers(dt: number, dirty: Set<number>): void {
     for (const mover of this.floorMovers.values()) this.tickMover(mover, dt, dirty);
     for (const mover of this.ceilingMovers.values()) this.tickMover(mover, dt, dirty);
   }
 
+  /**
+   * An exhaustive `switch` rather than an if/else chain with a fallthrough:
+   * a new `Mover` kind must be a compile error here, the way it already is in
+   * `moverActive`, not something that silently ticks as a crusher.
+   */
   private tickMover(mover: Mover, dt: number, dirty: Set<number>): void {
+    const sector = this.map.sectors[mover.sectorIndex];
+    const preFloor = sector.floorHeight;
+    const preCeil = sector.ceilHeight;
     switch (mover.kind) {
       case 'door':
         this.tickDoor(mover, dt, dirty);
@@ -973,6 +1108,9 @@ export class SpecialsController {
       case 'crusher':
         this.tickCrusher(mover, dt, dirty);
         break;
+    }
+    if (sector.floorHeight !== preFloor || sector.ceilHeight !== preCeil) {
+      this.trackPlaneMove(mover, preFloor, preCeil, dt);
     }
   }
 

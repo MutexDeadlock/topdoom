@@ -310,7 +310,8 @@ no surface — though its height still sizes the walls across from it (§ Deep w
 
 Every sector a specials mover can drive is left out of the static batches entirely and drawn from
 its own small mesh instead (`MapMeshOptions.movableSectors`, `specials/movergeometry.ts`), which
-`MoverGeometry.rebuild` brings up to date on each tic the sector's height changed.
+`MoverGeometry.rebuild` brings up to date each frame the sector's drawn height changed — at the
+interpolated heights `SpecialsController.drawMovers` writes, docs/frameloop.md § Interpolation.
 
 **A line touching a mover leaves the static batch on *both* its sides**, not just the one the mover
 owns. DOOM puts a platform's visible front texture on the sidedef of the lower sector looking at it
@@ -318,7 +319,7 @@ owns. DOOM puts a platform's visible front texture on the sidedef of the lower s
 lift's front wall at its raised height while the platform slides down behind it. Which of the two a
 mover then builds is `Build.includeSide`.
 
-That rebuild is on the tic path for *every* moving sector at once, so two things about it are
+That rebuild runs per frame for *every* moving sector at once, so two things about it are
 load-bearing:
 
 **A rebuild costs the sector's own size, never the map's.** `buildMoverMesh` walks a `MoverIndex`
@@ -342,7 +343,7 @@ does `rebuild` throw the mesh away and build a fresh one. Which means the fresh-
 definition of correct geometry: the refresh is only ever allowed to reproduce it exactly.
 
 **Only the walls are rebuilt; the flats are moved.** A moving height changes which wall tiers exist
-at all, so `buildMoverWalls` re-emits them from scratch every tic. A flat's footprint cannot change
+at all, so `buildMoverWalls` re-emits them from scratch on every refresh. A flat's footprint cannot change
 — that is the same invariant `aLightCell` and `copyRefreshedQuad` rest on — so re-dicing one is
 pure waste, and it was nearly all of the cost: on EPIC.WAD MAP05's biggest sector (598 leaves,
 87 k flat vertices) a refresh spent 9.46 ms of a 28.6 ms tic, almost all of it pushing flat
@@ -520,7 +521,7 @@ Two things keep that off the frame:
   texture is fixed geometry; only whether they are a *step* moves, and that is a height compare
   against the current floors.
 - **The pass is skipped while no floor has moved**, on a signature over every sector's floor height
-  (`floorSignature`). Without it a level of movers redoes the pass per mover per tic: 16 sectors
+  (`floorSignature`). Without it a level of movers redoes the pass per mover per refresh: 16 sectors
   rebuilding through one door's tic cost 4.8 ms of a 5.7 ms frame on overboard.wad MAP02.
 
 Three restrictions are this engine's, and each closes a way the baked lid could go stale or fight
@@ -743,9 +744,9 @@ does build a grid: the buckets are keyed on quad midpoints, and `refreshMoverMes
 never a quad's footprint — a rebuild that *does* reshape the mesh builds a fresh fader with it.
 
 **Mover geometry is never banded vertically** (`addWall`'s `bandVertically`). A mover's walls change
-height every tic, so a height-derived band count would change with them, and `refreshMoverMesh` may
+height on every refresh, so a height-derived band count would change with them, and `refreshMoverMesh` may
 only rewrite buffers whose quad count held still (§ Mover meshes) — banding them would force a full
-rebuild per tic and restart every fade mid-motion. Doors and lifts are short enough that one band is
+rebuild per refresh and restart every fade mid-motion. Doors and lifts are short enough that one band is
 what they would get anyway.
 
 Measured on EPIC.WAD MAP02 (the heaviest map to hand: 6,582 line sides), both cuts together take

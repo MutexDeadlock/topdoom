@@ -144,7 +144,9 @@ profiler's green/gold/red bar fills are at fill weight rather than text weight (
 be the accent's hex and stays literal anyway, precisely so the two can't be retuned together). Where
 a status colour *is* the accent it says so — the support column's red reads `--accent-text-hover`,
 because `#menu .warning` already made that the menu's one red for "this won't work" and a second
-would only be a near-miss.
+would only be a near-miss. The info column's blue (`#menu .row .meta.info`) is a literal on the same
+terms and for the opposite reason: it is the page's one blue, and an aside the player may open must
+not be a rung of the family that means "this won't work".
 
 One further documented exception:
 

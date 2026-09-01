@@ -17,8 +17,8 @@ import {
   uploadedSource,
   type WadSource,
 } from '../../wad/library.ts';
-import { siblingTextFile } from '../../wad/textfile.ts';
-import { badge, describeMap, describeSource, sourceColumnSpans } from './labels.ts';
+import { isTextFile, siblingTextFile } from '../../wad/textfile.ts';
+import { badge, describeMap, describeSource, rowButton, sourceColumnSpans } from './labels.ts';
 import { AboutUi } from './about.ts';
 import { LibraryUi } from './library.ts';
 import { WadInfoUi } from './wadinfo.ts';
@@ -61,6 +61,16 @@ export interface MenuDefaults {
 }
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+/**
+ * What `Menu` needs of a popup that can cover it: `close` reports whether it *was* up, so one ESC
+ * dismisses exactly one thing. `AboutUi`, `LibraryUi` and `WadInfoUi` each satisfy it already —
+ * naming it is what lets `Menu` hold them in one ordered list instead of three `||` chains.
+ */
+interface MenuOverlay {
+  close(): boolean;
+  readonly isOpen: boolean;
+}
 
 /** The menu's top-level tabs; exported for the F2/F3/F4 hotkeys in `main.ts`. */
 export type MenuTab = 'newgame' | 'save' | 'load' | 'settings';
@@ -144,6 +154,14 @@ export class Menu {
   private library: LibraryUi;
   private about = new AboutUi();
   private wadinfo = new WadInfoUi();
+  /**
+   * Every popup that can sit over the menu, **topmost first** — the one statement of that order,
+   * which `close`, `closeTopOverlay` and `hasOverlay` all derive from rather than each listing them
+   * again. The reader leads because it opens from a row *inside* the WAD Library, the same relation
+   * its `z-index` rung states in CSS (docs/styles.md § Tokens). Filled in the constructor: `library`
+   * is not built until then.
+   */
+  private overlays: MenuOverlay[] = [];
 
   private sources: WadSource[] = [];
   /**
@@ -192,6 +210,7 @@ export class Menu {
       pickFiles: () => this.pickFiles(),
       showTextFile: (source) => this.wadinfo.open(source),
     });
+    this.overlays = [this.wadinfo, this.about, this.library];
     el<HTMLButtonElement>('library-button').addEventListener('click', () => this.library.open());
     this.iwadSelect.addEventListener('change', () => this.selectIwad());
     this.fileInput.addEventListener('change', () => void this.onFilesChosen());
@@ -285,9 +304,7 @@ export class Menu {
 
   close(): void {
     // Otherwise they would be waiting, still open, the next time the menu comes up.
-    this.about.close();
-    this.library.close();
-    this.wadinfo.close();
+    for (const overlay of this.overlays) overlay.close();
     // Nothing in the menu may keep focus once it's gone: a control that still
     // had it would go on taking keys the game wants (`isTyping`, game/input.ts)
     // — a level dropdown clicked on the way out would eat the arrow keys.
@@ -315,18 +332,17 @@ export class Menu {
 
   /**
    * Dismisses whichever overlay is up, topmost first, and reports whether there was one — the
-   * hand-off `main.ts` gives ESC before it acts on the menu itself. The order lives here rather
-   * than in the caller, so a third overlay is one edit and never changes what ESC does elsewhere.
+   * hand-off `main.ts` gives ESC before it acts on the menu itself. The order is `overlays`' and
+   * lives here rather than in the caller, so another overlay is one edit and never changes what ESC
+   * does elsewhere.
    */
   closeTopOverlay(): boolean {
-    // The reader first: it is the one overlay that opens *over* another (a row in the WAD Library),
-    // so closing anything else under it would leave it up with nothing behind it.
-    return this.wadinfo.close() || this.about.close() || this.library.close();
+    return this.overlays.some((overlay) => overlay.close());
   }
 
-  /** Whether any of them is up — the same set as `closeTopOverlay`, kept next to it. */
+  /** Whether any of them is up — the same list `closeTopOverlay` walks. */
   get hasOverlay(): boolean {
-    return this.wadinfo.isOpen || this.about.isOpen || this.library.isOpen;
+    return this.overlays.some((overlay) => overlay.isOpen);
   }
 
   /** True once a level can actually be started. */
@@ -833,7 +849,7 @@ export class Menu {
         ...(anyReason ? [badge(reason, 'reason')] : []),
         // The same columns the WAD Library lists, so a file reads identically in both places —
         // just narrower, since this panel has a fraction of the overlay's width.
-        ...sourceColumnSpans(source, (src) => this.wadinfo.open(src)),
+        ...sourceColumnSpans(source, () => this.wadinfo.open(source)),
         order,
         this.removeButton(source),
       );
@@ -883,18 +899,7 @@ export class Menu {
    * where it was chosen from — this only undoes the pick.
    */
   private removeButton(source: WadSource): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'forget';
-    button.textContent = '×';
-    button.title = `Remove ${source.label}`;
-    button.addEventListener('click', (e) => {
-      // The row is a `<label>`, so a click inside it would otherwise be forwarded to a control.
-      e.preventDefault();
-      e.stopPropagation();
-      this.removePwad(source);
-    });
-    return button;
+    return rowButton('forget', '×', `Remove ${source.label}`, () => this.removePwad(source));
   }
 
   private renderLevels(): void {
@@ -1071,20 +1076,12 @@ export class Menu {
     // An upload sits in no folder, so a WAD's text file can only reach it in the same batch — a
     // `.txt` picked or dropped beside it. One that names no WAD here is simply not a WAD and is
     // dropped, rather than being reported as one that failed to parse.
-    const texts = files.filter((f) => /\.txt$/i.test(f.name));
+    const texts = new Map(files.filter((f) => isTextFile(f.name)).map((f) => [f.name, f]));
     for (const file of files) {
-      if (texts.includes(file)) continue;
+      if (isTextFile(file.name)) continue;
       try {
-        const siblingName = siblingTextFile(
-          file.name,
-          texts.map((t) => t.name),
-        );
-        const sibling = texts.find((t) => t.name === siblingName);
-        const source = await uploadedSource(
-          file.name,
-          await file.arrayBuffer(),
-          sibling ? { name: sibling.name, bytes: await sibling.arrayBuffer() } : undefined,
-        );
+        const sibling = texts.get(siblingTextFile(file.name, texts.keys()) ?? '');
+        const source = await uploadedSource(file.name, await file.arrayBuffer(), sibling);
         const existing = this.sources.findIndex((s) => s.key === source.key);
         if (existing >= 0) this.sources.splice(existing, 1, source);
         else this.sources.unshift(source);
@@ -1101,7 +1098,7 @@ export class Menu {
 
     if (added.length === 0) {
       const nothing =
-        texts.length > 0 ? 'Only text files there — a .txt is read beside its WAD, never on its own.' : 'Nothing to add.';
+        texts.size > 0 ? 'Only text files there — a .txt is read beside its WAD, never on its own.' : 'Nothing to add.';
       this.setStatus(failed.join('; ') || nothing, true);
       return;
     }

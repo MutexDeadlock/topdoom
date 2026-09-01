@@ -16,6 +16,16 @@ export interface WadTextFile {
 }
 
 /**
+ * Whether a file name is a candidate at all. The other half of the rule `siblingTextFile` finishes,
+ * and exported for the same reason `acceptableWads` is (docs/wad.md § The player's own library): the
+ * manifest scan, both library-scan paths and the upload pairing all have to admit the same files, and
+ * a second, looser copy of the predicate is how they come to disagree.
+ */
+export function isTextFile(name: string): boolean {
+  return /\.txt$/i.test(name);
+}
+
+/**
  * The sibling of `NAME.WAD` among `names`, or undefined. Matched case-insensitively and on the
  * base name alone: `SCYTHE.WAD` is shipped beside `scythe.txt` as often as beside `SCYTHE.TXT`,
  * and the name that comes back is the one that will actually open.

@@ -317,13 +317,11 @@
 #menu .row .meta.info {
   width: 3ch;
   text-align: right;
+  font-weight: bold;
   flex: none;
-  border: none;
-  background: none;
   padding: 0;
   line-height: inherit;
   color: #5b87b5;
-  cursor: pointer;
 }
 
 #menu .row .meta.info:hover {
@@ -363,11 +361,20 @@
   color: var(--accent-text-hover);
 }
 
-/* Drops an add-on from the picks — every row here is one (docs/menu.md § WAD Library). Sized to
-   the glyph so it doesn't push the detail columns around. */
-#menu .row .forget {
+/*
+ * The two glyph controls a WAD row can carry (`labels.ts: rowButton`) — the info column and the `×`
+ * that drops an add-on. One block undoes `#menu button`'s chrome for both, so a change to the
+ * menu's button look is undone in one place; `cursor` is not among them, being `#menu button`'s and
+ * `#menu .row`'s alike. Each keeps its own colour and sizing.
+ */
+#menu .row .forget,
+#menu .row .meta.info {
   border: none;
   background: none;
+}
+
+/* Sized to the glyph so it doesn't push the detail columns around. */
+#menu .row .forget {
   padding: 0 4px;
   line-height: 1;
   color: var(--fg-faint);

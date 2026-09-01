@@ -7,7 +7,7 @@
  */
 import type { WadSource } from '../library.ts';
 import { bytesOfFile, describeWad } from '../describe.ts';
-import { decodeTextFile, siblingTextFile } from '../textfile.ts';
+import { decodeTextFile, isTextFile, siblingTextFile } from '../textfile.ts';
 import {
   clearRoot,
   readDescriptors,
@@ -221,31 +221,25 @@ export function acceptableWads(files: readonly File[]): File[] {
  */
 export async function adoptFolderFiles(files: readonly File[], onProgress?: Progress): Promise<void> {
   const wads = acceptableWads(files);
-  // The `.txt` files come along too — this path has no handle to reopen the folder with, so a
-  // sibling not kept now is one the info popup could never read (docs/wad.md § The text file beside
-  // a WAD). They are indexed by the folder they sit in, since only a WAD's own folder can hold its
-  // sibling.
-  const texts = files.filter((f) => /\.txt$/i.test(f.name));
-  const textsByFolder = new Map<string, string[]>();
-  for (const file of texts) {
-    const folder = folderOf(relativePath(file));
-    const names = textsByFolder.get(folder) ?? [];
-    names.push(file.name);
-    textsByFolder.set(folder, names);
-  }
+  // Matched on the *relative path*, which scopes the match to the WAD's own folder for free — only
+  // a sibling sitting beside it counts. This path has no handle to reopen the folder with, so a
+  // matched `.txt` is kept in `state.files` alongside the WADs; an unmatched one is dropped rather
+  // than retained, since nothing could ever ask for it and the walk's caps are `acceptableWads`'
+  // alone. docs/wad.md § The text file beside a WAD.
+  const texts = new Map(files.filter((f) => isTextFile(f.name)).map((f) => [relativePath(f), f]));
+  const kept: File[] = [];
+  const entries = wads.map((f) => {
+    const path = relativePath(f);
+    const sibling = siblingTextFile(path, texts.keys());
+    if (sibling === undefined) return { path, open: () => Promise.resolve(f) };
+    kept.push(texts.get(sibling)!);
+    return { path, textFile: sibling.split('/').pop()!, open: () => Promise.resolve(f) };
+  });
 
   state.handle = null;
-  state.files = new Map([...wads, ...texts].map((f) => [relativePath(f), f]));
+  state.files = new Map([...wads, ...kept].map((f) => [relativePath(f), f]));
   state.name = wads.length > 0 ? (wads[0].webkitRelativePath.split('/')[0] ?? 'Your library') : '';
-  state.descriptors = await describeAll(
-    wads.map((f) => {
-      const path = relativePath(f);
-      const textFile = siblingTextFile(f.name, textsByFolder.get(folderOf(path)) ?? []);
-      return { path, ...(textFile ? { textFile } : {}), open: () => Promise.resolve(f) };
-    }),
-    new Map(),
-    onProgress,
-  );
+  state.descriptors = await describeAll(entries, new Map(), onProgress);
 }
 
 /** How far a scan has got, so the overlay can say something while a big folder is read. */
@@ -308,13 +302,12 @@ export async function forgetLibrary(): Promise<void> {
 export function librarySources(): WadSource[] {
   return state.descriptors.map((descriptor) => {
     let cached: Promise<ArrayBuffer> | null = null;
-    const cut = descriptor.path.lastIndexOf('/');
-    const folder = cut < 0 ? '' : descriptor.path.slice(0, cut);
+    const folder = folderOf(descriptor.path);
     const text = descriptor.textFile;
     return {
       key: `lib:${descriptor.path}`,
       id: descriptor.id ?? '',
-      label: descriptor.path.slice(cut + 1),
+      label: descriptor.path.split('/').pop()!,
       type: descriptor.type,
       maps: descriptor.maps,
       lumpCount: descriptor.lumpCount,
@@ -385,7 +378,7 @@ async function walk(
   }
   entries.sort(([a], [b]) => a.localeCompare(b));
   // This folder's own listing, which is what says whether a WAD here has a `.txt` beside it.
-  const texts = entries.filter(([name, h]) => h.kind === 'file' && /\.txt$/i.test(name)).map(([name]) => name);
+  const texts = entries.filter(([name, h]) => h.kind === 'file' && isTextFile(name)).map(([name]) => name);
 
   for (const [name, handle] of entries) {
     if (out.length >= MAX_FILES) return;
@@ -431,15 +424,15 @@ async function describeAll(
         if (hit && hit.size === file.size && hit.lastModified === file.lastModified && hit.support) {
           // The sibling `.txt` still comes from the walk: it is the folder's business rather than
           // this file's, so one dropped in since the last scan appears without re-reading any WAD.
-          out[index] = hit.textFile === entry.textFile ? hit : withTextFile(hit, entry.textFile);
+          out[index] = hit.textFile === entry.textFile ? hit : { ...hit, textFile: entry.textFile };
         } else {
           const described = await describeWad(entry.path.split('/').pop()!, bytesOfFile(file));
           out[index] = {
             path: entry.path,
             size: file.size,
             lastModified: file.lastModified,
+            textFile: entry.textFile,
             ...described,
-            ...(entry.textFile ? { textFile: entry.textFile } : {}),
           };
         }
       } catch (err) {
@@ -457,14 +450,6 @@ async function describeAll(
 /** A library file's sibling `.txt` as text, read the same way its WAD's bytes are. */
 async function readLibraryText(path: string): Promise<string> {
   return decodeTextFile(await (await openLibraryFile(path)).arrayBuffer());
-}
-
-/** A copy of the descriptor carrying whatever sibling `.txt` the walk just saw, or none. */
-function withTextFile(descriptor: LibraryDescriptor, textFile?: string): LibraryDescriptor {
-  const next = { ...descriptor };
-  if (textFile) next.textFile = textFile;
-  else delete next.textFile;
-  return next;
 }
 
 /** The folder part of a library-relative path — `''` for a file sitting in the root. */

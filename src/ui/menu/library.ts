@@ -672,7 +672,7 @@ export class LibraryUi {
     name.className = 'name truncate';
     name.textContent = source.label;
 
-    row.append(name, mark, ...sourceColumnSpans(source, (src) => this.hooks.showTextFile(src)));
+    row.append(name, mark, ...sourceColumnSpans(source, () => this.hooks.showTextFile(source)));
     return row;
   }
 

@@ -1,6 +1,7 @@
 /**
- * The strings the menu labels its WAD and level rows with, plus the spans the two WAD lists render
- * them as. Pure formatting over what `wad/library.ts` already resolved — no WAD is read here.
+ * The strings the menu labels its WAD and level rows with, plus the parts the two WAD lists render
+ * them as — the detail columns and the small controls that sit among them. Formatting over what
+ * `wad/library.ts` already resolved; no WAD is read here.
  * See docs/menu.md.
  */
 import type { MergedMap, WadSource } from '../../wad/library.ts';
@@ -79,28 +80,36 @@ export function badge(text: string, kind: '' | 'quiet' | 'reason' = ''): HTMLSpa
 }
 
 /**
- * The info column's control, in the two lists that render one: a WAD shipped with a text file
- * beside it (`WadSource.textFile`) offers it here, anything else gets the empty span that keeps the
- * columns behind it lined up. A `<button>` inside the row's `<label>`, so the click has to be
- * stopped from reaching the row's own control — the same shape the add-on list's `×` has.
+ * A glyph-sized control inside a WAD row — the info column and the add-on list's `×`. **The row is
+ * a `<label>`**, so the click has to be stopped from reaching it or the row's own checkbox toggles
+ * as well; that hazard is stated here once rather than at each button.
  */
-function infoColumn(src: WadSource, onInfo?: (src: WadSource) => void): HTMLElement {
-  const text = src.textFile;
-  if (!text || !onInfo) return metaSpan('info', '');
+export function rowButton(className: string, glyph: string, title: string, onClick: () => void): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'meta info';
-  // The circled `i`, `U+24D8`, and not `U+2139`: that one has an emoji presentation to be talked
-  // out of (`U+FE0E`, as the support glyphs do) and still renders as a bare letter when it is.
-  button.textContent = '\u24D8';
-  button.title = `Read ${text.name}`;
-  button.setAttribute('aria-label', button.title);
+  button.className = className;
+  button.textContent = glyph;
+  button.title = title;
+  button.setAttribute('aria-label', title);
   button.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    onInfo(src);
+    onClick();
   });
   return button;
+}
+
+/**
+ * The info column's control, in the two lists that render one: a WAD shipped with a text file
+ * beside it (`WadSource.textFile`) offers it here, anything else gets the empty span that keeps the
+ * columns behind it lined up.
+ */
+function infoColumn(src: WadSource, onInfo: () => void): HTMLElement {
+  const text = src.textFile;
+  if (!text) return metaSpan('info', '');
+  // The circled `i`, `U+24D8`, and not `U+2139`: that one has an emoji presentation to be talked
+  // out of (`U+FE0E`, as the support glyphs do) and still renders as a bare letter when it is.
+  return rowButton('meta info', '\u24D8', `Read ${text.name}`, onInfo);
 }
 
 /** One fixed-width detail column. The class name is what both stylesheets target. */
@@ -119,11 +128,11 @@ function metaSpan(kind: string, text: string): HTMLSpanElement {
  *
  * The support glyph is **last**, at the far right, and is the one column that can be blank: a
  * source carrying no verdict says nothing rather than claiming the file is fine
- * (docs/wad.md § Will it run?). The info column sits in front of it and takes `onInfo`, the one
- * column that is a control rather than a reading: without a handler it is a spacer, so a list that
- * has nowhere to open a text file simply doesn't offer one.
+ * (docs/wad.md § Will it run?). The info column sits in front of it and takes `onInfo`, being the
+ * one column that is a control rather than a reading; a file with no text file renders it as a
+ * spacer (docs/menu.md § The text file popup).
  */
-export function sourceColumnSpans(src: WadSource, onInfo?: (src: WadSource) => void): HTMLElement[] {
+export function sourceColumnSpans(src: WadSource, onInfo: () => void): HTMLElement[] {
   const { size, content, dehacked } = sourceColumns(src);
   const support = metaSpan('support', '');
   if (src.support) {

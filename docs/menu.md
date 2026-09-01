@@ -60,7 +60,7 @@ under it in the same `.build` column; a static credit sits bottom-left, outside 
 
 `F2`, `F3` and `F4` open the menu directly on **Save**, **Load** and **Settings** (`Menu.showTab`,
 wired in `main.ts` beside the `ESC` handler); with the menu already open they only switch tabs.
-Two rules keep them from acting behind the player's back: an overlay up (About, WAD Library)
+Two rules keep them from acting behind the player's back: any overlay up (`Menu.overlays`)
 takes precedence exactly as it does for `ESC`, and `F2` with no level loaded does nothing rather
 than opening the menu on the Save tab `open` hides. `preventDefault` is called only when the key
 actually did something, so a refused press still reaches the browser's own binding.
@@ -442,8 +442,10 @@ text, is docs/wad.md § The text file beside a WAD; this is only what the menu d
 - **A disabled row keeps a live info button.** Reading what a file is about is exactly what a player
   does with one the set can't take — the badge rule (§ WAD Library) extended one column.
 - **It is the menu's overlay, not the WAD Library's**, at `z-index: 6` local to `#menu` — one rung
-  above `#wadlibrary`, because it opens from a row inside it and has to cover it. `closeTopOverlay`
-  takes it first for that reason, so one `ESC` closes one thing.
+  above `#wadlibrary`, because it opens from a row inside it and has to cover it. That order is
+  `Menu.overlays`, topmost first: `close`, `closeTopOverlay` and `hasOverlay` all derive from that
+  one list rather than each naming the overlays again, so one `ESC` closes one thing and another
+  overlay is one edit. The CSS rung follows the list; nothing ties them but this sentence.
 - **The read is per-open and cancellable by the next one.** `WadInfoUi.token` rises on every open and
   on close; a read that lands under a stale token is dropped, so a second file opened while the first
   is still in flight is not overwritten by it, and nothing lands in a closed popup.

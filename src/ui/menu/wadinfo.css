@@ -22,12 +22,11 @@
   padding: 20px 24px 18px;
 }
 
+/* Deltas only, the way #about's header is written: #wadinfo nests inside #menu, so the flex row,
+   the rule under it and its padding are already `#menu header`'s (menu.css). */
 #wadinfo header {
-  display: flex;
   align-items: baseline;
   gap: 14px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 14px;
   margin-bottom: 14px;
 }
 

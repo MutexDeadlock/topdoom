@@ -283,7 +283,12 @@
     </div>
   </div>
 
-  <input type="file" id="file-input" accept=".wad,.WAD" multiple hidden />
+  <!-- Beside the other two popups, and inside #menu for the same reason. -->
+  <!-- @include ./wadinfo.html -->
+
+  <!-- `.txt` too: an upload sits in no folder, so a WAD's text file can only arrive in the same
+       pick as the WAD it belongs to (docs/menu.md § The text file popup). -->
+  <input type="file" id="file-input" accept=".wad,.WAD,.txt,.TXT" multiple hidden />
   <input type="file" id="folder-input" webkitdirectory hidden />
   <input type="file" id="save-file-input" accept=".json,application/json" hidden />
   <div id="menu-credit">by @fauler420</div>

@@ -78,6 +78,31 @@ export function badge(text: string, kind: '' | 'quiet' | 'reason' = ''): HTMLSpa
   return span;
 }
 
+/**
+ * The info column's control, in the two lists that render one: a WAD shipped with a text file
+ * beside it (`WadSource.textFile`) offers it here, anything else gets the empty span that keeps the
+ * columns behind it lined up. A `<button>` inside the row's `<label>`, so the click has to be
+ * stopped from reaching the row's own control — the same shape the add-on list's `×` has.
+ */
+function infoColumn(src: WadSource, onInfo?: (src: WadSource) => void): HTMLElement {
+  const text = src.textFile;
+  if (!text || !onInfo) return metaSpan('info', '');
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'meta info';
+  // The circled `i`, `U+24D8`, and not `U+2139`: that one has an emoji presentation to be talked
+  // out of (`U+FE0E`, as the support glyphs do) and still renders as a bare letter when it is.
+  button.textContent = '\u24D8';
+  button.title = `Read ${text.name}`;
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onInfo(src);
+  });
+  return button;
+}
+
 /** One fixed-width detail column. The class name is what both stylesheets target. */
 function metaSpan(kind: string, text: string): HTMLSpanElement {
   const span = document.createElement('span');
@@ -87,16 +112,18 @@ function metaSpan(kind: string, text: string): HTMLSpanElement {
 }
 
 /**
- * The same four columns as finished spans, for the two lists that give each its own space — the
+ * The same five columns as finished spans, for the two lists that give each its own space — the
  * WAD Library's file pane and the New Game tab's narrower add-on list. Built here rather than at
- * either call site so the `meta size`/`meta content`/`meta deh`/`meta support` class names the two
- * stylesheets target have one definition, and a fifth column costs one edit.
+ * either call site so the `meta size`/`meta content`/`meta deh`/`meta info`/`meta support` class
+ * names the two stylesheets target have one definition, and a sixth column costs one edit.
  *
  * The support glyph is **last**, at the far right, and is the one column that can be blank: a
  * source carrying no verdict says nothing rather than claiming the file is fine
- * (docs/wad.md § Will it run?).
+ * (docs/wad.md § Will it run?). The info column sits in front of it and takes `onInfo`, the one
+ * column that is a control rather than a reading: without a handler it is a spacer, so a list that
+ * has nowhere to open a text file simply doesn't offer one.
  */
-export function sourceColumnSpans(src: WadSource): HTMLSpanElement[] {
+export function sourceColumnSpans(src: WadSource, onInfo?: (src: WadSource) => void): HTMLElement[] {
   const { size, content, dehacked } = sourceColumns(src);
   const support = metaSpan('support', '');
   if (src.support) {
@@ -112,7 +139,7 @@ export function sourceColumnSpans(src: WadSource): HTMLSpanElement[] {
   }
   const deh = metaSpan('deh', dehacked);
   if (dehacked) deh.title = 'Contains DEHACKED patch';
-  return [metaSpan('size', size), metaSpan('content', content), deh, support];
+  return [metaSpan('size', size), metaSpan('content', content), deh, infoColumn(src, onInfo), support];
 }
 
 /** A WAD row's detail line, joined, for the one place too narrow to give each column its own space:

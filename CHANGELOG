@@ -11,6 +11,7 @@ Features and improvements
   - a crowd of monsters waking at once no longer floods the sound channels
   - starting a game shows a loading screen with the WAD download's progress
   - menu / WAD Library: 
+    - a WAD with a .txt beside it gets an info column; clicking it reads the file
     - shortened 'DEHACKED' to 'DEH'
     - a support tooltip names at most 3 maps per reason, sorted
 

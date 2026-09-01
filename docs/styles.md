@@ -34,6 +34,8 @@ src/ui/menu/
                       #menu button.link triggers
     savegames.css     the save/load lists inside #menu's tab panels
     library.css       #wadlibrary, the WAD Library overlay inside #menu
+    wadinfo.*         #wadinfo, the popup reading the .txt beside a WAD, over both WAD lists
+                      (docs/menu.md § The text file popup)
     hold.css          .hold/.holding, the press-and-hold confirm on any #menu button
 src/ui/devmode/
     debughud.*        #hud
@@ -146,7 +148,9 @@ would only be a near-miss.
 
 One further documented exception:
 
-- **`#about { z-index: 5 }`** is inside `#menu`'s stacking context, not on the global ladder.
+- **`#about` and `#wadlibrary` at `z-index: 5`, `#wadinfo` at `6`** are inside `#menu`'s stacking
+  context, not on the global ladder. The 6 is the one relation among them that matters: the reader
+  opens from a row in the WAD Library, so it has to cover it.
 
 ### The stacking ladder
 

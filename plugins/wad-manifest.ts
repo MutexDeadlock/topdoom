@@ -5,6 +5,7 @@ import { bytesOf, describeWad } from '../src/wad/describe.ts';
 import { hashBytes } from '../src/wad/checksum.ts';
 import { MANIFEST_PATH, WAD_DIR, type ManifestEntry } from '../src/wad/library.ts';
 import type { WadSupport } from '../src/wad/support.ts';
+import { siblingTextFile } from '../src/wad/textfile.ts';
 
 /** The two folders that are scanned, and what a file found under each is offered as. */
 export type WadRoot = 'iwad' | 'pwad';
@@ -30,7 +31,11 @@ export type WadManifestEntry = ManifestEntry & { id: string; support: WadSupport
  * in-browser callers so the same file cannot list differently served, uploaded, or found in the
  * player's own library; the id is added here because these bytes are already in memory.
  */
-export async function manifestEntry(path: string, folder: WadFolder): Promise<WadManifestEntry | null> {
+export async function manifestEntry(
+  path: string,
+  folder: WadFolder,
+  textFile?: string,
+): Promise<WadManifestEntry | null> {
   const buf = readFileSync(path);
   const file = path.split('/').pop()!;
 
@@ -53,6 +58,9 @@ export async function manifestEntry(path: string, folder: WadFolder): Promise<Wa
     // agree or `verifyWadSet` would refuse every load.
     id: hashBytes(buf),
     ...(described.dehacked ? { dehacked: true } : {}),
+    // The `.txt` beside the WAD, so the menu can offer it without asking the server whether one is
+    // there — docs/wad.md § The text file beside a WAD.
+    ...(textFile ? { textFile } : {}),
     // On every row, empty ones included: absent is *unknown*, not "fine" — docs/wad.md § Will it run?
     support: described.support,
     ...(Object.keys(described.levelNames).length > 0 ? { levelNames: described.levelNames } : {}),
@@ -69,18 +77,24 @@ export async function manifestEntry(path: string, folder: WadFolder): Promise<Wa
  * The *promise* is memoized, not the entry: two overlapping requests for the manifest would
  * otherwise both miss and describe every file twice.
  */
-const described = new Map<string, { mtimeMs: number; size: number; entry: Promise<WadManifestEntry | null> }>();
+const described = new Map<
+  string,
+  { mtimeMs: number; size: number; textFile?: string; entry: Promise<WadManifestEntry | null> }
+>();
 
 function describeCached(
   path: string,
   folder: WadFolder,
   mtimeMs: number,
   size: number,
+  textFile?: string,
 ): Promise<WadManifestEntry | null> {
   const hit = described.get(path);
-  if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit.entry;
-  const entry = manifestEntry(path, folder);
-  described.set(path, { mtimeMs, size, entry });
+  // `textFile` too, and it is not a property of the bytes: dropping a `.txt` beside a WAD leaves
+  // that WAD's mtime alone, so the memo would go on saying there is none.
+  if (hit && hit.mtimeMs === mtimeMs && hit.size === size && hit.textFile === textFile) return hit.entry;
+  const entry = manifestEntry(path, folder, textFile);
+  described.set(path, { mtimeMs, size, textFile, entry });
   return entry;
 }
 
@@ -106,6 +120,9 @@ async function scanFolder(dir: string, folder: WadFolder, root: WadRoot, depth =
   }
 
   const out: WadManifestEntry[] = [];
+  // The folder's own listing is what answers "is there a `.txt` beside this WAD" — one pass over
+  // the names already read, rather than a `statSync` per WAD.
+  const texts = names.filter((name) => /\.txt$/i.test(name));
   for (const name of names.sort()) {
     const path = join(dir, name);
     try {
@@ -115,7 +132,7 @@ async function scanFolder(dir: string, folder: WadFolder, root: WadRoot, depth =
         continue;
       }
       if (!stat.isFile() || !/\.wad$/i.test(name)) continue;
-      const entry = await describeCached(path, folder, stat.mtimeMs, stat.size);
+      const entry = await describeCached(path, folder, stat.mtimeMs, stat.size, siblingTextFile(name, texts));
       if (!entry) continue;
       // The root is what decides how the file is used; a signature mismatch
       // (e.g. a PWAD dropped into the `iwad` folder) still gets listed, just flagged.

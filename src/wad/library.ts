@@ -8,6 +8,7 @@ import { idOf } from './checksum.ts';
 import { bytesOf, describeWad } from './describe.ts';
 import type { Progress } from './library/disk.ts';
 import type { WadSupport } from './support.ts';
+import { decodeTextFile, type WadTextFile } from './textfile.ts';
 import { levelTitleFor, missionOf } from './campaign/names.ts';
 
 // This file is the layer's one entry point (docs/conventions.md § File names); `library/` holds
@@ -93,6 +94,14 @@ export interface WadSource {
    */
   folder?: string;
   /**
+   * The text file sitting beside this WAD, when there is one — `SCYTHE.TXT` next to `SCYTHE.WAD`.
+   * Its presence is known without reading anything (the manifest carries the name, a library scan
+   * and an upload pair the two by name), which is what lets both WAD lists draw their info column
+   * off the same listing they draw the rest of the row from. docs/wad.md § The text file beside a
+   * WAD.
+   */
+  textFile?: WadTextFile;
+  /**
    * `onProgress` is reported as the bytes arrive, and only by a source that actually downloads —
    * a file already in memory has nothing to report and calls it not at all. It is ignored on every
    * call after the first, which is what the memo hands back.
@@ -154,6 +163,11 @@ export interface ManifestEntry {
    * degrades to: a source with no ID matches no savegame rather than matching wrongly.
    */
   id?: string;
+  /**
+   * The name of the `.txt` sitting beside the WAD in the same served folder, absent when there is
+   * none — spelled as it is on disk, since that is the name the fetch has to ask for.
+   */
+  textFile?: string;
   /**
    * Each map's title, so the menu can name levels without downloading the file — the same reason
    * `maps` is here. What the file's own MAPINFO defines, and where it defines nothing, what its
@@ -217,9 +231,30 @@ export function pwadsFor(iwad: WadSource | null, pwads: readonly WadSource[]): W
   return pwads.filter((p) => p.key !== iwad?.key && fitsGameWad(iwad, p));
 }
 
+/**
+ * The URL one served file sits at. `folder` is a path, not one segment — each segment is encoded on
+ * its own so the separators survive (docs/wad.md § The `public/game/` manifest).
+ */
+function servedPath(folder: string, file: string): string {
+  const dir = folder.split('/').map(encodeURIComponent).join('/');
+  return `/${WAD_DIR}/${dir}/${encodeURIComponent(file)}`;
+}
+
+/**
+ * A served text file as text — the sibling `.txt` a WAD row offers, fetched only when the player
+ * opens it. Decoded by `decodeTextFile` rather than `res.text()`, which would assume UTF-8 and turn
+ * a DOS-era file's box art into replacement characters.
+ */
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return decodeTextFile(await res.arrayBuffer());
+}
+
 /** Wraps a server-side file; the fetched bytes are kept so restarts are instant. */
 function serverSource(entry: ManifestEntry): WadSource {
   let cached: Promise<ArrayBuffer> | null = null;
+  const text = entry.textFile;
   return {
     key: entry.file,
     id: entry.id ?? '',
@@ -233,14 +268,12 @@ function serverSource(entry: ManifestEntry): WadSource {
     size: entry.size,
     origin: 'server',
     folder: entry.folder,
+    ...(text ? { textFile: { name: text, read: () => fetchText(servedPath(entry.folder, text)) } } : {}),
     bytes(onProgress) {
       // Announced before the fetch, not on the first chunk: `loadWadFiles` calls every source in
       // one tick, so declaring here is what lets it fix the total before any byte lands.
       if (!cached) onProgress?.(0);
-      // `folder` is a path now, not one segment — each segment is encoded on its own so the
-      // separators survive (docs/wad.md § The `public/game/` manifest).
-      const dir = entry.folder.split('/').map(encodeURIComponent).join('/');
-      cached ??= fetch(`/${WAD_DIR}/${dir}/${encodeURIComponent(entry.file)}`).then(async (res) => {
+      cached ??= fetch(servedPath(entry.folder, entry.file)).then(async (res) => {
         if (!res.ok) throw new Error(`${entry.file}: HTTP ${res.status}`);
         // Streamed only when someone is watching: an unwatched load has no reason to pay for
         // chunk bookkeeping over up to 28 MB.
@@ -251,11 +284,20 @@ function serverSource(entry: ManifestEntry): WadSource {
   };
 }
 
-/** Parses an uploaded file far enough to categorise it, then keeps it in memory. */
-export async function uploadedSource(name: string, buffer: ArrayBuffer): Promise<WadSource> {
+/**
+ * Parses an uploaded file far enough to categorise it, then keeps it in memory. `text` is the
+ * `.txt` picked or dropped alongside it, which `Menu.addFiles` pairs by name — an upload sits in no
+ * folder, so a sibling can only ever arrive in the same batch.
+ */
+export async function uploadedSource(
+  name: string,
+  buffer: ArrayBuffer,
+  text?: { name: string; bytes: ArrayBuffer },
+): Promise<WadSource> {
   const described = await describeWad(name, bytesOf(buffer));
   return {
     ...described,
+    ...(text ? { textFile: { name: text.name, read: () => Promise.resolve(decodeTextFile(text.bytes)) } } : {}),
     key: `upload:${name}:${buffer.byteLength}`,
     // The one place an ID costs real work (a pass over up to ~14 MB), paid here
     // rather than lazily: the save list matches by ID and renders synchronously,

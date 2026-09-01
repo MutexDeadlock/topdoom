@@ -17,9 +17,11 @@ import {
   uploadedSource,
   type WadSource,
 } from '../../wad/library.ts';
+import { siblingTextFile } from '../../wad/textfile.ts';
 import { badge, describeMap, describeSource, sourceColumnSpans } from './labels.ts';
 import { AboutUi } from './about.ts';
 import { LibraryUi } from './library.ts';
+import { WadInfoUi } from './wadinfo.ts';
 import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../../game/skill.ts';
 import { getAutorun, setAutorun } from '../../game/player.ts';
 import {
@@ -141,6 +143,7 @@ export class Menu {
   private savegames: SavegamesUi;
   private library: LibraryUi;
   private about = new AboutUi();
+  private wadinfo = new WadInfoUi();
 
   private sources: WadSource[] = [];
   /**
@@ -187,6 +190,7 @@ export class Menu {
       applyPicks: (iwad, pwads) => this.applyPicks(iwad, pwads),
       setLibrarySources: (sources) => this.setLibrarySources(sources),
       pickFiles: () => this.pickFiles(),
+      showTextFile: (source) => this.wadinfo.open(source),
     });
     el<HTMLButtonElement>('library-button').addEventListener('click', () => this.library.open());
     this.iwadSelect.addEventListener('change', () => this.selectIwad());
@@ -283,6 +287,7 @@ export class Menu {
     // Otherwise they would be waiting, still open, the next time the menu comes up.
     this.about.close();
     this.library.close();
+    this.wadinfo.close();
     // Nothing in the menu may keep focus once it's gone: a control that still
     // had it would go on taking keys the game wants (`isTyping`, game/input.ts)
     // — a level dropdown clicked on the way out would eat the arrow keys.
@@ -314,12 +319,14 @@ export class Menu {
    * than in the caller, so a third overlay is one edit and never changes what ESC does elsewhere.
    */
   closeTopOverlay(): boolean {
-    return this.about.close() || this.library.close();
+    // The reader first: it is the one overlay that opens *over* another (a row in the WAD Library),
+    // so closing anything else under it would leave it up with nothing behind it.
+    return this.wadinfo.close() || this.about.close() || this.library.close();
   }
 
   /** Whether any of them is up — the same set as `closeTopOverlay`, kept next to it. */
   get hasOverlay(): boolean {
-    return this.about.isOpen || this.library.isOpen;
+    return this.wadinfo.isOpen || this.about.isOpen || this.library.isOpen;
   }
 
   /** True once a level can actually be started. */
@@ -824,9 +831,9 @@ export class Menu {
         input,
         name,
         ...(anyReason ? [badge(reason, 'reason')] : []),
-        // The same three columns the WAD Library lists, so a file reads identically in both places
-        // — just narrower, since this panel has a fraction of the overlay's width.
-        ...sourceColumnSpans(source),
+        // The same columns the WAD Library lists, so a file reads identically in both places —
+        // just narrower, since this panel has a fraction of the overlay's width.
+        ...sourceColumnSpans(source, (src) => this.wadinfo.open(src)),
         order,
         this.removeButton(source),
       );
@@ -1061,9 +1068,23 @@ export class Menu {
     // leaving a part-failed multi-file pick claiming nothing but success.
     const failed: string[] = [];
     const staged = this.library.isOpen;
+    // An upload sits in no folder, so a WAD's text file can only reach it in the same batch — a
+    // `.txt` picked or dropped beside it. One that names no WAD here is simply not a WAD and is
+    // dropped, rather than being reported as one that failed to parse.
+    const texts = files.filter((f) => /\.txt$/i.test(f.name));
     for (const file of files) {
+      if (texts.includes(file)) continue;
       try {
-        const source = await uploadedSource(file.name, await file.arrayBuffer());
+        const siblingName = siblingTextFile(
+          file.name,
+          texts.map((t) => t.name),
+        );
+        const sibling = texts.find((t) => t.name === siblingName);
+        const source = await uploadedSource(
+          file.name,
+          await file.arrayBuffer(),
+          sibling ? { name: sibling.name, bytes: await sibling.arrayBuffer() } : undefined,
+        );
         const existing = this.sources.findIndex((s) => s.key === source.key);
         if (existing >= 0) this.sources.splice(existing, 1, source);
         else this.sources.unshift(source);
@@ -1079,7 +1100,9 @@ export class Menu {
     }
 
     if (added.length === 0) {
-      this.setStatus(failed.join('; ') || 'Nothing to add.', true);
+      const nothing =
+        texts.length > 0 ? 'Only text files there — a .txt is read beside its WAD, never on its own.' : 'Nothing to add.';
+      this.setStatus(failed.join('; ') || nothing, true);
       return;
     }
     if (staged) this.library.stage(added);

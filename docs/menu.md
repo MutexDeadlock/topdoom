@@ -270,16 +270,17 @@ What is its own:
 - **The detail column says what a file *is*, never where it sits.** `describeSource` used to append
   a library file's subfolder; the row is already under that folder in the tree, so repeating it only
   crowded the column. An upload's `from disk` stays, since it belongs to no folder at all.
-- **A file row is six columns** — name, badge, size, contents, `DEH` (a DEHACKED patch, spelled
-  out in the column's tooltip), support — with the name
+- **A file row is seven columns** — name, badge, size, contents, `DEH` (a DEHACKED patch, spelled
+  out in the column's tooltip), info (the `.txt` beside the file, § The text file popup), support —
+  with the name
   taking the slack and the rest fixed-width and right-aligned, so sizes line up under sizes and map
   counts under map counts rather than each trailing whatever length its file name happened to be.
   `labels.ts: sourceColumns` returns the three detail values separately and `sourceColumnSpans`
   renders them plus the support glyph, and **both lists use both** — the add-on rows on the New Game
   tab carry the same columns, just narrower, since that panel is 620px against the overlay's 60% of
   the viewport. The markup is shared too, not just the strings: the
-  `meta size`/`meta content`/`meta deh`/`meta support` class names the two stylesheets target have
-  one definition, and `#wadlibrary` nests inside `#menu` so its rows inherit `#menu .row` outright —
+  `meta size`/`meta content`/`meta deh`/`meta info`/`meta support` class names the two stylesheets
+  target have one definition, and `#wadlibrary` nests inside `#menu` so its rows inherit `#menu .row` outright —
   `library.css` carries only the deltas. So the two cannot disagree about what a file *is*, only
   about how much space there is to say it. (`describeSource` joins the same values and is now only
   the game-WAD select's one-line label; the support verdict is deliberately not in it, being a glyph
@@ -392,8 +393,8 @@ What is its own:
 **The Add-ons list holds the picks, not the offer.** `renderPwads` lists `selectedPwads` alone, in
 merge order — browsing is the overlay's job now, so the list on the tab is short and is no longer a
 second picker that has to agree with the first about what is compatible. Each row is checkbox · name
-· [reason] · size · contents · `DEH` · support · `#N` · `×` — the same detail columns the overlay
-lists, narrower — and the two controls mean **different things**:
+· [reason] · size · contents · `DEH` · info · support · `#N` · `×` — the same detail columns the
+overlay lists, narrower — and the two controls mean **different things**:
 
 - **The checkbox disables, it does not remove.** An unticked add-on keeps its row and its place in
   the order, so a mod can be switched off for one run and back on without being hunted down in the
@@ -424,6 +425,32 @@ merged shows `off`.
 
 Drag-and-drop onto the menu is unchanged and still the fastest way in for one file;
 `Add single WADs…` in the overlay is the same thing through `#file-input` for anyone who can't drag.
+
+## The text file popup
+
+`ui/menu/wadinfo.ts` (`WadInfoUi`), `wadinfo.html`, `wadinfo.css`. The `.txt` a WAD ships beside it
+— `SCYTHE.TXT` next to `SCYTHE.WAD` — read in place. Which files have one, and how the bytes become
+text, is docs/wad.md § The text file beside a WAD; this is only what the menu does with it.
+
+- **The info column is the door**, in both WAD lists: a blue `ℹ` on a file that has a text file, an
+  empty span on one that hasn't (`labels.ts: infoColumn`, rendered by `sourceColumnSpans` like every
+  other column so the two lists cannot disagree). Empty rather than absent, or the support glyph
+  behind it would land somewhere different on each row.
+- **The button is a `<button>` inside the row's `<label>`** and so `preventDefault()`s and
+  `stopPropagation()`s — the same shape the add-on list's `×` has, and for the same reason: without
+  it the click reaches the row's own checkbox.
+- **A disabled row keeps a live info button.** Reading what a file is about is exactly what a player
+  does with one the set can't take — the badge rule (§ WAD Library) extended one column.
+- **It is the menu's overlay, not the WAD Library's**, at `z-index: 6` local to `#menu` — one rung
+  above `#wadlibrary`, because it opens from a row inside it and has to cover it. `closeTopOverlay`
+  takes it first for that reason, so one `ESC` closes one thing.
+- **The read is per-open and cancellable by the next one.** `WadInfoUi.token` rises on every open and
+  on close; a read that lands under a stale token is dropped, so a second file opened while the first
+  is still in flight is not overwritten by it, and nothing lands in a closed popup.
+- **The reader does not wrap** (`white-space: pre`). These files are laid out at a fixed column
+  width, and wrapping them costs the banners and tables their alignment — a long line scrolls
+  sideways instead. The panel's size is fixed on both axes, so it doesn't resize between
+  `Loading …` and the file.
 
 ## Save and Load tabs
 

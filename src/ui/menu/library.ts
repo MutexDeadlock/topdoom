@@ -53,6 +53,13 @@ export interface LibraryHooks {
    * into the draft rather than adopting them behind it.
    */
   pickFiles(): void;
+  /**
+   * Opens one file's own text file over this overlay — the info column's click
+   * (docs/menu.md § The text file popup). The popup is the menu's, like every other overlay: this
+   * one covers the WAD Library rather than nesting inside it, and `closeTopOverlay` has to know
+   * which of the two ESC takes first.
+   */
+  showTextFile(source: WadSource): void;
 }
 
 /**
@@ -665,7 +672,7 @@ export class LibraryUi {
     name.className = 'name truncate';
     name.textContent = source.label;
 
-    row.append(name, mark, ...sourceColumnSpans(source));
+    row.append(name, mark, ...sourceColumnSpans(source, (src) => this.hooks.showTextFile(src)));
     return row;
   }
 

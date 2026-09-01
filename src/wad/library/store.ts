@@ -43,6 +43,12 @@ export interface LibraryDescriptor {
    * `library.ts: ensureWadId`.
    */
   id?: string;
+  /**
+   * The name of the `.txt` sitting beside the WAD in the same folder, absent when there is none.
+   * A property of the folder's listing rather than of the file's bytes, so it is written on every
+   * scan — including one whose every WAD was a memo hit (`describeAll`).
+   */
+  textFile?: string;
 }
 
 const openDb = idbOpener(DB_NAME, DB_VERSION, (db) => {
@@ -165,6 +171,7 @@ function asDescriptor(value: unknown): LibraryDescriptor | null {
     levelNames: isTitleMap(v.levelNames) ? v.levelNames : {},
     ...(support ? { support } : {}),
     ...(typeof v.id === 'string' && v.id ? { id: v.id } : {}),
+    ...(typeof v.textFile === 'string' && v.textFile ? { textFile: v.textFile } : {}),
   };
 }
 

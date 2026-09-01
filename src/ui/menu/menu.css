@@ -305,6 +305,32 @@
 }
 
 /*
+ * Opens the `.txt` a WAD ships beside it (docs/menu.md § The text file popup), as one glyph — the
+ * column in front of the support verdict, and the only detail column that is a control. Shared by
+ * both WAD lists for the support column's reason, width included; it renders as an empty span on a
+ * file with no text file, which is what keeps the verdict behind it in the same place on every row.
+ *
+ * Blue, and a literal rather than a token: it is the one blue on the page, and it is deliberately
+ * *not* a rung of the accent family — the accent means "this won't work" here
+ * (docs/styles.md § Tokens), and an aside the player may open is the opposite of that.
+ */
+#menu .row .meta.info {
+  width: 3ch;
+  text-align: right;
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
+  line-height: inherit;
+  color: #5b87b5;
+  cursor: pointer;
+}
+
+#menu .row .meta.info:hover {
+  color: #8fb8e0;
+}
+
+/*
  * Whether this engine can run the file (docs/wad.md § Will it run?), as one glyph — shared by both
  * WAD lists, since `#wadlibrary` nests inside `#menu`. The width is here rather than per-list
  * because a glyph is a glyph at either panel width; only the text columns needed narrowing.

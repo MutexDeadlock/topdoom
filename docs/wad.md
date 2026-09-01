@@ -641,7 +641,8 @@ Three rules that are easy to get wrong:
 
 The walk is depth-capped at 8 and count-capped at 2000, so a player who points this at their home
 directory gets a truncated list rather than a hung menu. `.wad` files only, case-insensitively —
-the same filter `scanFolder` applies to `public/game/`. On the `webkitdirectory` path all three caps
+the same filter `scanFolder` applies to `public/game/` — plus each folder's `.txt` names, which are
+a listing rather than a file to describe (§ The text file beside a WAD). On the `webkitdirectory` path all three caps
 are `acceptableWads`, exported so the overlay can say how many files it is about to read **by the
 rule the scan itself applies**: a count taken by a second, looser copy promises files the scan then
 drops.
@@ -650,6 +651,35 @@ Files are described `SCAN_WIDTH` (12) at a time rather than one after another. E
 `getFile()` plus up to four short slice reads, all of them round trips the thread waits on rather
 than works through, and at the 2000-file cap that wait is the one the player watches. Results are
 written by index, not pushed, so a pool finishing out of order doesn't scramble the sorted list.
+
+## The text file beside a WAD
+
+A release's `.txt` — `SCYTHE.TXT` next to `SCYTHE.WAD` — offered from the info column of both WAD
+lists and read in the popup (docs/menu.md § The text file popup). `wad/textfile.ts` owns both
+halves: `siblingTextFile` finds the name, `decodeTextFile` turns the bytes into text. It reaches
+the menu as `WadSource.textFile`, a name plus a `read()`.
+
+- **Matched on the base name, case-insensitively, in the WAD's own folder.** `DOOM2.WAD` takes
+  `doom2.txt` as readily as `DOOM2.TXT`, and the name that comes back is the one spelled on disk —
+  it is the name the fetch or the file handle then has to ask for.
+- **Presence comes from a listing, never from a read.** The manifest carries the name
+  (`ManifestEntry.textFile`), a library scan takes it from the folder walk, an upload from the batch
+  it arrived in. Nothing is read until the player opens it, so the column costs a row nothing.
+- **It is a property of the folder, not of the WAD's bytes**, so both scan memos compare it beside
+  size and mtime — `describeCached` in `plugins/wad-manifest.ts`, `describeAll` in
+  `library/disk.ts`, which takes the walk's answer even on a memo hit. A `.txt` dropped in later
+  leaves every WAD's mtime alone, and a memo that ignored it would go on saying there is none.
+- **An upload's sibling can only arrive in the same pick.** An upload sits in no folder, so
+  `Menu.addFiles` pairs the batch's `.txt`s with the WADs beside them and `#file-input` accepts
+  `.txt` for it. A `.txt` matching no WAD in the batch is dropped rather than reported as a WAD that
+  failed to parse. The `webkitdirectory` path keeps the `.txt` files in `state.files` for the same
+  reason — it has no handle to reopen the folder with (§ The player's own library).
+- **UTF-8 first, CP437 second.** `decodeTextFile` tries a fatal UTF-8 decode and falls back to code
+  page 437, because these files are DOS-era: the standard idgames template is ASCII, but the banners
+  and rules drawn over it are CP437 box art, which no `TextDecoder` label covers (the encoding
+  standard dropped the page) and which latin-1 renders as stray accented letters. A file that
+  decodes as UTF-8 at all was written as one — a CP437 banner's high bytes are not valid sequences.
+  Line endings are normalised and the DOS end-of-file byte dropped.
 
 ## Describing a file without loading it
 

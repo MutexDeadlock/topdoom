@@ -14,11 +14,11 @@
   "keywords": [],
   "type": "module",
   "devDependencies": {
-    "@types/node": "^26.1.2",
-    "@types/three": "^0.185.3",
+    "@types/node": "^26.4.0",
+    "@types/three": "^0.185.4",
     "playwright-core": "^1.62.1",
     "typescript": "^7.0.2",
-    "vite": "^8.2.1"
+    "vite": "^8.2.2"
   },
   "dependencies": {
     "three": "^0.185.1"

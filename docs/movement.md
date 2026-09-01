@@ -405,8 +405,20 @@ to a continuous rate first, which would only approximate it. Below `MOMENTUM_STO
 velocity snaps to exactly 0 rather than crawling forever, the same reasoning as `WallFader`'s fade
 snap.
 
-- **`ThingLayer.applyKnockback`** integrates a monster or barrel's velocity as a plain displacement,
-  blocked by ordinary wall/step collision (`positionBlocked`, `forMonster: true` —
+**Each axis of the channel is held to vanilla's `MAXMOVE` (`p_local.h`, 30 units/tic —
+`player.ts: MAX_MOMENTUM_SPEED`, `clampMomentum`) before it moves anything**, `P_XYMovement`'s first
+act, in all three integrators. Nothing else bounds a thrust: the BFG ball's 100-800 contact hit is
+up to 100 units/tic, and a monster or barrel takes its move as one step that `positionBlocked`
+only probes at the far end (docs/testing.md § Cell size and tunnelling), so an unclamped hit
+carried the body clean through a wall. Repro: NUTS.WAD, a BFG ball into the front imps — corpses
+shot out of the map. The clamp binds the momentum channel alone; vanilla's binds the sum of input
+and momentum, but the input channel is bounded on its own (§ Friction's `MAX_TARGET_SCALE`).
+
+- **`ThingLayer.applyKnockback`** integrates a monster or barrel's velocity as a displacement taken
+  in halves until no step exceeds `MAXMOVE/2` (`MOMENTUM_SPLIT_STEP`, 15 units — `P_XYMovement`'s
+  own split, with MBF's symmetric check where vanilla splits a positive move only), so a barrel's
+  20-unit box can't skip a wall at the clamp either; the player and a doll need no split, since
+  `slideMove` traces the box's corners. Each step is blocked by ordinary wall/step collision (`positionBlocked`, `forMonster: true` —
   `ML_BLOCKMONSTERS` stops *any* non-player thing, so this is the correct flag even for a barrel).
   Unlike the player, a blocked monster or barrel stops dead and drops the remaining velocity rather
   than sliding, matching `P_XYMovement` zeroing `momx`/`momy` for a blocked non-missile, non-player

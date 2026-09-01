@@ -1,10 +1,10 @@
 v0.17.0 (2026-0?-??)
 
 Features and improvements
-  - UDMF maps load (needs ZNODES): the doom namespace plays in full, ZDoom-style
+  - UDMF maps load (needs ZNODES): the doom namespace plays in full, ZDoom
     namespaces are flagged red but stay pickable (geometry yes, specials no)
-  - weapon-matching player skins! Doomguy only, but can be forced for WADs which
-    customize the player sprites, all tuneable in Settings / Visuals
+  - weapon-matching player skins! Doomguy only, but can be forced for WADs
+    which customize the player sprites, all tuneable in Settings / Visuals
   - mover interpolation: moveable areas draw interpolated between tics 
     instead of stepping at 35 Hz
   - a corpse under a door, floor or crusher is squashed to a pool of blood
@@ -13,12 +13,13 @@ Features and improvements
   - a crowd of monsters waking at once no longer floods the sound channels
   - starting a game shows a loading screen with the WAD download's progress
   - menu / WAD Library: 
-    - a WAD with a .txt beside it gets an info column; clicking it reads the file
+    - a WAD with a .txt beside it gets an info icon; clicking it reads the file
     - shortened 'DEHACKED' to 'DEH'
     - a support tooltip names at most 3 maps per reason, sorted
 
 Fixed bugs
-  - rockets, plasma and BFG balls now leave the body instead of the player's head
+  - weapon projectiles now leave the body instead of the player's head
+  - knockback is now capped: a BFG-hit corpse no longer rockets out of the map
   - shots no longer slip through a crusher that has come down
   - a silent teleporter no longer strands a camera turn (Q/E) part-way through
   - the camera yaw wraps at ±180° instead of counting up

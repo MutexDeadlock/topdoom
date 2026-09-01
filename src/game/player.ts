@@ -105,6 +105,18 @@ export const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
  */
 export const MOMENTUM_STOP_SPEED = 1;
 
+/**
+ * `P_XYMovement`'s `MAXMOVE` (`p_local.h`, 30 units/tic) in units/sec: what `clampMomentum` holds
+ * each axis of the momentum channel to before it moves anything — here, in `game/voodoo.ts` and in
+ * `game/things.ts: applyKnockback`. docs/movement.md § Knockback.
+ */
+export const MAX_MOMENTUM_SPEED = 30 * 35;
+
+/** One axis of a momentum vector held to ±`MAX_MOMENTUM_SPEED`. */
+export function clampMomentum(v: number): number {
+  return v > MAX_MOMENTUM_SPEED ? MAX_MOMENTUM_SPEED : v < -MAX_MOMENTUM_SPEED ? -MAX_MOMENTUM_SPEED : v;
+}
+
 const AUTORUN_STORAGE_KEY = 'topdoom.autorun';
 
 /**
@@ -493,6 +505,8 @@ export class Player implements Pos3 {
     // rather than let it creep. A knockback, which nothing sustains, still ends
     // exactly as it always did.
     if (this.forced || Math.abs(this.momX) > MOMENTUM_STOP_SPEED || Math.abs(this.momY) > MOMENTUM_STOP_SPEED) {
+      this.momX = clampMomentum(this.momX);
+      this.momY = clampMomentum(this.momY);
       const moved = this.moveBy(this.momX * dt, this.momY * dt, blockers);
       if (dt > 0) {
         this.momX = (moved.x - this.x) / dt;

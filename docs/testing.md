@@ -171,6 +171,9 @@ The same property means **a wall cell's interior is not blocked** — only its b
 `positionBlocked` at that `#` cell's centre `(192, 192)` with radius 16 returns `false`, because a
 128-unit cell has real floor inside it. Probe near a boundary, not at a centre.
 
+Knockback is the exception: `ThingLayer.applyKnockback` clamps to `MAXMOVE` and half-steps
+(docs/movement.md § Knockback), so a momentum test cannot tunnel however hard it hits.
+
 Uniform cell heights also mean `hasLineOfSight`'s floor/ceiling sampling loop never narrows
 anything. A test meaning to exercise that half of the function must build a real step or low
 ceiling through the `heights` option, or it only looks like it covers it.

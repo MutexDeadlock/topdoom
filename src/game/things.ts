@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import type { Sector } from '../wad/map.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { SectorTouchCache, World } from './world.ts';
-import { GRAVITY, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
+import { clampMomentum, GRAVITY, MAX_MOMENTUM_SPEED, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import { pRandom } from '../util/random.ts';
 import { DOOM_TIC } from '../constants.ts';
 import {
@@ -126,6 +126,12 @@ import { thingStatsPatched } from './dehacked/apply.ts';
 const FRICTION = 0.90625;
 /** Below this a decaying knockback velocity snaps to 0. docs/movement.md § Knockback. */
 const KNOCKBACK_STOP_SPEED = 1;
+/**
+ * `P_XYMovement`'s `MAXMOVE/2`, the longest single step a momentum move takes before
+ * `applyKnockback` halves it — MBF's symmetric check (`comp_moveblock`), where vanilla splits a
+ * positive move only. docs/movement.md § Knockback.
+ */
+const MOMENTUM_SPLIT_STEP = MAX_MOMENTUM_SPEED / 35 / 2;
 
 /**
  * How often an unalerted monster re-checks line of sight to the player — vanilla's idle `A_Look`
@@ -1207,9 +1213,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
-   * Integrates one frame of a knocked-back thing's momentum, additive with this frame's AI
-   * movement as `P_XYMovement` is with `A_Chase`'s. A blocked monster or barrel **stops dead**
-   * rather than sliding, and the `blockersFor` thing check is deliberately skipped.
+   * Integrates one tic of a knocked-back thing's momentum, additive with this tic's AI movement
+   * as `P_XYMovement` is with `A_Chase`'s: each axis held to `MAX_MOMENTUM_SPEED`, the move
+   * halved until no step exceeds `MOMENTUM_SPLIT_STEP`, and a blocked step **stopping dead**
+   * rather than sliding. The `blockersFor` thing check is deliberately skipped.
    * docs/movement.md § Knockback.
    */
   function applyKnockback(p: PosedThing, dt: number): void {
@@ -1221,20 +1228,40 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       p.velY = 0;
       return;
     }
-    const nx = p.x + p.velX * dt;
-    const ny = p.y + p.velY * dt;
+    p.velX = clampMomentum(p.velX);
+    p.velY = clampMomentum(p.velY);
+    const startX = p.x;
+    const startY = p.y;
+    let moveX = p.velX * dt;
+    let moveY = p.velY * dt;
     knockbackCollider.radius = p.blockRadius;
     knockbackCollider.z = p.z;
     knockbackCollider.height = p.bodyHeight;
-    if (world.positionBlocked(nx, ny, knockbackCollider)) {
-      world.capturePin(p.pinned, p.x, p.y, p.z, p.velX, p.velY, p.blockRadius, dt);
-      p.velX = 0;
-      p.velY = 0;
-      return;
-    }
+    do {
+      let stepX = moveX;
+      let stepY = moveY;
+      if (Math.abs(moveX) > MOMENTUM_SPLIT_STEP || Math.abs(moveY) > MOMENTUM_SPLIT_STEP) {
+        stepX /= 2;
+        stepY /= 2;
+      }
+      moveX -= stepX;
+      moveY -= stepY;
+      if (world.positionBlocked(p.x + stepX, p.y + stepY, knockbackCollider)) {
+        // The memo replays "nothing moved", which is only what happened when the first step
+        // was the one refused.
+        if (p.x === startX && p.y === startY) {
+          world.capturePin(p.pinned, p.x, p.y, p.z, p.velX, p.velY, p.blockRadius, dt);
+        } else {
+          p.pinned.active = false;
+        }
+        p.velX = 0;
+        p.velY = 0;
+        return;
+      }
+      p.x += stepX;
+      p.y += stepY;
+    } while (moveX !== 0 || moveY !== 0);
     p.pinned.active = false;
-    p.x = nx;
-    p.y = ny;
     const decay = Math.pow(FRICTION, dt * 35);
     p.velX *= decay;
     p.velY *= decay;

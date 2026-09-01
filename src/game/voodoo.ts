@@ -10,7 +10,7 @@ import {
   type SectorTouchCache,
   type World,
 } from './world.ts';
-import { MOMENTUM_STOP_SPEED, PLAYER_RADIUS } from './player.ts';
+import { clampMomentum, MOMENTUM_STOP_SPEED, PLAYER_RADIUS } from './player.ts';
 import { ThingType } from './things/doomednums.ts';
 import { spawnAngleDeg } from './skill.ts';
 import type { Forces } from './specials/forces.ts';
@@ -122,6 +122,8 @@ export class VoodooDolls {
       doll.momY += impY;
 
       if (doll.momX !== 0 || doll.momY !== 0) {
+        doll.momX = clampMomentum(doll.momX);
+        doll.momY = clampMomentum(doll.momY);
         // Only asked for once the doll is actually moving: a parked doll — the
         // normal state of most of them — never pays for the sector walk.
         const speed = Math.hypot(doll.momX, doll.momY);

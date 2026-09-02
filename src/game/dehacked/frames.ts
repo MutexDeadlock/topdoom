@@ -216,6 +216,15 @@ export interface WeaponFrames {
    * for the rest.
    */
   shots: number;
+  /**
+   * The first firing action the pass carries — what the weapon *fires*, as opposed to how fast. A
+   * patch that repoints one is asking for a different shot, not a retimed one, and
+   * `WEAPON_ACTION_SOURCES` is where the applier looks the new one's roll and projectile up. Only
+   * the first counts: a `WeaponDef` holds one shot shape and not a per-shot schedule, the same
+   * reason `cooldown` is a mean over `shots`. Null for a chain that fires nothing.
+   * docs/dehacked.md § Action pointers.
+   */
+  action: string | null;
 }
 
 /**
@@ -233,11 +242,12 @@ function deriveWeapon(states: readonly StateRow[], w: WeaponStates): WeaponFrame
   // `fireChainStates` carries the closing `A_ReFire` state, whose tics are only ever spent on
   // release — the whole point of the rule — so it comes back out here.
   const span = fireChainStates(states, w.atk).filter((i) => states[i][3] !== 'A_ReFire');
-  const shots = Math.max(1, span.filter((i) => isWeaponFire(states[i][3])).length);
+  const fires = span.filter((i) => isWeaponFire(states[i][3]));
+  const shots = Math.max(1, fires.length);
   // A chain of nothing but zero-tic states would fire every frame; vanilla cannot reach that state
   // (`P_SetPsprite` would spin), so one tic is this engine's floor rather than a vanilla rule.
   const tics = Math.max(1, ticsOf(states, span) / shots);
-  return { cooldown: tics * DOOM_TIC, shots };
+  return { cooldown: tics * DOOM_TIC, shots, action: fires.length ? states[fires[0]][3] : null };
 }
 
 /** What the walker derives for one missile, keyed by its pristine flight sprite. */

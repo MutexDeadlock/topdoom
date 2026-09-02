@@ -48,11 +48,13 @@ import {
   setMaxAmmo,
   type AmmoType,
   type InventoryLimits,
+  type WeaponId,
 } from '../inventory.ts';
 import { resetSoundLumps, setSoundLump, type SfxId } from '../../audio/sfx.ts';
 import { resetMusicLumps, setMusicLump } from '../../audio/music/tables.ts';
 import { resetSpriteLumps, setSpriteLump } from '../../wad/sprites.ts';
-import { WEAPONS } from '../weapons.ts';
+import { WEAPON_PICKUPS } from '../inventory/tables.ts';
+import { WEAPONS, type WeaponDef } from '../weapons.ts';
 import type { DehAmmoEdit, DehFrameEdit, DehPatch, DehPointerEdit, DehThingEdit, DehWeaponEdit } from './defs.ts';
 import {
   deriveFrameTables,
@@ -70,6 +72,7 @@ import {
   MISSILE_SINKS,
   MOBJ_INFO,
   OBITUARY_SINKS,
+  WEAPON_ACTION_SOURCES,
   WEAPON_ORDER,
 } from './tables.ts';
 
@@ -102,6 +105,7 @@ const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(SOLID_DECORATION_RADIUS_OVERRIDE),
   patchable(PROJECTILE_RADIUS),
   patchable(WEAPONS),
+  patchable(WEAPON_PICKUPS),
   patchable(OBITUARIES),
   patchable(LOCKED_LINES),
   patchable(CHEAT_MESSAGES),
@@ -429,8 +433,14 @@ function applyAmmo(edit: DehAmmoEdit): void {
 }
 
 /**
- * `Weapon N`'s ammo type. Its five state pointers are applied by `applyFrames` instead, which walks
- * the repointed fire chain — docs/dehacked.md § Weapon, Ammo and Misc.
+ * `Weapon N`'s ammo type, which lands twice: on what the weapon spends, and on what its map pickup
+ * hands over. `P_GiveWeapon` reads the one `weaponinfo` field for both — two clips of the class
+ * unless it is `am_noammo` (halved for a dropped one, which `applyPickup` still decides) — while
+ * this engine keys the grant by doomednum in a table of its own.
+ * docs/items.md § Ammo counts, and what a patch can move.
+ *
+ * Its five state pointers are applied by `applyFrames` instead, which walks the repointed fire
+ * chain — docs/dehacked.md § Weapon, Ammo and Misc.
  *
  * An index of -1 is "the record wrote no `Ammo type` line" and leaves the weapon's own class alone;
  * without that guard a record that only repoints frames would disarm the weapon.
@@ -439,8 +449,17 @@ function applyWeapon(index: number, ammoIndex: number): void {
   const id = WEAPON_ORDER[index];
   if (!id || ammoIndex < 0) return;
   // vanilla's `am_noammo` is 5, past the four real classes — the fist and chainsaw use it.
-  WEAPONS[id].ammoType = AMMO_ORDER[ammoIndex] ?? null;
+  const type = AMMO_ORDER[ammoIndex] ?? null;
+  WEAPONS[id].ammoType = type;
+  for (const pickup of Object.values(WEAPON_PICKUPS)) {
+    if (pickup.weapon !== id) continue;
+    pickup.ammoType = type;
+    pickup.clips = type === null ? 0 : WEAPON_PICKUP_CLIPS;
+  }
 }
+
+/** `P_GiveWeapon`'s own literal: what a weapon lying on the map hands over, in clips. */
+const WEAPON_PICKUP_CLIPS = 2;
 
 /** Structural equality over the small plain values the tables hold. */
 function same(a: unknown, b: unknown): boolean {
@@ -494,9 +513,9 @@ function applyFrames(
   }
   for (const [index, id] of WEAPON_ORDER.entries()) {
     const rate = after.weapons[index];
-    if (rate && !same(before.weapons[index], rate)) {
-      WEAPONS[id].cooldown = rate.cooldown;
-    }
+    if (!rate || same(before.weapons[index], rate)) continue;
+    borrowWeapon(id, before.weapons[index].action, rate.action);
+    WEAPONS[id].cooldown = rate.cooldown;
   }
   for (const key of Object.keys(after.sprites)) {
     const dn = Number(key);
@@ -698,6 +717,41 @@ function attackFor(
   const stats = MONSTER_STATS[source];
   const shape = stats?.[slot] ?? stats?.[slot === 'melee' ? 'ranged' : 'melee'];
   return shape ? structuredClone(shape) : current;
+}
+
+/**
+ * The `WeaponDef` fields a repointed fire chain does **not** borrow: `ammoType` is the `Weapon`
+ * record's own line, `cooldown` is walked off the chain itself, and `iconLump` is the pickup's art
+ * rather than anything the shot does. Everything else is what the weapon fires, so it is stated as
+ * the exclusion — a field added to `WeaponDef` later describes the shot until it says otherwise.
+ */
+const WEAPON_OWN_FIELDS: readonly (keyof WeaponDef)[] = ['ammoType', 'cooldown', 'iconLump'];
+
+/**
+ * What a repointed fire chain now *fires*: the `WeaponDef` of the weapon whose firing action it
+ * took, copied bar `WEAPON_OWN_FIELDS`. The chain still supplies its own rate, and an action the
+ * bridge doesn't name leaves the weapon's shot alone — the two fallbacks `attackFor` makes on the
+ * monster side, for the same reasons.
+ *
+ * The copy is taken **after** `applyWeapon` and `applyMisc`, so a patch that retunes the BFG's
+ * cells/shot and then points something else at `A_FireBFG` gets the retuned figure.
+ * docs/dehacked.md § Action pointers.
+ *
+ * `skinWeapon` rides along with the shot, which is what draws the patched weapon in the player's
+ * hands as the one it now fires; a shot that resolves to no weapon at all clears it, and
+ * `playerSkinWeapon` takes the whole shipped set out of use.
+ */
+function borrowWeapon(id: WeaponId, before: string | null, after: string | null): void {
+  if (after === before) return;
+  const source = after === null ? undefined : WEAPON_ACTION_SOURCES[after];
+  if (source === undefined) {
+    WEAPONS[id].skinWeapon = null;
+    return;
+  }
+  if (source === id) return;
+  const borrowed = Object.entries(WEAPONS[source])
+    .filter(([field]) => !WEAPON_OWN_FIELDS.includes(field as keyof WeaponDef));
+  Object.assign(WEAPONS[id], structuredClone(Object.fromEntries(borrowed)));
 }
 
 /**

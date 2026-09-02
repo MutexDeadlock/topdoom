@@ -9,7 +9,7 @@ import {
 import {
   FF_FULLBRIGHT, frameLetter, freshState, MBF_STATES_START, MOBJ_STATES, SPRITE_NAMES, STATES,
 } from '../../src/game/dehacked/states.ts';
-import { MOBJ_INFO, WEAPON_ORDER } from '../../src/game/dehacked/tables.ts';
+import { MOBJ_INFO, WEAPON_ACTION_SOURCES, WEAPON_ORDER } from '../../src/game/dehacked/tables.ts';
 import { WEAPONS } from '../../src/game/weapons.ts';
 import {
   CORPSE_GIB,
@@ -193,6 +193,18 @@ describe('DEHACKED · the frame walker reproduces the shipped tables', () => {
     assert.equal(FULLBRIGHT_FRAMES.has('CPOSE'), true);
     assert.equal(FULLBRIGHT_FRAMES.has('CPOSF'), true);
     assert.equal(FULLBRIGHT_FRAMES.has('PAINH'), true);
+  });
+
+  test('each of vanilla\u2019s nine fire chains names its own weapon through the bridge', () => {
+    // The 1:1 the applier rests on: what a chain fires is enough to say whose shot it is. A tenth
+    // action, or two weapons sharing one, would make a repoint borrow the wrong `WeaponDef`.
+    const t = pristineFrameTables();
+    for (const [i, id] of WEAPON_ORDER.entries()) {
+      const action = t.weapons[i].action;
+      assert.ok(action, `${id} fires nothing`);
+      assert.equal(WEAPON_ACTION_SOURCES[action], id);
+    }
+    assert.equal(Object.keys(WEAPON_ACTION_SOURCES).length, WEAPON_ORDER.length);
   });
 });
 

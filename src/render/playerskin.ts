@@ -10,6 +10,7 @@ import { SpriteBank } from '../wad/sprites.ts';
 import { Wad, type WadFile } from '../wad/wad.ts';
 import { getPlayerSpriteMode } from '../wad/playerskin.ts';
 import { SpriteMaterialCache, type SpriteSkin } from './sprites.ts';
+import { playerSkinWeapon } from '../game/weapons.ts';
 import type { WeaponId } from '../game/inventory/defs.ts';
 
 /**
@@ -60,6 +61,9 @@ export class PlayerSkins {
    * The setting is read per call rather than captured, so the menu applies it to the level already
    * running; `setDrawsOwnPlayer` is the loaded set's own answer, resolved once per session.
    *
+   * Which of the nine is drawn is `playerSkinWeapon`'s, not `weapon`'s: a DEHACKED patch can move
+   * a weapon's shot onto another weapon's, and the art follows the shot.
+   *
    * The same record comes back every frame for a given weapon, so a caller handing it straight to
    * `SpriteActor.setSkin` allocates nothing.
    */
@@ -67,7 +71,8 @@ export class PlayerSkins {
     const mode = getPlayerSpriteMode();
     if (mode === 'never') return null;
     if (mode === 'auto' && setDrawsOwnPlayer) return null;
-    return this.byWeapon[weapon];
+    const drawn = playerSkinWeapon(weapon);
+    return drawn === null ? null : this.byWeapon[drawn];
   }
 
   dispose(): void {

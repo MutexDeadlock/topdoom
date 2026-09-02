@@ -256,6 +256,11 @@ point of use. Keeping vanilla's indirection rather than
 folding it flat is what lets a DEHACKED `Ammo N / Per ammo` line reach the pickups as well as the
 backpack, with nothing re-derived.
 
+A `Weapon N / Ammo type` line moves both halves of `P_GiveWeapon`: what the weapon spends, and what
+its pickup hands over. Vanilla reads one `weaponinfo` field for both, so `applyWeapon` writes the
+`WEAPON_PICKUPS` row alongside `WEAPONS` — two clips of the new class, none for `am_noammo`.
+Without it a patch's re-armed chainsaw is picked up empty.
+
 The module's other patchable values sit in one `LIMITS` record with narrow setters over it
 (`setMaxAmmo`, `setClipAmmo`, `setInventoryLimits`, `resetInventoryLimits`): the health and armour
 caps, the two armour classes, the sphere amounts, and the starting kit `createInventory` hands out.

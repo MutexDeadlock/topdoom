@@ -37,7 +37,7 @@ import { STATES } from '../../src/game/dehacked/states.ts';
 import { SpriteBank } from '../../src/wad/sprites.ts';
 import { Wad } from '../../src/wad/wad.ts';
 import { wadFile } from '../fixtures/wadfile.ts';
-import { WEAPONS } from '../../src/game/weapons.ts';
+import { WEAPONS, playerSkinWeapon } from '../../src/game/weapons.ts';
 import { SFX_ORDER, WEAPON_ORDER } from '../../src/game/dehacked/tables.ts';
 import { applyPickup, ammoMax, createInventory } from '../../src/game/inventory.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
@@ -172,6 +172,21 @@ describe('DEHACKED · applying', () => {
     // `am_noammo` is 5, past the four real classes.
     apply('Weapon 1\nAmmo type = 5\n');
     assert.equal(WEAPONS.pistol.ammoType, null);
+  });
+
+  test('a Weapon record moves what its pickup hands over, not just what it spends', () => {
+    // `P_GiveWeapon` reads the one `weaponinfo` field for both. Weapon 7 is `wp_chainsaw`,
+    // ammo class 3 is `am_misl` — nosp4.wad's Super Rocket Launcher.
+    apply('Weapon 7\nAmmo type = 3\n');
+    const inv = createInventory();
+    inv.ammo.rockets = 0;
+    applyPickup(inv, ThingType.chainsaw);
+    assert.equal(inv.ammo.rockets, 2, 'two clips of the new class');
+    resetDehacked();
+    const vanilla = createInventory();
+    vanilla.ammo.rockets = 0;
+    applyPickup(vanilla, ThingType.chainsaw);
+    assert.equal(vanilla.ammo.rockets, 0, 'vanilla\u2019s chainsaw is am_noammo');
   });
 
   test('Misc moves the starting kit and the armour classes', () => {
@@ -413,6 +428,56 @@ describe('DEHACKED · applying', () => {
     assert.equal(tics(WEAPONS.chainsaw.cooldown), 8);
     resetDehacked();
     assert.equal(tics(WEAPONS.chainsaw.cooldown), 4);
+  });
+
+  test('a repointed firing action makes the weapon fire the shot that action belongs to', () => {
+    // nosp4.wad's Super Rocket Launcher, in miniature: the pistol's own chain made to fire
+    // `A_FireMissile`. What the shot *is* comes from the rocket launcher; how fast it comes stays
+    // the pistol's own 14 tics, and `Ammo type` is untouched so its class does too.
+    apply(`[CODEPTR]\nFRAME ${stateNamed('S_PISTOL2')} = FireMissile\n`);
+    assert.equal(WEAPONS.pistol.kind, 'projectile');
+    assert.equal(WEAPONS.pistol.projectileSprite, 'MISL');
+    assert.equal(WEAPONS.pistol.ammoPerShot, 1);
+    assert.deepEqual(WEAPONS.pistol.splash, WEAPONS.rocketLauncher.splash);
+    assert.equal(WEAPONS.pistol.ammoType, 'bullets');
+    assert.equal(tics(WEAPONS.pistol.cooldown), 14);
+    assert.equal(WEAPONS.pistol.iconLump, 'PISGA0');
+    // The player's own art follows the shot: a pistol that fires rockets is drawn as the launcher.
+    assert.equal(playerSkinWeapon('pistol'), 'rocketLauncher');
+    resetDehacked();
+    assert.equal(WEAPONS.pistol.kind, 'hitscan');
+    assert.equal(playerSkinWeapon('pistol'), 'pistol');
+  });
+
+  test('a shot no shipped skin depicts takes the whole weapon-matching set out of use', () => {
+    // `A_Mushroom` is not one of the nine, so nothing here knows what the weapon looks like. Art
+    // that lies about one weapon in hand is worse than none, so every weapon falls back to `PLAY`.
+    apply(`[CODEPTR]\nFRAME ${stateNamed('S_PISTOL2')} = Mushroom\n`);
+    assert.equal(playerSkinWeapon('pistol'), null);
+    assert.equal(playerSkinWeapon('shotgun'), null, 'the untouched weapons go with it');
+    resetDehacked();
+    assert.equal(playerSkinWeapon('shotgun'), 'shotgun');
+  });
+
+  test('retiming a chain or moving its ammo class leaves the player art alone', () => {
+    // Only what a weapon *fires* moves the art. A faster chaingun is still a chaingun.
+    apply(`Frame ${stateNamed('S_CHAIN1')}\nDuration = 8\nWeapon 3\nAmmo type = 1\n`);
+    assert.equal(playerSkinWeapon('chaingun'), 'chaingun');
+  });
+
+  test('the borrowed shot is the owner as the patch left it, not as vanilla wrote it', () => {
+    // `Misc` is applied before the chains are walked, so a repoint at `A_FireBFG` gets the
+    // retuned cells/shot — the ordering `attackFor` keeps on the monster side.
+    apply(`Misc 0\nBFG Cells/Shot = 5\n[CODEPTR]\nFRAME ${stateNamed('S_PISTOL2')} = FireBFG\n`);
+    assert.equal(WEAPONS.pistol.ammoPerShot, 5);
+  });
+
+  test('an action the bridge does not name leaves the weapon\u2019s own shot alone', () => {
+    // MBF's `A_Mushroom` is not one of `p_pspr.c`'s nine, so the chain fires nothing this engine
+    // can name — which must not disarm the weapon it sits on.
+    apply(`[CODEPTR]\nFRAME ${stateNamed('S_PISTOL2')} = Mushroom\n`);
+    assert.equal(WEAPONS.pistol.kind, 'hitscan');
+    assert.equal(WEAPONS.pistol.pellets, 1);
   });
 
   test('MBF\u2019s own rows do not vote on fullbright until a Frame record writes one', () => {

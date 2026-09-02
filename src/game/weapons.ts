@@ -159,6 +159,13 @@ export interface WeaponDef {
    * BFG. `null` for every weapon but the BFG.
    */
   spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
+  /**
+   * Which weapon's shipped player skin draws this one — itself, until a patch moves the shot.
+   * `null` where no shipped skin depicts what it fires, which takes the whole set out of use
+   * (`playerSkinWeapon`). Presentation, like `iconLump`, and borrowed with the rest of the shot
+   * when a fire chain is repointed. docs/sprites.md § Weapon-matching player sprites.
+   */
+  skinWeapon: WeaponId | null;
 }
 
 /**
@@ -225,7 +232,7 @@ const AMMO_FALLBACK_ORDER: { weapon: WeaponId; ammo: AmmoType | null; minAmmo: n
  * walks it out of `info.c`'s own fire chain, which is what turns these seeds
  * into complete `WeaponDef`s.
  */
-type WeaponSeed = Omit<WeaponDef, 'cooldown'>;
+type WeaponSeed = Omit<WeaponDef, 'cooldown' | 'skinWeapon'>;
 
 /**
  * **Every number in this table is vanilla's** — spread from the `<<18`/`<<19`
@@ -463,7 +470,7 @@ const WEAPON_SEED: Record<WeaponId, WeaponSeed> = {
 
 /**
  * The seeds above, completed by the fill loop below. The cast is what the loop discharges: every
- * weapon has its `cooldown` before anything reads this table.
+ * weapon has its `cooldown` and its `skinWeapon` before anything reads this table.
  */
 export const WEAPONS = WEAPON_SEED as Record<WeaponId, WeaponDef>;
 
@@ -471,12 +478,33 @@ export const WEAPONS = WEAPON_SEED as Record<WeaponId, WeaponDef>;
  * Writes every weapon's fire rate from the walker's reading of vanilla's own `states[]`
  * (docs/weapons.md § Fire rates) — the summed tics of its `atkstate` chain, the `A_ReFire` state
  * excluded, over the number of shots one pass fires. The rest of each row is `p_pspr.c` data no
- * chain carries and stays written out above.
+ * chain carries and stays written out above. `skinWeapon` starts as the identity here rather than as
+ * nine hand-written rows: unpatched, every weapon is drawn as itself.
  *
  * Runs at import, before `dehacked/apply.ts` snapshots the table for `resetDehacked`.
  */
 const vanillaRates = pristineFrameTables().weapons;
-for (const [index, id] of WEAPON_ORDER.entries()) WEAPONS[id].cooldown = vanillaRates[index].cooldown;
+for (const [index, id] of WEAPON_ORDER.entries()) {
+  WEAPONS[id].cooldown = vanillaRates[index].cooldown;
+  WEAPONS[id].skinWeapon = id;
+}
+
+/**
+ * Which weapon's shipped player art draws `weapon`, or null for none at all — the one reader of
+ * `WeaponDef.skinWeapon`, so the set-wide rule lives with the field rather than at the draw site.
+ *
+ * A patch that repoints a fire chain at another weapon's firing action moves the art with the shot:
+ * nosp4.wad's chainsaw fires rockets and is drawn holding the launcher. One that leaves a weapon
+ * firing something no shipped skin depicts takes the **whole set** out of use, the loaded set's own
+ * `PLAY` art standing in for every weapon — art that lies about one weapon in hand is worse than no
+ * weapon-matching art at all. docs/sprites.md § Weapon-matching player sprites.
+ */
+export function playerSkinWeapon(weapon: WeaponId): WeaponId | null {
+  for (const id of WEAPON_ORDER) {
+    if (WEAPONS[id].skinWeapon === null) return null;
+  }
+  return WEAPONS[weapon].skinWeapon;
+}
 
 export interface HitscanShot {
   kind: 'hitscan';

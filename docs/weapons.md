@@ -204,7 +204,7 @@ one place this engine's weapons still differ in timing.
 
 ## What a DEHACKED patch can change here
 
-The rate, the ammo class, and nothing else — which is everything vanilla stores. `d_deh.c`'s
+The rate, the ammo class, and what the chain fires — which is everything vanilla stores. `d_deh.c`'s
 `deh_weapon[]` is an ammo type and five state pointers; `weaponinfo[]` holds no damage and no fire
 rate at all, because in vanilla a weapon's rate *is* its frames' durations. So a patch retunes a gun
 the way vanilla does, by editing the `Frame` records of its fire chain or by repointing
@@ -212,6 +212,12 @@ the way vanilla does, by editing the `Frame` records of its fire chain or by rep
 `A_ReFire` exclusion and the twice-a-pass rule hold under a patch: making `S_PLASMA2` a hundred tics
 long still leaves the plasma rifle at 3, and stretching `S_CHAIN1` moves the chaingun to the new gap
 between its two `A_FireCGun` calls rather than to the whole pass.
+
+The damage, spread, ammo cost and projectile are not fields a patch can write either — they follow
+the chain's **firing action**. A chain repointed at another of `p_pspr.c`'s nine fires that weapon's
+shot, copied whole bar the ammo class, the rate and the icon: docs/dehacked.md § Action pointers.
+That is how a patch builds a weapon vanilla has no slot for — nosp4.wad's Super Rocket Launcher is
+the chainsaw slot drawing rockets off a chain carrying `A_FireMissile`.
 
 A weapon's **flash, bob, raise and lower** states are the ones with nothing here to land on — there
 is no first-person weapon drawn — and report as `noTarget` rather than applying silently.

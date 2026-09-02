@@ -561,3 +561,18 @@ A false positive is the safe direction: it only leaves that set's player drawing
 
 A fetch that fails resolves to null and the player draws `PLAY`, silently — the game as it was
 before the file existed, and never a reason a level cannot start.
+
+### When a patch moves a weapon's shot
+
+Which of the nine is drawn is `WeaponDef.skinWeapon`, not the weapon in hand — `playerSkinWeapon`
+(`game/weapons.ts`) is the one reader. Unpatched it is the identity. A DEHACKED patch that repoints
+a fire chain at another weapon's firing action moves the art with the shot: nosp4.wad's chainsaw
+fires rockets, so the player is drawn holding the launcher. Only what a weapon *fires* moves it — a
+retimed chain or a bare `Ammo type` line leaves the art alone, a faster chaingun being still a
+chaingun.
+
+A shot that resolves to no weapon at all — an MBF pointer, or a chain left firing nothing — clears
+`skinWeapon`, and that takes the **whole set** out of use: every weapon falls back to the loaded
+set's own `PLAY`. Art that lies about one weapon in hand is worse than no weapon-matching art, and
+skins that come and go as the player switches are worse than either. Restored by `resetDehacked`
+with the rest of `WEAPONS` — docs/dehacked.md § Action pointers.

@@ -363,6 +363,28 @@ export const ATTACK_ACTION_SOURCES: Record<string, number> = {
   A_VileAttack: ThingType.archVile,
 };
 
+/**
+ * Which weapon owns each of `p_pspr.c`'s nine firing actions — `ATTACK_ACTION_SOURCES` for the
+ * player's side, and read the same way. The walker says which action a repointed fire chain now
+ * carries; this says whose roll, spread, ammo cost and projectile that action is, and the applier
+ * copies that weapon's own `WeaponDef` onto the repointed one (docs/dehacked.md § Action pointers).
+ *
+ * Every one of the nine is here and the mapping is 1:1 — vanilla writes one action per weapon, and
+ * the two chains that carry two firing actions (`S_SAW1`/`S_SAW2`, `S_CHAIN1`/`S_CHAIN2`) repeat
+ * their own.
+ */
+export const WEAPON_ACTION_SOURCES: Record<string, WeaponId> = {
+  A_Punch: 'fist',
+  A_Saw: 'chainsaw',
+  A_FirePistol: 'pistol',
+  A_FireShotgun: 'shotgun',
+  A_FireShotgun2: 'supershotgun',
+  A_FireCGun: 'chaingun',
+  A_FireMissile: 'rocketLauncher',
+  A_FirePlasma: 'plasmaRifle',
+  A_FireBFG: 'bfg',
+};
+
 /** Which `MonsterSounds` field each `Thing` sound line names — `mobjinfo.seesound` and friends. */
 export const THING_SOUND_FIELDS: Record<string, 'see' | 'attack' | 'pain' | 'death' | 'active'> = {
   'alert sound': 'see',

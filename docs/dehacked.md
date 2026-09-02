@@ -453,6 +453,22 @@ the one-home rule exists to prevent. Three rules fall out of that:
 - An action that is not an attack at all leaves the type's attack alone rather than clearing it;
   only a chain whose firing action is **gone** (`A_NULL`) loses its attack.
 
+**A repointed fire chain is the same rule on the player's side.** `WeaponFrames.action` is the
+first of `p_pspr.c`'s nine the chain now carries, `WEAPON_ACTION_SOURCES` says which weapon owns it,
+and the applier copies that weapon's `WeaponDef` — kind, roll, spread, ammo cost, projectile,
+splash, sounds — onto the repointed one. Three fields never come with it: `ammoType` is the `Weapon`
+record's own line, `cooldown` is walked off the chain itself, and `iconLump` is the pickup's art.
+The ordering and the two fallbacks are the monster side's, unchanged: the copy is taken after
+`applyWeapon` and `applyMisc`, and an action the bridge doesn't name leaves the weapon's shot alone.
+Only the first firing action counts — a `WeaponDef` holds one shot shape and not a per-shot
+schedule, the same reason `cooldown` is a mean over the pass. nosp4.wad's Super Rocket Launcher is
+the case this exists for: the chainsaw slot, `Ammo type = 3`, and a fire chain past the end of the
+table carrying `A_FireMissile`.
+
+The player's own art rides along: `WeaponDef.skinWeapon` is borrowed with the shot, so that chainsaw
+is drawn in the launcher's hands. A shot that resolves to no weapon clears it and stands the whole
+shipped skin set down — docs/sprites.md § When a patch moves a weapon's shot.
+
 **A missile chain is read for every firing action it carries, not only its first.** Vanilla never
 needs that — its multi-shot chains repeat one action — but a patch can make a chain fire two
 different ones, and NoSp2.wad's cybruiser does: `A_CyberAttack` then `A_BruisAttack`, a rocket and
@@ -534,7 +550,14 @@ Two spellings to know, both `d_deh.c`'s: `Deselect frame` is `upstate` and `Sele
 `WEAPON_STATES` the struct's, so neither side has to remember the swap.
 
 An `Ammo type` line is the only one that can *clear* something, so its absence is load-bearing: a
-record that only repoints frames leaves the weapon's ammo class alone rather than disarming it.
+record that only repoints frames leaves the weapon's ammo class alone rather than disarming it. It
+lands twice: on what the weapon spends, and on what its map pickup hands over. `P_GiveWeapon` reads
+the one `weaponinfo` field for both — two clips of the class unless it is `am_noammo` — while this
+engine keys the grant by doomednum in `WEAPON_PICKUPS`, so `applyWeapon` writes both. Without that
+a patch's re-armed chainsaw is picked up empty.
+
+What the chain now *fires* is the `Shooting frame`'s business rather than this record's —
+§ Action pointers.
 
 `Ammo` reaches both of vanilla's tables, `maxammo[]` and `clipammo[]`. The second matters more than
 it looks: `P_GiveAmmo` multiplies a pickup's `num` by `clipammo[type]`, so `Per ammo` drives what

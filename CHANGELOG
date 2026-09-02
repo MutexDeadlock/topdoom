@@ -12,6 +12,11 @@ Features and improvements
   - all settings live in one localStorage entry now; settings stored by an
     earlier build are not migrated and start out at their defaults again
 
+Fixed bugs
+  - a BEX [SOUNDS] key that names no sfx is reported instead of counted
+    as a redirect that landed
+
+
 
 ===============================================================================
 

@@ -614,6 +614,12 @@ so a "don't double the prefix" rule would silently mean the super shotgun's lump
 `[MUSIC]` is the one that can afford that tolerance — no `mus_*` mnemonic begins with `d_` — and
 takes it, so a patch writing `runnin = D_OTHER` gets what it plainly meant rather than `D_D_OTHER`.
 
+A `[SOUNDS]` key is held against `S_sfx[]`'s own names before it is stored, the way a `[SPRITES]`
+key is held against `sprnames[]`. Unchecked, a key naming nothing is stored under itself and
+counted `applied` — a redirect no `soundLumpName` lookup can reach, reported as a win. nosp4.wad
+writes six of them as raw `sfxenum_t` indices. `[MUSIC]` has no such check yet: it would need the
+mnemonic list `audio/music/tables.ts` holds in four separate consts.
+
 A numeric `Sound N` or `Music N` record classifies `noTarget`: those move a pointer into the exe's
 own string table, which means nothing outside it. Only the BEX mnemonic form names a lump.
 

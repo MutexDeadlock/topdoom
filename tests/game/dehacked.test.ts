@@ -44,6 +44,15 @@ describe('DEHACKED · the record grammar', () => {
     assert.deepEqual(patch.warnings.map((w) => [w.record, w.support, w.count]), [['[SPRITES]', 'unknown', 2]]);
   });
 
+  test('[SOUNDS] redirects a real sfx name and reports a key that is not one', () => {
+    // nosp4.wad writes its keys as raw `sfxenum_t` indices. Unchecked, `705` was stored under
+    // itself and counted applied — a redirect no `soundLumpName` lookup could ever reach.
+    const patch = parseDehacked('[SOUNDS]\npistol = NEWGUN\n705 = DIAACT\n');
+    assert.deepEqual([...patch.soundLumps], [['pistol', 'NEWGUN']]);
+    assert.equal(patch.applied.sound, 1);
+    assert.deepEqual(patch.warnings.map((w) => [w.record, w.support, w.count]), [['[SOUNDS]', 'unknown', 1]]);
+  });
+
   test('Bits parses both the numeric and the mnemonic form', () => {
     // EPIC.WAD writes one of each, so both are load-bearing on real content.
     assert.equal(parseDehacked('Thing 12\nBits = 768\n').thingEdits[0].bits, 0x100 | 0x200);

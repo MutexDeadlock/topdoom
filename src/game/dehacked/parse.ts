@@ -62,6 +62,9 @@ const HEADER_KEYS = new Set(['doom version', 'patch format']);
 /** Pristine sprite names, lowercased, for the `[SPRITES]` and `Text 4 4` rename lookups. */
 const SPRITE_MNEMONICS = new Set(SPRITE_NAMES.map((name) => name.toLowerCase()));
 
+/** `S_sfx[]`'s own names, for the `[SOUNDS]` lookup — slot 0 is `sfx_None`, which names no lump. */
+const SFX_MNEMONICS = new Set(SFX_ORDER.filter((name) => name !== null).map((name) => name.toLowerCase()));
+
 /**
  * Collects warnings deduped by `(record, field, support)`, and the merge point across a set's
  * several lumps (`readDehacked`), so one dedupe key serves both. `support` is in the key because
@@ -248,7 +251,7 @@ export function parseDehacked(
     // `Sound N` / `Music N` / `Sprite N` records `noTarget`, so `skipping` above has already
     // dropped their field lines.
     if (kind === 'sound') {
-      soundLumps.set(pair.key.trim().toLowerCase(), pair.value.trim());
+      readSoundLump(line, soundLumps);
       continue;
     }
     if (kind === 'music') {
@@ -577,6 +580,22 @@ function readText(headerLine: string, cursor: TextCursor, sinks: TextSinks): voi
     'unsupported',
     `substitutes \`${oldText.slice(0, 24).replace(/\n/g, ' ')}\`, which is not a level title`,
   );
+}
+
+/**
+ * One BEX `[SOUNDS]` entry, `mnemonic = name`. The mnemonic is held against `S_sfx[]`'s own names,
+ * the way `[SPRITES]`' is held against `sprnames[]`: unchecked, a key naming nothing is stored
+ * under itself and counted `applied`, claiming a redirect no lookup can reach. nosp4.wad writes six
+ * of them as raw `sfxenum_t` indices.
+ */
+function readSoundLump(line: FieldLine, soundLumps: Map<string, string>): void {
+  const { field: key, value, warnings } = line;
+  const from = key.trim().toLowerCase();
+  if (!SFX_MNEMONICS.has(from)) {
+    warnings.add('[SOUNDS]', 'unknown', `\`${key.trim()}\` is not a sound name`);
+    return;
+  }
+  soundLumps.set(from, value.trim());
 }
 
 /**

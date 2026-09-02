@@ -80,7 +80,7 @@ restore must never skip an entry (`buildThingSprites` throws on missing art inst
 `SAVE_VERSION` is a single integer, bumped on any change a version-1 reader would misread. The
 loader refuses any other version; the Load tab still lists such saves (grayed, with the version
 named) so they can be deleted or downloaded, just not loaded. This is deliberately unlike every
-other persisted `topdoom.*` value (docs/menu.md § Persisted settings): a settings scalar degrades
+other persisted setting (docs/menu.md § Persisted settings): a settings scalar degrades
 safely under structural validation, a snapshot's schema genuinely evolves and half-reading an old
 one produces a subtly wrong level rather than a default. It versions the snapshot's *content*
 only: the move to IndexedDB with split, gzipped records shipped without a bump, because how the

@@ -233,8 +233,8 @@ ignoring it plays their every fade at full blast.
 The player's own volume is a **gain node**, not part of that arithmetic — a sibling of the sfx bus
 under `master`, so the two sliders are independent (docs/audio.md § Volume and the context). As
 with sfx there is no separate mute: 0 stops the track outright rather than rendering a chip nobody
-can hear, and coming back up starts it again from the top. The value is persisted under
-`topdoom.musicVolume`, default **0.6 — tuned by feel**, and deliberately under the sfx default of
+can hear, and coming back up starts it again from the top. The value is persisted as
+`musicVolume`, default **0.6 — tuned by feel**, and deliberately under the sfx default of
 0.8: a shot or a monster waking has to cut through the track.
 
 **The master slider gates this player too, and only gates it.** `AudioEngine` pushes its value in
@@ -242,7 +242,7 @@ through `setMasterVolume`; the gain is the master node's, downstream of this bus
 applies it — but silence is silence whichever slider reached it, so `start`/`stopPlayback` test the
 two multiplied. Without that, a master of 0 would leave the chip rendering a track nobody can hear,
 which is the one thing this player's own 0 exists to prevent. The value is never stored here:
-`topdoom.masterVolume` has one owner.
+`masterVolume` has one owner.
 
 **The bus' order is volume, then the safety curve** (a `WaveShaperNode`, transparent below 0.7 and
 asymptotic above), and that order is the whole reason the curve is here rather than in the chip.

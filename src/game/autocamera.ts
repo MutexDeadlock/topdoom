@@ -10,6 +10,7 @@ import { ownTransfers, twoSidedBands, type DrawnBands, type SectorTransfers } fr
 import type { Pos3 } from '../types.ts';
 import { dampen } from '../util/damping.ts';
 import { segmentCrossT } from '../util/geom.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
 import { NO_SIDE } from '../wad/map.ts';
 import { EYE_HEIGHT } from './player.ts';
 import type { Opening, World } from './world.ts';
@@ -17,7 +18,7 @@ import type { Opening, World } from './world.ts';
 /** Which camera mode is active — a menu setting, see docs/menu.md § Persisted settings. */
 export type CameraMode = 'auto' | 'manual';
 
-const CAMERA_MODE_STORAGE_KEY = 'topdoom.cameraMode';
+const CAMERA_MODE_STORAGE_KEY = 'cameraMode';
 const CAMERA_MODES: readonly CameraMode[] = ['auto', 'manual'];
 
 /** The camera mode, shaped like every persisted setting — docs/menu.md § Persisted settings. */
@@ -29,7 +30,7 @@ export function getCameraMode(): CameraMode {
 
 export function setCameraMode(mode: CameraMode): void {
   cameraMode = mode;
-  globalThis.localStorage?.setItem(CAMERA_MODE_STORAGE_KEY, mode);
+  writeStorage(CAMERA_MODE_STORAGE_KEY, mode);
 }
 
 // The framing endpoints the two smoothed opennesses lerp between — all tuned by feel; the
@@ -525,7 +526,7 @@ export class AutoCamera {
 }
 
 function readStoredCameraMode(): CameraMode {
-  const stored = globalThis.localStorage?.getItem(CAMERA_MODE_STORAGE_KEY);
+  const stored = readStorage(CAMERA_MODE_STORAGE_KEY, 'auto');
   return CAMERA_MODES.find((m) => m === stored) ?? 'auto';
 }
 

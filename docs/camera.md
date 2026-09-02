@@ -132,7 +132,7 @@ sheet of water still drops the player up to 200 units, with nothing on screen to
 The default camera mode frames the view from the space around the player: shut-in geometry pulls
 the camera down to `AUTO_NARROW_DISTANCE`/`AUTO_NARROW_TILT` (350u / 50°), open areas push it out
 to `AUTO_WIDE_DISTANCE`/`AUTO_WIDE_TILT` (720u / 70°). The "Camera mode" menu setting
-(`topdoom.cameraMode`, owned by `game/autocamera.ts`) switches between `auto` and `manual`;
+(the `cameraMode` setting, owned by `game/autocamera.ts`) switches between `auto` and `manual`;
 manual keeps the 480u / 60° constructor defaults and the `+ - [ ]` keys. **The framing keys are
 inert in auto mode** — they act only while the mode is manual, the same inert-not-error shape the
 DEVMODE map keys have outside dev mode.

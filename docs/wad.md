@@ -610,7 +610,7 @@ only survived because the edge was `import type` and got erased.
 **Storage is IndexedDB, and there is no choice about it.** A `FileSystemDirectoryHandle` is
 structured-cloneable but not JSON-serializable — `JSON.stringify(handle)` yields `{}` — so
 `localStorage` cannot hold one, which is why this is the one persisted thing in the menu that isn't
-a `topdoom.*` key (docs/menu.md § Persisted settings). It gets its **own** database,
+a field of the settings object (docs/menu.md § Persisted settings). It gets its **own** database,
 `topdoom-wadlibrary`, rather than a `DB_VERSION` bump on the one holding savegames
 (`game/savestore.ts`): a failed upgrade here must not be able to take saves down with it. The
 request plumbing *is* shared — `asPromise`, `txDone` and `idbOpener` come from `util/idb.ts`; the

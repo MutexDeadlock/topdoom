@@ -10,6 +10,7 @@ import { OplChip } from './music/opl.ts';
 import { OplSynth } from './music/synth.ts';
 import { finaleMusicFor, intermissionMusicFor, vanillaMusicFor } from './music/tables.ts';
 import type { Song } from './music/defs.ts';
+import { writeStorage } from '../util/storage.ts';
 
 /**
  * Default music volume. **Tuned by feel**, and deliberately below the sfx default: music sits
@@ -17,7 +18,7 @@ import type { Song } from './music/defs.ts';
  */
 const DEFAULT_VOLUME = 0.6;
 
-const VOLUME_STORAGE_KEY = 'topdoom.musicVolume';
+const VOLUME_STORAGE_KEY = 'musicVolume';
 
 /**
  * How much audio is rendered at a time and how far ahead of the clock the scheduler keeps. Both
@@ -121,7 +122,7 @@ export class MusicPlayer {
   setVolume(value: number): void {
     const previous = this.audible;
     this._volume = Math.max(0, Math.min(1, value));
-    globalThis.localStorage?.setItem(VOLUME_STORAGE_KEY, String(this._volume));
+    writeStorage(VOLUME_STORAGE_KEY, this._volume);
     if (this.bus) this.bus.gain.value = this._volume;
     this.regate(previous);
   }

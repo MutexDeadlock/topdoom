@@ -17,9 +17,9 @@ scope; `three` itself imports fine, so a module pulling it in transitively is st
 Two runner details worth knowing before editing the scripts: a bare directory positional
 (`node --test tests`) fails with `Cannot find module`, so the glob is required and must be quoted
 so *node* expands it rather than the shell. And `--disable-warning=ExperimentalWarning` is there
-for one reason — `game/player.ts`'s module-scope `globalThis.localStorage?.getItem(...)` makes
-Node print a `localStorage is not available` warning on every test file. Making that read lazy
-would remove the need for the flag.
+for one reason — a module-scope setting read (`util/storage.ts`, reached from `game/player.ts` and
+a dozen others) makes Node print a `localStorage is not available` warning on every test file that
+imports one. Making those reads lazy would remove the need for the flag.
 
 Node runs **one process per test file**, which is what contains `player.ts`'s module-level
 `autorunEnabled` and any `Math.random` patch. Don't rely on state crossing files.

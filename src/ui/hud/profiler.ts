@@ -4,6 +4,7 @@
  */
 import type { FrameProfiler } from '../../util/profiler.ts';
 import { DEVMODE } from '../../constants.ts';
+import { readStorage, writeStorage } from '../../util/storage.ts';
 
 /**
  * A category's bar fills its row at this many ms — one whole 60fps frame budget, so a bar reaching
@@ -18,7 +19,7 @@ const WARN_FRACTION = 0.25;
 /** Bar turns red once a category alone would miss the frame budget by itself. */
 const HOT_FRACTION = 1;
 
-const PROFILER_STORAGE_KEY = 'topdoom.profiler';
+const PROFILER_STORAGE_KEY = 'profiler';
 
 /** `getProfilerVisible`'s memo of the stored setting; null until first read. */
 let visible: boolean | null = null;
@@ -32,16 +33,13 @@ export function getProfilerVisible(): boolean {
   // Memoized because `Game.draw` asks every frame to decide whether to run the GPU timer, and the
   // setting only ever moves through `setProfilerVisible` below — so the read stays inside the
   // `null` check rather than running ahead of a `??=`.
-  if (visible === null) {
-    const stored = globalThis.localStorage?.getItem(PROFILER_STORAGE_KEY);
-    visible = stored == null ? DEVMODE : stored === '1';
-  }
+  if (visible === null) visible = readStorage(PROFILER_STORAGE_KEY, DEVMODE);
   return visible;
 }
 
 export function setProfilerVisible(on: boolean): void {
   visible = on;
-  globalThis.localStorage?.setItem(PROFILER_STORAGE_KEY, on ? '1' : '0');
+  writeStorage(PROFILER_STORAGE_KEY, on);
   applyProfilerVisible();
 }
 

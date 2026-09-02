@@ -93,7 +93,7 @@ z >= b.z + b.height  ||  z + height <= b.z    →  not blocked
 
 which follows the finite-height actors of modern ports rather than the original, because in a
 top-down view a cacodemon hovering overhead reads as an invisible wall. The **`Infinite tall actors
-(vanilla)`** setting (Settings → General, `topdoom.infiniteTallActors`, off by default) restores the
+(vanilla)`** setting (Settings → General, the `infiniteTallActors` setting, off by default) restores the
 original rule; `blockedByThings` reads it per call, so it applies to the level already running.
 Rules that go with it:
 
@@ -275,7 +275,7 @@ produces: off, Shift runs exactly as above (vanilla's own sense); on — the def
 and Shift walks instead. It's module-level state in `player.ts` rather than a `Player` field,
 because `Player` is recreated every map load (`game.ts: loadMapByIndex`) and the setting must take
 effect immediately for a level already in progress, not just the next one. Persisted as
-`topdoom.autorun` — docs/menu.md § Persisted settings.
+`autorun` — docs/menu.md § Persisted settings.
 
 `Player.update` runs once per simulation tic, and `Player` carries `prevX`/`prevY`/`prevZ`/
 `prevAngle` for the render layer to interpolate from — with `syncInterpolation` collapsing that

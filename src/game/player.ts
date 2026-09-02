@@ -11,6 +11,7 @@ import { NO_FRICTION, type FrictionEffect } from './specials/defs.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { vecLength } from '../util/geom.ts';
 import { decayOverTics } from '../util/damping.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
 
 /** The player's own collision box, in map units — `MT_PLAYER`'s `mobjinfo` radius and height. */
 export const PLAYER_RADIUS = 16;
@@ -120,13 +121,13 @@ export function clampMomentum(v: number): number {
   return v > MAX_MOMENTUM_SPEED ? MAX_MOMENTUM_SPEED : v < -MAX_MOMENTUM_SPEED ? -MAX_MOMENTUM_SPEED : v;
 }
 
-const AUTORUN_STORAGE_KEY = 'topdoom.autorun';
+const AUTORUN_STORAGE_KEY = 'autorun';
 
 /**
  * Whether Shift *walks* (autorun on, the default) rather than *runs* (vanilla's own sense).
  * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
-let autorunEnabled = globalThis.localStorage?.getItem(AUTORUN_STORAGE_KEY) !== 'false';
+let autorunEnabled = readStorage(AUTORUN_STORAGE_KEY, true);
 
 export function getAutorun(): boolean {
   return autorunEnabled;
@@ -134,7 +135,7 @@ export function getAutorun(): boolean {
 
 export function setAutorun(enabled: boolean): void {
   autorunEnabled = enabled;
-  globalThis.localStorage?.setItem(AUTORUN_STORAGE_KEY, String(enabled));
+  writeStorage(AUTORUN_STORAGE_KEY, enabled);
 }
 
 export class Player implements Pos3 {

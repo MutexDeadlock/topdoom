@@ -299,14 +299,14 @@ logged — the message then shows silently, the same way a missing lump degrades
 ## Volume and the context
 
 The menu's Settings → Audio tab has three sliders — master, effects, music — and each value is
-persisted in `localStorage`, the sfx one under `topdoom.sfxVolume` (docs/menu.md § Persisted
-settings covers the shared pattern). Default is
+persisted as a field of the settings object, the sfx one as `sfxVolume` (docs/menu.md §
+Persisted settings covers the shared pattern). Default is
 **0.8, tuned by feel** rather than taken from vanilla's own starting `snd_SfxVolume` of 8 of 15 —
 there is no sound card's analogue stage behind this mixer, so vanilla's number arrives quieter
 here than it did on the hardware. The music default is lower again (docs/music.md § Volume): it
 sits under the game rather than beside it.
 
-**The master slider is the `master` gain node itself** (`topdoom.masterVolume`, default **1** —
+**The master slider is the `master` gain node itself** (the `masterVolume` setting, default **1** —
 unity, not a tuned number: what the mix sounds like is the two channel defaults' business, and this
 slider exists to pull all of it down at once). It is the only one that moves both buses, so 0 on it
 has to do what 0 on either channel does, on both at once: `play` short-circuits on

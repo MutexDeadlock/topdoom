@@ -1,7 +1,15 @@
+/**
+ * `Input`: the keyboard and pointer state the game loop samples each frame, latched to the tic
+ * cadence the simulation runs on, plus the right mouse button's binding — the one menu setting
+ * that belongs here. See docs/frameloop.md § Input runs on the tic and docs/menu.md § Right mouse
+ * button.
+ */
+import { readStorage, writeStorage } from '../util/storage.ts';
+
 /** What clicking the right mouse button does — a menu setting, see docs/menu.md. */
 export type RightMouseAction = 'none' | 'previousweapon' | 'use';
 
-const RIGHT_MOUSE_STORAGE_KEY = 'topdoom.rightMouse';
+const RIGHT_MOUSE_STORAGE_KEY = 'rightMouse';
 const RIGHT_MOUSE_ACTIONS: readonly RightMouseAction[] = ['none', 'previousweapon', 'use'];
 
 /**
@@ -16,7 +24,7 @@ export function getRightMouseAction(): RightMouseAction {
 
 export function setRightMouseAction(action: RightMouseAction): void {
   rightMouseAction = action;
-  globalThis.localStorage?.setItem(RIGHT_MOUSE_STORAGE_KEY, action);
+  writeStorage(RIGHT_MOUSE_STORAGE_KEY, action);
 }
 
 /**
@@ -183,7 +191,7 @@ export class Input {
 }
 
 function readStoredRightMouseAction(): RightMouseAction {
-  const stored = globalThis.localStorage?.getItem(RIGHT_MOUSE_STORAGE_KEY);
+  const stored = readStorage(RIGHT_MOUSE_STORAGE_KEY, 'previousweapon');
   return RIGHT_MOUSE_ACTIONS.find((a) => a === stored) ?? 'previousweapon';
 }
 

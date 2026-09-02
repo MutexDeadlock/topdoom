@@ -730,7 +730,7 @@ Costs a whole-map build about a fifth of its time — GoingDown MAP01's 2232 lea
 ### Turning it off
 
 Settings / Visuals / Lighting switches it off, labelled *Ambient occlusion* — what a graphics
-menu calls this — on the `topdoom.wallShade` key (docs/menu.md § Persisted settings). The strength
+menu calls this — on the `wallShade` setting (docs/menu.md § Persisted settings). The strength
 is a uniform every map material shares, so the switch reaches the level already running without
 rebuilding anything; off is that uniform at zero, and the baked amount stays in the buffers.
 
@@ -773,7 +773,7 @@ light, exactly as it does on a surface.
 
 ### Turning the tint off
 
-Settings / Visuals / Lighting, labelled *Outdoor sky tint*, on the `topdoom.skyTint` key
+Settings / Visuals / Lighting, labelled *Outdoor sky tint*, on the `skyTint` setting
 (docs/menu.md § Persisted settings). The colour is a uniform every map material shares, so the
 switch reaches a level already running; off is that uniform at white.
 
@@ -1460,7 +1460,7 @@ is smooth rather than stepped at 35 Hz.
 
 ### The toggle
 
-Settings / Visuals / Void switches the fog off, on the `topdoom.voidFog` key
+Settings / Visuals / Void switches the fog off, on the `voidFog` setting
 (docs/menu.md § Persisted settings). The plane reads the flag in its per-frame `update` rather than
 capturing it when the level is built, so switching it reaches the level already running; switched
 off it is the plane that stops drawing, not the level that changes, so nothing about what is

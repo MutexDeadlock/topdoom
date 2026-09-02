@@ -7,8 +7,9 @@ import * as THREE from 'three';
 import { SKY_FLAT } from '../wad/map.ts';
 import type { Sector } from '../wad/map.ts';
 import type { Bitmap } from '../wad/graphics.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
 
-const STORAGE_KEY = 'topdoom.skyTint';
+const STORAGE_KEY = 'skyTint';
 
 /**
  * How far a surface is carried toward the sky's colour, as a fraction of the way from its own.
@@ -41,7 +42,7 @@ const LUMA: readonly [number, number, number] = [0.2126, 0.7152, 0.0722];
  * Whether the tint is applied at all. On by default. Shaped like every persisted setting —
  * docs/menu.md § Persisted settings (docs/render.md § Turning the tint off).
  */
-let enabled = globalThis.localStorage?.getItem(STORAGE_KEY) !== 'false';
+let enabled = readStorage(STORAGE_KEY, true);
 
 /** What the level's own sky asks for, kept apart so the toggle can put it back without a rebuild. */
 const levelTint = new THREE.Color(1, 1, 1);
@@ -63,7 +64,7 @@ export function getSkyTint(): boolean {
 export function setSkyTint(on: boolean): void {
   enabled = on;
   applyTint();
-  globalThis.localStorage?.setItem(STORAGE_KEY, String(on));
+  writeStorage(STORAGE_KEY, on);
 }
 
 /**

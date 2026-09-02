@@ -47,6 +47,7 @@ import {
 } from '../../wad/playerskin.ts';
 import { getAutoSwitchWeapon, getPistolStart, setAutoSwitchWeapon, setPistolStart } from '../../game/inventory.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
+import { readStorage, readStorageObject, writeStorage } from '../../util/storage.ts';
 import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
 import { getProfilerVisible, setProfilerVisible } from '../hud/profiler.ts';
 import { getFpsVisible, setFpsVisible } from '../devmode/debughud.ts';
@@ -75,8 +76,8 @@ export type MenuTab = 'newgame' | 'save' | 'load' | 'settings';
 /** The Settings tab's own sub-tabs, in the order they are shown. */
 type SettingsTab = 'general' | 'controls' | 'visuals' | 'audio';
 
-const SKILL_STORAGE_KEY = 'topdoom.skill';
-const SELECTION_STORAGE_KEY = 'topdoom.selection';
+const SKILL_STORAGE_KEY = 'skill';
+const SELECTION_STORAGE_KEY = 'selection';
 
 /** What `saveSelection` writes: `WadSource.key`s plus the level, for every source but an upload. */
 interface StoredSelection {
@@ -976,7 +977,7 @@ export class Menu {
     }
     this.skillSelect.value = String(this.storedSkill());
     this.skillSelect.addEventListener('change', () => {
-      globalThis.localStorage?.setItem(SKILL_STORAGE_KEY, this.skillSelect.value);
+      writeStorage(SKILL_STORAGE_KEY, Number(this.skillSelect.value));
     });
   }
 
@@ -984,7 +985,7 @@ export class Menu {
    * Reads back the last skill picked; falls back to vanilla's own default when unset or invalid.
    */
   private storedSkill(): Skill {
-    const stored = Number(globalThis.localStorage?.getItem(SKILL_STORAGE_KEY));
+    const stored: number = readStorage(SKILL_STORAGE_KEY, DEFAULT_SKILL);
     return stored >= 1 && stored <= 5 ? (stored as Skill) : DEFAULT_SKILL;
   }
 
@@ -1015,29 +1016,23 @@ export class Menu {
       disabled: [...this.disabledPwads],
       map: this.levelSelect.value,
     };
-    globalThis.localStorage?.setItem(SELECTION_STORAGE_KEY, JSON.stringify(stored));
+    writeStorage(SELECTION_STORAGE_KEY, stored);
   }
 
   /**
-   * The stored selection, or null if there is none or it isn't parseable. The
-   * keys themselves aren't validated here — `init` resolves each against the
-   * current library and drops whatever no longer exists.
+   * The stored selection, or null where nothing is stored or what is stored names no IWAD. The keys
+   * themselves aren't validated here — `init` resolves each against the current library and drops
+   * whatever no longer exists.
    */
   private loadSelection(): StoredSelection | null {
-    const raw = globalThis.localStorage?.getItem(SELECTION_STORAGE_KEY);
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw) as Partial<StoredSelection>;
-      if (typeof parsed?.iwad !== 'string') return null;
-      return {
-        iwad: parsed.iwad,
-        pwads: Array.isArray(parsed.pwads) ? parsed.pwads.filter((p) => typeof p === 'string') : [],
-        disabled: Array.isArray(parsed.disabled) ? parsed.disabled.filter((p) => typeof p === 'string') : [],
-        map: typeof parsed.map === 'string' ? parsed.map : '',
-      };
-    } catch {
-      return null;
-    }
+    const parsed = readStorageObject(SELECTION_STORAGE_KEY) as Partial<StoredSelection> | null;
+    if (typeof parsed?.iwad !== 'string') return null;
+    return {
+      iwad: parsed.iwad,
+      pwads: Array.isArray(parsed.pwads) ? parsed.pwads.filter((p) => typeof p === 'string') : [],
+      disabled: Array.isArray(parsed.disabled) ? parsed.disabled.filter((p) => typeof p === 'string') : [],
+      map: typeof parsed.map === 'string' ? parsed.map : '',
+    };
   }
 
   private selectLevel(name: string): void {

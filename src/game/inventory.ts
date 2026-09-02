@@ -6,6 +6,7 @@ import type { SfxId } from '../audio/sfx.ts';
 import { ThingType } from './things/doomednums.ts';
 import { DEFAULT_SKILL, ammoAtSkill, type Skill } from './skill.ts';
 import { PLAYER_RADIUS } from './player.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
 import type { LockRule } from './specials/defs.ts';
 import {
   KEY_COLORS,
@@ -204,7 +205,7 @@ export function resetInventoryLimits(): void {
   setInventoryLimits(PRISTINE_LIMITS);
 }
 
-const PISTOL_START_STORAGE_KEY = 'topdoom.pistolStart';
+const PISTOL_START_STORAGE_KEY = 'pistolStart';
 
 /**
  * Whether every level is entered on a fresh `createInventory()` instead of carrying health, armor,
@@ -214,7 +215,7 @@ const PISTOL_START_STORAGE_KEY = 'topdoom.pistolStart';
  * an inventory. docs/items.md § Pistol start.
  * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
-let pistolStart = globalThis.localStorage?.getItem(PISTOL_START_STORAGE_KEY) === 'true';
+let pistolStart = readStorage(PISTOL_START_STORAGE_KEY, false);
 
 export function getPistolStart(): boolean {
   return pistolStart;
@@ -222,10 +223,10 @@ export function getPistolStart(): boolean {
 
 export function setPistolStart(enabled: boolean): void {
   pistolStart = enabled;
-  globalThis.localStorage?.setItem(PISTOL_START_STORAGE_KEY, String(enabled));
+  writeStorage(PISTOL_START_STORAGE_KEY, enabled);
 }
 
-const AUTO_SWITCH_STORAGE_KEY = 'topdoom.autoSwitchWeapon';
+const AUTO_SWITCH_STORAGE_KEY = 'autoSwitchWeapon';
 
 /**
  * Whether the game picks a *better* weapon for you: on ammo collected from empty (`AMMO_UPGRADE`)
@@ -238,7 +239,7 @@ const AUTO_SWITCH_STORAGE_KEY = 'topdoom.autoSwitchWeapon';
  * berserk selecting the fist (`givePower`) — punching is that pickup's entire effect.
  * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
-let autoSwitchWeapon = globalThis.localStorage?.getItem(AUTO_SWITCH_STORAGE_KEY) !== 'false';
+let autoSwitchWeapon = readStorage(AUTO_SWITCH_STORAGE_KEY, true);
 
 export function getAutoSwitchWeapon(): boolean {
   return autoSwitchWeapon;
@@ -246,7 +247,7 @@ export function getAutoSwitchWeapon(): boolean {
 
 export function setAutoSwitchWeapon(enabled: boolean): void {
   autoSwitchWeapon = enabled;
-  globalThis.localStorage?.setItem(AUTO_SWITCH_STORAGE_KEY, String(enabled));
+  writeStorage(AUTO_SWITCH_STORAGE_KEY, enabled);
 }
 /**
  * Applies a picked-up thing's effect, vanilla's `P_TouchSpecialThing` rules. Returns false for an

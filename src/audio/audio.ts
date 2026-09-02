@@ -18,6 +18,7 @@ import { DOOM_TIC } from '../constants.ts';
 import { MusicPlayer } from './music.ts';
 import { storedVolume } from './volume.ts';
 import { vecLength } from '../util/geom.ts';
+import { writeStorage } from '../util/storage.ts';
 
 /**
  * Sounds that may play at once. **Tuned by feel**, not vanilla: `snd_channels` defaults to 8, sized
@@ -88,8 +89,8 @@ const DEFAULT_VOLUME = 0.8;
  */
 const DEFAULT_MASTER_VOLUME = 1;
 
-const VOLUME_STORAGE_KEY = 'topdoom.sfxVolume';
-const MASTER_VOLUME_STORAGE_KEY = 'topdoom.masterVolume';
+const VOLUME_STORAGE_KEY = 'sfxVolume';
+const MASTER_VOLUME_STORAGE_KEY = 'masterVolume';
 
 /**
  * Sounds this engine ships itself, as lumps of its own WAD (`wad/shipped.ts`) → the priority they
@@ -259,7 +260,7 @@ export class AudioEngine implements SoundEmitter {
    */
   setVolume(value: number): void {
     this._volume = Math.max(0, Math.min(1, value));
-    globalThis.localStorage?.setItem(VOLUME_STORAGE_KEY, String(this._volume));
+    writeStorage(VOLUME_STORAGE_KEY, this._volume);
     if (this._volume === 0) this.stopAll();
     this.applyVolume();
   }
@@ -272,7 +273,7 @@ export class AudioEngine implements SoundEmitter {
    */
   setMasterVolume(value: number): void {
     this._masterVolume = Math.max(0, Math.min(1, value));
-    globalThis.localStorage?.setItem(MASTER_VOLUME_STORAGE_KEY, String(this._masterVolume));
+    writeStorage(MASTER_VOLUME_STORAGE_KEY, this._masterVolume);
     if (this._masterVolume === 0) this.stopAll();
     this.music.setMasterVolume(this._masterVolume);
     this.applyVolume();

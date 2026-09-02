@@ -8,6 +8,7 @@ import type { Input } from '../../game/input.ts';
 import type { TopDownCamera } from '../../render/camera.ts';
 import { getCameraMode } from '../../game/autocamera.ts';
 import { DEVMODE } from '../../constants.ts';
+import { readStorage, writeStorage } from '../../util/storage.ts';
 
 /**
  * Camera framing, then the level switching DEVMODE gates. Zoom and tilt are
@@ -37,7 +38,7 @@ export function handleHotkeys(
   if (input.pressed('KeyP')) changeMap(-1);
 }
 
-const FPS_STORAGE_KEY = 'topdoom.fps';
+const FPS_STORAGE_KEY = 'fps';
 
 /** `getFpsVisible`'s memo of the stored setting; null until first read. */
 let fpsVisible: boolean | null = null;
@@ -48,16 +49,13 @@ let fpsVisible: boolean | null = null;
  * way. See docs/menu.md § FPS counter.
  */
 export function getFpsVisible(): boolean {
-  if (fpsVisible === null) {
-    const stored = globalThis.localStorage?.getItem(FPS_STORAGE_KEY);
-    fpsVisible = stored == null ? DEVMODE : stored === '1';
-  }
+  if (fpsVisible === null) fpsVisible = readStorage(FPS_STORAGE_KEY, DEVMODE);
   return fpsVisible;
 }
 
 export function setFpsVisible(on: boolean): void {
   fpsVisible = on;
-  globalThis.localStorage?.setItem(FPS_STORAGE_KEY, on ? '1' : '0');
+  writeStorage(FPS_STORAGE_KEY, on);
   applyFpsVisible();
 }
 

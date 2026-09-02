@@ -4,8 +4,9 @@
  * See docs/lights.md § Bloom.
  */
 import * as THREE from 'three';
+import { readStorage, writeStorage } from '../util/storage.ts';
 
-const STORAGE_KEY = 'topdoom.bloom';
+const STORAGE_KEY = 'bloom';
 
 /**
  * Where the glow starts, per channel and in **linear** light. **Tuned by feel**, and 1 is the value
@@ -42,7 +43,7 @@ const SAMPLES = 4;
  * what it costs. Shaped like the rest — docs/menu.md § Persisted settings
  * (docs/lights.md § Turning it on).
  */
-let enabled = globalThis.localStorage?.getItem(STORAGE_KEY) === 'true';
+let enabled = readStorage(STORAGE_KEY, false);
 
 export function getBloom(): boolean {
   return enabled;
@@ -50,7 +51,7 @@ export function getBloom(): boolean {
 
 export function setBloom(on: boolean): void {
   enabled = on;
-  globalThis.localStorage?.setItem(STORAGE_KEY, String(on));
+  writeStorage(STORAGE_KEY, on);
 }
 
 /**

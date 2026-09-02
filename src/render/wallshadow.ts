@@ -5,11 +5,12 @@
  */
 import { NO_SIDE, type DoomMap } from '../wad/map.ts';
 import { distSqToSegment } from '../util/geom.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
 import { MAX_STEP_UP, sectorLines } from '../game/world.ts';
 import type { SectorPoly } from './bsp.ts';
 import type { SectorTransfers } from './mapmesh.ts';
 
-const STORAGE_KEY = 'topdoom.wallShade';
+const STORAGE_KEY = 'wallShade';
 
 /**
  * How far the darkening reaches from a wall, in map units. Tuned by feel, and it may not drop under
@@ -29,7 +30,7 @@ export const STRENGTH = 0.35;
  * docs/menu.md § Persisted settings — and carried as a live uniform rather than baked into the
  * vertex colours, so the menu reaches a level already running (docs/render.md § Turning it off).
  */
-let enabled = globalThis.localStorage?.getItem(STORAGE_KEY) !== 'false';
+let enabled = readStorage(STORAGE_KEY, true);
 
 /** Every linedef facing one sector: endpoints flattened, and the sector across each (-1 for none). */
 interface SectorWalls {
@@ -65,7 +66,7 @@ export function getWallShade(): boolean {
 export function setWallShade(on: boolean): void {
   enabled = on;
   wallShadeUniform.value = on ? STRENGTH : 0;
-  globalThis.localStorage?.setItem(STORAGE_KEY, String(on));
+  writeStorage(STORAGE_KEY, on);
 }
 
 /**

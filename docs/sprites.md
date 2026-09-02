@@ -547,7 +547,7 @@ A corpse goes on holding the weapon it died with.
 
 ### When the skins apply
 
-`topdoom.playerSprites` (docs/menu.md § Persisted settings) is `auto`, `always` or `never`, read per
+The `playerSprites` setting (docs/menu.md § Persisted settings) is `auto`, `always` or `never`, read per
 drawn frame so the menu applies it to the running level. `auto`, the default, stands the skins down
 where `setDrawsOwnPlayer(wad)` says the set draws the player its own way:
 

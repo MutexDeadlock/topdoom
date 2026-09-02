@@ -78,7 +78,7 @@ the next switch.
 ## Automatic weapon switching
 
 Three rules select a weapon for you. One is ungated; the other two are the
-`topdoom.autoSwitchWeapon` setting, on by default (`getAutoSwitchWeapon`, `game/inventory.ts`,
+The `autoSwitchWeapon` setting, on by default (`getAutoSwitchWeapon`, `game/inventory.ts`,
 docs/menu.md § Persisted settings).
 
 | Rule | Vanilla | Where | Gated |

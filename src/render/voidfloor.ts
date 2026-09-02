@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import type { DoomMap } from '../wad/map.ts';
 import { smoothstep } from '../util/damping.ts';
 import { glslFloat } from '../util/glsl.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
 import { doomToWorld } from './mapmesh.ts';
 import { VIEW_DISTANCE } from '../constants.ts';
 
@@ -59,10 +60,10 @@ const DENSITY_PATCH = /* glsl */ `
   #endif
 `;
 
-const STORAGE_KEY = 'topdoom.voidFog';
+const STORAGE_KEY = 'voidFog';
 
 /** Whether the fog is drawn at all. On by default. docs/menu.md § Persisted settings. */
-let enabled = globalThis.localStorage?.getItem(STORAGE_KEY) !== 'false';
+let enabled = readStorage(STORAGE_KEY, true);
 
 export function getVoidFog(): boolean {
   return enabled;
@@ -70,7 +71,7 @@ export function getVoidFog(): boolean {
 
 export function setVoidFog(on: boolean): void {
   enabled = on;
-  globalThis.localStorage?.setItem(STORAGE_KEY, String(on));
+  writeStorage(STORAGE_KEY, on);
 }
 
 /**

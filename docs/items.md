@@ -52,7 +52,7 @@ observable: `P_GiveBackpack` grants all four in that order and each overwrites t
 so a backpack taken at zero across the board with everything owned hands you the **rocket
 launcher** — `am_misl` is last. Under `AMMO_TYPES`' order it would hand you the plasma rifle.
 
-Gated by `topdoom.autoSwitchWeapon`, unlike the weapon-pickup switch above — docs/weapons.md §
+Gated by the `autoSwitchWeapon` setting, unlike the weapon-pickup switch above — docs/weapons.md §
 Automatic weapon switching. The cheats are not on this path: `IDKFA` assigns ammo directly, as
 `ST_Responder` does, and so switches nothing.
 
@@ -79,7 +79,7 @@ door on the far side of a transition needs its key collected again, same as vani
 
 ## Pistol start
 
-**Settings → General → "Pistol start every level"** (`topdoom.pistolStart`, off by default) throws
+**Settings → General → "Pistol start every level"** (the `pistolStart` setting, off by default) throws
 that carry-over away: every level is entered on a fresh `createInventory()` — 100 health, no armor,
 fist + pistol with 50 bullets — the way each map is balanced to be played on its own, and the way
 DOOM's own level select has always started one.

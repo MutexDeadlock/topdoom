@@ -7,6 +7,7 @@
 import { hashBytes } from './checksum.ts';
 import { spriteLumpFor } from './sprites.ts';
 import type { Wad } from './wad.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
 
 /**
  * The frames a skin file has to resolve: walk, attack and pain (`PLAY`'s own `A`-`G`) at all eight
@@ -23,7 +24,7 @@ export const SKIN_FLAT_FRAMES = 'HIJKLMN';
  */
 export type PlayerSpriteMode = 'auto' | 'always' | 'never';
 
-const MODE_STORAGE_KEY = 'topdoom.playerSprites';
+const MODE_STORAGE_KEY = 'playerSprites';
 const MODES: readonly PlayerSpriteMode[] = ['auto', 'always', 'never'];
 
 /**
@@ -38,7 +39,7 @@ export function getPlayerSpriteMode(): PlayerSpriteMode {
 
 export function setPlayerSpriteMode(mode: PlayerSpriteMode): void {
   playerSpriteMode = mode;
-  globalThis.localStorage?.setItem(MODE_STORAGE_KEY, mode);
+  writeStorage(MODE_STORAGE_KEY, mode);
 }
 
 /** `PLAY` + a frame letter + a rotation digit — a player sprite lump, and not `PLAYPAL`. */
@@ -77,6 +78,6 @@ export function setDrawsOwnPlayer(wad: Wad): boolean {
 }
 
 function readMode(): PlayerSpriteMode {
-  const stored = globalThis.localStorage?.getItem(MODE_STORAGE_KEY);
+  const stored = readStorage(MODE_STORAGE_KEY, 'auto');
   return MODES.find((mode) => mode === stored) ?? 'auto';
 }

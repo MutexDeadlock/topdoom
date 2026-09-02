@@ -9,6 +9,7 @@ import { lightForFrame, type Gldefs, type LightDef } from '../wad/gldefs.ts';
 import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS, type LightVisibility } from './lightvis.ts';
 import { doomToWorld } from './mapmesh.ts';
 import { vecLength } from '../util/geom.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
 
 /**
  * How many lights can reach the geometry shader at once. **Tuned by feel**, and generously: a
@@ -107,7 +108,7 @@ export interface Tint {
   b: number;
 }
 
-const STORAGE_KEY = 'topdoom.dynamicLights';
+const STORAGE_KEY = 'dynamicLights';
 
 /**
  * How many emitters keep a memo. A one-shot effect (`effectEmitterId`) gets a fresh ID every time
@@ -120,7 +121,7 @@ const MEMO_CAP = MAX_DYN_LIGHTS * 4;
  * Whether dynamic lights are drawn at all. On by default. Shaped like every persisted setting —
  * docs/menu.md § Persisted settings.
  */
-let dynamicLightsEnabled = globalThis.localStorage?.getItem(STORAGE_KEY) !== 'false';
+let dynamicLightsEnabled = readStorage(STORAGE_KEY, true);
 
 /**
  * One channel of a sector light and a dynamic tint composed: the sum, clamped. The single place the
@@ -137,7 +138,7 @@ export function getDynamicLights(): boolean {
 
 export function setDynamicLights(enabled: boolean): void {
   dynamicLightsEnabled = enabled;
-  globalThis.localStorage?.setItem(STORAGE_KEY, String(enabled));
+  writeStorage(STORAGE_KEY, enabled);
 }
 
 /**

@@ -1,3 +1,12 @@
+v0.1?.? (2026-09-0?)
+
+Features and improvements
+  - all settings live in one localStorage entry now; settings stored by an
+    earlier build are not migrated and start out at their defaults again
+
+
+===============================================================================
+
 v0.17.0 (2026-09-02)
 
 Heading towards v1.0 in big steps.

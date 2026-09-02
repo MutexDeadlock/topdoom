@@ -119,6 +119,7 @@ import { LevelMusic } from './audio/music.ts';
 import type { Pos2 } from './types.ts';
 import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 import { vecLength } from './util/geom.ts';
+import { readStorage, writeStorage } from './util/storage.ts';
 
 /**
  * Most tics one frame may run before the rest of the banked time is dropped.
@@ -144,7 +145,7 @@ const BUILD_MS_PER_KB = 1.1;
  */
 const SLOW_LOAD_MS = 200;
 
-const FPS_CAP_STORAGE_KEY = 'topdoom.fpsCap';
+const FPS_CAP_STORAGE_KEY = 'fpsCap';
 
 /** The frame rates the menu offers; `0` is no cap, and the default. */
 const FPS_CAPS = [0, 30, 60, 120] as const;
@@ -163,7 +164,7 @@ export function getFpsCap(): FpsCap {
 
 export function setFpsCap(cap: FpsCap): void {
   fpsCap = cap;
-  globalThis.localStorage?.setItem(FPS_CAP_STORAGE_KEY, String(cap));
+  writeStorage(FPS_CAP_STORAGE_KEY, cap);
 }
 
 /**
@@ -2176,6 +2177,6 @@ export class Game {
 }
 
 function readStoredFpsCap(): FpsCap {
-  const stored = Number(globalThis.localStorage?.getItem(FPS_CAP_STORAGE_KEY));
+  const stored = readStorage(FPS_CAP_STORAGE_KEY, 0);
   return FPS_CAPS.find((c) => c === stored) ?? 0;
 }

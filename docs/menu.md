@@ -619,8 +619,8 @@ things spawn at all, and which stat table the monsters run on (docs/monster-ai.m
 silently do nothing until the next load. It shares a row with Level (`.columns even`, § Settings
 tab below).
 
-`#skill-select` is filled once from `SKILL_NAMES` and seeded from `topdoom.skill`; a change writes
-that key back, so the next visit opens on the last skill played. **What a start actually runs at is
+`#skill-select` is filled once from `SKILL_NAMES` and seeded from the `skill` setting; a change writes
+that field back, so the next visit opens on the last skill played. **What a start actually runs at is
 `currentSkill()`, read off the select, not off storage** — where `localStorage` is unavailable the
 write goes nowhere and reading it back would silently ignore the player's pick. `submit()` (the
 `?map=` deep-link path) reads the same getter, which is the stored skill there since nothing has
@@ -744,39 +744,56 @@ surprise whatever the button is bound to.
 
 ## Persisted settings
 
-Every persisted value uses a `topdoom.*` `localStorage` key, read through `globalThis.localStorage?`
-(so nothing here breaks in a non-DOM context) and **validated on read with an explicit default** —
-`Number(null) === 0` otherwise makes "never set" indistinguishable from "silent"/"skill 0". Each
-value is owned by the module whose behavior it changes, and the menu only wires the control to that
-getter/setter; the exceptions are skill and the WAD selection, which belong to the menu itself.
+Every persisted value is a field of **one JSON object**, stored under the single `localStorage` key
+`topdoom.settings` and reached only through `util/storage.ts`: `readStorage(field, default)`,
+`readStorageObject(field)` and `writeStorage(field, value)`. Nothing else in `src/` touches
+`localStorage`.
+
+Three rules that module owns, so no call site repeats them:
+
+- **A read is validated against the caller's default** and falls back to it where the field is
+  unset or holds another type — `Number(null) === 0` otherwise makes "never set"
+  indistinguishable from "silent"/"skill 0". Type only: a range (`storedVolume`'s 0-1) or a set of
+  names (`readStoredFpsCap`) is the caller's own check, after the read.
+- **A write merges into a re-read of the object**, so a second tab open on the game overwrites the
+  field it changed rather than every setting the first one wrote.
+- **A browser with no storage degrades to defaults**, including one where the property access
+  itself throws (site data blocked) — which is why the guard there is a `try` and not a `?.`.
+
+Each value is owned by the module whose behavior it changes, and the menu only wires the control to
+that getter/setter; the exceptions are skill and the WAD selection, which belong to the menu itself.
 Each is a module-level value behind an exported `get`/`set` pair — not an instance field and not a
 `static`, even where the owning module has a class (`Player`, `World`, `AutoCamera` all do).
+**`util/storage.ts` holds no registry of fields**: the key constant lives with its owner, so adding
+a setting touches one module.
 
-| Key | Owner | Documented in |
+| Field | Owner | Documented in |
 |---|---|---|
-| `topdoom.masterVolume` | `audio/audio.ts` | docs/audio.md § Volume and the context |
-| `topdoom.sfxVolume` | `audio/audio.ts` | docs/audio.md § Volume and the context |
-| `topdoom.musicVolume` | `audio/music.ts` | docs/music.md § Volume |
-| `topdoom.autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
-| `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
-| `topdoom.cameraMode` | `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) | docs/camera.md § Auto camera |
-| `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
-| `topdoom.fps` | `ui/devmode/debughud.ts` (`getFpsVisible`/`setFpsVisible`) | § FPS counter below |
-| `topdoom.profiler` | `ui/hud/profiler.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
-| `topdoom.dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
-| `topdoom.voidFog` | `render/voidfloor.ts` (`getVoidFog`/`setVoidFog`) | docs/render.md § The toggle |
-| `topdoom.wallShade` | `render/wallshadow.ts` (`getWallShade`/`setWallShade`) | docs/render.md § Turning it off |
-| `topdoom.skyTint` | `render/skytint.ts` (`getSkyTint`/`setSkyTint`) | docs/render.md § Turning the tint off |
-| `topdoom.bloom` | `render/bloom.ts` (`getBloom`/`setBloom`) | docs/lights.md § Turning it on |
-| `topdoom.playerSprites` | `wad/playerskin.ts` (`getPlayerSpriteMode`/`setPlayerSpriteMode`) | docs/sprites.md § When the skins apply |
-| `topdoom.infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
-| `topdoom.pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
-| `topdoom.autoSwitchWeapon` | `game/inventory.ts` (`getAutoSwitchWeapon`/`setAutoSwitchWeapon`) | docs/weapons.md § Automatic weapon switching |
-| `topdoom.skill` | `ui/menu/menu.ts` | § Difficulty above |
-| `topdoom.selection` | `ui/menu/menu.ts` | § Remembered selection below |
+| `masterVolume` | `audio/audio.ts` | docs/audio.md § Volume and the context |
+| `sfxVolume` | `audio/audio.ts` | docs/audio.md § Volume and the context |
+| `musicVolume` | `audio/music.ts` | docs/music.md § Volume |
+| `autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
+| `rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
+| `cameraMode` | `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) | docs/camera.md § Auto camera |
+| `fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
+| `fps` | `ui/devmode/debughud.ts` (`getFpsVisible`/`setFpsVisible`) | § FPS counter below |
+| `profiler` | `ui/hud/profiler.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
+| `dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
+| `voidFog` | `render/voidfloor.ts` (`getVoidFog`/`setVoidFog`) | docs/render.md § The toggle |
+| `wallShade` | `render/wallshadow.ts` (`getWallShade`/`setWallShade`) | docs/render.md § Turning it off |
+| `skyTint` | `render/skytint.ts` (`getSkyTint`/`setSkyTint`) | docs/render.md § Turning the tint off |
+| `bloom` | `render/bloom.ts` (`getBloom`/`setBloom`) | docs/lights.md § Turning it on |
+| `playerSprites` | `wad/playerskin.ts` (`getPlayerSpriteMode`/`setPlayerSpriteMode`) | docs/sprites.md § When the skins apply |
+| `infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
+| `pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
+| `autoSwitchWeapon` | `game/inventory.ts` (`getAutoSwitchWeapon`/`setAutoSwitchWeapon`) | docs/weapons.md § Automatic weapon switching |
+| `skill` | `ui/menu/menu.ts` | § Difficulty above |
+| `selection` | `ui/menu/menu.ts` | § Remembered selection below |
 
-Three persisted things are **not** `topdoom.*` keys, because none of them fits in one: each has its
-own IndexedDB database, kept separate so an upgrade that fails for one can't take the others down.
+Three persisted things are **not** fields of that object, because none of them fits in one: each
+has its own IndexedDB database, kept separate so an upgrade that fails for one can't take the
+others down. `game/besttimes.ts` also still reads (and deletes) `topdoom.bestTimes`, the
+pre-IndexedDB blob — docs/hud.md § Migration off localStorage.
 
 | Database | Owner | Documented in |
 |---|---|---|
@@ -791,7 +808,7 @@ level (docs/savegames.md § The format and its version).
 
 ## Remembered selection
 
-`topdoom.selection` holds `{ iwad, pwads, map }` as `WadSource.key`s. Precedence when `init`
+The `selection` field holds `{ iwad, pwads, map }` as `WadSource.key`s. Precedence when `init`
 resolves it is **URL > stored > first IWAD on offer**, and every key is resolved against the current
 library, so a WAD that has since left `public/game/` is silently dropped (an unknown map falls back
 to the set's first, via `selectLevel`'s no-op). Restoring can pair a stored add-on with a
@@ -980,8 +997,8 @@ dev mode, the full status block inside it. One switch for the whole element, not
 dev build the fps *is* that block's first line, so splitting them would need `Game.debugLines` cut
 in two for a distinction nobody asked the menu for.
 
-The setting is `debughud.ts`'s own (`topdoom.fps`, `getFpsVisible`/`setFpsVisible`) and **defaults
-to `DEVMODE`** — on in a dev build, off in a shipped one, a stored `'1'`/`'0'` overriding that
+The setting is `debughud.ts`'s own (`fps`, `getFpsVisible`/`setFpsVisible`) and **defaults
+to `DEVMODE`** — on in a dev build, off in a shipped one, a stored `true`/`false` overriding that
 either way. It is deliberately the same rule the profiling overlay follows, and for the same reason:
 both are diagnostics a player may want and neither should be on top of a shipped game unasked.
 **This is a change from the counter always being drawn**, which is what every build did before the
@@ -1086,9 +1103,9 @@ walks the BSP for the player's sector and must not run when the *debug* text is 
 
 **The checkbox alone decides whether the panel is up** — General's `Debug / Dev` section
 (`#profiler-checkbox`), in every build, since the overlay covers the top-right corner of the level.
-The setting is `profiler.ts`'s own (`topdoom.profiler`,
+The setting is `profiler.ts`'s own (`profiler`,
 `getProfilerVisible`/`setProfilerVisible`) and **defaults to `DEVMODE`**: on in a dev build, as it
-behaved before the checkbox existed, off in a shipped one — a stored `'1'`/`'0'` overrides that
+behaved before the checkbox existed, off in a shipped one — a stored `true`/`false` overrides that
 either way. `applyProfilerVisible` is the single writer of `#profiler-hud`'s `visible` class, called
 by `ProfilerHud`'s constructor to seed it for the level starting and by the checkbox to change it
 live. **That class is also what `ProfilerHud.update` early-returns on**, so a hidden panel costs no

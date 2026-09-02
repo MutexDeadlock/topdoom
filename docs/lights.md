@@ -581,7 +581,7 @@ which is the same trade in the cheaper direction.
 
 ### Turning it on
 
-Settings / Visuals / Lighting / "Bloom", persisted at `topdoom.bloom`, read per frame.
+Settings / Visuals / Lighting / "Bloom", persisted as the `bloom` setting, read per frame.
 
 **Off by default — the only visual setting that is**, on the table above: several times the frame's
 GPU time is a price worth paying only once someone has seen the glow and decided they want it.
@@ -593,7 +593,7 @@ exception is a session that started with it on (§ Bloom and the canvas's MSAA).
 
 ## The toggle
 
-`topdoom.dynamicLights` in localStorage, **on by default**, in the menu's Settings → Visuals tab
+The `dynamicLights` setting, **on by default**, in the menu's Settings → Visuals tab
 under Lighting. Module-level rather than per-`Game`, for the reason `getInfiniteTallActors` is: it
 must apply to the level already running, and the flag is read once per frame, so it takes effect
 immediately with no reload. Turned off, `commit` uploads a count of zero and `tintAt` writes zeros

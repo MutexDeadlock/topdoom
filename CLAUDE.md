@@ -88,8 +88,9 @@ src/ui/        the page's own chrome (base styles + tokens, the loading and fata
 src/util/      helpers shared across layers: 2D geometry, the smoothing curves (damping: the
                damped-lerp approach and the Hermite ease), GLSL float literals (glsl), per-frame
                profiling, IndexedDB request plumbing (idb, shared by the save store and the WAD
-               library), raw DEFLATE (inflate, for compressed nodes), vanilla's random table — the
-               engine's only entropy source
+               library), the one localStorage object every setting is a field of (storage), raw
+               DEFLATE (inflate, for compressed nodes), vanilla's random table — the engine's only
+               entropy source
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
                    BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE +
                    FOG_START_FRACTION, WATER_SURFACE_ALPHA)

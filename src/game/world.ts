@@ -6,6 +6,7 @@
 import { LF, NO_SIDE, SKY_FLAT, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { buildSubSectorPolys } from '../render/bsp.ts';
 import { segmentCrossT, segmentIntersect, vecLength } from '../util/geom.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
 import { PLAYER_HEIGHT, SIGHT_EYE_HEIGHT } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './things/doomednums.ts';
@@ -342,7 +343,7 @@ export function getInfiniteTallActors(): boolean {
 
 export function setInfiniteTallActors(enabled: boolean): void {
   infiniteTallActors = enabled;
-  globalThis.localStorage?.setItem(INFINITE_TALL_STORAGE_KEY, String(enabled));
+  writeStorage(INFINITE_TALL_STORAGE_KEY, enabled);
 }
 
 const GRID_CELL = 128;
@@ -402,7 +403,7 @@ const SLIDE_ATTEMPTS = 3;
 const NO_LINES: readonly number[] = [];
 const NO_MATCHES: readonly number[] = [];
 
-const INFINITE_TALL_STORAGE_KEY = 'topdoom.infiniteTallActors';
+const INFINITE_TALL_STORAGE_KEY = 'infiniteTallActors';
 
 /**
  * Vanilla's `P_GroupLines` `sec->lines[]`: every linedef bordering a sector, in ascending linedef
@@ -427,7 +428,7 @@ const tagIndexes = new WeakMap<DoomMap, { sectors: Map<number, number[]>; lines:
  * `blockedByThings` and `bodyFloor`, the two functions it changes.
  * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
-let infiniteTallActors = globalThis.localStorage?.getItem(INFINITE_TALL_STORAGE_KEY) === 'true';
+let infiniteTallActors = readStorage(INFINITE_TALL_STORAGE_KEY, false);
 
 const positionScratch: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
 

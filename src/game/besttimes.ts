@@ -6,6 +6,7 @@
  * in their own IndexedDB database behind a synchronous in-memory cache — docs/hud.md § The store.
  */
 import { asPromise, idbOpener, txDone } from '../util/idb.ts';
+import { webStorage } from '../util/storage.ts';
 import type { Skill } from './skill.ts';
 
 /**
@@ -118,6 +119,18 @@ export function loadBestTimes(): Promise<void> {
   return (loading ??= load());
 }
 
+/**
+ * Test seam: replaces the backend with an in-memory one and resets everything the session had built
+ * on top of the old one, so a test can replay a boot. Every module-level mutable below the cache
+ * belongs here — a reset that forgets one leaks the previous test into the next.
+ */
+export function setBestTimeBackend(replacement: BestTimeBackend): void {
+  backend = replacement;
+  cache.clear();
+  loading = null;
+  pending = Promise.resolve();
+}
+
 let loading: Promise<void> | null = null;
 
 async function load(): Promise<void> {
@@ -137,7 +150,7 @@ async function load(): Promise<void> {
   if (!migrated || !usable) return;
   try {
     await store().write(migrated, evict());
-    globalThis.localStorage?.removeItem(LEGACY_STORAGE_KEY);
+    webStorage()?.removeItem(LEGACY_STORAGE_KEY);
   } catch {
     // Left in place, so the next visit tries again.
   }
@@ -169,7 +182,7 @@ function foldLegacyIn(): StoredBestTime[] | null {
  * cost every other level's.
  */
 function readLegacy(): Record<string, BestTime> | null {
-  const raw = globalThis.localStorage?.getItem(LEGACY_STORAGE_KEY);
+  const raw = webStorage()?.getItem(LEGACY_STORAGE_KEY);
   if (!raw) return null;
   let parsed: unknown;
   try {
@@ -252,18 +265,6 @@ const openDb = idbOpener(DB_NAME, DB_VERSION, (db) => {
  */
 let backend: BestTimeBackend | null = null;
 const store = (): BestTimeBackend => (backend ??= idbBackend());
-
-/**
- * Test seam: replaces the backend with an in-memory one and resets everything the session had built
- * on top of the old one, so a test can replay a boot. Every module-level mutable below the cache
- * belongs here — a reset that forgets one leaks the previous test into the next.
- */
-export function setBestTimeBackend(replacement: BestTimeBackend): void {
-  backend = replacement;
-  cache.clear();
-  loading = null;
-  pending = Promise.resolve();
-}
 
 /**
  * The real backend: one object store, one record per level keyed by `bestTimeKey` (docs/hud.md §

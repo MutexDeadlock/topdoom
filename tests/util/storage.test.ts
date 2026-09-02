@@ -1,5 +1,6 @@
 import { afterEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { fakeStorage, installStorage } from '../fixtures/storage.ts';
 
 /**
  * The settings blob: one `localStorage` key, one JSON object, every persisted setting a field in
@@ -12,29 +13,8 @@ import assert from 'node:assert/strict';
  * `localStorage` and no test is left reading what an earlier one wrote.
  */
 
-/** A `Storage` over a `Map`, only as much of the interface as `util/storage.ts` calls. */
-function fakeStorage(): Storage & { map: Map<string, string> } {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (key: string) => map.get(key) ?? null,
-    setItem: (key: string, value: string) => void map.set(key, value),
-    removeItem: (key: string) => void map.delete(key),
-    clear: () => map.clear(),
-    key: (i: number) => [...map.keys()][i] ?? null,
-    get length() {
-      return map.size;
-    },
-  };
-}
-
-/** Puts `value` in place of the global for the rest of the test; `null` stands for no storage. */
-function install(value: Storage | null): void {
-  Object.defineProperty(globalThis, 'localStorage', { value, configurable: true, writable: true });
-}
-
 let store = fakeStorage();
-install(store);
+installStorage(store);
 
 const { readStorage, readStorageObject, writeStorage } = await import('../../src/util/storage.ts');
 
@@ -43,7 +23,7 @@ const blob = () => JSON.parse(store.map.get(SETTINGS_KEY) ?? '{}') as Record<str
 
 afterEach(() => {
   store = fakeStorage();
-  install(store);
+  installStorage(store);
 });
 
 describe('Storage · settings blob', () => {
@@ -123,7 +103,7 @@ describe('Storage · settings blob', () => {
   });
 
   test('no storage at all reads as defaults and swallows the write', () => {
-    install(null);
+    installStorage(null);
     writeStorage('bloom', true);
     assert.equal(readStorage('bloom', false), false);
     assert.equal(readStorageObject('selection'), null);
@@ -146,7 +126,7 @@ describe('Storage · settings blob', () => {
     full.setItem = () => {
       throw new DOMException('quota exceeded', 'QuotaExceededError');
     };
-    install(full);
+    installStorage(full);
     assert.doesNotThrow(() => writeStorage('bloom', true));
     assert.equal(readStorage('bloom', false), false);
   });

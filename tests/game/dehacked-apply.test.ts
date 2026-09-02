@@ -399,6 +399,33 @@ describe('DEHACKED · applying', () => {
     assert.equal(tics(WEAPONS.pistol.cooldown), 14);
   });
 
+  test('a weapon built on extended states walks its rate off the chain the patch defined', () => {
+    // nosp4.wad's shape: the chainsaw slot repointed at a fire chain the patch writes past the end
+    // of the table, eight one-tic states closed by an `A_ReFire`. The rate is the pass, so 8 tics
+    // where the chainsaw's own is 4. docs/dehacked.md § Extended states.
+    const chain = [1736, 1737, 1738, 1739, 1740, 1741, 1742, 1743]
+      .map((i) => `Frame ${i}\nSprite number = 11\nDuration = 1\nNext frame = ${i + 1}\n`)
+      .join('');
+    apply(
+      `Weapon 7\nShooting frame = 1736\n${chain}Frame 1744\nDuration = 12\nNext frame = 1733\n` +
+      '[CODEPTR]\nFRAME 1737 = FireMissile\nFRAME 1744 = ReFire\n',
+    );
+    assert.equal(tics(WEAPONS.chainsaw.cooldown), 8);
+    resetDehacked();
+    assert.equal(tics(WEAPONS.chainsaw.cooldown), 4);
+  });
+
+  test('MBF\u2019s own rows do not vote on fullbright until a Frame record writes one', () => {
+    // Vanilla has one bright `SKUL F` (`S_SKULL_DIE1`) against MBF's two dim beta-lost-soul rows.
+    // Letting those vote unasked would take the glow off the lost soul in an unpatched game.
+    assert.equal(FULLBRIGHT_FRAMES.has('SKULF'), true);
+    // Written, they count, and two dim against one bright carries it.
+    apply(`Frame ${stateNamed('S_BSKUL_ATK2')}\nDuration = 5\nFrame ${stateNamed('S_BSKUL_ATK3')}\nDuration = 4\n`);
+    assert.equal(FULLBRIGHT_FRAMES.has('SKULF'), false);
+    resetDehacked();
+    assert.equal(FULLBRIGHT_FRAMES.has('SKULF'), true);
+  });
+
   test('a patch that touches one weapon leaves the other eight exactly as they were', () => {
     const before = WEAPON_ORDER.map((id) => WEAPONS[id].cooldown);
     apply(`Frame ${stateNamed('S_SGUN2')}\nDuration = 27\n`);
@@ -481,7 +508,8 @@ describe('DEHACKED · applying', () => {
   });
 
   test('a repoint to an action that is not an attack leaves the attack alone', () => {
-    // `A_FaceTarget` is a wind-up, not a shot: the chain keeps firing what it fired, one state later.
+    // `A_FaceTarget` is a wind-up, not a shot: the chain keeps firing what it fired, one state
+    // later.
     const before = structuredClone(MONSTER_STATS[ThingType.zombieman].ranged);
     apply(`[CODEPTR]\nFrame ${stateNamed('S_POSS_ATK3')} = A_FaceTarget\n`);
     assert.deepEqual(MONSTER_STATS[ThingType.zombieman].ranged, before);
@@ -564,8 +592,8 @@ describe('DEHACKED · applying', () => {
 
 /**
  * The completeness guard for the applier: whatever it can write, a reset must be able to put back.
- * A table added to `applyThing` and forgotten in `PATCHED_TABLES` fails here rather than as a mysterious
- * difficulty change two levels into a session.
+ * A table added to `applyThing` and forgotten in `PATCHED_TABLES` fails here rather than as a
+ * mysterious difficulty change two levels into a session.
  */
 describe('DEHACKED · reset restores every table it can write', () => {
   test('a maximal patch leaves nothing behind after resetDehacked', () => {

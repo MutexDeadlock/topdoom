@@ -55,9 +55,23 @@ export function writeStorage(key: string, value: Scalar | object): void {
   const store = webStorage();
   if (!store) return;
   try {
-    store.setItem(SETTINGS_KEY, JSON.stringify({ ...settings(), [key]: value }));
+    store.setItem(SETTINGS_KEY, JSON.stringify({ ...settings(store), [key]: value }));
   } catch {
     // Quota or a refusal — no setting here is worth failing a menu click over.
+  }
+}
+
+/**
+ * `localStorage`, or null where there is none. The property access itself throws in a browser with
+ * site data blocked, so the guard has to be a `try` and not a `?.` — which is why nothing in `src/`
+ * reaches for `globalThis.localStorage` on its own. Exported for `game/besttimes.ts`, whose one
+ * pre-IndexedDB key is not a setting and so has no `readStorage` of its own.
+ */
+export function webStorage(): Storage | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -65,8 +79,8 @@ export function writeStorage(key: string, value: Scalar | object): void {
  * The stored object, parsed per read: nothing here runs per frame, and a live read is what lets a
  * second tab's writes be seen at all.
  */
-function settings(): Record<string, unknown> {
-  const raw = webStorage()?.getItem(SETTINGS_KEY);
+function settings(store: Storage | null = webStorage()): Record<string, unknown> {
+  const raw = store?.getItem(SETTINGS_KEY);
   if (!raw) return {};
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -78,16 +92,4 @@ function settings(): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/**
- * `localStorage`, or null where there is none. The property access itself throws in a browser with
- * site data blocked, so the guard has to be a `try` and not a `?.`.
- */
-function webStorage(): Storage | null {
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
-  }
 }

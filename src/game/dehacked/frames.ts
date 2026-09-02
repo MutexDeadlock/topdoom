@@ -11,7 +11,7 @@ import { ThingType } from '../things/doomednums.ts';
 import { actionRole, type ChainKind } from './actions.ts';
 import type { DehFrameEdit, DehPointerEdit, DehThingEdit, DehWeaponEdit } from './defs.ts';
 import {
-  fireChainStates, frameLetter, MOBJ_STATES, SPRITE_NAMES, STATES, WEAPON_STATES,
+  fireChainStates, frameLetter, freshState, MOBJ_STATES, SPRITE_NAMES, STATES, WEAPON_STATES,
   type MobjStates, type StateRow, type WeaponStates,
 } from './states.ts';
 import { MISSILE_SINKS, MOBJ_INFO } from './tables.ts';
@@ -39,6 +39,12 @@ export interface PatchedStates {
    * "zero in 967 rows". docs/dehacked.md § Action pointers.
    */
   args: ReadonlyMap<number, readonly number[]>;
+  /**
+   * The rows a `Frame` record actually wrote, which is what lets a grown or MBF row vote in
+   * `rebuildFullbrightFrames`. Filled here rather than re-derived from the edits, so a record
+   * naming a row this walk skipped never votes.
+   */
+  written: ReadonlySet<number>;
 }
 
 /**
@@ -273,18 +279,26 @@ export interface FrameTables {
  * how an action pointer reaches this engine: the derivations already key off the action column, so
  * moving `A_CPosAttack` onto a chain changes that chain's shot count and windup for free.
  * docs/dehacked.md § Action pointers.
+ *
+ * `stateCount` is how far the patch grew the table (`DehPatch.stateCount`); the rows past `STATES`
+ * start out fresh and every one a patch cares about is written by a `Frame` record of its own.
+ * docs/dehacked.md § Extended states.
  */
 export function patchStates(
   frameEdits: readonly DehFrameEdit[],
   thingEdits: readonly DehThingEdit[],
   weaponEdits: readonly DehWeaponEdit[] = [],
   pointerEdits: readonly DehPointerEdit[] = [],
+  stateCount: number = STATES.length,
 ): PatchedStates {
   const states: MutableStateRow[] = STATES.map((row) => [...row]);
+  for (let i = states.length; i < stateCount; i++) states.push(freshState(i) as MutableStateRow);
   const args = new Map<number, readonly number[]>();
+  const written = new Set<number>();
   for (const edit of frameEdits) {
     const row = states[edit.index];
     if (!row) continue;
+    written.add(edit.index);
     if (edit.spriteNum !== undefined) row[0] = edit.spriteNum;
     if (edit.subNumber !== undefined) row[1] = edit.subNumber;
     if (edit.duration !== undefined) row[2] = edit.duration;
@@ -298,14 +312,18 @@ export function patchStates(
   const mobjStates = MOBJ_STATES.map((row) => ({ ...row }));
   for (const edit of thingEdits) {
     const row = mobjStates[edit.index - 1];
-    if (row && edit.states) Object.assign(row, edit.states);
+    if (row && edit.states) {
+      Object.assign(row, edit.states);
+    }
   }
   const weaponStates = WEAPON_STATES.map((row) => ({ ...row }));
   for (const edit of weaponEdits) {
     const row = weaponStates[edit.index];
-    if (row && edit.states) Object.assign(row, edit.states);
+    if (row && edit.states) {
+      Object.assign(row, edit.states);
+    }
   }
-  return { states, mobjStates, weaponStates, args };
+  return { states, mobjStates, weaponStates, args, written };
 }
 
 /**
@@ -516,8 +534,12 @@ function deriveMonster(
   const deathSprite: { death?: string; xdeath?: string } = {};
   const deathSpriteName = spriteOf(states, death.indices);
   const xdeathSpriteName = spriteOf(states, xdeath.indices);
-  if (deathSpriteName !== undefined && deathSpriteName !== sprite) deathSprite.death = deathSpriteName;
-  if (xdeathSpriteName !== undefined && xdeathSpriteName !== sprite) deathSprite.xdeath = xdeathSpriteName;
+  if (deathSpriteName !== undefined && deathSpriteName !== sprite) {
+    deathSprite.death = deathSpriteName;
+  }
+  if (xdeathSpriteName !== undefined && xdeathSpriteName !== sprite) {
+    deathSprite.xdeath = xdeathSpriteName;
+  }
 
   const missileShots = firingOffsets(states, missile);
   const meleeSwings = firingOffsets(states, melee);
@@ -692,5 +714,6 @@ export function pristineFrameTables(): FrameTables {
     mobjStates: MOBJ_STATES,
     weaponStates: WEAPON_STATES,
     args: new Map(),
+    written: new Set(),
   }));
 }

@@ -1,9 +1,11 @@
 /**
- * Headless sanity check: parses a WAD set and reports what the renderer will get.
+ * Headless sanity check: parses a WAD set and reports what the renderer will get — the support
+ * verdict, the map and node formats, the geometry, and the specials and DEHACKED coverage reports.
+ * See docs/wad.md and docs/dehacked.md § The coverage report.
  *
  *   node scripts/inspect-wad.ts <iwad> [map] [pwad ...]
- *   node scripts/inspect-wad.ts public/game/DOOM.WAD E1M1
- *   node scripts/inspect-wad.ts public/game/DOOM2.WAD MAP01 ~/wads/scythe.wad
+ *   node scripts/inspect-wad.ts public/game/iwad/DOOM.WAD E1M1
+ *   node scripts/inspect-wad.ts public/game/iwad/DOOM2.WAD MAP05 public/game/pwad/SCYTHE.WAD
  */
 import { readFileSync } from 'node:fs';
 import { Wad, WadFile } from '../src/wad/wad.ts';
@@ -302,8 +304,9 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
       unsupported: 'UNSUPPORTED (deliberately out of scope)',
       unknown: 'UNKNOWN',
     };
-    const { files, applied } = describeDehacked(patch);
+    const { files, applied, states } = describeDehacked(patch);
     console.log(`\n${applied || `DEHACKED (${files}): nothing applied`}`);
+    if (states) console.log(`  ${states}`);
 
     const byClass = new Map<DehShortfall, DehWarning[]>();
     for (const w of patch.warnings) {

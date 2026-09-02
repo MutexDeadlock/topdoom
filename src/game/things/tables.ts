@@ -8,7 +8,9 @@ import { DOOM_TIC } from '../../constants.ts';
 import { ThingType } from './doomednums.ts';
 import { pristineFrameTables } from '../dehacked/frames.ts';
 import type { AttackPose } from './defs.ts';
-import { FF_FULLBRIGHT, frameLetter, SPRITE_NAMES, STATES, type StateRow } from '../dehacked/states.ts';
+import {
+  FF_FULLBRIGHT, frameLetter, MBF_STATES_START, SPRITE_NAMES, STATES, type StateRow,
+} from '../dehacked/states.ts';
 // Type-only: `combat.ts` imports the barrel constants below at runtime, and a
 // value import back would close that loop.
 import type { DamageCause } from '../combat.ts';
@@ -516,7 +518,9 @@ for (const [key, m] of Object.entries(pristineFrameTables().monsters)) {
   if (m.sprite !== undefined) THING_SPRITES[dn] = m.sprite;
   // A walk cycle that is not the shared `A,B,C,D` earns an override row; a type that holds an idle
   // frame instead has no cycle at all.
-  if (m.walk.length && !sameLetters(m.walk, MONSTER_WALK_FRAMES)) MONSTER_WALK_FRAMES_OVERRIDE[dn] = m.walk;
+  if (m.walk.length && !sameLetters(m.walk, MONSTER_WALK_FRAMES)) {
+    MONSTER_WALK_FRAMES_OVERRIDE[dn] = m.walk;
+  }
   if (m.idle) MONSTER_IDLE_FRAMES[dn] = m.idle;
   if (m.death) MONSTER_DEATH_FRAMES[dn] = m.death;
   if (m.xdeath) MONSTER_XDEATH_FRAMES[dn] = m.xdeath;
@@ -572,10 +576,21 @@ export const FULLBRIGHT_FRAMES: Set<string> = new Set();
 
 /**
  * Refills `FULLBRIGHT_FRAMES` from a frame table — vanilla's own `STATES`, or a patched copy of it.
+ *
+ * **Only vanilla's rows vote, plus the ones `written` names.** The states past `MBF_STATES_START`
+ * are dummies nothing reaches until a `Frame` record writes one (docs/dehacked.md § Extended
+ * states), and letting them vote unasked would change the unpatched game: MBF's grenade is a bright
+ * `MISL A` against vanilla's one dim `S_ROCKET`, and a tie draws bright — the rocket in flight
+ * would glow.
  */
-export function rebuildFullbrightFrames(states: readonly StateRow[] = STATES): void {
+export function rebuildFullbrightFrames(
+  states: readonly StateRow[] = STATES,
+  written?: ReadonlySet<number>,
+): void {
   const votes = new Map<string, number>();
-  for (const [sprite, frame] of states) {
+  for (let i = 0; i < states.length; i++) {
+    if (i >= MBF_STATES_START && !written?.has(i)) continue;
+    const [sprite, frame] = states[i];
     const key = SPRITE_NAMES[sprite] + frameLetter(frame);
     votes.set(key, (votes.get(key) ?? 0) + (frame & FF_FULLBRIGHT ? 1 : -1));
   }

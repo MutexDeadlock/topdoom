@@ -11,6 +11,7 @@ import {
   type BestTimeBackend,
   type StoredBestTime,
 } from '../../src/game/besttimes.ts';
+import { fakeStorage, installStorage } from '../fixtures/storage.ts';
 
 const LEGACY_STORAGE_KEY = 'topdoom.bestTimes';
 
@@ -47,32 +48,13 @@ function memoryBackend(): MemoryBackend {
   return backend;
 }
 
-/**
- * Node has no `localStorage` unless webstorage is enabled, and the migration reaches for it through
- * `globalThis.localStorage?` — so installing a plain in-memory stand-in is enough, and lets a test
- * seed a deliberately broken blob to check what survives it.
- */
-function installStorage(): Map<string, string> {
-  const backing = new Map<string, string>();
-  const fake = {
-    get length() {
-      return backing.size;
-    },
-    clear: () => backing.clear(),
-    getItem: (key: string) => backing.get(key) ?? null,
-    key: (index: number) => [...backing.keys()][index] ?? null,
-    removeItem: (key: string) => void backing.delete(key),
-    setItem: (key: string, value: string) => void backing.set(key, value),
-  };
-  (globalThis as { localStorage?: Storage }).localStorage = fake as Storage;
-  return backing;
-}
-
 let store: MemoryBackend;
 let legacy: Map<string, string>;
 
 beforeEach(() => {
-  legacy = installStorage();
+  const fake = fakeStorage();
+  installStorage(fake);
+  legacy = fake.map;
   store = memoryBackend();
   setBestTimeBackend(store);
 });
@@ -184,7 +166,8 @@ describe('Best times · the record store', () => {
     for (const key of ['noSeconds', 'negative', 'notANumber', 'noKey', 'notAnObject']) {
       assert.equal(readBestTime(key), null, key);
     }
-    // And the surviving entry is still there after the next write, i.e. the bad ones didn't take it.
+    // And the surviving entry is still there after the next write, i.e. the bad ones didn't
+    // take it.
     recordBestTime('fresh', 10, meta);
     assert.equal(readBestTime('good'), 100);
   });

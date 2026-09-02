@@ -1,9 +1,11 @@
 /**
- * Vanilla's frame table as data: `states[]`, `sprnames[]` and each `mobjinfo` row's eight state
- * pointers, transcribed mechanically from `linuxdoom-1.10/info.c` and `info.h`. This is what a
+ * The frame table as data: `states[]`, `sprnames[]` and each `mobjinfo` row's eight state
+ * pointers, transcribed mechanically from `linuxdoom-1.10/info.c` and `info.h` and from prboom's
+ * own for the rows MBF appended. This is what a
  * DEHACKED `Frame N` record indexes and what `dehacked/frames.ts` walks to re-derive the engine's
- * letter-list tables; it is never stepped at runtime. Read-side and import-free, so the menu can
- * classify a patch through it. See docs/dehacked.md § Frames.
+ * letter-list tables; it is never stepped at runtime. MBF's own appended states are here too, and
+ * a patch may grow the table past them. Read-side and import-free, so the menu can classify a
+ * patch through it. See docs/dehacked.md § Frames and § Extended states.
  */
 
 /**
@@ -18,7 +20,11 @@ export type StateRow = readonly [sprite: number, frame: number, tics: number, ac
 /** `FF_FULLBRIGHT`, `p_pspr.h`: the bit in `state_t.frame` that draws the frame at full light. */
 export const FF_FULLBRIGHT = 0x8000;
 
-/** `sprnames[]`, all 138 in `spritenum_t` order. */
+/**
+ * `sprnames[]`, all 245 in `spritenum_t` order: vanilla's 138, MBF's seven, and the hundred `SP00`
+ * scratch names prboom pads the table with for patches to name their own art through — which is
+ * what a `Frame` record's `Sprite number` indexes. docs/dehacked.md § Extended states.
+ */
 export const SPRITE_NAMES: readonly string[] = [
   'TROO', 'SHTG', 'PUNG', 'PISG', 'PISF', 'SHTF', 'SHT2', 'CHGG', 'CHGF', 'MISG',
   'MISF', 'SAWG', 'PLSG', 'PLSF', 'BFGG', 'BFGF', 'BLUD', 'PUFF', 'BAL1', 'BAL2',
@@ -34,12 +40,33 @@ export const SPRITE_NAMES: readonly string[] = [
   'COL3', 'COL4', 'CAND', 'CBRA', 'COL6', 'TRE1', 'TRE2', 'ELEC', 'CEYE', 'FSKU',
   'COL5', 'TBLU', 'TGRN', 'TRED', 'SMBT', 'SMGT', 'SMRT', 'HDB1', 'HDB2', 'HDB3',
   'HDB4', 'HDB5', 'HDB6', 'POB1', 'POB2', 'BRS1', 'TLMP', 'TLP2',
+  // MBF's own, `info.c` from `SPR_TNT1` on: the invisible sprite, the marine's dog, the two beta
+  // plasma balls and the two beta bonus items, plus prboom's unused `BLD2`.
+  'TNT1', 'DOGS', 'PLS1', 'PLS2', 'BON3', 'BON4', 'BLD2',
+  // prboom's "100 extra sprite names to use in dehacked patches" — the art a patch that builds its
+  // own thing out of extended states draws through.
+  'SP00', 'SP01', 'SP02', 'SP03', 'SP04', 'SP05', 'SP06', 'SP07', 'SP08', 'SP09',
+  'SP10', 'SP11', 'SP12', 'SP13', 'SP14', 'SP15', 'SP16', 'SP17', 'SP18', 'SP19',
+  'SP20', 'SP21', 'SP22', 'SP23', 'SP24', 'SP25', 'SP26', 'SP27', 'SP28', 'SP29',
+  'SP30', 'SP31', 'SP32', 'SP33', 'SP34', 'SP35', 'SP36', 'SP37', 'SP38', 'SP39',
+  'SP40', 'SP41', 'SP42', 'SP43', 'SP44', 'SP45', 'SP46', 'SP47', 'SP48', 'SP49',
+  'SP50', 'SP51', 'SP52', 'SP53', 'SP54', 'SP55', 'SP56', 'SP57', 'SP58', 'SP59',
+  'SP60', 'SP61', 'SP62', 'SP63', 'SP64', 'SP65', 'SP66', 'SP67', 'SP68', 'SP69',
+  'SP70', 'SP71', 'SP72', 'SP73', 'SP74', 'SP75', 'SP76', 'SP77', 'SP78', 'SP79',
+  'SP80', 'SP81', 'SP82', 'SP83', 'SP84', 'SP85', 'SP86', 'SP87', 'SP88', 'SP89',
+  'SP90', 'SP91', 'SP92', 'SP93', 'SP94', 'SP95', 'SP96', 'SP97', 'SP98', 'SP99',
 ];
 
 /**
- * `states[]`, all 967 in `statenum_t` order. Index 0 is `S_NULL`, the "no state" every
- * `mobjinfo` pointer that doesn't exist points at, and the state a chain that expires into nothing
- * steps to. A DEH `Frame N` is the 0-based index here.
+ * `SPR_TNT1`, the sprite `info.c` gives a state that draws nothing — what a fresh state carries.
+ */
+export const INVISIBLE_SPRITE = 138;
+
+/**
+ * `states[]`, all 1076 in `statenum_t` order: vanilla's 967, then MBF's 109. Index 0 is `S_NULL`,
+ * the "no state" every `mobjinfo` pointer that doesn't exist points at, and the state a chain that
+ * expires into nothing steps to. A DEH `Frame N` is the 0-based index here, and one past the end
+ * grows the table instead — `stateTableSize`, docs/dehacked.md § Extended states.
  */
 export const STATES: readonly StateRow[] = [
   [0, 0, -1, '', 0, 'S_NULL'], // 0
@@ -1009,7 +1036,164 @@ export const STATES: readonly StateRow[] = [
   [137, 32769, 4, '', 965, 'S_TECH2LAMP2'], // 964
   [137, 32770, 4, '', 966, 'S_TECH2LAMP3'], // 965
   [137, 32771, 4, '', 963, 'S_TECH2LAMP4'], // 966
+
+  // MBF's own, appended after vanilla's last state: the invisible `S_TNT1`, killough's grenade and
+  // variable-damage explosion, the marine's dog, and the dummy beta BFG, plasma, bonus-item and
+  // lost-soul chains prboom carries "for dehacked compatibility". None is reachable from
+  // `MOBJ_INFO` or `WEAPON_STATES` here, so nothing derives off them until a patch points at one —
+  // which is exactly what patches use them for. `A_FireOldBFG`, `A_BetaSkullAttack` and `A_Stop`
+  // are not in `deh_bexptrs[]`, so no patch can name them and `actionRole` reads nothing from them.
+  [138, 0, -1, '', 967, 'S_TNT1'], // 967
+  [22, 32768, 1000, 'A_Die', 968, 'S_GRENADE'], // 968
+  [22, 32769, 4, 'A_Scream', 970, 'S_DETONATE'], // 969
+  [22, 32770, 6, 'A_Detonate', 971, 'S_DETONATE2'], // 970
+  [22, 32771, 10, '', 0, 'S_DETONATE3'], // 971
+  [139, 0, 10, 'A_Look', 973, 'S_DOGS_STND'], // 972
+  [139, 1, 10, 'A_Look', 972, 'S_DOGS_STND2'], // 973
+  [139, 0, 2, 'A_Chase', 975, 'S_DOGS_RUN1'], // 974
+  [139, 0, 2, 'A_Chase', 976, 'S_DOGS_RUN2'], // 975
+  [139, 1, 2, 'A_Chase', 977, 'S_DOGS_RUN3'], // 976
+  [139, 1, 2, 'A_Chase', 978, 'S_DOGS_RUN4'], // 977
+  [139, 2, 2, 'A_Chase', 979, 'S_DOGS_RUN5'], // 978
+  [139, 2, 2, 'A_Chase', 980, 'S_DOGS_RUN6'], // 979
+  [139, 3, 2, 'A_Chase', 981, 'S_DOGS_RUN7'], // 980
+  [139, 3, 2, 'A_Chase', 974, 'S_DOGS_RUN8'], // 981
+  [139, 4, 8, 'A_FaceTarget', 983, 'S_DOGS_ATK1'], // 982
+  [139, 5, 8, 'A_FaceTarget', 984, 'S_DOGS_ATK2'], // 983
+  [139, 6, 8, 'A_SargAttack', 974, 'S_DOGS_ATK3'], // 984
+  [139, 7, 2, '', 986, 'S_DOGS_PAIN'], // 985
+  [139, 7, 2, 'A_Pain', 974, 'S_DOGS_PAIN2'], // 986
+  [139, 8, 8, '', 988, 'S_DOGS_DIE1'], // 987
+  [139, 9, 8, 'A_Scream', 989, 'S_DOGS_DIE2'], // 988
+  [139, 10, 4, '', 990, 'S_DOGS_DIE3'], // 989
+  [139, 11, 4, 'A_Fall', 991, 'S_DOGS_DIE4'], // 990
+  [139, 12, 4, '', 992, 'S_DOGS_DIE5'], // 991
+  [139, 13, -1, '', 0, 'S_DOGS_DIE6'], // 992
+  [139, 13, 5, '', 994, 'S_DOGS_RAISE1'], // 993
+  [139, 12, 5, '', 995, 'S_DOGS_RAISE2'], // 994
+  [139, 11, 5, '', 996, 'S_DOGS_RAISE3'], // 995
+  [139, 10, 5, '', 997, 'S_DOGS_RAISE4'], // 996
+  [139, 9, 5, '', 998, 'S_DOGS_RAISE5'], // 997
+  [139, 8, 5, '', 974, 'S_DOGS_RAISE6'], // 998
+  [14, 0, 10, 'A_BFGsound', 1000, 'S_OLDBFG1'], // 999
+  [14, 1, 1, 'A_FireOldBFG', 1001, 'S_OLDBFG2'], // 1000
+  [14, 1, 1, 'A_FireOldBFG', 1002, 'S_OLDBFG3'], // 1001
+  [14, 1, 1, 'A_FireOldBFG', 1003, 'S_OLDBFG4'], // 1002
+  [14, 1, 1, 'A_FireOldBFG', 1004, 'S_OLDBFG5'], // 1003
+  [14, 1, 1, 'A_FireOldBFG', 1005, 'S_OLDBFG6'], // 1004
+  [14, 1, 1, 'A_FireOldBFG', 1006, 'S_OLDBFG7'], // 1005
+  [14, 1, 1, 'A_FireOldBFG', 1007, 'S_OLDBFG8'], // 1006
+  [14, 1, 1, 'A_FireOldBFG', 1008, 'S_OLDBFG9'], // 1007
+  [14, 1, 1, 'A_FireOldBFG', 1009, 'S_OLDBFG10'], // 1008
+  [14, 1, 1, 'A_FireOldBFG', 1010, 'S_OLDBFG11'], // 1009
+  [14, 1, 1, 'A_FireOldBFG', 1011, 'S_OLDBFG12'], // 1010
+  [14, 1, 1, 'A_FireOldBFG', 1012, 'S_OLDBFG13'], // 1011
+  [14, 1, 1, 'A_FireOldBFG', 1013, 'S_OLDBFG14'], // 1012
+  [14, 1, 1, 'A_FireOldBFG', 1014, 'S_OLDBFG15'], // 1013
+  [14, 1, 1, 'A_FireOldBFG', 1015, 'S_OLDBFG16'], // 1014
+  [14, 1, 1, 'A_FireOldBFG', 1016, 'S_OLDBFG17'], // 1015
+  [14, 1, 1, 'A_FireOldBFG', 1017, 'S_OLDBFG18'], // 1016
+  [14, 1, 1, 'A_FireOldBFG', 1018, 'S_OLDBFG19'], // 1017
+  [14, 1, 1, 'A_FireOldBFG', 1019, 'S_OLDBFG20'], // 1018
+  [14, 1, 1, 'A_FireOldBFG', 1020, 'S_OLDBFG21'], // 1019
+  [14, 1, 1, 'A_FireOldBFG', 1021, 'S_OLDBFG22'], // 1020
+  [14, 1, 1, 'A_FireOldBFG', 1022, 'S_OLDBFG23'], // 1021
+  [14, 1, 1, 'A_FireOldBFG', 1023, 'S_OLDBFG24'], // 1022
+  [14, 1, 1, 'A_FireOldBFG', 1024, 'S_OLDBFG25'], // 1023
+  [14, 1, 1, 'A_FireOldBFG', 1025, 'S_OLDBFG26'], // 1024
+  [14, 1, 1, 'A_FireOldBFG', 1026, 'S_OLDBFG27'], // 1025
+  [14, 1, 1, 'A_FireOldBFG', 1027, 'S_OLDBFG28'], // 1026
+  [14, 1, 1, 'A_FireOldBFG', 1028, 'S_OLDBFG29'], // 1027
+  [14, 1, 1, 'A_FireOldBFG', 1029, 'S_OLDBFG30'], // 1028
+  [14, 1, 1, 'A_FireOldBFG', 1030, 'S_OLDBFG31'], // 1029
+  [14, 1, 1, 'A_FireOldBFG', 1031, 'S_OLDBFG32'], // 1030
+  [14, 1, 1, 'A_FireOldBFG', 1032, 'S_OLDBFG33'], // 1031
+  [14, 1, 1, 'A_FireOldBFG', 1033, 'S_OLDBFG34'], // 1032
+  [14, 1, 1, 'A_FireOldBFG', 1034, 'S_OLDBFG35'], // 1033
+  [14, 1, 1, 'A_FireOldBFG', 1035, 'S_OLDBFG36'], // 1034
+  [14, 1, 1, 'A_FireOldBFG', 1036, 'S_OLDBFG37'], // 1035
+  [14, 1, 1, 'A_FireOldBFG', 1037, 'S_OLDBFG38'], // 1036
+  [14, 1, 1, 'A_FireOldBFG', 1038, 'S_OLDBFG39'], // 1037
+  [14, 1, 1, 'A_FireOldBFG', 1039, 'S_OLDBFG40'], // 1038
+  [14, 1, 1, 'A_FireOldBFG', 1040, 'S_OLDBFG41'], // 1039
+  [14, 1, 0, 'A_Light0', 1041, 'S_OLDBFG42'], // 1040
+  [14, 1, 20, 'A_ReFire', 81, 'S_OLDBFG43'], // 1041
+  [140, 32768, 6, '', 1043, 'S_PLS1BALL'], // 1042
+  [140, 32769, 6, '', 1042, 'S_PLS1BALL2'], // 1043
+  [140, 32770, 4, '', 1045, 'S_PLS1EXP'], // 1044
+  [140, 32771, 4, '', 1046, 'S_PLS1EXP2'], // 1045
+  [140, 32772, 4, '', 1047, 'S_PLS1EXP3'], // 1046
+  [140, 32773, 4, '', 1048, 'S_PLS1EXP4'], // 1047
+  [140, 32774, 4, '', 0, 'S_PLS1EXP5'], // 1048
+  [141, 32768, 4, '', 1050, 'S_PLS2BALL'], // 1049
+  [141, 32769, 4, '', 1049, 'S_PLS2BALL2'], // 1050
+  [141, 32770, 6, '', 1052, 'S_PLS2BALLX1'], // 1051
+  [141, 32771, 6, '', 1053, 'S_PLS2BALLX2'], // 1052
+  [141, 32772, 6, '', 0, 'S_PLS2BALLX3'], // 1053
+  [142, 0, 6, '', 1054, 'S_BON3'], // 1054
+  [143, 0, 6, '', 1055, 'S_BON4'], // 1055
+  [44, 0, 10, 'A_Look', 1056, 'S_BSKUL_STND'], // 1056
+  [44, 1, 5, 'A_Chase', 1058, 'S_BSKUL_RUN1'], // 1057
+  [44, 2, 5, 'A_Chase', 1059, 'S_BSKUL_RUN2'], // 1058
+  [44, 3, 5, 'A_Chase', 1060, 'S_BSKUL_RUN3'], // 1059
+  [44, 0, 5, 'A_Chase', 1057, 'S_BSKUL_RUN4'], // 1060
+  [44, 4, 4, 'A_FaceTarget', 1062, 'S_BSKUL_ATK1'], // 1061
+  [44, 5, 5, 'A_BetaSkullAttack', 1063, 'S_BSKUL_ATK2'], // 1062
+  [44, 5, 4, '', 1057, 'S_BSKUL_ATK3'], // 1063
+  [44, 6, 4, '', 1065, 'S_BSKUL_PAIN1'], // 1064
+  [44, 7, 2, 'A_Pain', 1057, 'S_BSKUL_PAIN2'], // 1065
+  [44, 8, 4, '', 1057, 'S_BSKUL_PAIN3'], // 1066
+  [44, 9, 5, '', 1068, 'S_BSKUL_DIE1'], // 1067
+  [44, 10, 5, '', 1069, 'S_BSKUL_DIE2'], // 1068
+  [44, 11, 5, '', 1070, 'S_BSKUL_DIE3'], // 1069
+  [44, 12, 5, '', 1071, 'S_BSKUL_DIE4'], // 1070
+  [44, 13, 5, 'A_Scream', 1072, 'S_BSKUL_DIE5'], // 1071
+  [44, 14, 5, '', 1073, 'S_BSKUL_DIE6'], // 1072
+  [44, 15, 5, 'A_Fall', 1074, 'S_BSKUL_DIE7'], // 1073
+  [44, 16, 5, 'A_Stop', 1074, 'S_BSKUL_DIE8'], // 1074
+  [22, 32769, 8, 'A_Mushroom', 128, 'S_MUSHROOM'], // 1075
 ];
+
+/**
+ * Where MBF's appended states start — the end of vanilla's own `states[]`. What `isPspriteState`
+ * stops at: the beta BFG's chain draws a gun sprite but belongs to no weapon this engine or MBF's
+ * own `weaponinfo[]` reaches, so a `Frame` record on one of those rows is world data like any
+ * other. docs/dehacked.md § Extended states.
+ */
+export const MBF_STATES_START = 967;
+
+/**
+ * The largest state index a patch may address here — a table of 34432 rows, thirty times the one
+ * `info.c` ships and far past what any real patch writes. dsda-doom has no such limit; it doubles
+ * the table for whatever index a record names, so one corrupt number is an allocation that would
+ * cost the level. An index above this names no state rather than growing into one. **This engine's
+ * own guard, not a vanilla rule.**
+ */
+export const MAX_STATE_INDEX = 32767;
+
+/**
+ * How large the frame table grows once a patch addresses state `highest`.
+ *
+ * dsda-doom's `dsda/state.c: dsda_EnsureCapacity` **doubles** rather than growing to fit, so the
+ * slots between the highest index a patch names and that power of two exist too — fresh, and
+ * reachable by a `Next frame` or a `Thing` pointer that lands in them. Reproducing the doubling is
+ * what makes those pointers land the same way here.
+ */
+export function stateTableSize(highest: number): number {
+  let size = STATES.length;
+  while (highest >= size) size *= 2;
+  return size;
+}
+
+/**
+ * A state the patch grew the table into, before its own `Frame` record writes over it:
+ * `dsda_ResetStates` gives each one the invisible sprite, `tics` of -1 and a `nextstate` pointing
+ * at itself, everything else zeroed — an invisible frame that holds forever and goes nowhere. It
+ * carries no `statenum_t` name because it has none.
+ */
+export function freshState(index: number): StateRow {
+  return [INVISIBLE_SPRITE, 0, -1, '', index, ''];
+}
 
 /**
  * The eight `states[]` entry points one `mobjinfo` row carries, each 0 (`S_NULL`) where the type
@@ -1247,8 +1431,13 @@ export function fireChainStates(states: readonly StateRow[], atk: number): numbe
  * `SPR_SHTG`..`SPR_BFGF` (indices 1-15) are the gun and flash lumps, and nothing in the world draws
  * them. This engine has no first-person weapon, so a `Frame` record on one of these has no sink
  * here.
+ *
+ * Vanilla's own rows only (`MBF_STATES_START`). MBF's appended `S_OLDBFG*` draw `SPR_BFGG` but sit
+ * in no `weaponinfo[]` row's chain, so they are the scratch space a patch treats them as rather
+ * than a gun being held.
  */
 export function isPspriteState(index: number): boolean {
+  if (index >= MBF_STATES_START) return false;
   const row = STATES[index];
   return row !== undefined && row[0] >= 1 && row[0] <= 15;
 }

@@ -89,31 +89,6 @@ const FLAG_SETS: readonly (readonly [Set<number>, (mask: number) => boolean])[] 
 ];
 
 /**
- * Whether a mask makes its type a member of `SOLID_DECORATION_TYPES`, which is `MF_SOLID` **and not
- * `MF_SHOOTABLE`** — a prop that blocks movement but that a shot passes through, not vanilla's
- * `MF_SOLID` alone (docs/movement.md § Solid decorations). Every monster in `info.c` carries
- * `MF_SOLID` too, so keying membership on that bit by itself would put any patched monster in the
- * set and `things.ts` would then skip it in the hitscan, projectile and splash paths.
- */
-function isSolidDecoration(mask: number): boolean {
-  return Boolean(mask & MF_FLAGS.SOLID.bit) && !(mask & MF_FLAGS.SHOOTABLE.bit);
-}
-
-/**
- * Pairs one patchable record table with its pristine clone, taken at import — before any `Game`
- * exists, so it can only ever capture the vanilla values — and returns the function that puts it
- * back.
- *
- * `structuredClone` rather than a shallow copy because `MonsterStats` nests three levels deep
- * (`ranged.projectile.pairOffsetsRad` is an array of arrays, `sounds.walk.sounds` an array); a
- * shallow copy would hand a patched sub-object straight back on reset.
- */
-function patchable<T>(table: Record<number | string, T>): () => void {
-  const pristine = structuredClone(table);
-  return () => restore(table, pristine);
-}
-
-/**
  * Every patchable record table, as the one list `resetDehacked` walks — the shape `FLAG_SETS` has
  * for the `Set`s, and for the same reason: registering a table here is the only edit needed, so a
  * table can never be patched without being restored.
@@ -171,14 +146,6 @@ export function thingStatsPatched(): boolean {
 let patchedThings = false;
 
 /**
- * Empties a record and refills it from a clone, so the pristine copy is never handed to a mutator.
- */
-function restore<T>(table: Record<number | string, T>, from: Record<number | string, T>): void {
-  for (const key of Object.keys(table)) delete table[key];
-  Object.assign(table, structuredClone(from));
-}
-
-/**
  * Puts every patchable table back to vanilla's values.
  *
  * Called immediately **before** `applyDehacked`, not after a session ends: a `Game` that throws
@@ -225,9 +192,31 @@ export function applyDehacked(patch: DehPatch): void {
   for (const [name, to] of patch.spriteRenames) setSpriteLump(name, to);
   // After the `Thing` loop, whose `Speed` scaling it composes with, and before the rebuild below,
   // which derives from the durations it writes.
-  applyFrames(patch.frameEdits, patch.thingEdits, patch.weaponEdits, patch.pointerEdits);
+  applyFrames(patch.frameEdits, patch.thingEdits, patch.weaponEdits, patch.pointerEdits, patch.stateCount);
   // Last, because `MONSTER_STATS` is what it derives from and every edit above may have moved it.
   rebuildDerivedMonsterStats();
+}
+
+/**
+ * Pairs one patchable record table with its pristine clone, taken at import — before any `Game`
+ * exists, so it can only ever capture the vanilla values — and returns the function that puts it
+ * back.
+ *
+ * `structuredClone` rather than a shallow copy because `MonsterStats` nests three levels deep
+ * (`ranged.projectile.pairOffsetsRad` is an array of arrays, `sounds.walk.sounds` an array); a
+ * shallow copy would hand a patched sub-object straight back on reset.
+ */
+function patchable<T>(table: Record<number | string, T>): () => void {
+  const pristine = structuredClone(table);
+  return () => restore(table, pristine);
+}
+
+/**
+ * Empties a record and refills it from a clone, so the pristine copy is never handed to a mutator.
+ */
+function restore<T>(table: Record<number | string, T>, from: Record<number | string, T>): void {
+  for (const key of Object.keys(table)) delete table[key];
+  Object.assign(table, structuredClone(from));
 }
 
 /** One `Thing` record, onto whichever of this engine's tables key the type it names. */
@@ -244,8 +233,12 @@ function applyThing(edit: DehThingEdit): void {
   const inert = INERT_SHOOTABLE[dn];
 
   if (edit.health !== undefined) MONSTER_HEALTH[dn] = edit.health;
-  if (edit.mass !== undefined && stats) stats.mass = edit.mass;
-  if (edit.painChance !== undefined && stats) stats.painChance = edit.painChance;
+  if (edit.mass !== undefined && stats) {
+    stats.mass = edit.mass;
+  }
+  if (edit.painChance !== undefined && stats) {
+    stats.painChance = edit.painChance;
+  }
 
   if (edit.radius !== undefined) {
     if (stats) stats.radius = edit.radius;
@@ -350,6 +343,17 @@ function applyBits(dn: number, mask: number, height: number | undefined): void {
 }
 
 /**
+ * Whether a mask makes its type a member of `SOLID_DECORATION_TYPES`, which is `MF_SOLID` **and not
+ * `MF_SHOOTABLE`** — a prop that blocks movement but that a shot passes through, not vanilla's
+ * `MF_SOLID` alone (docs/movement.md § Solid decorations). Every monster in `info.c` carries
+ * `MF_SOLID` too, so keying membership on that bit by itself would put any patched monster in the
+ * set and `things.ts` would then skip it in the hitscan, projectile and splash paths.
+ */
+function isSolidDecoration(mask: number): boolean {
+  return Boolean(mask & MF_FLAGS.SOLID.bit) && !(mask & MF_FLAGS.SHOOTABLE.bit);
+}
+
+/**
  * `Misc`'s values, each routed to whatever `MISC_SINKS` says it writes: an `InventoryLimits` field
  * for all but one, and `weaponinfo[wp_bfg].ammopershot` for `BFG Cells/Shot`.
  * docs/dehacked.md § Weapon, Ammo and Misc.
@@ -445,7 +449,9 @@ function same(a: unknown, b: unknown): boolean {
 
 /** Writes `value` under `key`, or deletes the key for null — one entry of a diff. */
 function put<T>(table: Record<number | string, T>, key: number | string, value: T | null | undefined): void {
-  if (value === null || value === undefined) delete table[key];
+  if (value === null || value === undefined) {
+    delete table[key];
+  }
   else table[key] = structuredClone(value);
 }
 
@@ -455,22 +461,26 @@ function put<T>(table: Record<number | string, T>, key: number | string, value: 
  * the walker reads differently (docs/dehacked.md § Frames lists them) and every unpatched type
  * exactly as they were.
  *
- * A patch with no frame edits at all returns before cloning the 967-row table: `resetDehacked`
- * runs immediately before this and has already refilled every sink from vanilla.
+ * A patch with no frame edits at all returns before cloning the frame table: `resetDehacked` runs
+ * immediately before this and has already refilled every sink from vanilla. `stateCount` is how far
+ * the patch grew that table (docs/dehacked.md § Extended states); growth on its own moves nothing,
+ * so it is not itself a reason to walk.
  */
 function applyFrames(
   frameEdits: readonly DehFrameEdit[],
   thingEdits: readonly DehThingEdit[],
-  weaponEdits: readonly DehWeaponEdit[] = [],
-  pointerEdits: readonly DehPointerEdit[] = [],
+  weaponEdits: readonly DehWeaponEdit[],
+  pointerEdits: readonly DehPointerEdit[],
+  stateCount: number,
 ): void {
   const repointed = thingEdits.some((edit) => edit.states) || weaponEdits.some((edit) => edit.states);
   if (frameEdits.length === 0 && !repointed && pointerEdits.length === 0) return;
 
-  const patched = patchStates(frameEdits, thingEdits, weaponEdits, pointerEdits);
+  const patched = patchStates(frameEdits, thingEdits, weaponEdits, pointerEdits, stateCount);
   // Only a `Frame` record can move a fullbright bit — a `Thing` state repoint moves pointers
-  // between rows, never the rows' own sprite/frame words.
-  if (frameEdits.length > 0) rebuildFullbrightFrames(patched.states);
+  // between rows, never the rows' own sprite/frame words. Which rows those are is also what lets an
+  // MBF or extended state vote at all (`rebuildFullbrightFrames`).
+  if (frameEdits.length > 0) rebuildFullbrightFrames(patched.states, patched.written);
 
   const before = pristineFrameTables();
   const after = deriveFrameTables(patched);
@@ -484,7 +494,9 @@ function applyFrames(
   }
   for (const [index, id] of WEAPON_ORDER.entries()) {
     const rate = after.weapons[index];
-    if (rate && !same(before.weapons[index], rate)) WEAPONS[id].cooldown = rate.cooldown;
+    if (rate && !same(before.weapons[index], rate)) {
+      WEAPONS[id].cooldown = rate.cooldown;
+    }
   }
   for (const key of Object.keys(after.sprites)) {
     const dn = Number(key);
@@ -514,7 +526,9 @@ function applyFrames(
 
 /** One monster type's changed entries, field by field, onto the pose tables and its stat block. */
 function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
-  if (b.sprite !== undefined && a.sprite !== b.sprite) THING_SPRITES[dn] = b.sprite;
+  if (b.sprite !== undefined && a.sprite !== b.sprite) {
+    THING_SPRITES[dn] = b.sprite;
+  }
   if (!same(a.walk, b.walk)) put(MONSTER_WALK_FRAMES_OVERRIDE, dn, same(b.walk, MONSTER_WALK_FRAMES) || b.walk.length === 0 ? null : b.walk);
   if (!same(a.idle, b.idle)) put(MONSTER_IDLE_FRAMES, dn, b.idle);
   if (!same(a.death, b.death)) put(MONSTER_DEATH_FRAMES, dn, b.death);
@@ -589,10 +603,18 @@ function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
   // MBF's `A_PlaySound`, and `A_Scratch`'s own `misc2` alongside it: both are read off the chain by
   // the walker, since a sound is a per-type property here rather than something a state carries.
   // docs/dehacked.md § Action pointers.
-  if (b.meleeSound !== null && b.meleeSound !== a.meleeSound) putSound(stats.sounds, 'melee', b.meleeSound);
-  if (b.rangedSound !== null && b.rangedSound !== a.rangedSound) putSound(stats.sounds, 'attack', b.rangedSound);
-  if (b.painSound !== null && b.painSound !== a.painSound) putSound(stats.sounds, 'pain', b.painSound);
-  if (b.deathSound !== null && b.deathSound !== a.deathSound) putSound(stats.sounds, 'death', b.deathSound);
+  if (b.meleeSound !== null && b.meleeSound !== a.meleeSound) {
+    putSound(stats.sounds, 'melee', b.meleeSound);
+  }
+  if (b.rangedSound !== null && b.rangedSound !== a.rangedSound) {
+    putSound(stats.sounds, 'attack', b.rangedSound);
+  }
+  if (b.painSound !== null && b.painSound !== a.painSound) {
+    putSound(stats.sounds, 'pain', b.painSound);
+  }
+  if (b.deathSound !== null && b.deathSound !== a.deathSound) {
+    putSound(stats.sounds, 'death', b.deathSound);
+  }
   // `A_Spawn` on a death chain is what this engine already models as a drop. Its `misc1` is a
   // 1-based `mobjinfo` index; a type no map can place has no doomednum to drop.
   if (b.drop !== null && b.drop !== a.drop) {

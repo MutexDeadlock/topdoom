@@ -6,7 +6,9 @@ import {
   pristineFrameTables,
   walkChain,
 } from '../../src/game/dehacked/frames.ts';
-import { FF_FULLBRIGHT, frameLetter, MOBJ_STATES, SPRITE_NAMES, STATES } from '../../src/game/dehacked/states.ts';
+import {
+  FF_FULLBRIGHT, frameLetter, freshState, MBF_STATES_START, MOBJ_STATES, SPRITE_NAMES, STATES,
+} from '../../src/game/dehacked/states.ts';
 import { MOBJ_INFO, WEAPON_ORDER } from '../../src/game/dehacked/tables.ts';
 import { WEAPONS } from '../../src/game/weapons.ts';
 import {
@@ -71,9 +73,9 @@ const EXCEPTIONS = new Map<string, string>([
 
 /**
  * The anchor: the walker's reading of vanilla's own frame table must be the shipped tables. One
- * test validates the 967-row transcription and every chain-walking rule at once, and its
- * exceptions list is the complete inventory of where the hand-curated tables and `info.c` part
- * ways. See docs/dehacked.md § Frames.
+ * test validates the transcription and every chain-walking rule at once, and its exceptions list is
+ * the complete inventory of where the hand-curated tables and `info.c` part ways.
+ * See docs/dehacked.md § Frames.
  */
 describe('DEHACKED · the frame walker reproduces the shipped tables', () => {
   test('deriving from pristine states[] equals the tables, bar the listed exceptions', () => {
@@ -171,8 +173,10 @@ describe('DEHACKED · the frame walker reproduces the shipped tables', () => {
   test('where vanilla splits a letter across bright and dim states, the states vote and a tie is bright', () => {
     // The whole stock list of splits — the per-(sprite, letter) set is an approximation of the
     // per-state bit exactly here, and nowhere else.
+    // Vanilla's rows only, the same span `rebuildFullbrightFrames` votes over: MBF's appended
+    // states are dummies nothing reaches until a `Frame` record writes one.
     const byKey = new Map<string, { on: number; off: number }>();
-    for (const [sprite, frame] of STATES) {
+    for (const [sprite, frame] of STATES.slice(0, MBF_STATES_START)) {
       const key = SPRITE_NAMES[sprite] + frameLetter(frame);
       const tally = byKey.get(key) ?? byKey.set(key, { on: 0, off: 0 }).get(key)!;
       if (frame & FF_FULLBRIGHT) tally.on++;
@@ -207,6 +211,46 @@ describe('DEHACKED · walking patched chains', () => {
     const pain = walkChain(STATES, troop.pain, new Set(see.indices));
     assert.equal(pain.indices.length, 2, 'S_TROO_PAIN, S_TROO_PAIN2, then back into the run');
     assert.deepEqual(walkChain(STATES, 0).indices, []);
+  });
+
+  test('patchStates grows the table, and every row it grew into starts out fresh', () => {
+    // The patch defines 2000 and 2001 and names nothing else past the shipped table; the doubling
+    // brings 2152 rows, and the ones between are what a `Next frame` landing there would find.
+    const patched = patchStates(
+      [{ index: 2000, spriteNum: 29, duration: 4, nextFrame: 2001 }, { index: 2001, duration: 6 }],
+      [],
+      [],
+      [],
+      2152,
+    );
+    assert.equal(patched.states.length, 2152);
+    assert.deepEqual(patched.states[2000], [29, 0, 4, '', 2001, '']);
+    assert.deepEqual(patched.states[2001], [freshState(2001)[0], 0, 6, '', 2001, '']);
+    assert.deepEqual(patched.states[2151], freshState(2151));
+    // A chain into an untouched row stops there: it holds forever and steps to itself.
+    const chain = walkChain(patched.states, 2000);
+    assert.deepEqual(chain.indices, [2000, 2001]);
+    // Vanilla's own rows are untouched by the growth.
+    assert.deepEqual(patched.states.slice(0, STATES.length), STATES.map((row) => [...row]));
+  });
+
+  test('a monster spawned onto extended states derives its art from them', () => {
+    // The shape the probe patch uses: the zombieman's spawn and walk moved onto rows the patch
+    // grew the table into, drawing another sprite entirely.
+    const zombie = rowOf('MT_POSSESSED') + 1;
+    const patched = patchStates(
+      [
+        { index: 2000, spriteNum: SPRITE_NAMES.indexOf('BON1'), subNumber: 0, duration: 6, nextFrame: 2001 },
+        { index: 2001, spriteNum: SPRITE_NAMES.indexOf('BON1'), subNumber: 1, duration: 6, nextFrame: 2000 },
+      ],
+      [{ index: zombie, states: { spawn: 2000, see: 2000 } }],
+      [],
+      [],
+      2152,
+    );
+    const m = deriveFrameTables(patched).monsters[ThingType.zombieman];
+    assert.equal(m.sprite, 'BON1');
+    assert.deepEqual(m.walk, ['A', 'B']);
   });
 
   test('repointing a death frame borrows the other sprite and its letters', () => {

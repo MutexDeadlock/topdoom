@@ -34,14 +34,32 @@ const DEH_BEXPTRS = [
   'A_Scratch', 'A_PlaySound', 'A_RandomJump', 'A_LineEffect',
 ];
 
+/**
+ * MBF's three actions that `deh_bexptrs[]` leaves out, so no patch can name one — they occupy the
+ * states MBF appended and nothing else. docs/dehacked.md § Extended states.
+ */
+const MBF_BETA = ['A_FireOldBFG', 'A_BetaSkullAttack', 'A_Stop'];
+
 /** The action table a repoint is read and classified through. docs/dehacked.md § Action pointers. */
 describe('DEHACKED · action pointers', () => {
   test('the table is exactly deh_bexptrs[], plus the A_NULL that terminates it', () => {
     for (const name of DEH_BEXPTRS) {
       assert.equal(ACTIONS.get(name.toLowerCase())?.name, name, `${name} is missing`);
     }
-    assert.equal(ACTIONS.size, DEH_BEXPTRS.length + 1);
+    assert.equal(ACTIONS.size, DEH_BEXPTRS.length + MBF_BETA.length + 1);
     assert.equal(ACTIONS.get('a_null')?.name, 'A_NULL');
+  });
+
+  test('MBF\u2019s three beta functions are in the table but nameable by no patch', () => {
+    // They are not in `deh_bexptrs[]`, so `deh_procBexCodePointers` resolves none of them. They are
+    // here because the states MBF appended carry them, and a repoint of one of those rows reports
+    // under the action that went.
+    for (const name of MBF_BETA) {
+      assert.equal(ACTIONS.get(name.toLowerCase())?.unnameable, true, `${name} should be unnameable`);
+      assert.equal(lookupAction(name), undefined);
+      assert.equal(lookupAction(name.slice(2)), undefined);
+    }
+    assert.match(classifyDehackedPointer('A_FireOldBFG', '')!.detail, /A_FireOldBFG/);
   });
 
   test('a row is either a sink or a reason it is not, never both and never neither', () => {

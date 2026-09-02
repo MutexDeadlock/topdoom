@@ -29,7 +29,7 @@ export type ChainKind = StatePointer;
  * than written per action so the table below stays a list of names: the reason is the same for
  * every member of a group, and `MISS_DETAIL` says it once.
  */
-type ActionMiss = 'psprite' | 'perType' | 'branch' | 'chainClock' | 'explode' | 'lineEffect';
+type ActionMiss = 'psprite' | 'perType' | 'branch' | 'chainClock' | 'explode' | 'lineEffect' | 'beta';
 
 /** One sentence for the report, naming where the behavior lives here instead. */
 const MISS_DETAIL: Record<ActionMiss, string> = {
@@ -39,6 +39,7 @@ const MISS_DETAIL: Record<ActionMiss, string> = {
   chainClock: 'fires at a point in a chain, and nothing steps states here to reach that point',
   explode: 'would explode a thing on death; the barrel is the only type this engine explodes, off its own chain',
   lineEffect: 'triggers a tagged linedef effect from a state, which nothing here dispatches',
+  beta: 'runs MBF\'s beta content, which no patch can name and nothing here has',
 };
 
 /**
@@ -93,6 +94,11 @@ const BY_MISS: Record<ActionMiss, readonly string[]> = {
   explode: ['A_Explode', 'A_Detonate', 'A_Mushroom'],
   chainClock: ['A_Die'],
   lineEffect: ['A_LineEffect'],
+  // The three MBF functions **outside** `deh_bexptrs[]`: the beta BFG's fire, the beta lost soul's
+  // charge and the halt that ends its death. No patch can name one, and they are here only because
+  // the states MBF appended carry them — a repoint of one of those rows reads its pristine action
+  // from this table and a report needs a name for it. docs/dehacked.md § Extended states.
+  beta: ['A_FireOldBFG', 'A_BetaSkullAttack', 'A_Stop'],
 };
 
 /**
@@ -106,6 +112,8 @@ export interface ActionRow {
   miss?: ActionMiss;
   /** The chains this action reaches a sink from; absent where every chain reads it the same. */
   chains?: readonly ChainKind[];
+  /** Set for the `UNNAMEABLE` actions: no `[CODEPTR]` mnemonic resolves to one. */
+  unnameable?: true;
 }
 
 /**
@@ -119,8 +127,16 @@ const CHAIN_SCOPED: Record<string, readonly ChainKind[]> = {
 };
 
 /**
- * Every `deh_bexptrs[]` name, keyed lowercase. `A_NULL` is the list's own terminator: an action
- * cleared.
+ * The actions `deh_bexptrs[]` does not list, so no `[CODEPTR]` mnemonic resolves to one. MBF's
+ * three beta functions, which reach here only as a state's pristine action — a separate fact from
+ * why the walker reads nothing from them, which is what `BY_MISS` answers.
+ */
+const UNNAMEABLE: ReadonlySet<string> = new Set(['A_FireOldBFG', 'A_BetaSkullAttack', 'A_Stop']);
+
+/**
+ * Every `deh_bexptrs[]` name, keyed lowercase, plus MBF's three beta functions that are not in that
+ * array but do occupy states — `lookupAction` is what holds the difference. `A_NULL` is the list's
+ * own terminator: an action cleared.
  */
 export const ACTIONS: ReadonlyMap<string, ActionRow> = new Map([
   ...Object.entries(BY_ROLE).flatMap(([role, names]) =>
@@ -132,7 +148,7 @@ export const ACTIONS: ReadonlyMap<string, ActionRow> = new Map([
   ...Object.entries(BY_MISS).flatMap(([miss, names]) =>
     names.map((name): [string, ActionRow] => [
       name.toLowerCase(),
-      { name, role: 'none', miss: miss as ActionMiss },
+      { name, role: 'none', miss: miss as ActionMiss, ...(UNNAMEABLE.has(name) ? { unnameable: true } : {}) },
     ]),
   ),
   ['a_null', { name: 'A_NULL', role: 'none' } as ActionRow],
@@ -151,7 +167,7 @@ export const NO_ACTION = '';
 export function lookupAction(mnemonic: string): string | undefined {
   const key = mnemonic.trim().toLowerCase();
   const row = ACTIONS.get(key) ?? ACTIONS.get(`a_${key}`);
-  if (!row) return undefined;
+  if (!row || row.unnameable) return undefined;
   return row.name === 'A_NULL' ? NO_ACTION : row.name;
 }
 

@@ -1,6 +1,8 @@
 v0.1?.? (2026-09-0?)
 
 Features and improvements
+  - DEHACKED: MBF's 109 extra states and 107 extra sprite names are there, and
+    a patch addressing a frame past them grows the table
   - all settings live in one localStorage entry now; settings stored by an
     earlier build are not migrated and start out at their defaults again
 

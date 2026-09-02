@@ -21,7 +21,7 @@ import type {
   DehWarning,
   DehWeaponEdit,
 } from './defs.ts';
-import { isFlashState, SPRITE_NAMES, STATES } from './states.ts';
+import { isFlashState, MAX_STATE_INDEX, SPRITE_NAMES, stateTableSize, STATES } from './states.ts';
 import {
   FRAME_ARG_FIELDS,
   FRAME_FIELD_SINKS,
@@ -48,6 +48,8 @@ interface FieldLine {
   value: string;
   label: string;
   warnings: WarningLog;
+  /** The frame table as this patch is growing it — every state-valued field goes through it. */
+  states: StateTable;
 }
 
 /**
@@ -109,6 +111,7 @@ export function parseDehacked(
 ): DehPatch {
   const cursor = new TextCursor(text);
   const warnings = new WarningLog();
+  const states = new StateTable();
   const applied: Record<string, number> = {};
   const thingEdits: DehThingEdit[] = [];
   const frameEdits: DehFrameEdit[] = [];
@@ -140,10 +143,18 @@ export function parseDehacked(
 
   /** Files the open record's edit, if it turned out to carry anything beyond its identity. */
   const closeRecord = (): void => {
-    if (edit && editTouched) thingEdits.push(edit);
-    if (frame && frameTouched) frameEdits.push(frame);
-    if (ammo && (ammo.maxAmmo !== undefined || ammo.perAmmo !== undefined)) ammoEdits.push(ammo);
-    if (weapon && (weapon.ammoType !== -1 || weapon.states)) weaponEdits.push(weapon);
+    if (edit && editTouched) {
+      thingEdits.push(edit);
+    }
+    if (frame && frameTouched) {
+      frameEdits.push(frame);
+    }
+    if (ammo && (ammo.maxAmmo !== undefined || ammo.perAmmo !== undefined)) {
+      ammoEdits.push(ammo);
+    }
+    if (weapon && (weapon.ammoType !== -1 || weapon.states)) {
+      weaponEdits.push(weapon);
+    }
     edit = null;
     editTouched = false;
     frame = null;
@@ -192,7 +203,7 @@ export function parseDehacked(
 
       ammo = kind === 'ammo' ? { index } : null;
       weapon = kind === 'weapon' ? { index, ammoType: -1 } : null;
-      pointerState = kind === 'pointer' ? pointerTarget(trimmed, warnings) : null;
+      pointerState = kind === 'pointer' ? pointerTarget(trimmed, states, warnings) : null;
 
       if (kind === 'thing') {
         row = MOBJ_INFO[index - 1];
@@ -202,9 +213,11 @@ export function parseDehacked(
         }
         edit = { index };
       } else if (kind === 'frame') {
-        const support = classifyDehackedFrame(index);
+        // Addressing a row is what grows the table, so the classification reads the grown one.
+        states.address(index);
+        const support = classifyDehackedFrame(index, states.count);
         if (support !== 'applied') {
-          warnings.add(word, support, frameDetailFor(index, support));
+          warnings.add(word, support, frameDetailFor(index, support, states));
           skipping = true;
           continue;
         }
@@ -224,7 +237,7 @@ export function parseDehacked(
     if (!pair) continue;
     if (HEADER_KEYS.has(pair.key.toLowerCase())) continue;
     if (skipping) continue;
-    const line: FieldLine = { field: pair.key, value: pair.value, label, warnings };
+    const line: FieldLine = { field: pair.key, value: pair.value, label, warnings, states };
 
     if (kind === 'strings') {
       readString(line, cursor, strings);
@@ -282,6 +295,7 @@ export function parseDehacked(
   }
 
   closeRecord();
+  states.settle();
   if (thingEdits.length) applied.thing = thingEdits.length;
   if (frameEdits.length) applied.frame = frameEdits.length;
   if (pointerEdits.length) applied.pointer = pointerEdits.length;
@@ -306,6 +320,7 @@ export function parseDehacked(
     musicLumps,
     strings,
     pars,
+    stateCount: states.count,
     warnings: warnings.drain(),
     applied,
   };
@@ -361,6 +376,91 @@ class TextCursor {
     const out = this.text.slice(this.at, this.at + n);
     this.at += n;
     return out;
+  }
+}
+
+/** How a state index that names no row is reported — `StateTable.addressOrWarn`'s description half. */
+interface StateMiss {
+  /** The record as the patch spelled it: `Pointer`, `[CODEPTR]`. */
+  record: string;
+  /** What the report quotes back, already in the words the patch wrote them. */
+  subject: string;
+  /** The field inside the record, where the miss was on one rather than on the header. */
+  field?: string;
+}
+
+/** One state-valued field waiting on the size the whole patch leaves the table at. */
+interface PendingState {
+  line: FieldLine;
+  index: number;
+  /** Takes the field back off its edit, for a pointer that turned out to name nothing. */
+  clear: () => void;
+}
+
+/**
+ * How large this patch grows `states[]`, and every state index it names held against that size.
+ *
+ * The two halves are the format's own split. A `Frame`, `Pointer` or `[CODEPTR]` record
+ * **addresses** a row, which is what grows the table (`dsda_GetDehState`); a `Thing`'s or
+ * `Weapon`'s frame pointer and a `Frame`'s `Next frame` only **point** into it, and dsda follows
+ * those long after the whole patch is read. So a pointer is checked at `settle` against the
+ * finished table rather than the one that existed when its line was met — otherwise a `Weapon`
+ * record naming a state its own patch defines further down would be rejected for a record order the
+ * format doesn't require.
+ * docs/dehacked.md § Extended states.
+ */
+class StateTable {
+  /** Rows the patch has grown `states[]` to — `DehPatch.stateCount`. */
+  count = STATES.length;
+  private pending: PendingState[] = [];
+
+  /** Grows the table to hold `index`. False where it names no row it ever could. */
+  address(index: number): boolean {
+    if (!Number.isInteger(index) || index < 0 || index > MAX_STATE_INDEX) return false;
+    this.count = Math.max(this.count, stateTableSize(index));
+    return true;
+  }
+
+  /**
+   * `address`, reporting the miss for the three headers that address a row outside a `FieldLine` —
+   * a `Pointer` header, its `Codep Frame` and a `[CODEPTR]`'s `FRAME n`. The report's own three
+   * strings travel in `miss` rather than positionally: two of them are adjacent and a swap would
+   * typecheck (docs/conventions.md § Named arguments).
+   */
+  addressOrWarn(index: number, warnings: WarningLog, miss: StateMiss): boolean {
+    if (this.address(index)) return true;
+    warnings.add(miss.record, 'unknown', this.noState(miss.subject), miss.field);
+    return false;
+  }
+
+  /** Files a pointer into the table. Only the lower bound can be answered here. */
+  point(index: number, line: FieldLine, clear: () => void): boolean {
+    if (!Number.isInteger(index) || index < 0) {
+      this.reject(line);
+      return false;
+    }
+    this.pending.push({ line, index, clear });
+    return true;
+  }
+
+  /** Reports every pointer that landed past the finished table, and takes it off its edit. */
+  settle(): void {
+    for (const { line, index, clear } of this.pending) {
+      if (index < this.count) continue;
+      this.reject(line);
+      clear();
+    }
+    this.pending.length = 0;
+  }
+
+  /** How a field that should have named a state and didn't is reported, wherever it was read. */
+  noState(subject: string): string {
+    return `\`${subject}\` names no state (there are ${this.count})`;
+  }
+
+  /** One rejected state-valued field, reported the same from either end of the deferral. */
+  private reject(line: FieldLine): void {
+    line.warnings.add(line.label, 'unknown', this.noState(`${line.field} = ${line.value}`), line.field);
   }
 }
 
@@ -420,9 +520,9 @@ function recordDetailFor(word: string, line: string, support: DehShortfall): str
 }
 
 /** Why a `Frame N` header is skipped, naming the state so a reader can see which chain it was. */
-function frameDetailFor(index: number, support: DehSupport): string {
+function frameDetailFor(index: number, support: DehSupport, states: StateTable): string {
   const name = STATES[index]?.[5];
-  if (support === 'unknown') return noState(`Frame ${index}`);
+  if (support === 'unknown') return states.noState(`Frame ${index}`);
   if (isFlashState(index)) return `${name} is a muzzle flash; this engine draws no first-person weapon`;
   return `${name} animates a weapon being held or swapped; this engine draws no first-person weapon`;
 }
@@ -556,10 +656,7 @@ function readThingField(edit: DehThingEdit, row: MobjRow, line: FieldLine): bool
     default: {
       const pointer = THING_STATE_FIELDS[key];
       if (pointer) {
-        if (!isStateIndex(raw)) {
-          warnings.add(label, 'unknown', noState(`${field} = ${value}`), field);
-          return false;
-        }
+        if (!line.states.point(raw, line, () => dropStatePointer(edit, pointer, raw))) return false;
         edit.states = { ...edit.states, [pointer]: raw };
         return true;
       }
@@ -602,9 +699,12 @@ function readFrameField(frame: DehFrameEdit, line: FieldLine): boolean {
     frame.args = args;
     return true;
   }
-  if (sink === 'nextFrame' && !isStateIndex(raw)) {
-    warnings.add(label, 'unknown', noState(`${field} = ${value}`), field);
-    return false;
+  if (sink === 'nextFrame') {
+    // `dropStatePointer`'s rule, for the one state-valued field that is not a map.
+    const drop = (): void => {
+      if (frame.nextFrame === raw) delete frame.nextFrame;
+    };
+    if (!line.states.point(raw, line, drop)) return false;
   }
   if (sink === 'spriteNum' && (raw < 0 || raw >= SPRITE_NAMES.length)) {
     warnings.add(label, 'unknown', `\`${field} = ${value}\` names no sprite (there are ${SPRITE_NAMES.length})`, field);
@@ -615,24 +715,12 @@ function readFrameField(frame: DehFrameEdit, line: FieldLine): boolean {
 }
 
 /**
- * Whether a number names a row of `states[]` — the one bound every state-valued field is held to.
- */
-function isStateIndex(raw: number): boolean {
-  return Number.isInteger(raw) && raw >= 0 && raw < STATES.length;
-}
-
-/** How a field that should have named a state and didn't is reported, wherever it was read. */
-function noState(subject: string): string {
-  return `\`${subject}\` names no state (there are ${STATES.length})`;
-}
-
-/**
  * The state a `Pointer N (Frame mm)` header repoints: `mm`, the parenthesised index. `N` is
  * DeHackEd's own cross-reference number and names nothing here — `d_deh.c`'s `deh_procPointer`
  * reads the target off the parentheses too. Null where the header carries none or names no state,
  * which leaves the record's own `Codep Frame` line with nothing to write.
  */
-function pointerTarget(headerLine: string, warnings: WarningLog): number | null {
+function pointerTarget(headerLine: string, states: StateTable, warnings: WarningLog): number | null {
   // The word inside the parentheses is *not* checked: `deh_procPointer` scans `(%s %i)` and reads
   // the string into a buffer it never looks at, so `Pointer 426 (x 777)` is as valid as
   // `(Frame 777)` — which mbfedit!.wad writes.
@@ -642,10 +730,7 @@ function pointerTarget(headerLine: string, warnings: WarningLog): number | null 
     return null;
   }
   const state = Number(paren[1]);
-  if (!isStateIndex(state)) {
-    warnings.add('Pointer', 'unknown', noState(headerLine));
-    return null;
-  }
+  if (!states.addressOrWarn(state, warnings, { record: 'Pointer', subject: headerLine })) return null;
   return state;
 }
 
@@ -658,18 +743,17 @@ function pointerTarget(headerLine: string, warnings: WarningLog): number | null 
  * chain through each other. docs/dehacked.md § Action pointers.
  */
 function readPointerField(state: number | null, line: FieldLine, edits: DehPointerEdit[]): void {
-  const { field, value, warnings } = line;
+  const { field, value, states, warnings } = line;
   if (state === null) return;
   if (field.trim().toLowerCase() !== 'codep frame') {
     warnings.add('Pointer', 'unknown', `\`${field}\` is not a field of a \`Pointer\` record`, field);
     return;
   }
   const source = Number(value);
-  if (!isStateIndex(source)) {
-    warnings.add('Pointer', 'unknown', noState(`${field} = ${value}`), field);
+  if (!states.addressOrWarn(source, warnings, { record: 'Pointer', subject: `${field} = ${value}`, field })) {
     return;
   }
-  filePointer({ state, action: STATES[source][3] }, 'Pointer', edits, warnings);
+  filePointer({ state, action: actionAt(source) }, 'Pointer', edits, warnings);
 }
 
 /**
@@ -677,23 +761,29 @@ function readPointerField(state: number | null, line: FieldLine, edits: DehPoint
  * looking the mnemonic up, so a patch may write either spelling.
  */
 function readCodePointer(line: FieldLine, edits: DehPointerEdit[]): void {
-  const { field: key, value, warnings } = line;
+  const { field: key, value, states, warnings } = line;
   const named = /^frame\s+(-?\d+)$/i.exec(key.trim());
   if (!named) {
     warnings.add('[CODEPTR]', 'unknown', `\`${key.trim()}\` is not a \`FRAME n\` line`);
     return;
   }
   const state = Number(named[1]);
-  if (!isStateIndex(state)) {
-    warnings.add('[CODEPTR]', 'unknown', noState(key.trim()));
-    return;
-  }
+  if (!states.addressOrWarn(state, warnings, { record: '[CODEPTR]', subject: key.trim() })) return;
   const action = lookupAction(value);
   if (action === undefined) {
     warnings.add('[CODEPTR]', 'unknown', `\`${value.trim()}\` is not an action pointer`, value.trim());
     return;
   }
   filePointer({ state, action }, '[CODEPTR]', edits, warnings);
+}
+
+/**
+ * The action a state carries in **pristine** `STATES` — `d_deh.c`'s `deh_codeptr[]` snapshot, which
+ * is what a `Pointer` record copies from and what a repoint is classified against. A row the patch
+ * grew the table into carries none, the same `NULL` `dsda_ResetStates` leaves it with.
+ */
+function actionAt(state: number): string {
+  return STATES[state]?.[3] ?? NO_ACTION;
 }
 
 /**
@@ -708,7 +798,7 @@ function filePointer(
   warnings: WarningLog,
 ): void {
   const { state, action } = repoint;
-  const verdict = classifyDehackedPointer(STATES[state][3], action, chainKindsOf(state));
+  const verdict = classifyDehackedPointer(actionAt(state), action, chainKindsOf(state));
   if (verdict === null) return;
   edits.push(repoint);
   if (verdict.support === 'applied') return;
@@ -717,21 +807,36 @@ function filePointer(
 
 /**
  * One `Weapon` field: the ammo type, or one of the five state pointers under the name
- * `WEAPON_STATE_FIELDS` maps it to. A pointer past `states[]` is reported rather than carried, the
- * same range check a `Thing`'s frame pointers get; 0 is `S_NULL` and is kept as written.
+ * `WEAPON_STATE_FIELDS` maps it to. A pointer past `states[]` is reported rather than carried, on
+ * the same deferred check a `Thing`'s frame pointers get (`StateTable`); 0 is `S_NULL` and is kept
+ * as written.
  */
 function readWeaponField(weapon: DehWeaponEdit, value: number, line: FieldLine): void {
-  const { field, label, warnings } = line;
-  const pointer = WEAPON_STATE_FIELDS[field.trim().toLowerCase()];
+  const pointer = WEAPON_STATE_FIELDS[line.field.trim().toLowerCase()];
   if (!pointer) {
     weapon.ammoType = value;
     return;
   }
-  if (!isStateIndex(value)) {
-    warnings.add(label, 'unknown', noState(`${field} = ${value}`), field);
-    return;
-  }
+  if (!line.states.point(value, line, () => dropStatePointer(weapon, pointer, value))) return;
   weapon.states = { ...weapon.states, [pointer]: value };
+}
+
+/**
+ * Takes one state pointer back off a `Thing` or `Weapon` edit, and the map with it once that
+ * empties — an edit that named nothing else must read as one that set no pointer at all.
+ *
+ * Only where this line's own value is still the one standing: a patch may write the same field
+ * twice, and the later, in-range one is what dsda keeps.
+ */
+function dropStatePointer<K extends string>(
+  edit: { states?: Partial<Record<K, number>> },
+  key: K,
+  value: number,
+): void {
+  const states = edit.states;
+  if (!states || states[key] !== value) return;
+  delete states[key];
+  if (Object.keys(states).length === 0) delete edit.states;
 }
 
 /**

@@ -199,6 +199,12 @@ export interface DehPatch {
   strings: ReadonlyMap<string, string>;
   /** `[PARS]` seconds, keyed by map lump name. */
   pars: ReadonlyMap<string, number>;
+  /**
+   * How many rows `states[]` has once this patch's `Frame`, `Pointer` and `[CODEPTR]` records have
+   * grown it — vanilla's 967 plus MBF's 109 where it names nothing past them. The applier sizes its
+   * copy of the frame table to this. docs/dehacked.md § Extended states.
+   */
+  stateCount: number;
   warnings: readonly DehWarning[];
   /** How many records of each kind were read, for the "what applied" half of the report. */
   applied: Readonly<Record<string, number>>;

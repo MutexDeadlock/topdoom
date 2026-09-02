@@ -42,7 +42,8 @@ tests/
 grouped output instead of forty flat lines, and it is why a file big enough to span two subjects
 (`tables.test.ts`, `geom.test.ts`) carries more than one block rather than one vague heading.
 The subject is uppercase-first and one of the existing ones where one fits (`Specials`, `Rendering`,
-`Regressions`, …); `tests/docs/describenames.test.ts` enforces the shape on every top-level `describe`.
+`Regressions`, …); `tests/docs/describenames.test.ts` enforces the shape on every top-level
+`describe`.
 
 Because the directories mirror `src/`, each subject area comes out contiguous, and the ordering is
 stable run to run — node walks the glob in order and buffers each file's output. Nothing depends on
@@ -213,10 +214,11 @@ declaring its own. `rig.tick` runs `update` and then `drawMovers(1)` — the fra
 the tic-exact pose (docs/frameloop.md § Interpolation) — so mover meshes read back after a tick are
 up to date; a test calling `specials.update` directly gets no mesh refresh until one lands.
 
-`NO_INPUT` and `USE_INPUT` are re-exports from `tests/fixtures/input.ts`, which holds every fake `Input`: `heldInput('KeyW')`/
+`NO_INPUT` and `USE_INPUT` are re-exports from `tests/fixtures/input.ts`, which holds every fake
+`Input`: `heldInput('KeyW')`/
 `IDLE_INPUT` for `Player.update`, which asks only for `held`; `NO_INPUT`/`USE_INPUT`/`PREV_WEAPON_INPUT`
-for the specials controller and weapon switching, which ask for `pressed`/`rightMousePressed`. A test
-takes one of those rather than casting its own object literal.
+for the specials controller and weapon switching, which ask for `pressed`/`rightMousePressed`. A
+test takes one of those rather than casting its own object literal.
 
 **It is a rig, not a mock.** The controller, `World`, `FogOfWar` and the built mesh below it are all
 the production objects; only the `MaterialBank` and `Input` are stubs, and only because the first
@@ -255,8 +257,8 @@ and there were three copies of that walk before.
 ## Shared helpers
 
 `tests/fixtures/monsterbody.ts`'s `monsterBody(at, over?)` is the `MonsterBody` a test hands
-`stepMonsterAI`: at rest — awake, nothing in progress, `movedir` at `DI_NODIR` so nothing walks before
-the first chase call — with `over` for what the test varies (`angle`, `movedir`, `movecount`,
+`stepMonsterAI`: at rest — awake, nothing in progress, `movedir` at `DI_NODIR` so nothing walks
+before the first chase call — with `over` for what the test varies (`angle`, `movedir`, `movecount`,
 `justHit`). Every test that steps the AI by hand, and `pinky.ts`, builds its body here, so a field
 added to `MonsterBody` is a one-file edit.
 
@@ -266,6 +268,11 @@ added to `MonsterBody` is a one-file edit.
 
 `tests/fixtures/files.ts`'s `filesUnder(dir, keep?)` is the recursive file walker the tree-wide
 guards in `tests/docs/` and `markup.test.ts` share.
+
+`tests/fixtures/storage.ts` holds `fakeStorage()` (a `Storage` over a `Map`, exposed as `.map`) and
+`installStorage(value)`, which puts one over the global — `null` for a browser with none. Node has
+no `localStorage` unless webstorage is enabled, so every test touching a persisted value installs
+one.
 
 ## Markup partials
 
@@ -289,8 +296,9 @@ only *reads* a patch — `wad/library.ts`, `plugins/wad-manifest.ts` — can rea
 ES re-exports are eager: a single `export { applyDehacked } from './dehacked/apply.ts'` in
 `game/dehacked.ts` reinstates the whole cost with nothing else changing.
 
-`dehacked/states.ts` — the 967-row frame table — is read-side and import-free, so it may sit in that
-graph; so is `dehacked/frames.ts`, the pure walker the game tables fill themselves from at import.
+`dehacked/states.ts` — the frame table, vanilla's 967 states and MBF's 109 — is read-side and
+import-free, so it may sit in that graph; so is `dehacked/frames.ts`, the pure walker the game
+tables fill themselves from at import.
 `tests/game/dehacked-frames.test.ts` carries the two anchor tests: the walker's reading of the
 unpatched table must equal the frozen hand transcription in `tests/fixtures/frametables.ts`, bar the
 four documented overrides, and the tables the engine actually animates and fires from must equal

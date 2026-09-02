@@ -15,10 +15,11 @@ Read and applied: `Thing` records (stats, `Bits`, sounds, the eight frame pointe
 records (sprite, subnumber, duration, next frame, MBF's two `Unknown` fields — § Frames), `Pointer`
 and `[CODEPTR]` repoints (§ Action pointers), `Weapon` records (ammo type and all five state
 pointers, § Weapon, Ammo and Misc), `Ammo`, `Misc`, vanilla `Text` substitutions, and BEX
-`[STRINGS]`, `[PARS]`, `[SOUNDS]`, `[MUSIC]` and `[SPRITES]`.
+`[STRINGS]`, `[PARS]`, `[SOUNDS]`, `[MUSIC]` and `[SPRITES]`. States past vanilla's own table —
+MBF's 109, and the ones a patch grows the table into — are addressable (§ Extended states).
 
-Deliberately out: `ID #`, and `A_RandomJump` of the action pointers. See § What is not supported
-for why each, and what it would cost.
+Deliberately out: `ID #`, extended `mobjinfo` rows, MBF21's own fields, and `A_RandomJump` of the
+action pointers. See § What is not supported for why each, and what it would cost.
 
 A patch that asks for something out of scope **still loads and still plays.** It is reported, never
 refused — the WADs this matters for are ones that work today, and a refusal would be a regression
@@ -348,6 +349,56 @@ frames and two super-shotgun flash durations, which report.
 **`[CODEPTR]` bodies are field lines.** `Frame 185 = A_PosAttack` carries an `=`, and a `Word N`
 candidate with one is never a record header — reading it as one opened an empty `Frame` record per
 line of the section (harmlessly, while `Frame` was skipped outright).
+
+## Extended states
+
+`STATES` is **1076 rows**: vanilla's 967, then MBF's 109. A `Frame N` is an index into that table
+and not into `info.c`'s, because that is the table every patch is written against.
+
+MBF's 109 (`info.c` from `S_TNT1` on) are the invisible state, killough's grenade and
+variable-damage explosion, the marine's dog, and the dummy beta BFG, plasma, bonus-item and
+lost-soul chains prboom carries "for dehacked compatibility". No `MOBJ_INFO` or `WEAPON_STATES` row
+reaches one, so nothing derives off them until a patch points at one — which is what patches use the
+range for. nosp4.wad builds a monster on the dog and beta-BFG rows.
+
+`SPRITE_NAMES` is 245 for the same reason: vanilla's 138, MBF's seven, and prboom's hundred `SP00`
+spare names, which is what a patch's own art draws through.
+
+**Past 1076 the table grows.** `dsda_GetDehState` extends it to hold whatever index a record
+addresses, and `dsda_EnsureCapacity` **doubles** rather than growing to fit — so the rows between
+the highest index a patch names and that power of two exist too, and a pointer landing in them is
+valid.
+`stateTableSize` reproduces the doubling; `DehPatch.stateCount` is where a patch's own size travels,
+merged across a set's lumps as the maximum. `MAX_STATE_INDEX` caps it, which dsda does not: an index
+is an allocation.
+
+A row the patch grew into is `freshState` — the invisible sprite, `tics` of -1, `nextstate` pointing
+at itself, no action and no `statenum_t` name, exactly what `dsda_ResetStates` leaves. Every row a
+patch cares about is then written by a `Frame` record of its own.
+
+**Addressing a row grows the table; pointing at one does not.** A `Frame N` header, a
+`Pointer N (Frame mm)` header, that record's own `Codep Frame` and a `[CODEPTR]`'s `FRAME n` each
+address a row. A `Thing`'s eight pointers, a `Weapon`'s five and a `Frame`'s `Next frame` only point
+into it, and dsda follows those long after the whole patch is read — so they are checked against the
+size the finished patch left, not the one that existed when the line was met. `StateTable`
+(`dehacked/parse.ts`) holds both halves; without the deferral a `Weapon` record naming a state its
+own patch defines further down would be rejected for a record order the format does not require.
+
+Two rules stop at `MBF_STATES_START`, and both would otherwise change the **unpatched** game:
+
+- `isPspriteState`. `S_OLDBFG*` draws `SPR_BFGG` but sits in no `weaponinfo[]` chain, so a `Frame`
+  on one of those rows is world data, not a gun being held.
+- the `FULLBRIGHT_FRAMES` vote (`things/tables.ts`), which takes MBF's rows only where a `Frame`
+  record wrote one. Vanilla has one bright `SKUL F` against MBF's two dim beta-lost-soul rows, so
+  letting them vote unasked takes the glow off the charging lost soul.
+
+`A_FireOldBFG`, `A_BetaSkullAttack` and `A_Stop` sit on those rows and are **not** in
+`deh_bexptrs[]`, so no patch can name one. `ACTIONS` carries them anyway, marked `unnameable`:
+`lookupAction` refuses them, and a repoint that clears one reports under its name.
+
+Still out: **extended `mobjinfo`**. `Thing 138` and up name no row here, so a patch that builds a
+new *thing* on extended states — as nosp4.wad's does — gets the states and not the type. MBF21's
+`Args1`..`Args8` and `MBF21 Bits` are likewise unread.
 
 ## Action pointers
 
@@ -692,6 +743,13 @@ fall-through `next` and the patch is reported. `A_LineEffect` would trigger a ta
 from a state — the specials layer has the seam for it, which is what makes this out of scope rather
 than absent. Every other pointer either lands or names the per-type property that holds its
 behavior instead — § Action pointers.
+
+**Extended `mobjinfo`, and MBF21's own fields.** A patch may address states past vanilla's table
+(§ Extended states) but not *things* past `mobjinfo`'s 137 rows, so one that builds a new monster
+out of extended states gets its frames and no type to hang them on — nosp4.wad's six new monsters
+are exactly that. MBF21's `Args1`..`Args8`, its `MBF21 Bits` on a `Thing` or `Weapon`, and its own
+action pointers (`A_MonsterProjectile`, `A_HealChase`, `A_JumpIfTargetInSight`, …) are unread for
+the same reason the extended things are: each is its own table, not a bound.
 
 **`ID #`.** Permanently out, not merely deferred. Re-keying a thing's doomednum would have to
 rewrite ten type-keyed tables and seven `Set`s that are not all keyed by the same thing —

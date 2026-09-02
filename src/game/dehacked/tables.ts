@@ -727,9 +727,13 @@ export function classifyDehackedField(kind: DehRecordKind, field: string, row?: 
  * (docs/weapons.md § Fire rates). Every other first-person state is `noTarget` — a muzzle flash
  * because there is no weapon here to flash, and a bob, raise or lower state because this engine
  * draws no weapon sprite to animate. docs/dehacked.md § Frames.
+ *
+ * `stateCount` is the table the patch is growing (docs/dehacked.md § Extended states), which is
+ * what an index is held against rather than `STATES.length`: a record naming a row past the end is
+ * what grows it, and only one past the growth limit names nothing.
  */
-export function classifyDehackedFrame(index: number): DehSupport {
-  if (!Number.isInteger(index) || index < 0 || index >= STATES.length) return 'unknown';
+export function classifyDehackedFrame(index: number, stateCount: number = STATES.length): DehSupport {
+  if (!Number.isInteger(index) || index < 0 || index >= stateCount) return 'unknown';
   if (isFlashState(index)) return 'noTarget';
   if (isPspriteState(index)) return FIRE_CHAIN_STATES.has(index) ? 'applied' : 'noTarget';
   return 'applied';

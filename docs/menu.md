@@ -293,8 +293,9 @@ What is its own:
   tab carry the same columns, just narrower, since that panel is 620px against the overlay's 60% of
   the viewport. The markup is shared too, not just the strings: the
   `meta size`/`meta content`/`meta deh`/`meta info`/`meta support` class names the two stylesheets
-  target have one definition, and `#wadlibrary` nests inside `#menu` so its rows inherit `#menu .row` outright —
-  `library.css` carries only the deltas. So the two cannot disagree about what a file *is*, only
+  target have one definition, and `#wadlibrary` nests inside `#menu` so its rows inherit
+  `#menu .row` outright — `library.css` carries only the deltas. So the two cannot disagree about
+  what a file *is*, only
   about how much space there is to say it. (`describeSource` joins the same values and is now only
   the game-WAD select's one-line label; the support verdict is deliberately not in it, being a glyph
   rather than text.) The badge **leads** the fixed-width block, ahead of the size: what it carries
@@ -313,8 +314,8 @@ What is its own:
   docs/styles.md § Tokens.
 - **A file with nothing left to load is greyed out**, game WAD and add-on alike, and carries
   `won't load` in the badge column. The rule is `support.ts: nothingLoads`, deliberately **narrower
-  than the red glyph**: a megawad with one nodeless map among thirty-one that work still shows the red
-  cross, and is still perfectly pickable — refusing the whole file over one map would lock the
+  than the red glyph**: a megawad with one nodeless map among thirty-one that work still shows the
+  red cross, and is still perfectly pickable — refusing the whole file over one map would lock the
   player out of the rest of it. Only a file whose *every* map is refused is unpickable, and a
   map-less add-on never is, having nothing that could fail to load. A ZDoom-namespace UDMF file
   shows the red cross and stays pickable however many of its maps raise it: those maps load and are
@@ -457,9 +458,9 @@ text, is docs/wad.md § The text file beside a WAD; this is only what the menu d
 - **It is the menu's overlay, not the WAD Library's**, at `z-index: 6` local to `#menu` — one rung
   above `#wadlibrary`, because it opens from a row inside it and has to cover it. It leads
   `Menu.overlays` for the same reason (§ The overlays over the menu).
-- **The read is per-open and cancellable by the next one.** `WadInfoUi.token` rises on every open and
-  on close; a read that lands under a stale token is dropped, so a second file opened while the first
-  is still in flight is not overwritten by it, and nothing lands in a closed popup.
+- **The read is per-open and cancellable by the next one.** `WadInfoUi.token` rises on every open
+  and on close; a read that lands under a stale token is dropped, so a second file opened while the
+  first is still in flight is not overwritten by it, and nothing lands in a closed popup.
 - **The reader does not wrap** (`white-space: pre`). These files are laid out at a fixed column
   width, and wrapping them costs the banners and tables their alignment — a long line scrolls
   sideways instead. The panel's size is fixed on both axes, so it doesn't resize between
@@ -619,10 +620,11 @@ things spawn at all, and which stat table the monsters run on (docs/monster-ai.m
 silently do nothing until the next load. It shares a row with Level (`.columns even`, § Settings
 tab below).
 
-`#skill-select` is filled once from `SKILL_NAMES` and seeded from the `skill` setting; a change writes
-that field back, so the next visit opens on the last skill played. **What a start actually runs at is
-`currentSkill()`, read off the select, not off storage** — where `localStorage` is unavailable the
-write goes nowhere and reading it back would silently ignore the player's pick. `submit()` (the
+`#skill-select` is filled once from `SKILL_NAMES` and seeded from the `skill` setting; a change
+writes that field back, so the next visit opens on the last skill played. **What a start actually
+runs at is `currentSkill()`, read off the select, not off storage** — where `localStorage` is
+unavailable
+the write goes nowhere and reading it back would silently ignore the player's pick. `submit()` (the
 `?map=` deep-link path) reads the same getter, which is the stored skill there since nothing has
 touched the control.
 
@@ -746,8 +748,9 @@ surprise whatever the button is bound to.
 
 Every persisted value is a field of **one JSON object**, stored under the single `localStorage` key
 `topdoom.settings` and reached only through `util/storage.ts`: `readStorage(field, default)`,
-`readStorageObject(field)` and `writeStorage(field, value)`. Nothing else in `src/` touches
-`localStorage`.
+`readStorageObject(field)` and `writeStorage(field, value)`. Nothing else in `src/` reaches for
+`globalThis.localStorage`: `game/besttimes.ts`'s one pre-IndexedDB key goes through the same
+module's exported `webStorage()`, so the guard below covers it too.
 
 Three rules that module owns, so no call site repeats them:
 
@@ -926,8 +929,9 @@ lie in the other direction.
 **A level load shows nothing unless it is predicted to be slow.** `Game.loadLevel` is the one
 decision point — an exit, `R` after death, a checkpoint reload and the DEVMODE map jump all go
 through it — and it estimates the build from the map's `LINEDEFS` lump size (`mapLinedefBytes`, a
-directory lookup; a UDMF map's `TEXTMAP` size scaled to the same unit) times `buildMsPerKb`. Only above `SLOW_LOAD_MS` does the overlay go up. An
-ordinary level change is a few frames, and an overlay up that briefly is a flicker, not feedback.
+directory lookup; a UDMF map's `TEXTMAP` size scaled to the same unit) times `buildMsPerKb`. Only
+above `SLOW_LOAD_MS` does the overlay go up. An ordinary level change is a few frames, and an
+overlay up that briefly is a flicker, not feedback.
 
 **The estimate exists because the build cannot be interrupted.** `loadMapByIndex` is one synchronous
 block, so nothing paints while it runs and a "show it if it takes long" timer would fire into a
@@ -953,8 +957,8 @@ player's own machine rather than the one `BUILD_MS_PER_KB` was measured on.
 
 `DEVMODE` reads `import.meta.env.VITE_DEVMODE`, defaulting to `false`; set `VITE_DEVMODE=true` in a
 git-ignored `.env.local` at the repo root to turn it on (Vite loads `.env.local` itself, no plugin
-needed). It gates three things — `ui/devmode/debughud.ts`, `ui/hud/profiler.ts` and `ui/menu/menu.ts` — all because a
-player has no legitimate reason to reach for them:
+needed). It gates three things — `ui/devmode/debughud.ts`, `ui/hud/profiler.ts` and
+`ui/menu/menu.ts` — all because a player has no legitimate reason to reach for them:
 
 - **What `#hud` says** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, the
   element shows only the fps counter; on, the full

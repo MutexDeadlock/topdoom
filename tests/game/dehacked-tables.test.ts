@@ -152,7 +152,15 @@ describe('DEHACKED · classification', () => {
     assert.equal(classifyDehackedFrame(1), 'noTarget'); // S_LIGHTDONE
     assert.equal(classifyDehackedFrame(2), 'noTarget'); // S_PUNCH, the fist's bob
     assert.equal(classifyDehackedFrame(12), 'noTarget'); // S_PISTOLUP, the raise chain
-    assert.equal(classifyDehackedFrame(967), 'unknown');
+    // MBF's own appended states are world data here: `S_OLDBFG1` draws `SPR_BFGG` but sits in no
+    // `weaponinfo[]` chain, which is why patches use that range as scratch space.
+    assert.equal(classifyDehackedFrame(967), 'applied'); // S_TNT1
+    assert.equal(classifyDehackedFrame(999), 'applied'); // S_OLDBFG1
+    assert.equal(classifyDehackedFrame(1075), 'applied'); // S_MUSHROOM, the last MBF row
+    // Past the table — unless the patch's own records grew it that far.
+    assert.equal(classifyDehackedFrame(1076), 'unknown');
+    assert.equal(classifyDehackedFrame(1733), 'unknown');
+    assert.equal(classifyDehackedFrame(1733, 4304), 'applied');
     assert.equal(classifyDehackedFrame(-1), 'unknown');
     // The fields inside one.
     assert.equal(classifyDehackedField('frame', 'Sprite subnumber'), 'applied');

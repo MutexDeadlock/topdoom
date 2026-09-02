@@ -12,6 +12,7 @@
 import type { Wad, WadFile } from '../wad/wad.ts';
 import type { DehPatch, DehShortfall } from './dehacked/defs.ts';
 import { parseDehacked, WarningLog } from './dehacked/parse.ts';
+import { STATES } from './dehacked/states.ts';
 import { decodeTextLump } from '../wad/textlump.ts';
 
 export { parseDehacked } from './dehacked/parse.ts';
@@ -58,6 +59,9 @@ export function readDehacked(
   const warnings = new WarningLog();
   const applied: Record<string, number> = {};
   const sources: WadFile[] = [];
+  // The widest table any lump asked for: the merged edits are applied against one copy, and a lump
+  // that grew it further does not shrink for the others.
+  let stateCount = 0;
 
   for (const lump of lumps) {
     const patch = parseDehacked(decodeTextLump(wad.data(lump)), titleLookup);
@@ -72,6 +76,7 @@ export function readDehacked(
     for (const [key, value] of patch.musicLumps) musicLumps.set(key, value);
     for (const [key, value] of patch.strings) strings.set(key, value);
     for (const [key, value] of patch.pars) pars.set(key, value);
+    stateCount = Math.max(stateCount, patch.stateCount);
     warnings.merge(patch.warnings);
     for (const [key, n] of Object.entries(patch.applied)) applied[key] = (applied[key] ?? 0) + n;
     sources.push(lump.source);
@@ -89,6 +94,7 @@ export function readDehacked(
     musicLumps,
     strings,
     pars,
+    stateCount,
     warnings: warnings.drain(),
     applied,
     sources,
@@ -99,9 +105,12 @@ export function readDehacked(
  * One line naming what a patch changed, and one naming what it asked for that this engine
  * couldn't do — the console half of the coverage report. Empty strings where there is nothing to
  * say, so a caller can skip the log entirely. `files` comes back too, so `inspect-wad`'s longer
- * report labels itself the same way rather than re-joining the sources.
+ * report labels itself the same way rather than re-joining the sources, and `states` likewise: only
+ * that report prints it, but the phrasing belongs with the rest of the report's.
  */
-export function describeDehacked(patch: LoadedDehacked): { files: string; applied: string; skipped: string } {
+export function describeDehacked(
+  patch: LoadedDehacked,
+): { files: string; applied: string; skipped: string; states: string } {
   const files = patch.sources.map((f) => f.name).join(', ');
   const parts = Object.entries(patch.applied)
     .filter(([, n]) => n > 0)
@@ -115,9 +124,14 @@ export function describeDehacked(patch: LoadedDehacked): { files: string; applie
     .map(([support, n]) => `${n} ${support}`)
     .join(', ');
 
+  // Only where the patch grew the frame table past the one `info.c` ships — the number a reader
+  // needs to tell an MBF21-era patch from a vanilla one. docs/dehacked.md § Extended states.
+  const grown = patch.stateCount > STATES.length;
+
   return {
     files,
     applied: parts.length ? `DEHACKED (${files}): ${parts.join(', ')} applied` : '',
     skipped: skipped ? `DEHACKED (${files}): ${skipped}` : '',
+    states: grown ? `extended states: table grown to ${patch.stateCount} rows (from ${STATES.length})` : '',
   };
 }

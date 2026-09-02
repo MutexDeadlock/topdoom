@@ -148,9 +148,10 @@ describe('DEHACKED · the record grammar', () => {
     assert.deepEqual(patch.frameEdits, [{ index: 185, spriteNum: 29, subNumber: 32773, duration: 4, nextFrame: 186 }]);
     assert.equal(patch.applied.frame, 1);
     assert.deepEqual(patch.warnings, []);
-    // A field with no sink, and one with an out-of-range value, are reported and not carried.
+    // A field with no sink, and one with an out-of-range value, are reported and not carried. A
+    // `Next frame` does not itself grow the table, so 5000 names nothing this patch created.
     const odd = parseDehacked('Frame 185\nWobble = 7\nNext frame = 5000\n');
-    assert.deepEqual(odd.frameEdits, []);
+    assert.deepEqual(odd.frameEdits, [{ index: 185 }]);
     assert.deepEqual(odd.warnings.map((w) => [w.field, w.support]), [['Wobble', 'unknown'], ['Next frame', 'unknown']]);
   });
 
@@ -162,10 +163,10 @@ describe('DEHACKED · the record grammar', () => {
 
   test('a Frame on a weapon state is classed by what it is, not read', () => {
     // 13 is `S_PISTOL1`, the pistol's fire chain, whose tics *are* its rate here; 47 is the super
-    // shotgun's flash and 2 is `S_PUNCH`, the fist's bob — nothing here draws either; 999 is past
-    // the table.
+    // shotgun's flash and 2 is `S_PUNCH`, the fist's bob — nothing here draws either; 40000 is past
+    // what any patch may grow the table to.
     const patch = parseDehacked(
-      'Frame 13\nDuration = 8\nFrame 47\nDuration = 4\nFrame 2\nDuration = 9\nFrame 999\nDuration = 1\n',
+      'Frame 13\nDuration = 8\nFrame 47\nDuration = 4\nFrame 2\nDuration = 9\nFrame 40000\nDuration = 1\n',
     );
     assert.deepEqual(patch.frameEdits, [{ index: 13, duration: 8 }]);
     assert.deepEqual(
@@ -223,6 +224,69 @@ describe('DEHACKED · the record grammar', () => {
     const patch = parseDehacked('Thing 12\nHit points = banana\nMass = 12\n');
     assert.deepEqual(patch.thingEdits, [{ index: 12, mass: 12 }]);
     assert.equal(patch.warnings.some((w) => w.support === 'unknown'), true);
+  });
+});
+
+/**
+ * A patch addressing states past the table it was shipped with. docs/dehacked.md § Extended states.
+ */
+describe('DEHACKED · extended states', () => {
+  test('a Frame record past the table grows it, doubling as dsda does', () => {
+    const patch = parseDehacked('Frame 1733\nSprite number = 11\nDuration = 1\nNext frame = 1734\n');
+    assert.equal(patch.stateCount, 2152);
+    assert.deepEqual(patch.frameEdits, [{ index: 1733, spriteNum: 11, duration: 1, nextFrame: 1734 }]);
+    assert.deepEqual(patch.warnings, []);
+    // A patch naming nothing past the shipped table leaves it at `info.h`'s own count.
+    assert.equal(parseDehacked('Frame 185\nDuration = 4\n').stateCount, 1076);
+  });
+
+  test('a [CODEPTR] and a Pointer address a row too, and a fresh one carries no action', () => {
+    const bex = parseDehacked('[CODEPTR]\nFRAME 1733 = Chase\n');
+    assert.equal(bex.stateCount, 2152);
+    assert.deepEqual(bex.pointerEdits, [{ state: 1733, action: 'A_Chase' }]);
+    // `Codep Frame` copies off the pristine column, and a row the patch grew into has none — so
+    // this clears the target's action rather than reading past the table.
+    const ptr = parseDehacked('Pointer 12 (Frame 185)\nCodep Frame = 2000\n');
+    assert.equal(ptr.stateCount, 2152);
+    assert.deepEqual(ptr.pointerEdits, [{ state: 185, action: '' }]);
+  });
+
+  test('a pointer into the table is checked against the size the whole patch left', () => {
+    // The `Weapon` record comes first and names a state only defined further down — the order
+    // DeHackEd itself writes, and one dsda accepts because it follows the pointer at runtime.
+    const patch = parseDehacked('Weapon 7\nShooting frame = 1736\nFrame 1736\nDuration = 1\n');
+    assert.deepEqual(patch.weaponEdits, [{ index: 7, ammoType: -1, states: { atk: 1736 } }]);
+    assert.deepEqual(patch.warnings, []);
+  });
+
+  test('a pointer past the finished table is reported and taken back off its edit', () => {
+    // Nothing here addresses a row past 1076, so the table never grows and all three miss.
+    const patch = parseDehacked(
+      'Thing 2\nInitial frame = 3000\nHit points = 40\nWeapon 7\nShooting frame = 3000\nFrame 185\nNext frame = 3000\n',
+    );
+    assert.deepEqual(patch.thingEdits, [{ index: 2, health: 40 }]);
+    assert.deepEqual(patch.weaponEdits, [{ index: 7, ammoType: -1 }]);
+    assert.deepEqual(patch.frameEdits, [{ index: 185 }]);
+    assert.deepEqual(
+      patch.warnings.map((w) => [w.record, w.field, w.support]),
+      [['Thing', 'Initial frame', 'unknown'], ['Weapon', 'Shooting frame', 'unknown'], ['Frame', 'Next frame', 'unknown']],
+    );
+  });
+
+  test('an index past the growth guard names no state, and grows nothing', () => {
+    const patch = parseDehacked('Frame 40000\nDuration = 1\n[CODEPTR]\nFRAME 40000 = Chase\n');
+    assert.equal(patch.stateCount, 1076);
+    assert.deepEqual(patch.frameEdits, []);
+    assert.deepEqual(patch.pointerEdits, []);
+    assert.deepEqual(patch.warnings.map((w) => [w.record, w.support]), [['Frame', 'unknown'], ['[CODEPTR]', 'unknown']]);
+  });
+
+  test("MBF's own appended states are addressable without growing anything", () => {
+    // `S_DOGS_ATK2` and `S_OLDBFG1` — the two blocks patches use as scratch space.
+    const patch = parseDehacked('Frame 983\nSprite number = 145\nFrame 999\nDuration = 6\n');
+    assert.equal(patch.stateCount, 1076);
+    assert.deepEqual(patch.frameEdits, [{ index: 983, spriteNum: 145 }, { index: 999, duration: 6 }]);
+    assert.deepEqual(patch.warnings, []);
   });
 });
 
@@ -342,5 +406,15 @@ describe('DEHACKED · lump discovery', () => {
     const patch = readDehacked(wad)!;
     assert.deepEqual([...patch.pars], [['MAP01', 11], ['MAP02', 99], ['MAP03', 33]]);
     assert.deepEqual(patch.sources.map((f) => f.name), ['doom2.wad', 'later.wad']);
+  });
+
+  test('the merged table is as wide as the widest lump asked for', () => {
+    // One copy of `states[]` is applied for the whole set, so a lump that grew it further cannot be
+    // shrunk back by one that did not. docs/dehacked.md § Extended states.
+    const wad = new Wad([
+      wadFile('IWAD', 'doom2.wad', [{ name: 'DEHACKED', text: 'Frame 3000\nDuration = 1\n' }]),
+      wadFile('PWAD', 'later.wad', [{ name: 'DEHACKED', text: 'Frame 185\nDuration = 1\n' }]),
+    ]);
+    assert.equal(readDehacked(wad)!.stateCount, 4304);
   });
 });

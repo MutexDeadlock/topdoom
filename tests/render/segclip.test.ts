@@ -16,16 +16,17 @@ import { polygonArea } from '../fixtures/geometry.ts';
 /**
  * Two cells split by one partition from `(0, 0)` along `dir`, each holding one
  * subsector of the same sector. The right cell carries `wall` as its only (one-sided)
- * seg; the left has no segs, so its cell survives whole and the pair has to tile the
+ * seg — running the wall's whole length, or `segEdge` where given, on its `direction`
+ * side; the left has no segs, so its cell survives whole and the pair has to tile the
  * padded map quad between them. Everything else is the minimum `buildSubSectorPolys`
  * reads.
  */
-function twoCellMap(dir: Vertex, edge: [Vertex, Vertex], half: number): DoomMap {
+function twoCellMap(dir: Vertex, edge: [Vertex, Vertex], half: number, segEdge?: [Vertex, Vertex], direction = 0): DoomMap {
   return bspMap({
-    vertexes: [edge[0], edge[1]],
+    vertexes: [...edge, ...(segEdge ?? [])],
     sidedefs: [0],
     linedefs: [wall(0, 1)],
-    segs: [seg(0, 1, 0)],
+    segs: [segEdge ? seg(2, 3, 0, direction) : seg(0, 1, 0)],
     subsectors: [
       [0, 0],
       [0, 1],
@@ -55,12 +56,13 @@ describe('Rendering · seg clip slack', () => {
     assert.equal(covered, quadArea(half));
   });
 
-  test('a wall the cell is not already cut along keeps the plain slack', () => {
+  test('a wall the cell is not already cut along clips exactly', () => {
     // DOOM1 E1M6's closet at (3448, -1536), reduced: the last partition runs along
     // one wall and nothing bounds the cell on the other three, so the reach the
     // slack scales on is the whole map. Slack there is not a rounding error between
     // a partition and its linedef — it is floor standing in the void, which this
-    // camera sees over a 72-unit wall.
+    // camera sees over a 72-unit wall — and even a flat 4 units of it shows, as a
+    // step where such a leaf meets a partition-cut one along the same wall.
     const half = 512;
     const polys = buildSubSectorPolys(
       bspMap({
@@ -81,7 +83,33 @@ describe('Rendering · seg clip slack', () => {
     for (let i = 0; i < polys[0].points.length; i += 2) {
       const x = polys[0].points[i];
       const y = polys[0].points[i + 1];
-      assert.ok(x >= -8 && x <= 72 && y >= -8 && y <= 136, `floor stands at (${x}, ${y}), well past the box`);
+      assert.ok(x >= 0 && x <= 64 && y >= 0 && y <= 128, `floor stands at (${x}, ${y}), past the box`);
+    }
+    assert.equal(polygonArea(polys[0].points), 64 * 128, 'the floor is the box, and all of it');
+  });
+
+  test('a split seg clips along its linedef, not its rounded endpoints', () => {
+    // A wall of slope 3, and on it a seg the node builder split at y = 64 and y = 128 —
+    // split vertexes rounded to the integer grid, and rounded the way that tilts the
+    // seg's own line toward the floor. Nothing else bounds the leaf along the wall, so
+    // the clip is exact; carried down the cell, the seg's own line would run 18 units
+    // into the floor by the bottom of the map. Once with the wall drawn south to north
+    // and the seg on its front, once drawn the other way with the seg on its back: the
+    // floor stays east either way, which only `Seg.direction` can say.
+    const half = 256;
+    const a = { x: 0, y: 0 };
+    const b = { x: 64, y: 192 };
+    const sa = { x: 22, y: 64 };
+    const sb = { x: 42, y: 128 };
+    for (const [edge, segEdge, direction] of [
+      [[a, b], [sa, sb], 0],
+      [[b, a], [sb, sa], 1],
+    ] as [[Vertex, Vertex], [Vertex, Vertex], number][]) {
+      const polys = buildSubSectorPolys(twoCellMap({ x: 1, y: 0 }, edge, half, segEdge, direction));
+
+      // The wall passes (-253.3, -760); the floor is on its east.
+      assert.ok(pointInConvexPolygon(-240, -760, polys[1].points), `floor 13 units inside the wall is drawn (direction ${direction})`);
+      assert.ok(!pointInConvexPolygon(-260, -760, polys[1].points), `void 7 units past the wall is not (direction ${direction})`);
     }
   });
 

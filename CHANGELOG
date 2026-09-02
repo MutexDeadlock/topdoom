@@ -1,5 +1,8 @@
 v0.17.0 (2026-09-??)
 
+Heading towards 1.0 in big steps.
+But there will be an v0.18 before, then polishing and bug-fixing.
+
 Features and improvements
   - UDMF maps load (needs ZNODES): the doom namespace plays in full, ZDoom
     namespaces are flagged red but stay pickable (geometry yes, specials no)
@@ -34,10 +37,12 @@ Fixed bugs
     - a monster's shot sits at the original's own heights: a hitscan leaves at
       its species' fire height, a fireball 32 units up at both ends
     - weapon projectiles now leave the body instead of the player's head
+    - shots no longer slip through a crusher that has come down
   - knockback is now capped: a BFG-hit corpse no longer rockets out of the map
-  - shots no longer slip through a crusher that has come down
   - a silent teleporter no longer strands a camera turn (Q/E) part-way through
   - the camera yaw wraps at ±180° instead of counting up
+  - fixed some floors standing 4 units past a wall 
+    (BSP related stuff - don't ask me)
 
 
 ===============================================================================

@@ -15,279 +15,6 @@ import { clipConvexPolygon as clip, polygonCentroid, vecLength } from '../util/g
 import { SectorProbe, selfReferencing } from './sectorprobe.ts';
 
 /**
- * Least slack, in map units, on the clip against a subsector's own segs: how far the
- * node-clipped cell may stick out past a seg's line before that overhang is cut
- * away. Without it, a seg line that disagrees with the partition it shares an
- * edge with by a rounding error shaves a sliver off the cell that the neighbouring
- * subsector doesn't fill — a visible crack in the floor.
- * docs/render.md § Cracks between subsectors.
- */
-const SEG_CLIP_TOLERANCE = 4;
-/**
- * Most slack `segClipTolerance` will hand one seg. Both bounds are measured, not tuned —
- * docs/render.md § Cracks between subsectors.
- */
-const SEG_CLIP_MAX_TOLERANCE = 32;
-
-/**
- * How far off a seg's own endpoints a cell edge may sit and still count as the
- * same line, in map units. A node partition built from a linedef stores integer
- * `(x, y, dx, dy)`, so it can only be a rounding error off that linedef where the
- * two meet; two units is that with headroom.
- * docs/render.md § Cracks between subsectors.
- */
-const PARTITION_MATCH = 2;
-
-/**
- * Whether `cell` is already cut along this seg's own line — an edge of it running
- * within `PARTITION_MATCH` of both the seg's endpoints, which is what a node
- * partition built from the seg's linedef leaves. Only then is the seg's line and
- * the cell's boundary the *same* boundary, disagreeing by rounding, which is the
- * case `segClipTolerance` hands slack to.
- */
-function cellCutAlong(cell: number[], a: Vertex, b: Vertex): boolean {
-  const n = cell.length / 2;
-  for (let i = 0; i < n; i++) {
-    const px = cell[i * 2];
-    const py = cell[i * 2 + 1];
-    const qx = cell[((i + 1) % n) * 2];
-    const qy = cell[((i + 1) % n) * 2 + 1];
-    const ex = qx - px;
-    const ey = qy - py;
-    const edgeLength = Math.sqrt(ex * ex + ey * ey);
-    if (edgeLength === 0) continue;
-    const offA = Math.abs(ex * (a.y - py) - ey * (a.x - px)) / edgeLength;
-    if (offA > PARTITION_MATCH) continue;
-    const offB = Math.abs(ex * (b.y - py) - ey * (b.x - px)) / edgeLength;
-    if (offB <= PARTITION_MATCH) return true;
-  }
-  return false;
-}
-
-/**
- * Slack for one seg's clip: how far past its own endpoints the seg's line has to be
- * extrapolated to reach `cell`, in multiples of the seg's own length, clamped between
- * the two tolerances above. That ratio is how far the line can have drifted by the
- * time it gets there — docs/render.md § Cracks between subsectors.
- *
- * **Only a seg the cell is already cut along is scaled up.** Where the cell has no
- * boundary on the seg's line, the seg is the only thing bounding it there and the
- * drift the scaling pays for cannot have happened; slack would just leave floor
- * standing past the wall, which this camera sees over it — DOOM1 E1M6's closet at
- * (3448, −1536) stood 22 units out into the void.
- */
-function segClipTolerance(cell: number[], a: Vertex, b: Vertex): number {
-  const lengthSq = (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y);
-  if (lengthSq === 0 || !cellCutAlong(cell, a, b)) return SEG_CLIP_TOLERANCE;
-  // Compared squared, so the whole scan costs one square root rather than one per corner.
-  let reachSq = 0;
-  for (let i = 0; i < cell.length; i += 2) {
-    const x = cell[i];
-    const y = cell[i + 1];
-    const dSq = Math.min((x - a.x) * (x - a.x) + (y - a.y) * (y - a.y), (x - b.x) * (x - b.x) + (y - b.y) * (y - b.y));
-    if (dSq > reachSq) reachSq = dSq;
-  }
-  return Math.min(SEG_CLIP_MAX_TOLERANCE, Math.max(SEG_CLIP_TOLERANCE, Math.sqrt(reachSq / lengthSq)));
-}
-
-/**
- * How far the line may run past the wall on it before that overhang is looked at,
- * in map units. Measured, like the two tolerances above: the cracks this has to
- * tolerate are rounding-scale, and the overhangs it has to catch are the length
- * of a wall stub — tens of units — so anything in between works.
- * docs/render.md § Walls that stop inside their cell.
- */
-const SEG_SPAN_SLACK = 4;
-
-/**
- * How far past a wall's end, and how far off its line, the ground beyond it is
- * probed. Tuned by feel between the same two bounds as `SEG_SPAN_SLACK`: enough
- * to clear the line itself, little enough to stay in whatever is immediately
- * around the corner.
- */
-const WALL_END_PROBE = 4;
-
-/** One of a leaf's segs, endpoints as the VERTEXES records the map already holds. */
-interface Wall {
-  a: Vertex;
-  b: Vertex;
-  /** The SEGS record itself, so the repairs below can ask what sector its side names. */
-  seg: Seg;
-  /** Filed into the child on the wrong side of its own line — `wallFacesAwayFromCell`. */
-  wrongSide: boolean;
-}
-
-/**
- * Whether the wall on this seg's line really bounds `cell`, so that clipping the
- * cell by that line is right — false where the wall stops inside the cell and
- * the same leaf carries on around its end, which a clip by the infinite line
- * would cut away. Decided by probing the ground just past the end the leaf's
- * walls cover, on the side the clip would remove; the sparing is then bounded to
- * overhangs this sector could own at all.
- * docs/render.md § Walls that stop inside their cell.
- */
-function wallBoundsCell(probe: () => SectorProbe, cell: number[], walls: Wall[], index: number, sector: number): boolean {
-  const { a, b } = walls[index];
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lengthSq = dx * dx + dy * dy;
-  if (lengthSq === 0) return true;
-
-  // Where the wall's infinite line crosses the cell, in the wall's own parameter.
-  const n = cell.length / 2;
-  let tMin = Infinity;
-  let tMax = -Infinity;
-  let px = cell[(n - 1) * 2];
-  let py = cell[(n - 1) * 2 + 1];
-  let dPrev = dx * (py - a.y) - dy * (px - a.x);
-  for (let i = 0; i < n; i++) {
-    const qx = cell[i * 2];
-    const qy = cell[i * 2 + 1];
-    const dCur = dx * (qy - a.y) - dy * (qx - a.x);
-    if (dPrev > 0 !== dCur > 0 && dPrev !== dCur) {
-      const f = dPrev / (dPrev - dCur);
-      const ix = px + (qx - px) * f;
-      const iy = py + (qy - py) * f;
-      const t = ((ix - a.x) * dx + (iy - a.y) * dy) / lengthSq;
-      if (t < tMin) tMin = t;
-      if (t > tMax) tMax = t;
-    }
-    px = qx;
-    py = qy;
-    dPrev = dCur;
-  }
-  // The line misses the cell entirely: clipping by it is a no-op either way.
-  if (tMin > tMax) return true;
-
-  const length = Math.sqrt(lengthSq);
-  const slack = SEG_SPAN_SLACK / length;
-  // `lineCoverage` only ever widens [0, 1], so a crossing inside that span is
-  // covered whatever the scan would say. With the miss above, this leaves only
-  // about one wall in ten actually paying for the scan (measured on EPIC MAP03).
-  if (tMin >= -slack && tMax <= 1 + slack) return true;
-
-  const cover = lineCoverage(walls, index);
-  const beforeStart = cover.min - tMin > slack;
-  const afterEnd = tMax - cover.max > slack;
-  if (!beforeStart && !afterEnd) return true;
-  // What sparing the clip would spare is the piece on the far side of the line,
-  // whole — so it has to be a piece this sector could own.
-  if (!probe().withinSector(sector, clip(cell, a.x, a.y, -dx, -dy), SEG_CLIP_MAX_TOLERANCE)) return true;
-
-  // The clip keeps `side <= tolerance` (util/geom.ts), so it removes the left
-  // side of the seg's own direction — which is where the probe steps.
-  const offX = (-dy / length) * WALL_END_PROBE;
-  const offY = (dx / length) * WALL_END_PROBE;
-  const stepX = (dx / length) * WALL_END_PROBE;
-  const stepY = (dy / length) * WALL_END_PROBE;
-  const floorPast = (t: number, away: number) =>
-    probe().sectorIndexAt(a.x + dx * t + away * stepX + offX, a.y + dy * t + away * stepY + offY) === sector;
-  if (beforeStart && floorPast(cover.min, -1)) return false;
-  if (afterEnd && floorPast(cover.max, 1)) return false;
-  return true;
-}
-
-/**
- * Whether the leaf's node-plane cell lies entirely on the side of this wall that
- * its clip would discard — a seg the node builder filed into the child on the
- * *wrong side* of its own line. A seg that really bounds its cell has the cell on
- * its keep side; clipping by a wrong-side one would wipe the cell down to the
- * tolerance band and leave the rest a hole. The caller double-checks against the
- * ground before sparing anything. docs/render.md § Segs on the wrong side of their leaf.
- */
-function wallFacesAwayFromCell(cell: number[], a: Vertex, b: Vertex): boolean {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lengthSq = dx * dx + dy * dy;
-  if (lengthSq === 0) return false;
-  // Both tolerances are scaled by the length instead of the cross products divided
-  // by it, so the scan costs one square root rather than a division per corner.
-  // This runs for every seg of every leaf and rejects all but a handful, so the
-  // corner that proves the cell straddles the line exits on the spot.
-  const length = Math.sqrt(lengthSq);
-  const keepSide = -PARTITION_MATCH * length;
-  let max = -Infinity;
-  for (let i = 0; i < cell.length; i += 2) {
-    const d = dx * (cell[i + 1] - a.y) - dy * (cell[i] - a.x);
-    if (d < keepSide) return false;
-    if (d > max) max = d;
-  }
-  return max > SEG_CLIP_TOLERANCE * length;
-}
-
-/**
- * How far the cell's corners are pulled toward its centroid before probing the
- * ground under them. Tuned by feel: inside enough that a corner exactly on a
- * partition or wall line cannot probe the far side of it, outside enough that
- * the samples still see most of the cell.
- */
-const CELL_SAMPLE_SHRINK = 0.75;
-
-/**
- * The sector enclosing the cell's interior, or -1 when any of the samples —
- * the centroid, then each corner pulled toward it — lands in the void. The
- * wrong-side sparing's reality check: a cell whose interior is not all floor
- * keeps its clips, however broken its segs, so it can never stand a slab of
- * floor out in the void. docs/render.md § Segs on the wrong side of their leaf.
- */
-function enclosingSectorOfCell(probe: SectorProbe, cell: number[]): number {
-  const centre = polygonCentroid(cell);
-  const enclosing = probe.sectorIndexAt(centre.x, centre.y, true);
-  if (enclosing < 0) return -1;
-  for (let i = 0; i < cell.length; i += 2) {
-    const x = centre.x + (cell[i] - centre.x) * CELL_SAMPLE_SHRINK;
-    const y = centre.y + (cell[i + 1] - centre.y) * CELL_SAMPLE_SHRINK;
-    if (probe.sectorIndexAt(x, y, true) < 0) return -1;
-  }
-  return enclosing;
-}
-
-/** How far off a seg's line another seg may sit and still count as lying on it. Tuned by feel. */
-const COLLINEAR_EPS = 1;
-
-/**
- * How far along this wall's line the leaf's walls on that line reach, in the
- * wall's own parameter — [0, 1] widened by every collinear neighbour. Only the
- * one caller above, and only once it knows the answer can matter.
- */
-function lineCoverage(walls: Wall[], index: number): { min: number; max: number } {
-  const { a, b } = walls[index];
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lengthSq = dx * dx + dy * dy;
-  const length = Math.sqrt(lengthSq);
-  const cover = { min: 0, max: 1 };
-  for (const [i, other] of walls.entries()) {
-    if (i === index) continue;
-    const offA = Math.abs(dx * (other.a.y - a.y) - dy * (other.a.x - a.x)) / length;
-    const offB = Math.abs(dx * (other.b.y - a.y) - dy * (other.b.x - a.x)) / length;
-    if (offA > COLLINEAR_EPS || offB > COLLINEAR_EPS) continue;
-    const tA = ((other.a.x - a.x) * dx + (other.a.y - a.y) * dy) / lengthSq;
-    const tB = ((other.b.x - a.x) * dx + (other.b.y - a.y) * dy) / lengthSq;
-    cover.min = Math.min(cover.min, tA, tB);
-    cover.max = Math.max(cover.max, tA, tB);
-  }
-  return cover;
-}
-
-/**
- * The cell clipped against every seg of the leaf that really bounds it, in seg order.
- * `spare` skips the segs `wallFacesAwayFromCell` flagged; run with it false, the result
- * is bit-identical to never having detected one — which is what the reality check on the
- * sparing falls back to. docs/render.md § Segs on the wrong side of their leaf.
- */
-function clipBy(probe: () => SectorProbe, poly: number[], walls: Wall[], sector: number, spare: boolean): number[] {
-  let cell = poly;
-  for (const [i, wall] of walls.entries()) {
-    if (spare && wall.wrongSide) continue;
-    if (!wallBoundsCell(probe, cell, walls, i, sector)) continue;
-    cell = clip(cell, wall.a.x, wall.a.y, wall.b.x - wall.a.x, wall.b.y - wall.a.y, segClipTolerance(cell, wall.a, wall.b));
-    if (cell.length < 6) break;
-  }
-  return cell;
-}
-
-/**
  * A convex floor patch and the sector whose flat it wears — all a flat needs to
  * be drawn, and so what the mesh builder and `findSolidCaps` take. `SubSectorPoly`
  * is this plus what gameplay needs on top.
@@ -320,6 +47,48 @@ export interface SubSectorPoly extends SectorPoly {
 }
 
 /**
+ * Which leaves border each one, as compressed rows: leaf `i`'s neighbours are
+ * `leaves[starts[i]]` up to `leaves[starts[i + 1]]`.
+ */
+export interface LeafGraph {
+  starts: Int32Array;
+  leaves: Int32Array;
+}
+
+/**
+ * Least slack, in map units, on the clip against a seg whose line the cell is already
+ * cut along: how far the node-clipped cell may stick out past that line before the
+ * overhang is cut away. Without it, a seg line that disagrees with the partition it
+ * shares an edge with by a rounding error shaves a sliver off the cell that the
+ * neighbouring subsector doesn't fill — a visible crack in the floor.
+ * docs/render.md § Cracks between subsectors.
+ */
+const SEG_CLIP_TOLERANCE = 4;
+
+/**
+ * Most slack `segClipTolerance` will hand one seg. Both bounds are measured, not tuned —
+ * docs/render.md § Cracks between subsectors.
+ */
+const SEG_CLIP_MAX_TOLERANCE = 32;
+
+/**
+ * How far off a seg's own endpoints a cell edge may sit and still count as the
+ * same line, in map units. A node partition built from a linedef stores integer
+ * `(x, y, dx, dy)`, so it can only be a rounding error off that linedef where the
+ * two meet; two units is that with headroom.
+ * docs/render.md § Cracks between subsectors.
+ */
+const PARTITION_MATCH = 2;
+
+/**
+ * How far past an edge the neighbour probes sample, in map units — `buildLeafGraph`'s and
+ * `buildIslands`'. **Tuned by feel**: a robustness value, far enough out to clear the clip's float
+ * noise and the overhang `segClipTolerance` leaves, short enough not to step over a sliver leaf
+ * whole.
+ */
+const NEIGHBOUR_PROBE = 0.5;
+
+/**
  * One rebuild per map, handed to all three of its consumers — `World`'s
  * subsector -> sector table, the mesh build and the fog grid all want the same
  * polygons. Weak on the map, so a torn-down level takes its polygons with it.
@@ -327,6 +96,12 @@ export interface SubSectorPoly extends SectorPoly {
  * sector heights and lights, never `vertexes`/`segs`/`nodes`.
  */
 const built = new WeakMap<DoomMap, SubSectorPoly[]>();
+
+/** One rebuild per map, like `buildSubSectorPolys`, and weak on it for the same reason. */
+const graphs = new WeakMap<DoomMap, LeafGraph>();
+
+/** One rebuild per map, like `buildLeafGraph`, and weak on it for the same reason. */
+const islands = new WeakMap<DoomMap, Int32Array>();
 
 /**
  * SEGS only stores edges that lie on real linedefs; the edges introduced by BSP
@@ -341,6 +116,84 @@ export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
   const polys = rebuildSubSectorPolys(map);
   built.set(map, polys);
   return polys;
+}
+
+/** Sector of a subsector, resolved via its first seg -> linedef -> sidedef. */
+export function sectorOfSubSector(map: DoomMap, ssIndex: number): number {
+  const ss = map.subsectors[ssIndex];
+  if (!ss) return 0;
+  for (let i = 0; i < ss.count; i++) {
+    const seg = map.segs[ss.first + i];
+    if (!seg) continue;
+    const sector = sectorOfSeg(map, seg);
+    if (sector >= 0) return sector;
+  }
+  return 0;
+}
+
+/** Vanilla's `R_PointInSubsector`, or -1 on a tree the descent can't finish. */
+export function subsectorAtPoint(map: DoomMap, x: number, y: number): number {
+  if (map.nodes.length === 0) return map.subsectors.length > 0 ? 0 : -1;
+  let child = map.nodes.length - 1;
+  // The tree is data from a file: a corrupt child index could otherwise loop forever.
+  for (let step = 0; step <= map.nodes.length; step++) {
+    if (child & SUBSECTOR_BIT) {
+      const leaf = child & ~SUBSECTOR_BIT;
+      return leaf < map.subsectors.length ? leaf : -1;
+    }
+    const node = map.nodes[child];
+    if (!node) return -1;
+    // The same side test `rebuildSubSectorPolys` clips with: cross <= 0 is the right child.
+    child = node.dx * (y - node.y) - node.dy * (x - node.x) <= 0 ? node.rightChild : node.leftChild;
+  }
+  return -1;
+}
+
+/**
+ * Which leaves touch which. Vanilla SEGS carry no minisegs, so a leaf's splits into the rest of
+ * its own sector have no edge to read the neighbour off; this recovers them geometrically instead,
+ * probing a map unit's half past the midpoint of every polygon edge and descending the tree there.
+ * docs/render.md § Leaf adjacency.
+ */
+export function buildLeafGraph(map: DoomMap): LeafGraph {
+  const cached = graphs.get(map);
+  if (cached) return cached;
+  const graph = rebuildLeafGraph(map);
+  graphs.set(map, graph);
+  return graph;
+}
+
+/**
+ * Which connected region each leaf belongs to, as an island per subsector: two leaves share one
+ * where a two-sided line or a BSP split joins them, so a map is usually a single island and a
+ * second is space only a teleporter reaches. Both union rules below err toward joining, since a
+ * link too many only fails to hide something while a link missing is a hole in the view.
+ * docs/render.md § Islands, docs/fogofwar.md § Islands for what reads it.
+ */
+export function buildIslands(map: DoomMap): Int32Array {
+  const cached = islands.get(map);
+  if (cached) return cached;
+  const built = rebuildIslands(map);
+  islands.set(map, built);
+  return built;
+}
+
+/** One of a leaf's segs, endpoints as the VERTEXES records the map already holds. */
+interface Wall {
+  /** The seg's own endpoints: its extent along the wall, never its line. */
+  a: Vertex;
+  b: Vertex;
+  /**
+   * The wall's line — the seg's linedef, oriented the seg's way — which every side
+   * question runs along: the clip, the wrong-side judgement, the sparing preview.
+   * docs/render.md § Cracks between subsectors.
+   */
+  lineA: Vertex;
+  lineB: Vertex;
+  /** The SEGS record itself, so the repairs below can ask what sector its side names. */
+  seg: Seg;
+  /** Filed into the child on the wrong side of its own line — `wallFacesAwayFromCell`. */
+  wrongSide: boolean;
 }
 
 function rebuildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
@@ -370,16 +223,18 @@ function rebuildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
       if (!seg) continue;
       // A GL miniseg lies on the split that made the leaf, which the node clip above has
       // already applied — and every repair below asks a question about a linedef, which a
-      // miniseg has none of. docs/wad.md § GL nodes.
+      // miniseg has none of (docs/wad.md § GL nodes), or about the seg's extent, which a
+      // seg with none cannot answer either.
       if (seg.linedef === NO_LINE) continue;
       const a = map.vertexes[seg.v1];
       const b = map.vertexes[seg.v2];
-      if (!a || !b) continue;
+      if (!a || !b || (a.x === b.x && a.y === b.y)) continue;
+      const [lineA, lineB] = linedefLine(map, seg) ?? [a, b];
       // Judged here against the untouched node cell: once one wrong-side clip has
       // run, the cell the next would be judged against is already gone.
-      const wrongSide = wallFacesAwayFromCell(poly, a, b);
+      const wrongSide = wallFacesAwayFromCell(poly, lineA, lineB);
       anyWrongSide ||= wrongSide;
-      walls.push({ a, b, seg, wrongSide });
+      walls.push({ a, b, lineA, lineB, seg, wrongSide });
       if (!selfReferencing(map, seg.linedef)) allSelfRef = false;
     }
 
@@ -391,7 +246,7 @@ function rebuildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
     // Segs the node builder filed into the child on the wrong side of their own
     // line are spared their clip entirely — with the drawn sector re-resolved,
     // since such a seg's front speaks for the neighbour — where the cell they
-    // would wipe turns out to be all floor.
+    // would wipe is all floor.
     // docs/render.md § Segs on the wrong side of their leaf.
     let clipped = clipBy(probe, poly, walls, bspSector, anyWrongSide);
     if (anyWrongSide) {
@@ -478,77 +333,270 @@ function rebuildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
   return result;
 }
 
+/**
+ * The seg's linedef, oriented the seg's way — the wall's line, where a split seg's
+ * own endpoints are rounded off it — or null where the linedef or a vertex of it is
+ * missing. `Seg.direction` is the one record of which way the seg runs.
+ * docs/render.md § Cracks between subsectors.
+ */
+function linedefLine(map: DoomMap, seg: Seg): [Vertex, Vertex] | null {
+  const line = map.linedefs[seg.linedef];
+  const v1 = line && map.vertexes[line.v1];
+  const v2 = line && map.vertexes[line.v2];
+  if (!v1 || !v2) return null;
+  return seg.direction === 0 ? [v1, v2] : [v2, v1];
+}
+
+/**
+ * Whether the leaf's node-plane cell lies entirely on the side of this wall that
+ * its clip would discard — a seg the node builder filed into the child on the
+ * *wrong side* of its own line. A seg that really bounds its cell has the cell on
+ * its keep side; clipping by a wrong-side one would wipe the cell down to the
+ * tolerance band and leave the rest a hole. The caller double-checks against the
+ * ground before sparing anything. docs/render.md § Segs on the wrong side of their leaf.
+ */
+function wallFacesAwayFromCell(cell: number[], a: Vertex, b: Vertex): boolean {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSq = dx * dx + dy * dy;
+  // Both tolerances are scaled by the length instead of the cross products divided
+  // by it, so the scan costs one square root rather than a division per corner.
+  // This runs for every seg of every leaf and rejects all but a handful, so the
+  // corner that proves the cell straddles the line exits on the spot.
+  const length = Math.sqrt(lengthSq);
+  const keepSide = -PARTITION_MATCH * length;
+  let max = -Infinity;
+  for (let i = 0; i < cell.length; i += 2) {
+    const d = dx * (cell[i + 1] - a.y) - dy * (cell[i] - a.x);
+    if (d < keepSide) return false;
+    if (d > max) max = d;
+  }
+  return max > SEG_CLIP_TOLERANCE * length;
+}
+
+/**
+ * The cell clipped against every seg of the leaf that really bounds it, in seg order.
+ * `spare` skips the segs `wallFacesAwayFromCell` flagged; run with it false, the result
+ * is bit-identical to never having detected one — which is what the reality check on the
+ * sparing falls back to. docs/render.md § Segs on the wrong side of their leaf.
+ */
+function clipBy(probe: () => SectorProbe, poly: number[], walls: Wall[], sector: number, spare: boolean): number[] {
+  let cell = poly;
+  for (const [i, wall] of walls.entries()) {
+    if (spare && wall.wrongSide) continue;
+    if (!wallBoundsCell(probe, cell, walls, i, sector)) continue;
+    const { lineA, lineB } = wall;
+    cell = clip(cell, lineA.x, lineA.y, lineB.x - lineA.x, lineB.y - lineA.y, segClipTolerance(cell, wall.a, wall.b));
+    if (cell.length < 6) break;
+  }
+  return cell;
+}
+
+/**
+ * How far the line may run past the wall on it before that overhang is looked at,
+ * in map units. Measured, like the two tolerances above: the cracks this has to
+ * tolerate are rounding-scale, and the overhangs it has to catch are the length
+ * of a wall stub — tens of units — so anything in between works.
+ * docs/render.md § Walls that stop inside their cell.
+ */
+const SEG_SPAN_SLACK = 4;
+
+/**
+ * How far past a wall's end, and how far off its line, the ground beyond it is
+ * probed. Tuned by feel between the same two bounds as `SEG_SPAN_SLACK`: enough
+ * to clear the line itself, little enough to stay in whatever is immediately
+ * around the corner.
+ */
+const WALL_END_PROBE = 4;
+
+/**
+ * Whether the wall on this seg's line really bounds `cell`, so that clipping the
+ * cell by that line is right — false where the wall stops inside the cell and
+ * the same leaf carries on around its end, which a clip by the infinite line
+ * would cut away. Decided by probing the ground just past the end the leaf's
+ * walls cover, on the side the clip would remove; the sparing is then bounded to
+ * overhangs this sector could own at all.
+ * docs/render.md § Walls that stop inside their cell.
+ */
+function wallBoundsCell(probe: () => SectorProbe, cell: number[], walls: Wall[], index: number, sector: number): boolean {
+  const { a, b, lineA, lineB } = walls[index];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSq = dx * dx + dy * dy;
+
+  // Where the wall's infinite line crosses the cell, in the wall's own parameter.
+  const n = cell.length / 2;
+  let tMin = Infinity;
+  let tMax = -Infinity;
+  let px = cell[(n - 1) * 2];
+  let py = cell[(n - 1) * 2 + 1];
+  let dPrev = dx * (py - a.y) - dy * (px - a.x);
+  for (let i = 0; i < n; i++) {
+    const qx = cell[i * 2];
+    const qy = cell[i * 2 + 1];
+    const dCur = dx * (qy - a.y) - dy * (qx - a.x);
+    if (dPrev > 0 !== dCur > 0 && dPrev !== dCur) {
+      const f = dPrev / (dPrev - dCur);
+      const ix = px + (qx - px) * f;
+      const iy = py + (qy - py) * f;
+      const t = ((ix - a.x) * dx + (iy - a.y) * dy) / lengthSq;
+      if (t < tMin) tMin = t;
+      if (t > tMax) tMax = t;
+    }
+    px = qx;
+    py = qy;
+    dPrev = dCur;
+  }
+  // The line misses the cell entirely: clipping by it is a no-op either way.
+  if (tMin > tMax) return true;
+
+  const length = Math.sqrt(lengthSq);
+  const slack = SEG_SPAN_SLACK / length;
+  // `lineCoverage` only ever widens [0, 1], so a crossing inside that span is
+  // covered whatever the scan would say. With the miss above, this leaves only
+  // about one wall in ten actually paying for the scan (measured on EPIC MAP03).
+  if (tMin >= -slack && tMax <= 1 + slack) return true;
+
+  const cover = lineCoverage(walls, index);
+  const beforeStart = cover.min - tMin > slack;
+  const afterEnd = tMax - cover.max > slack;
+  if (!beforeStart && !afterEnd) return true;
+  // What sparing the clip would spare is the piece on the far side of the line,
+  // whole — so it has to be a piece this sector could own.
+  const spared = clip(cell, lineA.x, lineA.y, lineA.x - lineB.x, lineA.y - lineB.y);
+  if (!probe().withinSector(sector, spared, SEG_CLIP_MAX_TOLERANCE)) return true;
+
+  // The clip keeps `side <= tolerance` (util/geom.ts), so it removes the left
+  // side of the seg's own direction — which is where the probe steps.
+  const offX = (-dy / length) * WALL_END_PROBE;
+  const offY = (dx / length) * WALL_END_PROBE;
+  const stepX = (dx / length) * WALL_END_PROBE;
+  const stepY = (dy / length) * WALL_END_PROBE;
+  const floorPast = (t: number, away: number) =>
+    probe().sectorIndexAt(a.x + dx * t + away * stepX + offX, a.y + dy * t + away * stepY + offY) === sector;
+  if (beforeStart && floorPast(cover.min, -1)) return false;
+  if (afterEnd && floorPast(cover.max, 1)) return false;
+  return true;
+}
+
+/**
+ * How far off a seg's line a seg of another linedef may sit and still count as lying
+ * on it. Tuned by feel; a seg of the same linedef lies on it by definition.
+ */
+const COLLINEAR_EPS = 1;
+
+/**
+ * How far along this wall's line the leaf's walls on that line reach, in the
+ * wall's own parameter — [0, 1] widened by every collinear neighbour. Only the
+ * one caller above, and only once it knows the answer can matter.
+ */
+function lineCoverage(walls: Wall[], index: number): { min: number; max: number } {
+  const { a, b, seg } = walls[index];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSq = dx * dx + dy * dy;
+  const length = Math.sqrt(lengthSq);
+  const cover = { min: 0, max: 1 };
+  for (const [i, other] of walls.entries()) {
+    if (i === index) continue;
+    if (other.seg.linedef !== seg.linedef) {
+      const offA = Math.abs(dx * (other.a.y - a.y) - dy * (other.a.x - a.x)) / length;
+      const offB = Math.abs(dx * (other.b.y - a.y) - dy * (other.b.x - a.x)) / length;
+      if (offA > COLLINEAR_EPS || offB > COLLINEAR_EPS) continue;
+    }
+    const tA = ((other.a.x - a.x) * dx + (other.a.y - a.y) * dy) / lengthSq;
+    const tB = ((other.b.x - a.x) * dx + (other.b.y - a.y) * dy) / lengthSq;
+    cover.min = Math.min(cover.min, tA, tB);
+    cover.max = Math.max(cover.max, tA, tB);
+  }
+  return cover;
+}
+
+/**
+ * Slack for one seg's clip: how far past its own endpoints the seg's line has to be
+ * extrapolated to reach `cell`, in multiples of the seg's own length, clamped between
+ * the two tolerances above. That ratio is how far the line can have drifted by the
+ * time it gets there — docs/render.md § Cracks between subsectors.
+ *
+ * **Only a seg the cell is already cut along gets any slack.** Where the cell has no
+ * boundary on the seg's line, the seg is the only thing bounding it there and the
+ * drift the slack pays for cannot have happened, so the clip is exact; any slack
+ * there is floor standing past the wall, which this camera sees over.
+ * docs/render.md § Cracks between subsectors.
+ */
+function segClipTolerance(cell: number[], a: Vertex, b: Vertex): number {
+  if (!cellCutAlong(cell, a, b)) return 0;
+  const lengthSq = (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y);
+  // Compared squared, so the whole scan costs one square root rather than one per corner.
+  let reachSq = 0;
+  for (let i = 0; i < cell.length; i += 2) {
+    const x = cell[i];
+    const y = cell[i + 1];
+    const dSq = Math.min((x - a.x) * (x - a.x) + (y - a.y) * (y - a.y), (x - b.x) * (x - b.x) + (y - b.y) * (y - b.y));
+    if (dSq > reachSq) reachSq = dSq;
+  }
+  return Math.min(SEG_CLIP_MAX_TOLERANCE, Math.max(SEG_CLIP_TOLERANCE, Math.sqrt(reachSq / lengthSq)));
+}
+
+/**
+ * Whether `cell` is already cut along this seg's own line — an edge of it running
+ * within `PARTITION_MATCH` of both the seg's endpoints, which is what a node
+ * partition built from the seg's linedef leaves. Only then is the seg's line and
+ * the cell's boundary the *same* boundary, disagreeing by rounding, which is the
+ * case `segClipTolerance` hands slack to.
+ */
+function cellCutAlong(cell: number[], a: Vertex, b: Vertex): boolean {
+  const n = cell.length / 2;
+  for (let i = 0; i < n; i++) {
+    const px = cell[i * 2];
+    const py = cell[i * 2 + 1];
+    const qx = cell[((i + 1) % n) * 2];
+    const qy = cell[((i + 1) % n) * 2 + 1];
+    const ex = qx - px;
+    const ey = qy - py;
+    const edgeLength = Math.sqrt(ex * ex + ey * ey);
+    if (edgeLength === 0) continue;
+    const offA = Math.abs(ex * (a.y - py) - ey * (a.x - px)) / edgeLength;
+    if (offA > PARTITION_MATCH) continue;
+    const offB = Math.abs(ex * (b.y - py) - ey * (b.x - px)) / edgeLength;
+    if (offB <= PARTITION_MATCH) return true;
+  }
+  return false;
+}
+
+/**
+ * How far the cell's corners are pulled toward its centroid before probing the
+ * ground under them. Tuned by feel: inside enough that a corner exactly on a
+ * partition or wall line cannot probe the far side of it, outside enough that
+ * the samples still see most of the cell.
+ */
+const CELL_SAMPLE_SHRINK = 0.75;
+
+/**
+ * The sector enclosing the cell's interior, or -1 when any of the samples —
+ * the centroid, then each corner pulled toward it — lands in the void. The
+ * wrong-side sparing's reality check: a cell whose interior is not all floor
+ * keeps its clips, however broken its segs, so it can never stand a slab of
+ * floor out in the void. docs/render.md § Segs on the wrong side of their leaf.
+ */
+function enclosingSectorOfCell(probe: SectorProbe, cell: number[]): number {
+  const centre = polygonCentroid(cell);
+  const enclosing = probe.sectorIndexAt(centre.x, centre.y, true);
+  if (enclosing < 0) return -1;
+  for (let i = 0; i < cell.length; i += 2) {
+    const x = centre.x + (cell[i] - centre.x) * CELL_SAMPLE_SHRINK;
+    const y = centre.y + (cell[i + 1] - centre.y) * CELL_SAMPLE_SHRINK;
+    if (probe.sectorIndexAt(x, y, true) < 0) return -1;
+  }
+  return enclosing;
+}
+
 /** Sector the seg's own side names, or -1 where its linedef or sidedef is missing. */
 function sectorOfSeg(map: DoomMap, seg: Seg): number {
   const line = map.linedefs[seg.linedef];
   if (!line) return -1;
   const side = map.sidedefs[segSide(line, seg.direction)];
   return side ? side.sector : -1;
-}
-
-/** Sector of a subsector, resolved via its first seg -> linedef -> sidedef. */
-export function sectorOfSubSector(map: DoomMap, ssIndex: number): number {
-  const ss = map.subsectors[ssIndex];
-  if (!ss) return 0;
-  for (let i = 0; i < ss.count; i++) {
-    const seg = map.segs[ss.first + i];
-    if (!seg) continue;
-    const sector = sectorOfSeg(map, seg);
-    if (sector >= 0) return sector;
-  }
-  return 0;
-}
-
-/**
- * How far past an edge the neighbour probes sample, in map units — `buildLeafGraph`'s and
- * `buildIslands`'. **Tuned by feel**: a robustness value, far enough out to clear the clip's float
- * noise and the overhang `segClipTolerance` leaves, short enough not to step over a sliver leaf
- * whole.
- */
-const NEIGHBOUR_PROBE = 0.5;
-
-/**
- * Which leaves border each one, as compressed rows: leaf `i`'s neighbours are
- * `leaves[starts[i]]` up to `leaves[starts[i + 1]]`.
- */
-export interface LeafGraph {
-  starts: Int32Array;
-  leaves: Int32Array;
-}
-
-/** Vanilla's `R_PointInSubsector`, or -1 on a tree the descent can't finish. */
-export function subsectorAtPoint(map: DoomMap, x: number, y: number): number {
-  if (map.nodes.length === 0) return map.subsectors.length > 0 ? 0 : -1;
-  let child = map.nodes.length - 1;
-  // The tree is data from a file: a corrupt child index could otherwise loop forever.
-  for (let step = 0; step <= map.nodes.length; step++) {
-    if (child & SUBSECTOR_BIT) {
-      const leaf = child & ~SUBSECTOR_BIT;
-      return leaf < map.subsectors.length ? leaf : -1;
-    }
-    const node = map.nodes[child];
-    if (!node) return -1;
-    // The same side test `rebuildSubSectorPolys` clips with: cross <= 0 is the right child.
-    child = node.dx * (y - node.y) - node.dy * (x - node.x) <= 0 ? node.rightChild : node.leftChild;
-  }
-  return -1;
-}
-
-/** One rebuild per map, like `buildSubSectorPolys`, and weak on it for the same reason. */
-const graphs = new WeakMap<DoomMap, LeafGraph>();
-
-/**
- * Which leaves touch which. Vanilla SEGS carry no minisegs, so a leaf's splits into the rest of
- * its own sector have no edge to read the neighbour off; this recovers them geometrically instead,
- * probing a map unit's half past the midpoint of every polygon edge and descending the tree there.
- * docs/render.md § Leaf adjacency.
- */
-export function buildLeafGraph(map: DoomMap): LeafGraph {
-  const cached = graphs.get(map);
-  if (cached) return cached;
-  const graph = rebuildLeafGraph(map);
-  graphs.set(map, graph);
-  return graph;
 }
 
 function rebuildLeafGraph(map: DoomMap): LeafGraph {
@@ -580,24 +628,6 @@ function rebuildLeafGraph(map: DoomMap): LeafGraph {
   }
   starts[polys.length] = leaves.length;
   return { starts, leaves: Int32Array.from(leaves) };
-}
-
-/** One rebuild per map, like `buildLeafGraph`, and weak on it for the same reason. */
-const islands = new WeakMap<DoomMap, Int32Array>();
-
-/**
- * Which connected region each leaf belongs to, as an island per subsector: two leaves share one
- * where a two-sided line or a BSP split joins them, so a map is usually a single island and a
- * second is space only a teleporter reaches. Both union rules below err toward joining, since a
- * link too many only fails to hide something while a link missing is a hole in the view.
- * docs/render.md § Islands, docs/fogofwar.md § Islands for what reads it.
- */
-export function buildIslands(map: DoomMap): Int32Array {
-  const cached = islands.get(map);
-  if (cached) return cached;
-  const built = rebuildIslands(map);
-  islands.set(map, built);
-  return built;
 }
 
 function rebuildIslands(map: DoomMap): Int32Array {
@@ -638,7 +668,9 @@ function rebuildIslands(map: DoomMap): Int32Array {
       const my = (a.y + b.y) / 2;
       for (let side = -1; side <= 1; side += 2) {
         const other = subsectorAtPoint(map, mx - dy * step * side, my + dx * step * side);
-        if (other >= 0 && other !== ss) union(ss, other);
+        if (other >= 0 && other !== ss) {
+          union(ss, other);
+        }
       }
     }
   }
@@ -664,7 +696,9 @@ function rebuildIslands(map: DoomMap): Int32Array {
     for (let k = graph.starts[i]; k < graph.starts[i + 1]; k++) {
       const j = graph.leaves[k];
       const sj = polys[j].physicalSector;
-      if (si === sj || joined.has(si * sectorCount + sj)) union(i, j);
+      if (si === sj || joined.has(si * sectorCount + sj)) {
+        union(i, j);
+      }
     }
   }
 

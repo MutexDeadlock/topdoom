@@ -13,7 +13,8 @@ the level are docs/sprites.md; the loop that drives a frame is docs/frameloop.md
 WAD. `buildSubSectorPolys` rebuilds each subsector by taking a quad covering the whole map and
 clipping it (Sutherland-Hodgman) against every partition line on the path from the BSP root down to
 that leaf, then against the subsector's own segs — skipping the minisegs a GL BSP closes its leaves
-with, which lie on partitions the cell has already been clipped by (docs/wad.md § GL nodes). The
+with, which lie on partitions the cell has already been clipped by (docs/wad.md § GL nodes), and any
+seg with no length, which can answer none of the questions the clip asks of one. The
 result is convex, so a triangle fan is enough.
 Traversal is iterative (stack-based), not recursive — some maps have deep BSP trees.
 `sectorOfSubSector` resolves a subsector's sector via its first seg → linedef → sidedef.
@@ -47,15 +48,30 @@ linedef 99's 8-unit seg cut a ~350 × 100 wedge out of the floor around `(-400, 
 and 1° off the partition that shares its corner — cut a ~500-unit-long wedge between subsectors 911
 and 912, opening the floor onto the blood pit two sectors below it.
 
-**Only a seg the cell is already cut along is scaled up** (`cellCutAlong`): an edge of the cell has
-to run within `PARTITION_MATCH` (2 units) of both of the seg's endpoints, which is what a partition
-built from the seg's own linedef leaves behind. That is the whole premise of the scaling — two
-boundaries that are meant to be the same line, disagreeing by rounding. Where the cell has *no*
+**Only a seg the cell is already cut along gets any slack** (`cellCutAlong`): an edge of the cell
+has to run within `PARTITION_MATCH` (2 units) of both of the seg's endpoints, which is what a
+partition built from the seg's own linedef leaves behind. That is the whole premise of the slack —
+two boundaries that are meant to be the same line, disagreeing by rounding. Where the cell has *no*
 boundary on that line, the seg is the only thing bounding it there, no drift can have happened, and
-slack only leaves floor standing past the wall. Repro: DOOM1 E1M6's closet at `(3448, -1536)`, an
-80 × 128 room whose leaf gets the whole east of the map as its cell because nothing out there needs
-a partition — its floor stood 11 to 22 units past all four walls, in the open void, under a camera
-that looks over a 72-unit wall.
+the clip is exact: slack only leaves floor standing past the wall. Repros: DOOM1 E1M6's closet at
+`(3448, -1536)`, an 80 × 128 room whose leaf gets the whole east of the map as its cell because
+nothing out there needs a partition — scaled, its floor stood 11 to 22 units past all four walls,
+in the open void, under a camera that looks over a 72-unit wall; and DOOM2 MAP01's wall along
+`y = 1664` west of `x = 64`, where a flat 4 units left subsector 183 ending 4 units past the leaf
+beside it, which a partition had cut on the wall exactly — a step in the floor's edge, in plain
+view from the level's second room.
+
+**The wall's line is the seg's linedef, not the seg** (`linedefLine`, oriented by `Seg.direction`).
+A seg the node builder split ends on a vertex rounded to the integer grid, so the line through its
+own endpoints sits up to √2/2 units off the wall; clipped exactly along *that*, a leaf loses a
+hairline of floor at the wall's foot wherever the rounding fell inward — every long diagonal
+one-sided wall in the stock maps has some (E1M8's outer walls, MAP20's). The linedef's vertices are
+the wall itself, and the wall mesh stands on them. Every *side* question runs along that line — the
+clip, the wrong-side judgement (§ Segs on the wrong side of their leaf), the preview of what a
+spared cut would keep (§ Walls that stop inside their cell) — so they cannot disagree about which
+side of the wall the cell is on. The seg's own endpoints keep only the *extent* questions: the
+partition match and the slack's reach, which are about the rounded endpoints the partition was
+built through, and the span a wall covers along its line.
 
 **The tolerance can never make two subsectors overlap**, which is why it can be this blunt. Node
 clipping alone partitions the plane into disjoint cells, and a subsector's polygon is only ever that
@@ -73,7 +89,9 @@ it), scaling the tolerance this way cuts total crack area by 29% against a flat 
 about 5. Gating the scaling on `cellCutAlong` then removes 8.5M units² of that overhang across the
 same WADs (2-unit sampling of every leaf whose polygon changed, counting only area no other leaf
 draws) and opens 23k units² of new crack — 370:1, and the crack it opens is in places the map's own
-leaves already fail to cover, which the slack was papering over with a neighbour's floor.
+leaves already fail to cover, which the slack was papering over with a neighbour's floor. Exact
+along the linedef on an uncut seg, censused the same way, removes the overhang past such walls and
+opens no crack; exact along the *seg* opens the hairlines above.
 
 ### Walls that stop inside their cell
 
@@ -88,15 +106,16 @@ the leaf wraps around the outside corner of a diagonal block, and lines 104 and 
 units² of grass off it — the black spots reported in sector 0.
 
 `wallBoundsCell` decides it, and only where the line crosses the cell beyond the span the leaf's own
-segs on that line cover — a wall that spans its cell is clipped by as before. There, the ground just
-past the covered end is probed, a little onto the side the clip would remove: **this sector's floor
-there means the wall has ended and the leaf carries on around it**, so the cut is spared. Void or
-another sector means the level's own outer wall, which is what the seg clips are *for*, and the cut
-stands. The probe is geometric (nearest linedef, and which side of it) rather than a BSP lookup —
-the tree is what is being rebuilt, so it cannot be the authority on where a point is. It lives in
-`sectorprobe.ts` as `SectorProbe`, which buckets the linedefs at 256 units so a probe scans a
-neighbourhood, and is built lazily: most maps have neither a stub nor a self-referencing sector and
-never ask it anything.
+segs on that line cover (`lineCoverage`: a seg of the same linedef by definition, one of another
+linedef within `COLLINEAR_EPS`) — a wall that spans its cell is clipped by as before. There, the
+ground just past the covered end is probed, a little onto the side the clip would remove: **this
+sector's floor there means the wall has ended and the leaf carries on around it**, so the cut is
+spared. Void or another sector means the level's own outer wall, which is what the seg clips are
+*for*, and the cut stands. The probe is geometric (nearest linedef, and which side of it) rather
+than a BSP lookup — the tree is what is being rebuilt, so it cannot be the authority on where a
+point is. It lives in `sectorprobe.ts` as `SectorProbe`, which buckets the linedefs at 256 units so
+a probe scans a neighbourhood, and is built lazily: most maps have neither a stub nor a
+self-referencing sector and never ask it anything.
 
 A spared cut keeps the floor *under* the stub's structure too — the test case is a 64-unit block
 standing in a 512-unit cell, and the whole cell survives. On screen that reads right only because

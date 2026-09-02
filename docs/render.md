@@ -256,9 +256,23 @@ take the same answer. It is what lets a dynamic light stop at a wall (docs/light
 at walls), and it is written once: a mover changes heights, never a quad's footprint, so
 `refreshMoverMesh` leaves it alone.
 
+Two more are optional: `aWallShade` (§ Wall contact shading) and `aSkyLit` (§ Outdoor sky tint),
+both per-vertex amounts in [0, 1] — see § What the buffers cost.
+
 Every builder threads one `Build` record: the map, the options resolved once, and the arrays each
 appends to. A whole-map build and a mover's differ only in the `holdsStill`/`includeSide` predicates
 on it (§ Mover meshes), so nothing below `buildMapMesh`/`buildMoverMesh` branches on which it is in.
+
+### What the buffers cost
+
+`aWallShade` and `aSkyLit` are uploaded as **normalized bytes, and only where some vertex in the
+batch is non-zero** (`setUnitAttribute`). An attribute three never binds reads back as 0 in the
+shader, which is what unshaded and indoors already mean, so a wall batch — never shaded — and a
+level with no sky drop the buffer outright. 1/255 of the amount is under one level of the 0-255
+colour it multiplies, so the quantization is not visible.
+
+Measured over DOOM2 MAP01/07/15/29 and GoingDown MAP01/15/30, 464k vertices in all: **3.54 MB of
+attribute buffer becomes 0.65 MB**, 82% less.
 
 ### Flats are diced on a world grid
 
@@ -654,6 +668,95 @@ warning flame (`SpriteFxLayer`'s `followTargetId` case) re-resolves it every tim
 position from the target it's tracking. A stationary one-shot effect (blood, puffs, teleport fog,
 impact explosions) only needs the single lookup `spawn` already does, since it never moves and its
 lifetime is short enough that a mid-flight relight isn't worth chasing.
+
+## Wall contact shading (`wallshadow.ts`)
+
+Floors darken toward the walls standing on them: an occlusion amount per flat vertex, baked at mesh
+build time into the `aWallShade` attribute and scaled in the vertex shader by one live uniform
+(`textures.ts` patches `color_vertex`). **This engine's own, not vanilla's** — vanilla lighting is
+flat within a sector, which from overhead reads as a cutout rather than as a room.
+
+- **A fan is shaded from its own sector's lines**, which is where a wall bounding it can stand — a
+  pillar's ring included, its one-sided lines facing that sector. Filtered once per leaf against the
+  leaf's bounding box grown by `RADIUS`, so the per-vertex scan is a handful of segments.
+- **Only where a wall actually rises on this floor**: void across the line, a step of `MAX_STEP_UP`
+  (`game/world.ts`, vanilla's `MAXSTEPSIZE` — what the player walks up) or more, or a ceiling
+  across it already down at this floor. A ledge dropping *away* casts nothing, which is what keeps
+  E1M1's outdoor walkway unshaded; nor does a neighbour whose ceiling merely hangs lower, since that
+  wall never reaches the floor.
+- **`RADIUS` cannot go below the flat dicing.** The amount lives at flat vertices, which sit on the
+  `FLAT_GRID_LEN` grid (~90 units) plus the leaf outline, so under that spacing only the outline
+  vertices ever carry any and the ramp is whatever the dicing happens to be. Same relationship as
+  `FADE_RADIUS` to `WALL_CHUNK_LEN` (§ The fade is a hole, not a wall).
+- **Walls and ceilings carry none.** 0 is the attribute's default and means unshaded, so geometry
+  built without it — anything but the map's own batches — is simply unaffected.
+
+Two leaves either side of a BSP split agree at their shared vertices by construction: the bounding
+box is grown by the same radius both times, so a wall in reach of the vertex is in both candidate
+sets, and both compute the same distance.
+
+**A mover keeps the shading it was built with until its next full rebuild.** `refreshMoverMesh`
+rewrites positions, UVs and colours and never `aWallShade` — the same rule as `aLightCell`
+(§ Mover meshes), but weaker: a footprint really is fixed, while a lift's shading is only right at
+the height it was last built at. Rebaking per tic would mean re-dicing every flat, which is the cost
+§ Mover meshes exists to avoid. What saves it is that the case that would show — a lift arriving
+flush with the floor it serves, still wearing the band its shaft cast on it — is exactly a rebuild:
+the lower step's quad stops existing there, the refresh refuses on the changed batch, and the fresh
+build bakes the new height. Stale shading is a travelling lift's, not a parked one's.
+
+Costs a whole-map build about a fifth of its time — GoingDown MAP01's 2232 leaves go 13.6 to
+17.4 ms, MAP03 11.2 to 12.3 — and per frame one multiply in the vertex shader over a buffer of
+4 bytes per vertex (0.37 MB for that map's 92k).
+
+### Turning it off
+
+Settings / Visuals / Lighting switches it off, labelled *Ambient occlusion* — what a graphics
+menu calls this — on the `topdoom.wallShade` key (docs/menu.md § Persisted settings). The strength
+is a uniform every map material shares, so the switch reaches the level already running without
+rebuilding anything; off is that uniform at zero, and the baked amount stays in the buffers.
+
+## Outdoor sky tint (`skytint.ts`)
+
+Every surface facing a sector roofed with `F_SKY1` is tinted toward that level's own sky: the
+camera never shows the sky, so without it a courtyard and a corridor are the same picture. Marked
+per vertex at build time (`aSkyLit`, 1 outdoors) and coloured by one live uniform, the same split
+as § Wall contact shading; a wall takes the marking of the room it *faces into*, which is the
+sector its light came from, so the two sides of a courtyard wall differ.
+
+**This engine's own**, and the one place it invents rather than measures: vanilla has no such tint,
+and the sky texture is not drawn here at all.
+
+Which sky a map stands under is the set's MAPINFO where it names one, and vanilla's own rule off the
+map's name otherwise (docs/wad.md § The sky texture). What that texture lends is `skyTintOf`, in
+three steps:
+
+- **The average of its pixels, at luminance 1** — a colour shift, never a brightness one, so an
+  outdoor floor never reads as a brighter indoor one. Both blends below preserve that, luminance
+  being linear in the channels.
+- **A sky with no colour of its own lends a cool daylight instead** (`COLOURLESS_SKY`), blended in
+  by how little chroma it has. DOOM's `SKY1` averages to flat grey — 143/143/142 over the lump — so
+  taking its hue faithfully tints E1's courtyards by nothing at all, which is not a cue.
+- **`STRENGTH` of the way from neutral, clamped to `LIMIT`.** The clamp binds on the hell skies:
+  DOOM II's `SKY3` averages 2.6 times as much red as green, and unclamped it paints every outdoor
+  surface of MAP21-32 crimson.
+
+Resolved once per level, since the sky cannot change within one; a set with no such texture leaves
+the uniform neutral.
+
+**Sprites take the same tint**, so a monster standing in a courtyard belongs to it rather than
+reading as cut out of an indoor room. A sprite's colour is recomputed every frame anyway, so where a
+surface is marked at build time a sprite simply asks `skyLitSector` for the sector it stands in —
+`ThingLayer`'s things and drops, `SpriteFxLayer`'s projectiles and one-shot effects (off the leaf
+their light was offered at), and the player's own billboard. Two things it deliberately does not
+reach: a **fullbright frame**, which lights itself and takes no sector light to tint, and a
+**dynamic light's** contribution, which keeps its own colour — the tint lands on the sector's own
+light, exactly as it does on a surface.
+
+### Turning the tint off
+
+Settings / Visuals / Lighting, labelled *Outdoor sky tint*, on the `topdoom.skyTint` key
+(docs/menu.md § Persisted settings). The colour is a uniform every map material shares, so the
+switch reaches a level already running; off is that uniform at white.
 
 ## Wall occlusion fading (`occlusion.ts`, `textures.ts`)
 
@@ -1172,7 +1275,7 @@ unchanged, so it is accepted in place; without the re-resolve the fader would go
 the batch the quad no longer draws in. Pinned by
 `tests/regression/fader-rebatched-quad.test.ts`.
 
-Measured on Sunder 2512 MAP20 at the player start, timing each part of `game.ts: updateFading`
+Measured on Sunder 2512 MAP20 at the player start, timing each part of `game.ts: updatePresentation`
 separately: `MoverGeometry.updateFading` 3.34 → 0.19 ms/frame, and with the wall-fader work
 above the block as a whole 18.2 → 1.8 ms/frame. What is left of it is the flat fader, which still
 walks its 49,716 fans a frame behind per-fan early-outs (§ Flats).
@@ -1257,7 +1360,8 @@ Two settings in `Viewport`'s constructor decide the pixel count, and both are lo
   already the supersampling 4x MSAA would approximate, the textures are point-sampled
   (`NearestFilter`, § Wall occlusion fading has the other half of that shader), and the occlusion
   fade discards whole fragments rather than shading partial coverage, so neither can use a coverage
-  mask. Below ratio 2 there is no such supersampling and MSAA is kept.
+  mask. Below ratio 2 there is no such supersampling and MSAA is kept — **unless the bloom chain is
+  already on, which takes the multisampling over**: docs/lights.md § Bloom and the canvas's MSAA.
 
 The clear and the canvas present are not a cost worth thinking about — 0.03 ms of a 14.7 MP frame.
 
@@ -1267,6 +1371,109 @@ row above it is worth touching. For a real experiment — an A/B of two shader v
 sweep — docs/lights.md § Profiling has the recipe
 (`EXT_disjoint_timer_query_webgl2`, which GPU chromium is pointed at, sizing the drawing buffer like
 the player's). Halving a number that turns out to be 4% of the frame is how time gets wasted here.
+
+## The void floor (`voidfloor.ts`)
+
+One plane under the whole level carrying a slow drift of fog, so the space around the map geometry
+reads as unlit depth rather than as a hole. Without it a level is a lit cutout floating on
+`game.ts`'s scene background, which is what an overhead camera shows most of: walls are drawn
+single-sided facing into their sector (§ Solid structures), so past the outermost one there is
+nothing to draw at all.
+
+- **It sits below every authored sector floor** (`voidFloorHeight`), so no real floor can ever be
+  under it and the two never z-fight. The clearance is what a Boom generalized "lower by 32" floor
+  needs to stay above it; a floor driven lower than that clips through, which is cosmetic.
+- **Its footprint is the map's own extent grown by `VIEW_DISTANCE`** (`voidFloorBounds`), the
+  distance at which the scene fog is fully opaque (§ View distance) — so it still reaches past the
+  horizon from a camera standing in the far corner, and no further.
+- **It takes the scene fog like everything else**, which is what makes it fade into the background
+  instead of ending at a visible rim.
+- **Its noise tile is generated from a hash local to the file, never `util/random.ts`.** `rndtable`
+  is the simulation's own entropy and every draw moves the game's sequence (docs/random.md); a
+  decorative texture must not touch it.
+
+**Density, not a surface.** A flat plane wearing a noise texture reads as a cheap floor: round
+blobs, uniformly lit, dead still. Three things together stop it doing that, and dropping any one of
+them brings the floor back.
+
+- **The lookup is domain-warped** — a second, coarser noise field displaces where the density is
+  sampled, which drags round blobs into filaments. This is what does most of the work.
+- **The warp field itself drifts**, so the structures turn and curl rather than slide past. That is
+  the wobble; sliding a static field looks like scrolling wallpaper.
+- **Thin fog is the scene background**, so the plane has no edge and no constant tone anywhere. The
+  two ends of that ramp are the dials for how much of this reads at all.
+
+Three drift speeds on three headings, all far under the player's own, so the fog is alive when they
+stand still and scenery when they run.
+
+**It is a patch on `MeshBasicMaterial`'s `map_fragment`, not a `ShaderMaterial`**, so the scene fog,
+tone mapping and output colour space three applies to every other surface apply here unchanged.
+`vMapUv` is already world position in tiles — the plane is an axis-aligned quad whose UVs run 0..1
+and whose texture `repeat` scales them — so the effect needs no varying of its own, and one RGBA
+tile carries four independent noise fields so the whole thing costs three texture reads.
+
+**Fragments past `fogFar` skip those reads.** The plane reaches `VIEW_DISTANCE` past the map on
+every side, so on a big map much of its on-screen area is somewhere three's own `fog_fragment` will
+mix to exactly `fogColor` whatever was computed. `smoothstep` is already saturated at that edge, so
+the cutoff can leave no seam.
+
+**It shows through unexplored geometry.** Fog of war discards unexplored surfaces outright
+(docs/fogofwar.md), so where the level used to read as black it now reads as this plane. That is
+the trade the feature makes, and it is why the thick end of the ramp has to stay well under the
+darkest real floor — measured on DOOM 1 E1M1, mean brightness 12 against that map's dark start floor
+at 23.
+
+**What it costs**, measured on DOOM 2 MAP15 at 5120x2880 on a Radeon integrated GPU, five
+interleaved passes against the plane hidden:
+
+| Variant | Frame rate cost |
+|---|---|
+| The plane with a plain static texture | 8.1% |
+| The plane with the drifting fog | 11.2% |
+
+The plane's own fill is nearly all of it and the effect adds about three points. Lighter maps stay
+pinned at the frame cap either way. Cutting the shader to two texture reads measured no faster,
+which is what says the cost is fill rather than the lookups.
+
+Built per level and dropped with it, because only its height and footprint depend on the map; the
+drift advances on the frame clock beside the animated textures (`game.ts`), not on the tic, so it
+is smooth rather than stepped at 35 Hz.
+
+### The toggle
+
+Settings / Visuals / Void switches the fog off, on the `topdoom.voidFog` key
+(docs/menu.md § Persisted settings). The plane reads the flag in its per-frame `update` rather than
+capturing it when the level is built, so switching it reaches the level already running; switched
+off it is the plane that stops drawing, not the level that changes, so nothing about what is
+revealed or shootable moves with it.
+
+## The player's shadow (`playershadow.ts`)
+
+A soft disc on the ground under the player, placed each frame from the same interpolated position
+their billboard uses (`game.ts: posePlayer`).
+
+**It is cast on `Player.groundZ`, not on the player's own feet** — this tic's own `groundFloor`
+answer, the height they would stand at here, which is the height they will land at. So the disc
+stays on the landing spot while a fall carries the body up off it, and the gap between sprite and
+disc is the fall itself.
+
+That height is kept by `Player` rather than asked again per drawn frame: `groundFloor` is
+`checkPosition`, and asking it off the render path would run the engine's hottest query several
+times per tic for a cosmetic disc. That is the
+whole point of the feature: an overhead camera has no other way to say how far down the ground is.
+
+**It darkens with that gap** (`shadowAlpha`): barely there while standing, ramping to its full
+strength over a tall DOOM drop and holding. Standing is the common case and wants to be ignorable;
+falling is the case that needs to be read at a glance.
+
+Measured against the shadow switched off, in 0–255 levels of the darkest pixel it changes: on
+E1M1's dark start floor a standing player moves 7 and a falling one 82; on the bright walkway
+outside, a standing player moves 23. A shadow is a multiply toward black, so a near-black floor
+inherently shows less of one.
+
+Session-scoped, like the player's billboard: nothing about it depends on which map is loaded. The
+screen effects that fade the billboard (the invisibility powerup) scale the disc with it, so the
+shadow never outlives the body it belongs to.
 
 ## View distance (`constants.ts: VIEW_DISTANCE`, `game.ts`)
 

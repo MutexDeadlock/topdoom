@@ -69,8 +69,8 @@
       <div class="tab-panel" id="tab-settings">
         <div class="tabs subtabs">
           <button class="tab" id="settings-tab-button-general" data-tab="general">General</button>
-          <button class="tab" id="settings-tab-button-controls" data-tab="controls">Controls</button>
           <button class="tab" id="settings-tab-button-visuals" data-tab="visuals">Visuals</button>
+          <button class="tab" id="settings-tab-button-controls" data-tab="controls">Controls</button>
           <button class="tab" id="settings-tab-button-audio" data-tab="audio">Audio</button>
         </div>
 
@@ -110,6 +110,65 @@
                 <input type="checkbox" id="profiler-checkbox" />
                 <span>Profiler overlay</span>
               </label>
+            </section>
+          </div>
+
+          <div class="tab-panel" id="settings-tab-visuals">
+            <section>
+              <h2>Camera</h2>
+              <select id="cameramode-select">
+                <option value="auto">Automatic zoom + tilt</option>
+                <option value="manual">Manual</option>
+              </select>
+            </section>
+
+            <section>
+              <h2>Frame rate</h2>
+              <select id="fpscap-select">
+                <option value="0">Unlimited</option>
+                <option value="30">30 fps</option>
+                <option value="60">60 fps</option>
+                <option value="120">120 fps</option>
+              </select>
+            </section>
+
+            <div class="columns">
+              <section>
+                <h2>Lighting</h2>
+                <label class="checkbox-row">
+                  <input type="checkbox" id="dynlights-checkbox" />
+                  <span>Dynamic lights</span>
+                </label>
+                <label class="checkbox-row">
+                  <input type="checkbox" id="wallshade-checkbox" />
+                  <span>Ambient occlusion</span>
+                </label>
+                <label class="checkbox-row">
+                  <input type="checkbox" id="bloom-checkbox" />
+                  <span>Bloom</span>
+                </label>
+                <label class="checkbox-row">
+                  <input type="checkbox" id="skytint-checkbox" />
+                  <span>Outdoor sky tint</span>
+                </label>
+              </section>
+
+              <section>
+                <h2>Void</h2>
+                <label class="checkbox-row">
+                  <input type="checkbox" id="voidfog-checkbox" />
+                  <span>Drifting fog around the level</span>
+                </label>
+              </section>
+            </div>
+
+            <section>
+              <h2>Player sprites</h2>
+              <select id="playersprites-select">
+                <option value="auto">Weapon-matching (auto)</option>
+                <option value="always">Weapon-matching (always)</option>
+                <option value="never">WAD's own</option>
+              </select>
             </section>
           </div>
 
@@ -177,43 +236,6 @@
                 </dl>
               </section>
             </div>
-          </div>
-
-          <div class="tab-panel" id="settings-tab-visuals">
-            <section>
-              <h2>Camera</h2>
-              <select id="cameramode-select">
-                <option value="auto">Automatic zoom + tilt</option>
-                <option value="manual">Manual</option>
-              </select>
-            </section>
-
-            <section>
-              <h2>Frame rate</h2>
-              <select id="fpscap-select">
-                <option value="0">Unlimited</option>
-                <option value="30">30 fps</option>
-                <option value="60">60 fps</option>
-                <option value="120">120 fps</option>
-              </select>
-            </section>
-
-            <section>
-              <h2>Lighting</h2>
-              <label class="checkbox-row">
-                <input type="checkbox" id="dynlights-checkbox" />
-                <span>Dynamic lights</span>
-              </label>
-            </section>
-
-            <section>
-              <h2>Player sprites</h2>
-              <select id="playersprites-select">
-                <option value="auto">Weapon-matching (auto)</option>
-                <option value="always">Weapon-matching (always)</option>
-                <option value="never">WAD's own</option>
-              </select>
-            </section>
           </div>
 
           <div class="tab-panel" id="settings-tab-audio">

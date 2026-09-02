@@ -1,8 +1,15 @@
-v0.17.0 (2026-0?-??)
+v0.17.0 (2026-09-??)
 
 Features and improvements
   - UDMF maps load (needs ZNODES): the doom namespace plays in full, ZDoom
     namespaces are flagged red but stay pickable (geometry yes, specials no)
+  - visual improvements / eye candy - most toggleable in Settings / Visuals:
+    - the void around the level draws as slowly drifting fog instead of black
+    - ambient occlusion: floors darken toward the walls standing on them
+    - areas open to the sky are tinted toward the level's own sky texture
+    - bloom: torches, lamps and plasma leave a soft glow on the frame
+      (off by default — it is not cheap)
+    - a subtle blob shadow under the player
   - weapon-matching player skins! Doomguy only, but can be forced for WADs
     which customize the player sprites, all tuneable in Settings / Visuals
   - mover interpolation: moveable areas draw interpolated between tics 

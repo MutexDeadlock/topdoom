@@ -120,6 +120,7 @@ import {
 } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
+import { skyLitSector } from '../render/skytint.ts';
 import type { DynamicLights } from '../render/lights.ts';
 import { blastDistanceToBox, boxReach, segmentEntersBox, traceHitsBox } from '../util/geom.ts';
 import type { Pos2, Pos3 } from '../types.ts';
@@ -599,9 +600,13 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       const z = p.drawPrevZ + (p.z - p.drawPrevZ) * alpha;
       // Read live off the sector rather than cached on the thing — docs/render.md § Sector
       // lighting on why every sprite must. A fullbright frame ignores the sector outright.
-      const light = FULLBRIGHT_FRAMES.has(p.anim.frameKey)
+      const bright = FULLBRIGHT_FRAMES.has(p.anim.frameKey);
+      const light = bright
         ? LIT_FULL
         : litColor(p.sector ? transfers.spriteLight(world.sectorIndexOfSubsector(p.subsector)) : 128);
+      // Standing under sky takes the level's outdoor tint, as the floor it stands on does.
+      // docs/render.md § Outdoor sky tint.
+      const sky = !bright && skyLitSector(p.sector);
       // A drawn sprite is both a possible emitter and a receiver. `p.visible` above already
       // gated on fog of war, so an unrevealed room lights nothing. docs/lights.md § What emits.
       const tint = lights?.offerAndTint(p.anim.frameKey, x, y, z, p.id, p.subsector);
@@ -610,14 +615,14 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         // A fuzzed thing (`FUZZ_TYPES`) differs only in which batch draws it; everything above
         // is the pose an ordinary thing gets.
         const into = FUZZ_TYPES.has(p.type) ? fuzzBatch : batch;
-        into.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, tint);
+        into.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, tint, sky);
         continue;
       }
       // Phase-shifted per instance, so two drops side by side ripple instead of bobbing in
       // unison. docs/items.md § Making monster drops readable.
       const bob = Math.sin((clock / DROP_BOB_SECONDS + p.id * 0.7) * Math.PI * 2) * DROP_BOB;
       doomToWorld(x, y, z + DROP_HOVER + bob, worldPos);
-      dropBatch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, tint);
+      dropBatch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, tint, sky);
     }
     batch.end();
     dropBatch.end();

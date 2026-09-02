@@ -23,6 +23,8 @@ import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { BRIGHTNESS_LIFT, WATER_SURFACE_ALPHA } from '../constants.ts';
 import { clipConvexPolygon, signedPolygonArea2 } from '../util/geom.ts';
+import { beginWallShade, wallShadeAt } from './wallshadow.ts';
+import { skyLitSector } from './skytint.ts';
 
 /**
  * DOOM's map plane is (x, y) with z as height. three.js is y-up, so a DOOM
@@ -560,6 +562,17 @@ interface Batch {
    * Light stops at walls).
    */
   cells: number[];
+  /**
+   * Per vertex, how occluded by a wall standing on it this point is — the `aWallShade` attribute
+   * (docs/render.md § Wall contact shading). Zero everywhere but a floor near a wall.
+   */
+  shade: number[];
+  /**
+   * Per vertex, 1 where the surface faces a sector roofed with sky — the `aSkyLit` attribute
+   * (docs/render.md § Outdoor sky tint). Constant across a quad or a fan; per vertex because that
+   * is where the shader can read it.
+   */
+  sky: number[];
 }
 
 /** The batches a build is accumulating into, one per `batchKey`. */
@@ -570,7 +583,7 @@ class BatchSet {
     const key = batchKey(kind, texture);
     let b = this.batches.get(key);
     if (!b) {
-      b = { key, kind, texture, positions: [], uvs: [], colors: [], cells: [] };
+      b = { key, kind, texture, positions: [], uvs: [], colors: [], cells: [], shade: [], sky: [] };
       this.batches.set(key, b);
     }
     return b;
@@ -612,11 +625,17 @@ function pushVertex(
    * exist.
    */
   cell = -1,
+  /** 1 marks the vertex as standing under sky; 0, the default, is indoors. */
+  sky = 0,
+  /** 0 leaves the vertex unshaded, which every wall and every open stretch of floor is. */
+  shade = 0,
 ): void {
   b.positions.push(x, y, z);
   b.uvs.push(u, v);
   b.colors.push(c, c, c, alpha);
   b.cells.push(cell);
+  b.shade.push(shade);
+  b.sky.push(sky);
 }
 
 /**
@@ -748,18 +767,37 @@ function drawnBatches(build: Build): Batch[] {
   return build.batches.all().filter((b) => b.positions.length > 0 && build.bank.get(b.kind, b.texture));
 }
 
-/** One batch as a three.js mesh: the four attributes every surface carries, named by its key. */
+/** One batch as a three.js mesh: the attributes it actually carries, named by its key. */
 function batchMesh(batch: Batch, material: THREE.Material): THREE.Mesh {
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.Float32BufferAttribute(batch.positions, 3));
   geom.setAttribute('uv', new THREE.Float32BufferAttribute(batch.uvs, 2));
   geom.setAttribute('color', new THREE.Float32BufferAttribute(batch.colors, 4));
   geom.setAttribute('aLightCell', new THREE.Float32BufferAttribute(batch.cells, 1));
+  setUnitAttribute(geom, 'aWallShade', batch.shade);
+  setUnitAttribute(geom, 'aSkyLit', batch.sky);
   geom.computeBoundingSphere();
 
   const mesh = new THREE.Mesh(geom, material);
   mesh.name = batch.key;
   return mesh;
+}
+
+/**
+ * One per-vertex amount in [0, 1] as a normalized byte, or no attribute at all where every value
+ * is 0 — see docs/render.md § What the buffers cost for both halves and what each saves. An
+ * attribute three never binds reads back as 0 in the shader, which is what both of these already
+ * mean, so dropping it changes nothing a draw can see.
+ */
+function setUnitAttribute(geom: THREE.BufferGeometry, name: string, values: number[]): void {
+  const bytes = new Uint8Array(values.length);
+  let any = false;
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] <= 0) continue;
+    bytes[i] = Math.round(values[i] * 255);
+    any = true;
+  }
+  if (any) geom.setAttribute(name, new THREE.Uint8BufferAttribute(bytes, 1, true));
 }
 
 /**
@@ -1466,10 +1504,15 @@ function addFlatFan(
   // Floors keep the polygon's winding (normal up); a ceiling gets the ring wound the other way.
   const ring = isCeiling ? reversedRing(poly.points) : poly.points;
 
+  // A ceiling is never shaded — it is not drawn at all — so the query is asked only for a floor,
+  // once per fan, and read back per vertex below.
+  const shaded = !isCeiling && beginWallShade(build.map, build.transfers, poly, height);
+  const sky = skyLitSector(build.map.sectors[poly.sector]) ? 1 : 0;
+
   const emit = (cell: ArrayLike<number>, i: number): void => {
     const x = cell[i * 2];
     const y = cell[i * 2 + 1];
-    pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha, ss);
+    pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha, ss, sky, shaded ? wallShadeAt(x, y) : 0);
     xy.push(x, y);
   };
   // Each grid cell is convex and small, so fanning it costs no slivers — see `diceOnGrid`.
@@ -1555,6 +1598,8 @@ function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean
 
   const batch = build.batches.get('wall', spec.texture);
   const { ax, ay, bx, by, topH, botH } = spec;
+  // A wall carries the tint of the room it faces into, which is the sector its light came from.
+  const sky = skyLitSector(build.map.sectors[spec.sector]) ? 1 : 0;
 
   // Cut both ways so the fade can dissolve a ball around the sightline rather than a full-height
   // slab of wall — see `WALL_CHUNK_LEN`.
@@ -1584,12 +1629,12 @@ function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean
       // (DOOM's front side), as the triangles A-D-C and A-C-B. Written out rather than iterated:
       // the dicing above makes up to `chunks * bands` of these, and a mover re-runs them per refresh.
       const vertexStart = batch.positions.length / 3;
-      pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha); // A
-      pushVertex(batch, cax, bandBot, -cay, cu0, bandVBot, color, alpha); // D
-      pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, color, alpha); // C
-      pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha); // A
-      pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, color, alpha); // C
-      pushVertex(batch, cbx, bandTop, -cby, cu1, bandVTop, color, alpha); // B
+      pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha, -1, sky); // A
+      pushVertex(batch, cax, bandBot, -cay, cu0, bandVBot, color, alpha, -1, sky); // D
+      pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, color, alpha, -1, sky); // C
+      pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha, -1, sky); // A
+      pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, color, alpha, -1, sky); // C
+      pushVertex(batch, cbx, bandTop, -cby, cu1, bandVTop, color, alpha, -1, sky); // B
       build.occluders.push({
         key: batch.key,
         vertexStart,

@@ -458,6 +458,24 @@ Unlike a title, the vanilla table is **not** gated on the map coming from the IW
 target rather than a name, and `G_DoCompleted` has no provenance check — vanilla applies `cpars` to
 whatever `MAP01` is loaded.
 
+## The sky texture (`campaign/sky.ts`)
+
+**A set's own MAPINFO wins where it names one** — ZDoom's `sky1` or UMAPINFO's `skytexture`, read
+into `MapInfoEntry.sky` — and only where the WAD actually carries that texture; otherwise the
+vanilla rule below stands. `sky1` is where the token-by-token walk had to learn to consume a value:
+GoingDown writes `sky1 SKY1 0`, whose value is the key's own name, so read naively the scroll speed
+became the sky.
+
+Vanilla itself has none of that. It reads the sky off the map's own name
+(`g_game.c: G_InitNew`). DOOM II switches at maps 12 and 21 (`SKY1`/`SKY2`/`SKY3`), an episode takes
+its own number, and Ultimate DOOM's `E4` clamps to `SKY4`. A name in neither scheme — a PWAD with
+its own — answers `SKY1`, which every set has.
+
+`levelSkyArt` composes the two, over the caller's own lookup: a name may be a composite texture or
+the bare patch lump a set can ship one as — vanilla accepts only the first, and a mapper naming the
+second gets the sky they meant. Where neither name resolves, `render/skytint.ts`, the one consumer,
+simply drops the tint.
+
 ## Level progression
 
 Which level an exit leads to (`campaign/progression.ts`). Vanilla keeps this nowhere in the WAD: it

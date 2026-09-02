@@ -9,6 +9,7 @@ import type { SpriteBank } from '../wad/sprites.ts';
 import { doomToWorld, litColor } from './mapmesh.ts';
 import { DOOM_TIC } from '../constants.ts';
 import { tinted, type Tint } from './lights.ts';
+import { skyScale } from './skytint.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
@@ -459,6 +460,8 @@ export interface SpritePose {
   animating: boolean;
   viewerAngleDeg: number;
   tint: Tint | undefined;
+  /** Whether the actor stands under sky — see `skyScale` (`render/skytint.ts`). */
+  sky: boolean;
 }
 
 /**
@@ -526,11 +529,17 @@ export class SpriteActor {
     // SpriteMaterialCache's doc); turn it by however far the live viewer
     // angle has moved from that default so it keeps facing the camera.
     this.mesh.rotation.y = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);
-    const lit = litColor(this.brightFrames.has(this.anim.frameKey) ? 255 : light);
+    const bright = this.brightFrames.has(this.anim.frameKey);
+    const lit = litColor(bright ? 255 : light);
+    // A fullbright frame lights itself, so it takes no tint (docs/render.md § Outdoor sky tint).
+    const outdoors = skyScale(pose.sky && !bright);
+    const lr = lit * outdoors.r;
+    const lg = lit * outdoors.g;
+    const lb = lit * outdoors.b;
     // A dynamic light reaching the player adds on top of the sector's own, the same sum the
     // instanced sprites take (docs/lights.md § Two lighting paths).
-    if (tint) material.color.setRGB(tinted(lit, tint.r), tinted(lit, tint.g), tinted(lit, tint.b));
-    else material.color.setScalar(lit);
+    if (tint) material.color.setRGB(tinted(lr, tint.r), tinted(lg, tint.g), tinted(lb, tint.b));
+    else material.color.setRGB(lr, lg, lb);
     // Only ever written on a clone — the cached material is shared, and its
     // own opacity must stay at the default 1 for everything else drawing it.
     if (this.opacity < 1) material.opacity = this.opacity;

@@ -36,6 +36,14 @@ interface TimerQueryExt {
 const MAX_IN_FLIGHT = 4;
 
 /**
+ * How many saturated frames in a row are taken as the driver having stopped answering, after which
+ * the queries in flight are given up on and the pool starts over. Without it a single batch that
+ * never completes is the last measurement of the session. **Tuned by feel** — a stall this long is
+ * already far past the frame or two a result normally takes.
+ */
+const STALL_FRAMES = 120;
+
+/**
  * One `TIME_ELAPSED_EXT` query around the render call, read back when the driver has it.
  *
  * The extension is **often absent** — browsers have disabled it on and off for side-channel
@@ -56,6 +64,8 @@ export class GpuTimer {
   private active: WebGLQuery | null = null;
   private smoothed = 0;
   private read = false;
+  /** Consecutive frames the pool has been full with nothing collected — see `STALL_FRAMES`. */
+  private stalled = 0;
 
   constructor(gl: QueryContext) {
     const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2') as TimerQueryExt | null;
@@ -81,13 +91,20 @@ export class GpuTimer {
     this.active = query;
   }
 
-  /** Closes the frame's query and collects whatever earlier ones the driver has finished. */
+  /**
+   * Closes the frame's query, if this frame opened one, and collects whatever earlier ones the
+   * driver has finished. **The collecting is unconditional**, and that is what keeps a stall from
+   * being permanent: a frame opens no query precisely when the pool is already full, so gating the
+   * harvest on having one would leave the full pool with nothing left to empty it.
+   */
   end(): void {
     const q = this.q;
-    if (!q || !this.active) return;
-    q.gl.endQuery(q.ext.TIME_ELAPSED_EXT);
-    this.inFlight.push(this.active);
-    this.active = null;
+    if (!q) return;
+    if (this.active) {
+      q.gl.endQuery(q.ext.TIME_ELAPSED_EXT);
+      this.inFlight.push(this.active);
+      this.active = null;
+    }
     this.harvest();
   }
 
@@ -105,6 +122,7 @@ export class GpuTimer {
       this.inFlight.length = 0;
       this.free.length = 0;
       this.active = null;
+      this.stalled = 0;
       return;
     }
     const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT) === true;
@@ -121,6 +139,16 @@ export class GpuTimer {
       }
       this.free.push(query);
     }
+    const collected = kept < this.inFlight.length;
     this.inFlight.length = kept;
+    const saturated = !collected && kept >= MAX_IN_FLIGHT;
+    this.stalled = saturated ? this.stalled + 1 : 0;
+    // Given up on rather than deleted: `beginQuery` resets whatever a query object last held, so
+    // the pool is reusable even where the driver never answered for it.
+    if (this.stalled > STALL_FRAMES) {
+      for (const query of this.inFlight) this.free.push(query);
+      this.inFlight.length = 0;
+      this.stalled = 0;
+    }
   }
 }

@@ -181,6 +181,14 @@ export class Player implements Pos3 {
   landingSpeed = 0;
 
   /**
+   * The ground the player is resting on or falling toward, as of this tic — what `update` already
+   * asked `groundFloor` for. Kept because the render layer casts the blob shadow on it and
+   * `checkPosition` is far too hot to ask a second time per drawn frame.
+   * docs/render.md § The player's shadow.
+   */
+  groundZ = 0;
+
+  /**
    * Where the player was at the end of the previous tic, for the render layer to
    * interpolate from — `game.ts: posePlayer` and the camera's follow point both
    * read it. Written at the top of `update`, and re-synced by every teleport-like
@@ -220,6 +228,7 @@ export class Player implements Pos3 {
     this.y = start.y;
     this.angle = start.angle;
     this.z = world.groundFloor(start.x, start.y, PLAYER_RADIUS);
+    this.groundZ = this.z;
     this.prevX = this.x;
     this.prevY = this.y;
     this.prevZ = this.z;
@@ -267,6 +276,9 @@ export class Player implements Pos3 {
    * has to call this.
    */
   syncInterpolation(): void {
+    // A discontinuous move lands the player on whatever is there, so this tic's ground is where
+    // they now are until `update` next resolves it.
+    this.groundZ = this.z;
     this.prevX = this.x;
     this.prevY = this.y;
     this.prevZ = this.z;
@@ -550,6 +562,7 @@ export class Player implements Pos3 {
           this.world.groundFloor(this.x, this.y, PLAYER_RADIUS),
           bodyFloor(this.x, this.y, PLAYER_RADIUS, this.z, blockers),
         );
+    this.groundZ = groundZ;
     if (this.z > groundZ) {
       // Airborne: the ground dropped out from under the player (walked off a
       // ledge, or a straddled gap turned out too wide to glide over). Fall

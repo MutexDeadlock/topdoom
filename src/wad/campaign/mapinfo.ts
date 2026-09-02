@@ -22,6 +22,11 @@ export interface MapInfoEntry {
    * (docs/music.md § Which track a level plays).
    */
   music?: string;
+  /**
+   * The texture this level's sky is drawn from, replacing the vanilla per-map choice
+   * (docs/wad.md § The sky texture).
+   */
+  sky?: string;
 }
 
 /**
@@ -79,6 +84,11 @@ export class MapInfo {
   /** The map-name → `D_*` lump projection — docs/music.md § Which track a level plays. */
   music(): Map<string, string> {
     return this.project((entry) => entry.music);
+  }
+
+  /** The map-name → sky texture projection — docs/wad.md § The sky texture. */
+  skies(): Map<string, string> {
+    return this.project((entry) => entry.sky);
   }
 
   private project(field: (entry: MapInfoEntry) => string | undefined): Map<string, string> {
@@ -156,26 +166,45 @@ function normalizeMapName(name: string): string {
  */
 const PROPERTY_KEYS: Record<
   string,
-  { field: 'next' | 'secretNext' | 'music'; value: (token: Token | undefined) => string | undefined }
+  {
+    field: 'next' | 'secretNext' | 'music' | 'sky';
+    value: (token: Token | undefined) => string | undefined;
+    /**
+     * Set where the key alone is the statement and the token after it is usually the following
+     * property — the finale keys — so `readProperty` consumes nothing.
+     */
+    bare?: true;
+  }
 > = {
   next: { field: 'next', value: exitValue },
   secretnext: { field: 'secretNext', value: exitValue },
   nextsecret: { field: 'secretNext', value: exitValue },
-  music: { field: 'music', value: musicValue },
-  endgame: { field: 'next', value: endValue },
-  endpic: { field: 'next', value: endValue },
-  endbunny: { field: 'next', value: endValue },
-  endcast: { field: 'next', value: endValue },
+  music: { field: 'music', value: lumpValue },
+  // ZDoom writes a scroll speed after the name (`sky1 SKY1 0`), which is left to be walked past
+  // like any other token that is not a key.
+  sky1: { field: 'sky', value: lumpValue },
+  skytexture: { field: 'sky', value: lumpValue },
+  endgame: { field: 'next', value: endValue, bare: true },
+  endpic: { field: 'next', value: endValue, bare: true },
+  endbunny: { field: 'next', value: endValue, bare: true },
+  endcast: { field: 'next', value: endValue, bare: true },
 };
 
-/** One `PROPERTY_KEYS` read at `keyIndex`, applied to `entry` — shared by both syntax walkers. */
-function readProperty(entry: MapInfoEntry, tokens: Token[], keyIndex: number): void {
+/**
+ * One `PROPERTY_KEYS` read at `keyIndex`, applied to `entry` — shared by both syntax walkers.
+ * Answers the last token index it consumed, which the walkers resume after: a value can read as a
+ * key of its own, and ZDoom's `sky1 SKY1 0` is exactly that — read token by token, the value
+ * `SKY1` is a second `sky1` statement whose own value is the scroll speed.
+ */
+function readProperty(entry: MapInfoEntry, tokens: Token[], keyIndex: number): number {
   const prop = PROPERTY_KEYS[tokens[keyIndex].text.toLowerCase()];
-  if (!prop) return;
+  if (!prop) return keyIndex;
   // `=` is optional in both syntaxes: UMAPINFO always writes it, ZDoom's newer
   // form usually does, and neither requires it.
-  const value = prop.value(tokens[keyIndex + 1]?.text === '=' ? tokens[keyIndex + 2] : tokens[keyIndex + 1]);
+  const valueIndex = tokens[keyIndex + 1]?.text === '=' ? keyIndex + 2 : keyIndex + 1;
+  const value = prop.value(tokens[valueIndex]);
   if (value !== undefined) entry[prop.field] = value;
+  return prop.bare ? keyIndex : valueIndex;
 }
 
 /** ZDoom's finale keywords as an exit value; anything else there is a map name. */
@@ -202,11 +231,11 @@ function endValue(token: Token | undefined): string | undefined {
 }
 
 /**
- * A `music` value as a lump name. Quoted or not (both syntaxes are in the wild), and ZDoom's
- * `$MUSIC_…` string-table indirection is left alone: it names no lump, and a track that doesn't
+ * A `music` or sky value as a lump name. Quoted or not (both syntaxes are in the wild), and ZDoom's
+ * `$MUSIC_…` string-table indirection is left alone: it names no lump, and a value that doesn't
  * resolve simply falls back to the vanilla per-map choice.
  */
-function musicValue(token: Token | undefined): string | undefined {
+function lumpValue(token: Token | undefined): string | undefined {
   if (!token || token.text === '{' || token.text === '}' || token.text === '=') return undefined;
   return token.text.toUpperCase();
 }
@@ -250,7 +279,7 @@ function parseMapInfo(text: string): Map<string, MapInfoEntry> {
         else if (token.text.toLowerCase() === 'levelname' && tokens[i + 1]?.text === '=' && tokens[i + 2]?.quoted) {
           entry.title = tokens[i + 2].text;
         } else {
-          readProperty(entry, tokens, i);
+          i = readProperty(entry, tokens, i);
         }
       }
       i--; // the loop above stopped one past the closing brace
@@ -261,7 +290,7 @@ function parseMapInfo(text: string): Map<string, MapInfoEntry> {
         const token = tokens[j];
         if (token.quoted) continue;
         if (token.text.toLowerCase() === 'map' || token.text === '{') break;
-        readProperty(entry, tokens, j);
+        j = readProperty(entry, tokens, j);
       }
     }
 

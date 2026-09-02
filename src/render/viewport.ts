@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three';
 import { TopDownCamera } from './camera.ts';
+import { Bloom, getBloom } from './bloom.ts';
 import { GpuTimer } from './gputimer.ts';
 import { Input } from '../game/input.ts';
 
@@ -16,6 +17,8 @@ export class Viewport {
    * Profiling overlay.
    */
   readonly gpuTimer: GpuTimer;
+  /** The post chain every draw goes through — see `present`. */
+  private bloom: Bloom;
 
   constructor(container: HTMLElement) {
     // Capped at 2 because the cost of this frame is per fragment almost end to end
@@ -28,7 +31,18 @@ export class Viewport {
     // `render/textures.ts`) and the occlusion fade discards whole fragments, so neither gets
     // anything from a coverage mask. It is not a small saving — 38% of the frame's GPU time,
     // measured on an integrated GPU at every ratio. docs/render.md § What a frame costs.
-    this.renderer = new THREE.WebGLRenderer({ antialias: pixelRatio < 2, powerPreference: 'high-performance' });
+    const wantsAntialias = pixelRatio < 2;
+    // Behind the bloom chain the canvas's own MSAA smooths nothing: the scene lands in a render
+    // target and the only thing reaching the default framebuffer is one triangle covering it whole.
+    // So the context gives it up where the chain is already on, and `Bloom` supplies it instead —
+    // for as long as this session lasts, whatever the setting does next.
+    // docs/lights.md § Bloom and the canvas's MSAA.
+    const bloomOwnsAntialias = wantsAntialias && getBloom();
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: wantsAntialias && !bloomOwnsAntialias,
+      powerPreference: 'high-performance',
+    });
+    this.bloom = new Bloom(this.renderer, bloomOwnsAntialias);
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -51,5 +65,15 @@ export class Viewport {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
       this.camera.setAspect(window.innerWidth / window.innerHeight);
     });
+  }
+
+  /**
+   * Draws a frame. The one call the engine renders through, so the post chain is either in front of
+   * every frame or of none — including the pause redraw and the savegame thumbnail, which read the
+   * canvas and would otherwise read a frame composited differently from the one on screen.
+   * docs/lights.md § Bloom.
+   */
+  present(scene: THREE.Scene, camera: THREE.Camera): void {
+    this.bloom.render(scene, camera);
   }
 }

@@ -162,6 +162,42 @@ describe('GPU timer · the frame\'s GPU milliseconds', () => {
     assert.equal(timer.ms, null);
   });
 
+  test('a stall that saturates the pool recovers once the driver answers again', () => {
+    // What a resize with the bloom chain on does: reallocating the scene target stalls the pipeline
+    // for several frames, the pool fills, and every slot has to come back afterwards. Collecting
+    // results only alongside a query of this frame's own is what deadlocks here — the frames that
+    // open none are exactly the frames that must still be draining.
+    const gl = new FakeGl();
+    const timer = new GpuTimer(gl);
+    for (let i = 0; i < 10; i++) frame(timer);
+    assert.equal(timer.ms, null, 'nothing answered yet');
+
+    for (const query of gl.begun) gl.ready.set(query, 6e6);
+    for (let i = 0; i < 4; i++) frame(timer);
+    assert.equal(timer.ms, 6, 'the timer never started measuring again after the stall');
+  });
+
+  test('a batch the driver never answers for is given up on, not held forever', () => {
+    // The other half of a permanent freeze: results that never arrive at all. Whatever the cause —
+    // a driver interrupted mid-query, a reallocation it never reported back on — the pool must
+    // start over rather than leave the last reading standing for the session.
+    const gl = new FakeGl();
+    const timer = new GpuTimer(gl);
+    frame(timer);
+    gl.finish(0, 4);
+    frame(timer);
+    assert.equal(timer.ms, 4);
+
+    // Nothing answers from here on, so the pool fills and the watchdog eventually clears it.
+    const dead = gl.begun.length;
+    for (let i = 0; i < 400; i++) frame(timer);
+    assert.ok(gl.begun.length > dead + 4, 'no query was ever opened again after the stall');
+
+    gl.ready.set(gl.begun[gl.begun.length - 1], 12e6);
+    frame(timer);
+    assert.equal(timer.ms, 4 + (12 - 4) * PROFILE_SMOOTHING, 'measuring never resumed');
+  });
+
   test('a lost context drops the queries instead of reading them back', () => {
     const gl = new FakeGl();
     const timer = new GpuTimer(gl);

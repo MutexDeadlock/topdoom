@@ -1,4 +1,10 @@
 /**
+ * The smoothing curves shared across layers: the framerate-independent damped approach the fades
+ * run on, and the Hermite ease the render layer shapes its falloffs with.
+ * See docs/render.md § Wall occlusion fading and docs/fogofwar.md § How reveal reaches the geometry.
+ */
+
+/**
  * Exponentially damped approach from `prev` toward `target` at the given rate (1/seconds),
  * framerate-independent via `dt`. A pure exponential lerp never actually reaches its target, so
  * once the remaining gap drops under `snapEps` this snaps straight to `target` instead of leaving a
@@ -20,4 +26,13 @@ export function dampen(prev: number, target: number, rate: number, dt: number, s
 export function dampenWith(prev: number, target: number, lerpT: number, snapEps: number): number {
   const next = prev + (target - prev) * lerpT;
   return Math.abs(target - next) < snapEps ? target : next;
+}
+
+/**
+ * Hermite ease over [0, 1] — GLSL's `smoothstep` without the clamp, so the caller clamps where it
+ * needs to. Shapes `render/playershadow.ts`'s rim falloff and `render/voidfloor.ts`'s noise
+ * upsample.
+ */
+export function smoothstep(t: number): number {
+  return t * t * (3 - 2 * t);
 }

@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import type { Wad, WadFile } from './wad/wad.ts';
 import { mapProvider, wadId, wadSetId } from './wad/checksum.ts';
 import { bestTimeKey, recordBestTime, type BestTimeResult } from './game/besttimes.ts';
-import { GraphicsBank } from './wad/graphics.ts';
+import { GraphicsBank, type Bitmap } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
 import { loadMap, mapLinedefBytes, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
@@ -16,6 +16,10 @@ import { gldefsFromWad, parseGldefs } from './wad/gldefs.ts';
 import { setDrawsOwnPlayer } from './wad/playerskin.ts';
 import { AnimatedTextures } from './render/textureanim.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
+import { PlayerShadow } from './render/playershadow.ts';
+import { VoidFloor } from './render/voidfloor.ts';
+import { setLevelSky, skyLitSector } from './render/skytint.ts';
+import { levelSkyArt } from './wad/campaign/sky.ts';
 import { LightVisibility } from './render/lightvis.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import { PlayerSkins } from './render/playerskin.ts';
@@ -217,6 +221,10 @@ export interface GameOptions {
 export class Game {
   private scene = new THREE.Scene();
   private materials: MaterialBank;
+  /** The set's own graphics — held for the sky each level reads its outdoor tint from. */
+  private gfx: GraphicsBank;
+  /** Which sky each level names for itself, where the set's MAPINFO says — docs/wad.md § The sky texture. */
+  private mapInfoSkies: Map<string, string>;
   /**
    * The frame's dynamic lights. Session-scoped, like the banks around it: the GLDEFS table comes
    * from the loaded WAD set, not from which map is up. docs/lights.md.
@@ -248,6 +256,14 @@ export class Game {
   private built: BuiltMap | null = null;
   private things: ThingLayer | null = null;
   private playerActor: SpriteActor;
+  /**
+   * The disc under the player's feet. Session-scoped like `playerActor`: it is placed from the
+   * frame's own interpolated position and owns nothing per-level. docs/render.md § The player's
+   * shadow.
+   */
+  private playerShadow = new PlayerShadow();
+  /** The ground the level stands in, rebuilt per map. docs/render.md § The void floor. */
+  private voidFloor: VoidFloor | null = null;
   /**
    * The level's static wall/flat faders and the bags every fader on the map
    * files into — see `FadePass`, which owns the order the frame runs them in.
@@ -542,9 +558,11 @@ export class Game {
     // with which map (docs/music.md § Which track a level plays).
     const musicBank = new MusicBank(wad);
     this.levelMusic = new LevelMusic(musicBank, mapInfo.music());
+    this.mapInfoSkies = mapInfo.skies();
     audio.music.setBank(musicBank);
 
     const gfx = new GraphicsBank(wad);
+    this.gfx = gfx;
     // Built before the materials: every one of them is patched against these uniform objects as it
     // is compiled, and the set holds for the whole session (docs/lights.md § Two lighting paths).
     this.lights = new DynamicLights(gldefsFromWad(wad, parseGldefs(gldefsText)));
@@ -588,6 +606,7 @@ export class Game {
       brightFrames: FULLBRIGHT_FRAMES,
     });
     this.scene.add(this.playerActor.mesh);
+    this.scene.add(this.playerShadow.mesh);
     // The vile-flame resolver is `monsterAttacks`', not the batch's — where the
     // flame belongs depends on live monster/player state. Both callbacks are
     // reached through a closure because `monsterAttacks` and `fogOfWar` are both
@@ -634,10 +653,12 @@ export class Game {
       hasPower(this.inventory, 'invisibility'),
     );
 
-    // Bound once rather than per frame: `playerActor` is never reassigned.
-    this.screenEffects = new ScreenEffects(view.renderer, (opacity) =>
-      this.playerActor.setOpacity(opacity),
-    );
+    // Bound once rather than per frame: neither the billboard nor the disc under it is ever
+    // reassigned.
+    this.screenEffects = new ScreenEffects(view.renderer, (opacity) => {
+      this.playerActor.setOpacity(opacity);
+      this.playerShadow.setOpacityScale(opacity);
+    });
 
     const wanted = this.mapNames.indexOf(startMap.toUpperCase());
     // The first-map fallback is fine for a fresh start, but a restore's things
@@ -732,6 +753,7 @@ export class Game {
     // this the menu (and the next level started from it) inherits the line.
     this.clearOverlays();
     this.playerActor.dispose();
+    this.playerShadow.dispose();
     this.disposeLevelGeometry();
     this.effects.dispose();
     this.materials.dispose();
@@ -750,7 +772,8 @@ export class Game {
 
   /**
    * Releases the current level's scene content: the mover-owned meshes (`specials`), the static
-   * batches and the thing sprites. The batched sprite meshes/materials are per-level; the
+   * batches, the thing sprites and the void floor. The batched sprite meshes/materials are
+   * per-level; the
    * geometry and textures behind them belong to `spriteMaterials`, which outlives a map.
    */
   private disposeLevelGeometry(): void {
@@ -764,6 +787,11 @@ export class Game {
     if (this.things) {
       this.scene.remove(this.things.group);
       this.things.dispose();
+    }
+    if (this.voidFloor) {
+      this.scene.remove(this.voidFloor.mesh);
+      this.voidFloor.dispose();
+      this.voidFloor = null;
     }
   }
 
@@ -846,7 +874,7 @@ export class Game {
    * trusting whatever `stillFrame` last composited.
    */
   private captureThumbnail(): string {
-    this.view.renderer.render(this.scene, this.view.camera.camera);
+    this.view.present(this.scene, this.view.camera.camera);
     const src = this.view.renderer.domElement;
     const w = 320;
     const h = Math.max(1, Math.round((src.height / Math.max(1, src.width)) * w));
@@ -964,6 +992,12 @@ export class Game {
       subsectorAt,
     });
     this.scene.add(this.built.group);
+    // The colour this level's sky lends every surface under it, resolved once: the sky is fixed for
+    // the whole of a level (docs/render.md § Outdoor sky tint). What the set's MAPINFO names for
+    // this map wins, and only where the WAD actually carries it — docs/wad.md § The sky texture.
+    setLevelSky(levelSkyArt(map.name, this.mapInfoSkies.get(map.name.toUpperCase()), (name) => this.skyArt(name)));
+    this.voidFloor = new VoidFloor(map);
+    this.scene.add(this.voidFloor.mesh);
     // The leaf graph the lights flood through, over the polygons the mesh just built — so a torch
     // stops at its wall. docs/lights.md § Light stops at walls.
     this.lights.bindLevel(new LightVisibility(map, this.built.polys, this.world));
@@ -1160,7 +1194,7 @@ export class Game {
     if (!this.paused) return;
     if (now - this.lastStill >= 50) {
       this.lastStill = now;
-      this.view.renderer.render(this.scene, this.view.camera.camera);
+      this.view.present(this.scene, this.view.camera.camera);
     }
     requestAnimationFrame(this.stillFrame);
   };
@@ -1711,7 +1745,7 @@ export class Game {
     // Moving planes are drawn `alpha` through the last tic like everything else. Must land before
     // the fade pass below: the refresh rewrites the mover buffers its commits write into.
     this.profiler.time('Movers', () => this.specials?.drawMovers(alpha));
-    this.updateFading(rawDt, camera);
+    this.updatePresentation(rawDt, camera);
     this.posePlayer(alpha, rawDt, camera.viewAngleDeg);
     this.profiler.time('Lights', () => this.lights.commit());
 
@@ -1720,7 +1754,7 @@ export class Game {
     const gpu = getProfilerVisible() ? this.view.gpuTimer : null;
     this.profiler.time('Render', () => {
       gpu?.begin();
-      this.view.renderer.render(this.scene, camera.camera);
+      this.view.present(this.scene, camera.camera);
       gpu?.end();
     });
     // The music synth runs off its own timer, in the gaps between frames, so it
@@ -2028,9 +2062,10 @@ export class Game {
   }
 
   /**
-   * Occlusion fading of walls and flats, plus the two texture animators — see render/occlusion.ts.
+   * Everything riding the frame clock rather than the tic: occlusion fading of walls and flats,
+   * the scrollers, the texture animators and the void floor's drift. See render/occlusion.ts.
    */
-  private updateFading(dt: number, camera: TopDownCamera): void {
+  private updatePresentation(dt: number, camera: TopDownCamera): void {
     this.profiler.time('Fading', () => {
       const camPos = camera.camera.position;
       // Door/lift geometry lives in its own meshes (game/specials.ts) and so
@@ -2062,6 +2097,8 @@ export class Game {
       // construction in the constructor) — an animated liquid/fire texture keeps
       // cycling across a level transition exactly as it does within one.
       this.animatedTextures.update(dt);
+      // Same frame clock, same reason. docs/render.md § The void floor.
+      this.voidFloor?.update(dt);
     });
   }
 
@@ -2079,6 +2116,9 @@ export class Game {
     const x = p.prevX + (p.x - p.prevX) * alpha;
     const y = p.prevY + (p.y - p.prevY) * alpha;
     const z = p.prevZ + (p.z - p.prevZ) * alpha;
+    // Cast on the ground under them, not on their feet — this tic's own `groundFloor` answer, kept
+    // by `Player` rather than asked again here. docs/render.md § The player's shadow.
+    this.playerShadow.update(x, y, p.groundZ, z);
     // Shortest-arc, so a shot fired across the -pi/pi seam doesn't spin the
     // billboard the long way round between two tics.
     let dAngle = p.angle - p.prevAngle;
@@ -2100,8 +2140,21 @@ export class Game {
     const tint = this.lights.offerAndTint(this.playerActor.frameKey, x, y, z, PLAYER_EMITTER_ID);
     this.playerActor.setPose(
       { x, y, z },
-      { facingDeg, light, dt: rawDt, animating: walking, viewerAngleDeg: viewAngleDeg, tint },
+      {
+        facingDeg,
+        light,
+        dt: rawDt,
+        animating: walking,
+        viewerAngleDeg: viewAngleDeg,
+        tint,
+        sky: skyLitSector(this.world.map.sectors[sectorIndex]),
+      },
     );
+  }
+
+  /** One sky name as art, however the set ships it — `levelSkyArt`'s lookup. */
+  private skyArt(name: string): Bitmap | null {
+    return this.gfx.texture(name) ?? this.gfx.picture(name);
   }
 
   /** DEVMODE's status text. Only ever called while the panel is shown — see `DebugHud.update`. */

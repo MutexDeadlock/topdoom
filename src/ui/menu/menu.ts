@@ -36,6 +36,10 @@ import { getCameraMode, setCameraMode, type CameraMode } from '../../game/autoca
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
 import { getInfiniteTallActors, setInfiniteTallActors } from '../../game/world.ts';
 import { getDynamicLights, setDynamicLights } from '../../render/lights.ts';
+import { getVoidFog, setVoidFog } from '../../render/voidfloor.ts';
+import { getBloom, setBloom } from '../../render/bloom.ts';
+import { getWallShade, setWallShade } from '../../render/wallshadow.ts';
+import { getSkyTint, setSkyTint } from '../../render/skytint.ts';
 import {
   getPlayerSpriteMode,
   setPlayerSpriteMode,
@@ -114,6 +118,10 @@ export class Menu {
   private playerSpritesSelect = el<HTMLSelectElement>('playersprites-select');
   private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private dynLightsCheckbox = el<HTMLInputElement>('dynlights-checkbox');
+  private voidFogCheckbox = el<HTMLInputElement>('voidfog-checkbox');
+  private bloomCheckbox = el<HTMLInputElement>('bloom-checkbox');
+  private wallShadeCheckbox = el<HTMLInputElement>('wallshade-checkbox');
+  private skyTintCheckbox = el<HTMLInputElement>('skytint-checkbox');
   private pistolStartCheckbox = el<HTMLInputElement>('pistolstart-checkbox');
   private autoSwitchCheckbox = el<HTMLInputElement>('autoswitch-checkbox');
   private fpsCheckbox = el<HTMLInputElement>('fps-checkbox');
@@ -228,6 +236,13 @@ export class Menu {
     this.installFpsCap();
     this.installInfiniteTall();
     this.installDynamicLights();
+    // The presentation toggles, each read live by the module that owns it so a change reaches the
+    // level already running — docs/render.md, and docs/lights.md § Turning it on for the bloom,
+    // which is **off** by default alone among them because of what it costs.
+    this.installToggle(this.voidFogCheckbox, getVoidFog, setVoidFog);
+    this.installToggle(this.wallShadeCheckbox, getWallShade, setWallShade);
+    this.installToggle(this.skyTintCheckbox, getSkyTint, setSkyTint);
+    this.installToggle(this.bloomCheckbox, getBloom, setBloom);
     this.installPlayerSprites();
     this.installPistolStart();
     this.installAutoSwitch();
@@ -556,6 +571,16 @@ export class Menu {
     this.dynLightsCheckbox.addEventListener('change', () => {
       setDynamicLights(this.dynLightsCheckbox.checked);
     });
+  }
+
+  /**
+   * One checkbox against the module-level flag it shows: the setting's own `get`/`set` pair is the
+   * whole of it, since every such flag is read live where it is used.
+   * docs/menu.md § Persisted settings.
+   */
+  private installToggle(box: HTMLInputElement, read: () => boolean, write: (on: boolean) => void): void {
+    box.checked = read();
+    box.addEventListener('change', () => write(box.checked));
   }
 
   /**

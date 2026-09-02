@@ -630,9 +630,10 @@ touched the control.
 
 The tab is split in four by its own row of **sub-tabs** (`.tabs.subtabs` inside `#tab-settings`,
 `Menu.setSettingsTab`), in the order **General** — what is left over, the settings that are none of
-the other three — **Controls**, the key list and everything bound to it, **Visuals**, everything
-that changes how the running level looks, and **Audio**, everything you hear. Controls sits second
-because it is the one a player opens to read rather than to change. The sub-panels are the same
+the other three — **Visuals**, everything that changes how the running level looks, **Controls**,
+the key list and everything bound to it, and **Audio**, everything you hear. Controls sits third
+because it is the one a player opens to read rather than to change, so the two tabs they open to
+*change* something sit together at the front. The sub-panels are the same
 `.tab-panels`/`.tab-panel` grid-cell stack the top-level tabs use, nested one level — so Audio being
 much shorter than Controls costs the menu no resize when the player switches, exactly as above. The
 sub-tab row is styled a step quieter (smaller type, no rule under it) so it doesn't read as a second
@@ -763,6 +764,10 @@ Each is a module-level value behind an exported `get`/`set` pair — not an inst
 | `topdoom.fps` | `ui/devmode/debughud.ts` (`getFpsVisible`/`setFpsVisible`) | § FPS counter below |
 | `topdoom.profiler` | `ui/hud/profiler.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
 | `topdoom.dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
+| `topdoom.voidFog` | `render/voidfloor.ts` (`getVoidFog`/`setVoidFog`) | docs/render.md § The toggle |
+| `topdoom.wallShade` | `render/wallshadow.ts` (`getWallShade`/`setWallShade`) | docs/render.md § Turning it off |
+| `topdoom.skyTint` | `render/skytint.ts` (`getSkyTint`/`setSkyTint`) | docs/render.md § Turning the tint off |
+| `topdoom.bloom` | `render/bloom.ts` (`getBloom`/`setBloom`) | docs/lights.md § Turning it on |
 | `topdoom.playerSprites` | `wad/playerskin.ts` (`getPlayerSpriteMode`/`setPlayerSpriteMode`) | docs/sprites.md § When the skins apply |
 | `topdoom.infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
 | `topdoom.pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
@@ -1028,6 +1033,13 @@ around `renderer.render`, through `EXT_disjoint_timer_query_webgl2`. Four things
   timer keeps a small pool of them in flight and claims each when the driver has it. The pool is
   capped, which is what stops a driver that never answers from queueing one query per frame for the
   rest of the session.
+- **A full pool must never be the end of it.** `end` collects finished results **whether or not
+  this frame opened a query of its own**, and a pool that stays full for `STALL_FRAMES` is given up
+  on and reused. Both exist because a frame opens no query exactly when the pool is already full:
+  collecting only alongside a query of the frame's own deadlocks the timer at the first stall long
+  enough to fill it, and the reading then stands unchanged for the rest of the session. A resize
+  with the bloom chain on is the case that reaches it — the scene target and the whole blur pyramid
+  are reallocated in one frame (docs/lights.md § Bloom).
 - **A *disjoint* drops the whole batch.** The GPU having been reset invalidates every query in
   flight, not one of them, and reading the flag is what clears it — so it is read once per harvest
   and every result in that pass is discarded when it is set.

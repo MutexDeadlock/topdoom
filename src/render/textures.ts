@@ -16,6 +16,9 @@ import {
   type DynamicLights,
 } from './lights.ts';
 import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from './lightvis.ts';
+import { glslFloat } from '../util/glsl.ts';
+import { wallShadeUniform } from './wallshadow.ts';
+import { skyTintUniform } from './skytint.ts';
 
 export type SurfaceKind = 'wall' | 'flat';
 
@@ -37,9 +40,11 @@ const SOFT_SPAN = glslFloat(2 * SHADOW_SOFT_BINS);
 /**
  * The dynamic-light term, appended to the `#include <color_fragment>` replacement so it lands while
  * `diffuseColor` is still live. `vColor` is the sector's baked light and `sampledDiffuseColor` the
- * texel: the lights are added to the *multiplier* and clamped there, which reproduces vanilla's
- * fullbright ceiling instead of overbrightening the texture past it. Fog is applied later, to
- * `gl_FragColor`, so a lit surface still fogs. docs/lights.md § Two lighting paths.
+ * texel: the lights are added to the *multiplier*, not the texel, which reproduces vanilla's
+ * fullbright ceiling instead of overbrightening the texture past it. The ceiling is the tone
+ * mapper's rather than a clamp here, so what passes it survives to be the bloom's only source. Fog
+ * is applied later, to `gl_FragColor`, so a lit surface still fogs.
+ * docs/lights.md § Two lighting paths, § Bloom.
  *
  * A light only counts where it can be seen from, tested twice. `vLightCell` is the surface's own
  * BSP leaf and `uLightVis` the per-leaf list of the lights that flooded into it, which is all the
@@ -99,7 +104,10 @@ const DYN_LIGHT_FRAGMENT = /* glsl */ `
                 if (lit <= 0.0) continue;
                 dynLight += uLightColor[i] * att * lit;
               }
-              diffuseColor.rgb = min(diffuseColor.rgb + sampledDiffuseColor.rgb * dynLight, vec3(1.0));
+              // Deliberately unclamped: the fullbright ceiling is three's own tone mapping, the
+              // same per-channel saturate, and leaving the excess intact is what the bloom
+              // threshold reads (docs/lights.md § Bloom).
+              diffuseColor.rgb += sampledDiffuseColor.rgb * dynLight;
             }`;
 
 /**
@@ -157,6 +165,28 @@ export class MaterialBank {
       // fading has why blending cannot work for a map-wide batch.
       const lights = this.lights;
       mat.onBeforeCompile = (shader) => {
+        // Two per-vertex amounts baked at build time, each scaled by one live uniform so its
+        // setting reaches a level already running: the shading a wall lays on the floor at its foot
+        // (docs/render.md § Wall contact shading) and whether the surface stands under sky
+        // (§ Outdoor sky tint). A geometry carrying neither attribute reads 0 for both, which is
+        // unshaded and indoors.
+        shader.uniforms.uWallShade = wallShadeUniform;
+        shader.uniforms.uSkyTint = skyTintUniform;
+        shader.vertexShader = shader.vertexShader
+          .replace(
+            '#include <common>',
+            `#include <common>
+            attribute float aWallShade;
+            attribute float aSkyLit;
+            uniform float uWallShade;
+            uniform vec3 uSkyTint;`,
+          )
+          .replace(
+            '#include <color_vertex>',
+            `#include <color_vertex>
+            vColor.rgb *= 1.0 - aWallShade * uWallShade;
+            vColor.rgb *= mix(vec3(1.0), uSkyTint, aSkyLit);`,
+          );
         // Dynamic lights ride along in this same replacement, and they have to: `diffuseColor` is
         // consumed into `outgoingLight` a few lines below `color_fragment`, so anything added to
         // it after that point is silently thrown away (docs/lights.md § Two lighting paths).
@@ -288,13 +318,4 @@ export class MaterialBank {
     }
     return false;
   }
-}
-
-/**
- * One JS number as a GLSL float literal. Every float spliced into the shader below goes through
- * here: a whole number would otherwise reach GLSL as an int and turn the surrounding arithmetic
- * into integer arithmetic, which is a silent wrong answer rather than a compile error.
- */
-function glslFloat(n: number): string {
-  return Number.isInteger(n) ? `${n}.0` : String(n);
 }

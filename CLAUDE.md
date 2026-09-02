@@ -70,8 +70,13 @@ src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it 
                for (sectorprobe), the solids a map draws as void (solids), mesh building, materials
                + texture animation, occlusion fading, Boom's scrolling surfaces (scroller), sprite
                billboards + their instanced batching, the weapon-matching player skins in drawable
-               form (playerskin), GLDEFS dynamic lights (lights) and which subsectors one reaches
-               (lightvis), shot tracers, camera, viewport, the GPU's own frame time (gputimer)
+               form (playerskin), the blob shadow under them (playershadow), the shading a wall
+               lays on the floor at its foot (wallshadow), the colour a sky ceiling lends what
+               stands under it (skytint), the drifting fog the level stands in
+               (voidfloor), the glow bright light leaves on the frame (bloom), GLDEFS dynamic
+               lights (lights) and which subsectors one
+               reaches (lightvis), shot tracers, camera, viewport, the GPU's own frame time
+               (gputimer)
 src/game/      spatial queries + collision, player controller, input, the auto camera, what each
                skill level changes (skill), thing world state, fog of war, inventory/pickups,
                weapons and firing, shots in flight + splash, damage/death, transient effects,
@@ -80,7 +85,8 @@ src/game/      spatial queries + collision, player controller, input, the auto c
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through, WebAudio
                playback (channels, attenuation, pan, volume), the level's music
 src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens)
-src/util/      helpers shared across layers: 2D geometry, damped-lerp smoothing, per-frame
+src/util/      helpers shared across layers: 2D geometry, the smoothing curves (damping: the
+               damped-lerp approach and the Hermite ease), GLSL float literals (glsl), per-frame
                profiling, IndexedDB request plumbing (idb, shared by the save store and the WAD
                library), raw DEFLATE (inflate, for compressed nodes), vanilla's random table — the
                engine's only entropy source
@@ -204,6 +210,9 @@ measuring; the relevant docs say which is which.
 and its files for their role, never repeating the domain (`things/tables.ts`, not `thingtables.ts`);
 where a `<domain>.ts` sits beside a `<domain>/`, the parent is that layer's one public entry point.
 Deviations are listed at the bottom of that doc and get fixed when the file is next touched.
+**Read that doc before adding a file, and re-check the finished one against it** — § Source order
+inside a file (public surface, subject, private support, in that order) and § Inline `if` are the
+two it is not enough to know about in the abstract.
 
 ## Documentation maintenance
 

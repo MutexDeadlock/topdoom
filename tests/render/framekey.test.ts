@@ -34,7 +34,15 @@ describe('Sprites · frameKey', () => {
   });
 
   test('a SpriteActor lifts a bright frame to 255 and leaves the rest to its sector', () => {
-    const pose = { facingDeg: 0, light: 64, dt: 0, animating: false, viewerAngleDeg: VIEWER_ANGLE_DEG, tint: undefined };
+    const pose = {
+      facingDeg: 0,
+      light: 64,
+      dt: 0,
+      animating: false,
+      viewerAngleDeg: VIEWER_ANGLE_DEG,
+      tint: undefined,
+      sky: false,
+    };
     const bright = new SpriteActor(BANK, MATERIALS, {
       spriteName: 'PLAY',
       animFrames: ['F'],

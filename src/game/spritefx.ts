@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
+import { skyLitSector } from '../render/skytint.ts';
 import { Tracer } from '../render/tracer.ts';
 import { effectEmitterId, type DynamicLights, type Tint } from '../render/lights.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
@@ -306,7 +307,11 @@ export class SpriteFxLayer {
     const cached = anim.resolve(facingDeg, this.viewerAngleDeg);
     if (!cached) return;
     doomToWorld(at.x, at.y, at.z + cached.bottomOffset, this.batchPos);
-    const lit = FULLBRIGHT_FRAMES.has(anim.frameKey) ? 255 : light;
+    const bright = FULLBRIGHT_FRAMES.has(anim.frameKey);
+    const lit = bright ? 255 : light;
+    // What flies over a courtyard takes the outdoor tint too, off the leaf it was offered at.
+    // docs/render.md § Outdoor sky tint.
+    const sky = !bright && subsector >= 0 && skyLitSector(this.world.sectorOfSubsector(subsector));
     // This is the single funnel for projectiles in flight, every one-shot effect and the Icon of
     // Sin's cubes — so one hook here covers every moving light the game has (docs/lights.md).
     let tint: Tint | undefined;
@@ -318,7 +323,7 @@ export class SpriteFxLayer {
       }
       tint = this.lights.offerAndTint(anim.frameKey, at.x, at.y, at.z, id, subsector);
     }
-    this.batch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(lit), tint);
+    this.batch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(lit), tint, sky);
   }
 
   updateTeleportFogs(dt: number): void {

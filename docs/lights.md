@@ -471,6 +471,126 @@ one-shot effect gets a fresh emitter ID every time one spawns (§ What emits). `
 them and resets `rowOwner`: memos are keyed on emitter IDs and leaf indices, both of which the next
 level reuses, and a row whose owner is forgotten re-uploads on its next use.
 
+## Bloom
+
+`src/render/bloom.ts`, owned by `Viewport` and reached through `Viewport.present` — the one call the
+whole engine renders through, so the pause redraw and the savegame thumbnail composite the same way
+the frame on screen does.
+
+**What glows is a per-channel threshold in linear light, and 1 is the value it must not be.** The
+light term is a multiplier on the texel (`textures.ts`), so on DOOM's dark floors a torch never
+pushes anything near white: with the threshold at 1, DOOM2 MAP25's sixteen torches changed **not one
+pixel**. `THRESHOLD` is tuned by feel instead, and what clears it in practice is the emitters
+themselves — flames, lamps, plasma — not the surfaces they light.
+
+**Per channel, not on luminance.** Linear light makes a saturated colour dark: DOOM's flame orange
+is luminance 0.30 with its red channel already at 1, so a luminance test drops exactly the lights
+this is for.
+
+**The light term is left unclamped** (`textures.ts`), so light strong enough to pass white blooms
+proportionally harder rather than saturating. It used to end `min(diffuseColor.rgb +
+sampledDiffuseColor.rgb * dynLight, vec3(1.0))`; the ceiling is now three's own tone mapping, the
+same per-channel saturate at `LinearToneMapping` and exposure 1 — and at the light visor's 2.5,
+since `saturate(min(x,1)·e) == saturate(x·e)` for `e >= 1`. The picture is unchanged either way.
+`tests/render/lights-shader.test.ts` pins it, because putting that clamp back would silently return
+the bloom to firing on nothing.
+
+### The chain
+
+Scene into a `HalfFloatType` target, then four blur levels and one composite:
+
+- **Half float is not for the range but for the darks, and it is the whole cost of the feature.**
+  Three encodes into a render target in its *working* colour space, i.e. linear
+  (`WebGLPrograms.js`: a non-XR target ignores `texture.colorSpace`), and the void fog sits at
+  linear 0.002-0.006 — two steps out of 255 in an 8-bit linear target. The full-size target is what
+  the measurements below are paying for.
+- **Tone mapping switches itself off**: three applies it per material only while drawing at the
+  canvas, so with a target bound the scene lands in linear light and the composite is what tone maps
+  and encodes. `toneMappingExposure` reaches it as a program uniform, so the light visor still works
+  with no wiring of its own.
+- **MSAA moves onto the scene target** (`samples`), under the same `pixelRatio < 2` condition
+  `Viewport` puts on the canvas context — with a target bound the canvas's own `antialias` does
+  nothing, and the path with the bloom off still uses it.
+- The blur is a **downsample/upsample pyramid** starting at `DOWNSCALE`, not a Gaussian: four 4-tap
+  halvings down and 9-tap tents summed back up. It is wide and ring-free for the cost of the small
+  levels only, and `FILTER_RADIUS` rather than the level count is the dial for how hazy it reads.
+
+### Why the bright pass is four taps
+
+**A single bilinear tap averages 2x2 source texels however far a pass reduces**, so the bright pass
+reading the scene at `DOWNSCALE` 4 saw 4 of every 16 texels — and *which* 4 slid as the camera
+moved. That is a flicker in the glow, and it was reported as one. It takes four taps, a quarter of
+the reduction apart, for the four to cover the block their output texel stands for.
+
+The threshold is applied **per tap, before the average**: after it, a lone bright texel is diluted
+under the threshold by its dark neighbours and drops out entirely, then pops back as the camera
+moves — the same flicker by the other route.
+
+Measured over six camera positions a map unit apart on E1M1's two static lamps, as the spread in how
+much glow the pass captured at all (a difference image measures the glow *sliding*, since one map
+unit moves the picture about two pixels):
+
+| bright pass | spread in captured glow |
+|---|---|
+| `DOWNSCALE` 4, one tap | 6.0% |
+| `DOWNSCALE` 4, four taps | 2.6% |
+| `DOWNSCALE` 2, four taps | 3.8% |
+
+`DOWNSCALE` 2 is where this was first worked around, and the table says why it worked: at a 2x
+reduction one bilinear tap *is* an exact box, so the bug could not show. With the four taps in
+place either divisor is stable, and 4 costs about 0.4 ms less of the 5.9 below — the full-size scene
+target, not this chain, is what the bloom actually costs.
+
+**`DOWNSCALE` above 4 needs more taps**, since four cover a 4x4 block and no more.
+
+### What it costs
+
+GPU time around the render call (`GpuTimer`), at a 5120x2880 drawing buffer, DOOM2 MAP25 standing in
+its sixteen torches:
+
+| GPU | off | on |
+|---|---|---|
+| GeForce RTX 5070 Ti Laptop | 1.0 ms | 5.8 ms |
+| Ryzen 9 9955HX integrated | 18.1 ms | 20.8 ms |
+
+The multiplier is large and the absolute figure is not: 5.8 ms at that size is still inside a
+120 fps budget. The integrated part is past 60 fps at that resolution with the bloom off as well, so
+this is not what breaks it there. Both are bandwidth, not shading — the scene target is written once
+and read once at full size, and the pyramid runs at a sixteenth of it and below.
+
+### Bloom and the canvas's MSAA
+
+The canvas's own multisampling (`Viewport`, docs/render.md § What a frame costs) smooths **nothing**
+behind this chain: the scene lands in a render target, and the only geometry reaching the default
+framebuffer is one triangle covering it whole. Left on, it is a second full-size multisample buffer
+allocated and resolved every frame beside the one the scene target already carries.
+
+So the context is created without it where the setting is already on, and `Bloom` supplies the
+antialiasing instead — the scene target's own `samples`, which it needed regardless. `Viewport`
+decides this once, because a WebGL context's `antialias` cannot be changed after it is created.
+
+That is what `Bloom.ownsAntialias` is for. A session that started with the glow **on** and then
+switches it off keeps rendering through the scene target and the composite, minus the blur chain:
+the target is the only multisampling left, and dropping it would leave the picture aliased until a
+reload. Nothing else changes — the levels are released, so what that session pays while off is one
+target and one full-screen triangle, which is what the canvas MSAA cost it anyway.
+
+A session that started with the glow **off** keeps the canvas's MSAA and the plain
+`renderer.render`; switching bloom on then costs the redundant canvas buffer until the next reload,
+which is the same trade in the cheaper direction.
+
+### Turning it on
+
+Settings / Visuals / Lighting / "Bloom", persisted at `topdoom.bloom`, read per frame.
+
+**Off by default — the only visual setting that is**, on the table above: several times the frame's
+GPU time is a price worth paying only once someone has seen the glow and decided they want it.
+Every other one of these is cheap enough to just be on.
+
+Off, the targets are released and `render` is the plain `renderer.render` it replaced, so the
+default costs nothing whatsoever — not the scene target, not a pass, not an allocation. The one
+exception is a session that started with it on (§ Bloom and the canvas's MSAA).
+
 ## The toggle
 
 `topdoom.dynamicLights` in localStorage, **on by default**, in the menu's Settings → Visuals tab

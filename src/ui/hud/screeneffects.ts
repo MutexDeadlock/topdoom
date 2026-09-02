@@ -51,9 +51,9 @@ export class ScreenEffects {
   private painFlash = 0;
 
   /**
-   * `setPlayerOpacity` writes partial invisibility to the player's own
-   * `SpriteActor`, passed as a callback so this stays out of the render layer
-   * — it's the one effect here that isn't a DOM overlay or a renderer uniform.
+   * `setPlayerOpacity` writes partial invisibility to what the player is drawn as — their own
+   * `SpriteActor` and the disc under it — passed as a callback so this stays out of the render
+   * layer; it's the one effect here that isn't a DOM overlay or a renderer uniform.
    */
   constructor(renderer: THREE.WebGLRenderer, setPlayerOpacity: (opacity: number) => void) {
     this.renderer = renderer;

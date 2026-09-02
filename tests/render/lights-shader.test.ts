@@ -154,6 +154,15 @@ describe('Dynamic lights · the geometry shader patch', () => {
     assert.ok(fog >= 0 && ours < fog, 'a lit surface must still fog');
   });
 
+  test('the light term is left unclamped, so the bloom has something to threshold', () => {
+    // What the glow reads is the amount by which light pushed a surface past white, so a `min(...,
+    // 1.0)` here would put every frame back under the threshold and the bloom would fire on
+    // nothing. The ceiling is three's own tone mapping instead — docs/lights.md § Bloom.
+    const { fragment } = patched(new DynamicLights(parseGldefs('')));
+    assert.match(fragment, /diffuseColor\.rgb \+= sampledDiffuseColor\.rgb \* dynLight;/);
+    assert.doesNotMatch(fragment, /min\(\s*diffuseColor\.rgb \+ sampledDiffuseColor/);
+  });
+
   test('the dither fade the patch shares its hook with is untouched', () => {
     // Both tenants live in one `#include <color_fragment>` replacement — docs/render.md
     // § Wall occlusion fading.
@@ -177,7 +186,8 @@ describe('Dynamic lights · the geometry shader patch', () => {
     assert.ok(!vertex.includes('aLightCell'));
     assert.ok(!fragment.includes('uLightVis'));
     assert.ok(!fragment.includes('uLightShadow'));
-    assert.deepEqual(Object.keys(uniforms), []);
+    // The contact shading and the sky tint are the hook's other tenants and ride along unlit.
+    assert.deepEqual(Object.keys(uniforms), ['uWallShade', 'uSkyTint']);
     // …but still fades, which is the other tenant of the same hook.
     assert.ok(fragment.includes('if (diffuseColor.a < dither) discard;'));
   });

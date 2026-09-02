@@ -1,0 +1,26 @@
+# https://editorconfig.org — every text file here is UTF-8, LF and 2-space.
+# The repo runs no linter and no formatter, so this is the only place those
+# settings are written down. The sections are a whitelist on purpose: the WADs
+# and DEHACKED patches under public/game and tests/fixtures are third-party and
+# match nothing here, so nothing rewrites them.
+
+root = true
+
+[*.{ts,css,html,json}]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.md]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+# Two trailing spaces are Markdown's hard line break.
+trim_trailing_whitespace = false
+# Prose wraps at 100; tables and link lines run past it.
+max_line_length = 100

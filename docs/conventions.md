@@ -319,6 +319,16 @@ same shapes 157 times, `DOOR_SPEED` 25 times, inside table rows the constants ar
 of), and importing from two `defs.ts` at once — `game/things.ts` would need
 `thingDefs.`/`monsterDefs.`, repeating the domain its directory already names.
 
+## Whitespace
+
+UTF-8, LF, two-space indent, final newline, no trailing whitespace — `.editorconfig` at the repo
+root is the only place these live; there is no linter and no formatter. Markdown keeps trailing
+whitespace (two spaces are a hard line break) and wraps prose at 100 columns; tables run past it.
+
+It lists the extensions it covers (`.ts`, `.css`, `.html`, `.json`, `.md`) rather than starting from
+`[*]`: the WADs and DEHACKED patches under `public/game/` and `tests/fixtures/` are third-party and
+stay byte-verbatim, and a whitelist cannot reach them. A new text extension needs adding here.
+
 ## Known deviations
 
 Pending, not precedent: none.

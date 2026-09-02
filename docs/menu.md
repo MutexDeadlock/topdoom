@@ -667,7 +667,7 @@ looking for.
 is not a key's behavior — the `+ - [ ]` rows there note they act in manual mode only.
 
 The frame limit is `#fpscap-select`, and its `<option>` values *are* the capped rates
-(`0` = unlimited, the default), so the control needs no mapping table. It is owned by `game.ts`
+(`0` = unlimited; `60` is the default), so the control needs no mapping table. It is owned by `game.ts`
 (`getFpsCap`/`setFpsCap`), whose frame loop is the only thing it changes, and is read live per frame
 — changing it mid-level applies to the level already running, like volume and autorun. See
 docs/frameloop.md § The FPS cap for how a cap is actually held. Lighting is the one

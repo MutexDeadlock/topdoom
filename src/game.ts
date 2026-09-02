@@ -147,9 +147,16 @@ const SLOW_LOAD_MS = 200;
 
 const FPS_CAP_STORAGE_KEY = 'fpsCap';
 
-/** The frame rates the menu offers; `0` is no cap, and the default. */
+/** The frame rates the menu offers; `0` is no cap, `60` the default. */
 const FPS_CAPS = [0, 30, 60, 120] as const;
 export type FpsCap = (typeof FPS_CAPS)[number];
+
+/**
+ * What a player who has never touched the setting runs at. **Tuned by feel**: the simulation is
+ * 35 Hz either way (docs/frameloop.md § The FPS cap), so frames past 60 buy little here and cost a
+ * laptop its fans; a player who wants them says so in the menu.
+ */
+const DEFAULT_FPS_CAP: FpsCap = 60;
 
 /**
  * How many frames a second the loop is allowed to run at, `0` for as many as the
@@ -2177,6 +2184,6 @@ export class Game {
 }
 
 function readStoredFpsCap(): FpsCap {
-  const stored = readStorage(FPS_CAP_STORAGE_KEY, 0);
-  return FPS_CAPS.find((c) => c === stored) ?? 0;
+  const stored = readStorage(FPS_CAP_STORAGE_KEY, DEFAULT_FPS_CAP);
+  return FPS_CAPS.find((c) => c === stored) ?? DEFAULT_FPS_CAP;
 }

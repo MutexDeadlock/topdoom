@@ -11,6 +11,7 @@ Features and improvements
       stands down entirely where no shipped skin depicts what a weapon fires
   - all settings live in one localStorage entry now; settings stored by an
     earlier build are not migrated and start out at their defaults again
+  - the frame limit defaults to 60 fps
 
 Fixed bugs
   - a map an PWAD replaced is no longer named after the IWAD's level of 

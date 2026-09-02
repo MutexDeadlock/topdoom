@@ -197,7 +197,8 @@ patterns' own tic timing.
 
 ## The FPS cap (`game.ts: dueThisFrame`, `getFpsCap`)
 
-A settings-menu limit of 30, 60 or 120 fps, or `0` for none — the default. It is enforced by
+A settings-menu limit of 30, 60 or 120 fps, or `0` for none. **60 is the default** — the simulation
+runs at 35 Hz whatever the cap, so more frames buy little and cost battery. It is enforced by
 **skipping whole rendering opportunities**: a frame that isn't due yet re-arms
 `requestAnimationFrame` without drawing.
 

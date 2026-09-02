@@ -10,7 +10,7 @@ import { OplChip } from './music/opl.ts';
 import { OplSynth } from './music/synth.ts';
 import { finaleMusicFor, intermissionMusicFor, vanillaMusicFor } from './music/tables.ts';
 import type { Song } from './music/defs.ts';
-import { writeStorage } from '../util/storage.ts';
+import { writeStorageSoon } from '../util/storage.ts';
 
 /**
  * Default music volume. **Tuned by feel**, and deliberately below the sfx default: music sits
@@ -122,7 +122,7 @@ export class MusicPlayer {
   setVolume(value: number): void {
     const previous = this.audible;
     this._volume = Math.max(0, Math.min(1, value));
-    writeStorage(VOLUME_STORAGE_KEY, this._volume);
+    writeStorageSoon(VOLUME_STORAGE_KEY, this._volume);
     if (this.bus) this.bus.gain.value = this._volume;
     this.regate(previous);
   }

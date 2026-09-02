@@ -985,7 +985,7 @@ export class Menu {
    * Reads back the last skill picked; falls back to vanilla's own default when unset or invalid.
    */
   private storedSkill(): Skill {
-    const stored: number = readStorage(SKILL_STORAGE_KEY, DEFAULT_SKILL);
+    const stored = readStorage(SKILL_STORAGE_KEY, DEFAULT_SKILL);
     return stored >= 1 && stored <= 5 ? (stored as Skill) : DEFAULT_SKILL;
   }
 

@@ -752,7 +752,7 @@ Every persisted value is a field of **one JSON object**, stored under the single
 `globalThis.localStorage`: `game/besttimes.ts`'s one pre-IndexedDB key goes through the same
 module's exported `webStorage()`, so the guard below covers it too.
 
-Three rules that module owns, so no call site repeats them:
+Four rules that module owns, so no call site repeats them:
 
 - **A read is validated against the caller's default** and falls back to it where the field is
   unset or holds another type — `Number(null) === 0` otherwise makes "never set"
@@ -760,6 +760,11 @@ Three rules that module owns, so no call site repeats them:
   names (`readStoredFpsCap`) is the caller's own check, after the read.
 - **A write merges into a re-read of the object**, so a second tab open on the game overwrites the
   field it changed rather than every setting the first one wrote.
+- **A setting a *continuous* control drives writes through `writeStorageSoon`**, which holds the
+  field for 250 ms and stores everything pending in one write. The three volume sliders set on every
+  `input` event — dozens across one drag, each otherwise re-encoding the whole object. A read in
+  between still sees the pending value, and `pagehide` or a tab going hidden flushes early, so the
+  delay cannot lose a setting.
 - **A browser with no storage degrades to defaults**, including one where the property access
   itself throws (site data blocked) — which is why the guard there is a `try` and not a `?.`.
 

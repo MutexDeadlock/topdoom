@@ -1,4 +1,4 @@
-import { afterEach, describe, test } from 'node:test';
+import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeStorage, installStorage } from '../fixtures/storage.ts';
 
@@ -16,12 +16,16 @@ import { fakeStorage, installStorage } from '../fixtures/storage.ts';
 let store = fakeStorage();
 installStorage(store);
 
-const { readStorage, readStorageObject, writeStorage } = await import('../../src/util/storage.ts');
+const { flushStorage, readStorage, readStorageObject, writeStorage, writeStorageSoon } =
+  await import('../../src/util/storage.ts');
 
 const SETTINGS_KEY = 'topdoom.settings';
 const blob = () => JSON.parse(store.map.get(SETTINGS_KEY) ?? '{}') as Record<string, unknown>;
 
 afterEach(() => {
+  // Before the swap, so a field left pending drains into the outgoing store and never surfaces in
+  // the next test's.
+  flushStorage();
   store = fakeStorage();
   installStorage(store);
 });
@@ -129,5 +133,53 @@ describe('Storage · settings blob', () => {
     installStorage(full);
     assert.doesNotThrow(() => writeStorage('bloom', true));
     assert.equal(readStorage('bloom', false), false);
+  });
+});
+
+/**
+ * The coalesced write a continuous control uses. What matters is that a drag costs one write, that
+ * nothing reads stale in the meantime, and that the value is not lost if the page goes away first.
+ */
+describe('Storage · coalesced writes', () => {
+  beforeEach(() => mock.timers.enable({ apis: ['setTimeout'] }));
+  afterEach(() => mock.timers.reset());
+
+  test('a burst on one field stores once, at the last value', () => {
+    for (let i = 0; i <= 10; i++) writeStorageSoon('sfxVolume', i / 10);
+    assert.deepEqual([...store.map.keys()], [], 'nothing stored while the drag is still going');
+    // A getter re-read mid-drag sees what was written, not what is still in the store.
+    assert.equal(readStorage('sfxVolume', -1), 1);
+    mock.timers.tick(250);
+    assert.equal(blob().sfxVolume, 1);
+  });
+
+  test('fields pending together land in one write, over what is already stored', () => {
+    writeStorage('autorun', false);
+    writeStorageSoon('sfxVolume', 0.4);
+    writeStorageSoon('musicVolume', 0.2);
+    mock.timers.tick(250);
+    assert.deepEqual(blob(), { autorun: false, sfxVolume: 0.4, musicVolume: 0.2 });
+  });
+
+  test('an immediate write carries the pending fields rather than dropping them', () => {
+    writeStorageSoon('sfxVolume', 0.4);
+    writeStorage('bloom', true);
+    assert.deepEqual(blob(), { sfxVolume: 0.4, bloom: true });
+  });
+
+  test('flushing early stores what is pending and leaves the timer nothing to do', () => {
+    writeStorageSoon('sfxVolume', 0.4);
+    flushStorage();
+    assert.equal(blob().sfxVolume, 0.4);
+    store.map.clear();
+    mock.timers.tick(250);
+    assert.deepEqual([...store.map.keys()], [], 'the cleared timer writes nothing more');
+  });
+
+  test('no storage at all swallows a coalesced write the way an immediate one is swallowed', () => {
+    installStorage(null);
+    writeStorageSoon('sfxVolume', 0.4);
+    assert.doesNotThrow(() => mock.timers.tick(250));
+    assert.equal(readStorage('sfxVolume', -1), -1);
   });
 });

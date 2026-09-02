@@ -61,6 +61,19 @@ describe('WAD parsing · the menu level list', () => {
     assert.deepEqual(maps, [{ name: 'MAP01', provider: 'freedoom2.wad', title: 'Hydroelectric Plant' }]);
   });
 
+  test("the IWAD's own titles stop at the maps it still provides", () => {
+    // freedoom2 + NUTS.WAD: the IWAD's DEHACKED names MAP01, but MAP01 is the add-on's level now.
+    const iwad = source('freedoom2.wad', 'IWAD', ['MAP01', 'MAP02'], {
+      MAP01: 'Hydroelectric Plant',
+      MAP02: 'Filtration Complex',
+    });
+    const maps = mergedMaps(iwad, [source('NUTS.WAD', 'PWAD', ['MAP01'])]);
+    assert.deepEqual(maps, [
+      { name: 'MAP01', provider: 'NUTS.WAD' },
+      { name: 'MAP02', provider: 'freedoom2.wad', title: 'Filtration Complex' },
+    ]);
+  });
+
   test("an add-on's titles reach a map it does not itself provide", () => {
     // EPIC.WAD ships five maps but its DEHACKED renames all 32, and in-game the title applies to
     // every one of them — the menu has to agree, so the provider is not consulted here.

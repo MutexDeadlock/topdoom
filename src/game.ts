@@ -592,7 +592,7 @@ export class Game {
     this.deathOverlay = new DeathOverlay(gfx);
     // Session-scoped like the banks above: which titles apply depends on the loaded file set
     // (its MAPINFO lumps and which IWAD it is), not on the current map.
-    this.levelNames = new LevelNames(wad, mapInfo, this.dehacked?.strings);
+    this.levelNames = new LevelNames(wad, mapInfo, this.dehacked);
     this.crosshair = new Crosshair(view.renderer.domElement);
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');

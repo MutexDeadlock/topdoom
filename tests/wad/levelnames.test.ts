@@ -10,6 +10,7 @@ import {
   missionOf,
   stripTitlePrefix,
   titleLookupFor,
+  type TitleFrom,
 } from '../../src/wad/campaign/names.ts';
 import { MapInfo } from '../../src/wad/campaign/mapinfo.ts';
 import { Wad } from '../../src/wad/wad.ts';
@@ -65,7 +66,7 @@ describe('WAD parsing · level name resolution', () => {
 
   test('MAPINFO outranks the vanilla table', () => {
     const sources = {
-      mapInfoTitle: 'Faulers First',
+      mapInfoTitle: { title: 'Faulers First', fromIwad: false },
       mission: 'doom2',
       providerName: 'faulers_first_map.wad',
       providerIsPwad: true,
@@ -127,6 +128,25 @@ describe('WAD parsing · level name resolution', () => {
     assert.equal(names.graphicFor('MAP02'), 'CWILV01', "the IWAD's own maps still get theirs");
   });
 
+  test("an IWAD's MAPINFO title does not name a map an add-on replaced", () => {
+    // The same rule the vanilla table has, for a set whose IWAD names its levels in MAPINFO: after
+    // the add-on takes MAP01 over, the IWAD's title is for a level that is no longer there.
+    const mapinfo = { name: 'MAPINFO', text: 'map MAP01 "Base"\nmap MAP02 "Plant"' };
+    const iwad = wadFile('IWAD', 'game.wad', ['MAP01', 'MAP02', mapinfo]);
+    const pwad = wadFile('PWAD', 'NUTS.WAD', ['MAP01']);
+    const wad = new Wad([iwad, pwad]);
+    const names = new LevelNames(wad, new MapInfo(wad));
+    assert.equal(names.nameFor('MAP01'), 'NUTS.WAD MAP01');
+    assert.equal(names.nameFor('MAP02'), 'Plant', "the maps it still provides keep theirs");
+
+    // An add-on's own MAPINFO names the map it brought, and any other in the set.
+    const named = wadFile('PWAD', 'NUTS.WAD', ['MAP01', { name: 'MAPINFO', text: 'map MAP01 "Nuts"\nmap MAP02 "Renamed"' }]);
+    const withNames = new Wad([iwad, named]);
+    const renamed = new LevelNames(withNames, new MapInfo(withNames));
+    assert.equal(renamed.nameFor('MAP01'), 'Nuts');
+    assert.equal(renamed.nameFor('MAP02'), 'Renamed');
+  });
+
   test('a map the mission table has no entry for falls back too', () => {
     // SIGIL's E5M1 with SIGIL loaded as a PWAD, and the same map with no provider at all.
     assert.equal(
@@ -142,6 +162,9 @@ describe('WAD parsing · level name resolution', () => {
  * that were already there. See docs/dehacked.md § Strings.
  */
 describe('WAD parsing · DEHACKED level titles', () => {
+  /** A projection's map → title pairs, dropping the provenance the assertions here don't test. */
+  const titlesOf = (titles: Map<string, TitleFrom>) => [...titles].map(([map, from]) => [map, from.title]);
+
   test('stripTitlePrefix applies the two edits LEVEL_NAMES was generated with', () => {
     assert.equal(stripTitlePrefix('level 1: entryway'), 'Entryway');
     assert.equal(stripTitlePrefix('MAP01: Hydroelectric Plant'), 'Hydroelectric Plant');
@@ -157,46 +180,91 @@ describe('WAD parsing · DEHACKED level titles', () => {
       ['THUSTR_1', 'MAP01: TNT One'],
       ['HUSTR_E1M1', 'E1M1: Doom One'],
     ]);
-    assert.deepEqual([...dehTitlesFor('doom2', strings)], [['MAP01', 'Doom II One']]);
-    assert.deepEqual([...dehTitlesFor('plutonia', strings)], [['MAP01', 'Plutonia One']]);
-    assert.deepEqual([...dehTitlesFor('tnt', strings)], [['MAP01', 'TNT One']]);
-    assert.deepEqual([...dehTitlesFor('doom', strings)], [['E1M1', 'Doom One']]);
+    assert.deepEqual(titlesOf(dehTitlesFor('doom2', strings)), [['MAP01', 'Doom II One']]);
+    assert.deepEqual(titlesOf(dehTitlesFor('plutonia', strings)), [['MAP01', 'Plutonia One']]);
+    assert.deepEqual(titlesOf(dehTitlesFor('tnt', strings)), [['MAP01', 'TNT One']]);
+    assert.deepEqual(titlesOf(dehTitlesFor('doom', strings)), [['E1M1', 'Doom One']]);
   });
 
   test('an unrecognised IWAD keeps the plain HUSTR_ set rather than dropping every title', () => {
     // The case EPIC.WAD lands in whenever the IWAD is not literally named `doom2.wad`.
     const strings = new Map([['HUSTR_1', 'MAP01: Kept'], ['PHUSTR_1', 'MAP01: Dropped']]);
-    assert.deepEqual([...dehTitlesFor(null, strings)], [['MAP01', 'Kept']]);
+    assert.deepEqual(titlesOf(dehTitlesFor(null, strings)), [['MAP01', 'Kept']]);
   });
 
   test('a lump name passes straight through, which is how a Text substitution arrives', () => {
-    assert.deepEqual([...dehTitlesFor('doom2', new Map([['MAP07', 'Renamed']]))], [['MAP07', 'Renamed']]);
+    assert.deepEqual(titlesOf(dehTitlesFor('doom2', new Map([['MAP07', 'Renamed']]))), [['MAP07', 'Renamed']]);
   });
 
   test('MAPINFO beats DEHACKED, and DEHACKED beats the vanilla table', () => {
     const base = { mission: 'doom2' as const, providerIsPwad: false };
-    assert.equal(levelTitleFor('MAP01', { ...base, mapInfoTitle: 'From MAPINFO', dehTitle: 'From DEH' }), 'From MAPINFO');
-    assert.equal(levelTitleFor('MAP01', { ...base, dehTitle: 'From DEH' }), 'From DEH');
+    const mapInfoTitle = { title: 'From MAPINFO', fromIwad: false };
+    const dehTitle = { title: 'From DEH', fromIwad: false };
+    assert.equal(levelTitleFor('MAP01', { ...base, mapInfoTitle, dehTitle }), 'From MAPINFO');
+    assert.equal(levelTitleFor('MAP01', { ...base, dehTitle }), 'From DEH');
     assert.equal(levelTitleFor('MAP01', base), 'Entryway');
   });
 
-  test("a DEH title applies to a PWAD's own map, where the vanilla table deliberately does not", () => {
-    // Renaming the base game's levels is what such a patch is for, so the IWAD-provided guard
-    // stays on the vanilla table alone.
+  test("an add-on's title applies to a PWAD's own map, where the vanilla table deliberately does not", () => {
+    // Renaming the base game's levels is what such a lump is for, so an add-on's title reaches any
+    // map — the IWAD-provided guard is on the vanilla table and on the IWAD's own titles.
     const pwad = { mission: 'doom2' as const, providerIsPwad: true };
     assert.equal(levelTitleFor('MAP01', pwad), undefined);
-    assert.equal(levelTitleFor('MAP01', { ...pwad, dehTitle: 'From DEH' }), 'From DEH');
+    assert.equal(levelTitleFor('MAP01', { ...pwad, dehTitle: { title: 'From DEH', fromIwad: false } }), 'From DEH');
+  });
+
+  test("the IWAD's own title does not name a map an add-on provides", () => {
+    // freedoom2 + NUTS.WAD: the IWAD's DEHACKED names every MAP01-MAP32, and MAP01 is now a
+    // different level. Repro: the card announced "Hydroelectric Plant" over NUTS.
+    const iwadTitle = { title: 'Hydroelectric Plant', fromIwad: true };
+    const pwad = { mission: null, providerName: 'NUTS.WAD', providerIsPwad: true } as const;
+    assert.equal(levelTitleFor('MAP01', { ...pwad, dehTitle: iwadTitle }), undefined);
+    assert.equal(levelTitleFor('MAP01', { ...pwad, mapInfoTitle: iwadTitle }), undefined);
+    assert.equal(levelNameFor('MAP01', { ...pwad, dehTitle: iwadTitle }), 'NUTS.WAD MAP01');
+    // Its own maps still get it, and an add-on's title still outranks it where both name the map.
+    const iwad = { mission: null, providerName: 'freedoom2.wad', providerIsPwad: false } as const;
+    assert.equal(levelTitleFor('MAP01', { ...iwad, dehTitle: iwadTitle }), 'Hydroelectric Plant');
+    assert.equal(
+      levelTitleFor('MAP01', { ...pwad, dehTitle: iwadTitle, mapInfoTitle: { title: 'Nuts', fromIwad: false } }),
+      'Nuts',
+    );
   });
 
   test("a PWAD's DEH title survives the IWAD's name graphic, by the provenance rule already there", () => {
     // EPIC.WAD provides MAP01 but no CWILV00, so `graphicFor` already declines the IWAD's — and
     // the card falls through to the text, which is where the DEH title is. No new rule needed.
+    // The strings carry no sources either, which is the permissive case: they count as an add-on's.
     const iwad = wadFile('IWAD', 'doom2.wad', ['MAP01', 'MAP02', 'CWILV00']);
     const pwad = wadFile('PWAD', 'EPIC.WAD', ['MAP01']);
     const wad = new Wad([iwad, pwad]);
-    const names = new LevelNames(wad, new MapInfo(wad), new Map([['MAP01', "1 - a fool's paradise"]]));
+    const names = new LevelNames(wad, new MapInfo(wad), { strings: new Map([['MAP01', "1 - a fool's paradise"]]) });
     assert.equal(names.graphicFor('MAP01'), undefined);
     assert.equal(names.nameFor('MAP01'), "1 - a fool's paradise");
+  });
+
+  test("the IWAD's DEH titles reach only the maps it still provides", () => {
+    // freedoom2's real shape: no MAPINFO, a file name `missionOf` doesn't know, and a DEHACKED
+    // naming all 32 maps. With NUTS.WAD loaded the card announced the IWAD's MAP01 title.
+    const iwad = wadFile('IWAD', 'freedoom2.wad', ['MAP01', 'MAP02']);
+    const pwad = wadFile('PWAD', 'NUTS.WAD', ['MAP01']);
+    const wad = new Wad([iwad, pwad]);
+    const strings = new Map([
+      ['HUSTR_1', 'MAP01: Hydroelectric Plant'],
+      ['HUSTR_2', 'MAP02: Filtration Complex'],
+    ]);
+    const names = new LevelNames(wad, new MapInfo(wad), {
+      strings,
+      stringSources: new Map([['HUSTR_1', iwad], ['HUSTR_2', iwad]]),
+    });
+    assert.equal(names.nameFor('MAP01'), 'NUTS.WAD MAP01');
+    assert.equal(names.nameFor('MAP02'), 'Filtration Complex');
+
+    // The add-on's own patch names its own map, which is what the rule must not cost.
+    const own = new LevelNames(wad, new MapInfo(wad), {
+      strings: new Map([['HUSTR_1', 'MAP01: Nuts']]),
+      stringSources: new Map([['HUSTR_1', pwad]]),
+    });
+    assert.equal(own.nameFor('MAP01'), 'Nuts');
   });
 
   test('the reverse lookup resolves a vanilla title back to the map that carries it', () => {

@@ -26,6 +26,12 @@ const DEHACKED_LUMP = 'DEHACKED';
 export interface LoadedDehacked extends DehPatch {
   /** In load order. The savegame's WAD-set identity keys off these — docs/savegames.md. */
   sources: readonly WadFile[];
+  /**
+   * Which file's patch set each string's winning value. Level naming asks — the IWAD's own titles
+   * don't name a map an add-on provides (docs/wad.md § Level names) — and the merged `strings`
+   * alone can't say.
+   */
+  stringSources: ReadonlyMap<string, WadFile>;
 }
 
 /**
@@ -55,6 +61,7 @@ export function readDehacked(
   const soundLumps = new Map<string, string>();
   const musicLumps = new Map<string, string>();
   const strings = new Map<string, string>();
+  const stringSources = new Map<string, WadFile>();
   const pars = new Map<string, number>();
   const warnings = new WarningLog();
   const applied: Record<string, number> = {};
@@ -74,7 +81,10 @@ export function readDehacked(
     for (const [key, value] of patch.spriteRenames) spriteRenames.set(key, value);
     for (const [key, value] of patch.soundLumps) soundLumps.set(key, value);
     for (const [key, value] of patch.musicLumps) musicLumps.set(key, value);
-    for (const [key, value] of patch.strings) strings.set(key, value);
+    for (const [key, value] of patch.strings) {
+      strings.set(key, value);
+      stringSources.set(key, lump.source);
+    }
     for (const [key, value] of patch.pars) pars.set(key, value);
     stateCount = Math.max(stateCount, patch.stateCount);
     warnings.merge(patch.warnings);
@@ -98,6 +108,7 @@ export function readDehacked(
     warnings: warnings.drain(),
     applied,
     sources,
+    stringSources,
   };
 }
 

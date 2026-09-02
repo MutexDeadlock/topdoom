@@ -409,13 +409,26 @@ Text resolution order, highest authority first:
    a substring: `freedoom2.wad` is not `doom2.wad` and must not inherit titles for maps it names
    nothing like.
 
-The name graphic needs no rule against a DEH title: the provenance check above already declines a
-patch from a different file than the map, so EPIC.WAD's `MAP01` — which it provides itself, without
-a `CWILV00` — falls through to the text where its DEH title is.
+The one exception to rules 1 and 2: **every title carries which file defined it
+(`TitleFrom.fromIwad`), and the IWAD's own titles name only maps the IWAD still provides** — rule
+3's guard, applied to the two above. Without it an IWAD that names its levels in MAPINFO or
+DEHACKED announces its own level over an add-on's replacement: repro freedoom2.wad + NUTS.WAD,
+whose MAP01 read `Hydroelectric Plant` instead of `NUTS.WAD MAP01`. An add-on's titles are
+unaffected and still reach every map in the set. Provenance travels with the title from wherever
+the merge across files happens — on the winning entry in `MapInfo`, from
+`LoadedDehacked.stringSources` per string — and a DEH string whose source isn't known counts as an
+add-on's.
+
+The name graphic is that same precondition at a stricter setting: for a PWAD-provided map, a
+foreign file's contribution counts only if it is the same file (`patchFor`), where a title counts
+unless it is the IWAD's — a `CWILV` lump is bound to a level slot, while a MAPINFO or DEH title is
+written to rename someone's levels. So EPIC.WAD's `MAP01` — which it provides itself, without a
+`CWILV00` — declines the IWAD's graphic and falls through to the text where its DEH title is.
 
 The menu names levels off the manifest alone, and gets the same answer. A file's `levelNames` holds
 what its MAPINFO says and, for the maps MAPINFO leaves unnamed, what its `DEHACKED` patch says —
-merged in that order when the manifest is built, so `mergedMaps` needs no rule of its own. That
+merged in that order when the manifest is built, so `mergedMaps` needs no order of its own; it does
+tag each title with whether the IWAD is the file that carried it, which is the guard above. That
 merge is `campaign/names.ts`' `mergeLevelTitles`, reached through the one `describe.ts: describeWad`
 the build-time plugin and `library.ts` both call — for the same reason `preferredMapInfoLump` is
 read there: stated in two places, the same file could list one way uploaded and another way served.

@@ -646,10 +646,9 @@ under DOOM. A **null mission** — an IWAD whose file name `missionOf` doesn't k
 EPIC.WAD lands whenever the IWAD isn't literally `doom2.wad` — keeps the plain `HUSTR_*` set rather
 than dropping every title the patch has.
 
-Resolution order is in docs/wad.md § Level names: MAPINFO, then DEHACKED, then the vanilla table.
-MAPINFO winning matches UMAPINFO's own spec. The "IWAD-provided map only" guard stays on the
-vanilla table alone — a DEH title, like a MAPINFO title, applies to any map, because renaming the
-base game's levels is exactly what such a patch is for.
+Resolution order, and which titles reach which maps, are in docs/wad.md § Level names. What this
+layer owes that rule is `readDehacked`'s `stringSources`: the file whose patch set each key's
+winning value, which the merged `strings` alone can't say.
 
 A DEH title does not need a rule against the `CWILV` name graphic. `LevelNames.patchFor`'s existing
 provenance check already declines a patch from a different file than the map when the map came from

@@ -7,7 +7,7 @@ import { WadFile } from './wad.ts';
 import { idOf } from './checksum.ts';
 import { bytesOf, describeWad } from './describe.ts';
 import { decodeTextFile } from './library/textfile.ts';
-import { levelTitleFor, missionOf } from './campaign/names.ts';
+import { levelTitleFor, missionOf, type TitleFrom } from './campaign/names.ts';
 import type { Progress, WadSource } from './library/defs.ts';
 
 // `library/` holds the shapes, the three places a source comes from, and the text file beside one;
@@ -109,14 +109,17 @@ export function mergedMaps(iwad: WadSource, pwads: WadSource[]): MergedMap[] {
   for (const map of iwad.maps) provider.set(map, iwad.label);
 
   const order = [...iwad.maps];
-  // Each file's own titles — its MAPINFO's, or its DEHACKED's where MAPINFO named nothing.
-  const fileTitles = new Map(Object.entries(iwad.levelNames));
+  // Each file's own titles — its MAPINFO's, or its DEHACKED's where MAPINFO named nothing — each
+  // tagged with whether the IWAD is what named it, which decides whether it reaches a map an
+  // add-on provides.
+  const fileTitles = new Map<string, TitleFrom>();
+  for (const [map, title] of Object.entries(iwad.levelNames)) fileTitles.set(map, { title, fromIwad: true });
   for (const pwad of pwads) {
     for (const map of pwad.maps) {
       if (!provider.has(map)) order.push(map);
       provider.set(map, pwad.label);
     }
-    for (const [map, title] of Object.entries(pwad.levelNames)) fileTitles.set(map, title);
+    for (const [map, title] of Object.entries(pwad.levelNames)) fileTitles.set(map, { title, fromIwad: false });
   }
 
   const mission = missionOf(iwad.label);

@@ -13,9 +13,10 @@ Features and improvements
     earlier build are not migrated and start out at their defaults again
 
 Fixed bugs
+  - a map an PWAD replaced is no longer named after the IWAD's level of 
+    that name
   - a BEX [SOUNDS] key that names no sfx is reported instead of counted
     as a redirect that landed
-
 
 
 ===============================================================================
@@ -735,6 +736,7 @@ UI / HUD
 ===============================================================================
 
 v0.7.0 (2026-08-03)
+
 - Q and E rotate camera by 45deg
 - initial COMBAT \o/
     - weapon shooting/switching/aiming

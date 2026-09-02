@@ -2,7 +2,7 @@
  * Vanilla's level-title tables (`d_englsh.h`) and the IWAD identification they key off, plus the
  * per-WAD-set title resolution that folds MAPINFO in. See docs/wad.md § Level names.
  */
-import type { Wad } from '../wad.ts';
+import type { Wad, WadFile } from '../wad.ts';
 import type { MapInfo } from './mapinfo.ts';
 
 /**
@@ -208,12 +208,21 @@ export function stripTitlePrefix(text: string): string {
   return bare ? bare[0].toUpperCase() + bare.slice(1) : bare;
 }
 
+/**
+ * A title one file in the set defines, and whether that file is the IWAD — which decides whether it
+ * names a map an add-on provides. See docs/wad.md § Level names.
+ */
+export interface TitleFrom {
+  title: string;
+  fromIwad: boolean;
+}
+
 /** Everything the two resolvers below need about one map, gathered from the loaded WAD set. */
 export interface LevelNameSources {
   /** The map's `levelname` from a MAPINFO/UMAPINFO lump, if any file in the set defines one. */
-  mapInfoTitle?: string;
+  mapInfoTitle?: TitleFrom;
   /** The map's title from a DEHACKED/BEX patch in the set — docs/dehacked.md § Strings. */
-  dehTitle?: string;
+  dehTitle?: TitleFrom;
   /** The loaded IWAD's mission, or null if its file name wasn't recognised. */
   mission: LevelMission | null;
   /** File name of the WAD that actually provides this map's lumps. */
@@ -224,17 +233,14 @@ export interface LevelNameSources {
 
 /**
  * The level's own title, or undefined if nothing knows one: what the WAD set's MAPINFO says, else
- * what a DEHACKED patch says, else the vanilla title — but the vanilla one only for a map the
- * *IWAD* provides, since a PWAD's `MAP01` is a different level from the IWAD's and would otherwise
- * inherit its name.
- *
- * MAPINFO beats DEHACKED, as UMAPINFO's own spec says it does. The "IWAD-provided only" guard is
- * on the vanilla table alone: a DEH title, like a MAPINFO title, applies to any map, because
- * renaming the base game's levels is exactly what such a patch is for.
+ * what a DEHACKED patch says, else the vanilla title. The IWAD's own titles and the vanilla table
+ * name only maps the IWAD still provides; an add-on's title of either kind names any map in the
+ * set. See docs/wad.md § Level names for the order and the guard.
  */
 export function levelTitleFor(mapName: string, sources: LevelNameSources): string | undefined {
-  if (sources.mapInfoTitle) return sources.mapInfoTitle;
-  if (sources.dehTitle) return sources.dehTitle;
+  const applies = (from?: TitleFrom) => (from && !(from.fromIwad && sources.providerIsPwad) ? from.title : undefined);
+  const named = applies(sources.mapInfoTitle) ?? applies(sources.dehTitle);
+  if (named) return named;
   if (!sources.providerIsPwad && sources.mission) return LEVEL_NAMES[sources.mission][mapName];
   return undefined;
 }
@@ -251,15 +257,20 @@ export function levelTitleFor(mapName: string, sources: LevelNameSources): strin
  * A null mission would otherwise drop every title, which is the case a PWAD lands in whenever the
  * IWAD's file name isn't one `missionOf` knows — so `HUSTR_*` is accepted there too rather than
  * throwing away the only titles the set has.
+ *
+ * `sources` says which file's patch set each key, so a title is tagged with the provenance of the
+ * string it came from rather than of some other key that reached the same map; a key it doesn't
+ * name counts as an add-on's, the permissive case.
  */
 export function dehTitlesFor(
   mission: LevelMission | null,
   strings: ReadonlyMap<string, string>,
-): Map<string, string> {
-  const out = new Map<string, string>();
+  sources?: ReadonlyMap<string, WadFile>,
+): Map<string, TitleFrom> {
+  const out = new Map<string, TitleFrom>();
   for (const [key, value] of strings) {
     const map = dehTitleKey(key, mission);
-    if (map) out.set(map, stripTitlePrefix(value));
+    if (map) out.set(map, { title: stripTitlePrefix(value), fromIwad: sources?.get(key)?.type === 'IWAD' });
   }
   return out;
 }
@@ -282,7 +293,7 @@ export function mergeLevelTitles(
   const levelNames: Record<string, string> = {};
   for (const [map, title] of mapInfoTitles) levelNames[map] = title;
   if (patchStrings) {
-    for (const [map, title] of dehTitlesFor(missionOf(fileName), patchStrings)) levelNames[map] ??= title;
+    for (const [map, title] of dehTitlesFor(missionOf(fileName), patchStrings)) levelNames[map] ??= title.title;
   }
   return levelNames;
 }
@@ -322,23 +333,32 @@ export function levelNameFor(mapName: string, sources: LevelNameSources): string
 }
 
 /**
+ * The half of a loaded DEHACKED patch that naming reads: the set's merged strings, and which file's
+ * patch set each key — `LoadedDehacked` (`game/dehacked.ts`) satisfies it.
+ */
+export interface DehStrings {
+  strings: ReadonlyMap<string, string>;
+  stringSources?: ReadonlyMap<string, WadFile>;
+}
+
+/**
  * Names the levels of one loaded WAD set. Built once per `Game` (the IWAD identification depends on
  * the file set, not on which map is loaded) and asked per map load.
  */
 export class LevelNames {
   private wad: Wad;
-  private titles: Map<string, string>;
-  private dehTitles: Map<string, string>;
+  private titles: Map<string, TitleFrom>;
+  private dehTitles: Map<string, TitleFrom>;
   private mission: LevelMission | null;
 
-  constructor(wad: Wad, mapInfo: MapInfo, dehStrings?: ReadonlyMap<string, string> | null) {
+  constructor(wad: Wad, mapInfo: MapInfo, deh?: DehStrings | null) {
     this.wad = wad;
     this.titles = mapInfo.titles();
     const iwad = wad.files.find((f) => f.type === 'IWAD');
     this.mission = iwad ? missionOf(iwad.name) : null;
     // Projected here rather than by the caller: which mnemonics apply depends on the mission,
     // which is identified two lines up and nowhere else.
-    this.dehTitles = dehTitlesFor(this.mission, dehStrings ?? new Map());
+    this.dehTitles = dehTitlesFor(this.mission, deh?.strings ?? new Map(), deh?.stringSources);
   }
 
   /**

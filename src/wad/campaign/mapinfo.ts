@@ -63,7 +63,8 @@ export function parseMapInfoNames(text: string): Map<string, string> {
  * which lumps apply depends on the file set, not on which map is loaded. docs/wad.md § Level names.
  */
 export class MapInfo {
-  private entries: Map<string, MapInfoEntry>;
+  /** Each map's winning entry, with the file that defined it — see `readEntries`. */
+  private entries: Map<string, DefinedEntry>;
 
   constructor(wad: Wad) {
     this.entries = readEntries(wad);
@@ -73,12 +74,19 @@ export class MapInfo {
    * What the set defines for one map, or undefined for a map no file names. Keys are upper-case.
    */
   entry(mapName: string): MapInfoEntry | undefined {
-    return this.entries.get(mapName);
+    return this.entries.get(mapName)?.entry;
   }
 
-  /** The map-name → title projection — see `parseMapInfoNames`. */
-  titles(): Map<string, string> {
-    return this.project((entry) => entry.title);
+  /**
+   * The map-name → title projection (see `parseMapInfoNames`), each carrying whether the IWAD is
+   * what defined it — the guard in docs/wad.md § Level names.
+   */
+  titles(): Map<string, { title: string; fromIwad: boolean }> {
+    const titles = new Map<string, { title: string; fromIwad: boolean }>();
+    for (const [map, { entry, fromIwad }] of this.entries) {
+      if (entry.title !== undefined) titles.set(map, { title: entry.title, fromIwad });
+    }
+    return titles;
   }
 
   /** The map-name → `D_*` lump projection — docs/music.md § Which track a level plays. */
@@ -93,7 +101,7 @@ export class MapInfo {
 
   private project(field: (entry: MapInfoEntry) => string | undefined): Map<string, string> {
     const picked = new Map<string, string>();
-    for (const [map, entry] of this.entries) {
+    for (const [map, { entry }] of this.entries) {
       const value = field(entry);
       if (value !== undefined) picked.set(map, value);
     }
@@ -101,12 +109,19 @@ export class MapInfo {
   }
 }
 
+/** One map's winning entry, with whether the file that defined it is the IWAD. */
+interface DefinedEntry {
+  entry: MapInfoEntry;
+  fromIwad: boolean;
+}
+
 /**
  * Every `map` entry the loaded WAD set defines: one lump per file (`MAPINFO_LUMPS`), files in load
- * order, a later file's entry replacing an earlier one outright rather than merging field by field.
+ * order, a later file's entry replacing an earlier one outright rather than merging field by field
+ * — its provenance with it, so the replacement can't leave a stale one behind.
  * See docs/wad.md § Level names.
  */
-function readEntries(wad: Wad): Map<string, MapInfoEntry> {
+function readEntries(wad: Wad): Map<string, DefinedEntry> {
   // Keyed by source file, in first-appearance order, which is load order.
   const perFile = new Map<WadFile, string[]>();
   for (const lump of wad.lumps) {
@@ -116,12 +131,14 @@ function readEntries(wad: Wad): Map<string, MapInfoEntry> {
     else perFile.set(lump.source, [lump.name]);
   }
 
-  const maps = new Map<string, MapInfoEntry>();
+  const maps = new Map<string, DefinedEntry>();
   for (const [file, present] of perFile) {
     const wanted = preferredMapInfoLump(present);
     const lump = wad.lumps.find((l) => l.source === file && l.name === wanted);
     if (!lump) continue;
-    for (const [map, entry] of parseMapInfo(decodeTextLump(wad.data(lump)))) maps.set(map, entry);
+    for (const [map, entry] of parseMapInfo(decodeTextLump(wad.data(lump)))) {
+      maps.set(map, { entry, fromIwad: file.type === 'IWAD' });
+    }
   }
   return maps;
 }

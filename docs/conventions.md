@@ -322,12 +322,26 @@ of), and importing from two `defs.ts` at once — `game/things.ts` would need
 ## Whitespace
 
 UTF-8, LF, two-space indent, final newline, no trailing whitespace — `.editorconfig` at the repo
-root is the only place these live; there is no linter and no formatter. Markdown keeps trailing
+root is the only place these live; there is no linter and no formatter. (`.claude/hooks/conventions.mjs`
+checks the mechanical rules of this doc — source order, inline `if`, comment width, the two
+toolchain constraints — on files *Claude* writes, and reports them back to it. Agent tooling: no
+npm script runs it and it gates nothing.) Markdown keeps trailing
 whitespace (two spaces are a hard line break) and wraps prose at 100 columns; tables run past it.
 
 It lists the extensions it covers (`.ts`, `.css`, `.html`, `.json`, `.md`) rather than starting from
 `[*]`: the WADs and DEHACKED patches under `public/game/` and `tests/fixtures/` are third-party and
 stay byte-verbatim, and a whitelist cannot reach them. A new text extension needs adding here.
+
+## Inline `if`
+
+An `if` keeps its statement on the same line only when that statement is an **early out** —
+`return`, `continue`, `break`, `throw` — however many clauses the condition has:
+`if (!a || !b) continue;` is the tree's idiom and stays.
+
+**Anything else takes a braced block once the condition has more than one clause.** With two
+clauses and a trailing assignment or call, the statement reads as part of the condition:
+`if (e.prevFloor === e.ticFloor && e.prevCeil === e.ticCeil) this.moverLerp.delete(id);` has to be
+braced, `if (taken) this.audio.play(...)` does not.
 
 ## Known deviations
 

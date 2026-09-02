@@ -6,5 +6,18 @@
     "deny": [
       "Edit(TODO)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/conventions.mjs"
+          }
+        ]
+      }
+    ]
   }
 }

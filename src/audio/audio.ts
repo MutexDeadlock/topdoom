@@ -34,7 +34,7 @@ const CHANNELS = 32;
  * `plasma`, which carries no origin, stacks about six deep and never reaches this.
  * docs/audio.md § Same-tic bursts.
  */
-const MAX_STARTS_PER_TIC = 4;
+const MAX_STARTS_PER_TIC = 6;
 
 /**
  * How long "one tic" lasts for that budget — vanilla's own tic (`constants.ts`). The frame loop

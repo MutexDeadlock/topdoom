@@ -82,12 +82,15 @@ of nothing-but-`triangularDraw` has a small nonzero mean. The distribution is sy
 
 ## What this does not buy
 
-**Not run-to-run determinism.** `clearRandom()` runs at level load (`game.ts: loadMapByIndex`,
-vanilla's `G_InitNew` position), so a level always starts from the same table position — but this
-engine's loop is dt-scaled, not tic-locked, and the light patterns and monster chase calls draw on
-wall-clock timers. Which draw lands on which table entry therefore still varies with framerate. The
-clear matches vanilla's contract and keeps a level's opening rolls stable; it does not make a run
-reproducible, and there are no demos here that would need it to be.
+**Not cross-engine determinism.** `clearRandom()` runs at level load (`game.ts: loadMapByIndex`,
+vanilla's `G_InitNew` position), so a level always starts from the same table position, and the
+simulation is tic-locked (docs/frameloop.md), so which draw lands on which entry no longer varies
+with framerate. Across *browsers* it still varies: ECMA-262 leaves `Math.sin`, `cos`, `atan2`, `exp`
+and `log` implementation-approximated, so a position drifts in its last bits and a comparison
+eventually falls the other way. `Math.hypot` and `Math.pow` were the two that had exact replacements
+and are gone from `src/` (`util/geom.ts: vecLength`, `util/damping.ts: decayOverTics`, each held by
+a test); the trigonometry is what a same-run-everywhere replay would still have to replace. Nothing
+tests reproducibility today — no demos here need it.
 
 What the table *does* buy is the distribution vanilla actually has, and exact-value tests: every
 number in `docs/weapons.md`, `docs/combat.md`, `docs/monster-ai.md` and `docs/monster-attacks.md`

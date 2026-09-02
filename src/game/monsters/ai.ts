@@ -34,6 +34,7 @@ import { ThingType } from '../things/doomednums.ts';
 import { monsterOrigin, SILENT, type SoundEmitter } from '../../audio/sfx.ts';
 import type { Pos3 } from '../../types.ts';
 import { DOOM_TIC } from '../../constants.ts';
+import { vecLength } from '../../util/geom.ts';
 
 /** Everything one `stepMonsterAI` call is given about the step it is being asked to take. */
 export interface MonsterStep {
@@ -252,7 +253,7 @@ export function stepMonsterAI(
     sfx: step.sfx ?? SILENT,
     dx,
     dy,
-    dist: Math.hypot(dx, dy),
+    dist: vecLength(dx, dy),
     sight: null,
     standingX: null,
     standingY: 0,
@@ -817,7 +818,7 @@ function settleVertical(c: Chase): void {
     // `dist < |delta|*3` — the drift only engages once the monster is close enough that the
     // height difference matters. Measured fresh, **not** `c.dist`: this runs after the walk
     // block, so the entry distance is stale by exactly the step just taken.
-    if (Math.hypot(target.x - body.x, target.y - body.y) < Math.abs(delta) * 3) {
+    if (vecLength(target.x - body.x, target.y - body.y) < Math.abs(delta) * 3) {
       const step = (FLOAT_SPEED / DOOM_TIC) * dt;
       body.z += Math.max(-step, Math.min(step, delta));
     }
@@ -838,7 +839,7 @@ function settleVertical(c: Chase): void {
  * monster. docs/monster-ai.md § Waking up.
  */
 function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: number, playerX: number, playerY: number): boolean {
-  const dist = Math.hypot(playerX - monsterX, playerY - monsterY);
+  const dist = vecLength(playerX - monsterX, playerY - monsterY);
   if (dist <= MELEE_RANGE) return true;
   const toPlayerDeg = (Math.atan2(playerY - monsterY, playerX - monsterX) * 180) / Math.PI;
   const diff = Math.abs((((toPlayerDeg - facingDeg + 180) % 360) + 360) % 360 - 180);

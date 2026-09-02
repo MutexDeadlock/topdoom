@@ -8,6 +8,7 @@ import type { Input } from '../game/input.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { VIEW_DISTANCE } from '../constants.ts';
 import { dampen } from '../util/damping.ts';
+import { vecLength } from '../util/geom.ts';
 
 export interface TopDownCameraOptions {
   /** Tilt away from straight down, in degrees. Small values stay top-down. */
@@ -347,7 +348,7 @@ export class TopDownCamera {
       // Nudge the focus towards the cursor, capped so the player stays on screen.
       const dx = cursor.x - pos.x;
       const dy = cursor.y - pos.y;
-      const dist = Math.hypot(dx, dy);
+      const dist = vecLength(dx, dy);
       const scale = dist > 0 ? Math.min(dist * this.aimLead, MAX_AIM_LEAD) / dist : 0;
       this.target.x += dx * scale;
       this.target.z += -dy * scale;

@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dampen } from '../../src/util/damping.ts';
+import { dampen, decayOverTics } from '../../src/util/damping.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
 
 /**
  * The smoothing behind both the wall-occlusion fade and the fog reveal fade.
@@ -33,5 +34,25 @@ describe('Smoothing · damped approach', () => {
     const falling = dampen(1, 0, 3, 1 / 60, 0);
     assert.ok(falling < 1 && falling > 0);
     assert.equal(dampen(0.001, 0, 3, 1 / 60, 0.004), 0);
+  });
+});
+
+/**
+ * The friction the player's momentum channel, a knockback and a voodoo doll all
+ * shed speed with. docs/movement.md § Knockback.
+ */
+describe('Smoothing · per-tic decay', () => {
+  test('one tic returns the factor itself, bit for bit', () => {
+    // The simulation only ever steps by DOOM_TIC, so this is the only case it
+    // takes: no `Math.pow` on the movement path, and nothing for an engine's
+    // last-bit rounding to differ over.
+    assert.ok(Object.is(decayOverTics(0.90625, DOOM_TIC), 0.90625));
+    assert.ok(Object.is(decayOverTics(0.973, DOOM_TIC), 0.973));
+  });
+
+  test('another step length still decays over the tics it covers', () => {
+    assert.equal(decayOverTics(0.90625, 2 * DOOM_TIC), 0.90625 ** 2);
+    assert.ok(Math.abs(decayOverTics(0.90625, DOOM_TIC / 2) - Math.sqrt(0.90625)) < 1e-12);
+    assert.equal(decayOverTics(0.90625, 0), 1);
   });
 });

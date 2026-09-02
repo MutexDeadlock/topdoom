@@ -3,7 +3,7 @@
  * not in, revealing per subsector and sticky on sight. See docs/fogofwar.md.
  */
 import { buildIslands, buildSubSectorPolys } from '../render/bsp.ts';
-import { polygonCentroid, segmentCrossT } from '../util/geom.ts';
+import { polygonCentroid, segmentCrossT, vecLength } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { decodeRuns, encodeRuns } from './snapshot.ts';
 import { scanSectors } from './specials/mapscan.ts';
@@ -291,7 +291,7 @@ export class FogOfWar {
           const sy = py + (cy - py) * BOUNDARY_INSET;
           samples[w++] = sx;
           samples[w++] = sy;
-          radius = Math.max(radius, Math.hypot(sx - cx, sy - cy));
+          radius = Math.max(radius, vecLength(sx - cx, sy - cy));
         }
       }
 

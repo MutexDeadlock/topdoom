@@ -24,6 +24,7 @@ import type { Skill } from '../skill.ts';
 import type { Pos3 } from '../../types.ts';
 import { DOOM_TIC } from '../../constants.ts';
 import { pRandom, triangularDraw } from '../../util/random.ts';
+import { vecLength } from '../../util/geom.ts';
 
 /**
  * Where the eye sights from, above its own floor: `MT_BOSSSPIT`'s `mobjinfo.height` of 32, less the
@@ -362,7 +363,7 @@ export class IconOfSin {
     const cube = this.makeCube(at, {
       angleRad: Math.atan2(dy, dx),
       target,
-      remaining: Math.hypot(dx, dy),
+      remaining: vecLength(dx, dy),
       soundTimer: 0,
     });
     if (!cube) return;
@@ -393,7 +394,7 @@ export class IconOfSin {
       c.y += Math.sin(c.angleRad) * step;
       // Eased toward the destination's own floor rather than held flat — the eye and the spawn
       // spots sit at different heights, and vanilla's cube carries a real `momz` for that reason.
-      const flat = Math.hypot(c.target.x - c.x, c.target.y - c.y);
+      const flat = vecLength(c.target.x - c.x, c.target.y - c.y);
       c.z += (c.target.z - c.z) * Math.min(1, step / Math.max(flat, step));
       c.soundTimer -= dt;
       if (c.soundTimer <= 0) {

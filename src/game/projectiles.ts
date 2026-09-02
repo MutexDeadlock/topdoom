@@ -25,6 +25,7 @@ import { stepTouchesBody, turnToward, type Projectile } from './spritefx/defs.ts
 import { BFG_SPRAY_HIT_FRAMES, IMPACT_EFFECTS, IMPACT_FRAME_SECONDS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_RADIUS_DEFAULT, PROJECTILE_SOUNDS, REVENANT_TRACER_TURN_RATE_RAD, SMOKE_TRAIL_FRAME_SECONDS, SMOKE_TRAIL_FRAMES, SMOKE_TRAIL_INTERVAL, TRACER_COLOR, TRACER_HOMING_Z_OFFSET } from './spritefx/tables.ts';
 import type { Pos3 } from '../types.ts';
 import type { MonsterRef } from './things/defs.ts';
+import { vecLength } from '../util/geom.ts';
 
 /** The banks a `ProjectileLayer` draws and sounds a missile through, beside the world it flies in. */
 export interface ProjectileLayerOptions {
@@ -473,7 +474,7 @@ export class ProjectileLayer {
    * explodes at the muzzle rather than behind the shooter. docs/combat.md § Where an impact sits.
    */
   private backOffWall(p: Projectile, at: Pos3): void {
-    const back = Math.min(p.radius, Math.hypot(at.x - p.originX, at.y - p.originY));
+    const back = Math.min(p.radius, vecLength(at.x - p.originX, at.y - p.originY));
     if (back <= 0) return;
     const heading = p.homing?.headingRad ?? p.angleRad;
     at.x -= Math.cos(heading) * back;
@@ -551,7 +552,7 @@ export class ProjectileLayer {
       // Paced by the live distance still to cover, as vanilla's own momz spring
       // is (`P_AproxDistance(dest - actor) / speed`) — not by a launch-time
       // budget this flight no longer has.
-      const remaining = Math.max(Math.hypot(target.x - homing.x, target.y - homing.y), step);
+      const remaining = Math.max(vecLength(target.x - homing.x, target.y - homing.y), step);
       homing.z += (target.z + TRACER_HOMING_Z_OFFSET - homing.z) * Math.min(1, step / remaining);
     }
     const fromX = homing.x;

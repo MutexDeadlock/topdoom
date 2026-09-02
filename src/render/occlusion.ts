@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { WALL_CHUNK_LEN, type FlatSurface, type WallOccluder } from './mapmesh.ts';
-import { polygonCentroid, segmentCrossT, segmentMeetsConvexPolygon, signedPolygonArea2 } from '../util/geom.ts';
+import { polygonCentroid, segmentCrossT, segmentMeetsConvexPolygon, signedPolygonArea2, vecLength } from '../util/geom.ts';
 import { dampenWith } from '../util/damping.ts';
 import { PLAYER_HEIGHT } from '../game/player.ts';
 import type { StandingBody } from '../game/things/defs.ts';
@@ -125,7 +125,7 @@ export function fadeReach(camX: number, camY: number, targets: FadeTarget[], out
  */
 export function collectFadeTargets(player: Pos3, awakeMonsters: readonly StandingBody[]): FadeTarget[] {
   const nearby = awakeMonsters
-    .map((m) => ({ m, d: Math.hypot(m.x - player.x, m.y - player.y) }))
+    .map((m) => ({ m, d: vecLength(m.x - player.x, m.y - player.y) }))
     .filter((e) => e.d <= MONSTER_FADE_RANGE);
   nearby.sort((a, b) => a.d - b.d);
   return [
@@ -819,7 +819,7 @@ export class WallFader {
     let halfChunk = 0;
     const bounds = emptyBox();
     for (const o of this.occluders) {
-      const half = Math.hypot(o.bx - o.ax, o.by - o.ay) / 2;
+      const half = vecLength(o.bx - o.ax, o.by - o.ay) / 2;
       if (half > halfChunk) halfChunk = half;
       stretchBox(bounds, (o.ax + o.bx) / 2, (o.ay + o.by) / 2);
     }

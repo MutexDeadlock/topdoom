@@ -399,9 +399,11 @@ own position stands in.
 **Integrating and decaying the resulting velocity is a second, separate step from computing the
 impulse**, and deliberately not the same velocity a monster/barrel/player already tracks for its own
 movement. `PosedThing.velX`/`velY` and `Player`'s `momX`/`momY` are the channel's own state, never
-the input velocity, decayed every frame by vanilla's per-tic `FRICTION` (`0.90625`) raised to the
-`dt*35` power — reproducing the exact discrete recurrence at any frame rate rather than converting
-to a continuous rate first, which would only approximate it. Below `MOMENTUM_STOP_SPEED` (1 u/s) the
+the input velocity, decayed every tic by vanilla's per-tic `FRICTION` (`0.90625`) spread over the
+tics the step covers (`util/damping.ts: decayOverTics`) — reproducing the exact discrete recurrence
+at any step length rather than converting to a continuous rate first, which would only approximate
+it. Under the tic lock the exponent is exactly 1, so the decay is the bare factor and no `Math.pow`
+runs on the movement path. Below `MOMENTUM_STOP_SPEED` (1 u/s) the
 velocity snaps to exactly 0 rather than crawling forever, the same reasoning as `WallFader`'s fade
 snap.
 

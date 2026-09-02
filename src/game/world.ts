@@ -5,7 +5,7 @@
  */
 import { LF, NO_SIDE, SKY_FLAT, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { buildSubSectorPolys } from '../render/bsp.ts';
-import { segmentCrossT, segmentIntersect } from '../util/geom.ts';
+import { segmentCrossT, segmentIntersect, vecLength } from '../util/geom.ts';
 import { PLAYER_HEIGHT, SIGHT_EYE_HEIGHT } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './things/doomednums.ts';
@@ -536,7 +536,7 @@ export class World {
   constructor(map: DoomMap) {
     this.map = map;
     const { minX, minY, maxX, maxY } = map.bounds;
-    this.mapSpan = Math.hypot(maxX - minX, maxY - minY);
+    this.mapSpan = vecLength(maxX - minX, maxY - minY);
     this.gridMinX = minX;
     this.gridMinY = minY;
     this.gridCols = Math.max(1, Math.ceil((maxX - minX) / GRID_CELL) + 1);
@@ -941,7 +941,7 @@ export class World {
    * the caller-owned memo in place; nothing is allocated.
    */
   capturePin(memo: PinnedMemo, x: number, y: number, z: number, velX: number, velY: number, radius: number, dt: number): void {
-    this.captureHeights(x, y, radius + Math.hypot(velX, velY) * dt + PIN_STAMP_SLOP, memo.stamp);
+    this.captureHeights(x, y, radius + vecLength(velX, velY) * dt + PIN_STAMP_SLOP, memo.stamp);
     memo.active = true;
     memo.x = x;
     memo.y = y;
@@ -1290,7 +1290,7 @@ export class World {
   ): boolean {
     if (this.sightRejected(from, to, fromSubsector, toSubsector)) return false;
 
-    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    const dist = vecLength(to.x - from.x, to.y - from.y);
     if (dist === 0) return true;
 
     const eyeZ = from.z + SIGHT_EYE_HEIGHT;
@@ -1565,7 +1565,7 @@ export class World {
     from: Pos3,
     to: Pos3,
   ): { x: number; y: number; z: number; lineIndex: number } | null {
-    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    const dist = vecLength(to.x - from.x, to.y - from.y);
     if (dist === 0) return null;
     let nearestT = Infinity;
     let hitLine = -1;
@@ -1616,7 +1616,7 @@ export class World {
     const { x, y, z } = origin;
     const dx = Math.cos(angleRad);
     const dy = Math.sin(angleRad);
-    const toTarget = target ? Math.hypot(target.x - x, target.y - y) : 0;
+    const toTarget = target ? vecLength(target.x - x, target.y - y) : 0;
     const maxRange = range ?? (target ? toTarget : WEAPON_RANGE);
     // Held for the whole trace, so a `range` past the target keeps climbing or
     // falling at the rate the aim set — `P_LineAttack`'s `slope`, `momz`. The
@@ -1752,7 +1752,7 @@ export class World {
       this.lineBox[base + BOX_LEFT] = Math.min(a.x, b.x);
       this.lineBox[base + BOX_RIGHT] = Math.max(a.x, b.x);
 
-      const len = Math.hypot(dx, dy);
+      const len = vecLength(dx, dy);
       const ex = len > 0 ? (dx / len) * WALL_OVERLAP : 0;
       const ey = len > 0 ? (dy / len) * WALL_OVERLAP : 0;
       this.lineOverlapEnds[base] = a.x - ex;
@@ -1993,7 +1993,7 @@ function blockedByThings(x: number, y: number, body: Collider): boolean {
     if (Math.abs(b.x - x) >= reach || Math.abs(b.y - y) >= reach) continue;
     if (zAware && (z >= b.z + b.height || z + height <= b.z)) continue;
     if (from && Math.abs(b.x - from.x) < reach && Math.abs(b.y - from.y) < reach) {
-      if (Math.hypot(b.x - x, b.y - y) >= Math.hypot(b.x - from.x, b.y - from.y)) continue;
+      if (vecLength(b.x - x, b.y - y) >= vecLength(b.x - from.x, b.y - from.y)) continue;
     }
     return true;
   }

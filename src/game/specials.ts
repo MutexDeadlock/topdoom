@@ -41,7 +41,7 @@ import { satisfiesLock, type KeySlot } from './inventory.ts';
 import type { Placement, Pos2 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
 import type { FadeParticipant } from '../render/occlusion.ts';
-import { segmentCrossT, segmentIntersect } from '../util/geom.ts';
+import { segmentCrossT, segmentIntersect, vecLength } from '../util/geom.ts';
 import { sectorOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import { DOOM_TIC } from '../constants.ts';
 
@@ -2164,7 +2164,7 @@ export class SpecialsController {
       // a fixed-point artifact, not a rule; the float equivalent is a single
       // step along the line's normal, which is what the loop was converging on.
       if (isFrontSide(a.x, a.y, b.x, b.y, px, py) !== wantFront) {
-        const len = Math.hypot(exitDx, exitDy) || 1;
+        const len = vecLength(exitDx, exitDy) || 1;
         const nudge = wantFront ? LINE_TELEPORT_NUDGE : -LINE_TELEPORT_NUDGE;
         px += (exitDy / len) * nudge;
         py += (-exitDx / len) * nudge;

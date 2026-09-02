@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { smoothstep } from '../util/damping.ts';
 import { doomToWorld } from './mapmesh.ts';
+import { vecLength } from '../util/geom.ts';
 
 /**
  * Disc radius in map units, against the player's own 16-unit radius (`game/player.ts`). Tuned by
@@ -108,7 +109,7 @@ function falloffTexture(): THREE.DataTexture {
   const centre = (TEXTURE_SIZE - 1) / 2;
   for (let y = 0; y < TEXTURE_SIZE; y++) {
     for (let x = 0; x < TEXTURE_SIZE; x++) {
-      const r = Math.hypot(x - centre, y - centre) / (TEXTURE_SIZE / 2);
+      const r = vecLength(x - centre, y - centre) / (TEXTURE_SIZE / 2);
       const at = (y * TEXTURE_SIZE + x) * 4;
       data[at + 3] = Math.round(255 * smoothstep(Math.min(Math.max((1 - r) / EDGE_FRACTION, 0), 1)));
     }

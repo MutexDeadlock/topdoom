@@ -458,6 +458,10 @@ the tests, and the table removes the motive entirely.
 `tests/util/random.test.ts` also asserts that **no file in `src/` mentions `Math.random`**. The repo
 runs no linter, so that test is the only thing keeping a second, undocumented entropy source out.
 
+`tests/util/geom.test.ts` carries the same kind of guard for **`Math.hypot`**, which nothing in
+`src/` may call: distances go through `vecLength`, whose result is bit-identical on every engine
+where `hypot`'s is not — docs/random.md § What this does not buy.
+
 The wall clock is the other entropy source, and gets the same treatment.
 `tests/util/profiler.test.ts` patches `performance.now` to a counter a test moves by hand, so a
 frame's duration is *stated* rather than spun out in a busy-wait loop — `FrameProfiler` reads the

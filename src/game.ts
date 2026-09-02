@@ -118,6 +118,7 @@ import { MapInfo } from './wad/campaign/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
 import type { Pos2 } from './types.ts';
 import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
+import { vecLength } from './util/geom.ts';
 
 /**
  * Most tics one frame may run before the rest of the banked time is dropped.
@@ -1817,7 +1818,7 @@ export class Game {
       // or (on every map with no 223 line) nothing at all.
       const ground = this.forces.frictionUnder(this.player, {
         radius: PLAYER_RADIUS,
-        speed: Math.hypot(this.player.velX, this.player.velY),
+        speed: vecLength(this.player.velX, this.player.velY),
         cache: this.playerTouch,
       });
       // Monsters are solid: the player walks around them, not through them.
@@ -2129,7 +2130,7 @@ export class Game {
     // this must not read possibly-stale velocity from the moment of death —
     // not that it would matter anyway, since setPose ignores `animating`
     // entirely once `die()` has been called (see SpriteActor's doc).
-    const walking = !this.playerDead && Math.hypot(this.player.velX, this.player.velY) > 1;
+    const walking = !this.playerDead && vecLength(this.player.velX, this.player.velY) > 1;
     const light = this.world.map.sectors[sectorIndex] ? this.transfers.spriteLight(sectorIndex) : 128;
     // The player is an emitter too — `PLAY F`, the firing frame, is the muzzle flash GLDEFS binds
     // `ZOMBIEATK` to, the same light the zombieman's own `POSS F` gets. `PLAYER_EMITTER_ID` keeps

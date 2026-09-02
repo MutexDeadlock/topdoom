@@ -14,6 +14,7 @@ import { ThingType } from '../things/doomednums.ts';
 import { DOOM_TIC } from '../../constants.ts';
 import type { Pos3 } from '../../types.ts';
 import type { ScrollerSnapshot } from '../snapshot.ts';
+import { vecLength } from '../../util/geom.ts';
 
 /**
  * `P_SpawnScrollers`' `SCROLL_SHIFT` of 5: a scroller's rate is its control
@@ -759,7 +760,7 @@ export class Forces {
     if (!v1 || !v2) return;
     const lx = v2.x - v1.x;
     const ly = v2.y - v1.y;
-    const len = Math.hypot(lx, ly);
+    const len = vecLength(lx, ly);
     if (len < 1e-6) return;
     const x = -(from.dy * ly + from.dx * lx) / len;
     const y = -(from.dx * ly - from.dy * lx) / len;

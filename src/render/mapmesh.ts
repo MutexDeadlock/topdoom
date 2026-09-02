@@ -22,7 +22,7 @@ import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { BRIGHTNESS_LIFT, WATER_SURFACE_ALPHA } from '../constants.ts';
-import { clipConvexPolygon, signedPolygonArea2 } from '../util/geom.ts';
+import { clipConvexPolygon, signedPolygonArea2, vecLength } from '../util/geom.ts';
 import { beginWallShade, wallShadeAt } from './wallshadow.ts';
 import { skyLitSector } from './skytint.ts';
 
@@ -135,7 +135,7 @@ const WALL_PROBE_OFFSET = 1.5;
 export function wallProbePoint(ax: number, ay: number, bx: number, by: number, out: Pos2): void {
   const dx = bx - ax;
   const dy = by - ay;
-  const len = Math.hypot(dx, dy) || 1;
+  const len = vecLength(dx, dy) || 1;
   out.x = (ax + bx) / 2 + (dy / len) * WALL_PROBE_OFFSET;
   out.y = (ay + by) / 2 + (-dx / len) * WALL_PROBE_OFFSET;
 }
@@ -650,7 +650,7 @@ function fillWallCells(build: Build): void {
   if (!subsectorAt) return;
   const probe: Pos2 = { x: 0, y: 0 };
   for (const o of build.occluders) {
-    if (Math.hypot(o.bx - o.ax, o.by - o.ay) < 1e-6) continue;
+    if (vecLength(o.bx - o.ax, o.by - o.ay) < 1e-6) continue;
     wallProbePoint(o.ax, o.ay, o.bx, o.by, probe);
     o.subsector = subsectorAt(probe.x, probe.y);
     const cells = batches.byKey(o.key)?.cells;
@@ -1584,7 +1584,7 @@ function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean
 
   const dx = spec.bx - spec.ax;
   const dy = spec.by - spec.ay;
-  const len = Math.hypot(dx, dy);
+  const len = vecLength(dx, dy);
   if (len < 1e-6) return false;
 
   // Fake contrast: east-west walls darken, north-south brighten, so corners stay legible under

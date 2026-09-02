@@ -10,6 +10,20 @@
 import type { Pos2 } from '../types.ts';
 
 /**
+ * Length of the 2D vector (dx, dy) — what every distance in `src/` is measured with.
+ *
+ * `Math.hypot` is the obvious spelling and is deliberately not used anywhere in the tree
+ * (`tests/util/geom.test.ts` fails the build on one): ECMA-262 leaves its result
+ * implementation-approximated, where `*` and `Math.sqrt` are exactly specified IEEE-754, so this
+ * form is the one that agrees bit-for-bit across engines. It is also the faster of the two —
+ * `hypot`'s only edge is the overflow/underflow guard, which no map-space coordinate (|x| < 32768)
+ * can reach. What that engine agreement is and isn't worth: docs/random.md § What this does not buy.
+ */
+export function vecLength(dx: number, dy: number): number {
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
  * 2D segment crossing between (ax,ay)-(bx,by) and (cx,cy)-(dx,dy): the crossing's parameter along
  * the first segment, or **-1** when they don't cross within both segments' bounds.
  *
@@ -359,7 +373,7 @@ export function clipConvexPolygon(
   // the tolerance has to be scaled the same way to mean a distance in map units.
   // `CLIP_EPS` only decides which side a point counts as being on; the cut runs
   // through the tolerance-offset line itself, so tolerance 0 clips exactly.
-  const cut = tolerance === 0 ? 0 : tolerance * Math.hypot(dx, dy);
+  const cut = tolerance === 0 ? 0 : tolerance * vecLength(dx, dy);
   const limit = cut + CLIP_EPS;
 
   let ax = poly[(n - 1) * 2];

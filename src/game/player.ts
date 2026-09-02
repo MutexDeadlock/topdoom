@@ -9,6 +9,8 @@ import type { PlayerSnapshot } from './snapshot.ts';
 import type { TeleportDest } from './specials.ts';
 import { NO_FRICTION, type FrictionEffect } from './specials/defs.ts';
 import type { Pos2, Pos3 } from '../types.ts';
+import { vecLength } from '../util/geom.ts';
+import { decayOverTics } from '../util/damping.ts';
 
 /** The player's own collision box, in map units — `MT_PLAYER`'s `mobjinfo` radius and height. */
 export const PLAYER_RADIUS = 16;
@@ -405,7 +407,7 @@ export class Player implements Pos3 {
   applyDamageThrust(speed: number, fromX: number, fromY: number): void {
     let dx = this.x - fromX;
     let dy = this.y - fromY;
-    const dist = Math.hypot(dx, dy);
+    const dist = vecLength(dx, dy);
     if (dist < 1) {
       // Degenerate same-position case (attacker and victim essentially
       // coincide, e.g. point-blank melee) — vanilla's own
@@ -508,7 +510,7 @@ export class Player implements Pos3 {
     // aren't combined — but still slides along walls through the same `slideMove`, matching
     // vanilla: the player always gets `P_SlideMove`, whether the momentum came from a hit, a
     // conveyor or the player's own thrust. Decayed by the floor's own per-tic friction
-    // (`ORIG_FRICTION` where no 223 line applies) (`Math.pow` rather than a continuous-rate
+    // (`ORIG_FRICTION` where no 223 line applies) (`decayOverTics` rather than a continuous-rate
     // conversion, for the same "survives conversion out of tics intact" reason `game/things.ts`'s
     // identical decay does), unlike `velX`/`velY`'s own feel-tuned `ACCELERATION` model.
     //
@@ -527,7 +529,7 @@ export class Player implements Pos3 {
       }
       this.x = moved.x;
       this.y = moved.y;
-      const decay = Math.pow(ground.friction, dt * 35);
+      const decay = decayOverTics(ground.friction, dt);
       this.momX *= decay;
       this.momY *= decay;
       if (!this.forced) {

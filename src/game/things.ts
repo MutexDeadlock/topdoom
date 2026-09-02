@@ -122,14 +122,15 @@ import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import { skyLitSector } from '../render/skytint.ts';
 import type { DynamicLights } from '../render/lights.ts';
-import { blastDistanceToBox, boxReach, segmentEntersBox, traceHitsBox } from '../util/geom.ts';
+import { blastDistanceToBox, boxReach, segmentEntersBox, traceHitsBox, vecLength } from '../util/geom.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import type { TeleportDest } from './specials.ts';
 import { thingStatsPatched } from './dehacked/apply.ts';
+import { decayOverTics } from '../util/damping.ts';
 
 /**
  * Vanilla's per-tic XY friction, `P_XYMovement`'s `FRICTION = 0xE800/0x10000`. `applyKnockback`
- * raises it to the `dt*35` power — docs/movement.md § Knockback.
+ * spreads it over the tics a step covers (`decayOverTics`) — docs/movement.md § Knockback.
  */
 const FRICTION = 0.90625;
 /** Below this a decaying knockback velocity snaps to 0. docs/movement.md § Knockback. */
@@ -726,7 +727,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // largest in the game — docs/monster-ai.md § Spatial indexing.
     const midX = (from.x + to.x) / 2;
     const midY = (from.y + to.y) / 2;
-    const half = Math.hypot(to.x - from.x, to.y - from.y) / 2;
+    const half = vecLength(to.x - from.x, to.y - from.y) / 2;
     grid.forEachMonsterNear(midX, midY, half + boxReach(reach + grid.maxBodyRadius()), (p) => {
       // The grid holds solid decorations too, and those block movement but not shots —
       // docs/monster-ai.md § Spatial indexing.
@@ -1140,7 +1141,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       const speed = thrustSpeed(amount, mass);
       let dx = p.x - fromX;
       let dy = p.y - fromY;
-      const dist = Math.hypot(dx, dy);
+      const dist = vecLength(dx, dy);
       if (dist < 1) {
         // Attacker and victim essentially coincide (point-blank melee), so there is no direction
         // to push along; vanilla's `R_PointToAngle2(0,0,0,0)` falls back to angle 0 for the same
@@ -1274,7 +1275,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       p.y += stepY;
     } while (moveX !== 0 || moveY !== 0);
     p.pinned.active = false;
-    const decay = Math.pow(FRICTION, dt * 35);
+    const decay = decayOverTics(FRICTION, dt);
     p.velX *= decay;
     p.velY *= decay;
     if (Math.abs(p.velX) < KNOCKBACK_STOP_SPEED) p.velX = 0;

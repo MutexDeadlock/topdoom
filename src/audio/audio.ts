@@ -17,6 +17,7 @@ import {
 import { DOOM_TIC } from '../constants.ts';
 import { MusicPlayer } from './music.ts';
 import { storedVolume } from './volume.ts';
+import { vecLength } from '../util/geom.ts';
 
 /**
  * Sounds that may play at once. **Tuned by feel**, not vanilla: `snd_channels` defaults to 8, sized
@@ -344,7 +345,7 @@ export class AudioEngine implements SoundEmitter {
     if (at) {
       const dx = at.x - this.listenerX;
       const dy = at.y - this.listenerY;
-      const dist = Math.hypot(dx, dy);
+      const dist = vecLength(dx, dy);
       if (dist > CLIPPING_DIST) return;
       gain = dist < CLOSE_DIST ? 1 : (CLIPPING_DIST - dist) / ATTENUATOR;
       // `S_AdjustSoundParams`'s own stereo separation, as a -1..1 pan: the

@@ -11,7 +11,7 @@
  * § Islands.
  */
 import { NO_LINE, NO_SIDE, segSide, SUBSECTOR_BIT, type DoomMap, type Seg, type Vertex } from '../wad/map.ts';
-import { clipConvexPolygon as clip, polygonCentroid } from '../util/geom.ts';
+import { clipConvexPolygon as clip, polygonCentroid, vecLength } from '../util/geom.ts';
 import { SectorProbe, selfReferencing } from './sectorprobe.ts';
 
 /**
@@ -568,7 +568,7 @@ function rebuildLeafGraph(map: DoomMap): LeafGraph {
       const by = points[((e + 1) % n) * 2 + 1];
       const ex = bx - ax;
       const ey = by - ay;
-      const length = Math.hypot(ex, ey);
+      const length = vecLength(ex, ey);
       if (length < 1e-6) continue;
       // The rings are counter-clockwise (`SectorPoly.points`), so (ey, -ex) points out of one.
       const step = NEIGHBOUR_PROBE / length;
@@ -631,7 +631,7 @@ function rebuildIslands(map: DoomMap): Int32Array {
       if (!a || !b) continue;
       const dx = b.x - a.x;
       const dy = b.y - a.y;
-      const length = Math.hypot(dx, dy);
+      const length = vecLength(dx, dy);
       if (length < 1e-6) continue;
       const step = NEIGHBOUR_PROBE / length;
       const mx = (a.x + b.x) / 2;

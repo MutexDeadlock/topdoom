@@ -8,7 +8,7 @@
  */
 import { WEAPON_RANGE } from '../world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
-import { traceHitsBox } from '../../util/geom.ts';
+import { traceHitsBox, vecLength } from '../../util/geom.ts';
 import { triangularSpread } from '../../util/random.ts';
 import type { CombatContext } from '../combat.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
@@ -151,7 +151,7 @@ export class MonsterAttacks {
     const slope = aimed.dist > 0 ? (aimed.z - atk.z) / aimed.dist : 0;
     // `resolveBullet` takes a point to slope toward, so the volley's shared slope
     // reaches it as the aim point lifted onto that slope.
-    const toAim = Math.hypot(aim.x - atk.x, aim.y - atk.y);
+    const toAim = vecLength(aim.x - atk.x, aim.y - atk.y);
     const sloped = { x: aim.x, y: aim.y, z: atk.z + slope * toAim };
     for (const damage of atk.bullets)
       this.resolveBullet(atk, atk.angleRad + triangularSpread(MONSTER_BULLET_SPREAD_DEG), damage, sloped);

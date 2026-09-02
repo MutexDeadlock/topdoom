@@ -3,7 +3,7 @@
  * emitter's own BSP leaf that crosses a boundary only where sight does, so a torch stops at its
  * wall instead of shining through it. See docs/lights.md § Light stops at walls.
  */
-import { closestTOnSegment, distSqToSegment, polygonCentroid, segmentCrossT } from '../util/geom.ts';
+import { closestTOnSegment, distSqToSegment, polygonCentroid, segmentCrossT, vecLength } from '../util/geom.ts';
 import type { DoomMap } from '../wad/map.ts';
 import type { SubSectorPoly } from './bsp.ts';
 
@@ -171,7 +171,7 @@ export class LightVisibility {
         const t = closestTOnSegment(fromX, fromY, geom[g], geom[g + 1], geom[g + 2], geom[g + 3]);
         const px = geom[g] + (geom[g + 2] - geom[g]) * t;
         const py = geom[g + 1] + (geom[g + 3] - geom[g + 1]) * t;
-        const d = fromCost + Math.hypot(px - fromX, py - fromY);
+        const d = fromCost + vecLength(px - fromX, py - fromY);
         if (d > radius) continue;
         cost[nb] = d;
         entry[nb * 2] = px;
@@ -258,7 +258,7 @@ export class LightVisibility {
       const by = pts[j * 2 + 1];
       const dx = bx - ax;
       const dy = by - ay;
-      const len = Math.hypot(dx, dy);
+      const len = vecLength(dx, dy);
       if (len < 1e-6) continue;
       let nx = dy / len;
       let ny = -dx / len;

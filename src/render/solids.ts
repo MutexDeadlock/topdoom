@@ -4,7 +4,7 @@
  * a camera looking down does. See docs/render.md § Solid structures.
  */
 import { NO_SIDE, type DoomMap } from '../wad/map.ts';
-import { polygonCentroid, signedPolygonArea2 } from '../util/geom.ts';
+import { polygonCentroid, signedPolygonArea2, vecLength } from '../util/geom.ts';
 import type { SectorPoly } from './bsp.ts';
 
 /**
@@ -242,7 +242,7 @@ function probeOutside(map: DoomMap, ring: { lines: number[]; vertexes: number[] 
     const a = map.vertexes[line.v1];
     const b = map.vertexes[line.v2];
     if (!a || !b) continue;
-    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    const length = vecLength(b.x - a.x, b.y - a.y);
     if (length > bestLength) {
       bestLength = length;
       best = i;

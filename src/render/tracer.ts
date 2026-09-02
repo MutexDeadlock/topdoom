@@ -80,7 +80,7 @@ export class Tracer {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dz = to.z - from.z;
-    const len = Math.hypot(dx, dy, dz);
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
     this.length = len - Math.min(shooterRadius + MUZZLE_GAP, len * MUZZLE_GAP_MAX_FRACTION);
     doomToWorld(to.x, to.y, to.z, this.impact);
     // `doomToWorld` is a pure axis permutation with no translation, so it maps this

@@ -8,6 +8,7 @@ import { DOOM_TIC } from '../constants.ts';
 import { lightForFrame, type Gldefs, type LightDef } from '../wad/gldefs.ts';
 import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS, type LightVisibility } from './lightvis.ts';
 import { doomToWorld } from './mapmesh.ts';
+import { vecLength } from '../util/geom.ts';
 
 /**
  * How many lights can reach the geometry shader at once. **Tuned by feel**, and generously: a
@@ -398,7 +399,7 @@ export class DynamicLights {
       // live one instead of being truncated away — `offer` reuses those slots next frame.
       for (let i = 0; i < this.offered.length; i++) {
         const e = this.offered[i];
-        e.sortKey = i < this.offerCount ? Math.hypot(e.x - this.camX, e.y - this.camY) - e.radius : Infinity;
+        e.sortKey = i < this.offerCount ? vecLength(e.x - this.camX, e.y - this.camY) - e.radius : Infinity;
       }
       this.offered.sort((a, b) => a.sortKey - b.sortKey);
     }
@@ -589,9 +590,7 @@ export class DynamicLights {
     if (!this.vis) return 1;
     const dx = x - this.committed.x[index];
     const dz = -y + this.committed.y[index];
-    // `Math.sqrt` of the dot rather than `Math.hypot`: this runs per sprite per light in the
-    // leaf, and hypot's overflow guard buys nothing at map coordinates.
-    const dist = Math.sqrt(dx * dx + dz * dz);
+    const dist = vecLength(dx, dz);
     const lo = Math.atan2(dz, dx) * BIN_PER_RADIAN + BIN_HALF - SHADOW_SOFT_BINS;
     const span = 2 * SHADOW_SOFT_BINS;
     const base = Math.floor(lo);

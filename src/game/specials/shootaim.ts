@@ -9,6 +9,7 @@ import { NO_SIDE } from '../../wad/map.ts';
 import { worldToDoom } from '../../render/mapmesh.ts';
 import type { Opening, World } from '../world.ts';
 import type { Pos3 } from '../../types.ts';
+import { vecLength } from '../../util/geom.ts';
 
 /** A shoot-trigger line the pointer is over, and the point on it a shot should be aimed at. */
 export interface ShootAim extends Pos3 {
@@ -111,7 +112,7 @@ export function pickShootAim(world: World, ray: THREE.Ray, lines: readonly numbe
     if (!a || !b) continue;
     const sx = b.x - a.x;
     const sy = b.y - a.y;
-    const len = Math.hypot(sx, sy);
+    const len = vecLength(sx, sy);
     if (len === 0) continue;
     // Where the ray meets the upright plane the line's face lies in; `denom` is
     // zero looking straight along it, where a face of no apparent width can't

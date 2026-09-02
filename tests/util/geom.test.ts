@@ -1,4 +1,5 @@
 import { describe, test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import {
   blastDistanceToBox,
@@ -12,6 +13,7 @@ import {
   traceHitsBox,
 } from '../../src/util/geom.ts';
 import { polygonArea } from '../fixtures/geometry.ts';
+import { filesUnder } from '../fixtures/files.ts';
 
 /**
  * The five primitives under every sightline in the engine — wall occlusion, fog
@@ -307,5 +309,18 @@ describe('Geometry · blast range', () => {
   test('a body overlapping the blast point is at range 0, never negative', () => {
     assert.equal(blastDistanceToBox(0, 0, 10, 0, 48), 0);
     assert.equal(blastDistanceToBox(0, 0, 0, 0, 16), 0);
+  });
+});
+
+describe('Geometry · one spelling for a distance', () => {
+  test('nothing in src/ calls Math.hypot', () => {
+    // The repo runs no linter, so this test is the only thing keeping an
+    // implementation-approximated result (ECMA-262 leaves `Math.hypot`'s last
+    // bits to the engine) out of code a replayed run has to reproduce.
+    // See `vecLength` for the argument, docs/testing.md § Determinism.
+    const offenders = filesUnder('src', (path) => path.endsWith('.ts')).filter((path) =>
+      readFileSync(path, 'utf8').includes('Math.hypot('),
+    );
+    assert.deepEqual(offenders, [], 'measure with util/geom.ts: vecLength');
   });
 });

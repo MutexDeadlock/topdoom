@@ -17,6 +17,8 @@ import type { Forces } from './specials/forces.ts';
 import type { TeleportDest } from './specials.ts';
 import type { VoodooSnapshot } from './snapshot.ts';
 import type { Pos2, Pos3 } from '../types.ts';
+import { vecLength } from '../util/geom.ts';
+import { decayOverTics } from '../util/damping.ts';
 
 /**
  * One doll. It has a player's radius and height because it *is* a player mobj —
@@ -126,7 +128,7 @@ export class VoodooDolls {
         doll.momY = clampMomentum(doll.momY);
         // Only asked for once the doll is actually moving: a parked doll — the
         // normal state of most of them — never pays for the sector walk.
-        const speed = Math.hypot(doll.momX, doll.momY);
+        const speed = vecLength(doll.momX, doll.momY);
         const ground = forces.frictionUnder(doll, { radius: PLAYER_RADIUS, speed, cache: doll.touch });
         // Where the move was headed before the slide clipped it, the player's
         // own `attempted` for a doll — see `Player.attempted`.
@@ -139,7 +141,7 @@ export class VoodooDolls {
         }
         doll.x = moved.x;
         doll.y = moved.y;
-        const decay = Math.pow(ground.friction, dt * 35);
+        const decay = decayOverTics(ground.friction, dt);
         doll.momX *= decay;
         doll.momY *= decay;
         // Unlike the player's channel this snaps unconditionally: a doll only

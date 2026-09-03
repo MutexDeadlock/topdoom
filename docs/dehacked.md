@@ -326,10 +326,7 @@ Writing the first is what found two transcription errors, both fixed toward `inf
 sequence was one letter short (each `S_*_RAISE` chain ends on the type's first death frame), and the
 barrel's blast delay above.
 
-**What a patched chain can't reach**, all residuals rather than bugs: `AttackStats.refire` — which
-is a `nextstate` pointing back at itself, not a position — stays as the stat table has it (the
-windup, shot count and shot spacing around it are all derived — docs/monster-ai.md § The windup);
-the flat per-frame rates (`MONSTER_DEATH_FRAME_SECONDS`, `IMPACT_FRAME_SECONDS`,
+**What a patched chain can't reach**, all residuals rather than bugs: the flat per-frame rates (`MONSTER_DEATH_FRAME_SECONDS`, `IMPACT_FRAME_SECONDS`,
 `BARREL_CHAIN.deathFrameSeconds`) stay flat; puff, blood and teleport-fog art is not derived; the
 player's own `PLAYER_*` letters are constants; a pain, attack or raise chain is drawn in the type's
 own sprite even if its states name another (`playOnce` takes no sprite — only death does). A
@@ -433,7 +430,7 @@ one place now, instead of three name sets inside the walker:
 | `chase` | the walk loop's `chaseInterval` and speed factor |
 | `firing` | an attack chain's shot count, windup, shot interval — and what the attack *is* (below) |
 | `weaponFire` | how many shots one pass of a fire chain makes (docs/weapons.md § Fire rates) |
-| `refire` | which part of a looping attack chain `spanOf` measures |
+| `refire` | which part of a looping attack chain `spanOf` measures, and `AttackStats.refire` itself (`MonsterFrames.rangedRefires`) — a `Far attack frame` pointed at a refire chain hoses like the chain's owner, one pointed away stops |
 | `sound` | `A_PlaySound`: the sound of whichever chain it sits in |
 | `drop` | `A_Spawn` on a death chain: what the type leaves behind (`MONSTER_DROPS`) |
 

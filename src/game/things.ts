@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import type { Sector } from '../wad/map.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
-import type { SectorTouchCache, World } from './world.ts';
+import type { PositionCheck, SectorTouchCache, World } from './world.ts';
 import {
   clampMomentum,
   GRAVITY,
@@ -108,7 +108,7 @@ import {
   type ThingState,
 } from './snapshot.ts';
 import { createThingGrid } from './things/grid.ts';
-import { makeCollider, makePinnedMemo, makeTouchCache } from './world.ts';
+import { dropoffRefuses, makeCollider, makePinnedMemo, makeTouchCache, mayHitDropoff } from './world.ts';
 import { transfersOf } from './specials/transfers.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import {
@@ -192,6 +192,14 @@ const LIT_FULL = litColor(255);
  * runs for every thing still carrying velocity, every tic. See `makeCollider`.
  */
 const knockbackCollider = makeCollider({ radius: 0, z: 0, height: 0, forMonster: true });
+
+/**
+ * The two walks `applyKnockback` compares — the step it wants and the position it is taking that
+ * step from. Module-level for the same reason the collider above is; `checkPosition`'s own scratch
+ * would have the second call clobber the first.
+ */
+const knockbackDest: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
+const knockbackStanding: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
 
 /** Everything `buildThingSprites` needs beyond the `World` it populates. */
 export interface ThingLayerOptions {
@@ -1228,9 +1236,13 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /**
    * Integrates one tic of a knocked-back thing's momentum, additive with this tic's AI movement
    * as `P_XYMovement` is with `A_Chase`'s: each axis held to `MAX_MOMENTUM_SPEED`, the move
-   * halved until no step exceeds `MOMENTUM_SPLIT_STEP`, and a blocked step **stopping dead**
+   * halved until no step exceeds `MOMENTUM_SPLIT_STEP`, and a refused step **stopping dead**
    * rather than sliding. The `blockersFor` thing check is deliberately skipped.
-   * docs/movement.md § Knockback.
+   *
+   * A step is refused on geometry *and* on the dropoff rule, because `P_XYMovement` reaches the
+   * world through the same `P_TryMove` a monster's walk step does — without that half, a hit
+   * shoves a body out over a ledge its own AI would never step onto and `groundFloor` leaves it
+   * standing on air. docs/movement.md § Knockback.
    */
   function applyKnockback(p: PosedThing, dt: number): void {
     // This exact state already proved blocked and nothing stamped nearby has changed, so replay
@@ -1250,6 +1262,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     knockbackCollider.radius = p.blockRadius;
     knockbackCollider.z = p.z;
     knockbackCollider.height = p.bodyHeight;
+    // Vanilla's two exemptions from the dropoff rule: `MF_FLOAT`, and the `MF_DROPOFF` `P_KillMobj`
+    // hands every corpse (`p_inter.c`) so a gibbed body still slides off whatever it died on.
+    const holdsLedge = !p.dead && !monsterStats[p.type]?.flies;
     do {
       let stepX = moveX;
       let stepY = moveY;
@@ -1259,7 +1274,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       }
       moveX -= stepX;
       moveY -= stepY;
-      if (world.positionBlocked(p.x + stepX, p.y + stepY, knockbackCollider)) {
+      // `stopOnBlock`: a refused walk leaves the heights half-accumulated, which is exactly the
+      // case that never reads them.
+      const dest = world.checkPosition(p.x + stepX, p.y + stepY, knockbackCollider, true, knockbackDest);
+      if (dest.blocked || (holdsLedge && overDropoff(p, dest))) {
         // The memo replays "nothing moved", which is only what happened when the first step
         // was the one refused.
         if (p.x === startX && p.y === startY) {
@@ -1280,6 +1298,16 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     p.velY *= decay;
     if (Math.abs(p.velX) < KNOCKBACK_STOP_SPEED) p.velX = 0;
     if (Math.abs(p.velY) < KNOCKBACK_STOP_SPEED) p.velY = 0;
+  }
+
+  /**
+   * Whether the dropoff rule refuses the momentum step `dest` describes, against where `p` stands
+   * now. The gate is what keeps the standing walk off every shove that isn't near a ledge — both
+   * halves are `world.ts`'s, shared with the monster walk step.
+   */
+  function overDropoff(p: PosedThing, dest: PositionCheck): boolean {
+    if (!mayHitDropoff(p.z, dest)) return false;
+    return dropoffRefuses(world.checkPosition(p.x, p.y, knockbackCollider, false, knockbackStanding), dest);
   }
 
   /**

@@ -402,7 +402,15 @@ deliberately not implemented: it would draw from the random table on a path vani
 Every type except the cacodemon, lost soul and pain elemental (`MonsterStats.flies`) refuses a step
 that would leave it standing over a drop of more than `MAX_STEP_UP` — vanilla's `P_TryMove` "don't
 stand over a dropoff", same 24-unit threshold and the same `MF_DROPOFF`/`MF_FLOAT` exemption. It is
-what stops a monster following the player off a high ledge. `checkPosition` accumulates the lowest
+what stops a monster following the player off a high ledge.
+
+**The rule lives in `world.ts` (`dropoffRefuses`, gated by `mayHitDropoff`), because every mover
+vanilla routes through `P_TryMove` obeys it** — the walk step here, and the momentum channel
+`P_XYMovement` feeds (`things.ts: applyKnockback`, docs/movement.md § Knockback), which is the half
+that was missing. A corpse is exempt there and not here: `P_KillMobj` hands it `MF_DROPOFF`, and it
+has no walk step to refuse.
+
+`checkPosition` accumulates the lowest
 floor the box touches (`PositionCheck.dropoffZ`) **only for a monster**, since nothing else consults
 it, and deliberately counts the far side of an `LF.BLOCK_MONSTERS` line as real floor: that line
 fences a monster's *movement*, but it is not a ledge. `tryWalk` treats a dropoff refusal exactly

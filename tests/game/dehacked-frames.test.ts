@@ -114,6 +114,7 @@ describe('DEHACKED · the frame walker reproduces the shipped tables', () => {
       // than the gap between two `A_CyberAttack` calls — until this comparison was added.
       cmp(`${n} shots`, g.shots, m.rangedShots > 1 ? m.rangedShots : null);
       cmp(`${n} shotInterval`, g.shotIntervalTics, inTics(m.rangedInterval));
+      cmp(`${n} refire`, g.refire, m.rangedRefires);
       cmp(`${n} chaseInterval`, g.chaseSeconds, m.chase ? round3(m.chase.interval) : null);
       cmp(`${n} speed`, g.speed, m.chase ? Math.round(rowSpeed(dn) * m.chase.factor * 10) / 10 : null);
     }
@@ -368,6 +369,7 @@ describe('DEHACKED · the derived tables the engine uses are the shipped reading
       cmp(`${name} windup`, g.windupTics, inTics(stats.ranged?.startDelaySeconds));
       cmp(`${name} shots`, g.shots, stats.ranged?.shots ?? null);
       cmp(`${name} shotInterval`, g.shotIntervalTics, inTics(stats.ranged?.shotInterval));
+      cmp(`${name} refire`, g.refire, stats.ranged?.refire ?? false);
       cmp(`${name} chaseInterval`, g.chaseSeconds, round3(stats.chaseInterval));
       cmp(`${name} speed`, g.speed, stats.speed);
     }

@@ -7,8 +7,9 @@
 import type { Sector } from '../../wad/map.ts';
 import {
   ANY_HEIGHT,
+  dropoffRefuses,
   makeCollider,
-  MAX_STEP_UP,
+  mayHitDropoff,
   type Collider,
   type PositionCheck,
   type ThingBlocker,
@@ -710,10 +711,8 @@ function testStep(c: Chase, x: number, y: number): StepResult {
   if (check.ceilingZ - check.floorZ < stats.height) {
     return 'blocked';
   }
-  // Cheap necessary condition for `dropoffRefuses`, off the walk already in hand, so the standing
-  // walk stays off every step taken away from a ledge. docs/monster-ai.md § The dropoff rule.
-  const mayDrop = !stats.flies && (body.z - check.floorZ > MAX_STEP_UP || body.z - check.dropoffZ > MAX_STEP_UP);
-  const overDropoff = mayDrop && dropoffRefuses(c, check);
+  const mayDrop = !stats.flies && mayHitDropoff(body.z, check);
+  const overDropoff = mayDrop && dropoffRefuses(standingAt(c), check);
   if (!check.blocked && !overDropoff) {
     if (!stats.flies) return 'clear';
     // "Mobj must lower itself to fit", against the destination's *own* overhead rather than a
@@ -744,25 +743,8 @@ function floatOverStep(c: Chase, x: number, y: number): void {
 }
 
 /**
- * Whether the dropoff rule refuses the step `dest` describes: no height the walk reports may sit
- * more than `MAX_STEP_UP` below the same height where the body stands. Relative rather than
- * vanilla's destination-only test, which freezes a monster already hanging over a ledge — MBF's
- * `monkeys` clipping for the two accumulated heights, and this engine's own for the centre floor.
- * docs/monster-ai.md § The dropoff rule.
- */
-function dropoffRefuses(c: Chase, dest: PositionCheck): boolean {
-  const standing = standingAt(c);
-  return (
-    standing.floorZ - dest.floorZ > MAX_STEP_UP ||
-    standing.dropoffZ - dest.dropoffZ > MAX_STEP_UP ||
-    // Both centre floors come off walks already in hand — see `PositionCheck.centreFloorZ`.
-    standing.centreFloorZ - dest.centreFloorZ > MAX_STEP_UP
-  );
-}
-
-/**
- * One `P_CheckPosition` at the body's own position. `z` is `ANY_HEIGHT` because no height it reads
- * depends on it.
+ * One `P_CheckPosition` at the body's own position, the standing side of `dropoffRefuses`. `z` is
+ * `ANY_HEIGHT` because no height it reads depends on it.
  */
 function standingAt(c: Chase): PositionCheck {
   const { body, stats } = c;

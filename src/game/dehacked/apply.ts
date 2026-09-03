@@ -611,6 +611,12 @@ function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
   if (stats.ranged && b.rangedInterval !== null && rangedMoved(a.rangedInterval, b.rangedInterval)) {
     stats.ranged.shotInterval = b.rangedInterval;
   }
+  // And whether the pass re-enters itself: the `A_*Refire` loop is the chain's, not the type's,
+  // so it travels with a repoint in both directions.
+  if (stats.ranged && rangedMoved(a.rangedRefires, b.rangedRefires)) {
+    if (b.rangedRefires) stats.ranged.refire = true;
+    else delete stats.ranged.refire;
+  }
   // And what each of those shots *is*, where they are not all the same attack.
   // No `rangedRepointed` disjunct here: `rangedAction` *is* `rangedActions[0]`
   // (`frames.ts: deriveMonster`), so a repoint always shows up in the list comparison.

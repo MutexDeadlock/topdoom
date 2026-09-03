@@ -420,8 +420,15 @@ and momentum, but the input channel is bounded on its own (§ Friction's `MAX_TA
   in halves until no step exceeds `MAXMOVE/2` (`MOMENTUM_SPLIT_STEP`, 15 units — `P_XYMovement`'s
   own split, with MBF's symmetric check where vanilla splits a positive move only), so a barrel's
   20-unit box can't skip a wall at the clamp either; the player and a doll need no split, since
-  `slideMove` traces the box's corners. Each step is blocked by ordinary wall/step collision (`positionBlocked`, `forMonster: true` —
-  `ML_BLOCKMONSTERS` stops *any* non-player thing, so this is the correct flag even for a barrel).
+  `slideMove` traces the box's corners. Each step is blocked by ordinary wall/step collision
+  (`checkPosition`, `forMonster: true` —
+  `ML_BLOCKMONSTERS` stops *any* non-player thing, so this is the correct flag even for a barrel)
+  **and by the dropoff rule** (`world.ts: dropoffRefuses`, docs/monster-ai.md § The dropoff rule),
+  because `P_XYMovement` reaches the world through the same `P_TryMove` a monster's walk step does.
+  Without that half a hit shoves a body out over a ledge its own AI refuses and the straddled
+  opening leaves it standing on air — repro: nosp4.wad MAP02, the spider mastermind on the pedestal
+  at (224, 960), sized to its own box. Exempt are the movers vanilla exempts: `MonsterStats.flies`
+  (`MF_FLOAT`) and every corpse, which `P_KillMobj` hands `MF_DROPOFF` (`p_inter.c`).
   Unlike the player, a blocked monster or barrel stops dead and drops the remaining velocity rather
   than sliding, matching `P_XYMovement` zeroing `momx`/`momy` for a blocked non-missile, non-player
   mobj. It runs **additively, on top of** whatever AI movement or floor-following already happened

@@ -178,7 +178,7 @@ export interface PositionCheck {
   /**
    * The floor under (x, y) alone, before the box walk raises `floorZ` — i.e.
    * `floorAt(x, y)`, off the descent this walk already made. Kept so a caller
-   * comparing centre floors (`monsters/ai.ts: dropoffRefuses`) needn't re-descend
+   * comparing centre floors (`dropoffRefuses` below) needn't re-descend
    * the BSP at a point this call just resolved.
    */
   centreFloorZ: number;
@@ -211,6 +211,36 @@ export function bodyFloor(
     if (top <= z && top > best) best = top;
   }
   return best;
+}
+
+/**
+ * Whether the dropoff rule refuses a step from `standing` to `dest`: no height the destination walk
+ * reports may sit more than `MAX_STEP_UP` below the same height where the body stands. Relative
+ * rather than vanilla's destination-only test, and carrying a third comparison of its own —
+ * docs/monster-ai.md § The dropoff rule for both.
+ *
+ * **The one home of this rule.** Every mover vanilla routes through `P_TryMove` shares it: the
+ * monster walk step (`monsters/ai.ts: testStep`) and knockback and conveyor momentum
+ * (`game/things.ts: applyKnockback`, `P_XYMovement`'s own `P_TryMove` call). A mover exempt in
+ * vanilla — `MF_FLOAT` or the `MF_DROPOFF` `P_KillMobj` hands every corpse — never asks.
+ */
+export function dropoffRefuses(standing: PositionCheck, dest: PositionCheck): boolean {
+  return (
+    standing.floorZ - dest.floorZ > MAX_STEP_UP ||
+    standing.dropoffZ - dest.dropoffZ > MAX_STEP_UP ||
+    // Both centre floors come off walks already in hand — see `PositionCheck.centreFloorZ`.
+    standing.centreFloorZ - dest.centreFloorZ > MAX_STEP_UP
+  );
+}
+
+/**
+ * Cheap necessary condition for `dropoffRefuses`, off the destination walk a caller already has:
+ * no comparison there can fire unless the destination sits more than a step under the body's feet,
+ * so a step taken away from any ledge never pays for the standing walk. Why it is sufficient:
+ * docs/monster-ai.md § The dropoff rule.
+ */
+export function mayHitDropoff(z: number, dest: PositionCheck): boolean {
+  return z - dest.floorZ > MAX_STEP_UP || z - dest.dropoffZ > MAX_STEP_UP;
 }
 
 /**

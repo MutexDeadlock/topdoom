@@ -588,6 +588,23 @@ describe('DEHACKED · applying', () => {
     assert.equal(MONSTER_STATS[ThingType.zombieman].ranged!.diceMult, 40);
   });
 
+  test("a Far attack frame pointed at a refire chain brings the loop with it", () => {
+    // nosp4.wad: `Thing 24` (MT_WOLFSS) rebuilt as the spider mastermind, its missile chain the
+    // spider's own `S_SPID_ATK1`. The chain's `A_SpidRefire` is what makes the spider hose
+    // without pause; without it the patched type took one burst and went back to chasing.
+    apply(`Thing 24\nFar attack frame = ${stateNamed('S_SPID_ATK1')}\n`);
+    const ranged = MONSTER_STATS[ThingType.wolfensteinSS].ranged!;
+    assert.equal(ranged.pellets, 3, "the spider's A_SPosAttack spread");
+    assert.equal(ranged.refire, true, 'and its A_SpidRefire loop');
+  });
+
+  test('and one pointed away from a refire chain loses the loop', () => {
+    // The chaingunner on the zombieman's chain: one `A_PosAttack`, no `A_CPosRefire`.
+    assert.equal(MONSTER_STATS[ThingType.heavyWeaponDude].ranged!.refire, true);
+    apply(`Thing 11\nFar attack frame = ${stateNamed('S_POSS_ATK1')}\n`);
+    assert.equal(MONSTER_STATS[ThingType.heavyWeaponDude].ranged!.refire, undefined);
+  });
+
   test("MBF's A_Scratch is an attack of its own: misc1 flat damage, misc2 the swing's sound", () => {
     // S_SARG_ATK2 is where the demon bites. MBF reads the damage off the state, not off a roll,
     // so a one-sided die is how a flat figure is written into `AttackStats`.

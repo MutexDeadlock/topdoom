@@ -165,6 +165,12 @@ export interface MonsterFrames {
   rangedShots: number;
   rangedInterval: number | null;
   /**
+   * Whether the ranged chain loops back through an `A_*Refire` — `AttackStats.refire`, the
+   * never-let-up loop. A property of the chain's shape, so a `Far attack frame` pointed at a
+   * refire chain brings the loop with it and one pointed away loses it.
+   */
+  rangedRefires: boolean;
+  /**
    * The first damaging action each attack chain carries — what the attack *is*, as opposed to the
    * timings around it. Null for a chain that fires nothing. A patch that repoints one of these is
    * asking for a different attack, not a retimed one; `ATTACK_ACTION_SOURCES` is where the applier
@@ -354,9 +360,12 @@ function durationOf(states: readonly StateRow[], chain: Chain): number {
  * state of theirs drawn on a walk-cycle letter. Any other chain is measured whole.
  */
 function spanOf(states: readonly StateRow[], chain: Chain): number[] {
-  const loop = cycleOf(chain);
-  const refires = chain.cycleAt >= 0 && loop.some((i) => actionRole(states[i][3]) === 'refire');
-  return refires ? loop : chain.indices;
+  return refiresOf(states, chain) ? cycleOf(chain) : chain.indices;
+}
+
+/** Whether a chain loops back through an `A_*Refire` — `MonsterFrames.rangedRefires`. */
+function refiresOf(states: readonly StateRow[], chain: Chain): boolean {
+  return chain.cycleAt >= 0 && cycleOf(chain).some((i) => actionRole(states[i][3]) === 'refire');
 }
 
 /**
@@ -586,6 +595,7 @@ function deriveMonster(
     rangedDelay: firingDelayOf(missileShots),
     rangedShots: rangedActions.length,
     rangedInterval: firingIntervalOf(missileShots),
+    rangedRefires: refiresOf(states, missile),
     meleeAction: meleeFiring.action,
     rangedAction: rangedActions[0] ?? null,
     rangedActions,

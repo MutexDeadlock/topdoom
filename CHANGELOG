@@ -1,10 +1,10 @@
-v0.17.1 (2026-09-0?)
+v0.17.1 (2026-09-03)
 
 Some smaller improvements and fixes before I begin with REPLAYS!
 Because I changed how the settings are saved, yours get resetted now, sry!
 
 Features and improvements
-  - settings:
+  - Settings:
     - all settings live in one localStorage entry now; settings stored by an
       earlier build are NOT migrated and start out at their defaults again
     - the frame limit defaults to 60 fps

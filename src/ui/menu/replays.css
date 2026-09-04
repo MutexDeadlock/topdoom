@@ -1,0 +1,243 @@
+/*
+ * The Replays tab panel (ui/menu/replays.ts): the record button, then the library as a list beside
+ * the picked replay's detail panel. The list is the save lists' shape (savegames.css) cut down to
+ * three columns; everything else about a replay lives in the panel, which is this tab's own.
+ */
+
+/*
+ * List left at 55%, detail right at 45%. Both columns are `minmax(0, …)` so a long replay name
+ * ellipsizes inside its own column instead of widening the grid — the detail's own text is the
+ * same story. The `gap` comes off the two shares, which is what `1fr`-of-the-rest already does.
+ */
+#menu .replays-split {
+  display: grid;
+  grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
+  gap: 14px;
+  /*
+   * Two rows' worth is all this row *asks* for — the list's own basis plus its button — and
+   * `flex-grow` still fills the panel. The `auto` basis is what makes that ask the specified
+   * height rather than the tallest column's content, which is the whole point: a detail panel that
+   * happens to carry a warning must not make the menu taller than every other tab, and the panel
+   * scrolls inside itself instead. The save lists' `.saves` rule is the same trick.
+   */
+  flex: 1 0 auto;
+  height: 190px;
+  min-height: 0;
+}
+
+/*
+ * No `gap`: the import button carries `button.ghost`'s own `margin-top`, so the list sits above it
+ * exactly as the save lists sit above theirs (menu.css § buttons).
+ */
+#menu .replays-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#menu .replays:empty::after {
+  content: 'No replays yet.';
+  display: block;
+  padding: 14px 12px;
+  color: var(--fg-faint);
+}
+
+/* A row is a pick, so it keeps `.row`'s pointer and hover — unlike the save lists' rows. */
+#menu .replays .row {
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 12px;
+}
+
+#menu .replays .row > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#menu .replays .row .name {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg);
+}
+
+#menu .replays .row .player {
+  color: var(--fg-muted);
+  font-size: 12px;
+  max-width: 40%;
+}
+
+/* Right-aligned and fixed-width: the clocks line up as a column down the list. */
+#menu .replays .row .length {
+  color: var(--fg-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/*
+ * Dimmed by colour rather than `opacity`, the `.row.disabled` rule's reason: the row still says
+ * why on its tooltip, and the panel prints that reason in red beside the Play button it greys.
+ */
+#menu .replays .row.unsupported .name,
+#menu .replays .row.unsupported .player,
+#menu .replays .row.unsupported .length {
+  color: var(--fg-faint);
+}
+
+#menu .replay-detail {
+  border: 1px solid var(--border);
+  background: var(--inset-bg);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-height: 0;
+}
+
+/*
+ * Everything but the buttons scrolls: a panel is taller than its box as soon as a replay has notes
+ * and a missing file to report, and the one thing that must never need scrolling to is Play.
+ */
+#menu .replay-detail .detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* Nothing picked: the one line centres in the box rather than hanging from its top edge. */
+#menu .replay-detail.empty {
+  align-items: center;
+  justify-content: center;
+}
+
+#menu .replay-detail .placeholder {
+  color: var(--fg-faint);
+}
+
+#menu .replay-detail .field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Name and player share a line: two short values, and the panel is short of height, not width. */
+#menu .replay-detail .field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+#menu .replay-detail .label {
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#menu .replay-detail input,
+#menu .replay-detail textarea {
+  font: inherit;
+  color: var(--fg);
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px 7px;
+  cursor: text;
+}
+
+/* The notes keep their line breaks and stop growing at `rows`; the box scrolls past that. */
+#menu .replay-detail textarea {
+  resize: none;
+  line-height: 1.4;
+}
+
+#menu .replay-detail input::placeholder,
+#menu .replay-detail textarea::placeholder {
+  color: var(--fg-ghost);
+}
+
+#menu .replay-detail input:focus,
+#menu .replay-detail textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/*
+ * The read-only half: a two-column grid so every value starts at the same x, with the label column
+ * sized by its widest word rather than by a guess.
+ */
+#menu .replay-detail .facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+#menu .replay-detail .facts .value {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The red is `#menu .warning`'s, shared with the save lists; the amber is the same `--caution` the
+ * save rows use for a file whose absence only costs looks (savegames.css). Both wrap rather than
+ * ellipsize, and both sit outside the scroller above with the buttons: the reason a Play is greyed
+ * is exactly the thing that must never be cut off or scrolled away from it.
+ */
+#menu .replay-detail .warning,
+#menu .replay-detail .caution {
+  flex: none;
+  font-size: 12px;
+  white-space: normal;
+}
+
+/*
+ * The buttons are `.row-actions` (savegames.css), outside the scroller above so they sit in one
+ * place whatever the panel holds; Play gets a little more room than a row's Load.
+ */
+#menu .replay-detail .row-actions button {
+  padding: 5px 14px;
+}
+
+/*
+ * The record row: heading, button and hint on **one line**. Stacked, the section spent two rows of
+ * a panel that is short of height on a heading and a button that together fill a third of the
+ * width — and the height it costs comes straight off the list and the panel below it.
+ */
+#menu #replay-record-section {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+#menu #replay-record-section h2 {
+  margin: 0;
+  flex: none;
+}
+
+/* The record button keeps its width from its label, ghost or primary, and no `.ghost` top margin
+   now that it sits beside the heading rather than under it. */
+#menu #replay-record-section button {
+  width: auto;
+  margin: 0;
+  padding: 7px 16px;
+}
+
+/* Takes the space left over, so a long refusal ellipsizes rather than pushing the button around. */
+#menu #replay-record-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

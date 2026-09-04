@@ -187,6 +187,9 @@ with, and the inventory comes out of the snapshot.
 That covers no checkpoint written this session (the first level of a run), one that no longer
 matches map/skill/WAD set, and a store that refused the read.
 
+All three end in `Game.reloadLevel`, which is also what a recording writes the reload down at
+(docs/replays.md § Restore events) and what a playback performs from the event.
+
 None of the three is a special case, just the ordinary map-load path, which already resets
 player/world/specials/fog for a normal transition and, via its own top-of-function reset,
 `playerDead`/the overlay/`playerActor`'s animation state too. The one wrinkle is the checkpoint's:
@@ -197,10 +200,17 @@ started another level meanwhile.
 **The overlay's hint names which of the two the press will do** — "press R to reload last savegame"
 against "press R to restart" — because reloading a save and restarting the level are different
 promises to make to a player standing over their own corpse. `damagePlayer` passes
-`DeathOverlay.show` whether a savegame is in hand and `DeathOverlay` owns the wording, the same
+`DeathOverlay.show` a `DeathHint` (`Game.deathHint`) and `DeathOverlay` owns the wording, the same
 split the killer line uses. Only the savegame can be answered for at death time: whether a
 *checkpoint* is readable is a store read away, so both level-reload outcomes share the one hint,
 which is a distinction the player has no reason to care about anyway.
+
+**A death inside a replay gets no hint at all** (`'none'`): `R` there is the record's input, not the
+viewer's, so offering a key that answers to someone else would be a promise the overlay cannot keep.
+The line is left out the way an unattributed killer is — the `.blank` class, no gap
+(docs/replays.md § Playback). Taking the replay over hands `R` back with the corpse still on
+screen, so `Game.takeOver` re-asserts the hint (`DeathOverlay.setHint`) — the overlay is drawn once
+and does not redraw itself. The intermission and the end card do the same with their continue key.
 
 ### Who killed the player
 

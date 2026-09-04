@@ -89,8 +89,11 @@ with framerate. Across *browsers* it still varies: ECMA-262 leaves `Math.sin`, `
 and `log` implementation-approximated, so a position drifts in its last bits and a comparison
 eventually falls the other way. `Math.hypot` and `Math.pow` were the two that had exact replacements
 and are gone from `src/` (`util/geom.ts: vecLength`, `util/damping.ts: decayOverTics`, each held by
-a test); the trigonometry is what a same-run-everywhere replay would still have to replace. Nothing
-tests reproducibility today — no demos here need it.
+a test); the trigonometry is what a same-run-everywhere replay would still have to replace.
+
+Within one engine the cursors are exactly reproducible, and the replays rest on that: a recording
+samples the P_Random cursor once a second and its playback compares (docs/replays.md § Playback),
+which is what turns "should be deterministic" into something the game reports.
 
 What the table *does* buy is the distribution vanilla actually has, and exact-value tests: every
 number in `docs/weapons.md`, `docs/combat.md`, `docs/monster-ai.md` and `docs/monster-attacks.md`

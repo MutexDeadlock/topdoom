@@ -10,6 +10,7 @@ import type { Pos3 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 import { stepFor } from '../fixtures/tics.ts';
+import { changedThing } from '../fixtures/snapshot.ts';
 
 /**
  * The kill counter against an arch-vile. Vanilla's `P_KillMobj` counts every death with no
@@ -53,7 +54,7 @@ function run(layer: ThingLayer, player: Pos3, seconds: number, done?: () => bool
 
 /** The imp's live health, read off the snapshot's sparse block — an absent `health` is the spawn default. */
 const impHealth = (layer: ThingLayer) =>
-  layer.snapshot().things[IMP_ID].monster?.health ?? MONSTER_HEALTH[ThingType.imp];
+  changedThing(layer.snapshot(), IMP_ID).monster?.health ?? MONSTER_HEALTH[ThingType.imp];
 
 describe('Regressions · an arch-vile’s raise counts toward the kill total', () => {
   test('a raised monster adds one to totalKills, so re-killing it lands back on 100%', () => {

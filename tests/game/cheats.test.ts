@@ -199,6 +199,20 @@ describe('Cheats · what a save and a patch see', () => {
     assert.deepEqual([restored.god, restored.noclip], [false, false]);
   });
 
+  test('a session that typed one is marked, IDKFA included, and the mark travels in the block', () => {
+    const cheats = new Cheats();
+    assert.equal(cheats.used, false);
+    cheats.type('idkfa', createInventory());
+    assert.equal(cheats.used, true, 'a code that leaves no toggle still cheated');
+    // The block is written for a session that used one, so its presence alone is what says so —
+    // which is why an IDKFA session records `{god: false, noclip: false}` rather than nothing.
+    const restored = new Cheats();
+    restored.restore(cheats.snapshot());
+    assert.equal(restored.used, true);
+    restored.restore(undefined);
+    assert.equal(restored.used, false, 'no block means the session never cheated');
+  });
+
   test("the classifier's STSTR_* list is exactly the set of responses that exist", () => {
     // `dehacked/tables.ts` spells the mnemonics out rather than importing them, because it is on
     // the read side and must not pull the game layer into the menu's graph. This is what keeps the

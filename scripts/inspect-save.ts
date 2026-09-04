@@ -10,7 +10,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { STATE_ENCODING, base64ToBytes, decompressText } from '../src/game/savestore.ts';
-import { SAVE_VERSION, wadLabel, type SaveWad } from '../src/game/savegames.ts';
+import { SAVE_VERSION, wadLabel, wadRoles, type SaveWad } from '../src/game/savegames.ts';
 import type { GameSnapshot } from '../src/game/snapshot.ts';
 
 const args = process.argv.slice(2);
@@ -29,12 +29,9 @@ const file = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
 console.log(`${file.name} — ${file.map} skill ${file.skill}, saved ${file.at}`);
 console.log(`format version ${file.version} (this build: ${SAVE_VERSION}), state encoding ${file.stateEncoding} (this build: ${STATE_ENCODING})`);
 const wads = (file.wads ?? []) as SaveWad[];
+const set = { wads, mapWad: String(file.mapWad ?? ''), patchWads: file.patchWads as string[] | undefined };
 for (const [i, wad] of wads.entries()) {
-  const roles = [
-    i === 0 ? 'game WAD' : null,
-    wad.id === file.mapWad ? 'map provider' : null,
-    Array.isArray(file.patchWads) && file.patchWads.includes(wad.id) ? 'DEH patch' : null,
-  ].filter((r) => r !== null);
+  const roles = wadRoles(set, i);
   console.log(`  ${wadLabel(wad)}${roles.length > 0 ? `  (${roles.join(', ')})` : ''}`);
 }
 
@@ -44,7 +41,7 @@ const state = JSON.parse(
 
 const p = state.player;
 console.log(`\nplayer: ${p.x.toFixed(1)}, ${p.y.toFixed(1)}  z ${p.z}  angle ${p.angle.toFixed(3)}  camera yaw ${state.cameraYawDeg}°`);
-console.log(`level time ${Number(file.levelTime).toFixed(1)}s, records ${state.recordsEligible ? 'eligible' : 'forfeited'}`);
+console.log(`level time ${Number(file.levelTime).toFixed(1)}s, records ${state.cheated ? 'forfeited' : 'eligible'}`);
 console.log(
   `state: ${Object.keys(state).length} top-level keys — ` +
     Object.entries(state)

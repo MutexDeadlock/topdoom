@@ -15,6 +15,7 @@
       <button class="tab" id="tab-button-newgame" data-tab="newgame">New Game</button>
       <button class="tab hidden" id="tab-button-save" data-tab="save">Save</button>
       <button class="tab" id="tab-button-load" data-tab="load">Load</button>
+      <button class="tab" id="tab-button-replays" data-tab="replays">Replays</button>
       <button class="tab" id="tab-button-settings" data-tab="settings">Settings</button>
     </div>
 
@@ -37,9 +38,14 @@
             <select id="level-select"></select>
           </section>
 
-          <section>
+          <section class="skill-column">
             <h2>Difficulty</h2>
             <select id="skill-select"></select>
+          </section>
+
+          <section class="record-column">
+            <h2>Replay</h2>
+            <button id="record-toggle" type="button" aria-pressed="false"></button>
           </section>
         </div>
       </div>
@@ -52,17 +58,35 @@
             <button class="primary" id="save-button">Save</button>
           </div>
         </section>
-        <section class="saves-section">
+        <section class="list-section">
           <h2>Existing saves <span class="hint">overwrite one, or rename it in place</span></h2>
           <div class="list saves" id="save-list"></div>
         </section>
       </div>
 
       <div class="tab-panel" id="tab-load">
-        <section class="saves-section">
+        <section class="list-section">
           <h2>Load game</h2>
           <div class="list saves" id="load-list"></div>
           <button class="ghost" id="save-import">Import save from disk…</button>
+        </section>
+      </div>
+
+      <div class="tab-panel" id="tab-replays">
+        <section id="replay-record-section">
+          <h2>Record</h2>
+          <button class="ghost" id="replay-record">Record from here</button>
+          <span class="hint warning" id="replay-record-hint"></span>
+        </section>
+        <section class="list-section">
+          <h2>Replays <span class="hint">pick one to see and edit what it is</span></h2>
+          <div class="replays-split">
+            <div class="replays-column">
+              <div class="list replays" id="replay-list"></div>
+              <button class="ghost" id="replay-import">Import replay from disk…</button>
+            </div>
+            <div class="replay-detail" id="replay-detail"></div>
+          </div>
         </section>
       </div>
 
@@ -313,5 +337,6 @@
   <input type="file" id="file-input" accept=".wad,.WAD,.txt,.TXT" multiple hidden />
   <input type="file" id="folder-input" webkitdirectory hidden />
   <input type="file" id="save-file-input" accept=".json,application/json" hidden />
+  <input type="file" id="replay-file-input" accept=".json,application/json" hidden />
   <div id="menu-credit">by @fauler420</div>
 </div>

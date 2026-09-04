@@ -49,6 +49,22 @@ where you left off. `?wad=DOOM2.WAD&pwad=SCYTHE.WAD&map=MAP05` preselects and sk
 
 See [docs/menu.md](docs/menu.md) for the WAD manifest, settings persistence and URL parameters.
 
+## Replays
+
+The **Replays** tab records a run and plays it back. Tick *Record a replay* on the New Game tab to
+record from the start, or press *Record from here* on the pause menu's Replays tab to record from
+where you are. A stored replay carries a name, a player and a description you can edit, and
+downloads as a `.topdoomreplay.json` file you can share and import back.
+
+Playing one shows a bar along the bottom: hover it for pause, playback speed, a camera toggle and
+*Take over*, which hands the level back to you right there and saves the game as it does. Click or
+drag the track to jump anywhere in the run; `Space` or a click on the level pauses and resumes, and
+the arrow keys skip five seconds either way. Switching
+the camera to *manual* lets you orbit and zoom around the recorded run with the usual keys without
+changing what the run itself does. A replay never sets a best time.
+A replay is only guaranteed to reproduce on the browser and build that recorded it — the bar says
+when either differs, and reports where a run diverged. See [docs/replays.md](docs/replays.md).
+
 ## Controls
 
 The same list is in the menu's **Settings** tab, along with the two settings that change what a key
@@ -56,9 +72,9 @@ does (autorun and the right mouse button), so both are there while you play — 
 
 | Key | |
 |---|---|
-| `W` `A` `S` `D` or the arrow keys | move |
+| `W` `A` `S` `D` or the arrow keys | move; the arrows skip a replay five seconds while one plays |
 | `Shift` | run |
-| `Space` | use — opens doors, throws switches, calls lifts |
+| `Space` | use — opens doors, throws switches, calls lifts; pauses a replay while one plays (a click on the level does too) |
 | right mouse | switch to your previous weapon, use, or nothing — pick one in the menu's Settings tab (default: previous weapon) |
 | mouse | aim; the view leads slightly towards the cursor |
 | left mouse | fire (hold to keep firing) |
@@ -197,7 +213,8 @@ floor movers, crushers, switches and teleporters all work, including locked door
 weapons fire, and every stock monster is in — including both DOOM II oddities, Commander Keen and
 the Icon of Sin. Three of vanilla's cheat codes are typed in as they always were
 (see [Controls](#controls) above). Sound effects and music both come out of the loaded WAD (see
-[Sound and music](#sound-and-music) above).
+[Sound and music](#sound-and-music) above). A run can be recorded and played back
+(see [Replays](#replays) above).
 
 **BOOM-format maps load and play** (experimental): extended BSP nodes, generalized linedefs and
 sector types, the extended linedef numbers, six-slot keys and generalized locks, elevators,

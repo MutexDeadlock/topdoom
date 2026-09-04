@@ -22,6 +22,9 @@ deliberate encodings, all owned by `game/snapshot.ts`:
   `lightStates`, `switchFlashes` as `[key, value][]` entries).
 - **The fog bitmap → run lengths** (`encodeRuns`/`decodeRuns`): alternating run lengths starting
   with zeros, JSON-native numbers rather than base64 so Node tests need no `atob`.
+- **Things → only the changed ones** (`ThingsSnapshot.changed`, `[id, state][]`): the same idea one
+  layer over, and the same reason — a restore re-spawns the map, so a thing nothing has touched is
+  already correct. § What is saved has the rule.
 - **Sectors → only the changed ones** (`snapshotSectors`/`applySectors`, `[index, fields][]`): a
   restore applies them to a *freshly loaded* map, so a sector no door, lift, light or secret has
   touched is already correct and is left out. `Game` takes the baseline to diff against straight
@@ -38,6 +41,13 @@ deliberate encodings, all owned by `game/snapshot.ts`:
   `Game.captureSave` hands over its state unrounded; the meta is stored as an object, where digits
   cost nothing, so only `levelTime` is rounded (in `createMeta`, because the export file
   stringifies the meta without a replacer).
+
+**`SAVE_VERSION` stays 1** through the thing-list change, deliberately: before v1.0 there are no
+saves worth a version, and the number is being kept for the first break that costs real players
+something. A save written before the change simply does not load, and nothing was added to explain
+it — the only such saves were made by development builds. Everything else added since is still the
+optional-field rule: absence means the old behaviour, the `teleportFogs` pattern. Breaking saves at
+all is the user's decision, not a free move (CLAUDE.md § Project-wide rules).
 
 A killable thing's AI block is the one part not written out field by field: `MONSTER_SAVE_KEYS`
 names the `PosedThing` fields it can carry, `MonsterFields` is `Pick`ed off `PosedThing` with that
@@ -117,7 +127,8 @@ each of the level's dolls has been carried to and the momentum it is carrying, a
 from before dolls existed, which leaves them standing on their own player starts exactly as a fresh
 load does (docs/specials.md § Voodoo dolls) — the optional `scrollers` block (the accelerative
 scrollers' built-up speed, below), level time, camera yaw,
-`recordsEligible` (so a `?pos=` run can't launder eligibility through a save), and the RNG cursors.
+`cheated` (so a `?pos=` run, a cheat or a taken-over replay can't launder its level's eligibility
+through a save), and the RNG cursors.
 
 **The player's external momentum is still stored as `knockVelX`/`knockVelY`.** That channel widened
 past knockback into the general one conveyors and pushers feed (`Player.momX`/`momY`,
@@ -204,6 +215,15 @@ nearly so:
   `game/things.ts`); its `lookTimer` phase and `homingBias` coin flip are re-seeded on restore,
   both invisible before first contact. This plus the sparse encoding is what keeps a 10k-monster
   map's save inside the quota (§ Storage).
+- **A save's thing list keeps only what the run changed**: `changed` holds `[id, state]` pairs for
+  the things no longer as the map spawned them, in ascending id. There is one restore path and it
+  always starts from the map — the spawn pass runs, `spawnBaseline` records what it made, and the
+  save is read over it; an id past the spawn count is a thing the run itself created and is pushed
+  in order, which is what keeps the index the id. A MAP15 save on entering the level is 1.4 kB where
+  the whole list was 4.2 kB, and 2.1 kB after a fight.
+- **`applyThingState` sets `angle` from `facingDeg`**, since the spawn underneath it is the *map's*
+  angle rather than this save's, and a monster block omits `angle` precisely when the two agree.
+  Without it a restored monster faces where the map placed it, not where the run left it.
 - **Saving is refused mid-intermission, mid-exit and while dead** (`Game.saveRefusal`), which keeps
   the intermission/exit cascade out of the format entirely. `captureSave` *throws* that refusal
   rather than returning a sentinel, so the whole save path has one refusal convention and the
@@ -287,6 +307,10 @@ decompressing every save to draw a list. `STATE_ENCODING` is versioned separatel
 `SAVE_VERSION`: one names the byte encoding, the other the snapshot's content, and they evolve
 independently.
 
+`idbBackend` is parameterized by database name and store prefix: the replays keep the same
+meta/bytes split in their own database (docs/replays.md § Storage), and nothing about a save's
+meaning lives in that layer.
+
 Two rules in `savestore.ts` are load-bearing. An IndexedDB transaction auto-commits as soon as
 control returns to the event loop with no request pending, so compression finishes *before*
 `putSave` opens its transaction, and both puts (meta + state) are issued synchronously inside one
@@ -307,8 +331,9 @@ origin's quota alone, and nothing evicts a save the player did not delete. `over
 slot keeping its ID and name, and `renameSave` touches the name only (`at` included, so the list
 can't reorder under the cursor — and the meta record only, so renaming never rewrites state bytes).
 A `QuotaExceededError` out of the write transaction surfaces as a
-readable message in the menu (mapped in `savegames.ts`, not the backend, so the tests' in-memory
-backend exercises the same translation). Quota pressure is far lower than under localStorage's
+readable message in the menu (mapped in `savestore.ts`'s `putStored`, above the backend, so the
+tests' in-memory backend exercises the same translation — and the replays' write takes the same
+path). Quota pressure is far lower than under localStorage's
 ~5 MB: the origin budget is typically hundreds of MB, and gzip takes several-fold off the
 snapshot JSON on top of the pristine-thing, sparse-block, sparse-sector, float-rounding and
 fog-RLE encodings it compresses. The uncompressed sizes for scale: DOOM2 MAP15 ~40 KB untouched
@@ -331,8 +356,8 @@ them: nothing was advanced into, so `R` there restarts as it always did.
 The reserved ID is the whole mechanism, and that is deliberate: hiding a save by *ID* needs no
 `SaveMeta` field, so the format is unchanged and `SAVE_VERSION` did not move. The ID is also what
 makes it self-overwriting — the same key replaces both records, so there is only ever one — and
-`freshId` (a base-36 timestamp plus a counter) can never collide with it. Two consequences the
-code has to honor, both in `savegames.ts`:
+`freshId` (`savestore.ts`: a base-36 timestamp plus a counter, shared with the replays) can never
+collide with it. Two consequences the code has to honor, both in `savegames.ts`:
 
 - `listSaves` filters the row out. It is the engine's save, not the player's, and both tabs list
   through that one function, so one filter keeps it out of Save and Load alike.
@@ -354,7 +379,22 @@ then re-checks map, skill and the WAD set by content on top of it.
 split as `SaveHooks`: `main.ts` owns the library and the database, `Game` owns which moment is
 worth capturing.
 
+## Naming
+
+**A blank name falls back to `defaultName`: the WAD that supplied the map with its extension
+dropped, then the map — `DOOM2 MAP05`, `NUTS MAP01`.** The provider is the file `mapWad` names,
+the game WAD where the set names none, and the bare map where there is no set at all. No date is in
+it: the row already shows `at`. `game/savegames.ts` owns the rule and **replays share it**
+(docs/replays.md § Recording), so the two lists read alike.
+
 ## Download and import
+
+A downloaded save is `<name>.topdoomsave.json` (`saveFileName`) — the save's own name, anything a
+filesystem could object to replaced, so the file on disk is the row the player clicked. The suffix
+pairs with the replays' `.topdoomreplay.json`; both come from `downloadFileName`, and it is what
+`Menu.installDropTarget` routes a dropped file by (docs/menu.md § Replays tab). A save downloaded
+before the suffix existed still imports: the drop rule takes any other `.json` as a save, and the
+importer reads content, not names.
 
 `node scripts/inspect-save.ts <file>` reads a downloaded save headlessly — meta, WAD roles, the
 player's position out of the decoded state, and `--state`/`--thumb` dumps — through the same codec

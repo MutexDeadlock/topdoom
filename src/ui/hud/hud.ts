@@ -300,6 +300,7 @@ export class Hud {
    * time.
    */
   private timerCanvas = document.getElementById('hud-timer') as HTMLCanvasElement;
+  private recordingEl = document.getElementById('hud-recording')!;
   private tallNumbers: TieredNumbers;
   private shortNumbers: WadNumbers;
   private healthValue: NumberField;
@@ -379,7 +380,8 @@ export class Hud {
     this.backpackRow = this.addPowerRow(gfx, BACKPACK_ICON).row;
   }
 
-  update(inv: Inventory, stats: LevelStats): void {
+  update(inv: Inventory, stats: LevelStats, recording: boolean): void {
+    this.recordingEl.classList.toggle('hidden', !recording);
     this.drawStatLine(this.killsCanvas, 'M', stats.kills, stats.totalKills);
     this.drawStatLine(this.itemsCanvas, 'I', stats.items, stats.totalItems);
     this.drawStatLine(this.secretsCanvas, 'S', stats.secrets, stats.totalSecrets);

@@ -226,6 +226,11 @@ export function setPistolStart(enabled: boolean): void {
   writeStorage(PISTOL_START_STORAGE_KEY, enabled);
 }
 
+/** A replay's pin on the setting, without touching the stored one; `null` puts that back. */
+export function overridePistolStart(enabled: boolean | null): void {
+  pistolStart = enabled ?? readStorage(PISTOL_START_STORAGE_KEY, false);
+}
+
 const AUTO_SWITCH_STORAGE_KEY = 'autoSwitchWeapon';
 
 /**
@@ -248,6 +253,11 @@ export function getAutoSwitchWeapon(): boolean {
 export function setAutoSwitchWeapon(enabled: boolean): void {
   autoSwitchWeapon = enabled;
   writeStorage(AUTO_SWITCH_STORAGE_KEY, enabled);
+}
+
+/** A replay's pin on the setting, without touching the stored one; `null` puts that back. */
+export function overrideAutoSwitchWeapon(enabled: boolean | null): void {
+  autoSwitchWeapon = enabled ?? readStorage(AUTO_SWITCH_STORAGE_KEY, true);
 }
 /**
  * Applies a picked-up thing's effect, vanilla's `P_TouchSpecialThing` rules. Returns false for an

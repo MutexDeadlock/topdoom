@@ -31,17 +31,34 @@ const DOT_R = 1.5;
 export class Crosshair {
   private canvas: HTMLCanvasElement;
   private lastColor: string | null = null;
+  private detached = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
+  }
+
+  /** The reticle image for `health`, as a CSS `url()` — what a replay's reticle element shows. */
+  static image(health: number): string {
+    return `url("data:image/svg+xml,${encodeURIComponent(crosshairSvg(colorForHealth(health)))}")`;
   }
 
   update(health: number): void {
     const color = colorForHealth(health);
     if (color === this.lastColor) return;
     this.lastColor = color;
-    const uri = `data:image/svg+xml,${encodeURIComponent(crosshairSvg(color))}`;
-    this.canvas.style.cursor = `url("${uri}") ${CENTER} ${CENTER}, crosshair`;
+    if (!this.detached) this.canvas.style.cursor = cursorFor(color);
+  }
+
+  /**
+   * Takes the reticle off the pointer — a replay draws it where the recording aimed instead, and
+   * the pointer goes back to the ordinary arrow, which is what the bar's controls are clicked
+   * with (docs/replays.md § Playback) — or puts it back on.
+   */
+  detach(on: boolean): void {
+    if (on === this.detached) return;
+    this.detached = on;
+    if (on) this.canvas.style.cursor = 'default';
+    else if (this.lastColor !== null) this.canvas.style.cursor = cursorFor(this.lastColor);
   }
 }
 
@@ -50,6 +67,11 @@ export class Crosshair {
  * and the health number cross into it as one cue rather than in two different blues.
  */
 const OVER_HUNDRED = `rgb(${COLOR_BLUE.join(', ')})`;
+
+function cursorFor(color: string): string {
+  const uri = `data:image/svg+xml,${encodeURIComponent(crosshairSvg(color))}`;
+  return `url("${uri}") ${CENTER} ${CENTER}, crosshair`;
+}
 
 /** Health → CSS color. `health <= 100` maps linearly onto hue 120 (green) down to 0 (red). */
 function colorForHealth(health: number): string {

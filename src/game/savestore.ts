@@ -1,10 +1,10 @@
 /**
- * The savegame store's storage layer: the IndexedDB backend behind
- * `game/savegames.ts`, plus the byte codecs (gzip, base64) the save formats are
- * built on. Deliberately typed over `unknown` meta records — validation and the
- * `SaveMeta` shape stay in `savegames.ts`, so this file owns bytes and
- * transactions, nothing about what a save means.
- * docs/savegames.md § Storage.
+ * The savegame store's storage layer: the IndexedDB backend behind `game/savegames.ts` (and, over
+ * its own database, `game/replay.ts`), the byte codecs (gzip, base64) the save formats are built
+ * on, and the store rules both formats share — a fresh ID, the missing-row refusal, the quota
+ * refusal. Deliberately typed over `unknown` meta records — validation and the `SaveMeta` shape
+ * stay in `savegames.ts`, so this file owns bytes, transactions and IDs, nothing about what a save
+ * means. docs/savegames.md § Storage.
  */
 import { asPromise, idbOpener, txDone } from '../util/idb.ts';
 
@@ -45,26 +45,27 @@ export interface SaveStoreBackend {
   remove(id: string): Promise<void>;
 }
 
-const DB_NAME = 'topdoom';
 const DB_VERSION = 1;
-const META_STORE = 'saves-meta';
-const STATE_STORE = 'saves-state';
-
-const openDb = idbOpener(DB_NAME, DB_VERSION, (db) => {
-  if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'id' });
-  if (!db.objectStoreNames.contains(STATE_STORE)) db.createObjectStore(STATE_STORE, { keyPath: 'id' });
-});
 
 /**
- * The real backend: one database, two object stores keyed by save ID —
- * `saves-meta` holds plain `SaveMeta` objects so listing never touches a
- * snapshot, `saves-state` the compressed bytes. An IndexedDB transaction
- * auto-commits as soon as control returns to the event loop with no request
- * pending, so nothing here may `await` between opening a transaction and
- * issuing its requests — which is why `putSave` takes finished bytes and the
- * compression happens before it is called.
+ * The real backend: one database, two object stores keyed by record ID —
+ * `<prefix>-meta` holds plain meta objects so listing never touches a
+ * snapshot, `<prefix>-state` the compressed bytes. The savegames live in
+ * `topdoom`; a replay's record has the same two halves and takes the same
+ * backend over its own database, kept separate so an upgrade that fails for
+ * one can't take the other down (docs/replays.md § Storage). An IndexedDB
+ * transaction auto-commits as soon as control returns to the event loop with
+ * no request pending, so nothing here may `await` between opening a
+ * transaction and issuing its requests — which is why `putSave` takes finished
+ * bytes and the compression happens before it is called.
  */
-export function idbBackend(): SaveStoreBackend {
+export function idbBackend(names: { database: string; prefix: string }): SaveStoreBackend {
+  const META_STORE = `${names.prefix}-meta`;
+  const STATE_STORE = `${names.prefix}-state`;
+  const openDb = idbOpener(names.database, DB_VERSION, (db) => {
+    if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'id' });
+    if (!db.objectStoreNames.contains(STATE_STORE)) db.createObjectStore(STATE_STORE, { keyPath: 'id' });
+  });
   // Transaction creation and its request in one synchronous expression — see
   // the auto-commit rule above.
   const read = async <T>(store: string, request: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> =>
@@ -91,6 +92,50 @@ export function idbBackend(): SaveStoreBackend {
       return txDone(tx);
     },
   };
+}
+
+/** The stored meta for `id`, or a thrown refusal — the opening of every read-modify-write. */
+export async function readStoredMeta(backend: SaveStoreBackend, noun: string, id: string): Promise<unknown> {
+  const raw = await backend.readMeta(id);
+  if (raw === undefined) throw new Error(`that ${noun} no longer exists`);
+  return raw;
+}
+
+/**
+ * The one write of a whole record: both halves in the backend's single transaction, with a quota
+ * refusal — the only failure a player can act on — translated to a readable message. Mapped here
+ * rather than in the backend so the tests' in-memory backend exercises the same translation.
+ */
+export async function putStored(backend: SaveStoreBackend, noun: string, meta: unknown, state: StoredState): Promise<void> {
+  try {
+    await backend.putSave(meta, state);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+      throw new Error(`not enough browser storage for this ${noun} — delete an older ${noun} and try again`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Session-scoped tiebreaker for records landing in the same millisecond; uniqueness is checked
+ * against the stored IDs anyway.
+ */
+let idCounter = 0;
+
+/**
+ * Deliberately entropy-free — the engine's one randomness source is the DOOM table
+ * (docs/random.md), and a record ID needs uniqueness, not randomness.
+ */
+export async function freshId(backend: SaveStoreBackend): Promise<string> {
+  const existing = new Set(
+    (await backend.listMeta()).map((raw) => (typeof raw === 'object' && raw !== null ? (raw as { id?: unknown }).id : undefined)),
+  );
+  let id: string;
+  do {
+    id = Date.now().toString(36) + '-' + (idCounter++).toString(36);
+  } while (existing.has(id));
+  return id;
 }
 
 /**

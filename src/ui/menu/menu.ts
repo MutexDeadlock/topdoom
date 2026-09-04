@@ -47,8 +47,10 @@ import {
 } from '../../wad/playerskin.ts';
 import { getAutoSwitchWeapon, getPistolStart, setAutoSwitchWeapon, setPistolStart } from '../../game/inventory.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
+import { ReplaysUi, type ReplayHooks } from './replays.ts';
+import { isReplayFileName } from '../../game/replay.ts';
 import { readStorage, readStorageObject, writeStorage } from '../../util/storage.ts';
-import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
+import { requiredWads, wadLabel, type MissingWad, type SaveWadSet } from '../../game/savegames.ts';
 import { getProfilerVisible, setProfilerVisible } from '../hud/profiler.ts';
 import { getFpsVisible, setFpsVisible } from '../devmode/debughud.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
@@ -59,6 +61,8 @@ export interface Selection {
   pwads: WadSource[];
   map: string;
   skill: Skill;
+  /** Whether the game starts recording a replay as it begins (docs/replays.md § Recording). */
+  record?: boolean;
 }
 
 export interface MenuDefaults {
@@ -71,7 +75,7 @@ export interface MenuDefaults {
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /** The menu's top-level tabs; exported for the F2/F3/F4 hotkeys in `main.ts`. */
-export type MenuTab = 'newgame' | 'save' | 'load' | 'settings';
+export type MenuTab = 'newgame' | 'save' | 'load' | 'replays' | 'settings';
 
 /** The Settings tab's own sub-tabs, in the order they are shown. */
 type SettingsTab = 'general' | 'controls' | 'visuals' | 'audio';
@@ -131,12 +135,14 @@ export class Menu {
     newgame: el<HTMLButtonElement>('tab-button-newgame'),
     save: el<HTMLButtonElement>('tab-button-save'),
     load: el<HTMLButtonElement>('tab-button-load'),
+    replays: el<HTMLButtonElement>('tab-button-replays'),
     settings: el<HTMLButtonElement>('tab-button-settings'),
   };
   private tabPanels = {
     newgame: el<HTMLDivElement>('tab-newgame'),
     save: el<HTMLDivElement>('tab-save'),
     load: el<HTMLDivElement>('tab-load'),
+    replays: el<HTMLDivElement>('tab-replays'),
     settings: el<HTMLDivElement>('tab-settings'),
   };
   private activeTab: MenuTab = 'newgame';
@@ -153,6 +159,10 @@ export class Menu {
     audio: el<HTMLDivElement>('settings-tab-audio'),
   };
   private savegames: SavegamesUi;
+  private replays: ReplaysUi;
+  private recordToggle = el<HTMLButtonElement>('record-toggle');
+  /** Whether the next game starts recording; session-only, so it can't outlive the tab it was set in. */
+  private recordArmed = false;
   private library: LibraryUi;
   private about = new AboutUi();
   private wadinfo = new WadInfoUi();
@@ -193,12 +203,18 @@ export class Menu {
     onResume: () => void,
     audio: AudioEngine,
     saves: SaveHooks,
+    replays: ReplayHooks,
   ) {
     this.onStart = onStart;
     this.onResume = onResume;
     this.audio = audio;
     this.savegames = new SavegamesUi(
       saves,
+      (text, isError) => this.setStatus(text, isError),
+      (meta) => this.describeSave(meta),
+    );
+    this.replays = new ReplaysUi(
+      replays,
       (text, isError) => this.setStatus(text, isError),
       (meta) => this.describeSave(meta),
     );
@@ -249,6 +265,7 @@ export class Menu {
     this.installAutoSwitch();
     this.installFps();
     this.installProfiler();
+    this.installRecordToggle();
     this.installAbout();
     this.setTab('newgame');
     this.setSettingsTab('general');
@@ -308,6 +325,7 @@ export class Menu {
     this.tabButtons.save.classList.toggle('hidden', !inGame);
     if (!inGame && this.activeTab === 'save') this.setTab('newgame');
     this.savegames.refresh(inGame);
+    this.replays.refresh(inGame);
     this.refreshButtons();
   }
 
@@ -403,7 +421,7 @@ export class Menu {
    * which alone can't name a level, docs/wad.md § Level names), and whatever
    * `resolveSaveWads` reports as unavailable.
    */
-  describeSave(meta: SaveMeta): SaveSetInfo {
+  describeSave(meta: SaveWadSet): SaveSetInfo {
     const { iwad, pwads, missing } = this.resolveSaveWads(meta);
     // Without the game WAD there is no map list to resolve against; the row
     // falls back to the bare lump name and says which file is missing.
@@ -448,6 +466,7 @@ export class Menu {
     }
     // A save list is only built while it's the tab on screen — see `SavegamesUi.setVisible`.
     this.savegames.setVisible(tab === 'save' || tab === 'load' ? tab : null);
+    this.replays.setVisible(tab === 'replays');
   }
 
   /**
@@ -605,6 +624,26 @@ export class Menu {
     this.pistolStartCheckbox.checked = getPistolStart();
     this.pistolStartCheckbox.addEventListener('change', () => {
       setPistolStart(this.pistolStartCheckbox.checked);
+    });
+  }
+
+  /**
+   * The record toggle beside the level and difficulty pickers. A button rather than a checkbox:
+   * it reads as one of the three things being chosen about the game, and says which state it is
+   * in rather than what ticking it would mean. docs/menu.md § Replays tab.
+   */
+  private installRecordToggle(): void {
+    const show = () => {
+      this.recordToggle.textContent = this.recordArmed ? '● Recording' : 'Not recording';
+      this.recordToggle.setAttribute('aria-pressed', String(this.recordArmed));
+      this.recordToggle.title = this.recordArmed
+        ? 'This game is recorded; the replay is stored when it ends'
+        : 'Record this game as a replay';
+    };
+    show();
+    this.recordToggle.addEventListener('click', () => {
+      this.recordArmed = !this.recordArmed;
+      show();
     });
   }
 
@@ -1141,10 +1180,12 @@ export class Menu {
     this.root.addEventListener('drop', (e) => {
       e.preventDefault();
       const files = [...((e as DragEvent).dataTransfer?.files ?? [])];
-      // A dropped save import lands beside the WADs: `.json` can only be a
-      // downloaded save, everything else keeps going to the WAD path.
-      const saves = files.filter((f) => f.name.toLowerCase().endsWith('.json'));
-      const wads = files.filter((f) => !saves.includes(f));
+      // A dropped download lands beside the WADs: a replay by its own suffix, any other `.json`
+      // is a save, everything else keeps going to the WAD path.
+      const replays = files.filter((f) => isReplayFileName(f.name));
+      const saves = files.filter((f) => !replays.includes(f) && f.name.toLowerCase().endsWith('.json'));
+      const wads = files.filter((f) => !saves.includes(f) && !replays.includes(f));
+      if (replays.length > 0) void this.replays.importFiles(replays);
       if (saves.length > 0) void this.savegames.importFiles(saves);
       if (wads.length > 0) void this.addFiles(wads);
     });
@@ -1164,12 +1205,13 @@ export class Menu {
     const iwad = this.selectedIwad;
     const pwads = this.activePwads();
     const map = this.levelSelect.value;
+    const record = this.recordArmed;
     return access
       .then((granted) => {
         if (!granted) {
           throw new Error('Permission to read your WAD folder was refused — reopen the WAD Library.');
         }
-        return this.onStart({ iwad, pwads, map, skill });
+        return this.onStart({ iwad, pwads, map, skill, record });
       })
       .catch((err: Error) => this.setStatus(err.message, true))
       .finally(() => this.refreshButtons());

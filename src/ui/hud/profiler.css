@@ -48,7 +48,7 @@
 #profiler-hud .profiler-bar {
   position: relative;
   display: block;
-  width: 110px;
+  width: 80px;
   height: 8px;
   background: #1c1c22;
   border: 1px solid var(--border);

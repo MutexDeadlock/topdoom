@@ -286,9 +286,14 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /** Reused by `crossAfterPush`, which runs for every pushed thing every tic. */
   const pushedFrom: Pos2 = { x: 0, y: 0 };
 
-  if (restore) {
-    restoreThings(restore);
-  } else {
+  /**
+   * Every thing as the map spawned it — what `snapshotThings` elides against and what a restore's
+   * missing entries stand for. Assigned once the spawn loop below has run, which is every level: a
+   * restore is read *over* the map, never instead of it.
+   */
+  let spawnBaseline: ThingState[] = [];
+
+  {
     for (const t of map.things) {
       if (!THING_SPRITES[t.type]) continue;
       if (isMultiplayerOnly(t.flags)) continue;
@@ -308,6 +313,11 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       if (COUNTKILL_TYPES.has(t.type)) stats.totalKills++;
       else if (COUNTITEM_TYPES.has(t.type)) stats.totalItems++;
     }
+    // Before anything a restore changes: this is the state a thing left out of `changed` stands
+    // for, in both directions — what `snapshotThings` elides against and what `restoreThings`
+    // keeps.
+    spawnBaseline = posed.map(thingStateOf);
+    if (restore) restoreThings(restore);
   }
 
   /**
@@ -317,39 +327,46 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   const grid = createThingGrid(world, posed);
 
   function snapshotThings(): ThingsSnapshot {
-    return {
-      clock,
-      stats: { ...stats },
-      things: posed.map((p) => {
-        const s: ThingState = { type: p.type, x: p.x, y: p.y, z: p.z, facingDeg: p.facingDeg };
-        // Present only when true — see ThingState's doc.
-        if (p.picked) s.picked = true;
-        if (p.hidden) s.hidden = true;
-        if (p.dropped) s.dropped = true;
-        if (p.ambush) s.ambush = true;
-        const killable = Number.isFinite(p.health) || p.dead;
-        if (killable && !isPristine(p)) {
-          // Sparse: a field still at its spawn default is omitted and the restore's own
-          // `pushThing` re-supplies it. The six keys with no constant default are decided here
-          // instead. docs/savegames.md § What is saved and what is deliberately not.
-          const block: Partial<MonsterFields> = {
-            homingBias: p.homingBias,
-          };
-          // Written unconditionally once a patch has moved `MONSTER_HEALTH`, since the elision
-          // is against a table value. docs/dehacked.md § Savegames and patched tables.
-          if (thingStatsPatched() || p.health !== spawnHealthFor(p.type, p.dropped)) block.health = p.health;
-          if (p.angle !== (p.facingDeg * Math.PI) / 180) block.angle = p.angle;
-          if (p.spawnX !== p.x) block.spawnX = p.spawnX;
-          if (p.spawnY !== p.y) block.spawnY = p.spawnY;
-          if (p.spawnAngle !== p.facingDeg) block.spawnAngle = p.spawnAngle;
-          for (const key of MONSTER_KEYS_WITH_DEFAULTS) {
-            if (p[key] !== MONSTER_FIELD_DEFAULTS[key]) copyMonsterField(block, p, key);
-          }
-          s.monster = block;
-        }
-        return s;
-      }),
-    };
+    // Only the things the run has moved on from; the restore re-spawns the map and reads these
+    // over it. docs/savegames.md § The format and its version.
+    const changed: [number, ThingState][] = [];
+    for (const [i, p] of posed.entries()) {
+      const s = thingStateOf(p);
+      const asSpawned = i < spawnBaseline.length && sameThingState(s, spawnBaseline[i]);
+      if (!asSpawned) changed.push([i, s]);
+    }
+    return { clock, stats: { ...stats }, changed };
+  }
+
+  /** One live thing as it is stored — the sparse rules are in `ThingState`'s own doc. */
+  function thingStateOf(p: PosedThing): ThingState {
+    const s: ThingState = { type: p.type, x: p.x, y: p.y, z: p.z, facingDeg: p.facingDeg };
+    // Present only when true — see ThingState's doc.
+    if (p.picked) s.picked = true;
+    if (p.hidden) s.hidden = true;
+    if (p.dropped) s.dropped = true;
+    if (p.ambush) s.ambush = true;
+    const killable = Number.isFinite(p.health) || p.dead;
+    if (killable && !isPristine(p)) {
+      // Sparse: a field still at its spawn default is omitted and the restore's own
+      // `pushThing` re-supplies it. The six keys with no constant default are decided here
+      // instead. docs/savegames.md § What is saved and what is deliberately not.
+      const block: Partial<MonsterFields> = {
+        homingBias: p.homingBias,
+      };
+      // Written unconditionally once a patch has moved `MONSTER_HEALTH`, since the elision
+      // is against a table value. docs/dehacked.md § Savegames and patched tables.
+      if (thingStatsPatched() || p.health !== spawnHealthFor(p.type, p.dropped)) block.health = p.health;
+      if (p.angle !== (p.facingDeg * Math.PI) / 180) block.angle = p.angle;
+      if (p.spawnX !== p.x) block.spawnX = p.spawnX;
+      if (p.spawnY !== p.y) block.spawnY = p.spawnY;
+      if (p.spawnAngle !== p.facingDeg) block.spawnAngle = p.spawnAngle;
+      for (const key of MONSTER_KEYS_WITH_DEFAULTS) {
+        if (p[key] !== MONSTER_FIELD_DEFAULTS[key]) copyMonsterField(block, p, key);
+      }
+      s.monster = block;
+    }
+    return s;
   }
 
   function update(
@@ -1007,37 +1024,69 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * the spawn loop's skip: skipping would shift every later ID and desync the saved cross-thing
    * references. docs/savegames.md § What is saved and what is deliberately not.
    */
+  /**
+   * Read *over* the map's own spawn loop, which has already run: only the things that are no longer
+   * as it left them are in the save, and everything it leaves out was just spawned as it should be.
+   * An id past the spawn count is a thing the run itself created (a dropped weapon, a nightmare
+   * respawn, one of the Icon's); the pairs are in ascending id, so pushing those in the order they
+   * come keeps the index the id. docs/savegames.md § The format and its version.
+   */
   function restoreThings(saved: ThingsSnapshot): void {
+    const spawned = posed.length;
+    restoreCounts(saved);
+    for (const [id, s] of saved.changed) {
+      applyThingState(id < spawned ? posed[id] : pushSaved(s), s);
+    }
+  }
+
+  /** The level-wide totals a restore brings with it, over whatever the spawn loop counted. */
+  function restoreCounts(saved: ThingsSnapshot): void {
     clock = saved.clock;
     stats.totalKills = saved.stats.totalKills;
     stats.kills = saved.stats.kills;
     stats.totalItems = saved.stats.totalItems;
     stats.items = saved.stats.items;
-    for (const s of saved.things) {
-      const p = pushThing(s.type, { x: s.x, y: s.y, z: s.z }, s.facingDeg, {
-        ambush: s.ambush === true,
-        dropped: s.dropped === true,
-      });
-      if (!p) {
-        throw new Error(`this WAD set has no art for thing ${s.type} (${THING_SPRITES[s.type] ?? '?'}) the save needs`);
-      }
-      p.picked = s.picked === true;
-      p.hidden = s.hidden === true;
-      p.visible = !p.hidden;
-      const m = s.monster;
-      if (!m) continue;
-      // The block is sparse: a key it lacks keeps the spawn default `pushThing` just applied
-      // (`copyMonsterField` skips it) — see `MONSTER_FIELD_DEFAULTS`.
-      for (const key of MONSTER_SAVE_KEYS) copyMonsterField(p, m, key);
-      // `dead` is derived, not saved: every death site sets it exactly when health drops to <= 0.
-      // docs/savegames.md § The format and its version.
-      p.dead = p.health <= 0;
-      // Re-enter the death pose `damageThing` played, on whichever frame `deadTime` says the
-      // corpse is holding. `health` keeps its negative overkill in the save precisely so the gib
-      // rule inside recomputes the way it did at the time of death.
-      if (p.dead) enterDeathPose(p, p.deadTime);
-      else restoreAttackPose(p);
+  }
+
+  /** A saved thing pushed as a fresh one; refuses rather than shifting every id after it. */
+  function pushSaved(s: ThingState): PosedThing {
+    const p = pushThing(s.type, { x: s.x, y: s.y, z: s.z }, s.facingDeg, {
+      ambush: s.ambush === true,
+      dropped: s.dropped === true,
+    });
+    if (!p) {
+      throw new Error(`this WAD set has no art for thing ${s.type} (${THING_SPRITES[s.type] ?? '?'}) the save needs`);
     }
+    return p;
+  }
+
+  /** `s` over a thing that already carries its type's spawn defaults. */
+  function applyThingState(p: PosedThing, s: ThingState): void {
+    p.x = s.x;
+    p.y = s.y;
+    p.z = s.z;
+    p.facingDeg = s.facingDeg;
+    // The heading follows the facing it was elided against — the spawn angle underneath is the
+    // map's, not this save's, and a monster whose block omits `angle` means "the two agree".
+    p.angle = (s.facingDeg * Math.PI) / 180;
+    p.ambush = s.ambush === true;
+    p.dropped = s.dropped === true;
+    p.picked = s.picked === true;
+    p.hidden = s.hidden === true;
+    p.visible = !p.hidden;
+    const m = s.monster;
+    if (!m) return;
+    // The block is sparse: a key it lacks keeps the spawn default `pushThing` just applied
+    // (`copyMonsterField` skips it) — see `MONSTER_FIELD_DEFAULTS`.
+    for (const key of MONSTER_SAVE_KEYS) copyMonsterField(p, m, key);
+    // `dead` is derived, not saved: every death site sets it exactly when health drops to <= 0.
+    // docs/savegames.md § The format and its version.
+    p.dead = p.health <= 0;
+    // Re-enter the death pose `damageThing` played, on whichever frame `deadTime` says the
+    // corpse is holding. `health` keeps its negative overkill in the save precisely so the gib
+    // rule inside recomputes the way it did at the time of death.
+    if (p.dead) enterDeathPose(p, p.deadTime);
+    else restoreAttackPose(p);
   }
 
   /**
@@ -1592,6 +1641,18 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 function spawnHealthFor(type: number, dropped: boolean): number {
   if (type === ThingType.barrel) return BARREL_HEALTH;
   return dropped ? Infinity : MONSTER_HEALTH[type] ?? Infinity;
+}
+
+/**
+ * Whether a thing is exactly as its spawn record holds it, field by field — what the sparse
+ * snapshot elides on. The monster block is the rare case (a wounded or dead thing) and compares
+ * serialized; everything else is a scalar.
+ */
+function sameThingState(a: ThingState, b: ThingState): boolean {
+  if (a.type !== b.type || a.x !== b.x || a.y !== b.y || a.z !== b.z || a.facingDeg !== b.facingDeg) return false;
+  if (a.picked !== b.picked || a.hidden !== b.hidden || a.dropped !== b.dropped || a.ambush !== b.ambush) return false;
+  if (a.monster === undefined || b.monster === undefined) return a.monster === b.monster;
+  return JSON.stringify(a.monster) === JSON.stringify(b.monster);
 }
 
 /**

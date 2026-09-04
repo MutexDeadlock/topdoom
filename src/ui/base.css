@@ -10,6 +10,7 @@
   --z-hud: 10; /* #hud, #profiler-hud, #hud-bar */
   --z-message: 12; /* #hud-message, #level-card */
   --z-overlay: 15; /* #intermission, #death-overlay — never up at the same time */
+  --z-replaybar: 16; /* #replay-bar — usable over the two above, under the menu */
   --z-menu: 20;
   --z-loading: 25; /* #loading — boot screen and level loads, over the menu they cover */
   --z-fatal: 30;

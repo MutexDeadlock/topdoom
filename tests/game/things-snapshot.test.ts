@@ -10,6 +10,7 @@ import { DOOM_TIC } from '../../src/constants.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { changedThing, savedThing } from '../fixtures/snapshot.ts';
 
 /**
  * The thing layer's savegame round-trip: a snapshot rebuilt through
@@ -80,16 +81,39 @@ describe('Savegames · things round-trip', () => {
     assert.deepEqual(getRandomCursors(), cursorsAfter, 'and draw the same random numbers');
   });
 
-  test('an undisturbed monster is saved compactly, without the AI block', () => {
+  test('a save stores only the things the run moved on from, and re-spawns the rest', () => {
+    clearRandom();
+    const { grid, world } = arena();
+    const layer = build(world);
+    const player: Pos3 = { ...grid.centre(1, 1), z: 0 };
+
+    assert.deepEqual(layer.snapshot().changed, [], 'nothing has happened yet');
+    layer.damage(0, 20, { from: player });
+    const at = { ...grid.centre(4, 1), z: 0 };
+    layer.tryPickup(at, at, 24, (type) => type === ThingType.stimpack);
+    for (let i = 0; i < 5; i++) layer.update(DOOM_TIC, player);
+
+    const saved = JSON.parse(JSON.stringify(layer.snapshot()));
+    assert.deepEqual(
+      saved.changed.map(([id]: [number]) => id),
+      [0, 4],
+      'the wounded imp and the taken stimpack, and nothing else',
+    );
+
+    const fresh = arena();
+    const restored = buildThingSprites(fresh.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
+    assert.deepEqual(restored.snapshot(), layer.snapshot(), 'the re-spawned layer matches, field for field');
+    assert.deepEqual(restored.stats, layer.stats);
+  });
+
+  test('an undisturbed monster is not saved at all, and a scratched one brings its AI block', () => {
     clearRandom();
     const { world } = arena();
     const layer = build(world);
-    const saved = layer.snapshot();
-    assert.equal(saved.things[2].monster, undefined, 'the untouched demon has no monster block');
-    assert.equal(saved.things[4].monster, undefined, 'the stimpack never has one');
+    assert.equal(savedThing(layer.snapshot(), 2), undefined, 'the untouched demon is not in the save');
 
     layer.damage(2, 5);
-    assert.notEqual(layer.snapshot().things[2].monster, undefined, 'one scratch and the block appears');
+    assert.notEqual(changedThing(layer.snapshot(), 2).monster, undefined, 'one scratch and the block appears');
   });
 
   test('a disturbed monster saves only its off-default fields', () => {
@@ -101,7 +125,7 @@ describe('Savegames · things round-trip', () => {
     layer.damage(1, 1000); // gib the other
 
     const saved = layer.snapshot();
-    const wounded = saved.things[0].monster!;
+    const wounded = changedThing(saved, 0).monster!;
     assert.equal(wounded.health, MONSTER_HEALTH[ThingType.imp] - 20, 'damaged health is saved');
     assert.equal(wounded.alerted, true);
     assert.ok('homingBias' in wounded, 'the coin flip is always saved — its spawn default is a random draw');
@@ -110,7 +134,7 @@ describe('Savegames · things round-trip', () => {
     }
     assert.ok(!('dead' in wounded) && !('deathFrameCount' in wounded), 'the two derived fields are never saved');
 
-    const corpse = saved.things[1].monster!;
+    const corpse = changedThing(saved, 1).monster!;
     assert.ok(!('dead' in corpse), 'dead is derived from health on restore');
     assert.ok(corpse.health! <= 0, 'the overkill health the gib rule re-reads is intact');
   });
@@ -130,7 +154,7 @@ describe('Savegames · things round-trip', () => {
     // every key present, defaults included, plus the since-removed `dead` and
     // `deathFrameCount` (the latter deliberately stale to prove it is ignored).
     const padded = JSON.parse(JSON.stringify(saved));
-    for (const t of padded.things) {
+    for (const [, t] of padded.changed) {
       if (!t.monster) continue;
       t.monster = {
         ...MONSTER_FIELD_DEFAULTS,
@@ -187,7 +211,9 @@ describe('Savegames · things round-trip', () => {
     clearRandom();
     const { world } = arena();
     const saved = build(world).snapshot();
-    saved.things[0].type = 99999; // no THING_SPRITES entry
+    // Past the spawn count, so the restore has to push it rather than find it on the map — which
+    // is the only way a save can name a type at all now that the map's own things come from the map.
+    saved.changed.push([99, { type: 99999, x: 0, y: 0, z: 0, facingDeg: 0 }]);
     const fresh = arena();
     assert.throws(
       () => buildThingSprites(fresh.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved }),

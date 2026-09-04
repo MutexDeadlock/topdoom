@@ -5,6 +5,7 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { changedThing } from '../fixtures/snapshot.ts';
 
 /**
  * **A teleported monster stands on the floor it arrives at, it does not fall to it.**
@@ -60,7 +61,7 @@ describe('Regressions · teleport arrival height', () => {
     let arrivalZ: number | null = null;
     for (let i = 0; i < 300 && arrivalZ === null; i++) {
       step();
-      const imp = layer.snapshot().things[0];
+      const imp = changedThing(layer.snapshot(), 0);
       // The tic it lands: the pad is a whole cell away from where it walked.
       if (Math.hypot(imp.x - pad.x, imp.y - pad.y) < 64) arrivalZ = imp.z;
     }

@@ -52,9 +52,16 @@ export class Cheats {
    * of every tic, which is what every reader goes through.
    */
   noclip = false;
+  /**
+   * Whether any code has fired this session — including IDKFA, which leaves no toggle behind. It
+   * is what keeps a cheated session from claiming best times on the levels after the one it was
+   * typed on, where the toggles alone would forget an IDKFA (docs/cheats.md § Saves and best
+   * times). Never cleared: a session that cheated has cheated.
+   */
+  used = false;
   private buffer = '';
 
-  /** Whether any cheat is on at all — what a save bothers to record. */
+  /** Whether any cheat is on at all. */
   get active(): boolean {
     return this.god || this.noclip;
   }
@@ -86,6 +93,7 @@ export class Cheats {
       if (fired) {
         // Cleared so the tail of one code can't stand in for the head of the next.
         this.buffer = '';
+        this.used = true;
         message = this.fire(fired[1], inv);
       }
     }
@@ -97,12 +105,14 @@ export class Cheats {
   }
 
   /**
-   * A save from before cheats existed — or one taken with none on — carries nothing, and means both
-   * off.
+   * A save from before cheats existed — or one taken by a session that never typed one — carries
+   * nothing, and means both off and nothing cheated. A block being there at all is what says a code
+   * fired: it is only written for a session that used one. docs/cheats.md § Saves and best times.
    */
   restore(saved?: CheatSnapshot): void {
     this.god = saved?.god ?? false;
     this.noclip = saved?.noclip ?? false;
+    this.used = saved !== undefined;
   }
 
   /** One cheat's effect, `ST_Responder`'s own block per code. */

@@ -18,6 +18,15 @@
   pointer-events: none;
 }
 
+/*
+ * Lifted clear of the replay bar's expanded panel. `ReplayBar` sets the class every frame off the
+ * same conditions the panel's own display rule reads, so the two can't disagree — a replay
+ * restarted from the keyboard closes the panel without a `pointerleave` to hear about it.
+ */
+body.replay-expanded #hud-bar {
+  bottom: 74px;
+}
+
 #game-hud {
   grid-column: 2;
   display: flex;
@@ -136,10 +145,42 @@
 }
 
 /* Mirrors #hud-levelstats on the grid's other side — flush against #game-hud's right edge. */
-#hud-timer {
+#hud-run {
   grid-column: 3;
   justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#hud-timer {
   height: 14px;
+}
+
+/*
+ * The recording light, beside the clock because both are about the run rather than about the
+ * player. Drawn rather than lettered: the readouts around it are the WAD's own sprite glyphs, and
+ * DOM text in the page font beside them would read as a different screen. The slow pulse is what
+ * separates it from the red the status bar prints numbers in — nothing else here moves.
+ * docs/replays.md § Recording.
+ */
+#hud-recording {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e03030;
+  box-shadow: 0 0 6px rgba(224, 48, 48, 0.9);
+  animation: hud-recording-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes hud-recording-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 #game-hud .hud-powers {

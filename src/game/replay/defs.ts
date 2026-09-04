@@ -1,0 +1,331 @@
+/**
+ * The replay format: what a recording holds, the constants the record is quantized against, and
+ * the pure helpers the recorder, the playback and the menu share. The store and the persisted
+ * player name live in the parent `game/replay.ts`. docs/replays.md § The record.
+ */
+import type { CameraMode } from '../autocamera.ts';
+import type { RightMouseAction } from '../input.ts';
+import type { SaveWad, SaveWadSet } from '../savegames.ts';
+import type { Skill } from '../skill.ts';
+import type { GameSnapshot } from '../snapshot.ts';
+import type { CameraPose } from '../../render/camera.ts';
+import { DOOM_TIC } from '../../constants.ts';
+
+/**
+ * Bumped on any change a reader of the previous version would misread — including a `SAVE_VERSION`
+ * bump, since the record embeds savegame snapshots. `tests/game/replay.test.ts` pins the pair.
+ */
+export const REPLAY_VERSION = 1;
+
+/**
+ * The **simulation epoch**, and the one number in this file that is not about the format: bumped
+ * whenever a change to what a *tic* does could make an old recording run differently — movement,
+ * collision, the specials tables, `mobjinfo`, weapon rates and damage, monster AI, who draws from
+ * the random table and in what order. Never bumped for a release, for rendering, for the HUD or for
+ * the menu: none of those reach the tic. A replay whose `compat` differs from this **still plays**;
+ * it only says it may desync (`compatDrift`), where a `REPLAY_VERSION` mismatch refuses outright.
+ * docs/replays.md § Compatibility, CLAUDE.md § Project-wide rules.
+ */
+export const COMPAT = 1;
+
+/**
+ * How a replay's simulation epoch stands against this build's, or null when they agree. `0` is a
+ * replay written before the field existed, which is by definition older.
+ */
+export function compatDrift(compat: number): 'older' | 'newer' | null {
+  if (compat === COMPAT) return null;
+  return compat < COMPAT ? 'older' : 'newer';
+}
+
+/** One desync sample per second of simulation (35 tics). */
+export const CHECK_INTERVAL = 35;
+
+/**
+ * How often a recording lays down a seek anchor: one a minute of simulation. The interval is what
+ * a seek costs — a jump runs the tics from the anchor it lands on — traded against the ~4 kB each
+ * keyframe adds to the file. docs/replays.md § Seeking.
+ */
+export const KEYFRAME_INTERVAL = 35 * 60;
+
+/** The playback speeds the bar's slider steps through, 1× at index 3. */
+export const SPEED_STEPS: readonly number[] = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
+
+export const NORMAL_SPEED_INDEX = 3;
+
+/**
+ * The lattice the recorded camera pose sits on, in map units and degrees — far below what a pick
+ * or a turn can resolve (tuned by feel, the aim point's own `AIM_QUANTUM`). Snapped *before* the
+ * recording's own tic reads the camera, so what a replay stores is exactly what ran.
+ * docs/replays.md § Camera state.
+ */
+export const POSE_QUANTUM = 1 / 64;
+
+/** `pose` snapped onto the `POSE_QUANTUM` lattice. */
+export function quantizePose(pose: CameraPose): CameraPose {
+  return {
+    yaw: snapToLattice(pose.yaw),
+    point: [snapToLattice(pose.point[0]), snapToLattice(pose.point[1]), snapToLattice(pose.point[2])],
+    distance: snapToLattice(pose.distance),
+    tilt: snapToLattice(pose.tilt),
+  };
+}
+
+/** The tic count `buttons` bit for the left button being down, and for the right button's edge. */
+export const BUTTON_FIRE = 1;
+export const BUTTON_RIGHT_EDGE = 2;
+
+/** The six persisted settings a tic can observe — `replay/settings.ts` captures and pins them. */
+export interface SimSettings {
+  autorun: boolean;
+  autoSwitchWeapon: boolean;
+  rightMouse: RightMouseAction;
+  cameraMode: CameraMode;
+  infiniteTallActors: boolean;
+  pistolStart: boolean;
+}
+
+/** Where a level began in the tic stream — the bar's markers and the list's level line. */
+export interface LevelMarker {
+  tic: number;
+  map: string;
+}
+
+/**
+ * Something that reached the simulation between two tics and was not input: a settings change
+ * made in the menu, or a death restart's reload landing. Applied *before* tic `tic` runs.
+ * `snapshot` indexes `ReplayData.snapshots`; null is the plain reload with a fresh inventory.
+ * docs/replays.md § Restore events.
+ */
+export type ReplayEvent =
+  | { tic: number; kind: 'settings'; settings: SimSettings }
+  | { tic: number; kind: 'restore'; map: string; snapshot: number | null };
+
+/**
+ * The per-tic record, one column per field so the JSON stays short and gzips well. `held` and
+ * `pressed` are `BOUND_KEYS` masks; `wheel` is the sign of the tic's scroll; `aimX`/`aimY` are
+ * the aim point in `AIM_QUANTUM` units, null where the pointer missed the plane.
+ */
+export interface TicColumns {
+  held: number[];
+  pressed: number[];
+  buttons: number[];
+  wheel: number[];
+  aimX: (number | null)[];
+  aimY: (number | null)[];
+  /**
+   * The camera the tic was read at, in `POSE_QUANTUM` units: orbit, follow point (the camera's own
+   * `THREE` triple), distance, tilt. Recorded rather than recomputed, so a later change to how the
+   * camera behaves cannot move an old recording. docs/replays.md § Camera state.
+   */
+  poseYaw: number[];
+  poseX: number[];
+  poseY: number[];
+  poseZ: number[];
+  poseDistance: number[];
+  poseTilt: number[];
+}
+
+/**
+ * The columns whose values crawl rather than jump — the aim point and the camera pose, both
+ * quantized coordinates. On disk they are stored as differences, which gzip packs to about half
+ * what the absolute values take; the mask columns are left alone, where differences measured
+ * *worse*. docs/replays.md § The record.
+ */
+const DELTA_COLUMNS = ['aimX', 'aimY', 'poseYaw', 'poseX', 'poseY', 'poseZ', 'poseDistance', 'poseTilt'] as const;
+
+/** The stored form of `tics`: the smooth columns as differences. */
+export function packTics(tics: TicColumns): TicColumns {
+  return walkColumns(tics, true);
+}
+
+/** `packTics` undone — what everything above the store reads. */
+export function unpackTics(tics: TicColumns): TicColumns {
+  return walkColumns(tics, false);
+}
+
+/** The six pose columns as a pose, or null past the end of the stream. */
+export function poseAt(tics: TicColumns, tic: number): CameraPose | null {
+  const yaw = tics.poseYaw[tic];
+  if (yaw === undefined) return null;
+  return {
+    yaw: yaw * POSE_QUANTUM,
+    point: [tics.poseX[tic] * POSE_QUANTUM, tics.poseY[tic] * POSE_QUANTUM, tics.poseZ[tic] * POSE_QUANTUM],
+    distance: tics.poseDistance[tic] * POSE_QUANTUM,
+    tilt: tics.poseTilt[tic] * POSE_QUANTUM,
+  };
+}
+
+/**
+ * A moment the playback can jump to: the world as a savegame holds it, on the map it belongs to.
+ * `[0]` is the recording's own start. The camera is not here — it is in the tic columns, one pose
+ * per tic (§ Camera state), and a jump reads the pose of the tic it lands on.
+ * docs/replays.md § Seeking.
+ */
+export interface Keyframe {
+  tic: number;
+  /** The map this state belongs to — a recording that advanced spans several. */
+  map: string;
+  /** Index into `ReplayData.snapshots`. */
+  snapshot: number;
+}
+
+/** The stored (gzipped) half of a replay. */
+export interface ReplayData {
+  /** `[0]` is the moment recording began; restore events index the rest. */
+  snapshots: GameSnapshot[];
+  /**
+   * Whether the recording build's `DEVMODE` made `N`/`P` jump level. Recorded rather than read
+   * from this build, so the recorded presses jump exactly where they jumped and nowhere else.
+   * docs/replays.md § What breaks determinism.
+   */
+  devmode: boolean;
+  /** Never empty and `[0].tic === 0`: the start, and every seek anchor after it. */
+  keyframes: Keyframe[];
+  /** The settings at tic 0; later changes are events. */
+  settings: SimSettings;
+  tics: TicColumns;
+  /** The characters typed in a tic, for the tics that typed any — cheat codes. */
+  typed: [tic: number, text: string][];
+  events: ReplayEvent[];
+  /** `[tic, player.x, player.y, P_Random cursor]` every `CHECK_INTERVAL` tics. */
+  checks: [tic: number, x: number, y: number, cursor: number][];
+}
+
+/** The listed half: everything about a replay that a row shows without decoding the data. */
+export interface ReplayMeta {
+  id: string;
+  version: number;
+  /** ISO date the recording was stored. */
+  at: string;
+  name: string;
+  /** Whatever the player wrote about the run — the panel's **Notes** field, newlines and all. */
+  description: string;
+  player: string;
+  /** `VERSION` of the build that recorded it. */
+  build: string;
+  /**
+   * `COMPAT` of the build that recorded it — what says whether this build's simulation is the one
+   * that ran. `0` for a replay written before the field existed, which reads as older.
+   */
+  compat: number;
+  /** `describeEngine` of the recording browser. */
+  engine: string;
+  skill: Skill;
+  wads: SaveWad[];
+  mapWad: string;
+  patchWads?: string[];
+  ticCount: number;
+  /** Never empty: `[0]` is the map recording began on, which is what `replayMap` reads. */
+  levels: LevelMarker[];
+}
+
+export interface Replay extends ReplayMeta {
+  data: ReplayData;
+}
+
+/** What `Game` hands over when a recording ends; the store stamps the rest. */
+export type ReplayCapture = Omit<
+  Replay,
+  'id' | 'version' | 'at' | 'name' | 'description' | 'player' | 'build' | 'compat' | 'engine'
+>;
+
+export interface ReplayListEntry {
+  meta: ReplayMeta;
+  /**
+   * Why this build cannot play the row — the format version (the savegame version included), or a
+   * meta too damaged to read — and null when it can. The list shows it in red beside the row and
+   * greys Play; it is the same sentence `readReplay` would have thrown.
+   */
+  refusal: string | null;
+}
+
+/** The map a recording began on: the first level marker, which every stored replay has. */
+export function replayMap(meta: Pick<ReplayMeta, 'levels'>): string {
+  return meta.levels[0]?.map ?? '?';
+}
+
+/** A replay's identity for the savegame WAD gate — `wadSetRefusal` and friends, unchanged. */
+export function replayWadSet(meta: ReplayMeta): SaveWadSet {
+  const { wads, mapWad, patchWads } = meta;
+  return { map: replayMap(meta), wads, mapWad, ...(patchWads ? { patchWads } : {}) };
+}
+
+/**
+ * The JavaScript engine behind a user-agent string, with the browser for the reader — what a
+ * replay was recorded on, since `Math.sin` and friends differ between engines
+ * (docs/replays.md § What breaks determinism). "unknown" for anything unrecognized.
+ */
+export function describeEngine(userAgent: string): string {
+  const browser = (name: string, pattern: RegExp): string => {
+    const version = userAgent.match(pattern)?.[1];
+    return version ? `${name} ${version}` : name;
+  };
+  if (/Firefox\//.test(userAgent)) return `SpiderMonkey · ${browser('Firefox', /Firefox\/(\d+)/)}`;
+  if (/Edg\//.test(userAgent)) return `V8 · ${browser('Edge', /Edg\/(\d+)/)}`;
+  if (/OPR\//.test(userAgent)) return `V8 · ${browser('Opera', /OPR\/(\d+)/)}`;
+  if (/Chrome\//.test(userAgent)) return `V8 · ${browser('Chrome', /Chrome\/(\d+)/)}`;
+  if (/Safari\//.test(userAgent) && /Version\//.test(userAgent)) {
+    return `JavaScriptCore · ${browser('Safari', /Version\/(\d+)/)}`;
+  }
+  return 'unknown';
+}
+
+/** The speed at a slider position, clamped into the table. */
+export function speedAt(index: number): number {
+  const i = Math.max(0, Math.min(SPEED_STEPS.length - 1, Math.round(index)));
+  return SPEED_STEPS[i];
+}
+
+/** How far through the stream tic `tic` is, 0..1; an empty stream reads as finished. */
+export function positionFraction(tic: number, ticCount: number): number {
+  if (ticCount <= 0) return 1;
+  return Math.max(0, Math.min(1, tic / ticCount));
+}
+
+/** The tic a position on the bar's track stands for, clamped into the stream. */
+export function ticAtFraction(fraction: number, ticCount: number): number {
+  return Math.max(0, Math.min(ticCount, Math.round(fraction * ticCount)));
+}
+
+/** A replay's length in seconds — the tic count on vanilla's clock. */
+export function replaySeconds(ticCount: number): number {
+  return ticCount * DOOM_TIC;
+}
+
+/** The other way round: what a span of seconds is worth in tics — the arrow keys' skip. */
+export function replayTics(seconds: number): number {
+  return Math.round(seconds / DOOM_TIC);
+}
+
+function snapToLattice(v: number): number {
+  return Math.round(v / POSE_QUANTUM) * POSE_QUANTUM;
+}
+
+/**
+ * `DELTA_COLUMNS` differenced (`pack`) or added back up. A null — the tics the pointer missed the
+ * aim plane — carries no value and leaves the running total where it was.
+ */
+function walkColumns(tics: TicColumns, pack: boolean): TicColumns {
+  const out: TicColumns = { ...tics };
+  for (const name of DELTA_COLUMNS) {
+    const values = tics[name] as (number | null)[];
+    const walked: (number | null)[] = new Array(values.length);
+    let last = 0;
+    for (let i = 0; i < values.length; i++) {
+      const value = values[i];
+      if (value === null || value === undefined) {
+        walked[i] = null;
+        continue;
+      }
+      if (pack) {
+        walked[i] = value - last;
+        last = value;
+      } else {
+        last += value;
+        walked[i] = last;
+      }
+    }
+    out[name] = walked as number[] & (number | null)[];
+  }
+  return out;
+}

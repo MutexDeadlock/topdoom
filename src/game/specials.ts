@@ -36,7 +36,7 @@ import { pRandom } from '../util/random.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './things/doomednums.ts';
 import type { CrossingBody } from './things/defs.ts';
-import type { Input } from './input.ts';
+import type { TicInput } from './input.ts';
 import { satisfiesLock, type KeySlot } from './inventory.ts';
 import type { Placement, Pos2 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
@@ -705,7 +705,7 @@ export class SpecialsController {
   update(
     dt: number,
     player: Placement,
-    input: Input,
+    input: TicInput,
     ownedKeys: ReadonlySet<KeySlot>,
     /**
      * IDCLIP: walk triggers stop firing, exactly as `MF_NOCLIP` keeps `P_TryMove` from running
@@ -2443,7 +2443,7 @@ export class SpecialsController {
     }
   }
 
-  private handleUseTrigger(at: Placement, input: Input, ownedKeys: ReadonlySet<KeySlot>): void {
+  private handleUseTrigger(at: Placement, input: TicInput, ownedKeys: ReadonlySet<KeySlot>): void {
     if (!input.pressed('Space') && !input.rightMousePressed('use')) return;
     const tx = at.x + Math.cos(at.angle) * USE_RANGE;
     const ty = at.y + Math.sin(at.angle) * USE_RANGE;

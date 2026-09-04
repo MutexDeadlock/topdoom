@@ -1,8 +1,13 @@
 wad/library ui/library
 
-src/ 2.405.230 Bytes
-    2.405.142 Bytes
-    2.404.906 Bytes
+src/
+ 2.655.603 Bytes
+ 2.657.498 Bytes
+
+
+- Saves/Replays filter (name, MAP, runner)
+- "Start new game" -> Press-and-hold while game is running
+- E1M1 shotgunner wakeup on pillar
 
 "Getting started"
 

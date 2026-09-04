@@ -8,6 +8,7 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
 import { addControlLine, gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { TIC } from '../fixtures/specialsrig.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { changedThing } from '../fixtures/snapshot.ts';
 
 /**
  * **A conveyor-pinned body must resume the moment the wall in its way moves.**
@@ -69,13 +70,13 @@ describe('Regressions · pinned-body memo invalidation', () => {
       }
     };
     run(150);
-    const pinnedX = layer.snapshot().things[0].x;
+    const pinnedX = changedThing(layer.snapshot(), 0).x;
     assert.ok(pinnedX < grid.centre(3, 1).x - 64, 'the shut door should have pinned the eye');
     run(50);
-    assert.equal(layer.snapshot().things[0].x, pinnedX, 'pinned means not moving');
+    assert.equal(changedThing(layer.snapshot(), 0).x, pinnedX, 'pinned means not moving');
     map.sectors[grid.index(3, 1)].ceilHeight = 128;
     run(200);
-    const after = layer.snapshot().things[0].x;
+    const after = changedThing(layer.snapshot(), 0).x;
     assert.ok(after > pinnedX + 64, `the eye should have ridden on, moved ${after - pinnedX} units`);
   });
 });

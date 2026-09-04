@@ -6,6 +6,7 @@ import {
   deleteSave,
   exportSave,
   importSave,
+  isDownloadFileName,
   listSaves,
   missingWadLabel,
   missingWadText,
@@ -14,6 +15,7 @@ import {
   readSave,
   renameSave,
   requiredWads,
+  saveFileName,
   setSaveBackend,
   wadLabel,
   wadSetRefusal,
@@ -27,41 +29,8 @@ import {
   bytesToBase64,
   compressText,
   decompressText,
-  type SaveStoreBackend,
-  type StoredState,
 } from '../../src/game/savestore.ts';
-
-/**
- * The two IndexedDB object stores as two Maps, exposed so tests can tamper with
- * stored records the way devtools (or a future build) could. The gzip codec is
- * *not* faked — `CompressionStream` is global in Node, so every test compresses
- * and decompresses for real.
- */
-interface MemoryBackend extends SaveStoreBackend {
-  metas: Map<string, unknown>;
-  states: Map<string, StoredState>;
-}
-
-function memoryBackend(): MemoryBackend {
-  const metas = new Map<string, unknown>();
-  const states = new Map<string, StoredState>();
-  return {
-    metas,
-    states,
-    listMeta: async () => [...metas.values()],
-    readMeta: async (id) => metas.get(id),
-    readState: async (id) => states.get(id),
-    putSave: async (meta, state) => {
-      metas.set((meta as { id: string }).id, meta);
-      states.set(state.id, state);
-    },
-    putMeta: async (meta) => void metas.set((meta as { id: string }).id, meta),
-    remove: async (id) => {
-      metas.delete(id);
-      states.delete(id);
-    },
-  };
-}
+import { memoryBackend, type MemoryBackend } from '../fixtures/savestore.ts';
 
 let store: MemoryBackend;
 
@@ -99,7 +68,7 @@ describe('Savegames · the store', () => {
 
     const listed = await listSaves();
     assert.equal(listed.length, 1);
-    assert.deepEqual(listed[0], { meta, supported: true });
+    assert.deepEqual(listed[0], { meta, refusal: null });
 
     const back = await readSave(meta.id);
     assert.equal(back.map, 'E1M1');
@@ -233,7 +202,7 @@ describe('Savegames · the store', () => {
     store.metas.set(meta.id, withoutField);
 
     const [entry] = await listSaves();
-    assert.equal(entry.supported, true, 'the field costs no version bump');
+    assert.equal(entry.refusal, null, 'the field costs no version bump');
     assert.equal((await readSave(meta.id)).mapWad, '', 'and reads as "no provider named"');
   });
 
@@ -287,8 +256,19 @@ describe('Savegames · the store', () => {
     assert.deepEqual(listed.wads[1], { name: 'B', id: 'b' });
   });
 
-  test('an empty name defaults to map and date', async () => {
-    assert.match((await writeSave(capture('MAP05'), '   ')).name, /^MAP05 — /);
+  test('an empty name defaults to the map provider and the map', async () => {
+    assert.equal((await writeSave(capture('MAP05'), '   ')).name, 'DOOM MAP05');
+    const foreign = { ...capture('MAP01'), wads: [{ name: 'DOOM2.WAD', id: 'iwad' }, { name: 'NUTS.WAD', id: 'pwad' }], mapWad: 'pwad' };
+    assert.equal((await writeSave(foreign, '')).name, 'NUTS MAP01', 'the file the map came from, not the game WAD');
+    assert.equal((await writeSave({ ...foreign, mapWad: '' }, '')).name, 'DOOM2 MAP01', 'no provider falls back to the game WAD');
+    assert.equal((await writeSave({ ...capture('MAP07'), wads: [], mapWad: '' }, '')).name, 'MAP07', 'no set at all leaves the map');
+  });
+
+  test('a download is named after the save', () => {
+    assert.equal(saveFileName('NUTS MAP01'), 'NUTS MAP01.topdoomsave.json');
+    assert.equal(saveFileName('   '), 'save.topdoomsave.json');
+    assert.ok(isDownloadFileName('NUTS MAP01.TopDoomSave.JSON', 'save'));
+    assert.ok(!isDownloadFileName('NUTS MAP01.topdoomreplay.json', 'save'));
   });
 
   test('the list is newest first', async () => {
@@ -301,14 +281,16 @@ describe('Savegames · the store', () => {
     );
   });
 
-  test('an unsupported version is listed but refuses to load', async () => {
+  test('an unsupported version lists with the reason it will refuse to load', async () => {
     const meta = await writeSave(capture(), 'old');
     tamperMeta(meta.id, { version: SAVE_VERSION + 1 });
 
     const [entry] = await listSaves();
-    assert.equal(entry.supported, false);
+    // The row's red line is the sentence the load would have thrown: a greyed Load always says why.
+    // docs/menu.md § Save and Load tabs.
+    assert.match(entry.refusal ?? '', new RegExp(`version ${SAVE_VERSION + 1}.*version ${SAVE_VERSION}`));
     assert.equal(entry.meta.name, 'old', 'the row still shows its own name');
-    await assert.rejects(readSave(meta.id), new RegExp(`version ${SAVE_VERSION + 1}.*version ${SAVE_VERSION}`));
+    await assert.rejects(readSave(meta.id), new RegExp(entry.refusal ?? ''));
   });
 
   test('a damaged meta is one unloadable row, not a broken list', async () => {
@@ -317,10 +299,10 @@ describe('Savegames · the store', () => {
     const listed = await listSaves();
     assert.equal(listed.length, 2);
     const broken = listed.find((e) => e.meta.map === '?')!;
-    assert.equal(broken.supported, false);
+    assert.match(broken.refusal ?? '', /damaged/);
     assert.equal(broken.meta.name, '(unreadable save)');
     await assert.rejects(readSave('broken'), /damaged/);
-    assert.equal(listed.find((e) => e.meta.name === 'good')!.supported, true);
+    assert.equal(listed.find((e) => e.meta.name === 'good')!.refusal, null);
   });
 
   test('a damaged state lists as loadable and fails at load, readably', async () => {
@@ -328,11 +310,11 @@ describe('Savegames · the store', () => {
 
     // Listing reads metas only, so neither problem below can show up in the list.
     store.states.set(meta.id, { id: meta.id, encoding: STATE_ENCODING, bytes: new Uint8Array([1, 2, 3]) });
-    assert.equal((await listSaves())[0].supported, true);
+    assert.equal((await listSaves())[0].refusal, null);
     await assert.rejects(readSave(meta.id), /damaged/);
 
     store.states.delete(meta.id);
-    assert.equal((await listSaves())[0].supported, true);
+    assert.equal((await listSaves())[0].refusal, null);
     await assert.rejects(readSave(meta.id), /damaged/);
     await deleteSave(meta.id);
     assert.deepEqual(await listSaves(), [], 'still deletable');

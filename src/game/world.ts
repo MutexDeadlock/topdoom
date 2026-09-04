@@ -376,6 +376,11 @@ export function setInfiniteTallActors(enabled: boolean): void {
   writeStorage(INFINITE_TALL_STORAGE_KEY, enabled);
 }
 
+/** A replay's pin on the setting, without touching the stored one; `null` puts that back. */
+export function overrideInfiniteTallActors(enabled: boolean | null): void {
+  infiniteTallActors = enabled ?? readStorage(INFINITE_TALL_STORAGE_KEY, false);
+}
+
 const GRID_CELL = 128;
 
 /**

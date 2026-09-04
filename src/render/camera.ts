@@ -4,11 +4,46 @@
  * state.
  */
 import * as THREE from 'three';
-import type { Input } from '../game/input.ts';
+import type { TicInput } from '../game/input.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { VIEW_DISTANCE } from '../constants.ts';
 import { dampen } from '../util/damping.ts';
 import { vecLength } from '../util/geom.ts';
+
+/**
+ * Every field of the camera's simulation state, mid-glide included — what a replay recorded
+ * mid-level starts from, since a savegame keeps the yaw alone and rebuilds the rest snapped
+ * (docs/replays.md § Camera state). Plain numbers, so it serializes as it is.
+ */
+export interface CameraSnapshot {
+  yaw: number;
+  targetYaw: number;
+  prevYaw: number;
+  smoothed: [number, number, number];
+  prevSmoothed: [number, number, number];
+  distance: number;
+  targetDistance: number;
+  prevDistance: number;
+  tilt: number;
+  targetTilt: number;
+  prevTilt: number;
+  qHold: number;
+  eHold: number;
+  initialised: boolean;
+}
+
+/**
+ * The camera as the simulation reads it — where it looks from and at, and nothing about how it got
+ * there. Enough to place the eye exactly, which is what lets a replay carry the camera as an input
+ * rather than recomputing it. docs/replays.md § Camera state.
+ */
+export interface CameraPose {
+  yaw: number;
+  /** The smoothed follow point, in the `THREE` space the camera keeps it in — not DOOM's. */
+  point: [number, number, number];
+  distance: number;
+  tilt: number;
+}
 
 export interface TopDownCameraOptions {
   /** Tilt away from straight down, in degrees. Small values stay top-down. */
@@ -261,11 +296,133 @@ export class TopDownCamera {
     this.applyToCamera(1);
   }
 
+  /** The pose this tic is being read at — see `CameraPose`. */
+  pose(): CameraPose {
+    return {
+      yaw: this._yawDeg,
+      point: this.smoothed.toArray() as [number, number, number],
+      distance: this._distance,
+      tilt: this._tiltDeg,
+    };
+  }
+
+  /**
+   * Puts the camera *at* `pose`, this tic's state becoming the previous one so the draw still
+   * interpolates between the two. The targets follow it, so a camera handed back to its own
+   * `tick` afterwards (a replay taken over) carries on from here instead of gliding somewhere else.
+   * docs/replays.md § Camera state.
+   */
+  setPose(pose: CameraPose): void {
+    this.prevSmoothed.copy(this.smoothed);
+    this.prevYawDeg = this._yawDeg;
+    this.prevDistance = this._distance;
+    this.prevTiltDeg = this._tiltDeg;
+    this.roundPose(pose);
+    this.targetYawDeg = pose.yaw;
+    this._targetDistance = pose.distance;
+    this._targetTiltDeg = pose.tilt;
+  }
+
+  /**
+   * Puts the camera at `pose` but leaves the targets alone, so a Q/E step or a framing glide still
+   * in flight carries on from here — and leaves the previous tic's pose alone, since this moves the
+   * camera nowhere it wasn't. What a recording does every tic with its own pose rounded onto the
+   * record's lattice: `setPose` there would collapse each target onto whatever the ease had reached
+   * by that tic, and a 45° orbit would arrive one damped step per press.
+   * docs/replays.md § Camera state.
+   */
+  roundPose(pose: CameraPose): void {
+    this.smoothed.fromArray(pose.point);
+    this._yawDeg = pose.yaw;
+    this._distance = pose.distance;
+    this._tiltDeg = pose.tilt;
+    this.initialised = true;
+  }
+
+  /**
+   * `setPose` with no history left to interpolate out of — for the discontinuities: a playback
+   * opening, a seek landing somewhere else entirely. docs/replays.md § Camera state.
+   */
+  snapPose(pose: CameraPose): void {
+    this.setPose(pose);
+    this.prevSmoothed.copy(this.smoothed);
+    this.prevYawDeg = this._yawDeg;
+    this.prevDistance = this._distance;
+    this.prevTiltDeg = this._tiltDeg;
+    this.viewYawDeg = this._yawDeg;
+    this.applyToCamera(1);
+  }
+
+  snapshot(): CameraSnapshot {
+    return {
+      yaw: this._yawDeg,
+      targetYaw: this.targetYawDeg,
+      prevYaw: this.prevYawDeg,
+      smoothed: this.smoothed.toArray() as [number, number, number],
+      prevSmoothed: this.prevSmoothed.toArray() as [number, number, number],
+      distance: this._distance,
+      targetDistance: this._targetDistance,
+      prevDistance: this.prevDistance,
+      tilt: this._tiltDeg,
+      targetTilt: this._targetTiltDeg,
+      prevTilt: this.prevTiltDeg,
+      qHold: this.qHoldTime,
+      eHold: this.eHoldTime,
+      initialised: this.initialised,
+    };
+  }
+
+  /**
+   * Puts every field `snapshot` took back, and poses the `THREE` camera at the tic-exact result
+   * — the same "no glide left over" `snapTo` promises, for a state that was itself mid-glide.
+   */
+  restore(state: CameraSnapshot): void {
+    this._yawDeg = state.yaw;
+    this.targetYawDeg = state.targetYaw;
+    this.prevYawDeg = state.prevYaw;
+    this.viewYawDeg = state.yaw;
+    this.smoothed.fromArray(state.smoothed);
+    this.prevSmoothed.fromArray(state.prevSmoothed);
+    this._distance = state.distance;
+    this._targetDistance = state.targetDistance;
+    this.prevDistance = state.prevDistance;
+    this._tiltDeg = state.tilt;
+    this._targetTiltDeg = state.targetTilt;
+    this.prevTiltDeg = state.prevTilt;
+    this.qHoldTime = state.qHold;
+    this.eHoldTime = state.eHold;
+    this.initialised = state.initialised;
+    this.applyToCamera(1);
+  }
+
+  /**
+   * `restore(other.snapshot())` without the snapshot: what a playback's drawn camera does every
+   * tic to follow the simulation's, so it allocates nothing.
+   */
+  copyFrom(other: TopDownCamera): void {
+    this._yawDeg = other._yawDeg;
+    this.targetYawDeg = other.targetYawDeg;
+    this.prevYawDeg = other.prevYawDeg;
+    this.viewYawDeg = other._yawDeg;
+    this.smoothed.copy(other.smoothed);
+    this.prevSmoothed.copy(other.prevSmoothed);
+    this._distance = other._distance;
+    this._targetDistance = other._targetDistance;
+    this.prevDistance = other.prevDistance;
+    this._tiltDeg = other._tiltDeg;
+    this._targetTiltDeg = other._targetTiltDeg;
+    this.prevTiltDeg = other.prevTiltDeg;
+    this.qHoldTime = other.qHoldTime;
+    this.eHoldTime = other.eHoldTime;
+    this.initialised = other.initialised;
+    this.applyToCamera(1);
+  }
+
   /**
    * This frame's orbit input: the Q/E 45° snaps and their auto-repeat.
    * See docs/camera.md § Camera orbit.
    */
-  applyYawInput(input: Input, dt: number): void {
+  applyYawInput(input: TicInput, dt: number): void {
     this.qHoldTime = input.held('KeyQ') ? this.qHoldTime + dt : 0;
     this.eHoldTime = input.held('KeyE') ? this.eHoldTime + dt : 0;
     if (input.pressed('KeyQ') || this.qHoldTime >= KEY_YAW_REPEAT_INTERVAL) {
@@ -276,6 +433,19 @@ export class TopDownCamera {
       this.stepYaw(-KEY_YAW_STEP);
       this.eHoldTime = 0;
     }
+  }
+
+  /**
+   * The manual zoom and tilt keys. They write the *targets* so a held key rides the framing
+   * smoother instead of stepping raw at the tic rate, and the camera clamps both to its own
+   * envelope, so a held key just saturates there. Asked by `handleHotkeys` in manual camera mode
+   * and by a replay's manual view whatever mode it was recorded under. docs/camera.md § Auto camera.
+   */
+  applyFramingKeys(input: TicInput): void {
+    if (input.held('Equal', 'NumpadAdd')) this.targetDistance -= 8;
+    if (input.held('Minus', 'NumpadSubtract')) this.targetDistance += 8;
+    if (input.held('BracketLeft')) this.targetTiltDeg -= 0.5;
+    if (input.held('BracketRight')) this.targetTiltDeg += 0.5;
   }
 
   /**
@@ -421,6 +591,17 @@ export class TopDownCamera {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
     return raycaster.ray;
+  }
+
+  /**
+   * The ray from the camera through the DOOM-space point — what the tic picks with, built from
+   * the aim point rather than from the pointer so a replay's recorded aim casts the same ray
+   * (docs/replays.md § The TicInput seam). Same pose rule as `rayFor`.
+   */
+  rayToward(x: number, y: number, z: number): THREE.Ray {
+    const origin = this.camera.position.clone();
+    const direction = new THREE.Vector3(x, z, -y).sub(origin).normalize();
+    return new THREE.Ray(origin, direction);
   }
 
   /**

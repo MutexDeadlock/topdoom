@@ -8,6 +8,7 @@ import { addControlLine, gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
+import { changedThing, savedThing } from '../fixtures/snapshot.ts';
 
 /**
  * **A decoration riding a Boom conveyor over a teleport line must teleport.**
@@ -62,15 +63,16 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
       );
       rigged.tick();
     };
-    return { grid, layer, step, pad: grid.centre(3, 1) };
+    return { grid, layer, step, pad: grid.centre(3, 1), start: grid.centre(1, 1) };
   }
 
   for (const special of [252, 253]) {
     test(`a decoration on a ${special} belt reaches the teleport pad instead of riding off the end`, () => {
-      const { layer, step, pad } = rig(special);
-      const startX = layer.snapshot().things[0].x;
+      const { layer, step, pad, start } = rig(special);
+      // Nothing has moved it yet, so the save carries no entry — its spawn is where the map put it.
+      const startX = savedThing(layer.snapshot(), 0)?.x ?? start.x;
       for (let i = 0; i < 200; i++) step();
-      const eye = layer.snapshot().things[0];
+      const eye = changedThing(layer.snapshot(), 0);
       assert.ok(eye.x > startX, 'the belt should have moved it at all');
       assert.ok(
         Math.hypot(eye.x - pad.x, eye.y - pad.y) < PLAYER_RADIUS,
@@ -91,14 +93,15 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
     const forces = new Forces(map, world);
     const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
     layer.damage(0, 1000); // dead where it stands, before the belt has run
-    const startX = layer.snapshot().things[0].x;
+    const startX = changedThing(layer.snapshot(), 0).x;
     for (let i = 0; i < 100; i++) {
       forces.tick();
       layer.update(TIC, null, undefined, undefined, undefined, (pos, radius, cache) => forces.carryForBody(pos, radius, cache));
     }
     const after = layer.snapshot();
     assert.equal(after.stats.kills, 1, 'the imp should have died before the belt ran');
-    assert.ok(after.things[0].x > startX + 64, `the corpse only moved ${after.things[0].x - startX} units`);
+    const corpse = changedThing(after, 0);
+    assert.ok(corpse.x > startX + 64, `the corpse only moved ${corpse.x - startX} units`);
   });
 
   test('the same belt with no teleport line just carries it to the wall', () => {
@@ -114,7 +117,7 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
       forces.tick();
       layer.update(TIC, null, undefined, undefined, undefined, (pos, radius, cache) => forces.carryForBody(pos, radius, cache));
     }
-    const eye = layer.snapshot().things[0];
+    const eye = changedThing(layer.snapshot(), 0);
     // Carried east out of the belt sector and stopped by the corridor's end wall.
     assert.ok(eye.x > grid.centre(2, 1).x, `the eye only reached ${eye.x}`);
     assert.ok(eye.x < grid.centre(5, 1).x, 'it should not have left the corridor');

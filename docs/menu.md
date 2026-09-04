@@ -43,7 +43,7 @@ Only the WAD lists, the level list and the difficulty options are built in JS.
   taller than the space left spills out of it and is painted over by the footer. On the
   `.tab-panels` cell instead, a short visible tab would scroll into the hidden tabs' empty height,
   since that cell is sized by the tallest of them. Scrolling the whole panel inside `#menu` is not
-  the fix either — an uncapped panel makes `.saves-section` grow without bound rather than scroll.
+  the fix either — an uncapped panel makes `.list-section` grow without bound rather than scroll.
 
 `#menu` sits at `--z-menu` on the stacking ladder, above every in-game overlay and below the
 fatal-error screen — the whole ladder is one block in `base.css` (docs/styles.md § The stacking
@@ -290,7 +290,7 @@ What is its own:
   counts under map counts rather than each trailing whatever length its file name happened to be.
   `labels.ts: sourceColumns` returns the three detail values separately and `sourceColumnSpans`
   renders them plus the support glyph, and **both lists use both** — the add-on rows on the New Game
-  tab carry the same columns, just narrower, since that panel is 620px against the overlay's 60% of
+  tab carry the same columns, just narrower, since that panel is 682px against the overlay's 60% of
   the viewport. The markup is shared too, not just the strings: the
   `meta size`/`meta content`/`meta deh`/`meta info`/`meta support` class names the two stylesheets
   target have one definition, and `#wadlibrary` nests inside `#menu` so its rows inherit
@@ -502,7 +502,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   are still a file the save was made with and no longer has — just not one that blocks the load,
   which is what the red says. **The line is `missingWadLabel`, not the full sentence**: every line
   in the label column is `white-space: nowrap` with an ellipsis, so the rows keep one height beside
-  the thumbnails, and the column is only ~55 characters wide at 12px (620px menu, less the thumbnail
+  the thumbnails, and the column is only ~60 characters wide at 12px (682px menu, less the thumbnail
   and the row's three buttons). The sentence saying what to *do* — `missingWadText` — goes on that
   line's `title` and is what a failed Load throws into the status line, both of which have the width
   for it (docs/savegames.md § WAD-set identity). **A row missing a *required* file greys its Load
@@ -520,13 +520,21 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   string, the cost worth avoiding on the one path a player repeats. (A rename also never rewrites
   the save's state record: `renameSave` puts the meta alone.) It also means nothing may bake a
   save's name into a row's other elements — the Overwrite tooltip says "this save" for that reason.
-- **The save lists fill the panel vertically**: `.saves-section` is the tab panel's flexible child
+- **The save lists fill the panel vertically**: `.list-section` is the tab panel's flexible child
   and the list is the section's, against a `#menu > .panel` capped at the viewport — so the rows use
   whatever height is left and scroll inside the menu instead of growing it off-screen. Because the
   tab panels share one grid cell, that height is the tallest panel's on every tab, as before.
-- An **unsupported version** renders dimmed via its own `unsupported` class rather than `.disabled`
-  (a child can't undo a parent's opacity, and its download/delete buttons must stay live); only
-  Load is refused.
+- **A row that cannot be loaded says why, in red.** `SaveListEntry.refusal` is the sentence
+  `readSave` would have thrown — a format version this build doesn't read, or a meta too damaged to
+  trust — printed beside the row's missing-file lines and in the same red, since it means the same
+  thing. Greying Load without it is the bug this replaced: every disabled Load or Play carries its
+  reason (CLAUDE.md § Project-wide rules). The row renders dimmed via its own `unsupported` class
+  rather than `.disabled` (a child can't undo a parent's opacity, and its download/delete buttons
+  must stay live); only Load is refused.
+- **What the rows share with the Replays tab lives in `actions.ts`**: the refusal contract every
+  store call runs under (`attempt`: anything thrown becomes the status line), the red/amber line
+  beside a row (`noteLine`), the download and delete icon buttons (`iconButton`) and handing an
+  export file to the browser (`downloadJson`). Each tab keeps only the store call and the noun.
 - **Delete and Overwrite confirm by being held** (`hold.ts: confirmOnHold`, `HOLD_MS` — shared with
   the WAD Library's Forget, and styled by the class alone in `hold.css` so any `#menu` button can
   wear it): a bar sweeps the button and the action fires when it lands, letting go early cancels and
@@ -538,7 +546,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   the current moment, keeping its ID and its name (renaming has its own affordance). Delete and
   download are icon-only buttons (`⤓`, `🗑︎` with a text-presentation selector) with their meaning in
   the tooltip; Load and Overwrite are `.primary`.
-- **Download** writes the save as `<map>-<date>.topdoom.json` through a temporary anchor: one
+- **Download** writes the save as `<name>.topdoomsave.json` through a temporary anchor: one
   tab-indented JSON file whose meta fields are readable and whose `state` is the stored gzip bytes,
   base64'd (`exportSave` — docs/savegames.md § Storage has the format's rules);
   **import** accepts such a file back via its own `#save-file-input` (the WAD `#file-input` stays
@@ -568,6 +576,76 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   leaves its tab marked for the next look. `Menu.mapCache` memoizes `mergedMaps` per WAD set for
   the same reason as the laziness: `describeSave` needs a level title per row, and the rows share a
   handful of sets.
+
+## Replays tab
+
+`ui/menu/replays.ts` (`ReplaysUi`) over the `game/replay.ts` store, following every rule § Save and
+Load tabs states — the epoch-ticketed lazy render, the thrown refusal into `#menu-status`, the
+in-place edit that patches its row instead of re-listing, the hold-to-confirm delete, the greyed
+Play for a set the library can't supply. What is this tab's own:
+
+- **It is a list beside a detail panel, not a list of fat rows** (`.replays-split`, 55/45 grid
+  columns): a replay carries three editable fields and six facts, which is more than a row can hold
+  without becoming a form. The **list** shows only what tells one run from another at a glance —
+  name, player, length — and the **panel** shows the picked one in full. `selectedId` survives a
+  re-list, so an edit or an import doesn't move what the player is looking at; a stop or a delete
+  clears it, and the newest replay is what an unset pick falls back to, which is exactly the run
+  just recorded.
+- **The panel's buttons and warnings never scroll** (`.detail-body` is the scroller, the rest are
+  its siblings): the fields and facts scroll under them. A reason scrolled out of sight beside a
+  greyed Play is the state the "say why" rule exists to prevent.
+- **The split asks for a fixed height** (`flex: 1 0 auto` over `height: 190px`, the list's own basis
+  plus its button) and grows from there, the `.saves` rule again. Without it the detail panel's
+  content set the *menu's* height: a replay carrying a two-line warning made this tab taller than
+  every other one, so switching to it grew the menu. The panel scrolls instead.
+- **A replay that cannot be played says why, in red**, where the Load list only greys the button and
+  notes the version in its meta line: `ReplayListEntry.refusal` is the sentence `readReplay` would
+  have thrown, printed in the panel beside the Play it greys, with the missing-file lines under it
+  (docs/replays.md § Storage). Its list row is dimmed by colour and carries the same sentence on its
+  tooltip — a row is not a button, so a tooltip is readable there.
+- **The tab is always available**, unlike Save: a replay can be played from the launcher. Only its
+  record button needs a running game, and is disabled with the reason beside it otherwise —
+  `Game.recordingRefusal`, which adds "a replay is playing", "already recording" and a cheat code
+  half typed to the moments a save is refused at, in recording's own words (docs/replays.md
+  § Recording). It is what the hint says after a recording is stopped somewhere a new one cannot
+  start — the intermission most of all, where stopping is the ordinary thing to do. With **no game
+  at all** that hook has nothing to answer for, and this one grey says why on a **tooltip**
+  (`NO_LEVEL_TOOLTIP`) rather than in red: nobody expects to record a game that isn't running, so
+  the sentence would be noise on the launcher's every visit. It hangs on the row rather than the
+  button, since a disabled button gets no hover — which is exactly why every *unobvious* refusal
+  here stays text.
+- **The record row is one line** — heading, button, hint (`#replay-record-section` is the flex row;
+  the heading keeps its `<h2>` and loses its margin). Stacked it spent two rows of a panel that is
+  short of height on a heading and a button filling a third of the width, and that height comes
+  straight off the list and the detail panel below.
+- **The Replays tab carries a red light while a recording runs** (`.recording`, set wherever the
+  record button is refreshed), so it is visible from every tab — the HUD's own light is behind the
+  menu meanwhile (docs/replays.md § Recording).
+- **The button says what pressing it does**: "Record from here", or "**Stop and save recording**" —
+  primary while one runs, since that press is what turns the run into a stored replay. Stopping
+  stores it; so does the session, for a recording still running when a level start or the campaign's
+  end tears the `Game` down (§ Session lifecycle).
+- **Three fields are editable**, all in the panel: name and player share a line (`.field-row` —
+  two short values, and the panel is short of height rather than width), then **Notes** below them,
+  a `<textarea>` of `NOTES_ROWS` lines, since a note about a run is a sentence or three and an
+  `<input>` shows one.
+  Each commits through `describeReplay` (a meta-only write, like `renameSave`) on blur, or on Enter
+  outside the notes, where a newline is a newline; a committed name or player patches its list row.
+  A non-blank **player** also becomes the name later recordings are credited to — there is no
+  Settings field for it (docs/replays.md § Recording). The panel's read-only facts are level, skill,
+  when it was recorded, the WAD set, and build · engine — provenance, read before playing. What
+  actually warns is the amber line under them: a replay recorded under a different **simulation
+  epoch** says it may desync (`compatDrift`, docs/replays.md § Compatibility), where the build
+  number alone says nothing.
+- **A downloaded replay is `<name>.topdoomreplay.json`**, a downloaded save `<name>.topdoomsave.json`
+  (both `downloadFileName`), and `installDropTarget` routes a drop by the replay suffix *ahead* of
+  the `.json` save rule, so the two imports can't take each other's files — a save downloaded before
+  its own suffix existed still lands on the save importer.
+- **The New Game tab's record toggle** starts a recording with the game (`Selection.record`). It
+  rides the Level/Difficulty row as a third control rather than taking a row of its own, and reads
+  as the state it is in ("Not recording" / "● Recording") rather than as what pressing it would do.
+  Session-only and off by default: a recording that outlived the tab it was armed in would be a
+  surprise, and it costs memory for the whole run.
 
 ## Picking a WAD set
 
@@ -718,9 +796,16 @@ DEVMODE-only section becomes a third column when shown and leaves two when it is
 cell to suppress. Columns are content-width so they pack left rather than being stretched apart,
 which is why those descriptions are kept to a word or two. Move and fight stays full width.
 
-`.columns` is shared with the New Game tab, where Level and Difficulty use the `even` modifier:
-`flex: 1` plus `min-width: 0`, since a `width: 100%` select needs an equal share it can shrink
-inside rather than a content-sized one a long map name would push past the panel.
+`.columns` is shared with the New Game tab, where its `even` modifier gives a section `flex: 1` plus
+`min-width: 0`, since a `width: 100%` select needs a share it can shrink inside rather than a
+content-sized one a long map name would push past the panel. **Only Level takes that share.**
+Difficulty (`.skill-column`, 26ch) and the record toggle (`.record-column`, 17ch) are fixed to their
+own longest string — "I'm Too Young to Die" plus the select's arrow, and "Not recording" plus the
+button's padding — because both are closed lists, where the level names beside them are whatever the
+WAD set calls its maps and are the ones worth the room. Both numbers are **measured**, not guessed:
+a select silently truncates its own text and a button wraps onto a second line, taking the row's
+height with it, so neither shows up as an overflow. The button is `white-space: nowrap` for the same
+reason.
 
 The rest is static markup with no `Menu` state — no field lookups, no listeners — except
 `#controls-dev`, the `N`/`P` map-jump row, which the constructor reveals when `DEVMODE` is set.
@@ -795,6 +880,7 @@ a setting touches one module.
 | `infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
 | `pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
 | `autoSwitchWeapon` | `game/inventory.ts` (`getAutoSwitchWeapon`/`setAutoSwitchWeapon`) | docs/weapons.md § Automatic weapon switching |
+| `playerName` | `game/replay.ts` (written by `describeReplay`, no setter) | docs/replays.md § Recording |
 | `skill` | `ui/menu/menu.ts` | § Difficulty above |
 | `selection` | `ui/menu/menu.ts` | § Remembered selection below |
 
@@ -808,6 +894,7 @@ pre-IndexedDB blob — docs/hud.md § Migration off localStorage.
 | `topdoom` | `game/savestore.ts` | docs/savegames.md § Storage |
 | `topdoom-wadlibrary` | `wad/library/store.ts` | docs/wad.md § The player's own library |
 | `topdoom-besttimes` | `game/besttimes.ts` | docs/hud.md § The store |
+| `topdoom-replays` | `game/replay.ts` | docs/replays.md § Storage |
 
 A savegame is also the one departure from per-value structural validation: it carries an explicit
 `version` field, refused on mismatch rather than half-read. A settings scalar degrades safely to its
@@ -891,6 +978,11 @@ Rules that hold this together:
   error, and is re-synced with `open(game !== null)` so it stops offering a return.
 - **"Return to game" is disabled for the duration of a start** (`startWithSkill`), since the level
   it would return to is disposed part-way through.
+- **A replay is the same `startLevel` too**, given the replay as a third argument: its WAD set is
+  resolved by `playReplay` exactly as `loadSave` resolves a save's, and `Game` gets snapshot 0 as
+  `restore` plus the replay as `playback` (docs/replays.md § Playback). Every teardown of a `Game`
+  stores whatever it was still recording first (`storeRecording`), so a recording survives the
+  level start or campaign end that ends it.
 - **A load is the same `startLevel`**, given the save as a second argument: it verifies the
   assembled set's game WAD and map provider against the save's own IDs (`verifySaveWads`, over
   `wadSetRefusal` — docs/savegames.md § WAD-set identity) and hands `Game` the snapshot instead of
@@ -973,7 +1065,9 @@ needed). It gates three things — `ui/devmode/debughud.ts`, `ui/hud/profiler.ts
   prints is live state.** The last line is the auto camera's own readout — `AutoCamera.readout` in
   `game/autocamera.ts`, which owns the smoothed state it prints rather than exposing it to
   `game.ts` (docs/camera.md § Auto camera), and reads `manual` in the
-  other camera mode. It used to end with two static hotkey hint lines as well, which were the game's
+  other camera mode. Under a playback it reads `replay camera: recording`/`manual` instead: the
+  camera comes from the record there, so the auto camera's dials stand still and printing them
+  would be a readout of nothing (docs/replays.md § Playback). It used to end with two static hotkey hint lines as well, which were the game's
   only controls reference and so invisible to exactly the players who needed them; that list is now
   the menu's Settings tab (docs/menu.md § Settings tab).
 - **The Settings tab's `#controls-dev` section**, the only place `N`/`P` is listed in the UI —

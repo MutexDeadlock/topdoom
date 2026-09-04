@@ -31,6 +31,11 @@ export interface EndCardInfo {
    * above.
    */
   continues: boolean;
+  /**
+   * Whether that key is the viewer's to press at all: under a playback it is the record's, so the
+   * card carries no hint (docs/replays.md § Playback).
+   */
+  canContinue: boolean;
 }
 
 /**
@@ -64,8 +69,14 @@ export class EndCard {
     if (!info.episodeGraphic || !drawIcon(this.subjectCanvas, this.gfx, info.episodeGraphic)) {
       drawText(this.subjectCanvas, this.redFont, info.subtitle);
     }
+    this.setContinueHint(info.canContinue);
     drawText(this.hintCanvas, this.redFont, info.continues ? CONTINUE_HINT : MENU_HINT);
     this.root.classList.remove('hidden');
+  }
+
+  /** `Intermission.setContinueHint`'s twin — the take-over reaches whichever popup is up. */
+  setContinueHint(shown: boolean): void {
+    this.hintCanvas.classList.toggle('hidden', !shown);
   }
 
   /** Drops the card. The element outlives any one `Game`, so `dispose` clears it too. */

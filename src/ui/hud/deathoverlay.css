@@ -28,10 +28,12 @@
   height: 20px;
 }
 
-/* Set whenever nothing attributed the killing blow: the overlay then looks exactly as it did
-   before this line existed, rather than leaving a gap. A canvas is always `:empty`, so the state
-   is a class the drawing code sets and not a selector. */
-#death-overlay .killer.blank {
+/* Set whenever nothing attributed the killing blow, and on the hint under a replay, where `R` is
+   not the viewer's to press: the overlay then looks exactly as it did before that line existed,
+   rather than leaving a gap. A canvas is always `:empty`, so the state is a class the drawing code
+   sets and not a selector. */
+#death-overlay .killer.blank,
+#death-overlay .hint.blank {
   display: none;
 }
 

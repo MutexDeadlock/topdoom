@@ -3,7 +3,7 @@
  * knockback, and the vanilla `PLAYER_*` constants. See docs/movement.md.
  */
 import { bodyFloor, type ThingBlocker, type World } from './world.ts';
-import type { Input } from './input.ts';
+import type { TicInput } from './input.ts';
 import type { PlayerSnapshot } from './snapshot.ts';
 // Type-only, so the specials <-> player edge stays compile-time and no runtime cycle forms.
 import type { TeleportDest } from './specials.ts';
@@ -136,6 +136,11 @@ export function getAutorun(): boolean {
 export function setAutorun(enabled: boolean): void {
   autorunEnabled = enabled;
   writeStorage(AUTORUN_STORAGE_KEY, enabled);
+}
+
+/** A replay's pin on the setting, without touching the stored one; `null` puts that back. */
+export function overrideAutorun(enabled: boolean | null): void {
+  autorunEnabled = enabled ?? readStorage(AUTORUN_STORAGE_KEY, true);
 }
 
 export class Player implements Pos3 {
@@ -444,7 +449,7 @@ export class Player implements Pos3 {
    */
   update(
     dt: number,
-    input: Input,
+    input: TicInput,
     aim: Pos2 | null,
     forwardDeg: number,
     blockers?: readonly ThingBlocker[],

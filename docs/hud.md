@@ -150,6 +150,12 @@ equivalent — its intermission screen prints every percentage in the same color
 value — so this is a UI addition, not a fidelity reproduction; only the choice of *which* WAD asset
 to sample the color from follows the same convention the yellow recolor already established.
 
+**The recording light rides beside the clock** (`#hud-recording`, in the `#hud-run` cell with it):
+a pulsing red dot while `Game.recording`, hidden otherwise — `Hud.update` is handed the flag with
+the rest of the frame's state, so every path that ends a recording clears it. Beside the clock
+because both are about the run rather than about the player, and a drawn dot rather than the word
+REC because everything else in this bar is the WAD's own sprite glyphs. docs/replays.md § Recording.
+
 ## Level timer
 
 `#hud-timer`, the third column of `#hud-bar`'s grid (mirroring `#hud-levelstats` on the opposite
@@ -229,13 +235,20 @@ the player is firing, neither of which this screen knows — so both the idea an
 this engine's own and tuned by feel. A WAD set without the lump hides the canvas rather than
 leaving a gap, like every other WAD graphic here.
 
-**A cheated run gets none of it.** With `Game.recordsEligible` false, `show` draws one red
+**A cheated run gets none of it.** With `Game.cheated` set, `show` draws one red
 `You cheated` line (`.line-cheated`) and the `STFKILL3` face, hides the stat block and every time
 line, and returns — the percentages, the clock and the comparison against a best time all say
 something about a run this one no longer is (docs/cheats.md § Saves and best times). The continue
-hint stays: it is still what dismisses the popup. That is the *same* flag which already refuses the
+hint stays: it is still what dismisses the popup — unless a playback owns that key, below. That is the *same* flag which already refuses the
 record, deliberately rather than a second account of the run — which also means a `?pos=x,y` start,
 excluded from records for its own reasons (§ Best times), reports itself cheated too.
+
+**Under a playback the continue hint is left out**, on this popup and on the end card alike
+(`show`'s `canContinue`, `Game.viewerContinues`): `Space` there is the record's input, and the
+viewer's own pauses the playback. Taking the replay over with either popup on screen puts the hint
+back — `Intermission.setContinueHint`/`EndCard.setContinueHint`, called from `Game.takeOver`, since
+neither popup redraws itself. The death overlay's `R` hint follows the same rule
+(docs/death.md § Player death, docs/replays.md § Playback).
 
 Lines are centered in the panel, but the three stat lines sit in a `.stats` wrapper so they are
 centered as **one block**: centering each on its own would stagger the labels and undo the very
@@ -313,6 +326,10 @@ Control flow, continuing § Intermission's:
 
 ## Best times
 
+**A replay is watched, not run**: `Game.recordCompletion` returns null for the whole of one, so a
+playback writes no time and its intermission draws no record lines — but it is not treated as a
+cheated run either, since `cheated` is the recording's own (docs/replays.md § Playback).
+
 `src/game/besttimes.ts` persists one best completion time per level (§ The store below), and the
 popup shows it: a `Best time mm:ss` line on an ordinary run,
 or a green `NEW BEST TIME!` with the beaten time as `Previous mm:ss` when the record falls. The
@@ -328,15 +345,22 @@ different WADs that happen to share a basename fight over one record, and would 
 a rename. Skill is in the key because a time set on skill 1 says nothing about one set on
 Ultra-Violence.
 
-Three rules about what counts:
+Four rules about what counts:
 
-- **A cheated run never records.** Any cheat code firing clears `Game.recordsEligible` for the rest
-  of the session, and the flag rides in the savegame, so it can't be washed off by saving and
-  loading (docs/cheats.md § Saves and best times).
+- **`Game.cheated` is per level, not per session.** `runEnterLevel` sets it afresh on every level
+  entered through an exit: whatever disqualified the last level, the next one starts at its own
+  player start and is the player's own run. The flag rides in the savegame either way, so it can't
+  be washed off by saving and loading.
+- **A cheated run never records, and neither does the rest of the session.** A code firing clears
+  the flag *and* marks `Cheats.used`, which is what the level entry above reads — so an IDKFA on
+  MAP01 keeps MAP02 out too, though it leaves no toggle behind
+  (docs/cheats.md § Saves and best times).
 - **A `?pos=x,y` run never records.** That entry point can drop the player anywhere, the exit
-  included, and one such run would leave an unbeatable time in the table. `Game.recordsEligible` is
-  captured in the constructor, because `startPos` is nulled out once the first map has consumed it.
-  Such a run shows no best-time lines at all rather than a record it can't touch.
+  included, and one such run would leave an unbeatable time in the table. `Game.cheated` is decided
+  in the constructor, because `startPos` is nulled out once the first map has consumed it.
+  Such a run shows no best-time lines at all rather than a record it can't touch. A **taken-over
+  replay** is the same case for the same reason — the run up to that point was not this player's
+  (docs/replays.md § Playback). Both stop at the level they happened on.
 - **A record is only written on an improvement**, so `recordBestTime` returning `previous` is what
   the popup renders either way — the store and the popup never form separate opinions about which
   time is the best one.
@@ -490,6 +514,12 @@ doubles as the aim reticle here (`game.ts`'s mouse-aim raycast), so there's scre
 spend on it that vanilla never had. `update()` skips rebuilding the cursor image when the computed
 color hasn't changed, since it's called every frame from the same `Game.frame` loop as `Hud.update`.
 
+**A replay takes the reticle off the pointer** (`Crosshair.detach`): the cursor over the canvas
+becomes the ordinary arrow, which the bar's controls are clicked with, and the bar draws
+`Crosshair.image` where the *recording* aimed instead — at half opacity, and only while the bar's
+Crosshair toggle is on (docs/replays.md § Playback). The image builder is the same one the cursor
+uses, so the two can't drift apart.
+
 **The outline is what makes the color legible**, and it is drawn as a second, wider pass of the
 same shape underneath rather than as a filter: solid black, `HALO` pixels proud of the colored
 stroke on every side. Two details are load-bearing. The outline arms run `HALO` *further out at
@@ -540,7 +570,8 @@ by `PAIN_FLASH_MAX_ALPHA`, tuned by feel since vanilla swaps palettes outright r
 an overlay). **It's a separate element because its red has to blend with, not replace, the suit's
 persistent green wash** — two `background`s on one element can't coexist, but two stacked elements
 can. `damagePlayer` bumps it on every hit, lethal or not, and `loadMapByIndex`/`dispose` reset it
-alongside `playerDead`/the tint classes.
+alongside `playerDead`/the tint classes. So does a replay's seek, on the frame it lands
+(docs/replays.md § Seeking): the catch-up bumps it per hit while no frame draws to decay it.
 
 `SpriteActor.setOpacity` draws through a per-actor **clone** of the shared cached material rather
 than mutating it: `SpriteMaterialCache` hands out one material per (lump, mirrored) pair to

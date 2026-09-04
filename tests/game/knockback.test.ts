@@ -8,6 +8,7 @@ import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { MATERIALS, recordingBank } from '../fixtures/spritestubs.ts';
 import { IDLE_INPUT } from '../fixtures/input.ts';
+import { changedThing } from '../fixtures/snapshot.ts';
 
 /**
  * `P_XYMovement`'s two guards on a momentum move: each axis held to `MAXMOVE` (30 units/tic),
@@ -34,7 +35,7 @@ function room(type: number, x?: number): { things: ThingLayer; world: World; at:
 }
 
 function x(things: ThingLayer): number {
-  return things.snapshot().things[0].x;
+  return changedThing(things.snapshot(), 0).x;
 }
 
 describe('Knockback · momentum clamp', () => {

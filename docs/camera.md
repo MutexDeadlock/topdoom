@@ -86,6 +86,18 @@ Two angles come out of this, and mixing them up is the easy mistake. `viewerAngl
 drawn, and is what billboards must orient to — using the tic-exact one there leaves every sprite a
 fraction of a yaw snap out of line with the walls behind it. docs/frameloop.md § Interpolation.
 
+**A playback splits the camera in two**: the simulation's is put at the pose the recording ran at
+(`pose`/`setPose`, one per tic in the record), and the one being drawn either mirrors it or is the
+viewer's to move (docs/replays.md § Playback). That split exists precisely because of the two
+couplings above — a viewer who could move the simulation's camera could change what a recorded shot
+hit. Neither `tick` here nor `AutoCamera.tick` runs under a playback: the camera is an input there,
+which is what lets this file's behaviour be retuned without moving old recordings
+(docs/replays.md § Camera state).
+
+**A replay also carries the whole smoothing state** at each of its keyframes, which a savegame does
+not: `snapshot`/`restore` here and on `AutoCamera` hand over every damper mid-glide, for a recording
+that starts mid-level, a seek that lands mid-run, and a playback handed back to the player.
+
 **The camera outlives the level**, since it belongs to the `Viewport` and a load only replaces the
 `Game` — so the follow point's exponential smoother still holds the *outgoing* level's position when
 the next one starts. `loadMapByIndex` therefore ends the player's placement with `snapTo`, which
@@ -116,6 +128,11 @@ lock made the view lurch every time the cursor crossed a monster and again when 
 player never asked for, from a system that is supposed to be invisible.
 `game.ts: updateLivingPlayer` therefore returns the plane point specifically, while `Player.angle`
 and the shot keep the lock (docs/combat.md § Auto-aim).
+
+**The point is quantized to `AIM_QUANTUM` (1/64 map unit) before the simulation sees it**, and a
+pointer that misses the plane aims at nothing rather than picking through the horizon — both so a
+replay's record is exactly what ran (docs/replays.md § The TicInput seam). 1/64 is far below what
+a pick or a turn resolves.
 
 **The aim plane sits at `TopDownCamera.followHeight`, not at the player's own `z`.** The two are the
 same height once the follow smoother has caught up — the camera is handed `eyeZ` and the plane sits

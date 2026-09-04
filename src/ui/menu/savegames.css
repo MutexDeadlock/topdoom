@@ -30,9 +30,10 @@
  * The list is the panel's flexible child, so it fills the height the menu has
  * left rather than the fixed cap `.list` gives the WAD lists — a save list is
  * the point of its tab, and scrolling a 190px box through 24 saves isn't.
- * Chain: .tab-panel (column) → this section → .saves (menu.css § .panel).
+ * Chain: .tab-panel (column) → this section → .saves / .replays-split (menu.css § .panel).
+ * The Replays tab's section is the same child.
  */
-#menu .saves-section {
+#menu .list-section {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -48,7 +49,8 @@
  * basis: the usual `flex: 1` shorthand puts it back to 0 and the ask reverts to
  * the content. docs/menu.md § One screen, two jobs.
  */
-#menu .saves {
+#menu .saves,
+#menu .replays {
   flex: 1 0 auto;
   height: 150px;
   max-height: none;
@@ -88,6 +90,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * The exception to the rule above: a row that cannot be loaded wraps its reason instead of
+ * ellipsizing it. A truncated "…" leaves the player hovering to find out why Load is greyed, which
+ * is the thing the reason exists to prevent (CLAUDE.md § Project-wide rules). Missing-file lines
+ * carry a short label with their sentence on the tooltip, so wrapping costs them nothing. The
+ * replay list has the same pair of rules over its own label.
+ */
+#menu .saves .save-label .warning {
+  white-space: normal;
 }
 
 /*
@@ -138,19 +151,20 @@
 }
 
 /*
- * An add-on the save doesn't need back (docs/savegames.md § WAD-set identity):
- * still a warning — something the save was made with is gone — but amber rather
- * than the accent's red, which is reserved for what actually blocks the load.
- * `--caution` rather than a literal now that the WAD Library's support column
- * carries the same amber (docs/styles.md § Tokens). Lighter than a bar fill
- * would be, matching how `--accent-text-hover` is the text-weight red.
+ * The menu's one amber, for a loss that stops nothing: an add-on a save doesn't need back
+ * (docs/savegames.md § WAD-set identity), a replay recorded under other rules — still a warning,
+ * but not the accent's red, which is reserved for what actually blocks. `--caution` rather than a
+ * literal now that the WAD Library's support column carries the same amber (docs/styles.md
+ * § Tokens). Lighter than a bar fill would be, matching how `--accent-text-hover` is the
+ * text-weight red.
  */
-#menu .saves .save-label .caution {
+#menu .caution {
   color: var(--caution);
   font-size: 12px;
 }
 
-#menu .saves .save-actions {
+/* A row's buttons — a save row's and the replay panel's alike (`actions.ts`). */
+#menu .row-actions {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -159,7 +173,7 @@
 
 /* Small inline actions — undo button.ghost's full-width, left-aligned upload styling
    and button.primary's roomy footer padding. */
-#menu .saves .save-actions button {
+#menu .row-actions button {
   width: auto;
   margin: 0;
   text-align: center;
@@ -170,7 +184,7 @@
 
 /* Icon buttons (download, delete) carry their meaning in the tooltip, so they get
    a square glyph-sized box rather than a label's worth of padding. */
-#menu .saves .save-actions button.icon {
+#menu .row-actions button.icon {
   width: 30px;
   padding: 4px 0;
   font-size: 15px;
@@ -189,7 +203,7 @@
 
 /* Overwrite is accent-coloured at rest and `--accent-hover` while hovered — which
    is when it's held — so its bar lightens the button instead of colouring it. */
-#menu .saves .save-actions button.primary .fill {
+#menu .row-actions button.primary .fill {
   background: #fff;
   opacity: 0.35;
 }

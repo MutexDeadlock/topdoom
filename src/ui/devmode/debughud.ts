@@ -4,7 +4,7 @@
  * once DEVMODE is off. Whether the text shows at all is the player's own
  * setting. See docs/menu.md § Dev mode and § FPS counter.
  */
-import type { Input } from '../../game/input.ts';
+import type { TicInput } from '../../game/input.ts';
 import type { TopDownCamera } from '../../render/camera.ts';
 import { getCameraMode } from '../../game/autocamera.ts';
 import { DEVMODE } from '../../constants.ts';
@@ -12,28 +12,25 @@ import { readStorage, writeStorage } from '../../util/storage.ts';
 
 /**
  * Camera framing, then the level switching DEVMODE gates. Zoom and tilt are
- * player-facing controls, so they sit ahead of that gate — the camera
- * distance/tilt they set are framing preferences, not debug state. They act in
- * manual camera mode only and are inert while the auto camera drives the
- * framing (the same inert-not-error shape N/P have outside dev mode) —
- * docs/camera.md § Auto camera. They write the *targets* so a held key rides
- * the camera's framing smoother instead of stepping raw at the tic rate.
+ * player-facing controls (`TopDownCamera.applyFramingKeys`), so they sit ahead
+ * of that gate — the camera distance/tilt they set are framing preferences, not
+ * debug state. They act in manual camera mode only and are inert while the auto
+ * camera drives the framing (the same inert-not-error shape N/P have outside
+ * dev mode) — docs/camera.md § Auto camera.
  */
 export function handleHotkeys(
-  input: Input,
+  input: TicInput,
   camera: TopDownCamera,
   /** Null while a cheat code is being typed, whose letters must not also jump level — game.ts. */
   changeMap: ((delta: number) => void) | null,
+  /**
+   * Whether the map-jump keys exist: this build's `DEVMODE`, or the one a replay was recorded
+   * under, so its `N`/`P` presses jump on any build (docs/replays.md § What breaks determinism).
+   */
+  devmode = DEVMODE,
 ): void {
-  if (getCameraMode() === 'manual') {
-    // The camera clamps both targets to its own envelope, so a held key just
-    // saturates there.
-    if (input.held('Equal', 'NumpadAdd')) camera.targetDistance -= 8;
-    if (input.held('Minus', 'NumpadSubtract')) camera.targetDistance += 8;
-    if (input.held('BracketLeft')) camera.targetTiltDeg -= 0.5;
-    if (input.held('BracketRight')) camera.targetTiltDeg += 0.5;
-  }
-  if (!DEVMODE || !changeMap) return;
+  if (getCameraMode() === 'manual') camera.applyFramingKeys(input);
+  if (!devmode || !changeMap) return;
   if (input.pressed('KeyN')) changeMap(1);
   if (input.pressed('KeyP')) changeMap(-1);
 }

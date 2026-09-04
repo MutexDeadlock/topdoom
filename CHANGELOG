@@ -1,3 +1,32 @@
+v0.18.0 (unreleased)
+
+REPLAYS! A run can be recorded and played back, in this engine's own format.
+
+Savegames made in previous versions are silently broken, as I didn't 
+raised SAVE_VERSION yet (this mechanism is for post-1.0).
+
+Features and improvements
+  - Replays:
+    - a Replays tab records a run and lists, plays, renames, downloads and
+      imports the recordings
+    - recording starts with a new game (a checkbox on New Game) or mid-level
+      from the replays menu
+    - a playback bar along the bottom: position, pause, 0.25x-4x speed,
+      and taking the level over from there
+    - the Player name a replay is credited to is entered on the replay itself
+      and inherited by later recordings
+    - taking a replay over flags that level as "cheated"
+  - Save- and Replay files:
+    - an unnamed save or replay is named after the WAD its map came from and the
+      map: "DOOM2 MAP05", "NUTS MAP01"
+    - a downloaded save is named after the save, as a replay is, and carries its
+      own ".topdoomsave.json" suffix
+    - savegames and replay snapshots store only the things that are no longer as
+      the map spawned them (this is why saves broke here)
+
+
+===============================================================================
+
 v0.17.1 (2026-09-03)
 
 Some smaller improvements and fixes before I begin with REPLAYS!

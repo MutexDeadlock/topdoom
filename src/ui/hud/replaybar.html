@@ -1,0 +1,28 @@
+<div id="replay-bar" class="hidden">
+  <div id="replay-panel">
+    <button id="replay-pause" title="Pause or resume the playback">❚❚</button>
+    <span id="replay-time"></span>
+    <span id="replay-status"></span>
+    <label class="speed">
+      <input type="range" id="replay-speed" min="0" max="8" step="1" />
+      <span id="replay-speed-value"></span>
+    </label>
+    <button id="replay-crosshair" title="Show or hide the reticle where the recording aimed"></button>
+    <button id="replay-camera" title="Watch through the recording's camera, or move your own"></button>
+    <button id="replay-takeover" title="Stop the playback and play on from here">Take over</button>
+  </div>
+  <div id="replay-track" title="Click or drag to jump to a moment">
+    <div id="replay-markers"></div>
+    <div id="replay-fill"></div>
+    <div id="replay-scrub" class="hidden"></div>
+    <span id="replay-hover" class="hidden"></span>
+  </div>
+</div>
+<div id="replay-reticle" class="hidden"></div>
+<div id="replay-seek" class="hidden" aria-hidden="true">
+  <svg viewBox="0 0 24 16"><path d="M1 1 L11 8 L1 15 Z M13 1 L23 8 L13 15 Z" /></svg>
+</div>
+<div id="replay-flash" class="hidden" aria-hidden="true">
+  <svg class="play" viewBox="0 0 16 16"><path d="M3 1 L14 8 L3 15 Z" /></svg>
+  <svg class="pause" viewBox="0 0 16 16"><path d="M2 1 H6 V15 H2 Z M10 1 H14 V15 H10 Z" /></svg>
+</div>

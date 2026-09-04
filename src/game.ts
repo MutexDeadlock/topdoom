@@ -25,8 +25,8 @@ import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import { PlayerSkins } from './render/playerskin.ts';
 import type { LoadingScreen } from './ui/loading.ts';
 import type { Viewport } from './render/viewport.ts';
-import type { TopDownCamera } from './render/camera.ts';
-import type { Input } from './game/input.ts';
+import { TopDownCamera } from './render/camera.ts';
+import type { TicInput } from './game/input.ts';
 import {
   bodiesOverlap,
   buildThingSprites,
@@ -69,6 +69,7 @@ import { switchPairTexture } from './game/specials/defs.ts';
 import { IconOfSin } from './game/monsters/iconofsin.ts';
 import { Hud, type LevelStats } from './ui/hud/hud.ts';
 import { Crosshair } from './ui/hud/crosshair.ts';
+import { ReplayBar } from './ui/hud/replaybar.ts';
 import { Intermission, INTERMISSION_INPUT_DELAY } from './ui/hud/intermission.ts';
 import { EndCard, type EndScope } from './ui/hud/endcard.ts';
 import { LevelCard } from './ui/hud/levelcard.ts';
@@ -81,7 +82,7 @@ import { CenterMessage, lockedLineMessage, SECRET_MESSAGE } from './ui/hud/messa
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
 import { getProfilerVisible, ProfilerHud } from './ui/hud/profiler.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
-import { DeathOverlay } from './ui/hud/deathoverlay.ts';
+import { DeathOverlay, type DeathHint } from './ui/hud/deathoverlay.ts';
 import { FrameProfiler } from './util/profiler.ts';
 import { clearRandom, getRandomCursors, setRandomCursors } from './util/random.ts';
 import {
@@ -93,7 +94,24 @@ import {
   type GameSnapshot,
   type SectorSnapshot,
 } from './game/snapshot.ts';
-import { wadSetRefusal, type CheckpointStore, type SaveCapture, type SaveGame } from './game/savegames.ts';
+import {
+  wadSetRefusal,
+  type CheckpointStore,
+  type SaveCapture,
+  type SaveGame,
+} from './game/savegames.ts';
+import {
+  ReplayPlayback,
+  ReplayRecorder,
+  applySimSettings,
+  captureSimSettings,
+  quantizePose,
+  releaseSimSettings,
+  // Ours, not the DOM's animation type of the same name — game.ts sees both.
+  type Keyframe,
+  type Replay,
+  type ReplayCapture,
+} from './game/replay.ts';
 import { playerDamageAtSkill, type Skill } from './game/skill.ts';
 import {
   applyDamage,
@@ -117,7 +135,7 @@ import { MusicBank } from './wad/music.ts';
 import { MapInfo } from './wad/campaign/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
 import type { Pos2 } from './types.ts';
-import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
+import { DEVMODE, DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 import { vecLength } from './util/geom.ts';
 import { readStorage, writeStorage } from './util/storage.ts';
 
@@ -129,6 +147,17 @@ import { readStorage, writeStorage } from './util/storage.ts';
  * docs/frameloop.md § The accumulator.
  */
 const MAX_TICS_PER_FRAME = 5;
+
+/**
+ * How long one frame may spend running a replay's seek forward. Long enough that a minute of
+ * recording catches up in a handful of frames, short enough that the page still answers a click
+ * or an ESC between slices — tuned by feel, and it buys more tics than it looks like: the frame
+ * it runs in draws nothing. docs/replays.md § Seeking.
+ */
+const SEEK_BUDGET_MS = 48;
+
+/** `replayAimNdc`'s projection scratch, so the per-frame reticle placement allocates nothing. */
+const AIM_SCRATCH = new THREE.Vector3();
 
 /**
  * What a level build costs per KB of `LINEDEFS`, and only the seed for `buildMsPerKb`, which
@@ -224,6 +253,18 @@ export interface GameOptions {
    * docs/menu.md § The loading screen.
    */
   loading?: LoadingScreen | null;
+  /**
+   * A replay to play instead of taking live input: `restore` is then its first snapshot, and the
+   * level starts under its recorded camera and settings. A constructor option rather than a
+   * method because a playback always begins with a load. docs/replays.md § Playback.
+   */
+  playback?: Replay | null;
+  /**
+   * Stores the current moment as a savegame — the session layer's store call around `saveVia`.
+   * Taking a replay over calls it, so the level the player is handed is one they can come back to.
+   * Absent means taking over stores nothing.
+   */
+  autoSave?: (() => Promise<unknown>) | null;
 }
 
 /** One loaded WAD set, playing one level at a time. */
@@ -417,6 +458,16 @@ export class Game {
   private skill: Skill;
   private hud: Hud;
   private crosshair: Crosshair;
+  /** The playback bar; hidden outside a replay. docs/replays.md § Playback. */
+  private replayBar: ReplayBar;
+  /** The session's savegame writer, called when a replay is taken over — see `GameOptions`. */
+  private autoSave: (() => Promise<unknown>) | null;
+  /**
+   * The camera the **simulation** reads — normally the viewport's own, and during a playback a
+   * private one that evolves from the record alone, so that looking around cannot change what the
+   * run does. docs/replays.md § Playback.
+   */
+  private simCamera: TopDownCamera;
   /** Center-screen text — currently only the secret-found line (see `SECRET_MESSAGE`). */
   private message: CenterMessage;
   /** The "Entering / <level name>" card every map load raises — see ui/hud/levelcard.ts. */
@@ -495,17 +546,31 @@ export class Game {
   /** `?pos=x,y` override for the player start, consumed by the first map load. */
   private startPos: Pos2 | null;
   /**
-   * Whether this session's completions may set best times. A `?pos=` start can drop the player
-   * anywhere — next to the exit included — so those runs are excluded (docs/hud.md § Best times).
-   * Captured up front because `startPos` is nulled out once the first map has consumed it.
+   * Whether *this level's* completion is disqualified from best times. A `?pos=` start can drop the
+   * player anywhere — next to the exit included — and a taken-over replay was someone else's run up
+   * to that point, so neither may set a record; the next level entered through an exit is the
+   * player's own again. A cheat outlives the level, through `Cheats.used`
+   * (docs/hud.md § Best times). Decided up front because `startPos` is nulled out once the first
+   * map has consumed it.
    */
-  private recordsEligible: boolean;
+  private cheated: boolean;
   /**
    * The typed cheat codes and the two toggles they leave on. Owned by the session, not the level:
    * an exit carries them into the next map the way vanilla's `player_t.cheats` does.
    * docs/cheats.md.
    */
   private cheats = new Cheats();
+  /**
+   * What the tic reads its input through instead of the live `Input` while a replay is being
+   * recorded or played — see the two getters below it. docs/replays.md.
+   */
+  private replay: ReplayRecorder | ReplayPlayback | null = null;
+  /**
+   * The keyframe a jump in progress still has to restore, and whether the bar's marker has had a
+   * frame to itself yet. Null once it is restored, and for a jump that needs no anchor at all.
+   * docs/replays.md § Seeking.
+   */
+  private seekAnchor: { frame: Keyframe; announced: boolean } | null = null;
 
   constructor(view: Viewport, audio: AudioEngine, wad: Wad, options: GameOptions) {
     const {
@@ -519,8 +584,11 @@ export class Game {
       gldefsText = '',
       playerSkins = null,
       loading = null,
+      playback = null,
+      autoSave = null,
     } = options;
     this.view = view;
+    this.simCamera = view.camera;
     this.audio = audio;
     this.wad = wad;
     this.title = title;
@@ -530,9 +598,12 @@ export class Game {
     this.onCampaignEnd = onCampaignEnd;
     this.loading = loading;
     this.savedState = restore;
-    // From the save when restoring: a `?pos=` run must not become eligible for
-    // best times by being saved and loaded back (docs/hud.md § Best times).
-    this.recordsEligible = restore ? restore.recordsEligible : startPos === null;
+    // From the save when restoring: a `?pos=` run must not shed the flag by being saved and loaded
+    // back (docs/hud.md § Best times). A playback inherits the recording's own verdict with its
+    // first snapshot, so the intermission reports what the recording player did rather than the
+    // fact of being a replay; whether a best time may actually be *written* is
+    // `recordCompletion`'s separate question.
+    this.cheated = restore ? restore.cheated : startPos !== null;
     // Primed here, where a one-off scan of each file's bytes disappears into a load that is about
     // to build every mesh in the level, so the exit frame only ever hits the memo.
     for (const file of wad.files) wadId(file);
@@ -601,6 +672,8 @@ export class Game {
     // (its MAPINFO lumps and which IWAD it is), not on the current map.
     this.levelNames = new LevelNames(wad, mapInfo, this.dehacked);
     this.crosshair = new Crosshair(view.renderer.domElement);
+    this.autoSave = autoSave;
+    this.replayBar = new ReplayBar({ takeOver: () => this.takeOver(), seek: (tic) => this.seekTo(tic) });
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
     // After `mapNames`: a progression may only name a level the loaded set actually provides.
@@ -674,6 +747,227 @@ export class Game {
     // and sectors only make sense on the exact map they were saved on.
     if (restore && wanted < 0) throw new Error(`the selected WADs have no map ${startMap.toUpperCase()}`);
     this.loadMapByIndex(wanted >= 0 ? wanted : 0, restore);
+    // After the load, which snapped the camera the way a save restore does: the recording's camera
+    // was mid-glide, and its settings are the run's. docs/replays.md § Camera state.
+    if (playback) {
+      this.replay = new ReplayPlayback(playback);
+      // A camera of its own, so the viewer's can be moved without moving the ray the picks are
+      // cast along — `syncViewCamera` is what the drawn one follows.
+      this.simCamera = new TopDownCamera(view.camera.camera.aspect);
+      // The record's own first pose, on both cameras: the level load left them framed on the
+      // player start, which is not where the recording was looking from.
+      const start = this.replay.poseAt(0);
+      if (start) {
+        this.simCamera.snapPose(start);
+        view.camera.snapPose(start);
+      }
+      applySimSettings(playback.data.settings);
+      this.crosshair.detach(true);
+    }
+  }
+
+  /** The recorder in charge, if a replay is being recorded. Routed through a getter — see CLAUDE.md. */
+  private get recorder(): ReplayRecorder | null {
+    return this.replay instanceof ReplayRecorder ? this.replay : null;
+  }
+
+  private get playback(): ReplayPlayback | null {
+    return this.replay instanceof ReplayPlayback ? this.replay : null;
+  }
+
+  get recording(): boolean {
+    return this.recorder !== null;
+  }
+
+  /**
+   * Why a recording can't start now, or null: a replay playing, one already recording, a cheat
+   * code half typed (the buffer is in no snapshot), or any moment a save would be refused —
+   * a recording starts by capturing one. Said in the recording's own words, since a player who
+   * pressed Record is not being told about saving. docs/replays.md § Recording.
+   */
+  recordingRefusal(): string | null {
+    if (this.playback) return "you can't record while a replay is playing";
+    if (this.recorder) return 'already recording';
+    if (this.cheats.typing) return 'finish typing the cheat code first';
+    const moment = this.blockedMoment();
+    return moment === null ? null : `you can't start recording ${moment}`;
+  }
+
+  /**
+   * Starts recording from this moment. The level is **reloaded from the capture** first, so the
+   * run being recorded is exactly what a playback restores, transients and all — and the camera
+   * is put back mid-glide afterwards, since the reload snapped it. Throws `recordingRefusal`.
+   * docs/replays.md § Recording.
+   */
+  startRecording(): void {
+    const refusal = this.recordingRefusal();
+    if (refusal) throw new Error(refusal);
+    const camera = this.simCamera.snapshot();
+    const auto = this.autoCamera.snapshot();
+    // Elided: this is a replay's snapshot 0, and the reload below re-spawns the things it leaves
+    // out — docs/replays.md § The record.
+    const capture = this.captureSave({ thumbnail: false });
+    const entering = this.levelTime === 0;
+    this.loadMapByIndex(this.mapIndex, capture.state);
+    this.simCamera.restore(camera);
+    this.autoCamera.restore(auto);
+    // A reload shows no card, but a recording that begins as the level does still is arriving.
+    if (entering) this.levelCard.show(this.levelNames.nameFor(this.currentMap), this.levelNames.graphicFor(this.currentMap));
+    this.replay = new ReplayRecorder(this.view.input, {
+      capture,
+      pose: quantizePose(this.simCamera.pose()),
+      settings: captureSimSettings(),
+      devmode: DEVMODE,
+    });
+  }
+
+  /** Ends the recording and hands it over for the store; null when none was running. */
+  finishRecording(): ReplayCapture | null {
+    const recorder = this.recorder;
+    if (!recorder) return null;
+    this.replay = null;
+    return recorder.finish();
+  }
+
+  /**
+   * Hands a replay's level to the player right here: live input from the next tic, settings back
+   * to the stored ones. `cheated` stays set — the run up to here was not theirs.
+   * docs/replays.md § Playback.
+   */
+  takeOver(): void {
+    if (!this.playback) return;
+    releaseSimSettings();
+    this.replay = null;
+    // The viewport's camera takes the simulation back over, at the pose it is being drawn at, so
+    // taking over in the manual view keeps the view the player is looking at.
+    this.simCamera = this.view.camera;
+    // The auto camera stood still through the playback (the pose came from the record), so it is
+    // seeded here rather than left to glide in from wherever the last level load left it.
+    this.autoCamera.seed(this.player, this.simCamera);
+    this.view.input.reset();
+    this.crosshair.detach(false);
+    // The run up to here was the recording's, so nothing from it may set a best time.
+    this.cheated = true;
+    // Taking over mid-death or on the intermission hands those keys back to the viewer, and the
+    // popup on screen was drawn without their hint. docs/replays.md § Playback.
+    this.deathOverlay.setHint(this.deathHint());
+    this.intermission.setContinueHint(this.viewerContinues);
+    this.endCard.setContinueHint(this.viewerContinues);
+    void this.saveTakeOver();
+  }
+
+  /**
+   * The savegame taking over writes, so the handed-over level is one the player can come back to —
+   * and, through `saveVia`, what `R` reloads from here on. Reported in the center message rather
+   * than on the bar, which is gone by the time it lands; a refused moment (an intermission, a
+   * corpse) says so there and takes nothing else down with it. docs/replays.md § Playback.
+   */
+  private async saveTakeOver(): Promise<void> {
+    if (!this.autoSave) return;
+    try {
+      await this.autoSave();
+      this.message.show('game saved');
+    } catch (err) {
+      this.message.show((err as Error).message);
+    }
+  }
+
+  /**
+   * Jumps the playback to `tic`. The state comes from the last keyframe at or before it and the
+   * tics from there to the target are then run, which `runSeek` does over the frames that follow —
+   * a jump that stays ahead of the current position and passes no keyframe needs no restore and
+   * runs on from here. docs/replays.md § Seeking.
+   */
+  seekTo(tic: number): void {
+    const playback = this.playback;
+    if (!playback) return;
+    const target = Math.max(0, Math.min(playback.ticCount, Math.round(tic)));
+    const anchor = playback.keyframeAt(target);
+    playback.seekBack = target < playback.cursor;
+    // Restored by `runSeek` rather than here: the level build it costs blocks the page for as long
+    // as any map load, and the bar's marker is meant to be up before it does.
+    const needed = target < playback.cursor || anchor.tic > playback.cursor;
+    this.seekAnchor = needed ? { frame: anchor, announced: false } : null;
+    playback.seekTarget = target;
+  }
+
+  /**
+   * One frame of a jump in progress: the marker alone on the first, then the keyframe restore, then
+   * the catch-up tics. The level's picture stands untouched throughout and is only drawn again once
+   * the target lands — running the tics on screen would play the level at speed under a camera that
+   * moves only at the end. docs/replays.md § Seeking.
+   */
+  private runSeek(playback: ReplayPlayback, rawDt: number): void {
+    const pending = this.seekAnchor;
+    if (pending !== null && !pending.announced) {
+      pending.announced = true;
+      this.replayBar.update(playback, null, this.inventory.health);
+      return;
+    }
+    if (pending !== null) {
+      this.seekAnchor = null;
+      this.applyKeyframe(pending.frame, playback);
+    }
+    const swapped = this.advanceSeek(playback);
+    // The target landed: draw it. A tic that swapped the level leaves the next frame to do it.
+    if (playback.seekTarget === null && !swapped) {
+      this.profiler.beginFrame();
+      this.draw(1, rawDt, false);
+    } else {
+      this.replayBar.update(playback, null, this.inventory.health);
+    }
+  }
+
+  /** The world as `frame` held it at that anchor, cameras and pinned settings included. */
+  private applyKeyframe(frame: Keyframe, playback: ReplayPlayback): void {
+    const state = playback.replay.data.snapshots[frame.snapshot];
+    const index = this.mapNames.indexOf(frame.map);
+    this.audio.stopAll();
+    this.loadMapByIndex(index >= 0 ? index : this.mapIndex, state);
+    // Not part of what `loadMapByIndex` restores — it is the session's, and only a load that
+    // starts a session (the constructor) reads it from a snapshot. A seek past a cheat the
+    // recording typed has to arrive with the recording's own verdict on the run.
+    this.cheated = state.cheated;
+    playback.seek(frame.tic);
+    // The pose of the tic being landed on, snapped rather than glided into: the camera was
+    // somewhere else entirely a moment ago. docs/replays.md § Camera state.
+    const pose = playback.poseAt(frame.tic);
+    if (pose) this.forEachCamera((camera) => camera.snapPose(pose));
+    applySimSettings(playback.settings);
+    // The state is the record's own again, so whatever had drifted before this point is gone.
+    playback.desyncedAt = null;
+  }
+
+  /**
+   * One frame's share of a seek's catch-up: tics run as fast as they will inside `SEEK_BUDGET_MS`,
+   * with sound off. True when a tic swapped the level, which ends the slice and the frame with it —
+   * everything the draw would touch has just been rebuilt. docs/replays.md § Seeking.
+   */
+  private advanceSeek(playback: ReplayPlayback): boolean {
+    const target = playback.seekTarget;
+    if (target === null) return false;
+    const until = performance.now() + SEEK_BUDGET_MS;
+    let swapped = false;
+    this.audio.setSilent(true);
+    try {
+      while (!swapped && playback.cursor < target && playback.hasTic) {
+        this.replayBeginTic();
+        swapped = this.tic(playback, this.simCamera);
+        if (performance.now() >= until) break;
+      }
+    } finally {
+      this.audio.setSilent(false);
+    }
+    if (playback.cursor < target && playback.hasTic) return swapped;
+    playback.seekTarget = null;
+    this.syncViewCamera(DOOM_TIC);
+    // Every hit the catch-up ran through added to the damage flash, none of which the viewer saw —
+    // undropped, the frame the jump lands on opens red over a fight that is already over. The
+    // sound's own answer to the same problem is `setSilent` above. docs/replays.md § Seeking.
+    this.screenEffects.clearPain();
+    // The catch-up took real time no tic is owed for, and the frame it ends on draws the target.
+    this.resyncClock();
+    return swapped;
   }
 
   get currentMap(): string {
@@ -683,15 +977,24 @@ export class Game {
   /**
    * Why this moment can't be saved, or null when it can — death, a pending exit and the
    * intermission are refused. A sentence rather than a flag because it is what the player is told.
-   * Deliberately narrower than `levelEnding`: the Icon of Sin's death cascade stays saveable, since
-   * `IconSnapshot` carries `exitTimer`. docs/savegames.md § What is saved and what is deliberately
-   * not.
+   * docs/savegames.md § What is saved and what is deliberately not.
    */
   saveRefusal(): string | null {
-    if (this.playerDead) return "you can't save while dead";
-    if (this.popup === 'intermission') return "you can't save during the intermission";
-    if (this.popup === 'endcard') return "you can't save once the campaign is over";
-    if (this.pendingExit) return "you can't save while the level is exiting";
+    const moment = this.blockedMoment();
+    return moment === null ? null : `you can't save ${moment}`;
+  }
+
+  /**
+   * The moment a state capture is refused at, as the clause both refusals end in, or null. One
+   * list, two verbs: what stops a save stops a recording from starting, and each says so in its
+   * own words. Deliberately narrower than `levelEnding`: the Icon of Sin's death cascade stays
+   * saveable, since `IconSnapshot` carries `exitTimer`.
+   */
+  private blockedMoment(): string | null {
+    if (this.playerDead) return 'while dead';
+    if (this.popup === 'intermission') return 'during the intermission';
+    if (this.popup === 'endcard') return 'once the campaign is over';
+    if (this.pendingExit) return 'while the level is exiting';
     return null;
   }
 
@@ -724,6 +1027,8 @@ export class Game {
 
   resume(): void {
     if (this.running) return;
+    // The bar's `Space` is the viewer's again, now that the menu is not reading keys.
+    this.replayBar.setKeysActive(true);
     // Reached from the Start button or ESC, i.e. from a real user gesture —
     // which is the only way a browser lets an AudioContext start.
     this.audio.resume();
@@ -740,6 +1045,7 @@ export class Game {
 
   pause(): void {
     if (this.paused) return; // a second call would leave two `stillFrame` loops running
+    this.replayBar.setKeysActive(false);
     this.stop();
     this.paused = true;
     // ESC landing in the one frame a parked load waits out: the pause screen is about to show the
@@ -752,6 +1058,11 @@ export class Game {
     // Read by `resumeFromCheckpoint`, whose store read can still be in flight.
     this.disposed = true;
     this.stop();
+    // A recording is finished by the session layer before this; a playback's pins come off here.
+    if (this.playback) releaseSimSettings();
+    this.replay = null;
+    this.crosshair.detach(false);
+    this.replayBar.dispose();
     // The engine is session-level and the next Game sets its own bank; this
     // only makes sure nothing from this level is left holding a channel.
     this.audio.stopAll();
@@ -831,7 +1142,8 @@ export class Game {
    * add — a capture identifies its WAD set by content, so this class knows nothing about the
    * library it was picked from.
    */
-  private captureSave(thumbnail = true): SaveCapture {
+  private captureSave(options: { thumbnail?: boolean } = {}): SaveCapture {
+    const { thumbnail = true } = options;
     const refusal = this.saveRefusal();
     if (refusal) throw new Error(refusal);
     return {
@@ -850,8 +1162,8 @@ export class Game {
       thumb: thumbnail ? this.captureThumbnail() : '',
       state: {
         levelTime: this.levelTime,
-        cameraYawDeg: this.view.camera.yawDeg,
-        recordsEligible: this.recordsEligible,
+        cameraYawDeg: this.simCamera.yawDeg,
+        cheated: this.cheated,
         player: this.player.snapshot(),
         inventory: serializeInventory(this.inventory),
         weapons: this.weaponSystem.snapshot(),
@@ -867,7 +1179,7 @@ export class Game {
         projectiles: this.projectiles.snapshot(),
         // Only while one is actually on: an honest run's save carries nothing, which is what a
         // save from before cheats existed also carries. docs/cheats.md § Saves and best times.
-        ...(this.cheats.active ? { cheats: this.cheats.snapshot() } : {}),
+        ...(this.cheats.used ? { cheats: this.cheats.snapshot() } : {}),
         teleportFogs: this.effects.snapshotTeleportFogs(),
         voodoo: this.voodoo.snapshot(),
         scrollers: this.forces.snapshot(),
@@ -917,6 +1229,7 @@ export class Game {
     this.playerActor.revive();
     this.mapIndex = this.wrapIndex(index);
     const name = this.mapNames[this.mapIndex];
+    this.recorder?.levelLoaded(name);
     // Before the map is built rather than after: the track outlives the load,
     // and `play` is a no-op when the level being entered wants the same one.
     this.audio.music.play(this.levelMusic.trackFor(name));
@@ -1029,7 +1342,7 @@ export class Game {
       // The saved position and camera replace both the map's own start and any
       // `?pos=` override, which stays queued for the next fresh level.
       this.player.restore(restore.player);
-      this.view.camera.yawDeg = restore.cameraYawDeg;
+      this.forEachCamera((camera) => (camera.yawDeg = restore.cameraYawDeg));
     } else {
       // Applied before fog of war is seeded, so an explicit start position reveals
       // exactly what is visible from there and nothing from the map's real spawn.
@@ -1040,7 +1353,7 @@ export class Game {
       // Every level (re)load starts the camera facing the same way the player
       // spawns facing, instead of always defaulting to due-north regardless of
       // the map's own player-start angle.
-      this.view.camera.yawDeg = (this.player.angle * 180) / Math.PI - 90;
+      this.forEachCamera((camera) => (camera.yawDeg = (this.player.angle * 180) / Math.PI - 90));
     }
     // After both branches, and after the yaw each sets: the camera belongs to
     // the session, not the level, so its smoothed follow point still holds the
@@ -1049,8 +1362,11 @@ export class Game {
     this.autoCamera = new AutoCamera(this.world, this.transfers);
     // Seeded before snapTo, which poses the camera — so a level opens already
     // framed rather than mid-zoom. docs/camera.md § Auto camera.
-    this.autoCamera.seed(this.player, this.view.camera);
-    this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
+    this.autoCamera.seed(this.player, this.simCamera);
+    this.simCamera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
+    // A level change re-seeds the viewer's own camera from the simulation's: it is a hard reset of
+    // the framing, and gliding in from the outgoing level is exactly what `snapTo` exists to stop.
+    if (this.view.camera !== this.simCamera) this.view.camera.copyFrom(this.simCamera);
     this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player, movableSectors);
     if (restore) this.fogOfWar.restoreExplored(restore.fog);
     this.specials = new SpecialsController(this.world, {
@@ -1079,10 +1395,13 @@ export class Game {
         // `turnYaw`, not an assignment, so a step still animating survives the trip
         // (docs/specials.md § Silent and line-to-line teleporters). Yaw first either way: `snapTo`
         // poses the camera with it.
-        const camera = this.view.camera;
-        if (dest.rotateBy === undefined) camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
-        else camera.turnYaw((dest.rotateBy * 180) / Math.PI);
-        camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
+        // Both cameras: a replay's viewer must not be left gliding across the map either, and
+        // the operations are applied rather than the state copied, so a manual view keeps its zoom.
+        this.forEachCamera((camera) => {
+          if (dest.rotateBy === undefined) camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
+          else camera.turnYaw((dest.rotateBy * 180) / Math.PI);
+          camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
+        });
       },
       // Who a mover can catch. The tests over them are the specials layer's own; this hands over
       // the bodies and nothing else — `things` as a getter because it is built further down.
@@ -1299,9 +1618,10 @@ export class Game {
       this.audio.play(amount > healthBefore + 50 ? 'pdiehi' : 'pldeth', this.player, PLAYER_ORIGIN);
       this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
       // The hint depends on what `R` will actually do — a savegame to reload is
-      // known here and now, where a checkpoint is only a store read away
+      // known here and now, where a checkpoint is only a store read away, and under a playback `R`
+      // is the record's rather than the viewer's, so there is nothing to offer
       // (docs/death.md § Player death).
-      if (!this.levelEnding) this.deathOverlay.show(obituary(cause), this.savedState !== null);
+      if (!this.levelEnding) this.deathOverlay.show(obituary(cause), this.deathHint());
       return true;
     }
     this.audio.play('plpain', this.player, PLAYER_ORIGIN);
@@ -1310,20 +1630,34 @@ export class Game {
   }
 
   /**
+   * Whether the key that dismisses the intermission and the end card is the viewer's to press. It
+   * is the record's under a playback, so neither popup offers it (docs/replays.md § Playback).
+   */
+  private get viewerContinues(): boolean {
+    return this.playback === null;
+  }
+
+  /** Which line the death overlay offers — nothing under a playback, where `R` is the record's. */
+  private deathHint(): DeathHint {
+    if (this.playback) return 'none';
+    return this.savedState !== null ? 'reload-save' : 'restart';
+  }
+
+  /**
    * Whatever was typed this tic, and the one response a completed code prints. Returns whether
    * those characters belonged to a cheat — completed one or are partway into one — which is what
    * keeps the same keypress from also firing a bound key.
    *
    * A cheat also ends this run's claim on a best time, the same way a `?pos=` start does — it
-   * travels in the save with `recordsEligible`. docs/cheats.md § Saves and best times.
+   * travels in the save with `cheated`. docs/cheats.md § Saves and best times.
    */
-  private applyCheats(input: Input): boolean {
+  private applyCheats(input: TicInput): boolean {
     const typed = input.typed();
     if (!typed) return false;
     const response = this.cheats.type(typed, this.inventory);
     if (response) {
       this.message.show(response);
-      this.recordsEligible = false;
+      this.cheated = true;
     }
     // A code half typed counts too: the hotkey has to be swallowed on the way *into* the match,
     // not only on the tic that completes it.
@@ -1394,6 +1728,10 @@ export class Game {
 
   /** `enterLevel`'s body, run either at once or on the frame after the overlay is up. */
   private runEnterLevel(index: number, reborn: boolean): void {
+    // A level entered through an exit is the player's own run again, whatever disqualified the last
+    // one — a `?pos=` start, a replay taken over. A cheat is the exception: it is the session's,
+    // like the toggles it leaves (docs/hud.md § Best times).
+    this.cheated = this.cheats.used;
     // Before the load, which hands this very object to `weaponSystem.beginLevel`.
     if (this.playerDead || reborn || getPistolStart()) this.inventory = createInventory();
     // A savegame belongs to the level it was taken on; the checkpoint written
@@ -1439,6 +1777,7 @@ export class Game {
       episodeGraphic: this.levelNames.episodeGraphicFor(this.currentMap),
       subtitle: this.title,
       continues: this.nextMapIndex >= 0,
+      canContinue: this.viewerContinues,
     });
     this.popup = 'endcard';
     this.intermissionTime = 0;
@@ -1461,7 +1800,7 @@ export class Game {
       // Nothing here should throw — the refusals `captureSave` checks are all
       // false on a level just loaded — but this runs inside the frame loop,
       // where an exception would take the running game down with it.
-      capture = this.captureSave(false);
+      capture = this.captureSave({ thumbnail: false });
     } catch (err) {
       console.warn('checkpoint not captured:', err);
       return;
@@ -1480,13 +1819,16 @@ export class Game {
    * calls it, and re-entrant while a read is in flight is the same press twice.
    */
   private restart(): void {
+    // A replay restarts where its recording did: the restore event, not the key
+    // (docs/replays.md § Restore events).
+    if (this.playback) return;
     if (this.restarting) return;
     // The savegame path is synchronous — the snapshot is already in memory, and
     // it came from this very session, so there is nothing to match against
     // (docs/death.md § Player death).
     if (this.savedState) {
       const state = this.savedState;
-      this.loadLevel(this.mapIndex, () => this.loadMapByIndex(this.mapIndex, state));
+      this.loadLevel(this.mapIndex, () => this.reloadLevel(state));
       return;
     }
     this.restarting = true;
@@ -1511,11 +1853,91 @@ export class Game {
     if (this.disposed || !this.playerDead) return;
     if (save && this.matchesSession(save)) {
       const state = save.state;
-      this.loadLevel(this.mapIndex, () => this.loadMapByIndex(this.mapIndex, state));
+      this.loadLevel(this.mapIndex, () => this.reloadLevel(state));
       return;
     }
-    this.inventory = createInventory();
-    this.loadLevel(this.mapIndex, () => this.loadMapByIndex(this.mapIndex));
+    this.loadLevel(this.mapIndex, () => this.reloadLevel(null));
+  }
+
+  /**
+   * The level again, from `state` or (null) fresh with a fresh inventory — every way `R` reloads
+   * ends here, which is what lets a recording write the reload down as one event at the tic it
+   * lands on. docs/replays.md § Restore events.
+   */
+  private reloadLevel(state: GameSnapshot | null): void {
+    if (!state) this.inventory = createInventory();
+    this.recorder?.restore(this.currentMap, state);
+    this.loadMapByIndex(this.mapIndex, state);
+  }
+
+  /**
+   * Applies `apply` to every camera there is: the simulation's, and the viewport's own where a
+   * playback has separated the two. For the discontinuities both must take — a level load, a
+   * teleport — since neither may be left gliding in from where the last one was.
+   */
+  private forEachCamera(apply: (camera: TopDownCamera) => void): void {
+    apply(this.simCamera);
+    if (this.view.camera !== this.simCamera) apply(this.view.camera);
+  }
+
+  /**
+   * Brings the drawn camera up to the simulation's, once per tic of a playback: mirrored outright
+   * in the recording view, and in the manual one driven by the viewer's own orbit and framing keys
+   * around the same follow point. Nothing here reaches the simulation.
+   * docs/replays.md § Playback.
+   */
+  private syncViewCamera(dt: number): void {
+    const playback = this.playback;
+    const view = this.view.camera;
+    if (!playback || view === this.simCamera) return;
+    if (playback.cameraView === 'recording') {
+      view.copyFrom(this.simCamera);
+      return;
+    }
+    const input = this.view.input;
+    view.applyYawInput(input, dt);
+    view.applyFramingKeys(input);
+    view.tick(dt, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, playback.lastAim);
+    // The live input is read by nothing else while a replay plays, and its edges have to be
+    // cleared by someone or a press would latch for the rest of the playback.
+    input.endTic();
+  }
+
+  /**
+   * What a replay puts between two tics: the recorder's settings diff and desync sample, or the
+   * playback's due events (a reload lands here, synchronously — never parked), its settings pinned
+   * again, and its sample compared. docs/replays.md § Restore events.
+   */
+  private replayBeginTic(): void {
+    const recorder = this.recorder;
+    if (recorder) {
+      // Before the tic the anchor is stamped for, and only where the moment allows a capture at
+      // all: a keyframe taken mid-cheat or over a corpse would restore what `captureSave` refuses
+      // to write. A refused one waits for the next tic. docs/replays.md § Seeking.
+      if (recorder.keyframeDue && !this.cheats.typing && this.saveRefusal() === null) {
+        const state = this.captureSave({ thumbnail: false }).state;
+        recorder.keyframe(this.currentMap, state);
+      }
+      // Snapped onto the record's lattice *before* the tic reads the camera, so what ran is what
+      // is stored — the aim point's own rule. `roundPose`, not `setPose`: the orbit and the framing
+      // are heading somewhere and that is not part of a pose. docs/replays.md § Camera state.
+      const pose = quantizePose(this.simCamera.pose());
+      this.simCamera.roundPose(pose);
+      recorder.beginTic(this.player.x, this.player.y, captureSimSettings(), pose);
+      return;
+    }
+    const playback = this.playback;
+    if (!playback) return;
+    // The camera is an input here, not a computation: the tic runs at the pose the recording ran
+    // at, whatever this build's camera code would have picked. docs/replays.md § Camera state.
+    const pose = playback.poseAt(playback.cursor);
+    if (pose) this.simCamera.setPose(pose);
+    for (const event of playback.eventsAt(playback.cursor)) {
+      if (event.kind !== 'restore') continue;
+      this.reloadLevel(event.snapshot === null ? null : playback.replay.data.snapshots[event.snapshot]);
+    }
+    applySimSettings(playback.settings);
+    playback.check(this.player.x, this.player.y);
   }
 
   /**
@@ -1567,17 +1989,33 @@ export class Game {
     // reaches consumers that would misread a negative one. docs/frameloop.md § The accumulator.
     const rawDt = Math.max(0, (now - this.lastTime) / 1000);
     this.lastTime = now;
-    this.accumulator += rawDt;
+    // A seek owns the frame it runs in: `runSeek` banks no time and draws nothing until it lands.
+    if (this.playback?.seekTarget != null) {
+      this.runSeek(this.playback, rawDt);
+      requestAnimationFrame(this.frame);
+      return;
+    }
+    // A playback banks time at its own speed, and none while paused or spent — the bar's pause
+    // is not the menu's, the frame keeps running (docs/replays.md § Playback).
+    const playback = this.playback;
+    const held = playback !== null && (playback.paused || playback.ended);
+    this.accumulator += held ? 0 : rawDt * (playback?.speed ?? 1);
     // A stall (backgrounded tab, a slow map load) must not be paid back as a
     // burst of catch-up tics — drop the debt instead: never take a giant step.
     if (this.accumulator > MAX_TICS_PER_FRAME * DOOM_TIC) this.accumulator = MAX_TICS_PER_FRAME * DOOM_TIC;
     this.profiler.beginFrame();
 
-    const { input, camera } = this.view;
+    const camera = this.simCamera;
+    const input: TicInput = this.replay ?? this.view.input;
     let ran = 0;
     while (this.accumulator >= DOOM_TIC && ran < MAX_TICS_PER_FRAME) {
+      if (playback && !playback.hasTic) {
+        this.accumulator = 0;
+        break;
+      }
       this.accumulator -= DOOM_TIC;
       ran++;
+      this.replayBeginTic();
       // A tic that swapped the level (an exit, a restart) invalidates
       // everything the rest of this frame would touch — stop and let the next
       // frame start clean on the new map.
@@ -1585,13 +2023,17 @@ export class Game {
         requestAnimationFrame(this.frame);
         return;
       }
+      this.syncViewCamera(DOOM_TIC);
     }
+    // A playback that ran no tic — paused, or spent — still lets the viewer look around.
+    if (held) this.syncViewCamera(DOOM_TIC);
 
     // A frozen simulation is drawn at the tic-exact pose, not at the leftover
     // accumulator: with no further tic coming, the last two tics stay apart
     // forever while `alpha` keeps changing every frame, so the still scene
     // shakes between them. docs/frameloop.md § Interpolation.
-    this.draw(this.popup ? 1 : this.accumulator / DOOM_TIC, rawDt);
+    const still = this.popup !== null || (playback !== null && (playback.paused || playback.ended));
+    this.draw(still ? 1 : this.accumulator / DOOM_TIC, rawDt, still);
     requestAnimationFrame(this.frame);
   };
 
@@ -1605,7 +2047,7 @@ export class Game {
    * samples it, the aim ray before `player.update` so `player.angle` is this
    * tic's. docs/frameloop.md § What runs in a tic.
    */
-  private tic(input: Input, camera: TopDownCamera): boolean {
+  private tic(input: TicInput, camera: TopDownCamera): boolean {
     // The level is over and frozen behind the popup: nothing is advanced — not the clock, not the
     // specials, not a monster — only the still scene is redrawn under it. Space/Enter rather than
     // any key, since Escape belongs to the menu (main.ts) and would otherwise both pause and eat
@@ -1643,13 +2085,18 @@ export class Game {
     // A letter of a code must not also work its bound key: DEVMODE's map jump `P` sits inside
     // `idclip`, and jumping level mid-code would eat the cheat. Only that callback is withheld —
     // the camera keys aren't letters and can't collide. docs/cheats.md § Typing a code.
-    handleHotkeys(input, camera, cheating ? null : (delta) => this.enterLevel(this.mapIndex + delta));
+    handleHotkeys(
+      input,
+      camera,
+      cheating ? null : (delta) => this.enterLevel(this.mapIndex + delta),
+      this.playback?.replay.data.devmode ?? DEVMODE,
+    );
     // Set before any system runs, since specials/monsters/weapons all raise
     // sounds during the update below. The camera's yaw is last tic's (it
     // settles in `camera.tick`, at the end) — a tic of smoothing lag on the
     // pan axis, which is inaudible.
     this.audio.setListener(this.player, camera.viewerAngleDeg + 180);
-    camera.applyYawInput(input, DOOM_TIC);
+    if (!this.playback) camera.applyYawInput(input, DOOM_TIC);
 
     // Runs before player.update so a lift/door the player is standing on has
     // already moved this tic by the time groundFloor is sampled below.
@@ -1693,7 +2140,8 @@ export class Game {
       // the continue key at the top of `tic` is what loads it.
       // The cheated popup reads the *same* flag that already refuses a best time — a run that
       // can't set one has nothing worth stating (docs/cheats.md § Saves and best times).
-      this.intermission.show(this.levelStats(), this.recordCompletion(), this.parFor(), !this.recordsEligible);
+      this.intermission.setContinueHint(this.viewerContinues);
+      this.intermission.show(this.levelStats(), this.recordCompletion(), this.parFor(), this.cheated);
       // Vanilla's own `S_ChangeMusic(mus_inter)` at the intermission, keeping
       // the level's track when the set has no intermission lump.
       const between = this.levelMusic.intermissionTrackFor(this.currentMap);
@@ -1725,8 +2173,12 @@ export class Game {
     // After movement (the probe runs from this tic's position) and before
     // camera.tick, whose damping advances toward the fresh target.
     // docs/camera.md § Auto camera.
-    this.profiler.time('Camera', () => this.autoCamera.tick(this.player, camera));
-    camera.tick(DOOM_TIC, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, cursor);
+    // Skipped under a playback: the camera came from the record at the top of the tic, and
+    // advancing it here would leave the next tic interpolating out of a pose nothing saw.
+    if (!this.playback) {
+      this.profiler.time('Camera', () => this.autoCamera.tick(this.player, camera));
+      camera.tick(DOOM_TIC, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, cursor);
+    }
 
     this.profiler.time('Fog of War', () => this.fogOfWar.tick(this.player.x, this.player.y));
     this.updateThings(DOOM_TIC);
@@ -1741,10 +2193,10 @@ export class Game {
    * the current one, runs the presentation-only animators, and draws. Advances
    * no gameplay state whatsoever. docs/frameloop.md § What runs in a frame.
    */
-  private draw(alpha: number, rawDt: number): void {
+  private draw(alpha: number, rawDt: number, still: boolean): void {
     const camera = this.view.camera;
     camera.applyToCamera(alpha);
-    this.updateOverlays(rawDt);
+    this.updateOverlays(rawDt, alpha);
     this.fogOfWar.updateFade(rawDt);
     // Opened before anything draws: each draw pass below offers its sprites as emitters as it goes,
     // and `commit` closes the set once they all have (docs/lights.md § What reaches the shader).
@@ -1755,7 +2207,10 @@ export class Game {
     // the fade pass below: the refresh rewrites the mover buffers its commits write into.
     this.profiler.time('Movers', () => this.specials?.drawMovers(alpha));
     this.updatePresentation(rawDt, camera);
-    this.posePlayer(alpha, rawDt, camera.viewAngleDeg);
+    // A still frame gives the player's own clock nothing: the sprite holds the frame it is on
+    // rather than walking on the spot behind a paused replay or an intermission. Everything else
+    // here is presentation the frozen scene still wants (the bar, the HUD, fading).
+    this.posePlayer(alpha, still ? 0 : rawDt, camera.viewAngleDeg);
     this.profiler.time('Lights', () => this.lights.commit());
 
     // Measured only while the overlay is up: a timer query is cheap but not free, and nothing
@@ -1781,7 +2236,7 @@ export class Game {
    * sector underfoot. Returns the point the camera leads toward, which is always where the cursor
    * meets the aim plane — never the locked-on monster.
    */
-  private updateLivingPlayer(dt: number, input: Input, camera: TopDownCamera): Pos2 | null {
+  private updateLivingPlayer(dt: number, input: TicInput, camera: TopDownCamera): Pos2 | null {
     // Ticked with the rest of the player's own update and not while dead,
     // matching vanilla: powers age in `P_PlayerThink`, which hands off to
     // `P_DeathThink` and returns before reaching them once health hits 0.
@@ -1792,21 +2247,26 @@ export class Game {
     // docs/camera.md § Aim lead's rule and the reason they are returned
     // separately at all.
     const { monster, shootLine, cursor } = this.profiler.time('Player', () => {
-      // The tic-exact viewer angle, not the interpolated `viewAngleDeg` the
-      // billboards are drawn at, for the same framerate-independence reason
-      // the camera was posed at alpha 1 above.
-      const ray = camera.rayFor(input.pointer.x, input.pointer.y);
-      const m = this.things?.pickMonster(ray, camera.viewerAngleDeg) ?? null;
-      // A monster in front of the switch wins: the pointer is over its body,
-      // and a shot would be absorbed by it long before reaching the wall.
-      const line = m ? null : (this.specials?.pickShootTarget(ray, this.player.z + AIM_HEIGHT_OFFSET) ?? null);
       // The aim plane hangs off the camera's own follow height, not the
       // player's live `z`: identical once the follow smoother has caught up,
       // but during a fall — into a Boom water pool, off any ledge — a plane
       // that drops while the camera lags swings the cursor's world point and
       // turns the player with it. docs/camera.md § Aim lead.
       const aimPlaneZ = camera.followHeight - EYE_HEIGHT + AIM_HEIGHT_OFFSET;
-      const onPlane = camera.pointerToPlane(input.pointer.x, input.pointer.y, aimPlaneZ);
+      // The one read of where the player aims, and the ray the picks below use is cast *toward*
+      // that point rather than through the pointer — so a replay, which records the point, casts
+      // the same ray. No point (pointer above the horizon) picks nothing.
+      // docs/replays.md § The TicInput seam.
+      const onPlane = input.aim(camera, aimPlaneZ);
+      const ray = onPlane ? camera.rayToward(onPlane.x, onPlane.y, aimPlaneZ) : null;
+      // The tic-exact viewer angle, not the interpolated `viewAngleDeg` the
+      // billboards are drawn at, for the same framerate-independence reason
+      // the camera was posed at alpha 1 above.
+      const m = ray ? (this.things?.pickMonster(ray, camera.viewerAngleDeg) ?? null) : null;
+      // A monster in front of the switch wins: the pointer is over its body,
+      // and a shot would be absorbed by it long before reaching the wall.
+      const line =
+        m || !ray ? null : (this.specials?.pickShootTarget(ray, this.player.z + AIM_HEIGHT_OFFSET) ?? null);
       const at = m ?? line ?? onPlane;
       // Whatever the world is pushing the player with this tic — a conveyor
       // underfoot — onto the same momentum channel a hit's knockback uses.
@@ -1858,7 +2318,7 @@ export class Game {
    * or a shoot-triggered wall — which is what lets a shot angle toward its height; see
    * docs/combat.md § Auto-aim.
    */
-  private fireWeapons(input: Input, monster: MonsterRef | null, shootLine: ShootAim | null): void {
+  private fireWeapons(input: TicInput, monster: MonsterRef | null, shootLine: ShootAim | null): void {
     // Called after player.update so player.angle already reflects this frame's aim.
     this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
     const shots = this.weaponSystem.fire(input.mouseDown, this.inventory, this.player.angle);
@@ -1956,11 +2416,14 @@ export class Game {
 
   /**
    * Files the completion that just happened and reports how it compares to the level's best, or
-   * null if this run was never eligible for one. The record is keyed to the WAD file that
+   * null if this level's run may claim none. The record is keyed to the WAD file that
    * *provides* the map rather than to the loaded set — see docs/hud.md § Best times.
    */
   private recordCompletion(): BestTimeResult | null {
-    if (!this.recordsEligible) return null;
+    // A replay is watched, not run: it reports the recording player's time and claims nothing,
+    // whoever holds the record. docs/replays.md § Playback.
+    if (this.playback) return null;
+    if (this.cheated) return null;
     const map = this.currentMap;
     const source = mapProvider(this.wad, map);
     if (!source) return null;
@@ -1975,14 +2438,28 @@ export class Game {
    * The 2D layers over the level: status bar, crosshair, center message, level card,
    * the screen tints and the death overlay.
    */
-  private updateOverlays(dt: number): void {
-    this.hud.update(this.inventory, this.levelStats());
+  private updateOverlays(dt: number, alpha: number): void {
+    this.hud.update(this.inventory, this.levelStats(), this.recording);
     this.crosshair.update(this.inventory.health);
+    this.replayBar.update(this.playback, this.replayAimNdc(alpha), this.inventory.health);
     this.message.update(dt);
     this.levelCard.update(dt);
     this.screenEffects.update(dt, this.inventory);
     this.screenEffects.setColormapTint(this.viewColormap());
     this.deathOverlay.update(dt);
+  }
+
+  /**
+   * Where the recording's aim point falls on screen this frame, in NDC: the aim interpolated
+   * `alpha` into the tic being drawn, through the pose `draw` just set from the same `alpha` — what
+   * the replay reticle is placed at. Null with no playback, no aim, or a dead player (nothing aims
+   * then).
+   */
+  private replayAimNdc(alpha: number): Pos2 | null {
+    const aim = this.playback?.aimAt(alpha);
+    if (!aim || this.playerDead) return null;
+    const projected = AIM_SCRATCH.set(aim.x, aim.z, -aim.y).project(this.view.camera.camera);
+    return { x: projected.x, y: projected.y };
   }
 
   /**
@@ -2114,10 +2591,12 @@ export class Game {
   /**
    * Places the player's own billboard: position, facing, sector light and which
    * animation is due. Positions are interpolated `alpha` through the last tic;
-   * the animation still advances on `rawDt`, since it is presentation and its
-   * own frame chain is what times it.
+   * the animation advances on `dt`, since it is presentation and its own frame
+   * chain is what times it — which is why `draw` hands it 0 on a still frame,
+   * where the real one would walk the sprite on the spot (docs/frameloop.md
+   * § Pausing).
    */
-  private posePlayer(alpha: number, rawDt: number, viewAngleDeg: number): void {
+  private posePlayer(alpha: number, dt: number, viewAngleDeg: number): void {
     // Chosen before the pose that reads it. The setting is read per frame rather than captured, so
     // the menu applies it to the level already running.
     this.playerActor.setSkin(this.playerSkins?.skinFor(this.inventory.currentWeapon, this.setDrawsPlayer) ?? null);
@@ -2152,7 +2631,9 @@ export class Game {
       {
         facingDeg,
         light,
-        dt: rawDt,
+        dt,
+        // Left true while frozen on purpose: at `dt` 0 the sprite holds the stride it was in,
+        // where `false` would snap it to standing — a pause is not a stop.
         animating: walking,
         viewerAngleDeg: viewAngleDeg,
         tint,
@@ -2178,8 +2659,18 @@ export class Game {
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
       `Sound channels: ${channels.playing}/${channels.total} (${channels.dropped} burst-dropped)`,
       `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${cameraDeg}°yaw`,
-      getCameraMode() === 'auto' ? this.autoCamera.readout() : 'manual',
+      this.cameraReadout(),
     ];
+  }
+
+  /**
+   * The camera line of `debugLines`. A playback's camera comes from the record, so the auto
+   * camera's dials are standing still and reporting them would be a lie — the view in force is
+   * what there is to say (docs/replays.md § Playback).
+   */
+  private cameraReadout(): string {
+    if (this.playback) return `replay camera: ${this.playback.cameraView}`;
+    return getCameraMode() === 'auto' ? this.autoCamera.readout() : 'manual';
   }
 }
 

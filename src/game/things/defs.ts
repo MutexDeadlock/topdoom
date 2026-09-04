@@ -354,6 +354,10 @@ export interface ThingLayer {
    * which only exists inside the factory.
    * docs/savegames.md § What is saved and what is deliberately not.
    */
+  /**
+   * Every thing the run has moved on from — the things still exactly as the map spawned it are
+   * left out, since a restore re-spawns them. docs/savegames.md § The format and its version.
+   */
   snapshot(): ThingsSnapshot;
   /**
    * Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared

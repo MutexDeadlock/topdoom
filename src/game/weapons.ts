@@ -4,7 +4,7 @@
  */
 import { getAutoSwitchWeapon, hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
 import type { WeaponsSnapshot } from './snapshot.ts';
-import type { Input } from './input.ts';
+import type { TicInput } from './input.ts';
 import { PLAYER_ORIGIN, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
 import { DOOM_TIC } from '../constants.ts';
@@ -733,7 +733,7 @@ export class WeaponSystem {
    * left behind by an *earlier* switch and that same call then records the one
    * being left now — which is what makes a second click toggle back.
    */
-  handleSwitching(input: Input, inv: Inventory, wheelDelta: number): void {
+  handleSwitching(input: TicInput, inv: Inventory, wheelDelta: number): void {
     // Ahead of the wheel block, which early-returns on no scroll.
     const previous = this.previousWeapon;
     if (previous !== null && inv.weapons.has(previous) && input.rightMousePressed('previousweapon')) {

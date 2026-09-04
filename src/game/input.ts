@@ -4,10 +4,41 @@
  * that belongs here. See docs/frameloop.md § Input runs on the tic and docs/menu.md § Right mouse
  * button.
  */
+import type { TopDownCamera } from '../render/camera.ts';
+import type { Pos2 } from '../types.ts';
 import { readStorage, writeStorage } from '../util/storage.ts';
 
 /** What clicking the right mouse button does — a menu setting, see docs/menu.md. */
 export type RightMouseAction = 'none' | 'previousweapon' | 'use';
+
+/**
+ * Everything a simulation tic may read from the player. `Input` is the live keyboard and
+ * pointer; a replay's recorder wraps one and its playback stands in for one, which is why the
+ * pointer itself is not here — the tic asks for the *aim point* instead, and never for where the
+ * pointer is on screen. docs/replays.md § The TicInput seam.
+ */
+export interface TicInput {
+  held(...codes: string[]): boolean;
+  pressed(code: string): boolean;
+  typed(): string;
+  readonly mouseDown: boolean;
+  rightMousePressed(action: RightMouseAction): boolean;
+  consumeWheel(): number;
+  /**
+   * Where the player is aiming on the horizontal plane at `planeZ`, in map space and quantized to
+   * `AIM_QUANTUM`; null when the pointer misses the plane (above the horizon). Asked at most once
+   * per tic, immediately after the camera is posed at alpha 1.
+   */
+  aim(camera: TopDownCamera, planeZ: number): Pos2 | null;
+  endTic(): void;
+}
+
+/**
+ * The lattice the aim point sits on, in map units — 1/64 is far below anything a pick or a
+ * turn can resolve (tuned by feel). The point is quantized *before* the simulation reads it, so
+ * what a replay stores is exactly what ran. docs/replays.md § The TicInput seam.
+ */
+export const AIM_QUANTUM = 1 / 64;
 
 const RIGHT_MOUSE_STORAGE_KEY = 'rightMouse';
 const RIGHT_MOUSE_ACTIONS: readonly RightMouseAction[] = ['none', 'previousweapon', 'use'];
@@ -28,6 +59,20 @@ export function setRightMouseAction(action: RightMouseAction): void {
 }
 
 /**
+ * A replay's playback pins the binding for the run it replays without touching the stored one;
+ * `null` puts the stored value back. docs/replays.md § Settings are frozen per tic.
+ */
+export function overrideRightMouseAction(action: RightMouseAction | null): void {
+  rightMouseAction = action ?? readStoredRightMouseAction();
+}
+
+/** `point` snapped onto the `AIM_QUANTUM` lattice; null passes through. */
+export function quantizeAim(point: Pos2 | null): Pos2 | null {
+  if (!point) return null;
+  return { x: Math.round(point.x / AIM_QUANTUM) * AIM_QUANTUM, y: Math.round(point.y / AIM_QUANTUM) * AIM_QUANTUM };
+}
+
+/**
  * How many characters one tic may collect. A tic clears the buffer, so this only ever caps a
  * burst nothing consumed — a keyboard macro, or keys arriving while the loop is stalled.
  */
@@ -42,7 +87,7 @@ const TYPED_LIMIT = 32;
  * clear would drop most presses before a tic ever saw them.
  * docs/frameloop.md § Input runs on the tic.
  */
-export class Input {
+export class Input implements TicInput {
   private down = new Set<string>();
   private pressedThisTic = new Set<string>();
   private typedThisTic = '';
@@ -148,7 +193,11 @@ export class Input {
    * implements rather than reading the setting itself.
    */
   rightMousePressed(action: RightMouseAction): boolean {
-    return this.rightPressedThisTic && rightMouseAction === action;
+    return this.rightPressedThisTic && getRightMouseAction() === action;
+  }
+
+  aim(camera: TopDownCamera, planeZ: number): Pos2 | null {
+    return quantizeAim(camera.pointerToPlane(this.pointer.x, this.pointer.y, planeZ));
   }
 
   /** Accumulated scroll-wheel `deltaY` since the last call: positive is "down" (next weapon). */
@@ -206,7 +255,7 @@ function readStoredRightMouseAction(): RightMouseAction {
  * Only `keydown` asks: a key held from the canvas into a field must still see
  * its `keyup`, and clearing one that was never latched costs nothing.
  */
-function isTyping(target: EventTarget | null): boolean {
+export function isTyping(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
   );

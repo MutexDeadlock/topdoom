@@ -24,7 +24,7 @@
  */
 #menu > .panel {
   width: 100%;
-  max-width: 620px;
+  max-width: 682px;
   max-height: calc(100dvh - 48px);
   padding: 26px 30px 22px;
 }
@@ -96,6 +96,34 @@
   color: var(--fg);
 }
 
+/*
+ * The Replays tab while a recording is running (`ReplaysUi.refreshRecordButton` sets the class):
+ * the same light the HUD shows behind the menu, so opening the menu mid-recording never hides the
+ * one fact the tab is about. docs/replays.md § Recording.
+ */
+#menu .tab.recording::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 7px;
+  vertical-align: 1px;
+  border-radius: 50%;
+  background: #e03030;
+  box-shadow: 0 0 5px rgba(224, 48, 48, 0.9);
+  animation: menu-recording-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes menu-recording-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 #menu .tab.active {
   color: #fff;
   border-bottom-color: var(--accent);
@@ -131,7 +159,7 @@
 
 /*
  * A column so a panel can hand its own leftover height to one child
- * (`.saves-section`), and the scroller for a window too short to hold it — each
+ * (`.list-section`), and the scroller for a window too short to hold it — each
  * panel scrolls its own content, never the cell they share.
  * docs/menu.md § One screen, two jobs.
  */
@@ -278,7 +306,7 @@
 /*
  * The add-on rows carry the same three detail columns the WAD Library lists (docs/menu.md §
  * WAD Library), fixed-width and right-aligned so they line up down the list. Narrower than the
- * overlay's, because this panel is 620px against its 60%-of-viewport. Scoped to `#pwad-list` so
+ * overlay's, because this panel is 682px against its 60%-of-viewport. Scoped to `#pwad-list` so
  * the save rows, which share `.row` but lay themselves out entirely differently, are left alone.
  */
 #pwad-list .row .meta {
@@ -471,6 +499,57 @@
 #menu .columns.even > section {
   flex: 1;
   min-width: 0;
+}
+
+/*
+ * Difficulty is sized to its own longest option ("I'm Too Young to Die" plus the select's arrow)
+ * rather than taking an equal share: the five names are a closed list, where the level names beside
+ * them are whatever the WAD set is called and are the ones worth the room. Level keeps `flex: 1`
+ * and takes everything the other two leave.
+ */
+#menu .columns.even > section.skill-column {
+  flex: 0 0 26ch;
+}
+
+/*
+ * The record toggle rides the Level/Difficulty row rather than a section of its own — it is one
+ * more thing about the game being started, and a row of its own gave a checkbox the weight of a
+ * heading. Narrower than the two selects beside it, and a **fixed** width: the two labels are
+ * different lengths, and a column that resized as it was pressed would shove the selects sideways.
+ * 17ch is the longer label ("Not recording") plus the button's own padding and border — measured,
+ * not guessed: at 15ch it wrapped onto a second line and took the whole row's height with it.
+ */
+#menu .columns.even > section.record-column {
+  flex: 0 0 17ch;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * Boxed as one of the row's three controls: the selects' own padding and border colour, and their
+ * height — taken by *stretching* into the column rather than restated as a number, since a button
+ * and a select derive their own height differently (the body font's 1.5 line height against the
+ * select's `normal`) and any figure written here would be right on one platform's font metrics.
+ */
+#menu #record-toggle {
+  flex: 1;
+  /* Or the button's own text box, which is taller than a select's, would set the row's height
+     instead of taking it — `flex` cannot shrink a box below its content without this. */
+  min-height: 0;
+  line-height: normal;
+  /* Never two lines: a wrapped label would set the whole row's height, and the column is sized to
+     fit the longer one anyway (`.record-column`). */
+  white-space: nowrap;
+  width: 100%;
+  padding: 8px 10px;
+  border-color: var(--border);
+  background: var(--inset-bg);
+  text-align: left;
+}
+
+#menu #record-toggle[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent-text-hover);
 }
 
 /* A description that carries its own control (the autorun checkbox) beside it. */

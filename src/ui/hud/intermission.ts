@@ -10,7 +10,9 @@ import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 /**
  * What the player has to press to leave the popup — see `Game.frame`'s intermission branch. Shared
  * with `ui/hud/endcard.ts`, the other half of that one continue-key flow (docs/hud.md § End card):
- * both popups are dismissed by the same key and must not describe it differently.
+ * both popups are dismissed by the same key and must not describe it differently. Left out
+ * entirely under a playback, where that key is the record's rather than the viewer's — the death
+ * overlay's `R` hint for the same reason (docs/replays.md § Playback).
  */
 export const CONTINUE_HINT = 'Press SPACE to continue';
 
@@ -119,8 +121,9 @@ export class Intermission {
   }
 
   /**
-   * `cheated` is `game.ts`'s `recordsEligible` inverted — the same flag that already decides
+   * `cheated` is `game.ts`'s own flag — the same one that already decides
    * whether a completion may set a record, rather than a second account of what happened this run.
+   * Whether the continue key is offered is `setContinueHint`'s, set beforehand.
    */
   show(stats: LevelStats, record: BestTimeResult | null, parSeconds: number | null, cheated: boolean): void {
     if (cheated) return this.showCheated();
@@ -139,6 +142,14 @@ export class Intermission {
     this.drawParLine(parSeconds, stats.elapsedSeconds);
     this.drawBestLines(record);
     this.root.classList.remove('hidden');
+  }
+
+  /**
+   * Shows or hides the continue hint on a popup already up: taking a replay over hands that key
+   * back to the viewer with the popup on screen. See `CONTINUE_HINT`.
+   */
+  setContinueHint(shown: boolean): void {
+    this.hintCanvas.classList.toggle('hidden', !shown);
   }
 
   /**
@@ -250,7 +261,8 @@ export class Intermission {
   /**
    * The whole popup replaced by one line (see `CHEATED_TEXT`) — every canvas the run's numbers
    * would have gone on is hidden here, and only here, so each `draw*` below stays the sole owner
-   * of its own line's visibility. The continue hint stays, since it is still what dismisses this.
+   * of its own line's visibility. The continue hint is `show`'s to place, being about the key
+   * rather than about the run.
    */
   private showCheated(): void {
     this.statsBlock.classList.add('hidden');

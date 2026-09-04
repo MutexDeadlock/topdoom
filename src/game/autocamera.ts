@@ -18,6 +18,16 @@ import type { Opening, World } from './world.ts';
 /** Which camera mode is active — a menu setting, see docs/menu.md § Persisted settings. */
 export type CameraMode = 'auto' | 'manual';
 
+/** The auto camera's dampers, as `snapshot()` hands them over — docs/replays.md § Camera state. */
+export interface AutoCameraSnapshot {
+  spread: number;
+  ahead: number;
+  clearance: number;
+  framing: number;
+  tiltShift: number;
+  initialised: boolean;
+}
+
 const CAMERA_MODE_STORAGE_KEY = 'cameraMode';
 const CAMERA_MODES: readonly CameraMode[] = ['auto', 'manual'];
 
@@ -31,6 +41,11 @@ export function getCameraMode(): CameraMode {
 export function setCameraMode(mode: CameraMode): void {
   cameraMode = mode;
   writeStorage(CAMERA_MODE_STORAGE_KEY, mode);
+}
+
+/** A replay's pin on the mode, without touching the stored one; `null` puts that back. */
+export function overrideCameraMode(mode: CameraMode | null): void {
+  cameraMode = mode ?? readStoredCameraMode();
 }
 
 // The framing endpoints the two smoothed opennesses lerp between — all tuned by feel; the
@@ -400,6 +415,31 @@ export class AutoCamera {
   constructor(world: World, transfers?: SectorTransfers) {
     this.world = world;
     this.transfers = transfers ?? ownTransfers(world.map);
+  }
+
+  /**
+   * The five dampers and whether they have been seeded, for the one thing that has to carry them
+   * across a level rebuild: `startRecording`, whose reload would otherwise re-seed the framing and
+   * hop it under the player. docs/replays.md § Recording.
+   */
+  snapshot(): AutoCameraSnapshot {
+    return {
+      spread: this.smoothedSpread,
+      ahead: this.smoothedAhead,
+      clearance: this.smoothedClearance,
+      framing: this.smoothedFraming,
+      tiltShift: this.smoothedTiltShift,
+      initialised: this.initialised,
+    };
+  }
+
+  restore(state: AutoCameraSnapshot): void {
+    this.smoothedSpread = state.spread;
+    this.smoothedAhead = state.ahead;
+    this.smoothedClearance = state.clearance;
+    this.smoothedFraming = state.framing;
+    this.smoothedTiltShift = state.tiltShift;
+    this.initialised = state.initialised;
   }
 
   /**

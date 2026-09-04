@@ -5,6 +5,7 @@ import { buildThingSprites, monstersTelefrag } from '../../src/game/things.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { savedThing } from '../fixtures/snapshot.ts';
 
 /**
  * `P_TeleportMove`/`PIT_StompThing` (`p_map.c`): what a body landing on a teleport pad does to
@@ -46,7 +47,7 @@ const IMP_RADIUS = 20;
  * health at all — the lamp — can never read as hurt, which is the point.
  */
 function telefragged(layer: ReturnType<typeof arena>['layer'], id: number): boolean {
-  return (layer.snapshot().things[id].monster?.health ?? Infinity) <= 0;
+  return (savedThing(layer.snapshot(), id)?.monster?.health ?? Infinity) <= 0;
 }
 
 describe('Death · telefrag', () => {

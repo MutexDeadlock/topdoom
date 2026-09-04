@@ -81,7 +81,8 @@ src/game/      spatial queries + collision, player controller, input, the auto c
                skill level changes (skill), thing world state, fog of war, inventory/pickups,
                weapons and firing, shots in flight + splash, damage/death, transient effects,
                voodoo dolls, the typed cheat codes (cheats), best times, savegames (the snapshot
-               shape, the IndexedDB store)
+               shape, the IndexedDB store), replays (the record, the recorder and playback behind
+               the tic's input, their own store)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through, WebAudio
                playback (channels, attenuation, pan, volume), the level's music
 src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens)
@@ -100,8 +101,8 @@ index.html         the page skeleton; @includes the .html beside each one
 plugins/       Vite plugins: the public/game/{iwad,pwad} manifest, the WAD built from assets/
                (game-wad), index.html's @include expansion
 assets/        the sources that WAD is built from: gldefs.txt, secret.ogg, playerskins.wad
-scripts/       headless inspection of a WAD (scripts/inspect-wad.ts) and of a savegame file
-               (scripts/inspect-save.ts)
+scripts/       headless inspection of a WAD (scripts/inspect-wad.ts), of a savegame file
+               (scripts/inspect-save.ts) and of a replay (scripts/inspect-replay.ts)
 ```
 
 ## Subsystem documentation
@@ -134,6 +135,7 @@ relevant one before changing that subsystem** — several rules there look like 
 | [hud.md](docs/hud.md) | The HUD, level stats and timer, level card, intermission, best times, center messages, `WadFont`, screen effects |
 | [styles.md](docs/styles.md) | Which `.html`/`.css` owns which element, the `index.html`/`styles.css` entries, the palette/stacking tokens |
 | [savegames.md](docs/savegames.md) | The save format and its version, the snapshot apply order, the store, download/import, WAD-set identity |
+| [replays.md](docs/replays.md) | Recording and playing back a run: the `TicInput` seam, the record, restore events, the store, the playback bar |
 | [specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, secrets, voodoo dolls |
 | [fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
@@ -153,13 +155,28 @@ reasonable, and not from the Doom wiki alone (which has been wrong here: linedef
 58, the turbo stairs' "and Crush" naming). When you add or change one of these, cite where it
 came from.
 
-**A change that would break existing saves must be flagged to the user first.** `SAVE_VERSION`
-(`game/savegames.ts`) is meant to stay at its current value: released saves exist, and a bump
-orphans them all. When a change would make the current reader misread a stored `GameSnapshot` — a
-renamed/re-encoded field, a changed spawn default the sparse encodings elide against, a reordered
-`posed`/thing identity — say so *before* implementing, and prefer a compatible extension (an
-optional field whose absence means the old behavior, the `teleportFogs` pattern —
-docs/savegames.md § The format and its version) whenever one exists.
+**A change that would break existing saves must be flagged to the user first — every time.** When a
+change would make the current reader misread a stored `GameSnapshot` — a renamed/re-encoded field, a
+changed spawn default the sparse encodings elide against, a reordered `posed`/thing identity — say
+so *before* implementing, and say what it would cost to avoid. **Avoiding the break is still the
+goal**, and a compatible extension (an optional field whose absence means the old behavior, the
+`teleportFogs` pattern) is the first thing to reach for: never break a format merely because saves
+are cheap to break right now. Only where compatibility would cost a second read path is the
+standing answer, **until v1.0**, to break instead and keep one format — the user decides that, per
+change. `SAVE_VERSION` (`game/savegames.ts`) **stays 1** through such a break, kept for the first
+change that orphans real players' saves, and the broken case gets no explaining machinery: a save
+only a development build wrote just fails.
+
+**A change to what a tic does bumps `COMPAT` (`game/replay/defs.ts`)** — the simulation epoch that
+warns a replay recorded under older rules that it may desync. Nothing detects a missed bump, so ask
+it of every change under `src/game/`: could an old recording run differently now? Say in the report
+whether it raised the epoch and why. A release, rendering, the HUD, the menu and the camera never
+do. docs/replays.md § Compatibility.
+
+**A save or replay that can't be used says why, where the player is looking.** A greyed Load or
+Play always carries the reason in red beside the row — `SaveListEntry.refusal` /
+`ReplayListEntry.refusal`, the same sentence the read would have thrown. Greying alone is the bug:
+a disabled button shows no tooltip. docs/menu.md § Save and Load tabs.
 
 **A deliberate deviation is fine; an undocumented one is not.** Where this engine knowingly departs
 from vanilla, the departure says so at the declaration, names what it follows instead, and explains

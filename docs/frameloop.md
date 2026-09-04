@@ -81,6 +81,11 @@ are tic counts, so animation belongs on the tic clock.
 
 ### Input runs on the tic
 
+The tic reads a **`TicInput`**, not the concrete `Input`: live play passes the `Input`, a
+recording passes a recorder wrapping it, a playback passes the record itself
+(docs/replays.md § The TicInput seam). Nothing in a tic reads the pointer — it asks for the aim
+*point* instead.
+
 `Input`'s edge latches (`pressed`, `rightMousePressed`) hold "went down since the last **tic**", and
 `endTic` is the only thing that clears them. Rendering runs several times per tic, so clearing at
 frame cadence would drop most presses before a tic ever saw them — every door, weapon-switch digit
@@ -100,6 +105,10 @@ the rest of the level. Nothing outside the menu is focusable, which is what make
 "only while the menu is up" true.
 
 ### Posing for the aim ray
+
+The ray is cast **toward the aim point** (`rayToward`), not through the pointer, so a replay's
+recorded point casts the ray the recording cast — docs/replays.md § The TicInput seam. Everything
+below is about the pose it is cast from.
 
 The aim ray is cast through the **live `THREE` camera**, which the last rendered frame left at an
 *interpolated* pose — a function of frame timing. Casting through it as it stands makes what
@@ -135,6 +144,21 @@ That is not a cosmetic difference. It is why a heavy fight now escalates at the 
 NUTS.WAD's ~7,700-monster infight cascade resolves several times faster than it used to, because it
 is no longer being run at three-quarters speed. `MAX_TICS_PER_FRAME` is the bound on how far this
 can go — past 5 tics of debt the engine gives up and drops the rest, and *then* it does slow down.
+
+## Playback speed and pause
+
+A replay banks `rawDt × speed` instead of `rawDt`, and nothing at all while its bar's pause is on
+or its stream is spent; both of those draw at alpha 1, the frozen-simulation rule above. That pause
+is **not** the menu's — the frame loop keeps running so the bar stays live, and `ESC` still pauses
+the game as it always did. `MAX_TICS_PER_FRAME` bounds what a speed can actually reach on a slow
+frame, so 5× under a 30 fps cap runs at about 4.3×. docs/replays.md § Playback.
+
+A **seek owns the frame**: `runSeek` banks no time, runs its own tics for up to `SEEK_BUDGET_MS`
+and **draws nothing at all** until the target lands — the frame before the jump stays on screen,
+with only the bar and its marker updated over it. Landing draws at alpha 1, except on a tic that
+swapped the level, which ends the frame undrawn like the tic loop's own does. `resyncClock` is what
+keeps the catch-up's real seconds from becoming a burst of tics afterwards.
+docs/replays.md § Seeking.
 
 ## What runs in a frame (`game.ts: draw`)
 
@@ -236,6 +260,14 @@ whose geometry and materials have just been released.
 
 **`pause` flushes a parked level load** before it freezes, and `resume` shares `resyncClock` with
 the frame that performs one — see § A parked level load.
+
+**A frame that advances no tic advances no player animation either.** `frame`'s `still` — an
+intermission or end card up, or a playback paused or spent — already draws at alpha 1 (§ Interpolation);
+it also hands `posePlayer` a `dt` of 0, so the sprite holds the stride it was on instead of walking
+on the spot behind a frozen scene. `animating` stays *true* there: at `dt` 0 the actor keeps its
+frame, where false would snap it to standing, and a pause is not a stop. Everything else in the
+frame keeps its real `dt` — the HUD, the replay bar and the fades are presentation the frozen scene
+still wants (docs/replays.md § Playback).
 
 ## A parked level load (`game.ts: loadLevel`, `pendingLoad`)
 

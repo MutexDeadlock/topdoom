@@ -9,6 +9,7 @@ import { MONSTER_HEALTH } from '../../src/game/things/tables.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { MATERIALS, recordingBank } from '../fixtures/spritestubs.ts';
 import { stepFor } from '../fixtures/tics.ts';
+import { changedThing } from '../fixtures/snapshot.ts';
 
 /**
  * Knockback shoved a monster out over a ledge its own walk step refuses, and the
@@ -51,7 +52,7 @@ function pedestal(): { things: ThingLayer; at: { x: number; y: number }; east: n
 function shove(things: ThingLayer, at: { x: number; y: number }, damage: number): { x: number; z: number } {
   things.damage(0, damage, { from: { x: at.x - 60, y: at.y } });
   stepFor(2, () => things.update(DOOM_TIC, null));
-  return things.snapshot().things[0];
+  return changedThing(things.snapshot(), 0);
 }
 
 describe('Regressions · knockback over a ledge', () => {

@@ -10,7 +10,10 @@ import {
   bytesToBase64,
   compressText,
   decompressText,
+  freshId as freshStoredId,
   idbBackend,
+  putStored,
+  readStoredMeta,
   type SaveStoreBackend,
   type StoredState,
 } from './savestore.ts';
@@ -47,7 +50,7 @@ const AUTOSAVE_NAME = 'Checkpoint';
  * `indexedDB`.
  */
 let backend: SaveStoreBackend | null = null;
-const store = (): SaveStoreBackend => (backend ??= idbBackend());
+const store = (): SaveStoreBackend => (backend ??= idbBackend({ database: 'topdoom', prefix: 'saves' }));
 
 /** Test seam: replaces the backend with an in-memory one (`tests/game/savegames.test.ts`). */
 export function setSaveBackend(replacement: SaveStoreBackend): void {
@@ -83,8 +86,52 @@ export function wadLabel(wad: SaveWad): string {
   return wad.name || 'unknown file';
 }
 
+/**
+ * What the file at `index` of a stored set does there, for the inspection scripts: the game WAD
+ * is `[0]`, the map provider is `mapWad`'s, a DEH patch is one `patchWads` names.
+ */
+export function wadRoles(set: Pick<SaveWadSet, 'wads' | 'mapWad' | 'patchWads'>, index: number): string[] {
+  const wad = set.wads[index];
+  const roles: string[] = [];
+  if (index === 0) roles.push('game WAD');
+  if (wad.id === set.mapWad) roles.push('map provider');
+  if (set.patchWads?.includes(wad.id)) roles.push('DEH patch');
+  return roles;
+}
+
 /** The identity half of a save's meta: every field the WAD gate reads, and all it reads. */
 export type SaveWadSet = Pick<SaveMeta, 'map' | 'wads' | 'mapWad' | 'patchWads'>;
+
+/**
+ * What an unnamed save or replay is called: the WAD that supplied the map, extension dropped, and
+ * the map — `DOOM2 MAP05`. No date, which the row already shows from `at`. The map provider is
+ * `mapWad`'s file, falling back to the game WAD when the set names none.
+ */
+export function defaultName(set: Pick<SaveWadSet, 'map' | 'wads' | 'mapWad'>): string {
+  const provider = set.wads.find((wad) => wad.id === set.mapWad) ?? set.wads[0];
+  const file = (provider?.name ?? '').replace(/\.[^.]*$/, '').trim();
+  return file ? `${file} ${set.map}` : set.map;
+}
+
+/**
+ * A download's file name: the record's own name with anything a filesystem could object to
+ * replaced, under `kind`'s suffix. The suffix is also what `Menu.installDropTarget` routes a
+ * dropped file by, so the two importers can't take each other's files.
+ */
+export function downloadFileName(name: string, kind: 'save' | 'replay'): string {
+  const safe = name.replace(/[^\p{L}\p{N} _.-]+/gu, '_').trim() || kind;
+  return `${safe}.topdoom${kind}.json`;
+}
+
+/** Whether a dropped or picked file is one of `kind`'s downloads. */
+export function isDownloadFileName(name: string, kind: 'save' | 'replay'): boolean {
+  return name.toLowerCase().endsWith(`.topdoom${kind}.json`);
+}
+
+/** `<name>.topdoomsave.json` — a downloaded save, `replayFileName`'s twin. */
+export function saveFileName(name: string): string {
+  return downloadFileName(name, 'save');
+}
 
 /**
  * Which entries of a save's set a load actually requires back, positionally:
@@ -255,17 +302,19 @@ export type SaveCapture = Omit<SaveGame, 'id' | 'version' | 'at' | 'name'>;
 export interface SaveListEntry {
   meta: SaveMeta;
   /**
-   * False for a version this build can't load, or a meta too damaged to trust — still listed so it
-   * can be deleted or downloaded. A damaged *state* is invisible here (listing never reads it) and
-   * surfaces at load instead.
+   * Why this build cannot load the row — a format version it does not read, or a meta too damaged
+   * to trust — and null when it can. The same sentence `readSave` would throw, so the list can say
+   * *why* Load is greyed instead of only that it is; the row still lists, downloads and deletes.
+   * A damaged *state* is invisible here (listing never reads it) and surfaces at load instead.
    */
-  supported: boolean;
+  refusal: string | null;
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
-const asSkill = (v: unknown): Skill => (v === 1 || v === 2 || v === 3 || v === 4 || v === 5 ? v : 3);
-
-const asText = (v: unknown): string => (typeof v === 'string' ? v : '');
+/** The field readers every stored meta degrades through — the replay's too (`game/replay.ts`). */
+export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+export const asText = (v: unknown): string => (typeof v === 'string' ? v : '');
+export const asNumber = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+export const asSkill = (v: unknown): Skill => (v === 1 || v === 2 || v === 3 || v === 4 || v === 5 ? v : 3);
 
 /**
  * One stored WAD entry, each field degraded on its own. Deliberately *mapped*
@@ -274,7 +323,7 @@ const asText = (v: unknown): string => (typeof v === 'string' ? v : '');
  * wrong role. A blanked entry instead fails loudly — an empty ID matches
  * nothing in the library, so the file is reported as one to go and find.
  */
-const asWad = (v: unknown): SaveWad => {
+export const asWad = (v: unknown): SaveWad => {
   const w = isRecord(v) ? v : {};
   return { name: asText(w.name), id: asText(w.id) };
 };
@@ -287,7 +336,7 @@ function asMeta(raw: unknown, id: string): SaveMeta {
   const r = isRecord(raw) ? raw : {};
   return {
     id,
-    version: typeof r.version === 'number' ? r.version : 0,
+    version: asNumber(r.version),
     at: asText(r.at),
     name: typeof r.name === 'string' && r.name.length > 0 ? r.name : '(unreadable save)',
     map: typeof r.map === 'string' ? r.map : '?',
@@ -297,7 +346,7 @@ function asMeta(raw: unknown, id: string): SaveMeta {
     // Absent for every save written before the field existed, which is the right reading: those
     // were made by a build that applied no patch. docs/dehacked.md § Savegames and patched tables.
     ...(Array.isArray(r.patchWads) ? { patchWads: r.patchWads.filter((v) => typeof v === 'string') } : {}),
-    levelTime: typeof r.levelTime === 'number' ? r.levelTime : 0,
+    levelTime: asNumber(r.levelTime),
     thumb: asText(r.thumb),
   };
 }
@@ -308,27 +357,23 @@ function asMeta(raw: unknown, id: string): SaveMeta {
  * `mapWad`: a save without one is still perfectly loadable, since a blank only
  * makes the WAD gate stricter (`requiresWholeSet`).
  */
-function hasLoadableMeta(raw: unknown): boolean {
-  return isRecord(raw) && raw.version === SAVE_VERSION && typeof raw.map === 'string' && Array.isArray(raw.wads);
+function metaRefusal(raw: unknown): string | null {
+  if (!isRecord(raw)) return damagedText;
+  if (raw.version !== SAVE_VERSION) return versionRefusal(raw.version);
+  return typeof raw.map === 'string' && Array.isArray(raw.wads) ? null : damagedText;
 }
 
 /**
  * The state half: without these the restore path would crash mid-load. Checked wherever a snapshot
  * is actually decoded.
  */
-function isLoadableState(state: unknown): state is GameSnapshot {
+export function isLoadableState(state: unknown): state is GameSnapshot {
   return isRecord(state) && isRecord(state.player) && isRecord(state.rng);
 }
 
-/**
- * The stored meta for `id`, or a thrown refusal — the shared opening of every read-modify-write
- * below.
- */
-async function readMeta(id: string): Promise<unknown> {
-  const raw = await store().readMeta(id);
-  if (raw === undefined) throw new Error('that save no longer exists');
-  return raw;
-}
+const readMeta = (id: string): Promise<unknown> => readStoredMeta(store(), 'save', id);
+const putSave = (meta: SaveMeta, state: StoredState): Promise<void> => putStored(store(), 'save', meta, state);
+const freshId = (): Promise<string> => freshStoredId(store());
 
 /**
  * Every stored save, newest first, unsupported versions included (marked, not
@@ -341,13 +386,22 @@ export async function listSaves(): Promise<SaveListEntry[]> {
   const entries = raws
     .map((raw) => {
       const id = isRecord(raw) && typeof raw.id === 'string' ? raw.id : '';
-      return { meta: asMeta(raw, id), supported: hasLoadableMeta(raw) };
+      return { meta: asMeta(raw, id), refusal: metaRefusal(raw) };
     })
     .filter((entry) => entry.meta.id !== AUTOSAVE_ID);
   return entries.sort((a, b) => b.meta.at.localeCompare(a.meta.at));
 }
 
-const damaged = (): Error => new Error('this save is damaged and cannot be loaded');
+const damagedText = 'this save is damaged and cannot be loaded';
+const damaged = (): Error => new Error(damagedText);
+
+/**
+ * Why this build cannot read a save written in `version`, one sentence — `readSave`'s refusal and
+ * the list's own line beside the row, which are the same thing said in two places.
+ */
+export function versionRefusal(version: unknown): string {
+  return `this save uses format version ${String(version)}; this build loads version ${SAVE_VERSION}`;
+}
 
 /**
  * The full save, or a thrown, user-readable refusal — an unsupported version names both versions
@@ -355,10 +409,8 @@ const damaged = (): Error => new Error('this save is damaged and cannot be loade
  */
 export async function readSave(id: string): Promise<SaveGame> {
   const rawMeta = await readMeta(id);
-  if (isRecord(rawMeta) && rawMeta.version !== SAVE_VERSION) {
-    throw new Error(`this save uses format version ${String(rawMeta.version)}; this build loads version ${SAVE_VERSION}`);
-  }
-  if (!hasLoadableMeta(rawMeta)) throw damaged();
+  const refused = metaRefusal(rawMeta);
+  if (refused !== null) throw new Error(refused);
   const record = await store().readState(id);
   if (!record || record.encoding !== STATE_ENCODING) throw damaged();
   let state: unknown;
@@ -380,47 +432,8 @@ async function encodeState(id: string, state: GameSnapshot): Promise<StoredState
 }
 
 /**
- * The one write of a whole save: both records in the backend's single
- * transaction, with a quota refusal — the only failure a player can act on —
- * translated to a readable message. Mapped here rather than in the backend so
- * the tests' in-memory backend exercises the same translation.
- */
-async function putSave(meta: SaveMeta, state: StoredState): Promise<void> {
-  try {
-    await store().putSave(meta, state);
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
-      throw new Error('not enough browser storage for this save — delete an older save and try again');
-    }
-    throw err;
-  }
-}
-
-/**
- * Session-scoped tiebreaker for saves landing in the same millisecond; uniqueness is checked
- * against the stored IDs anyway.
- */
-let idCounter = 0;
-
-/**
- * Deliberately entropy-free — the engine's one randomness source is the DOOM table
- * (docs/random.md), and a save ID needs uniqueness, not randomness.
- */
-async function freshId(): Promise<string> {
-  const existing = new Set((await store().listMeta()).map((raw) => (isRecord(raw) ? raw.id : undefined)));
-  let id: string;
-  do {
-    id = Date.now().toString(36) + '-' + (idCounter++).toString(36);
-  } while (existing.has(id));
-  return id;
-}
-
-/** What an unnamed save is called: the map and when it was taken. */
-const defaultName = (map: string): string => `${map} — ${new Date().toLocaleString()}`;
-
-/**
  * Owns the naming rule for both writers: a blank (or all-whitespace) name falls
- * back to `defaultName`. `levelTime` is rounded here — the meta is stored as an
+ * back to `defaultName`, shared with replays. `levelTime` is rounded here — the meta is stored as an
  * object, where digits cost nothing, but the export file stringifies it without
  * a replacer.
  */
@@ -431,7 +444,7 @@ function createMeta(id: string, name: string, capture: SaveCapture): SaveMeta {
     id,
     version: SAVE_VERSION,
     at: new Date().toISOString(),
-    name: name.trim() || defaultName(capture.map),
+    name: name.trim() || defaultName(capture),
     levelTime: Math.round(capture.levelTime * 1e6) / 1e6,
   };
 }
@@ -550,9 +563,11 @@ export async function importSave(text: string): Promise<SaveMeta> {
     throw refusal();
   }
   if (isRecord(raw) && typeof raw.version === 'number' && raw.version !== SAVE_VERSION) {
-    throw new Error(`this save uses format version ${raw.version}; this build loads version ${SAVE_VERSION}`);
+    throw new Error(versionRefusal(raw.version));
   }
-  if (!hasLoadableMeta(raw)) throw refusal();
+  // The imported file's own shape refusal, not a stored row's: a file this build cannot read is
+  // "not a TopDoom save" whatever is wrong with it beyond the version above.
+  if (metaRefusal(raw) !== null) throw refusal();
   const record = raw as Record<string, unknown>;
   if (typeof record.state !== 'string' || record.stateEncoding !== STATE_ENCODING) throw refusal();
   let bytes: Uint8Array<ArrayBuffer>;

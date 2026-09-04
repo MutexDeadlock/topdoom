@@ -20,15 +20,20 @@ const TITLE = 'You died';
 const DEATH_OVERLAY_DELAY = PLAYER_DEATH_FRAMES.length * PLAYER_DEATH_FRAME_SECONDS;
 
 /**
- * The overlay's bottom line, in the two things `R` can do: reload the savegame
- * this level is being played out of, or reload the level itself (its checkpoint
- * where there is one, a plain restart otherwise — a distinction the player has
- * no reason to care about). Which one applies is the game layer's to know, so
- * `show` is told that and this layer keeps the wording.
- * docs/death.md § Player death.
+ * What the overlay's bottom line says: the two things `R` can do — reload the savegame this level
+ * is being played out of, or reload the level itself (its checkpoint where there is one, a plain
+ * restart otherwise — a distinction the player has no reason to care about) — and `none`, for a
+ * death nobody in front of the screen can answer: a replay's, where `R` belongs to the record.
+ * Which applies is the game layer's to know, so `show` is told that and this layer keeps the
+ * wording. docs/death.md § Player death.
  */
-const RESTART_HINT = 'press R to restart';
-const RELOAD_SAVE_HINT = 'press R to reload last savegame';
+export type DeathHint = 'restart' | 'reload-save' | 'none';
+
+const HINTS: Record<DeathHint, string> = {
+  restart: 'press R to restart',
+  'reload-save': 'press R to reload last savegame',
+  none: '',
+};
 
 export class DeathOverlay {
   private rootEl = document.getElementById('death-overlay')!;
@@ -41,8 +46,8 @@ export class DeathOverlay {
   private delay = -1;
   /** The killer line the armed overlay will carry — see `show`. */
   private killer = '';
-  /** Which hint the armed overlay will carry — see `show` and `RESTART_HINT`. */
-  private hint = RESTART_HINT;
+  /** Which hint the armed overlay will carry — see `show` and `DeathHint`. */
+  private hint: DeathHint = 'restart';
 
   /**
    * The IWAD's own `STCFN*` type, the same three-canvas arrangement `EndCard` uses: the heading in
@@ -63,7 +68,8 @@ export class DeathOverlay {
     if (this.delay < 0) {
       drawText(this.killerCanvas, this.yellowFont, this.killer);
       this.killerCanvas.classList.toggle('blank', this.killer === '');
-      drawText(this.hintCanvas, this.redFont, this.hint);
+      drawText(this.hintCanvas, this.redFont, HINTS[this.hint]);
+      this.hintCanvas.classList.toggle('blank', this.hint === 'none');
       this.rootEl.classList.remove('hidden');
     }
   }
@@ -72,21 +78,34 @@ export class DeathOverlay {
    * Arms the overlay, with `killer` as its middle line — an already-composed
    * sentence (`things/tables.ts`'s `obituary`), since what killed the player is the
    * game layer's to know, not this one's. `''` leaves the line out entirely.
-   * `reloadsSave` says which of the two hints applies (`RESTART_HINT`).
+   * `hint` says which bottom line applies (`DeathHint`).
    * `update` raises it `DEATH_OVERLAY_DELAY` later, so a `clear` inside that
    * window means it is never seen at all.
    */
-  show(killer: string, reloadsSave: boolean): void {
+  show(killer: string, hint: DeathHint): void {
     this.killer = killer;
-    this.hint = reloadsSave ? RELOAD_SAVE_HINT : RESTART_HINT;
+    this.hint = hint;
     this.delay = DEATH_OVERLAY_DELAY;
+  }
+
+  /**
+   * Swaps the hint on an overlay already armed or up: taking a replay over hands `R` back to the
+   * viewer while their corpse is on screen. An armed one is left to `update`, which draws it.
+   * docs/replays.md § Playback.
+   */
+  setHint(hint: DeathHint): void {
+    if (hint === this.hint) return;
+    this.hint = hint;
+    if (this.rootEl.classList.contains('hidden')) return;
+    drawText(this.hintCanvas, this.redFont, HINTS[hint]);
+    this.hintCanvas.classList.toggle('blank', hint === 'none');
   }
 
   /** Takes the overlay down — armed or already up. Every map (re)load starts from here. */
   clear(): void {
     this.delay = -1;
     this.killer = '';
-    this.hint = RESTART_HINT;
+    this.hint = 'restart';
     this.rootEl.classList.add('hidden');
   }
 }

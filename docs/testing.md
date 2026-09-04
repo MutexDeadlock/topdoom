@@ -60,7 +60,8 @@ savegame suite joined next (`game/snapshot.test.ts`, `game/savegames.test.ts`,
 and the round-trips prove behavioral equality — save mid-motion, rebuild over a fresh grid map, then
 tick original and restored in lockstep and compare positions and the RNG cursors, not just fields.
 The store itself has no `indexedDB` to reach in Node, so it takes an injected backend instead
-(`setSaveBackend`, two `Map`s standing in for the two object stores); the gzip and base64 codecs
+(`setSaveBackend`, two `Map`s standing in for the two object stores — `fixtures/savestore.ts`,
+which the replay store's suite injects too); the gzip and base64 codecs
 around it are **not** stubbed, since `CompressionStream` is global in Node and a compression
 round-trip that isn't the real one proves nothing. The `ThingLayer` and `SpriteFxLayer` tests reach
 `buildThingSprites`/`spawn` headless through a name-only `SpriteBank` stub and a three-field
@@ -266,6 +267,12 @@ added to `MonsterBody` is a one-file edit.
 (`ticsIn(seconds)`, rounded) and stops early once `done` holds, returning the seconds run. Every
 "run the simulation for N seconds" loop goes through it rather than rounding its own.
 
+`tests/fixtures/snapshot.ts` reads a `ThingsSnapshot`, which carries only what the run changed
+(docs/savegames.md § The format and its version): `savedThing(things, id)` is undefined where the
+thing is still exactly as the map spawned it — usually the assertion itself, since "untouched" is
+what most of these tests are checking for — and `changedThing` throws there instead, for a test that
+has already established the change.
+
 `tests/fixtures/files.ts`'s `filesUnder(dir, keep?)` is the recursive file walker the tree-wide
 guards in `tests/docs/` and `markup.test.ts` share.
 
@@ -469,6 +476,10 @@ runs no linter, so that test is the only thing keeping a second, undocumented en
 `tests/util/geom.test.ts` carries the same kind of guard for **`Math.hypot`**, which nothing in
 `src/` may call: distances go through `vecLength`, whose result is bit-identical on every engine
 where `hypot`'s is not — docs/random.md § What this does not buy.
+
+`tests/game/replay-keys.test.ts` is the third of that shape: every key code the tree passes to
+`held(`/`pressed(` must be in `BOUND_KEYS`, or a replay would record it as never pressed
+(docs/replays.md § The record).
 
 The wall clock is the other entropy source, and gets the same treatment.
 `tests/util/profiler.test.ts` patches `performance.now` to a counter a test moves by hand, so a

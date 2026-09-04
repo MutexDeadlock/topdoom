@@ -21,18 +21,22 @@ src/ui/loading.*      #loading and its panel (#loading-title, #loading-bar/#load
                       too, and the one element in the markup that starts visible
                       (docs/menu.md § The loading screen)
 src/ui/hud/           everything drawn over the running level (docs/hud.md's own file list)
-    hud.*             #hud-bar, #game-hud, #hud-levelstats, #hud-timer
+    hud.*             #hud-bar, #game-hud, #hud-levelstats, #hud-run (#hud-timer,
+                      #hud-recording)
     screeneffects.*   #screen-tint, #colormap-tint, #pain-flash
     message.*         #hud-message
     levelcard.*       #level-card
     intermission.*    #intermission
     deathoverlay.*    #death-overlay
+    replaybar.*       #replay-bar (track, #replay-scrub, #replay-hover, #replay-crosshair),
+                      #replay-reticle, #replay-seek, #replay-flash
     profiler.*        #profiler-hud, and its #profiler-cpu/#profiler-rows/#profiler-gpu children
 src/ui/menu/
     menu.css/.html    #menu
     about.*           #about, the About/Changelog popup inside #menu, and its
                       #menu button.link triggers
     savegames.css     the save/load lists inside #menu's tab panels
+    replays.css       #menu's Replays panel: the record button, the list and the detail panel
     library.css       #wadlibrary, the WAD Library overlay inside #menu
     wadinfo.*         #wadinfo, the popup reading the .txt beside a WAD, over both WAD lists
                       (docs/menu.md § The text file popup)

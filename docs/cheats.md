@@ -96,9 +96,15 @@ void to whatever leaf it lands in, and the floor comes back from that sector.
 
 ## Saves and best times
 
-**A cheat costs the run its best time.** Any code firing clears `recordsEligible`, the same flag a
-`?pos=` start clears, so no completion after it is offered as a record (docs/hud.md § Best times).
+**A cheat costs the run its best time.** Any code firing sets `cheated`, the same flag a `?pos=`
+start sets, so that level's completion is not offered as a record (docs/hud.md § Best times).
 It travels in the savegame, so it can't be washed off by saving and loading.
+
+**And it costs the levels after it too**, where a `?pos=` start or a taken-over replay costs only
+the level it happened on: the code also sets **`Cheats.used`**, and every level entered through an
+exit reads that flag to decide whether the fresh level may record. `used` covers IDKFA, which leaves
+no toggle to notice afterwards — an arsenal carried into the next level is exactly the run that must
+not set a time there.
 
 **And the intermission says so.** With that flag false the popup drops its percentages, its clock
 and its best-time comparison for one red `You cheated` line under the `STFKILL3` face
@@ -109,6 +115,9 @@ and its best-time comparison for one red `You cheated` line under the `STFKILL3`
 them into the next map the way vanilla's `player_t.cheats` does; `restart` after a death reloads a
 checkpoint, and what that save recorded is what comes back.
 
-A save records the toggles only while one is on (`GameSnapshot.cheats`, optional and absent
-otherwise), which is also what a save from before cheats existed carries — so old saves read as
-"no cheats" and `SAVE_VERSION` did not move (docs/savegames.md § The format and its version).
+A save records the toggles for a session that **used** one (`GameSnapshot.cheats`, optional and
+absent otherwise), which is also what a save from before cheats existed carries — so old saves read
+as "no cheats" and `SAVE_VERSION` did not move (docs/savegames.md § The format and its version).
+The block's mere presence is what restores `used`: it is written for no other reason, so an IDKFA
+session records `{god: false, noclip: false}` where it used to record nothing. An old build reading
+that block sets both toggles off, which is what absence meant to it — the format did not change.

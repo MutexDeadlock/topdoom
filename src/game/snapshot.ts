@@ -320,7 +320,14 @@ export interface ThingState {
 export interface ThingsSnapshot {
   clock: number;
   stats: LevelKillItemStats;
-  things: ThingState[];
+  /**
+   * Only the things no longer as this map spawned them, as `[id, state]` pairs in ascending id.
+   * A restore re-spawns the level from the map and reads these over it, so a thing nothing has
+   * touched costs nothing; an id past the spawn count is one the run itself made, and is pushed in
+   * order. The whole list this replaced is what `SAVE_VERSION` 2 refuses.
+   * docs/savegames.md § The format and its version.
+   */
+  changed: [number, ThingState][];
 }
 
 export interface CubeState {
@@ -366,9 +373,11 @@ export interface GameSnapshot {
   levelTime: number;
   cameraYawDeg: number;
   /**
-   * Carried through so a `?pos=` run can't become best-time-eligible by being saved and restored.
+   * Whether this level's run is disqualified from best times — a cheat, a `?pos=` start, a replay
+   * taken over. Carried through so none of them can be laundered by saving and restoring.
+   * docs/hud.md § Best times.
    */
-  recordsEligible: boolean;
+  cheated: boolean;
   player: PlayerSnapshot;
   inventory: InventorySnapshot;
   weapons: WeaponsSnapshot;

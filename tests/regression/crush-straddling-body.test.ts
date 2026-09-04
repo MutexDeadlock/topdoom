@@ -9,6 +9,7 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 import { crushSources } from '../fixtures/specialsrig.ts';
+import { savedThing } from '../fixtures/snapshot.ts';
 
 /**
  * `PIT_ChangeSector` crushes a body whose *clipped headroom* is under its own
@@ -49,7 +50,7 @@ function pulse(room: ReturnType<typeof scene>): { caught: boolean; health: numbe
 
 /** The knight's health, through the snapshot — which elides the field entirely while it is untouched. */
 function healthOf(things: ReturnType<typeof buildThingSprites>): number {
-  return things.snapshot().things[0].monster?.health ?? MONSTER_HEALTH[ThingType.hellKnight];
+  return savedThing(things.snapshot(), 0)?.monster?.health ?? MONSTER_HEALTH[ThingType.hellKnight];
 }
 
 describe('Regressions · a body straddling a crusher edge', () => {

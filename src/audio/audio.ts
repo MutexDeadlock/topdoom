@@ -215,6 +215,8 @@ export class AudioEngine implements SoundEmitter {
   private assetBuffers = new Map<AssetSfxId, AudioBuffer | null>();
 
   private voices: (Voice | null)[] = new Array(CHANNELS).fill(null);
+  /** Set while a replay's seek runs its tics — see `setSilent`. */
+  private silent = false;
   /** Copies the same-tic budget has turned away since the level loaded — DEVMODE's status text. */
   private burstDropped = 0;
 
@@ -333,8 +335,19 @@ export class AudioEngine implements SoundEmitter {
     for (let i = 0; i < this.voices.length; i++) this.stopVoice(i);
   }
 
+  /**
+   * Drops every sound raised while set, and stops what is ringing. For simulation that runs
+   * without being watched — a replay catching up to a seek plays out minutes of fighting in a
+   * fraction of a second, and every shot of it would arrive at once.
+   * docs/replays.md § Seeking.
+   */
+  setSilent(on: boolean): void {
+    this.silent = on;
+    if (on) this.stopAll();
+  }
+
   play(id: SfxId, at?: Pos2 | null, origin?: number): void {
-    if (this.sfxAudible === 0) return;
+    if (this.silent || this.sfxAudible === 0) return;
     const ctx = this.ctx;
     // Not started yet, or paused: dropping the sound is right either way —
     // a suspended context would otherwise queue it up and fire the whole
@@ -369,7 +382,7 @@ export class AudioEngine implements SoundEmitter {
    * is still loading or failed to decode, the same way a missing lump is.
    */
   playAsset(id: AssetSfxId): void {
-    if (this.sfxAudible === 0) return;
+    if (this.silent || this.sfxAudible === 0) return;
     const buffer = this.assetBuffers.get(id);
     if (!buffer) return;
     const { priority } = ASSETS[id];

@@ -16,7 +16,10 @@ import {
   writeSave,
   type SaveCapture,
   type SaveGame,
+  type SaveWadSet,
 } from './game/savegames.ts';
+import { replayMap, replayWadSet, writeReplay, type Replay } from './game/replay.ts';
+import { formatClock } from './ui/hud/hud.ts';
 import { Game } from './game.ts';
 import { loadBestTimes } from './game/besttimes.ts';
 import { stockGldefs } from './wad/gldefs.ts';
@@ -58,7 +61,11 @@ async function boot(): Promise<void> {
    * threads the snapshot through `Game`'s restore path — the two are the same
    * sequence, so they stay one function rather than drifting apart.
    */
-  const startLevel = async (selection: Selection, save: SaveGame | null = null): Promise<void> => {
+  const startLevel = async (
+    selection: Selection,
+    save: SaveGame | null = null,
+    replay: Replay | null = null,
+  ): Promise<void> => {
     // Synchronously, before the first `await`: this call is still inside the
     // Start button's own click handler, which is the safest moment a browser
     // will let an AudioContext start.
@@ -76,7 +83,8 @@ async function boot(): Promise<void> {
         shippedWad(),
       ]);
       const wad = new Wad(files);
-      if (save) verifySaveWads(wad, save);
+      const set = save ?? (replay ? replayWadSet(replay) : null);
+      if (set) verifySaveWads(wad, set);
       // Awaited: on a big map this line is what the player reads for as long as the build takes,
       // and `painted` is what gets it there first.
       loading.detail(`Building ${selection.map} …`);
@@ -88,21 +96,30 @@ async function boot(): Promise<void> {
       // both key off it being null.
       const previous = game;
       game = null;
-      previous?.dispose();
+      if (previous) {
+        storeRecording(previous);
+        previous.dispose();
+      }
       game = new Game(view, audio, wad, {
         startMap: selection.map,
         title: titleOf(selection.iwad, selection.pwads),
         skill: selection.skill,
         // A load carries its own position; `?pos=` is for a fresh start only.
-        startPos: save ? null : startPos,
-        restore: save?.state ?? null,
+        startPos: save || replay ? null : startPos,
+        // A replay starts from its own first snapshot — docs/replays.md § Playback.
+        restore: replay ? replay.data.snapshots[0] : (save?.state ?? null),
+        playback: replay,
+        autoSave: () => withCapture((capture) => writeSave(capture, takeOverSaveName(replay, capture))),
         checkpoint: { write: writeAutosave, read: readAutosave },
         // Nulled before `dispose()` — the call arrives from inside this very `Game`'s tic — and
         // the menu reopens as a launcher (docs/menu.md § Session lifecycle).
         onCampaignEnd: () => {
           const finished = game;
           game = null;
-          finished?.dispose();
+          if (finished) {
+            storeRecording(finished);
+            finished.dispose();
+          }
           menu.open(false);
         },
         gldefsText,
@@ -110,11 +127,18 @@ async function boot(): Promise<void> {
         loading,
       });
 
+      // Recording begins on the level as loaded, before the first tic — docs/replays.md § Recording.
+      if (selection.record) game.startRecording();
       menu.close();
       loading.hide();
       game.resume();
     } catch (err) {
       loading.hide();
+      // The level's own music starts before its map is built, so that the build has something to
+      // play over (`loadMapByIndex`). A build that threw leaves that track playing under the error
+      // with nothing to stop it — the `Game` it belonged to was never constructed, so nothing will
+      // ever dispose it. docs/music.md § Which track a level plays.
+      audio.music.stop();
       menu.setStatus((err as Error).message, true);
       // The previous level is gone by now, so re-sync the menu: with nothing
       // left to return to, it must stop offering it.
@@ -124,27 +148,54 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * The load side of `startLevel`: re-resolves the save's WAD set from the
-   * current library and hands over what it could supply. A *required* file the
-   * library no longer offers fails here, before anything is torn down, so the
-   * running level survives a load that can't happen.
+   * The stored-set side of `startLevel`, for a save and a replay alike: re-resolves the set from
+   * the current library and hands `start` what it could supply. A *required* file the library no
+   * longer offers fails here, before anything is torn down, so the running level survives a load
+   * that can't happen.
    */
-  const loadSave = async (save: SaveGame): Promise<void> => {
+  const startFromSet = async (
+    set: SaveWadSet,
+    noun: 'save' | 'replay',
+    start: (iwad: WadSource, pwads: WadSource[]) => Promise<void>,
+  ): Promise<void> => {
     try {
-      // The same resolution the save row shows, so a row that reports no
-      // problem can't fail here — and a file it does report is named in the
-      // same words (docs/savegames.md § WAD-set identity). Only a *required*
-      // file stops the load; the rest are a note on the row and are simply left
+      // The same resolution the row shows, so a row that reports no problem can't fail here — and
+      // a file it does report is named in the same words (docs/savegames.md § WAD-set identity).
+      // Only a *required* file stops the load; the rest are a note on the row and are simply left
       // out of the set.
-      const { iwad, pwads, missing } = menu.resolveSaveWads(save);
+      const { iwad, pwads, missing } = menu.resolveSaveWads(set);
       const blocker = blockingWad(missing);
       if (blocker) throw new Error(missingWadText(blocker));
-      if (!iwad) throw new Error('this save does not name a game WAD');
-      await startLevel({ iwad, pwads, map: save.map, skill: save.skill }, save);
+      if (!iwad) throw new Error(`this ${noun} does not name a game WAD`);
+      await start(iwad, pwads);
     } catch (err) {
       menu.setStatus((err as Error).message, true);
       console.error(err);
     }
+  };
+
+  const loadSave = (save: SaveGame): Promise<void> =>
+    startFromSet(save, 'save', (iwad, pwads) => startLevel({ iwad, pwads, map: save.map, skill: save.skill }, save));
+
+  const playReplay = (replay: Replay): Promise<void> =>
+    startFromSet(replayWadSet(replay), 'replay', (iwad, pwads) =>
+      startLevel({ iwad, pwads, map: replayMap(replay), skill: replay.skill }, null, replay),
+    );
+
+  /**
+   * Whatever `finished` was still recording goes to the store before it is torn down — a new
+   * start, the campaign's end and the menu's own Stop all land here. Fire-and-forget like the
+   * checkpoint: a refused write must not take the session change down with it.
+   */
+  const storeRecording = (finished: Game): void => {
+    const capture = finished.finishRecording();
+    if (!capture) return;
+    void writeReplay(capture, '')
+      .then((meta) => menu.setStatus(`Replay "${meta.name}" stored.`))
+      .catch((err: unknown) => {
+        console.warn('replay not stored:', err);
+        menu.setStatus(`replay not stored: ${(err as Error).message}`, true);
+      });
   };
 
   const resumeGame = (): void => {
@@ -167,13 +218,32 @@ async function boot(): Promise<void> {
     await game.saveVia(write);
   };
 
-  const menu: Menu = new Menu((selection) => startLevel(selection), resumeGame, audio, {
-    onSave: (name) => withCapture((capture) => writeSave(capture, name)),
-    onOverwrite: (id) => withCapture((capture) => overwriteSave(id, capture)),
-    onLoad: (save) => loadSave(save),
-    // No game is the menu's own `inGame` gate, so there is nothing to say here.
-    saveRefusal: () => game?.saveRefusal() ?? null,
-  });
+  const menu: Menu = new Menu(
+    (selection) => startLevel(selection),
+    resumeGame,
+    audio,
+    {
+      onSave: (name) => withCapture((capture) => writeSave(capture, name)),
+      onOverwrite: (id) => withCapture((capture) => overwriteSave(id, capture)),
+      onLoad: (save) => loadSave(save),
+      // No game is the menu's own `inGame` gate, so there is nothing to say here.
+      saveRefusal: () => game?.saveRefusal() ?? null,
+    },
+    {
+      onPlay: (replay) => playReplay(replay),
+      onStartRecording: () => {
+        if (!game) throw new Error('no running game to record');
+        game.startRecording();
+      },
+      onStopRecording: async () => {
+        const capture = game?.finishRecording();
+        if (!capture) throw new Error('nothing is being recorded');
+        await writeReplay(capture, '');
+      },
+      recordingRefusal: () => game?.recordingRefusal() ?? null,
+      isRecording: () => game?.recording ?? false,
+    },
+  );
 
   // A `?map=` deep link starts a level without the player ever clicking
   // anything, so no gesture has unlocked audio by then — the first one that
@@ -253,13 +323,18 @@ function parsePos(raw: string | null): Pos2 | null {
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
 }
 
+/** What taking a replay over calls the savegame it writes: the replay and how far into it. */
+function takeOverSaveName(replay: Replay | null, capture: SaveCapture): string {
+  return replay ? `${replay.name} @ ${formatClock(capture.levelTime)}` : '';
+}
+
 /**
  * Refuses a load the freshly assembled set can't play, naming the offending
  * file. The rule itself is `wadSetRefusal`'s (docs/savegames.md § WAD-set
  * identity); this re-hashes the bytes actually in hand to feed it, which is
  * what catches a manifest ID left stale by a changed file.
  */
-function verifySaveWads(wad: Wad, save: SaveGame): void {
+function verifySaveWads(wad: Wad, save: SaveWadSet): void {
   const refusal = wadSetRefusal(save, wadSetId(wad), mapProvider(wad, save.map));
   if (refusal) throw new Error(refusal);
 }

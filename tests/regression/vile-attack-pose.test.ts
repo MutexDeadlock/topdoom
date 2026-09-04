@@ -64,12 +64,12 @@ function arena(restore?: ThingsSnapshot): Fixture {
   };
 }
 
-/** A save of nothing but an awake vile, so the cast under test is one the AI itself decides to start. */
+/** A save that wakes the vile the map spawned, so the cast under test is one the AI decides to start. */
 function awake(vile: { x: number; y: number }): ThingsSnapshot {
   return {
     clock: 0,
     stats: { totalKills: 1, kills: 0, totalItems: 0, items: 0 },
-    things: [{ type: ThingType.archVile, x: vile.x, y: vile.y, z: 0, facingDeg: 180, monster: { alerted: true } }],
+    changed: [[0, { type: ThingType.archVile, x: vile.x, y: vile.y, z: 0, facingDeg: 180, monster: { alerted: true } }]],
   };
 }
 

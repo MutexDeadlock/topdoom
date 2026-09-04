@@ -11,6 +11,7 @@ import type { ThingsSnapshot } from '../../src/game/snapshot.ts';
 import { addControlLine, gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { MATERIALS, recordingBank } from '../fixtures/spritestubs.ts';
 import { crushSources, specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { savedThing } from '../fixtures/snapshot.ts';
 
 /**
  * `PIT_ChangeSector`'s corpse branch: a body a moving plane leaves no room for is crunched to a
@@ -55,7 +56,7 @@ function kill(things: ThingLayer): void {
 
 /** Whether the save says this corpse has been crunched. */
 function crushed(things: ThingLayer): boolean {
-  return things.snapshot().things[0].monster?.crushed === true;
+  return savedThing(things.snapshot(), 0)?.monster?.crushed === true;
 }
 
 describe('Death · corpses under a mover', () => {

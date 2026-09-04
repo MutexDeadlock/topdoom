@@ -127,7 +127,8 @@ async function boot(): Promise<void> {
         loading,
       });
 
-      // Recording begins on the level as loaded, before the first tic — docs/replays.md § Recording.
+      // Recording begins on the level as loaded, before the first tic.
+      // docs/replays.md § Recording.
       if (selection.record) game.startRecording();
       menu.close();
       loading.hide();

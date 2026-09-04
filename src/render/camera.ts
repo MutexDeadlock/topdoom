@@ -439,7 +439,8 @@ export class TopDownCamera {
    * The manual zoom and tilt keys. They write the *targets* so a held key rides the framing
    * smoother instead of stepping raw at the tic rate, and the camera clamps both to its own
    * envelope, so a held key just saturates there. Asked by `handleHotkeys` in manual camera mode
-   * and by a replay's manual view whatever mode it was recorded under. docs/camera.md § Auto camera.
+   * and by a replay's manual view whatever mode it was recorded under.
+   * docs/camera.md § Auto camera.
    */
   applyFramingKeys(input: TicInput): void {
     if (input.held('Equal', 'NumpadAdd')) this.targetDistance -= 8;

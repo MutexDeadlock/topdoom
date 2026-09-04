@@ -433,9 +433,8 @@ async function encodeState(id: string, state: GameSnapshot): Promise<StoredState
 
 /**
  * Owns the naming rule for both writers: a blank (or all-whitespace) name falls
- * back to `defaultName`, shared with replays. `levelTime` is rounded here — the meta is stored as an
- * object, where digits cost nothing, but the export file stringifies it without
- * a replacer.
+ * back to `defaultName`, shared with replays. `levelTime` is rounded here — the meta is stored as
+ * an object, where digits cost nothing, but the export file stringifies it without a replacer.
  */
 function createMeta(id: string, name: string, capture: SaveCapture): SaveMeta {
   const { state: _state, ...rest } = capture;

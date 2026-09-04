@@ -8,8 +8,8 @@
  * allocation at a call site — which is what makes one safe to take even in per-frame code.
  *
  * Cross-cutting, so there is no `docs/` page of its own. The rest of the rule — always DOOM map
- * space, never a direction or a velocity, and when to take one rather than stay on scalars — is
- * CLAUDE.md § Position types.
+ * space, never a direction or a velocity — is CLAUDE.md § Position types; when to take one rather
+ * than stay on scalars is docs/conventions.md § Named arguments.
  */
 
 /** A point on the DOOM map plane. */

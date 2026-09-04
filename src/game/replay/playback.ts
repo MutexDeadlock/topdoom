@@ -207,7 +207,9 @@ export class ReplayPlayback implements TicInput {
     if (!sample || sample[0] !== this.cursor) return;
     this.checkIndex++;
     if (this.desyncedAt !== null) return;
-    if (sample[1] !== x || sample[2] !== y || sample[3] !== getRandomCursors().p) this.desyncedAt = this.cursor;
+    if (sample[1] !== x || sample[2] !== y || sample[3] !== getRandomCursors().p) {
+      this.desyncedAt = this.cursor;
+    }
   }
 }
 

@@ -1,127 +1,72 @@
 # File conventions
 
-Where a file goes, what it is called, and the order things sit in inside it. Most of this is
-**descriptive** — it was written down by reading `src/` and naming the shape that was already
-dominant, so almost every file already conforms. The deviations that remain are listed at the
-bottom rather than swept: a file gets brought into line when it is next touched for another reason,
-not in a rename pass of its own.
-
-§ Source order inside a file and § Publics above privates are the exception and are
-**prescriptive**: they were chosen against the shape `src/` already had, so most files do not
-conform yet. Same discipline — convert on touch, never in a sweep.
-
-The header-comment and code-comment rules themselves are in CLAUDE.md § Code comments; this doc
-covers only naming and layout.
+Where a file goes, what it is called, the order things sit in inside it, and the shape of a
+comment. § Source order inside a file, § Publics above privates and § Inline `if` are
+**prescriptive** and not every file conforms; the rest describe the shape `src/` already has. A
+file is brought into line when it is next touched for another reason, never in a sweep —
+§ Known deviations says how to find what is pending. CLAUDE.md keeps only the rules that must be in
+context on every change and points here for the rest.
 
 ## File names
 
-Lowercase, a single token, no separators — `besttimes.ts`, `moverblocking.ts`, `sectoreffects.ts`,
-`textureanim.ts`, `deathoverlay.ts`. No kebab-case, no camelCase, no suffix conventions inside
-`src/`. (`docs/` is the opposite and deliberately so: docs are flat and group by a shared
-`monster-` prefix — CLAUDE.md § Documentation maintenance.)
-
-**A directory is named for the domain; the files inside it are named for their role**, and the
-domain is never repeated in the filename. `things/tables.ts`, never `things/thingtables.ts` and
-never a flat `thingtables.ts` — the directory already said which domain it is.
-
-**Where a `<domain>.ts` sits beside a `<domain>/`, the parent file is the layer's one public entry
-point** for the rest of the engine and the directory holds its internals. `game/things.ts` +
-`game/things/`, `game/specials.ts` + `game/specials/`, `wad/map.ts` + `wad/map/` and
-`wad/library.ts` + `wad/library/` are all this shape. The parent may re-export out of the directory
-to keep that true — `things.ts` does exactly that for `ThingLayer`, `MonsterRef` and
-`BarrelExplosion`, so `game.ts` and `combat.ts` never have to know which file inside `things/` a
-type happens to live in, and `map.ts` does it for `SUBSECTOR_BIT`, `NO_LINE` and `segSide` so
-`render/bsp.ts` reads a seg and a node without reaching into `map/defs.ts`.
-
-**A shape the directory's own files share goes in `<domain>/defs.ts`, never in the parent.** The
-parent imports every child, so a child taking a type back out of it is a cycle — one that survives
-only while the edge stays `import type` and is erased. `wad/library/defs.ts` and `wad/map/defs.ts`
-are the worked cases: `library/`'s `disk.ts` and `manifest.ts` both take `WadSource` from the
-first, `map/`'s three format seams take their records from the second, and each parent re-exports
-what moved.
-
-`wad/map/` holds `defs.ts` plus the lump *formats* a map can ship in rather than roles —
-`nodes.ts` for the BSP encodings, `hexen.ts` for Hexen's own LINEDEFS/THINGS, `udmf.ts` for
-TEXTMAP. `campaign/` is the same shape:
-where a directory groups sub-topics rather than stages of one pipeline, the sub-topic is the name.
-
-The one exception is `game/dehacked.ts` + `game/dehacked/`, which has **two** entry points, split
-by audience: reading a patch is the parent, applying one is `dehacked/apply.ts`. Two of the three
-readers have no `Game` and want only a patch's text, and because ES re-exports are eager, a parent
-that re-exported the applier would make them evaluate — and `structuredClone` — every game table to
-read a level title. This is a deliberate exception with a guard test, not a precedent for splitting
-an entry point whenever it feels convenient: the bar is a dependency graph that differs this
-sharply between two sets of callers. docs/dehacked.md § The two entry points.
-
-A directory with no parent file (`game/monsters/`, `src/render/`, `src/util/`) is just a grouping;
-its files are imported directly. **The missing parent is the point, not an omission** — a grouping
-holds decision modules and data that something else drives, so there is no single object to be the
-entry, and a parent file holding only re-exports would be the `index.ts` barrel § Imports rules out.
-
-`game/monsters/` is the one where that reads as asymmetry, so: the monster runtime is
-`ThingLayer` — over half its surface is monster-facing, because one `posed` array holds monsters,
-decorations and pickups alike. Splitting a real `monsters.ts` out of it would repartition that
-array, and `ThingsSnapshot.things` encodes it flat, so the cost is a `SAVE_VERSION` bump and every
-released save (CLAUDE.md's save-compatibility rule). The directory stays parentless deliberately.
-
-Nor does it nest under `things/`, though a monster *is* a thing: nesting tracks dependency, not
-taxonomy, and here `things.ts` is the caller (it imports `stepMonsterAI`) while `monsters/` takes
-only the `doomednums.ts` leaf back. It is also peer API — 30 import sites outside `things/` — and
-`ai.ts` deliberately knows nothing of `ThingLayer`, which is what keeps it headlessly testable
-(docs/monster-ai.md). The "is a" relationship is already stated where it holds and is checked:
-`PosedThing extends MonsterBody`.
-
-**A directory earns its keep at two files, never one.** `game/spritefx/` is the floor. A lone file
-under a directory buys nothing the flat name didn't — so the choice is between a real split and
-leaving it flat, and "it would be tidier in a folder" is not a reason to make one.
+- **Lowercase, one token, no separators**: `besttimes.ts`, `deathoverlay.ts`. No kebab-case, no
+  camelCase, no suffixes. (`docs/` is flat and groups by prefix instead — CLAUDE.md
+  § Documentation maintenance.)
+- **A directory is named for the domain, its files for their role, and the domain is never
+  repeated**: `things/tables.ts`, not `things/thingtables.ts` and not a flat `thingtables.ts`.
+- **A `<domain>.ts` beside a `<domain>/` is the layer's one public entry point**; the directory
+  holds internals and nothing outside reaches into it. `game/things.ts`, `game/specials.ts`,
+  `game/inventory.ts`, `game/spritefx.ts`, `game/replay.ts`, `wad/map.ts`, `wad/library.ts`,
+  `audio/music.ts`, and `game.ts` beside `game/`. The parent re-exports what importers need
+  (`things.ts` hands out `ThingLayer`; `map.ts` hands out `SUBSECTOR_BIT`) so no importer learns
+  which inner file a shape lives in.
+- **A shape the directory's own files share goes in `<domain>/defs.ts`, never in the parent**: the
+  parent imports every child, so a child importing the parent is a cycle that survives only while
+  the edge is `import type`. `wad/map/defs.ts`, `wad/library/defs.ts`.
+- **Where a directory groups sub-topics rather than pipeline stages, the sub-topic is the name**:
+  `wad/map/{nodes,hexen,udmf}.ts` by lump format, `wad/campaign/{mapinfo,pars,sky}.ts`.
+- **One entry point per layer.** The exception is `game/dehacked.ts` + `dehacked/apply.ts`, split
+  by audience because ES re-exports are eager and two of three readers must not evaluate the game
+  tables to read a level title. It has a guard test; the bar for another is a dependency graph
+  that differs that sharply. docs/dehacked.md § The two entry points.
+- **A directory with no parent file is a grouping** (`game/monsters/`, `render/`, `util/`,
+  `wad/campaign/`): its files are imported directly, and a parent holding only re-exports would be
+  the `index.ts` barrel § Imports rules out. `game/monsters/` stays parentless and outside
+  `things/` because the runtime is `ThingLayer` (one `posed` array holds monsters, decorations and
+  pickups; splitting it is a `SAVE_VERSION` break), `things.ts` is the caller and `ai.ts` must
+  stay headless (docs/monster-ai.md); nesting tracks dependency, not taxonomy.
+- **A grouping whose subject is one class names that module after the directory** — the one place
+  the domain repeats: `wad/wad.ts` (`Wad`), `audio/audio.ts` (`AudioEngine`), `ui/menu/menu.ts`,
+  `ui/hud/hud.ts`. The `ui/` two cannot be parent files: each UI module keeps its `.css`/`.html`
+  beside it (docs/styles.md § One owner per element).
+- **A directory earns its keep at two files, never one.** `game/spritefx/` is the floor.
 
 ## The role names
 
-Three role names recur and mean the same thing everywhere:
-
-- **`defs.ts`** — the record shapes a subsystem passes around, plus the constants tied to *those
-  shapes*. `things/defs.ts` (`PosedThing`, `ThingLayer`, the barrel constants), `monsters/defs.ts`
-  (`MonsterBody`, `MonsterStats`).
-- **`tables.ts`** — the type-keyed, vanilla/WAD-derived data every instance is looked up in.
-  `things/tables.ts` (`THING_SPRITES`, `MONSTER_HEALTH`, the frame letters), `monsters/tables.ts`
-  (`MONSTER_STATS`, `INERT_SHOOTABLE`, `FAST_MONSTER_STATS`).
-- **an identity table** — the module that gives raw numbers readable names. It stands alone and
-  **imports nothing**, so any table module can take it without a cycle. `things/doomednums.ts`
-  (`ThingType`) is the only one; it is named for what it holds rather than taking a generic role
-  name, because `types.ts` next to `defs.ts` would read as "TypeScript type declarations".
-
-Everything else is named for what it *does*: `ai.ts`, `attacks.ts`, `grid.ts`, `vile.ts`,
-`mapscan.ts`, `movergeometry.ts`.
-
-The `defs`/`tables` split earns its keep when both halves are large — the thing layer's are 555 and
-833 lines, the monsters' 491 and 503 — or when the subsystem needs a directory anyway and the split
-is what fills it, which is `spritefx/`'s case at 159 and 208 and `specials/`'s at 360 and 392. A
-subsystem needing neither keeps its shapes and tables in one `defs.ts`.
-
-**Splitting a file out is the answer when its own constant block buries its subject**, whatever the
-halves measure: `inventory/` exists at 117 and 122 lines because ~110 lines of doomednum-keyed
-pickup tables sat between `createInventory` and `applyPickup`. The parent `<domain>.ts` re-exports
-what moved (§ File names), so no importer learns which file inside the directory a shape lives in.
-
-**`tables.ts` may import `defs.ts`, never the reverse**: the shapes have to stay usable by a module
-that wants nothing to do with the data, which is what lets `monsters/ai.ts` take `MonsterStats`
-without pulling the whole stat table's dependency on `world.ts` in behind it.
+- **`defs.ts`** — the record shapes a subsystem passes around, plus the constants tied to those
+  shapes (`things/defs.ts`: `PosedThing`, the barrel constants).
+- **`tables.ts`** — the type-keyed, vanilla/WAD-derived data instances are looked up in
+  (`monsters/tables.ts`: `MONSTER_STATS`).
+- **An identity table** gives raw numbers names and **imports nothing**, so any table can take it
+  without a cycle. `things/doomednums.ts` (`ThingType`) — not `types.ts`, which reads as TypeScript
+  declarations.
+- Everything else is named for what it *does*: `ai.ts`, `grid.ts`, `vile.ts`, `mapscan.ts`.
+- **`tables.ts` may import `defs.ts`, never the reverse**: the shapes must stay usable by a module
+  that wants none of the data (`monsters/ai.ts` takes `MonsterStats` without `world.ts` behind it).
+- **Split `defs`/`tables` when both halves are large or the directory exists anyway**; otherwise one
+  `defs.ts`. **Split a file out when its constant block buries its subject**, whatever the sizes —
+  `inventory/` exists because the pickup tables sat between `createInventory` and `applyPickup`.
 
 ## Source order inside a file
 
-Two shapes, by what the module is:
-
-**A data module** (`defs.ts`, `tables.ts`, `doomednums.ts`): record shapes first,
-then constants and tables **grouped by topic**, not sorted by kind. A derived value goes directly
-after what it derives from — `FAST_MONSTER_STATS` after `MONSTER_STATS`, `TALLEST_BODY_HEIGHT`
-after that. A pure helper goes directly after the table it reads — `attackPoseFrameSeconds` after
-`MONSTER_ATTACK_POSE`. A shape that belongs to one topic stays with that topic rather than being
-hoisted to the top: `BarrelExplosion` sits at the end of `things/defs.ts` with the `BARREL_*`
-constants, and that is correct.
+**A data module** (`defs.ts`, `tables.ts`, `doomednums.ts`): shapes first, then constants and tables
+**grouped by topic**, not by kind. A derived value follows what it derives from
+(`FAST_MONSTER_STATS` after `MONSTER_STATS`); a pure helper follows the table it reads; a shape
+belonging to one topic stays with it (`BarrelExplosion` at the end of `things/defs.ts` with the
+`BARREL_*` constants).
 
 **A system module** (one class, factory or entry function): **public surface, subject, private
-support, side effects** — in that order. The subject splits the same way inside
-(§ Publics above privates).
+support, side effects**, in that order.
 
 ```
 import …
@@ -135,223 +80,164 @@ function clampToSector(…) { … }       private helpers
 for (const [i, id] of WEAPON_ORDER…)  module-evaluation side effects, last
 ```
 
-The split is by what a use site can carry on its own. A helper's name and signature state what it
-does, so the subject reads fine above it — that is § Single-use helpers' test. A constant's name
-never states its *value*, and here the declaration is also the only place its provenance lives
-(CLAUDE.md's constants rule: a vanilla citation, or "tuned by feel"), which is what a reader needs
-to judge the line using it. `game/player.ts` spends 93 lines on 16 constants, nearly all of it
-citation. So values go above the subject and behavior goes below it.
+Values go above the subject because a constant's declaration is the only place its provenance
+lives (CLAUDE.md's constants rule); behavior goes below because a helper's name says what it does.
+`src/main.ts` is the shape with `boot()` as subject and `void boot()` as the side effect.
 
-`src/main.ts` is the same shape with `boot()` as its subject and `void boot()` as the side effect.
-
-Three rules constrain the tail:
-
-- **Helpers below the subject are `function` declarations**, never `const helper = () => …`.
-  Declarations hoist and are safe wherever they sit; a `const` is only initialized when its own line
-  runs, so anything reaching it during module evaluation gets a TDZ error. This is load-bearing, not
-  theoretical: `game.ts`'s `let fpsCap = readStoredFpsCap()` calls a function declared below it.
-- **A private constant only one private helper reads travels with that helper**, below the subject —
-  the same pairing the data module keeps. Private constants only: module-level state and everything
-  exported stay above the subject whatever reads them, since an importer opens the file to find
-  them. `game.ts`'s FPS cap is the worked case — its state and both accessors above, only
-  `readStoredFpsCap` below.
-- **Type declarations are order-free.** An options interface sits directly above the class it
-  configures (§ Named arguments), never hoisted away from it.
-
-**When the constant block itself buries the subject, that is the signal to split**, not to bend the
-order: a type-keyed table big enough to push the class hundreds of lines down belongs in the
-subsystem's `tables.ts` — § The role names owns that call, `inventory/` being the worked case.
-
-This is the one **prescriptive** rule here, but it usually asks for less than it looks: in most
-files only *private* helpers move, and **every module in `src/` now conforms**. The exception to
-expect when adding one is a module whose tail is free functions, where **exported** ones sit down
-there too and move up as well — `game/world.ts` had eighteen, `render/mapmesh.ts` twenty-two.
-
-**The exception**: a module that is a bag of independent pure functions keeps each function's own
-types and constants immediately above it instead of hoisting them, and interleaves private with
-exported. `specials/mapscan.ts` is the case — reading it top-to-bottom is reading one analysis at a
-time, which hoisting would destroy.
+- **Helpers below the subject are `function` declarations**, never `const f = () => …`:
+  declarations hoist, a `const` read during module evaluation is a TDZ error — `game.ts`'s
+  `let fpsCap = readStoredFpsCap()` calls a function declared below it.
+- **A private constant read by one private helper travels with that helper**, below the subject.
+  Module-level state and everything exported stay above it whatever reads them (`game.ts`'s FPS
+  cap: state and accessors above, only `readStoredFpsCap` below).
+- **Type declarations are order-free**; an options interface sits directly above the class it
+  configures (§ Named arguments).
+- **A constant block that buries the subject is the signal to split** (§ The role names), not to
+  bend the order.
+- **Exception**: a bag of independent pure functions keeps each function's own types and constants
+  above it and interleaves private with exported, so it reads one analysis at a time
+  (`specials/mapscan.ts`).
 
 ## Publics above privates
 
-**Inside a class or factory, the public surface comes before the private support** — the same split
-the module order makes, one level down. A reader who opens `ThingLayer` to find out what it can do
-reaches `update`, `draw` and `damage` before `pushThing` and `refreshSector`.
+**Inside a class or factory, public surface before private support** — the module order one level
+down: `ThingLayer` reaches `update`/`draw`/`damage` before `pushThing`.
 
-A factory's members are `function` declarations in its closure, not properties on a returned
-literal, so this order is available to it at all: declarations hoist, so the public half can call
-the private half above it. The returned object is then a bare manifest of names — `game/things.ts`
-ends in one — and is the closure's own "side effects last" line, since it has to be last for
-`count: posed.length` and `missingArt: [...missingArt]` to read final values.
-
-Inside the closure the order is state, then construction, then publics, then privates: a `const`
-does not hoist, so anything a public reads must already be declared, and `createThingGrid` buckets
-what it is handed eagerly, so `grid` has to be built after the spawn loop that fills `posed`.
+A factory's members are `function` declarations in its closure, not properties on a literal, which
+is what lets publics call the privates below them; the returned object is a bare manifest and the
+closure's "side effects last" line (`game/things.ts` ends in one, so `count: posed.length` reads
+the final value). Inside the closure: state, construction, publics, privates — a `const` does not
+hoist, and `createThingGrid` buckets eagerly, so `grid` is built after the spawn loop fills `posed`.
 
 ## Single-use helpers
 
-A helper called from exactly one place earns its name when **the name states something its body does
-not**; otherwise inline it. `dehacked/frames.ts`'s `isMonsterRow` is one line
-(`pain !== 0 && death !== 0`) and keeps its name, because "is this row a monster" is the concept and
-the expression is not. `wad/map.ts`'s old `readMapFormat` was the other case —
-`lumps.has('BEHAVIOR')` already reads as the question its name asked — so it is now that ternary
-inside `loadMap`, with its fidelity citation as a comment on the `const`.
-
-Length is not the test. A one-line body under a doc block that carries a vanilla citation or a
-hazard is usually worth keeping, since a declaration is where such a block belongs; a body called
-twice on one line (`checksum.ts`'s `hex32`) is not single-use at all.
+**A helper called from one place keeps its name when the name states something its body does not;
+otherwise inline it.** `dehacked/frames.ts`'s `isMonsterRow` (`pain !== 0 && death !== 0`) stays:
+"is this row a monster" is the concept. `wad/map.ts`'s format detection is inline in `loadMap`:
+`lumps.has('BEHAVIOR')` already reads as the question, and the citation sits on the `const`.
+Length is not the test — a one-liner under a citation or hazard block stays, since a declaration
+is where that block belongs; a body called twice on one line (`checksum.ts`'s `hex32`) is not
+single-use.
 
 ## Named arguments
 
-**Past three or four arguments — and always where two adjacent ones share a type — the tail goes
-in a named object.** `new TopDownCamera(aspect, options)` and `new Game(view, audio, wad, options)`
-are the shape: the handles that cannot be confused with each other stay positional, everything
-describing *this* call goes behind a name. `GameOptions.startMap` and `.title` are both strings, so
-positionally a swap typechecks and produces a level named after the WAD set.
-
-**The per-field JSDoc lives on the options interface**, and is not repeated at the call site
-(§ Comment shape). A call site keeps only `//` notes about the *value* it passes.
-
-**Nor does a parameter repeat what the object beside it already owns.**
-`new SpecialsController(world, options)` takes no `map`: `World` holds the map it was built over,
-and a second parameter is a second chance for the two to disagree.
-
-**The one exception is a coordinate pair on a hot path**, which keeps its `x`/`y` scalars —
-CLAUDE.md's position-types rule names `World`'s (`linesNear`, `subsectorAt`, `floorAt`,
-`positionBlocked`), and `ThingGrid.forEachMonsterNear` has the same shape: callers compute the
-coordinates inline, so a point parameter allocates one per call in code that runs thousands of
-times a frame. The same reasoning keeps `ThingGrid.pushBlocker`'s five scalars and
-`mapmesh.ts`'s `pushVertex`, where the record would be the allocation the pool or buffer exists to
-avoid.
-
-That is the whole exception. Anywhere else, being on a hot path is a reason to **measure**, not a
-reason to skip the name: `ThingGrid.forEachMonsterAlongRay` and `stepMonsterAI` both take the
-object.
-
-**Where a call's helpers all want the same handles, thread one context rather than an options
-object per helper.** `monsters/ai.ts` is the worked case: `stepMonsterAI(body, stats, world, step)`
-builds a `Chase` from its own parameters plus the four values it derives, and its fourteen helpers
-take that — collapsing about seventy parameters to fourteen, `runChaseCall`'s thirteen to one.
-
-The exported half is the options interface (`MonsterStep`), by the handles-vs-description test
-above; the private context extends it with what the call derives, so a caller is never asked for a
-field only the call can compute.
-
-**A record read on a hot path must reach it as one shape.** V8 keys a property load on the object's
-hidden class, and that class follows the literal: an omitted optional, a spread, or the same fields
-written in another order each make a different one, and a load site fed several goes megamorphic.
-So build such a record in exactly one place and require every field, which is what makes the type
-checker refuse a literal — `world.ts`'s `makeCollider` is the worked case, and skipping it measured
-10% on the monster path (docs/world.md § The collider).
-
-**A context carries policy as well as data.** `render/mapmesh.ts`'s `Build` covers either the whole
-map's static geometry or one mover's sector, and the two differ only in the `holdsStill` and
-`includeSide` predicates on it — so none of the dozen builders below has to know which it is in.
+- **Past three or four arguments — and always where two adjacent ones share a type — the tail goes
+  in a named object**: `new TopDownCamera(aspect, options)`, `new Game(view, audio, wad, options)`.
+  Handles that cannot be confused stay positional; everything describing *this* call goes behind a
+  name. `GameOptions.startMap`/`.title` are both strings — positionally a swap typechecks.
+- **Per-field JSDoc lives on the options interface**, not at the call site (§ Comment shape); a
+  call site keeps `//` notes about the *value* it passes.
+- **A parameter never repeats what the object beside it owns**: `new SpecialsController(world,
+  options)` takes no `map` — `World` holds it, and a second parameter is a chance to disagree.
+- **A point goes in as a `Pos2`/`Pos3` where callers already hold one** (`src/types.ts`; CLAUDE.md
+  § Position types has what they mean). `Player`, `PosedThing`, `MonsterBody` and the WAD's `Thing`
+  all carry `x`/`y`(/`z`), so passing them costs no conversion and no allocation.
+- **The one exception is a coordinate pair on a hot path**, which keeps scalars: `util/geom.ts`,
+  `World`'s point queries (`linesNear`, `subsectorAt`, `sectorAt`, `floorAt`, `groundFloor`,
+  `positionBlocked`), `ThingGrid.forEachMonsterNear`/`pushBlocker`, `mapmesh.ts`'s `pushVertex` —
+  callers compute the coordinates inline, so a point parameter allocates per call. That is the
+  whole exception: elsewhere a hot path is a reason to **measure**, not to skip the name
+  (`forEachMonsterAlongRay` and `stepMonsterAI` take the object).
+- **Where a call's helpers all want the same handles, thread one context** rather than an options
+  object per helper: `monsters/ai.ts` builds a `Chase` from its parameters plus what it derives,
+  and every helper takes that. The exported half is the options interface (`MonsterStep`); the
+  private context extends it with the derived fields, so a caller is never asked for what only the
+  call can compute.
+- **A record read on a hot path reaches it as one shape**: V8 keys a property load on the hidden
+  class, and an omitted optional, a spread or another field order each make a new one — a load site
+  fed several goes megamorphic. Build such a record in one place and require every field
+  (`world.ts`'s `makeCollider`; docs/world.md § The collider).
+- **A context carries policy as well as data**: `mapmesh.ts`'s `Build` covers the whole map or one
+  mover's sector, differing only in its `holdsStill`/`includeSide` predicates, so no builder below
+  has to know which.
 
 ## Comment shape
 
-CLAUDE.md § Code comments has the three tiers and the header rule. These are the shape rules a
-sweep of `specials/`, `render/` and `things/` turned into repeat findings — each is here because it
-was violated more than once.
+**Every `src/` file opens with a header comment** — one to three sentences on what it owns and
+where it sits, ending in a pointer to its subsystem doc. It is the router into `docs/` at the point
+of reading: purpose, not a contents list. A one-function file may let that function's JSDoc carry
+the pointer (`util/damping.ts`); `constants.ts` and `types.ts` point at CLAUDE.md.
 
-**The subject is our code.** A comment says what *this* code does; a vanilla, Boom or GZDoom
-reference is a supporting clause, never the subject. `Vanilla's P_PlayerInSpecialSector — the
-sector specials that need no mover` inverts it and reads as documentation of another engine;
-`The sector specials that need no mover at all … (vanilla's P_PlayerInSpecialSector)` does not.
-The test: **delete the foreign name — if nothing is left, the comment was not earning its place.**
-`/** Vanilla `player->secretcount`. */` on a field named `secretsFound` fails it outright.
+**Beyond the header, comments are minimal, and a rule a doc covers is written once — in the doc.**
+Three tiers, by what breaks if missing:
 
-This is not a licence to drop citations. A transcribed table, a derived constant and a deliberate
-deviation all still name their source (CLAUDE.md's constants and fidelity rules), and a file that
-*is* a transcription — `audio/sfx.ts`, `wad/campaign/pars.ts`, `specials/generalized.ts` — says so
-in its header, because that is what the file owns. A citation names a source the project trusts:
-the real source, never the Doom wiki alone.
+1. **Doc-owned** — an invariant a `docs/` file covers (fidelity, an algorithm's shape, bug
+   history): a sentence on what the thing does, the rule's name, and `docs/x.md § heading`. Never
+   the argument, vanilla C, or how the bug was found.
+2. **Site-local** — a hazard about this code's shape no doc is the home for (the
+   `world.ts`/`player.ts` import-cycle workaround, the `tsc` narrowing quirk, a deliberate
+   allocation). Inline and short.
+3. **Citations** — the `info.c`/`g_game.c` note or "tuned by feel" CLAUDE.md's constants rule
+   requires.
 
-**A doc block belongs to a declaration.** Never stack two `/** */` blocks, and never let one drift
-off what it documents when something is inserted between. Both read as a doc on the wrong symbol,
-and editors show them that way. A group of related constants carries its rationale on the first
-one's JSDoc, per § Source order inside a file — not in a free-floating block above the group.
+A doc-owned comment holding something the doc lacks moves it into the doc.
 
-**State what is true, not what changed.** No "now", "used to", "was tried", "turned out" — those
-date the comment and describe an edit rather than the code. How a bug was found and what was tried
-first belong in the commit message. A decision worth protecting from a well-meaning revert says it
-is deliberate and points at the doc that argues it: *"deliberately not a linear scan however rare
-arch-viles seem — docs/monster-ai.md § Spatial indexing has the map that disproves it."*
-
-**Parallel fields may repeat a comment; arguments may not.** Two sibling fields documented in the
-same words are fine and often better (`WallQuad.baseAlpha` / `FlatSurface.baseAlpha`). An
-*argument* stated at two sites is the tier-1 violation: state it once in the doc, and leave each
-site the fact plus `docs/x.md § heading`.
-
-**100 columns.** Comments and `docs/` prose alike. A one-line `/** … */` that would run past it
-becomes a multi-line block rather than trailing off the screen. Exempt: markdown tables, code
-fences, and a line whose overflow is a single unbreakable token (a URL, a long inline `` `code` ``
-span). Code is not held to it.
+- **The subject is our code.** A vanilla/Boom/GZDoom name is a supporting clause, never the
+  subject: delete the foreign name — if nothing is left, the comment was not earning its place.
+  `/** Vanilla `player->secretcount`. */` on `secretsFound` fails. Citations stay: a transcribed
+  table, a derived constant and a deliberate deviation name their source, and a file that *is* a
+  transcription (`audio/sfx.ts`, `wad/campaign/pars.ts`, `specials/generalized.ts`) says so in its
+  header. The source is the real one, never the Doom wiki alone.
+- **A doc block belongs to a declaration.** Never stack two `/** */` blocks or insert code between
+  a block and what it documents — editors show the doc on the wrong symbol. A group of related
+  constants carries its rationale on the first one's JSDoc, not a floating block.
+- **State what is true, not what changed.** No "now", "used to", "was tried" — they date the
+  comment. Bug history goes in the commit message. A decision worth protecting from a revert says
+  it is deliberate and points at the doc that argues it.
+- **Parallel fields may repeat a comment; arguments may not.** Sibling fields in the same words
+  are fine (`WallQuad.baseAlpha`/`FlatSurface.baseAlpha`); an argument at two sites is the tier-1
+  violation.
+- **100 columns**, comments and `docs/` prose alike; a `/** … */` that would overrun becomes a
+  block. Exempt: tables, code fences, a single unbreakable token. Code is not held to it.
 
 ## Abbreviations
 
-**An abbreviation is upper case in prose** — comments, `docs/` and player-facing text alike:
-`ESC`, `ID`, `IDs`. Never `Esc`, `Id`, `id`.
-
-**Code keeps its own casing** and is exempt, backtick spans in prose included: `getElementById` is
-the DOM's, `wadSetId`/`SfxId`/`targetId` are camelCase like the rest of `src/`, and `SaveGame.id` /
-`SaveWad.id` are persisted field names — renaming those is a `SAVE_VERSION` bump (CLAUDE.md's
-save-compatibility rule), not a casing sweep.
-
-**`id Software` is the company's own spelling** and stays lowercase, as do `id-era` and
-`id-Software` URLs. That collision is the reason for the rule: in prose, lowercase `id` is the
-company and upper-case `ID` is an identifier, so neither has to be read from context.
+- **Upper case in prose** — comments, docs, player-facing text: `ESC`, `ID`, `IDs`.
+- **Code keeps its casing**, backtick spans included: `getElementById`, `wadSetId`, and the
+  persisted `SaveGame.id`/`SaveWad.id` (renaming those is a `SAVE_VERSION` break).
+- **`id Software` stays lowercase**, as do `id-era` and URLs — which is why prose `ID` is upper:
+  lowercase `id` is the company.
 
 ## Imports
 
-Every relative import carries an explicit `.ts` extension — `allowImportingTsExtensions` plus Node
-ESM resolution means `from './wad/reader'` does not resolve. There are no `index.ts` barrels
-anywhere, and adding one would break the entry-point rule above: `game/things.ts` is the thing
-layer's barrel *and* its implementation, which is what keeps its public surface an explicit list.
-
-**Names arrive named; a namespace import is for three cases**: a package with one obvious name
-(`THREE`), two modules whose exports collide (`wad/map.ts`'s `hexen`/`udmf`), and a `defs.ts` a file
-takes 30-odd shapes from at once and reads each of them a handful of times — `specials.ts` reads
-`defs.` and is the only one. It costs the `noUnusedLocals` check on that module: a namespace is
-always used, so a name that falls out of use rots silently. Two things keep a file on named
-imports: use sites dense enough that the prefix becomes the noise (`specials/tables.ts` reads those
-same shapes 157 times, `DOOR_SPEED` 25 times, inside table rows the constants are the vocabulary
-of), and importing from two `defs.ts` at once — `game/things.ts` would need
-`thingDefs.`/`monsterDefs.`, repeating the domain its directory already names.
+- **Every relative import carries `.ts`**: `allowImportingTsExtensions` plus Node ESM resolution
+  means `from './wad/reader'` does not resolve.
+- **No `index.ts` barrels.** The entry-point file is the barrel *and* the implementation, which
+  keeps its public surface an explicit list.
+- **Names arrive named; a namespace import is for three cases**: a package with one name
+  (`THREE`), two modules whose exports collide (`map.ts`'s `hexen`/`udmf`), and a `defs.ts` a file
+  takes dozens of shapes from and reads each a handful of times (`specials.ts`'s `defs.`). It costs
+  `noUnusedLocals` on that module — a namespace is always used — so dense use sites
+  (`specials/tables.ts`) and a file importing two `defs.ts` at once stay on named imports.
 
 ## Whitespace
 
-UTF-8, LF, two-space indent, final newline, no trailing whitespace — `.editorconfig` at the repo
-root is the only place these live; there is no linter and no formatter. (`.claude/hooks/conventions.mjs`
-checks the mechanical rules of this doc — source order, inline `if`, comment width, the two
-toolchain constraints — on files *Claude* writes, and reports them back to it. Agent tooling: no
-npm script runs it and it gates nothing.) Markdown keeps trailing
-whitespace (two spaces are a hard line break) and wraps prose at 100 columns; tables run past it.
+UTF-8, LF, two-space indent, final newline, no trailing whitespace — `.editorconfig` is the only
+place these live; there is no linter and no formatter. Markdown keeps trailing whitespace (a hard
+line break) and wraps prose at 100 columns; tables run past it. The file whitelists extensions
+(`.ts`, `.css`, `.html`, `.json`, `.md`) rather than matching `[*]`: the WADs and DEHACKED patches
+under `public/game/` and `tests/fixtures/` stay byte-verbatim. A new text extension is added there.
 
-It lists the extensions it covers (`.ts`, `.css`, `.html`, `.json`, `.md`) rather than starting from
-`[*]`: the WADs and DEHACKED patches under `public/game/` and `tests/fixtures/` are third-party and
-stay byte-verbatim, and a whitelist cannot reach them. A new text extension needs adding here.
+`.claude/hooks/conventions.mjs` checks the mechanical rules here — source order, inline `if`,
+comment width, the two toolchain constraints — on files *Claude* writes; run by hand with
+`node .claude/hooks/conventions.mjs <file>`. Agent tooling: no npm script runs it, it gates nothing.
 
 ## Inline `if`
 
-An `if` keeps its statement on the same line only when that statement is an **early out** —
-`return`, `continue`, `break`, `throw` — however many clauses the condition has:
-`if (!a || !b) continue;` is the tree's idiom and stays.
-
-**Anything else takes a braced block once the condition has more than one clause.** With two
-clauses and a trailing assignment or call, the statement reads as part of the condition:
-`if (e.prevFloor === e.ticFloor && e.prevCeil === e.ticCeil) this.moverLerp.delete(id);` has to be
-braced, `if (taken) this.audio.play(...)` does not.
+**An `if` keeps its statement on the line only for an early out** — `return`, `continue`, `break`,
+`throw` — however many clauses: `if (!a || !b) continue;`. **Anything else takes a braced block once
+the condition has more than one clause**: with two clauses and a trailing call, the statement reads
+as part of the condition. `if (taken) this.audio.play(...)` stays; `if (a === b && c === d)
+this.moverLerp.delete(id);` is braced.
 
 ## Known deviations
 
-Pending, not precedent: none.
+Pending, not precedent: what `node .claude/hooks/conventions.mjs <file>` reports on a module — a
+private helper above the last export in a module that is not a bag of pure functions, a
+multi-clause condition carrying its statement. Fixed when the file is next touched; the hook is the
+list.
 
-A layer entry point re-exporting its own is not a deviation — `specials.ts` hands out
-`SectorEffects`, which cannot be `SpecialsController`'s because it is built before the `World` the
-controller needs (docs/savegames.md § Apply order). The test: an export that leaves the layer only
-to be handed straight back in is a round trip, and belongs to the layer instead.
-
-Every `src/` file opens with a header block carrying a `docs/` pointer;
-`src/constants.ts` and `src/types.ts` are the two that point at CLAUDE.md instead, because they are
-cross-cutting and the rules governing them genuinely live there rather than in any subsystem doc.
+Not a deviation: a layer entry point re-exporting its own — `specials.ts` hands out
+`SectorEffects`, built before the `World` the controller needs (docs/savegames.md § Apply order).
+The test: an export that leaves the layer only to be handed straight back in is a round trip and
+belongs to the layer.

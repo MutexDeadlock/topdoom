@@ -2,7 +2,7 @@
  * The 2D primitives more than one layer needs — segment crossings, point-to-segment distance,
  * the swept box tests and the convex-polygon queries. Pure functions on scalars, deliberately:
  * their callers compute coordinates inline thousands of times a frame, so a point-object
- * parameter here would allocate in exactly the wrong place (CLAUDE.md § Position types).
+ * parameter here would allocate in exactly the wrong place (docs/conventions.md § Named arguments).
  * Each is documented at its own declaration; the rules built on them live with their callers —
  * docs/movement.md § Collision, docs/render.md § Wall occlusion fading, docs/fogofwar.md and
  * docs/monster-attacks.md § Monster projectiles in flight.

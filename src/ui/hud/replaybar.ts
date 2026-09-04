@@ -103,7 +103,9 @@ export class ReplayBar {
       this.track.addEventListener(type, () => {
         const at = this.dragging;
         this.dragging = null;
-        if (at !== null && this.shown) this.hooks.seek(ticAtFraction(at, this.shown.ticCount));
+        if (at !== null && this.shown) {
+          this.hooks.seek(ticAtFraction(at, this.shown.ticCount));
+        }
       });
     }
     window.addEventListener('keydown', this.onKeyDown);

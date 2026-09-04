@@ -1,8 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this
-repository.
-
 ## What this is
 
 A top-down DOOM built on the original IWADs. The camera hangs above the player, tilted slightly
@@ -65,7 +62,8 @@ src/wad/       WAD files, merged lump directory, content IDs (checksum), map lum
                takes over (textlump), whether this engine can run a file at all (support), what a
                file holds without loading it (describe), the one WAD the engine ships itself
                (shipped) and writing one (write), the shipped player art and when it stands in
-               (playerskin), the menu's WAD library
+               (playerskin), the menu's WAD library, and the campaign lumps — MAPINFO, level
+               names, par times, the sky, the level progression (campaign/)
 src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it can't ask the tree
                for (sectorprobe), the solids a map draws as void (solids), mesh building, materials
                + texture animation, occlusion fading, Boom's scrolling surfaces (scroller), sprite
@@ -78,14 +76,19 @@ src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it 
                reaches (lightvis), shot tracers, camera, viewport, the GPU's own frame time
                (gputimer)
 src/game/      spatial queries + collision, player controller, input, the auto camera, what each
-               skill level changes (skill), thing world state, fog of war, inventory/pickups,
-               weapons and firing, shots in flight + splash, damage/death, transient effects,
-               voodoo dolls, the typed cheat codes (cheats), best times, savegames (the snapshot
-               shape, the IndexedDB store), replays (the record, the recorder and playback behind
-               the tic's input, their own store)
+               skill level changes (skill), thing world state, monsters (AI, attacks, the
+               arch-vile), fog of war, inventory/pickups, weapons and firing, shots in flight +
+               splash, damage/death, transient effects (spritefx), voodoo dolls, DEHACKED/BEX
+               patches read and applied (dehacked), the typed cheat codes (cheats), best times,
+               savegames (the snapshot shape, the IndexedDB store), replays (the record, the
+               recorder and playback behind the tic's input, their own store)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through, WebAudio
                playback (channels, attenuation, pan, volume), the level's music
-src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens)
+src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens);
+               hud/ the in-game overlays (status bar, crosshair, level card, intermission, end
+               card, death overlay, center message, screen effects, the replay bar), menu/ the
+               launcher and pause screen (WAD Library, Save/Load, Replays, settings), devmode/ the
+               status text and debug hotkeys
 src/util/      helpers shared across layers: 2D geometry, the smoothing curves (damping: the
                damped-lerp approach and the Hermite ease), GLSL float literals (glsl), per-frame
                profiling, IndexedDB request plumbing (idb, shared by the save store and the WAD
@@ -101,8 +104,9 @@ index.html         the page skeleton; @includes the .html beside each one
 plugins/       Vite plugins: the public/game/{iwad,pwad} manifest, the WAD built from assets/
                (game-wad), index.html's @include expansion
 assets/        the sources that WAD is built from: gldefs.txt, secret.ogg, playerskins.wad
-scripts/       headless inspection of a WAD (scripts/inspect-wad.ts), of a savegame file
-               (scripts/inspect-save.ts) and of a replay (scripts/inspect-replay.ts)
+scripts/       headless inspection of a WAD (inspect-wad.ts), of a savegame file
+               (inspect-save.ts) and of a replay (inspect-replay.ts); building assets/
+               playerskins.wad (build-playerskins.ts)
 ```
 
 ## Subsystem documentation
@@ -141,7 +145,7 @@ relevant one before changing that subsystem** — several rules there look like 
 | [audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
 | [music.md](docs/music.md) | The OPL chip and `GENMIDI`, MUS/MIDI decoding, which track a level plays, music volume |
 | [testing.md](docs/testing.md) | The runner, the ASCII-grid map fixture, the fixture WADs, the tree-wide guards |
-| [conventions.md](docs/conventions.md) | File and directory naming, the `defs`/`tables` roles, source order inside a file, known deviations |
+| [conventions.md](docs/conventions.md) | File and directory naming, the `defs`/`tables` roles, source order, named arguments, comment shape, how to find the pending deviations |
 
 For what is and isn't implemented, see [README.md](README.md#state) and [CHANGELOG](CHANGELOG).
 
@@ -189,10 +193,10 @@ than vanilla's infinitely tall actors (`game/world.ts`, docs/movement.md § Coll
 **Constants fall into exactly two marked categories.** Values derived from vanilla carry their
 source citation at the declaration (`g_game.c`'s ticcmd tables, `info.c`'s mobjinfo fields,
 `P_RadiusAttack`'s literal 128). Values tuned by feel say so at the declaration, in those words —
-`grep -rn "tuned by feel" src/` is the list; no roster is kept here. Prefer digging out the exact
-vanilla source over declaring a number tuned: every `weapons.ts` rate, spread and damage turned out
-to have one (docs/weapons.md § Fire rates). Never introduce a third, unmarked category: a bare
-number with no note is indistinguishable from a transcription error.
+`grep -rn "tuned by feel" src/` is the list; no roster is kept here. Dig for the vanilla source
+before declaring a number tuned: every `weapons.ts` rate, spread and damage has one
+(docs/weapons.md § Fire rates). Never a third, unmarked category: a bare number with no note is
+indistinguishable from a transcription error.
 
 **`constants.ts` stays small**, and admits a constant on exactly one of two grounds: it is used in
 more than two files and isn't identity-coupled to any one module (`DOOM_TIC`), or it is a **feel
@@ -209,28 +213,18 @@ identity-coupled to one module lives in that module (`PLAYER_RADIUS` in `game/pl
 height), never three.js space — `mapmesh.ts`'s `doomToWorld`/`worldToDoom` is the one place the two
 meet. Nothing here is a direction or velocity: those stay separate `velX`/`velY`/`velZ` fields, and
 headings are plain `angle` numbers — `Placement.angle` in **radians**, like
-`Player.angle`/`MonsterBody.angle` and unlike the WAD's own degrees.
-
-The rule for parameters: **take a `Pos2`/`Pos3` where callers already hold a point object, keep
-scalars where they're computing coordinates inline.** `Player`, `PosedThing`, `MonsterBody` and the
-WAD's `Thing` already carry `x`/`y`(/`z`), so passing them costs no conversion and no allocation.
-But `util/geom.ts`'s primitives and `World`'s point queries (`linesNear`, `subsectorAt`, `sectorAt`,
-`floorAt`, `groundFloor`, `positionBlocked`) deliberately stay on scalars: their callers compute
-coordinates on the fly, and a point parameter would force a fresh object per call in exactly the
-code that runs thousands of times a frame.
+`Player.angle`/`MonsterBody.angle` and unlike the WAD's own degrees. When a signature takes one
+rather than staying on scalars is docs/conventions.md § Named arguments.
 
 **Hot paths are measured, not reasoned about.** `hasLineOfSight`, `positionBlocked`, the monster
-grids and the sprite batches carry non-obvious shapes because the obvious version measured too slow,
-and obvious-looking optimizations of them have measured no faster. Don't "simplify" these without
-measuring; the relevant docs say which is which.
+grids and the sprite batches carry non-obvious shapes because the obvious version measured slower.
+Don't "simplify" these without measuring; the relevant docs say which is which.
 
-**A new file's name and layout follow docs/conventions.md**: a directory is named for the domain
-and its files for their role, never repeating the domain (`things/tables.ts`, not `thingtables.ts`);
-where a `<domain>.ts` sits beside a `<domain>/`, the parent is that layer's one public entry point.
-Deviations are listed at the bottom of that doc and get fixed when the file is next touched.
-**Read that doc before adding a file, and re-check the finished one against it** — § Source order
-inside a file (public surface, subject, private support, in that order) and § Inline `if` are the
-two it is not enough to know about in the abstract.
+**A new file's name, layout and comments follow docs/conventions.md.** Read it before adding a
+file, and re-check the finished one against § Source order inside a file (public surface, subject,
+private support, in that order), § Inline `if` and § Comment shape — the three it is not enough to
+know about in the abstract. A file that doesn't conform is fixed when next touched, never in a
+sweep; `.claude/hooks/conventions.mjs` is the list.
 
 ## Documentation maintenance
 
@@ -252,28 +246,8 @@ two it is not enough to know about in the abstract.
 
 ## Code comments
 
-**Every `src/` file opens with a short header comment** — one to three sentences on what the file
-owns and where it sits, ending in a pointer to its subsystem doc(s). It is the router into `docs/`
-at the point of reading; keep it to purpose, not a contents list. A one-function file may let
-that function's JSDoc carry the pointer instead (`util/damping.ts`); `constants.ts` and `types.ts`
-are cross-cutting and point back here rather than at a `docs/` page.
-
-Beyond the header, comments are minimal. A rule a subsystem doc covers is written **once**, in the
-doc — two copies drift, and the code copy is the one nobody re-reads. Comments fall into three tiers
-by what breaks if they're missing:
-
-1. **Doc-owned** — any invariant a `docs/` file covers: vanilla fidelity, why an algorithm has the
-   shape it does, bug history. The comment says what the thing does in a sentence or two, names the
-   rule and points at `docs/x.md § heading` for the argument — it does not reproduce that argument,
-   paste vanilla C, or retell how the bug was found.
-2. **Site-local** — hazards about *this code's shape* no subsystem doc is the right home for: the
-   `world.ts`/`player.ts` import-cycle workaround, the `tsc` narrowing quirk, a deliberate
-   allocation. These stay inline and stay short — there is nowhere else for them to live.
-3. **Citations** — the `info.c`/`g_game.c` source note or the "tuned by feel" note the constants
-   rule already requires.
-
-When a doc-owned comment holds something the doc lacks, move it into the doc instead of keeping
-both. **A comment's subject is our code**, with any vanilla/Boom/GZDoom name as a supporting clause
-— delete the foreign name and something must be left. That rule and the rest of the comment shape
-(doc blocks stay attached to their declaration; state what is true, not what changed) are
-docs/conventions.md § Comment shape.
+**Every `src/` file opens with a short header comment** ending in a pointer to its subsystem
+doc(s) — the router into `docs/` at the point of reading. Beyond the header, comments are minimal:
+a rule a subsystem doc covers is written **once**, in the doc, and the code names it and points at
+`docs/x.md § heading`. The three tiers, the header's shape and the rest of what a comment may say
+are docs/conventions.md § Comment shape.

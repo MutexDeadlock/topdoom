@@ -538,9 +538,11 @@ export class LibraryUi implements MenuOverlay {
   private forgetButton(): HTMLButtonElement {
     const button = this.controlButton('Forget');
     button.title = 'Hold to forget your WAD folder';
-    confirmOnHold(button, 'Hold Forget to drop your WAD folder.', (text) => this.showStatus(text), () =>
-      void this.forget(),
-    );
+    confirmOnHold(button, {
+      hint: 'Hold Forget to drop your WAD folder.',
+      setStatus: (text) => this.showStatus(text),
+      action: () => void this.forget(),
+    });
     return button;
   }
 

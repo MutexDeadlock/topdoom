@@ -391,13 +391,17 @@ export class ReplaysUi {
 
   private makeDeleteButton(meta: ReplayMeta): HTMLButtonElement {
     const button = iconButton('delete', 'Hold to delete this replay');
-    confirmOnHold(button, 'Hold the trash button to delete that replay.', (t) => this.setStatus(t), () => {
-      void attempt(this.setStatus, async () => {
-        await deleteReplay(meta.id);
-        // The panel was showing what has just gone, so the re-list picks the newest for it.
-        this.selectedId = null;
-        this.refresh();
-      });
+    confirmOnHold(button, {
+      hint: 'Hold the trash button to delete that replay.',
+      setStatus: (t) => this.setStatus(t),
+      action: () => {
+        void attempt(this.setStatus, async () => {
+          await deleteReplay(meta.id);
+          // The panel was showing what has just gone, so the re-list picks the newest for it.
+          this.selectedId = null;
+          this.refresh();
+        });
+      },
     });
     return button;
   }

@@ -270,9 +270,11 @@ export class SavegamesUi {
       // disabled button never shows its tooltip.
       overwrite.title = 'Hold to replace this save with the current moment';
       overwrite.disabled = !this.canSave;
-      confirmOnHold(overwrite, 'Hold Overwrite to replace that save.', (t) => this.setStatus(t), () =>
-        void this.overwrite(meta.id),
-      );
+      confirmOnHold(overwrite, {
+        hint: 'Hold Overwrite to replace that save.',
+        setStatus: (t) => this.setStatus(t),
+        action: () => void this.overwrite(meta.id),
+      });
       actions.append(overwrite);
     }
     actions.append(this.makeDownloadButton(meta), this.makeDeleteButton(meta));
@@ -344,14 +346,18 @@ export class SavegamesUi {
 
   private makeDeleteButton(meta: SaveMeta): HTMLButtonElement {
     const button = iconButton('delete', 'Hold to delete this save');
-    confirmOnHold(button, 'Hold the trash button to delete that save.', (t) => this.setStatus(t), () => {
-      void attempt(this.setStatus, async () => {
-        await deleteSave(meta.id);
-        // Only this row goes; re-listing would redecode every remaining row's
-        // thumbnail to redraw rows that didn't change (see `rename`).
-        button.closest('.row')?.remove();
-        this.markOtherListStale();
-      });
+    confirmOnHold(button, {
+      hint: 'Hold the trash button to delete that save.',
+      setStatus: (t) => this.setStatus(t),
+      action: () => {
+        void attempt(this.setStatus, async () => {
+          await deleteSave(meta.id);
+          // Only this row goes; re-listing would redecode every remaining row's
+          // thumbnail to redraw rows that didn't change (see `rename`).
+          button.closest('.row')?.remove();
+          this.markOtherListStale();
+        });
+      },
     });
     return button;
   }

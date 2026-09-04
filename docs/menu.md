@@ -18,7 +18,16 @@ Only the WAD lists, the level list and the difficulty options are built in JS.
   dim so the frozen level shows through (`Game` keeps drawing it — docs/frameloop.md § Pausing), and
   reveals **Return to game**. Both are off before any level is loaded: there is nothing behind the
   menu then but the static HUD markup with placeholder values, which the opaque gradient exists to
-  hide.
+  hide. The class *is* that state: `Menu.inGame` reads it back rather than mirroring it in a field.
+- **`Start new game` is a press-and-hold while a level is running** (`hold.ts: confirmOnHold`'s
+  `required`, § Save and Load tabs): it throws that level away, and it sits in the same footer as
+  `Return to game`. Asked per press, not wired once — from the launcher the button is an ordinary
+  one and a click starts.
+- **The status line is the footer's only elastic item.** Both buttons are `flex: none` and
+  `#menu-status` takes the space left over; letting them shrink instead wraps their labels over
+  three lines and grows the footer inside the panel. What the two clamped lines then cut is in the
+  line's own `title` (`setStatus`). **Switching tabs clears it** (`setTab`): a message explains the
+  tab it was raised on.
 - The active tab is *not* reset on open — it's whichever the player last clicked (`newgame` on the
   first open, set in the constructor). Reopening mid-level to change one setting must not throw away
   the tab they were on.
@@ -542,7 +551,9 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   one gesture rather than the two-click arm it replaced, which read as a broken button. The sweep is
   a CSS transition whose duration is handed over as `--hold-time`, so the bar and the timer can't
   disagree; the label moves into a `.label` span so the `.fill` can paint behind it, and Space/Enter
-  held on a focused button works the same way. Both are per row; Overwrite refills that save from
+  held on a focused button works the same way. **`required` makes the hold conditional** — a button
+  that only destroys something some of the time (Start new game, § One screen, two jobs) wears the
+  same confirm and acts on a plain click while the predicate says no. Both are per row; Overwrite refills that save from
   the current moment, keeping its ID and its name (renaming has its own affordance). Delete and
   download are icon-only buttons (`⤓`, `🗑︎` with a text-presentation selector) with their meaning in
   the tooltip; Load and Overwrite are `.primary`.

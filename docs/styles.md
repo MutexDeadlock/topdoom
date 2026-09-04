@@ -52,9 +52,10 @@ for the part it has in common with seven others.
 
 Every file here is named after the module that shows and hides its elements, with one exception:
 **`hold.css` is named for a behavior, not an element.** Its rules are keyed on the `.hold` class
-`hold.ts` applies, and the buttons wearing it belong to two different modules (the save rows and the
-WAD Library's Forget) — filing it under either would leave the other importing a stylesheet named
-after somewhere else. It is imported after `menu.css` so `#menu button.hold` follows the `.ghost`
+`hold.ts` applies, and the buttons wearing it belong to several different modules (the save rows,
+the WAD Library's Forget, the footer's Start new game) — filing it under any of them would leave the
+others importing a stylesheet named after somewhere else. `#menu button.primary .fill` lives here
+too, for the same reason: the fill is this file's element, whoever's button wears it. It is imported after `menu.css` so `#menu button.hold` follows the `.ghost`
 rules it sits alongside; the two set disjoint properties, so the order is for reading, not cascade.
 
 Two modules drive parts of markup they don't own the *element* of, and so have no `.html`:

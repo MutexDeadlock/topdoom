@@ -205,10 +205,15 @@ A doc-owned comment holding something the doc lacks moves it into the doc.
 - **No `index.ts` barrels.** The entry-point file is the barrel *and* the implementation, which
   keeps its public surface an explicit list.
 - **Names arrive named; a namespace import is for three cases**: a package with one name
-  (`THREE`), two modules whose exports collide (`map.ts`'s `hexen`/`udmf`), and a `defs.ts` a file
-  takes dozens of shapes from and reads each a handful of times (`specials.ts`'s `defs.`). It costs
-  `noUnusedLocals` on that module — a namespace is always used — so dense use sites
-  (`specials/tables.ts`) and a file importing two `defs.ts` at once stay on named imports.
+  (`THREE`), two modules whose exports collide (`map.ts`'s `hexen`/`udmf`), and **any module a file
+  takes a dozen-odd names from and reads each a handful of times** — `specials.ts`'s `defs.`,
+  `menu.ts`'s `wadlib.` over `wad/library.ts`. It costs `noUnusedLocals` on that module — a
+  namespace is always used — so dense use sites (`specials/tables.ts`) and a file importing two
+  `defs.ts` at once stay on named imports.
+- **A densely read name stays named beside the namespace**, in its own `import type`/`import`:
+  `menu.ts` reads `WadSource` at 26 sites and takes it named, everything else through `wadlib`.
+- **The namespace is named for the module, never for a word the file already uses**: `wadlib`, not
+  `library` — `menu.ts` holds a `LibraryUi` in `this.library`.
 
 ## Whitespace
 

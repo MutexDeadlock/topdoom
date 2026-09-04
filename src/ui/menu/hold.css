@@ -1,8 +1,8 @@
 /*
  * Press-and-hold confirm: the bar sweeps the button while it's held and the action fires when it
  * lands — hold.ts § confirmOnHold, which also sets `--hold-time` so the sweep and the timer share
- * one duration. Scoped to the class rather than to one list, since both the save rows and the WAD
- * Library's Forget button wear it.
+ * one duration. Scoped to the class rather than to one list, since the save rows, the WAD Library's
+ * Forget button and the footer's Start new game all wear it.
  */
 #menu button.hold {
   position: relative;
@@ -23,6 +23,14 @@
   transform: scaleX(1);
   transition-duration: var(--hold-time, 1s);
   transition-timing-function: linear;
+}
+
+/* A `.primary` button is accent-coloured at rest and `--accent-hover` while hovered — which is when
+   it's held — so its bar lightens the button instead of colouring it. Overwrite and Start new game
+   both. */
+#menu button.primary .fill {
+  background: #fff;
+  opacity: 0.35;
 }
 
 /* Positioned, so DOM order paints the label over the bar rather than under it. */

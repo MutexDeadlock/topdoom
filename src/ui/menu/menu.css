@@ -632,9 +632,18 @@
   margin-left: auto;
 }
 
+/* The status line is the footer's only elastic item — the buttons keep their labels on one line and
+   it takes what is left over. Shrinking them instead wraps "Start new game" over three lines and
+   grows the footer under the panel. */
+#menu > .panel > footer button {
+  flex: none;
+}
+
 /* Clamped to two lines for the reason the WAD Library's own line is (library.css): a failure here
    is a sentence, and one line cut off the half that said what to do about it. */
 #menu-status {
+  flex: 1;
+  min-width: 0;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;

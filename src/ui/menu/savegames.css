@@ -200,10 +200,3 @@
 #menu .saves .row.unsupported .save-label {
   opacity: 0.4;
 }
-
-/* Overwrite is accent-coloured at rest and `--accent-hover` while hovered — which
-   is when it's held — so its bar lightens the button instead of colouring it. */
-#menu .row-actions button.primary .fill {
-  background: #fff;
-  opacity: 0.35;
-}

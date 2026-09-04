@@ -2,26 +2,11 @@
  * The start menu — launcher and pause screen in one: WAD/level/difficulty selection, the settings
  * and save/load tabs, and the About and WAD Library popups. See docs/menu.md.
  */
-import {
-  ensureLibraryAccess,
-  ensureWadId,
-  fetchLibrary,
-  fitsGameWad,
-  librarySources,
-  mapStyle,
-  mergedMaps,
-  pwadsFor,
-  rememberLibraryId,
-  isTextFile,
-  rescanIfPermitted,
-  restoreLibrary,
-  siblingTextFile,
-  textFileIndex,
-  uploadedSource,
-  type WadSource,
-} from '../../wad/library.ts';
+import * as wadlib from '../../wad/library.ts';
+import type { WadSource } from '../../wad/library.ts';
 import { badge, describeMap, describeSource, rowButton, sourceColumnSpans } from './labels.ts';
 import { AboutUi } from './about.ts';
+import { confirmOnHold } from './hold.ts';
 import { LibraryUi } from './library.ts';
 import { WadInfoUi } from './wadinfo.ts';
 import type { MenuOverlay } from './overlay.ts';
@@ -182,7 +167,7 @@ export class Menu {
    * page of rows all asking about the same handful of sets. Dropped whenever
    * `sources` changes, since an upload can complete a set that was short a file.
    */
-  private mapCache = new Map<string, ReturnType<typeof mergedMaps>>();
+  private mapCache = new Map<string, ReturnType<typeof wadlib.mergedMaps>>();
   private selectedIwad: WadSource | null = null;
   /** Ordered: add-ons are merged in the order the user picked them. */
   private selectedPwads: WadSource[] = [];
@@ -236,7 +221,14 @@ export class Menu {
       this.refreshButtons();
       this.saveSelection();
     });
-    this.startButton.addEventListener('click', () => void this.startWithSkill(this.currentSkill()));
+    confirmOnHold(this.startButton, {
+      hint: 'Hold Start new game to abandon the game you are running.',
+      setStatus: (text) => this.setStatus(text),
+      action: () => void this.startWithSkill(this.currentSkill()),
+      // Only a start that throws a running level away is worth confirming; from the launcher it
+      // stays an ordinary button.
+      required: () => this.inGame,
+    });
     this.resumeButton.addEventListener('click', () => this.onResume());
     for (const tab of Object.keys(this.tabButtons) as MenuTab[]) {
       this.tabButtons[tab].addEventListener('click', () => this.setTab(tab));
@@ -283,8 +275,11 @@ export class Menu {
     // The player's own folder is restored from its memo, then rescanned where the permission
     // already stands — both prompt for nothing, because this is the boot path
     // (docs/wad.md § The player's own library).
-    const [served] = await Promise.all([fetchLibrary(), restoreLibrary().then(rescanIfPermitted)]);
-    this.sources = [...librarySources(), ...served];
+    const [served] = await Promise.all([
+      wadlib.fetchLibrary(),
+      wadlib.restoreLibrary().then(wadlib.rescanIfPermitted),
+    ]);
+    this.sources = [...wadlib.librarySources(), ...served];
     this.mapCache.clear();
 
     const stored = this.loadSelection();
@@ -458,8 +453,19 @@ export class Menu {
     return this.startWithSkill(this.currentSkill());
   }
 
+  /**
+   * Whether a level is loaded and paused behind the menu. `open`'s own flag, read back off the
+   * class it sets rather than mirrored in a field — one owner for the state, so the two can't
+   * disagree about what the backdrop is showing.
+   */
+  private get inGame(): boolean {
+    return this.root.classList.contains('ingame');
+  }
+
   private setTab(tab: MenuTab): void {
     this.activeTab = tab;
+    // A message explains the tab it was raised on; carried onto the next one it explains nothing.
+    this.setStatus('');
     for (const key of Object.keys(this.tabButtons) as MenuTab[]) {
       this.tabButtons[key].classList.toggle('active', key === tab);
       this.tabPanels[key].classList.toggle('inactive', key !== tab);
@@ -697,11 +703,11 @@ export class Menu {
   }
 
   /** `mergedMaps` for a set, from `mapCache` — see that field's doc. */
-  private mapsFor(iwad: WadSource, pwads: WadSource[]): ReturnType<typeof mergedMaps> {
+  private mapsFor(iwad: WadSource, pwads: WadSource[]): ReturnType<typeof wadlib.mergedMaps> {
     const key = [iwad.key, ...pwads.map((p) => p.key)].join('\n');
     let maps = this.mapCache.get(key);
     if (!maps) {
-      maps = mergedMaps(iwad, pwads);
+      maps = wadlib.mergedMaps(iwad, pwads);
       this.mapCache.set(key, maps);
     }
     return maps;
@@ -823,8 +829,8 @@ export class Menu {
   private async identify(source: WadSource): Promise<void> {
     if (source.id) return;
     try {
-      await ensureWadId(source);
-      await rememberLibraryId(source);
+      await wadlib.ensureWadId(source);
+      await wadlib.rememberLibraryId(source);
     } catch (err) {
       // A file that can't be read still selects: the failure to *load* it is the level start's to
       // report, with the WAD set in hand, rather than this one's on a tick.
@@ -924,8 +930,8 @@ export class Menu {
    */
   private mismatchReason(source: WadSource): string {
     if (this.selectedIwad && source.key === this.selectedIwad.key) return 'game WAD';
-    if (fitsGameWad(this.selectedIwad, source)) return '';
-    return mapStyle(source) === 'doom1' ? 'DOOM 1' : 'DOOM II';
+    if (wadlib.fitsGameWad(this.selectedIwad, source)) return '';
+    return wadlib.mapStyle(source) === 'doom1' ? 'DOOM 1' : 'DOOM II';
   }
 
   /**
@@ -936,7 +942,7 @@ export class Menu {
    * lets a mismatched pick keep its row instead of being pruned out of the list.
    */
   private activePwads(): WadSource[] {
-    return pwadsFor(
+    return wadlib.pwadsFor(
       this.selectedIwad,
       this.selectedPwads.filter((p) => !this.disabledPwads.has(p.key)),
     );
@@ -1084,6 +1090,8 @@ export class Menu {
 
   private refreshButtons(): void {
     this.startButton.disabled = !this.isReady;
+    // The hold is only asked for in game (`confirmOnHold`'s `required`), so the tooltip is too.
+    this.startButton.title = this.inGame ? 'Hold to abandon the game you are running' : '';
     // Only ever disabled for the duration of a start (see `startWithSkill`);
     // whether it's *shown* is `open`'s call.
     this.resumeButton.disabled = false;
@@ -1128,12 +1136,12 @@ export class Menu {
     // An upload sits in no folder, so a WAD's text file can only reach it in the same batch — a
     // `.txt` picked or dropped beside it. One that names no WAD here is simply not a WAD and is
     // dropped, rather than being reported as one that failed to parse.
-    const texts = textFileIndex(files, (f) => f.name);
+    const texts = wadlib.textFileIndex(files, (f) => f.name);
     for (const file of files) {
-      if (isTextFile(file.name)) continue;
+      if (wadlib.isTextFile(file.name)) continue;
       try {
-        const sibling = texts.get(siblingTextFile(file.name, texts.keys()) ?? '');
-        const source = await uploadedSource(file.name, await file.arrayBuffer(), sibling);
+        const sibling = texts.get(wadlib.siblingTextFile(file.name, texts.keys()) ?? '');
+        const source = await wadlib.uploadedSource(file.name, await file.arrayBuffer(), sibling);
         const existing = this.sources.findIndex((s) => s.key === source.key);
         if (existing >= 0) this.sources.splice(existing, 1, source);
         else this.sources.unshift(source);
@@ -1197,7 +1205,7 @@ export class Menu {
     // still live: a browser refuses a file-permission prompt raised any later, and the set may
     // include a library file whose folder needs re-granting. The same trick `main.ts` uses for
     // `audio.resume()` — docs/menu.md § Session lifecycle.
-    const access = this.needsLibraryAccess() ? ensureLibraryAccess() : Promise.resolve(true);
+    const access = this.needsLibraryAccess() ? wadlib.ensureLibraryAccess() : Promise.resolve(true);
     this.startButton.disabled = true;
     // The level being replaced is disposed part-way through this, so there is
     // nothing to return to until it either resolves or fails.

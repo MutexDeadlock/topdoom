@@ -35,6 +35,7 @@ src/ui/menu/
     menu.css/.html    #menu
     about.*           #about, the About/Changelog popup inside #menu, and its
                       #menu button.link triggers
+    welcome.*         #welcome, the first-boot popup inside #menu (docs/menu.md § Welcome popup)
     savegames.css     the save/load lists inside #menu's tab panels, and what the Replays tab
                       shares with them: .row-actions, .warning/.caution
     replays.css       #menu's Replays panel: the record button, the list and the detail panel

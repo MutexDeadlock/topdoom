@@ -1,8 +1,10 @@
 # Menu, settings, session lifecycle and dev mode
 
-`src/ui/menu/menu.ts`, `src/ui/menu/labels.ts`, `src/ui/menu/about.ts`, `src/ui/menu/library.ts`,
-`src/ui/menu/menu.html` + `src/ui/menu/about.html`,
-`src/ui/menu/menu.css` + `src/ui/menu/about.css` + `src/ui/menu/library.css`,
+`src/ui/menu/menu.ts`, `src/ui/menu/labels.ts`, `src/ui/menu/about.ts`, `src/ui/menu/welcome.ts`,
+`src/ui/menu/library.ts`,
+`src/ui/menu/menu.html` + `src/ui/menu/about.html` + `src/ui/menu/welcome.html`,
+`src/ui/menu/menu.css` + `src/ui/menu/about.css` + `src/ui/menu/welcome.css` +
+`src/ui/menu/library.css`,
 `src/main.ts`, `src/constants.ts: DEVMODE`, `src/ui/devmode/`, `src/util/profiler.ts`
 
 The menu is plain DOM: every element is static markup in `src/ui/menu/menu.html` (pulled into the
@@ -123,6 +125,27 @@ Load-bearing:
 
 `#about` is a child of `#menu` so it disappears with it; `Menu.close()` also closes it, or it would
 still be up the next time the menu opens.
+
+## Welcome popup
+
+`#welcome` (`welcome.ts`, `WelcomeUi`) is a new player's first screen: one sentence on what the
+game is, the five basic keys (a `#menu .keys` list, the Settings tab's own), and where a WAD of
+their own goes. `boot()` opens it through `Menu.showWelcome()` right after `menu.open()`, at every
+boot, until the player ticks **Don't bug me again**.
+
+- **The checkbox is the `showWelcome` setting**, written on every change like the Settings tab's
+  checkboxes (§ Persisted settings): ticking it stores `false`, unticking it before closing stores
+  `true` again. Stored as the *showing* flag so a browser with no storage reads the default and
+  keeps showing the popup — the one case where being reminded beats being forgotten.
+- **The checkbox starts unticked at every open**: the popup being up at all means it hasn't been
+  muted, so a stale tick could only mislead.
+- **Over the launcher only.** `showWelcome` is its own call rather than part of `open`, because
+  `open` is also the pause screen (§ One screen, two jobs), and a `?map=` deep link never opens
+  the menu, so it never sees the popup either (§ URL parameters).
+- Structurally `#about`'s sibling: a child of `#menu`, `z-index: 5` local to `#menu`'s stacking
+  context, in `Menu.overlays` so `ESC`, the backdrop and `Let's go` all dismiss it the same way
+  (§ The overlays over the menu). Its panel is capped rather than fixed in height — it has no tabs
+  to hold still under.
 
 ## WAD Library
 
@@ -921,6 +944,7 @@ a setting touches one module.
 | `autoSwitchWeapon` | `game/inventory.ts` (`getAutoSwitchWeapon`/`setAutoSwitchWeapon`) | docs/weapons.md § Automatic weapon switching |
 | `playerName` | `game/replay.ts` (written by `describeReplay`, no setter) | docs/replays.md § Recording |
 | `skill` | `ui/menu/menu.ts` | § Difficulty above |
+| `showWelcome` | `ui/menu/welcome.ts` | § Welcome popup above |
 | `selection` | `ui/menu/menu.ts` | § Remembered selection below |
 
 Three persisted things are **not** fields of that object, because none of them fits in one: each
@@ -996,7 +1020,8 @@ Rules that hold this together:
   up: the menu, or a `?map=` level, which is why that branch **awaits** `menu.submit()` — the deep
   link never opens the menu, so the same overlay covers its WAD load, and `startLevel` has already
   raised and lowered it by the time `boot` calls `hide` (§ The loading screen). The failure path
-  needs no call of its own: `#fatal-error` is a rung above `#loading`.
+  needs no call of its own: `#fatal-error` is a rung above `#loading`. The launcher branch also
+  brings the welcome popup up over the menu (§ Welcome popup).
 - **`new Viewport` is wrapped in `try`/`catch`** and routed to `#fatal-error`: three.js throws a raw
   `Error` when the browser can't create a WebGL2 context, and without this the page is left sitting
   on `Loading …` forever, which reads as "hung" rather than "your browser can't run this". The

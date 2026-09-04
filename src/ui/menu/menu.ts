@@ -6,6 +6,7 @@ import * as wadlib from '../../wad/library.ts';
 import type { WadSource } from '../../wad/library.ts';
 import { badge, describeMap, describeSource, rowButton, sourceColumnSpans } from './labels.ts';
 import { AboutUi } from './about.ts';
+import { WelcomeUi } from './welcome.ts';
 import { confirmOnHold } from './hold.ts';
 import { LibraryUi } from './library.ts';
 import { WadInfoUi } from './wadinfo.ts';
@@ -150,6 +151,7 @@ export class Menu {
   private recordArmed = false;
   private library: LibraryUi;
   private about = new AboutUi();
+  private welcome = new WelcomeUi();
   private wadinfo = new WadInfoUi();
   /**
    * Every popup that can sit over the menu, **topmost first** — the one statement of that order,
@@ -213,7 +215,7 @@ export class Menu {
       pickFiles: () => this.pickFiles(),
       showTextFile: (source) => this.wadinfo.open(source),
     });
-    this.overlays = [this.wadinfo, this.about, this.library];
+    this.overlays = [this.wadinfo, this.about, this.welcome, this.library];
     el<HTMLButtonElement>('library-button').addEventListener('click', () => this.library.open());
     this.iwadSelect.addEventListener('change', () => this.selectIwad());
     this.fileInput.addEventListener('change', () => void this.onFilesChosen());
@@ -322,6 +324,15 @@ export class Menu {
     this.savegames.refresh(inGame);
     this.replays.refresh(inGame);
     this.refreshButtons();
+  }
+
+  /**
+   * Brings the welcome popup up over the launcher, unless the player has muted it — `main.ts`'s
+   * boot, once the menu is open (docs/menu.md § Welcome popup). Not part of `open`, which is also
+   * the pause screen: a run interrupted by ESC is nobody's first look at the game.
+   */
+  showWelcome(): void {
+    this.welcome.open();
   }
 
   close(): void {

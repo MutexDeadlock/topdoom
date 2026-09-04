@@ -21,6 +21,7 @@
 @import './ui/menu/savegames.css';
 @import './ui/menu/replays.css';
 @import './ui/menu/about.css';
+@import './ui/menu/welcome.css';
 @import './ui/menu/library.css';
 @import './ui/menu/wadinfo.css';
 @import './ui/loading.css';

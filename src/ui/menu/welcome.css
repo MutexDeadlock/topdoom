@@ -1,0 +1,71 @@
+/*
+ * The welcome popup — docs/menu.md § Welcome popup. Structurally #about's sibling: a child of #menu,
+ * so it can only exist while the menu is up, at a z-index local to #menu's own stacking context
+ * rather than a rung of base.css's global ladder. #about's rung: it opens at boot, before anything
+ * else can be clicked, and covers the links that open the other popups.
+ */
+#welcome {
+  z-index: 5;
+  padding: 24px;
+  background: rgba(6, 6, 8, 0.8);
+}
+
+/*
+ * Capped, not fixed: unlike #about it has no tabs of different heights to hold still under. The
+ * cap is the viewport less #welcome's own padding, and `border-box` so the panel's padding counts
+ * against it — content-box would push a capped panel back out to the full viewport height.
+ */
+#welcome .panel {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  padding: 24px 28px 22px;
+}
+
+/* Deltas only: the flex row, the rule under it and its margins are already `#menu header`'s. */
+#welcome header {
+  justify-content: center;
+}
+
+#welcome h1 {
+  font-size: 22px;
+  letter-spacing: 4px;
+}
+
+#welcome p {
+  margin: 0 0 12px;
+  color: var(--fg-button);
+}
+
+#welcome .lead {
+  margin-bottom: 20px;
+  color: var(--fg);
+}
+
+#welcome strong {
+  font-weight: normal;
+  color: var(--fg);
+}
+
+/* The one inline code span, in the WAD name the second section names. */
+#welcome code {
+  color: var(--fg);
+}
+
+/* The pointer at the rest of the key list, quieter than the rows above it. */
+#welcome p.hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+/* The checkbox at the left, the button at the right: `#menu footer` lays the row out. */
+#welcome footer {
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+#welcome .checkbox-row {
+  color: var(--fg-dim);
+}

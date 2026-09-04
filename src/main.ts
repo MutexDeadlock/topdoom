@@ -303,6 +303,9 @@ async function boot(): Promise<void> {
     await menu.submit();
   } else {
     menu.open();
+    // Over the launcher only: a deep link never shows the menu, and a returning player has muted
+    // it (docs/menu.md § Welcome popup).
+    menu.showWelcome();
   }
 
   // Whatever just took the screen replaces `#loading`, which is in the page from

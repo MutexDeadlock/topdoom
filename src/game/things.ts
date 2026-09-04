@@ -421,7 +421,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         // hanging in the air drops. Gated on the thing's own cached sector floor, so a corpse
         // already resting on it costs no query.
         if (p.type !== ThingType.lostSoul && p.z > (p.sector?.floorHeight ?? p.z)) {
-          const restZ = world.groundFloor(p.x, p.y, p.blockRadius, true);
+          const restZ = world.groundFloor(p.x, p.y, p.blockRadius, true, p.z);
           p.velZ -= GRAVITY * dt;
           p.z = Math.max(restZ, p.z + p.velZ * dt);
           if (p.z === restZ) p.velZ = 0;

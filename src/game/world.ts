@@ -468,8 +468,9 @@ let infiniteTallActors = readStorage(INFINITE_TALL_STORAGE_KEY, false);
 const positionScratch: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
 
 /**
- * `World.standingAt`'s own collider, refilled per call: the walk it wants has no body in it, and
- * it runs per body per frame through `groundFloor`/`groundCeiling`/`headroom`.
+ * `World.standingAt`'s own collider, refilled per call: the walk it wants has no *height* in it,
+ * only the feet its caller passed, and it runs per body per frame through
+ * `groundFloor`/`groundCeiling`/`headroom`.
  */
 const standingCollider = makeCollider({ radius: 0, z: ANY_HEIGHT, height: ANY_HEIGHT });
 
@@ -1182,9 +1183,13 @@ export class World {
    * keeps a mover pinned to a ledge's high side while its box still spans
    * that ledge's line. Point-sampling the floor instead deadlocks a fall off a
    * ledge; see docs/movement.md § Collision.
+   *
+   * `feet` is the body's own `z` where the caller has one, and it bounds which ledge may hold the
+   * body up: an opening more than `MAX_STEP_UP` above the feet is one no `P_TryMove` could have
+   * put them on. `ANY_HEIGHT` asks the geometry alone, which is what a fresh placement wants.
    */
-  groundFloor(x: number, y: number, radius: number, forMonster = false): number {
-    return this.standingAt(x, y, radius, forMonster).floorZ;
+  groundFloor(x: number, y: number, radius: number, forMonster = false, feet: number = ANY_HEIGHT): number {
+    return this.standingAt(x, y, radius, forMonster, feet).floorZ;
   }
 
   /**
@@ -1457,7 +1462,11 @@ export class World {
       }
       const openTop = front.ceilHeight < back.ceilHeight ? front.ceilHeight : back.ceilHeight;
       const openBottom = front.floorHeight > back.floorHeight ? front.floorHeight : back.floorHeight;
-      if (openBottom > out.floorZ) out.floorZ = openBottom;
+      // Vanilla adopts a box-wide `tmfloorz` only through a `P_TryMove` that already refused a
+      // bigger step, so a ledge more than `MAX_STEP_UP` above these feet is never what a body
+      // rests on. Skipping it here is what stops a body authored — or shoved — under such a ledge
+      // from being lifted onto it. docs/movement.md § Collision.
+      if (openBottom > out.floorZ && !stepsTooHigh(openBottom, z, zFinite)) out.floorZ = openBottom;
       if (openTop < out.ceilingZ) out.ceilingZ = openTop;
       if (openingRefuses(openTop, openBottom, z, zFinite)) {
         out.blocked = true;
@@ -1914,12 +1923,20 @@ export class World {
 
   /**
    * The one box walk the three queries below share: a body of this radius standing here, its own
-   * height ignored (`ANY_HEIGHT`) so the walk reports the opening rather than testing a fit. The
+   * height ignored (`ANY_HEIGHT`) so the walk reports the opening rather than testing a fit. Its
+   * `feet` still count, and only against the step a ledge would be (`stepsTooHigh`). The
    * result is `checkPosition`'s shared scratch — read the fields out before the next call.
    */
-  private standingAt(x: number, y: number, radius: number, forMonster: boolean): PositionCheck {
+  private standingAt(
+    x: number,
+    y: number,
+    radius: number,
+    forMonster: boolean,
+    feet: number = ANY_HEIGHT,
+  ): PositionCheck {
     standingCollider.radius = radius;
     standingCollider.forMonster = forMonster;
+    standingCollider.z = feet;
     return this.checkPosition(x, y, standingCollider, false);
   }
 
@@ -2050,7 +2067,18 @@ function blockedByThings(x: number, y: number, body: Collider): boolean {
 function openingRefuses(openTop: number, openBottom: number, z: number, zFinite: boolean): boolean {
   if (openTop - openBottom < PLAYER_HEIGHT) return true;
   if (!zFinite) return false;
-  return openBottom - z > MAX_STEP_UP || openTop - z < PLAYER_HEIGHT;
+  return stepsTooHigh(openBottom, z, zFinite) || openTop - z < PLAYER_HEIGHT;
+}
+
+/**
+ * `P_TryMove`'s "too big a step up" on its own, asked of one opening twice: it refuses the move
+ * above, and it keeps `checkPosition`'s `floorZ` off an opening bottom a body at `z` could not
+ * have climbed onto. `zFinite` false (`ANY_HEIGHT`) is the walk that asks about the geometry
+ * rather than about a body, and no step is too high for it.
+ * See docs/movement.md § Collision.
+ */
+function stepsTooHigh(openBottom: number, z: number, zFinite: boolean): boolean {
+  return zFinite && openBottom - z > MAX_STEP_UP;
 }
 
 function makeHeightsStamp(): HeightsStamp {

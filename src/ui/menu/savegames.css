@@ -183,8 +183,14 @@
 }
 
 /* Icon buttons (download, delete) carry their meaning in the tooltip, so they get
-   a square glyph-sized box rather than a label's worth of padding. */
+   a square glyph-sized box rather than a label's worth of padding. Centred by the flex
+   box and not by the padding around it: a glyph wider than the space padding leaves is
+   laid out from the content edge under `text-align`, so a padding rule from another tab
+   would slide it off centre rather than merely crowd it. */
 #menu .row-actions button.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 30px;
   padding: 4px 0;
   font-size: 15px;

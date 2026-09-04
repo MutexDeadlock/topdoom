@@ -21,6 +21,12 @@ import { stepFor } from '../fixtures/tics.ts';
  * `P_ZMovement` clamps the ceiling last, so the ceiling wins.
  * See docs/monster-ai.md § Floating monsters.
  *
+ * A body standing on the room floor is no longer lifted onto that block at all —
+ * a ledge more than a step above a body's feet is not what it rests on
+ * (docs/movement.md § Collision) — so the clamp is asked here of a flier that
+ * drifted onto the block under its own power, which is the state the bug left
+ * behind and the one the clamp order still has to answer.
+ *
  * **Repro: DOOM2 MAP29**, the cacodemon at (-112, 1104). Sector 76 is the room
  * (floor 352, ceiling 504) and sector 82 the diagonal `SW1LION` switch block
  * (floor 480, ceiling 504) 24 units from it — closer than the 31-unit radius,
@@ -89,8 +95,17 @@ describe('Regressions · a floater straddling a block it cannot fit on', () => {
     assert.ok(CEILING - BLOCK_TOP < CACO.height, `${CEILING - BLOCK_TOP} of headroom against a ${CACO.height}-tall body`);
   });
 
-  test('the ceiling wins over the floor, so it is never pushed into the gap', () => {
+  test('a body on the room floor is not lifted onto the block at all', () => {
     const f = loadBlock();
+    run(f, DOOM_TIC);
+    assert.equal(f.body.z, ROOM_FLOOR, 'the block is more than a step above its feet');
+  });
+
+  test('the ceiling wins over the floor, so a body on the block is never left in the gap', () => {
+    const f = loadBlock();
+    // Hovering at the block top, which a flier can reach on its own and which is exactly where
+    // the bug used to shove it.
+    f.body.z = BLOCK_TOP;
     run(f, DOOM_TIC);
     assert.equal(f.body.z, CEILING - CACO.height, 'clamped to the ceiling, below the block top');
   });

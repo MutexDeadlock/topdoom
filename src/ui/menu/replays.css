@@ -132,7 +132,11 @@
   gap: 10px;
 }
 
-#menu .replay-detail .label {
+/* The two `.label`s this panel owns — a field's caption and a fact's term — named rather than
+   matched panel-wide: `confirmOnHold` wraps a held button's content in a `.label` of its own
+   (hold.css), and shrinking that one takes the delete button's glyph and its box down with it. */
+#menu .replay-detail .field .label,
+#menu .replay-detail .facts .label {
   color: var(--fg-dim);
   font-size: 11px;
   text-transform: uppercase;
@@ -202,9 +206,12 @@
 
 /*
  * The buttons are `.row-actions` (savegames.css), outside the scroller above so they sit in one
- * place whatever the panel holds; Play gets a little more room than a row's Load.
+ * place whatever the panel holds; Play gets a little more room than a row's Load. **Not the icon
+ * buttons beside it**: this rule and savegames.css's `button.icon` carry the same specificity, so
+ * without the `:not` the later file wins the tie and a square 30px box is left with 2px of room
+ * for its glyph.
  */
-#menu .replay-detail .row-actions button {
+#menu .replay-detail .row-actions button:not(.icon) {
   padding: 5px 14px;
 }
 

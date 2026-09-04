@@ -58,6 +58,12 @@ others importing a stylesheet named after somewhere else. `#menu button.primary 
 too, for the same reason: the fill is this file's element, whoever's button wears it. It is imported after `menu.css` so `#menu button.hold` follows the `.ghost`
 rules it sits alongside; the two set disjoint properties, so the order is for reading, not cascade.
 
+`hold.ts` also wraps a held button's content in a `.label` span, so **a panel-wide rule on a generic
+class name reaches inside every button in that panel**. Name the owners instead:
+`#menu .replay-detail .field .label, #menu .replay-detail .facts .label` and not
+`#menu .replay-detail .label`, which shrank the delete button's glyph to a caption's 11px and its
+box with it.
+
 Two modules drive parts of markup they don't own the *element* of, and so have no `.html`:
 `savegames.ts` fills panels inside `#menu`, and `library.ts` drives `#wadlibrary`, whose markup sits
 in `menu.html` beside the `@include` of `about.html`. `crosshair.ts` and `wadfont.ts` have neither

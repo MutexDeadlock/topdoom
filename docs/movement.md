@@ -38,6 +38,25 @@ of the local sector's floor and the opening-bottom of any two-sided line the box
 test compares a freshly-dropped `z` against a still-high opening bottom and blocks every further
 move near that edge, forever.
 
+**A ledge more than `MAX_STEP_UP` above a body's feet never counts** (`stepsTooHigh`, the `feet`
+argument of `groundFloor` and the `z` every `checkPosition` collider carries). The pinning above
+*retains* a floor a body already reached; it must never *lift* one, and vanilla cannot, because a
+box-wide `tmfloorz` is only ever adopted by a `P_TryMove` that already refused a bigger step. The
+same opening is asked twice on one walk, by one predicate: it refuses the move (`openingRefuses`)
+and it is skipped as floor. Without it a body authored — or shoved, or left by a lowering sector —
+beside a tall ledge its box overlaps is snapped onto that ledge's top the moment anything settles
+it, and the dropoff rule then measures every step back down against the ledge and refuses it: a
+monster hovering a ledge's height over the floor for the rest of the level, walking on air.
+`ANY_HEIGHT` feet ask the geometry alone, which is what a fresh placement (a teleport arrival, a
+level's spawn loop) wants and what `groundCeiling`/`headroom` always pass.
+
+**Repro: DOOM1 E1M1**, the shotgun guys at (240, -3376) and (240, -3088). They stand in sector 24
+(floor -8) and their 20-unit box overlaps by 4 units the linedefs of the platforms beside them
+(sectors 44/45, floor 40), so waking one used to hop it 48 units into the air.
+`tests/regression/monster-under-high-ledge.test.ts` states that geometry in round numbers. It is
+authored geometry and not an accident of this engine: 39 of the 16,821 monsters in DOOM1, DOOM2 and
+the two freedooms stand in one, up to DOOM2 MAP26's cyberdemon at 216 units.
+
 A **solid** wall goes through the same two gates as a passable opening — it is not refused on mere
 proximity. That is `PIT_CheckLine`'s own order (bbox, then side, and only then the `!backsector` /
 `ML_BLOCKING` decisions), and it is the whole reason the endpoint jam § slideMove used to describe

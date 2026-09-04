@@ -567,7 +567,7 @@ export class Player implements Pos3 {
     const groundZ = this.noclip
       ? this.world.floorAt(this.x, this.y)
       : Math.max(
-          this.world.groundFloor(this.x, this.y, PLAYER_RADIUS),
+          this.world.groundFloor(this.x, this.y, PLAYER_RADIUS, false, this.z),
           bodyFloor(this.x, this.y, PLAYER_RADIUS, this.z, blockers),
         );
     this.groundZ = groundZ;

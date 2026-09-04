@@ -82,13 +82,14 @@ interface Chase extends MonsterStep {
    */
   sight: boolean | null;
   /**
-   * Where `standingAt`'s memo was taken, or null if it holds nothing yet. The buffer it fills is
-   * module-level (`standingCheck`) so it costs no allocation, but *whether it is valid* is a
-   * property of this one call — a fresh context is stale by construction, which is what a tic of
-   * movers under an unmoved body requires.
+   * Where `standingAt`'s memo was taken — position and feet — or null if it holds nothing yet. The
+   * buffer it fills is module-level (`standingCheck`) so it costs no allocation, but *whether it
+   * is valid* is a property of this one call — a fresh context is stale by construction, which is
+   * what a tic of movers under an unmoved body requires.
    */
   standingX: number | null;
   standingY: number;
+  standingZ: number;
   /**
    * This monster as a collision query, built once because `newChaseDir` probes up to eight
    * destinations for it. The feet height is the one field a probe varies, so each sets it first —
@@ -258,6 +259,7 @@ export function stepMonsterAI(
     sight: null,
     standingX: null,
     standingY: 0,
+    standingZ: 0,
     collider: makeCollider({
       radius: stats.radius,
       z: body.z,
@@ -743,19 +745,23 @@ function floatOverStep(c: Chase, x: number, y: number): void {
 }
 
 /**
- * One `P_CheckPosition` at the body's own position, the standing side of `dropoffRefuses`. `z` is
- * `ANY_HEIGHT` because no height it reads depends on it.
+ * One `P_CheckPosition` at the body's own position: the standing side of `dropoffRefuses`, and the
+ * floor `settleVertical` rests the body on. The probe carries the body's own feet, which is what
+ * keeps a ledge more than a step above them from counting as either
+ * (`world.ts: stepsTooHigh`, docs/movement.md § Collision).
  */
 function standingAt(c: Chase): PositionCheck {
   const { body, stats } = c;
-  // Keyed on the position too, so a committed move self-invalidates the memo within the call.
-  if (c.standingX !== body.x || c.standingY !== body.y) {
+  // Keyed on the position and the feet, so a committed move — or a height `floatOverStep` changed
+  // — self-invalidates the memo within the call.
+  if (c.standingX !== body.x || c.standingY !== body.y || c.standingZ !== body.z) {
     probeCollider.radius = stats.radius;
-    probeCollider.z = ANY_HEIGHT;
+    probeCollider.z = body.z;
     probeCollider.height = stats.height;
     c.world.checkPosition(body.x, body.y, probeCollider, false, standingCheck);
     c.standingX = body.x;
     c.standingY = body.y;
+    c.standingZ = body.z;
   }
   return standingCheck;
 }

@@ -335,9 +335,10 @@ property of the numbers rather than an extra check: a refused destination is one
 solid line (docs/movement.md § Collision), and every type's chase step is shorter than its own
 radius (the closest is the arch-vile, 15 against 20) — so the box at the destination and the box one
 step behind it always overlap, and a wall that the second one spans the first spans too. Taking the
-whole step rather than creeping into the refused position is also what keeps `settleVertical` honest
-— standing mid-graze would snap the body up to a `groundFloor` the step-up rule exists to refuse, a
-visible 56-unit hop on the MAP06 case. The extra query is one `testStep` inside the already-blocked
+whole step rather than creeping into the refused position is also what keeps `settleVertical` where
+the walk left it — standing mid-graze would rest the body on a `groundFloor` the step-up rule exists
+to refuse. The hop itself is bounded at the source now (docs/movement.md § Collision); what the
+whole step keeps is the body out of a position no `P_TryMove` accepted. The extra query is one `testStep` inside the already-blocked
 branch, replacing the two the older overlap-only version ran.
 
 Two arguments the player's own movement never sets:
@@ -521,11 +522,18 @@ pins the box-wide floor to the block for as long as the box spans its linedef (d
 Collision), and that pinning is load-bearing — vanilla only refreshes `mo->floorz` on a *successful*
 `P_TryMove`, which is its own deadlock (§ The dropoff rule) and not the rule to copy here.
 
+**A body on the floor is not lifted onto such a block in the first place** — a ledge more than
+`MAX_STEP_UP` above its feet is not what it rests on (docs/movement.md § Collision) — so the clamp
+answers the flier that drifted onto the block under its own power, which every flier can. Both
+rules are needed: the step bound keeps a body off a block it never climbed, and the clamp order
+decides where a body already up there ends up.
+
 **Repro: DOOM2 MAP29**, the cacodemon authored at (-112, 1104). Sector 76 is the room (floor 352,
 ceiling 504); sector 82 is the diagonal `SW1LION` switch block (floor 480, ceiling 504) whose
 linedef 1131 passes 24 units away — closer than the cacodemon's 31-unit radius, so its box straddles
 that block from the moment it spawns and can never step clear of it. With the floor winning it
-snapped 128 units up to z = 480 the instant it woke and hung there for the rest of the level.
+snapped 128 units up to z = 480 the instant it woke and hung there for the rest of the level; with
+the step bound it never leaves 352 unless it flies there itself.
 `tests/regression/floater-under-low-ceiling.test.ts` states the same geometry in round numbers.
 
 `testStep` carries its own copy of vanilla's "mobj must lower itself to fit"

@@ -29,6 +29,8 @@ Features and improvements
       as the map spawned them (this is why saves broke here)
 
 Fixed bugs
+  - a monster standing beside a ledge taller than a step no longer levitates
+    onto it when it wakes and hovers there (the two shotgun guys on E1M1)
   - a long menu status line no longer squeezes the footer buttons until their
     labels wrap
 

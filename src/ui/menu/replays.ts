@@ -24,7 +24,16 @@ import {
 import { blockingWad, missingWadText, wadLabel, type SaveWadSet } from '../../game/savegames.ts';
 import { SKILL_NAMES } from '../../game/skill.ts';
 import { formatClock } from '../hud/hud.ts';
-import { attempt, downloadJson, iconButton, noteLine, type StatusLine } from './actions.ts';
+import {
+  attempt,
+  downloadJson,
+  emptyLine,
+  iconButton,
+  installFilter,
+  matchesFilter,
+  noteLine,
+  type StatusLine,
+} from './actions.ts';
 import { confirmOnHold } from './hold.ts';
 import type { SaveSetInfo } from './savegames.ts';
 
@@ -85,6 +94,8 @@ export class ReplaysUi {
    * move what the player is looking at; the newest replay stands in when it names none.
    */
   private selectedId: string | null = null;
+  /** The heading's filter, already trimmed and lowercased — `installFilter`'s hand-off. */
+  private filter = '';
 
   constructor(
     hooks: ReplayHooks,
@@ -94,6 +105,10 @@ export class ReplaysUi {
     this.hooks = hooks;
     this.setStatus = setStatus;
     this.describe = describe;
+    installFilter(el<HTMLInputElement>('replay-filter'), (filter) => {
+      this.filter = filter;
+      this.renderList(true);
+    });
     this.recordButton.addEventListener('click', () => void this.toggleRecording());
     el<HTMLButtonElement>('replay-import').addEventListener('click', () => {
       this.fileInput.value = '';
@@ -180,14 +195,42 @@ export class ReplaysUi {
     if (epoch !== this.renderEpoch || !this.visible) return;
     this.stale = false;
     this.entries = entries;
-    if (!entries.some((entry) => entry.meta.id === this.selectedId)) {
-      this.selectedId = entries[0]?.meta.id ?? null;
-    }
-    const scrollTop = this.list.scrollTop;
+    this.renderList();
+  }
+
+  /**
+   * Builds the list from the cached listing, minus what the filter hides, and re-aims the panel:
+   * the pick has to be one of the rows on screen, or the panel would be showing a replay the
+   * filter says isn't there. `fromFilter` is a keystroke rather than a re-list — the rows are a
+   * different set now, so the offset goes back to the top.
+   */
+  private renderList(fromFilter = false): void {
+    const shown = this.entries.filter((entry) => this.matches(entry));
+    const picked = this.selectedId;
+    if (!shown.some((entry) => entry.meta.id === picked)) this.selectedId = shown[0]?.meta.id ?? null;
+    const scrollTop = fromFilter ? 0 : this.list.scrollTop;
     this.list.replaceChildren();
-    for (const entry of entries) this.list.append(this.makeRow(entry));
+    for (const entry of shown) this.list.append(this.makeRow(entry));
+    // Nothing recorded and nothing kept are different sentences, and this is what knows which.
+    if (shown.length === 0) {
+      this.list.append(emptyLine(this.entries.length === 0 ? 'No replays yet.' : 'No replay matches that filter.'));
+    }
     this.list.scrollTop = scrollTop;
-    this.renderDetail();
+    // A keystroke that left the pick where it was leaves the panel alone: it is a form of thirty-odd
+    // elements, and a re-list is the only thing that can change what one of them says.
+    if (!fromFilter || this.selectedId !== picked) this.renderDetail();
+  }
+
+  /**
+   * What the filter looks through: everything about a replay the player wrote themselves, plus the
+   * level it was recorded on — the one thing worth searching for that they didn't. The level costs
+   * a `describe` per row, so an empty filter never asks for it.
+   */
+  private matches(entry: ReplayListEntry): boolean {
+    if (this.filter === '') return true;
+    const { meta } = entry;
+    const level = this.describe(replayWadSet(meta)).level;
+    return matchesFilter(this.filter, [meta.name, meta.player, meta.description, level]);
   }
 
   /**

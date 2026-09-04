@@ -523,11 +523,13 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 - **The name in each row is an `<input>`** — renaming happens in place (`renameSave`), Enter or blur
   commits, ESC reverts and is stopped from bubbling to `main.ts`'s menu-closing handler. An
   untouched field re-renders nothing, so a plain focus-and-blur can't pull the row out from under a
-  click heading for one of its own buttons. Nor does a *successful* rename, or a delete: both patch
-  the visible list (the input's own value, `row.remove()`) and only mark the other tab's list stale.
-  Re-listing rebuilds every row — one thumbnail decode and one `describeSave` each — to redraw one
-  string, the cost worth avoiding on the one path a player repeats. (A rename also never rewrites
-  the save's state record: `renameSave` puts the meta alone.) It also means nothing may bake a
+  click heading for one of its own buttons. Nor does a *successful* rename: it patches the visible
+  list (the input's own value) and only marks the other tab's list stale. **Re-listing** rebuilds
+  every row — one thumbnail decode and one `describeSave` each — to redraw one string, the cost
+  worth avoiding on the one path a player repeats. A **delete** drops the row from the cached
+  listing and redraws the tab from it: the store read is the part `rename` avoids, and this needs
+  none — measured at ~3 ms over 40 rows, the thumbnails coming back from the browser's own image
+  cache. (A rename also never rewrites the save's state record: `renameSave` puts the meta alone.) It also means nothing may bake a
   save's name into a row's other elements — the Overwrite tooltip says "this save" for that reason.
 - **The save lists fill the panel vertically**: `.list-section` is the tab panel's flexible child
   and the list is the section's, against a `#menu > .panel` capped at the viewport — so the rows use
@@ -542,8 +544,29 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   must stay live); only Load is refused.
 - **What the rows share with the Replays tab lives in `actions.ts`**: the refusal contract every
   store call runs under (`attempt`: anything thrown becomes the status line), the red/amber line
-  beside a row (`noteLine`), the download and delete icon buttons (`iconButton`) and handing an
-  export file to the browser (`downloadJson`). Each tab keeps only the store call and the noun.
+  beside a row (`noteLine`), the heading's filter field (`installFilter`, `matchesFilter`,
+  `emptyLine`), the download and delete icon buttons (`iconButton`) and handing an export file to
+  the browser (`downloadJson`). Each tab keeps only the store call, the noun and which fields its
+  filter looks through.
+- **Each list has a filter beside its heading** (`.list-head` is the flex row, the `<h2>` giving up
+  its margin to sit in it — the WAD Library header's shape). A save is matched on its name and its
+  level, a replay on name, player, notes and level (§ Replays tab); the comparison is a plain
+  case-insensitive substring, over text `installFilter` trimmed and lowercased once per keystroke
+  rather than once per row. Three rules make it behave:
+  - **The Save and Load tabs filter independently.** They are looked through for different reasons,
+    so text typed over one must not hide rows on the other.
+  - **A keystroke re-renders from the cached listing, never from the store** (`SavegamesUi.entries`,
+    `ReplaysUi.entries`), and scrolls back to the top: the rows are a different set now, so keeping
+    the offset would leave the player looking at the middle of them. A keystroke that leaves the
+    Replays panel's pick alone leaves the panel alone as well — only a re-list can change what one
+    of its thirty-odd elements says.
+  - **The list says which of the two things an empty list means** — nothing stored, or nothing the
+    filter kept — from its renderer (`actions.ts: emptyLine`), since only it knows both counts.
+    `:empty::after` stays the shape for the add-on list alone, which has no renderer and no filter;
+    it is keyed on `#pwad-list` rather than on `.list`, or its sentence would be what an unrendered
+    save list claims.
+  - **ESC clears a filter that has something in it** and stops there; an already empty field lets
+    the key through to `main.ts`, which closes the menu with it — the in-place rename's rule.
 - **Delete and Overwrite confirm by being held** (`hold.ts: confirmOnHold`, `HOLD_MS` — shared with
   the WAD Library's Forget, and styled by the class alone in `hold.css` so any `#menu` button can
   wear it): a bar sweeps the button and the action fires when it lands, letting go early cancels and
@@ -602,6 +625,11 @@ Play for a set the library can't supply. What is this tab's own:
   re-list, so an edit or an import doesn't move what the player is looking at; a stop or a delete
   clears it, and the newest replay is what an unset pick falls back to, which is exactly the run
   just recorded.
+- **The filter reaches what the panel holds, not only what the row shows**: name, player, notes and
+  the level — a run is as likely to be remembered by the note written on it as by its name. The
+  level costs a `describe` per row, so an empty filter never asks for it. A pick
+  the filter hides is moved to the first row that survived it — a panel showing a replay the list
+  says isn't there is the state to avoid — and with nothing left it falls back to the placeholder.
 - **The panel's buttons and warnings never scroll** (`.detail-body` is the scroller, the rest are
   its siblings): the fields and facts scroll under them. A reason scrolled out of sight beside a
   greyed Play is the state the "say why" rule exists to prevent.

@@ -59,14 +59,20 @@
           </div>
         </section>
         <section class="list-section">
-          <h2>Existing saves <span class="hint">overwrite one, or rename it in place</span></h2>
+          <div class="list-head">
+            <h2>Existing saves <span class="hint">overwrite one, or rename it in place</span></h2>
+            <input type="search" class="list-filter" id="save-filter" placeholder="Filter by name or map…" autocomplete="off" />
+          </div>
           <div class="list saves" id="save-list"></div>
         </section>
       </div>
 
       <div class="tab-panel" id="tab-load">
         <section class="list-section">
-          <h2>Load game</h2>
+          <div class="list-head">
+            <h2>Load game</h2>
+            <input type="search" class="list-filter" id="load-filter" placeholder="Filter by name or map…" autocomplete="off" />
+          </div>
           <div class="list saves" id="load-list"></div>
           <button class="ghost" id="save-import">Import save from disk…</button>
         </section>
@@ -79,7 +85,10 @@
           <span class="hint warning" id="replay-record-hint"></span>
         </section>
         <section class="list-section">
-          <h2>Replays <span class="hint">pick one to see and edit what it is</span></h2>
+          <div class="list-head">
+            <h2>Replays <span class="hint">pick one to see and edit what it is</span></h2>
+            <input type="search" class="list-filter" id="replay-filter" placeholder="Filter by name, map, player…" autocomplete="off" />
+          </div>
           <div class="replays-split">
             <div class="replays-column">
               <div class="list replays" id="replay-list"></div>

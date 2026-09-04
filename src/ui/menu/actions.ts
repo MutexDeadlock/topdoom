@@ -1,7 +1,9 @@
 /**
  * What the Save, Load and Replays tabs' rows share: the refusal contract every store call runs
- * under, the warning line beside a row, the download and delete icon buttons, and handing an
- * export file to the browser. Pure DOM; each tab keeps what differs — the store call and the noun.
+ * under, the warning line beside a row, the heading's filter field and the line a list shows in
+ * place of rows, the download and delete icon buttons, and handing an export file to the browser.
+ * Pure DOM; each tab keeps what differs — the store call, the noun and which fields the filter
+ * looks through.
  * docs/menu.md § Save and Load tabs.
  */
 
@@ -33,6 +35,40 @@ export function noteLine(kind: 'warning' | 'caution', label: string, full?: stri
   line.className = kind;
   line.textContent = label;
   if (full !== undefined) line.title = full;
+  return line;
+}
+
+/**
+ * Wires a list heading's filter field: every keystroke hands over the text already trimmed and
+ * lowercased, so the comparison below is done once per keystroke rather than once per row. ESC
+ * clears a filter that has something in it and stops there; an already empty field lets the key
+ * through to `main.ts`, which closes the menu with it.
+ */
+export function installFilter(input: HTMLInputElement, onChange: (filter: string) => void): void {
+  input.addEventListener('input', () => onChange(input.value.trim().toLowerCase()));
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || input.value === '') return;
+    e.stopPropagation();
+    input.value = '';
+    onChange('');
+  });
+}
+
+/** Whether a row survives the filter above its list: a plain substring over the fields that tab
+    decided are worth searching. `filter` is what `installFilter` handed over. */
+export function matchesFilter(filter: string, fields: readonly string[]): boolean {
+  return filter === '' || fields.some((field) => field.toLowerCase().includes(filter));
+}
+
+/**
+ * The line a list shows in place of rows: nothing stored yet, or nothing its filter kept. A
+ * rendered child rather than the `:empty::after` the add-on list uses — which of the two an empty
+ * list means is the renderer's to say, and only it knows both counts.
+ */
+export function emptyLine(text: string): HTMLDivElement {
+  const line = document.createElement('div');
+  line.className = 'empty';
+  line.textContent = text;
   return line;
 }
 

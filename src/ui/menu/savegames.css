@@ -56,13 +56,6 @@
   max-height: none;
 }
 
-#menu .saves:empty::after {
-  content: 'No saved games yet.';
-  display: block;
-  padding: 14px 12px;
-  color: var(--fg-faint);
-}
-
 /* Taller rows than the WAD lists: a thumbnail needs the height, and the label under
    the name (level, then meta, then any missing-file warning) fills it. */
 #menu .saves .row {

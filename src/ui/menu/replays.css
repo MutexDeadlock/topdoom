@@ -35,13 +35,6 @@
   min-height: 0;
 }
 
-#menu .replays:empty::after {
-  content: 'No replays yet.';
-  display: block;
-  padding: 14px 12px;
-  color: var(--fg-faint);
-}
-
 /* A row is a pick, so it keeps `.row`'s pointer and hover — unlike the save lists' rows. */
 #menu .replays .row {
   align-items: baseline;

@@ -20,7 +20,7 @@ import {
 } from '../../game/savegames.ts';
 import { SKILL_NAMES } from '../../game/skill.ts';
 import { formatClock } from '../hud/hud.ts';
-import { attempt, downloadJson, iconButton, noteLine } from './actions.ts';
+import { attempt, downloadJson, emptyLine, iconButton, installFilter, matchesFilter, noteLine } from './actions.ts';
 import { confirmOnHold } from './hold.ts';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -68,8 +68,8 @@ export interface SaveSetInfo {
  * line. docs/menu.md § Save and Load tabs.
  */
 export class SavegamesUi {
-  private saveList = el<HTMLDivElement>('save-list');
-  private loadList = el<HTMLDivElement>('load-list');
+  /** The two list containers, keyed like `stale` and `filters` — everything per tab indexes alike. */
+  private lists = { save: el<HTMLDivElement>('save-list'), load: el<HTMLDivElement>('load-list') };
   private nameInput = el<HTMLInputElement>('save-name');
   private saveButton = el<HTMLButtonElement>('save-button');
   private refusalHint = el<HTMLSpanElement>('save-refusal');
@@ -92,6 +92,16 @@ export class SavegamesUi {
    * discards itself.
    */
   private renderEpoch = 0;
+  /**
+   * The heading's filter, per tab: the two lists are looked through for different reasons, so text
+   * typed over one must not hide rows on the other.
+   */
+  private filters = { save: '', load: '' };
+  /**
+   * What the last listing returned, so a keystroke in a filter re-renders without re-reading. One
+   * array for both tabs: they list the same store, and only the *rendering* of it is per tab.
+   */
+  private entries: SaveListEntry[] = [];
 
   constructor(
     hooks: SaveHooks,
@@ -101,6 +111,16 @@ export class SavegamesUi {
     this.hooks = hooks;
     this.setStatus = setStatus;
     this.describe = describe;
+    // Spelled out rather than looped over the two tabs: an element is looked up by a literal id
+    // (docs/styles.md § One owner per element), which `tests/ui/markup.test.ts` is what enforces.
+    installFilter(el<HTMLInputElement>('save-filter'), (filter) => {
+      this.filters.save = filter;
+      this.renderList('save', true);
+    });
+    installFilter(el<HTMLInputElement>('load-filter'), (filter) => {
+      this.filters.load = filter;
+      this.renderList('load', true);
+    });
     this.saveButton.addEventListener('click', () => void this.save());
     this.nameInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') void this.save();
@@ -182,7 +202,8 @@ export class SavegamesUi {
     }
     if (epoch !== this.renderEpoch || this.visible !== tab) return;
     this.stale[tab] = false;
-    this.renderList(tab === 'save' ? this.saveList : this.loadList, entries, tab);
+    this.entries = entries;
+    this.renderList(tab);
   }
 
   private async save(): Promise<void> {
@@ -197,16 +218,33 @@ export class SavegamesUi {
     this.refresh();
   }
 
-  private renderList(container: HTMLDivElement, entries: SaveListEntry[], mode: 'save' | 'load'): void {
-    const scrollTop = container.scrollTop;
+  /**
+   * Builds one tab's list from the cached listing, minus what its filter hides. `fromFilter` is a
+   * keystroke rather than a re-list: the rows are a different set now, so the offset goes back to
+   * the top instead of leaving the player in the middle of fresh results.
+   */
+  private renderList(tab: 'save' | 'load', fromFilter = false): void {
+    const container = this.lists[tab];
+    const scrollTop = fromFilter ? 0 : container.scrollTop;
     container.replaceChildren();
-    for (const entry of entries) container.append(this.makeRow(entry, mode));
+    let shown = 0;
+    for (const entry of this.entries) {
+      // The level is the filter's second field and the row's own second line, so it is resolved
+      // once here rather than again inside the row.
+      const set = this.describe(entry.meta);
+      if (!matchesFilter(this.filters[tab], [entry.meta.name, set.level])) continue;
+      container.append(this.makeRow(entry, set, tab));
+      shown++;
+    }
+    // Nothing stored and nothing kept are different sentences, and this is what knows which.
+    if (shown === 0) {
+      container.append(emptyLine(this.entries.length === 0 ? 'No saved games yet.' : 'No save matches that filter.'));
+    }
     container.scrollTop = scrollTop;
   }
 
-  private makeRow(entry: SaveListEntry, mode: 'save' | 'load'): HTMLDivElement {
+  private makeRow(entry: SaveListEntry, set: SaveSetInfo, mode: 'save' | 'load'): HTMLDivElement {
     const { meta } = entry;
-    const set = this.describe(meta);
     const row = document.createElement('div');
     row.className = 'row' + (entry.refusal === null ? '' : ' unsupported');
 
@@ -352,9 +390,12 @@ export class SavegamesUi {
       action: () => {
         void attempt(this.setStatus, async () => {
           await deleteSave(meta.id);
-          // Only this row goes; re-listing would redecode every remaining row's
-          // thumbnail to redraw rows that didn't change (see `rename`).
-          button.closest('.row')?.remove();
+          // Dropped from the cache and the list redrawn from it — what `rename` avoids is the
+          // *re-listing*, and this needs none. Measured at ~3 ms over 40 rows, the thumbnails
+          // coming back from the browser's own image cache, which is what a filter keystroke has
+          // paid since it started rebuilding the same rows.
+          this.entries = this.entries.filter((e) => e.meta.id !== meta.id);
+          if (this.visible) this.renderList(this.visible);
           this.markOtherListStale();
         });
       },

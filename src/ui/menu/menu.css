@@ -198,6 +198,49 @@
   color: var(--fg-faint);
 }
 
+/*
+ * A list's heading row: the `<h2>` and its hint on the left, the filter field on the right — the
+ * WAD Library header's shape (library.css), one panel down. The heading takes the slack, so a long
+ * hint ellipsizes rather than squeezing the field, and the field keeps one width across the tabs.
+ */
+#menu .list-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  /* The margin the `<h2>` gave up to sit in this row. */
+  margin-bottom: 8px;
+}
+
+#menu .list-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#menu .list-filter {
+  flex: none;
+  width: 230px;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--inset-bg);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}
+
+#menu .list-filter::placeholder {
+  color: var(--fg-ghost);
+}
+
+#menu .list-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 #menu .list {
   border: 1px solid var(--border);
   background: var(--inset-bg);
@@ -205,9 +248,20 @@
   overflow-y: auto;
 }
 
-#menu .list:empty::after {
+/*
+ * The line a list shows in place of rows. The add-on list has no renderer of its own and no
+ * filter, so its one sentence is CSS's; the save and replay lists have both, and say which of the
+ * two things an empty list means from their renderer (`actions.ts: emptyLine`). Keyed on the id
+ * rather than on `.list`, or the add-on sentence would be what an unrendered save list claims.
+ */
+#pwad-list:empty::after {
   content: 'No add-ons picked — open the WAD Library to choose some.';
   display: block;
+  padding: 14px 12px;
+  color: var(--fg-faint);
+}
+
+#menu .list .empty {
   padding: 14px 12px;
   color: var(--fg-faint);
 }

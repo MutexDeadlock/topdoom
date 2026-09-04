@@ -16,6 +16,7 @@ import {
   type LineDef,
   type SideDef,
   type Sector,
+  type Vertex,
 } from '../wad/map.ts';
 import { buildLeafGraph, buildSubSectorPolys, type LeafGraph, type SectorPoly, type SubSectorPoly } from './bsp.ts';
 import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
@@ -145,12 +146,43 @@ export interface DrawnBands {
   /** The lower step, drawn when `lowerTop > lowerBot`. */
   lowerBot: number;
   lowerTop: number;
-  /** The upper step, drawn when `upperTop > upperBot` and not `skyPair`. */
+  /** The upper step, drawn when `upperTop > upperBot`, not `skyPair` and not `upperTrimmed`. */
   upperBot: number;
   upperTop: number;
   /** Two sky ceilings, between which vanilla draws no upper at all. */
   skyPair: boolean;
+  /**
+   * A thin ceiling step over an opening the player walks under, which this engine draws as
+   * nothing. Never true with `skyPair`; a deliberate deviation, docs/render.md § Ceiling trims.
+   */
+  upperTrimmed: boolean;
 }
+
+/** A zeroed record for a caller keeping one as scratch, so the field list exists in one place. */
+export function newDrawnBands(): DrawnBands {
+  return { lowerBot: 0, lowerTop: 0, upperBot: 0, upperTop: 0, skyPair: false, upperTrimmed: false };
+}
+
+/**
+ * The tallest ceiling step that reads as trim rather than as structure. **Tuned by feel**: 16 is
+ * the band DOOM's mappers run around a room's edge, and 32 starts taking door lintels with it.
+ * docs/render.md § Ceiling trims.
+ */
+const TRIM_MAX_HEIGHT = 16;
+
+/**
+ * How much room has to be left under a step before it is trim at all. Vanilla's own player height
+ * (`info.c`'s `MT_PLAYER`, 56, the number `game/player.ts`'s `PLAYER_HEIGHT` carries) — under that
+ * the step is a window sill or a closed door's face, which is structure whatever its height.
+ */
+const TRIM_MIN_OPENING = 56;
+
+/**
+ * How wide the sector whose ceiling drops may be and still be a *fixture* hung from the ceiling —
+ * an exit sign, a light panel — rather than a room the step runs around. **Tuned by feel**, on
+ * DOOM's 64-unit grid: every `EXITSIGN` in both id IWADs hangs in a sector no wider than this.
+ */
+const TRIM_MAX_FIXTURE = 64;
 
 /**
  * **Which bands one side of a two-sided line draws, and how tall** — the heights resolved through
@@ -159,21 +191,26 @@ export interface DrawnBands {
  * two cannot drift; written into a caller's record, so neither allocates.
  *
  * `wallHeightCap` is deliberately *not* applied here: no occlusion question wants a wall shortened
- * by a build option. docs/render.md § Mesh building.
+ * by a build option. `upperTrimmed` is the opposite case and belongs here — a trimmed upper is a
+ * quad that does not exist, which no occlusion question may believe in either.
+ * docs/render.md § Mesh building and § Ceiling trims.
  */
 export function twoSidedBands(
+  map: DoomMap,
   transfers: SectorTransfers,
-  sec: Sector,
   secIndex: number,
-  other: Sector,
   otherIndex: number,
+  upper: string,
   out: DrawnBands,
 ): void {
+  const sec = map.sectors[secIndex];
+  const other = map.sectors[otherIndex];
   out.lowerBot = transfers.drawnFloor(secIndex);
   out.lowerTop = transfers.drawnFloor(otherIndex);
   out.upperBot = ceilingFacing(transfers, other, otherIndex, secIndex);
   out.upperTop = sec.ceilHeight;
   out.skyPair = sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT;
+  out.upperTrimmed = trimsCeiling(map, out, otherIndex, upper);
 }
 
 /**
@@ -249,6 +286,12 @@ export interface BuiltMap {
   /** Names of textures referenced by the map but missing from the WAD. */
   missingTextures: string[];
   triangles: number;
+  /**
+   * How many upper steps the ceiling-trim rule left out of these batches, which `game.ts` reports
+   * at level load. The static geometry's own tally: a line touching a mover is built by
+   * `buildMoverMesh` instead and counted nowhere. docs/render.md § Ceiling trims.
+   */
+  trimmedUppers: number;
   /** Every rendered wall quad, for occlusion-fading the ones between camera and player. */
   occluders: WallOccluder[];
   /** Wall batch meshes by key, so occlusion fading can reach their vertex-alpha attribute. */
@@ -413,6 +456,8 @@ export interface MoverMesh {
   wallMeshCount: number;
   wallQuads: WallOccluder[];
   flatFans: FlatSurface[];
+  /** How many upper steps this sector's build left out — `BuiltMap.trimmedUppers`' twin. */
+  trimmedUppers: number;
 }
 
 /**
@@ -474,6 +519,7 @@ export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshO
     group,
     missingTextures: [...build.missing].sort(),
     triangles,
+    trimmedUppers: build.trimmedUppers,
     occluders: build.occluders,
     wallMeshes,
     flatSurfaces: build.flatSurfaces,
@@ -508,6 +554,7 @@ export function buildMoverMesh(mover: MoverBuild, sectorIndex: number): MoverMes
     wallMeshCount: drawn.reduce((n, b) => n + (b.kind === 'wall' ? 1 : 0), 0),
     wallQuads: build.occluders,
     flatFans: build.flatSurfaces,
+    trimmedUppers: build.trimmedUppers,
   };
 }
 
@@ -683,6 +730,8 @@ interface Build {
   occluders: WallOccluder[];
   /** Every flat fan emitted, appended in draw order. */
   flatSurfaces: FlatSurface[];
+  /** How many upper steps this build left out as ceiling trims — see `BuiltMap.trimmedUppers`. */
+  trimmedUppers: number;
   renderCeilings: boolean;
   wallHeightCap: number;
   movableSectors?: Set<number>;
@@ -737,6 +786,7 @@ function beginBuild(map: DoomMap, polys: SubSectorPoly[], bank: MaterialBank, op
     transfers,
     occluders: [],
     flatSurfaces: [],
+    trimmedUppers: 0,
     rebuiltWithNeighbours: false,
     renderCeilings: options.renderCeilings ?? false,
     wallHeightCap: options.wallHeightCap ?? 0,
@@ -1577,15 +1627,12 @@ interface WallSpec {
  * and `WALL_CHUNK_LEN` says why.
  */
 function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean {
-  if (spec.topH <= spec.botH) return false;
-  if (!isTextured(spec.texture)) return false;
-  const dim = build.size('wall', spec.texture);
+  const dim = wallTextureSize(build, spec);
   if (!dim) return false;
 
   const dx = spec.bx - spec.ax;
   const dy = spec.by - spec.ay;
   const len = vecLength(dx, dy);
-  if (len < 1e-6) return false;
 
   // Fake contrast: east-west walls darken, north-south brighten, so corners stay legible under
   // flat sector lighting (`r_segs.c: R_StoreWallRange`).
@@ -1659,6 +1706,19 @@ function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean
     }
   }
   return true;
+}
+
+/**
+ * The art `addWall` would draw this quad with, or null where it draws nothing at all — which is
+ * also **vanilla's** answer for whether the tier exists, its `toptexture`/`bottomtexture` being
+ * non-zero over a real span. `addTwoSidedSide` asks it without emitting for a ceiling trim, whose
+ * midtexture clip has to follow vanilla rather than this engine (§ What cuts a midtexture).
+ */
+function wallTextureSize(build: Build, spec: WallSpec): Size | null {
+  if (spec.topH <= spec.botH) return null;
+  const dim = build.size('wall', spec.texture);
+  if (!dim) return null;
+  return vecLength(spec.bx - spec.ax, spec.by - spec.ay) < 1e-6 ? null : dim;
 }
 
 function buildWalls(build: Build): void {
@@ -1789,8 +1849,83 @@ function ceilingFacing(transfers: SectorTransfers, other: Sector, otherIndex: nu
   return transfers.heightSec(viewerSector) >= 0 ? other.ceilHeight : transfers.drawnCeiling(otherIndex);
 }
 
+/**
+ * Whether a side's upper is a **ceiling trim** — a thin step over an opening the player walks
+ * under, which this engine draws as nothing. The four clauses and what each keeps are
+ * docs/render.md § Ceiling trims; the heights come off the record the caller has just filled, so
+ * they are the drawn ones. Ordered cheapest first: the map-wide index is only consulted for a step
+ * the heights already admit.
+ */
+function trimsCeiling(map: DoomMap, bands: DrawnBands, otherIndex: number, upper: string): boolean {
+  if (bands.skyPair) return false;
+  if (bands.upperTop <= bands.upperBot) return false;
+  if (bands.upperTop - bands.upperBot > TRIM_MAX_HEIGHT) return false;
+  if (bands.upperBot - Math.max(bands.lowerBot, bands.lowerTop) < TRIM_MIN_OPENING) return false;
+  const index = trimIndex(map);
+  return index.extent[otherIndex] > TRIM_MAX_FIXTURE && index.masonry.has(upper);
+}
+
+/** What deciding a trim needs to know about the whole map — see `trimIndex`. */
+interface TrimIndex {
+  /** How wide each sector is at its widest, over the linedefs that bound it. */
+  extent: Float64Array;
+  /** Every texture this map hangs somewhere other than on an upper step. */
+  masonry: Set<string>;
+}
+
+/** One index per map, weak on it like `bsp.ts`'s polygons — see `trimIndex`. */
+const trimIndexes = new WeakMap<DoomMap, TrimIndex>();
+
+/**
+ * The two map-wide questions a trim asks, in one pass over the linedefs, built once: a mover
+ * rebuilds through here every tic it runs and neither answer moves with a height.
+ *
+ * `masonry` is what keeps an **exit sign**, which no width test can: a sign is a 16-unit upper
+ * over a walkable opening like any trim, and what makes it a sign is that `EXITSIGN` is painted
+ * nowhere else. A texture the map also hangs as a wall or a step riser is ordinary material, and a
+ * thin band of it overhead is trim. A sector no linedef names has no extent at all, which keeps
+ * its upper.
+ */
+function trimIndex(map: DoomMap): TrimIndex {
+  const cached = trimIndexes.get(map);
+  if (cached) return cached;
+  const n = map.sectors.length;
+  const minX = new Float64Array(n).fill(Infinity);
+  const minY = new Float64Array(n).fill(Infinity);
+  const maxX = new Float64Array(n).fill(-Infinity);
+  const maxY = new Float64Array(n).fill(-Infinity);
+  const stretch = (sec: number, v: Vertex) => {
+    if (v.x < minX[sec]) minX[sec] = v.x;
+    if (v.y < minY[sec]) minY[sec] = v.y;
+    if (v.x > maxX[sec]) maxX[sec] = v.x;
+    if (v.y > maxY[sec]) maxY[sec] = v.y;
+  };
+  const masonry = new Set<string>();
+  for (const line of map.linedefs) {
+    const v1 = map.vertexes[line.v1];
+    const v2 = map.vertexes[line.v2];
+    for (const sideIndex of [line.right, line.left]) {
+      if (sideIndex === NO_SIDE) continue;
+      const side = map.sidedefs[sideIndex];
+      if (!side) continue;
+      if (isTextured(side.lower)) masonry.add(side.lower);
+      if (isTextured(side.middle)) masonry.add(side.middle);
+      if (side.sector >= n) continue;
+      if (v1) stretch(side.sector, v1);
+      if (v2) stretch(side.sector, v2);
+    }
+  }
+  const extent = new Float64Array(n);
+  for (let sec = 0; sec < n; sec++) {
+    extent[sec] = Math.max(maxX[sec] - minX[sec], maxY[sec] - minY[sec]);
+  }
+  const index = { extent, masonry };
+  trimIndexes.set(map, index);
+  return index;
+}
+
 /** `addTwoSidedSide`'s own scratch — it is not reentrant, so one record serves every side. */
-const sideBands: DrawnBands = { lowerBot: 0, lowerTop: 0, upperBot: 0, upperTop: 0, skyPair: false };
+const sideBands = newDrawnBands();
 
 /**
  * How opaque a Boom 260 midtexture draws: `tran_filter_pct`'s default of 66 (`m_misc.c`'s config
@@ -1804,11 +1939,14 @@ function addTwoSidedSide(build: Build, line: LineView, view: SideView): void {
   // The heights this side is *sized* against. Everything below reads these, never
   // `sec.floorHeight`/`other.ceilHeight` — except the midtexture's peg anchor, the one thing a 242
   // leaves alone (docs/render.md § Deep water).
-  twoSidedBands(transfers, sec, secIndex, other, otherIndex, sideBands);
+  twoSidedBands(build.map, transfers, secIndex, otherIndex, side.upper, sideBands);
   const otherCeil = sideBands.upperBot;
   const selfFloor = sideBands.lowerBot;
   const otherFloor = sideBands.lowerTop;
   const skyPair = sideBands.skyPair;
+  // A step whose own height can move is left alone whatever its span: a door would otherwise shed
+  // its header mid-travel, the tic it drops under `TRIM_MAX_HEIGHT`.
+  const trimmed = sideBands.upperTrimmed && build.holdsStill(secIndex) && build.holdsStill(otherIndex);
   const base = {
     ax: a.x,
     ay: a.y,
@@ -1828,17 +1966,21 @@ function addTwoSidedSide(build: Build, line: LineView, view: SideView): void {
   let upperDrawn = false;
   if (sec.ceilHeight > otherCeil && !skyPair) {
     const dim = size('wall', side.upper);
-    upperDrawn = addWall(
-      build,
-      {
-        ...base,
-        topH: line.cap(sec, sec.ceilHeight),
-        botH: Math.min(line.cap(sec, sec.ceilHeight), otherCeil),
-        texture: side.upper,
-        pegRef: upperUnpegged ? sec.ceilHeight : otherCeil + (dim?.h ?? 128),
-      },
-      line.bandVertically,
-    );
+    const upper: WallSpec = {
+      ...base,
+      topH: line.cap(sec, sec.ceilHeight),
+      botH: Math.min(line.cap(sec, sec.ceilHeight), otherCeil),
+      texture: side.upper,
+      pegRef: upperUnpegged ? sec.ceilHeight : otherCeil + (dim?.h ?? 128),
+    };
+    // A trim is left out of the mesh and still counts as drawn below: the midtexture clip is
+    // vanilla's rule about what the mapper textured, not this engine's about what it draws.
+    if (trimmed) {
+      upperDrawn = wallTextureSize(build, upper) !== null;
+      if (upperDrawn) build.trimmedUppers++;
+    } else {
+      upperDrawn = addWall(build, upper, line.bandVertically);
+    }
   }
 
   // Lower: the neighbour's floor is higher, so a step faces this side. A pool's surface never

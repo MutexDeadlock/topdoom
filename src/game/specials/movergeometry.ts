@@ -271,6 +271,17 @@ export class MoverGeometry {
   }
 
   /**
+   * How many upper steps the ceiling-trim rule left out of the mover meshes (docs/render.md
+   * § Ceiling trims), for `game.ts`'s level-load line to add to the static batches' own tally.
+   * Read once at load: a rebuild moves it, and nothing reports it again.
+   */
+  get trimmedUppers(): number {
+    let total = 0;
+    for (const entry of this.moverMeshes.values()) total += entry.mesh.trimmedUppers;
+    return total;
+  }
+
+  /**
    * Indexes every sector's own occluders and flats out of `built` once, so `recolorSector` never
    * re-scans the map. **Every sector, not just the ones with a load-time blink pattern**: the
    * `lightChange` line specials can recolor any tag-matched sector on demand. Static batches only —

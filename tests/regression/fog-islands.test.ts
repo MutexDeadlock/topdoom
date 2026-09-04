@@ -4,7 +4,7 @@ import { Wad } from '../../src/wad/wad.ts';
 import { loadMap } from '../../src/wad/map.ts';
 import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
-import { buildIslands, buildSubSectorPolys } from '../../src/render/bsp.ts';
+import { buildIslands, buildSubSectorPolys, islandCount } from '../../src/render/bsp.ts';
 import { fixtureWad } from '../fixtures/wadfile.ts';
 
 /**
@@ -42,6 +42,12 @@ describe('Regressions · fog of war and detached regions', () => {
     assert.equal(island[mainPool], startIsland, 'the underwater tunnel is part of the main map');
     assert.notEqual(island[poolRoom], startIsland, 'the pool room is not');
     assert.equal(island[sector92], island[poolRoom], 'the pool room is one island, not several');
+  });
+
+  test('the island count is how many regions the partition found', () => {
+    // What `game.ts` puts on the level-load line; the ids are dense, so it is the highest plus one.
+    assert.equal(islandCount(map), new Set(island).size);
+    assert.equal(islandCount(map), 27, 'BOOMEDIT MAP01, as docs/render.md § Islands records');
   });
 
   test('a sight ray never reaches another island', () => {

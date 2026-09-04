@@ -178,6 +178,20 @@ export function buildIslands(map: DoomMap): Int32Array {
   return built;
 }
 
+/**
+ * How many connected regions the map came apart into, which `game.ts` reports at level load — one
+ * on every stock map, more where a teleporter is the only way in. `rebuildIslands` hands out dense
+ * ids, so the highest plus one is the count. docs/render.md § Islands.
+ */
+export function islandCount(map: DoomMap): number {
+  const island = buildIslands(map);
+  let highest = -1;
+  for (let i = 0; i < island.length; i++) {
+    if (island[i] > highest) highest = island[i];
+  }
+  return highest + 1;
+}
+
 /** One of a leaf's segs, endpoints as the VERTEXES records the map already holds. */
 interface Wall {
   /** The seg's own endpoints: its extent along the wall, never its line. */

@@ -249,6 +249,10 @@ Built once per map, weak on it, beside the polygons. The union passes cost 0.5 m
 875 leaves, 2.1 ms on BOOMEDIT MAP01's 1549 and 3.7 ms on GoingDown MAP01's 2232; the leaf graph
 they walk is the one `mapmesh.ts` already builds.
 
+**How many a level came apart into is on `game.ts`'s level-load line**, as `N islands` — the ids
+`buildIslands` hands out are dense, so `islandCount` is the highest plus one. It reads the memo the
+fog grid's own build filled, and never partitions a second time.
+
 ## Mesh building (`mapmesh.ts`)
 
 Walls are built per linedef from sidedefs: one-sided lines get their middle texture over the full
@@ -367,6 +371,75 @@ Ceilings are never rendered — `buildMapMesh`'s `renderCeilings` option still e
 view choice, not a debug convenience. It is also why the ceiling half of Boom's transfers has no
 *plane* to show for itself: a 261 transfer only moves sprite light, and a 242 *fake ceiling* draws
 no surface — though its height still sizes the walls across from it (§ Deep water).
+
+### Ceiling trims
+
+**A thin ceiling step over an opening the player walks under is not drawn** — `twoSidedBands`'
+`upperTrimmed`, this engine's own and **a deliberate deviation** from vanilla, which draws every
+upper the mapper textured. From overhead such a step is a ribbon floating in mid-air with nothing
+under it: DOOM2 MAP01's platform (sector 23) carries an 8-unit `STEP2` upper along its whole outline
+(lines 272-283), 176 units over the player's head, and it reads as clutter rather than as geometry.
+A first-person view never has the problem — the step sits at the top of the frame, against the
+ceiling it belongs to.
+
+Four clauses (`trimsCeiling`), the first three measured off the same `DrawnBands` record, so the
+drawn heights (Boom's 242 transfers included) are the ones judged:
+
+- **The step is at most `TRIM_MAX_HEIGHT` (16) tall.** Above that it is the wall over a doorway,
+  which is what tells you where a room ends.
+- **`TRIM_MIN_OPENING` (56, vanilla's `MT_PLAYER` height) is left under it**, measured from the
+  higher of the two drawn floors. Under that the step is a window sill or a closed door's face,
+  which is structure however thin.
+- **The sector whose ceiling drops is wider than `TRIM_MAX_FIXTURE` (64)**, at its widest over the
+  linedefs bounding it. A narrower one is something hung from the ceiling — a sign, a light panel,
+  a ceiling box — rather than a room the step runs around.
+- **The texture is one the map also paints somewhere other than on an upper step** (`TrimIndex`'s
+  `masonry`: any lower, any middle). This is what keeps an **exit sign** whatever its size, and no
+  width test can: a sign is a 16-unit upper over a walkable opening like every other trim, and what
+  makes it a sign is that `EXITSIGN` is painted nowhere else on the map. A texture the map also
+  hangs as a wall or a step riser is ordinary material, and a thin band of it overhead is trim.
+
+Both are one pass over the linedefs, built once per map (`trimIndex`, weak on it) — a mover
+rebuilds through here every tic it runs and neither answer moves with a height. On GoingDown MAP28,
+11234 linedefs and the largest committed map, that pass costs 0.4 ms of the level load and every
+later `twoSidedBands` reads the memo.
+
+Censused over the committed WADs, as a share of the drawn upper sides: DOOM1 59 of 1200, DOOM2 416
+of 4585, freedoom1 3864 of 18414, freedoom2 4491 of 18200, GoingDown 11508 of 51491. **Every
+`EXIT*` upper in all five survives** — 451 sides. The detailed WADs trim four times DOOM2's share
+because they detail with ceiling steps, which is the same thing showing up more often, not a
+different thing.
+
+The two loose clauses were settled on that census. `TRIM_MAX_HEIGHT` at 32 takes 672 sides on DOOM2
+and starts on door lintels (63 `METAL` sides that are door frames). Without the masonry clause,
+`TRIM_MAX_FIXTURE` alone loses 8 exit-sign sides — freedoom1 E1M9's `EXITSGN2` hangs in a 192 x 64
+strip — and raising it to 192 to save them costs a third of the effect (DOOM2 445 -> 307) and still
+loses 3 in GoingDown. The masonry clause saves all 8 for 6.5% of DOOM2's trims and 2% of
+GoingDown's, and what it spares reads right: `STEPTOP`, `LITEBLU4`, `FIREBLU2`, `BIGDOOR6`,
+`SW1BROWN` — door tops, light panels and switch faces.
+
+**How many steps a level lost is on `game.ts`'s level-load line**, as `N ceiling trims` beside the
+triangle count — `BuiltMap.trimmedUppers` plus `MoverGeometry.trimmedUppers`, since a line touching
+a mover is built out of the static batches and would otherwise go uncounted (12 of DOOM2 MAP01's
+17). Read once, at load: a mover rebuild moves its own tally and nothing reports it again. DOOM2
+MAP01 17, MAP05 38, MAP29 7, GoingDown MAP01 8.
+
+**A step either of whose sectors can move keeps its upper** (`Build.holdsStill`, the same predicate
+the vertical dicing asks). A door's upper shrinks as it opens, so without that a wide door sheds its
+header the tic it passes 16 units, mid-travel.
+
+**The trim still counts as drawn for the midtexture clip.** That clip follows vanilla's rule about
+what the mapper *textured* (§ What cuts a midtexture), not this engine's about what it draws, so the
+tier is asked for with `wallTextureSize` and simply not emitted — a barred gate hung in a trimmed
+doorway is cut where vanilla cuts it.
+
+**The verdict lives in `twoSidedBands` rather than in the mesh builder**, because the auto camera
+reads the same record to decide what can hide the player (docs/camera.md § Framing past an
+occluder): a quad that does not exist must not be an occluder either. The mover exemption above is
+the one half the camera does not apply — it reads live heights and has no notion of a build's
+movers, so a moving door's header is trim to it while it is drawn. `standsOver` also requires an
+occluder to reach within 64 units of the eye, which a ceiling step under a camera hanging 585 units
+up never does.
 
 ## Mover meshes (`mapmesh.ts: buildMoverMesh`, `refreshMoverMesh`)
 

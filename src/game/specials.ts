@@ -652,6 +652,11 @@ export class SpecialsController {
     return this.geometry;
   }
 
+  /** The mover meshes' share of the ceiling-trim tally — see `MoverGeometry.trimmedUppers`. */
+  get trimmedUppers(): number {
+    return this.geometry.trimmedUppers;
+  }
+
   /**
    * Refreshes every moving sector's mesh at plane heights interpolated `alpha` of the way through
    * the last tic — the mover half of docs/frameloop.md § Interpolation. The lerped heights are

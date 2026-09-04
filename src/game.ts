@@ -16,6 +16,7 @@ import { gldefsFromWad, parseGldefs } from './wad/gldefs.ts';
 import { setDrawsOwnPlayer } from './wad/playerskin.ts';
 import { AnimatedTextures } from './render/textureanim.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
+import { islandCount } from './render/bsp.ts';
 import { PlayerShadow } from './render/playershadow.ts';
 import { VoidFloor } from './render/voidfloor.ts';
 import { setLevelSky, skyLitSector } from './render/skytint.ts';
@@ -1490,10 +1491,14 @@ export class Game {
     if (linedefKb > 0) this.buildMsPerKb = buildMs / linedefKb;
 
     const provider = this.wad.providerOf(name)?.name ?? '?';
+    // Memoised on the map by the fog grid's own build, so this reads rather than partitions.
+    const islands = islandCount(map);
     console.info(
       `${name} (${provider}): ${map.sectors.length} sectors, ${map.linedefs.length} linedefs, ` +
         `${map.things.length} things (${this.things.count} rendered), ` +
-        `${this.built.triangles} tris in ${Math.round(buildMs)} ms`,
+        `${this.built.triangles} tris, ` +
+        `${this.built.trimmedUppers + (this.specials?.trimmedUppers ?? 0)} ceiling trims, ` +
+        `${islands} island${islands === 1 ? '' : 's'} in ${Math.round(buildMs)} ms`,
     );
     if (this.built.missingTextures.length > 0) {
       console.warn('missing textures:', this.built.missingTextures.join(', '));

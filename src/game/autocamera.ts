@@ -6,7 +6,7 @@
  */
 import { DOOM_TIC } from '../constants.ts';
 import { MAX_CAMERA_DISTANCE, MAX_TILT_DEG, MIN_RESCUE_DISTANCE, type TopDownCamera } from '../render/camera.ts';
-import { ownTransfers, twoSidedBands, type DrawnBands, type SectorTransfers } from '../render/mapmesh.ts';
+import { newDrawnBands, ownTransfers, twoSidedBands, type SectorTransfers } from '../render/mapmesh.ts';
 import type { Pos3 } from '../types.ts';
 import { dampen } from '../util/damping.ts';
 import { segmentCrossT } from '../util/geom.ts';
@@ -215,7 +215,7 @@ let rayTopLimit = 0;
  * not reentrant and a visitor per line would allocate.
  */
 let rayTransfers!: SectorTransfers;
-const rayBands: DrawnBands = { lowerBot: 0, lowerTop: 0, upperBot: 0, upperTop: 0, skyPair: false };
+const rayBands = newDrawnBands();
 
 /**
  * The unit direction from the player's eye toward the camera's, written by `eyeDirection` — every
@@ -607,9 +607,10 @@ function hidesFromCamera(i: number, h: number, cameraSide: number): boolean {
   if (!line) return false;
   const facing = cameraSide === 0 ? line.right : line.left;
   if (facing === NO_SIDE) return false; // nothing drawn on the side the camera is on
-  const nearIndex = map.sidedefs[facing]?.sector;
+  const side = map.sidedefs[facing];
+  const nearIndex = side?.sector;
   const near = map.sectors[nearIndex];
-  if (!near) return false;
+  if (!side || !near) return false;
   const otherSide = cameraSide === 0 ? line.left : line.right;
   const farIndex = otherSide !== NO_SIDE ? map.sidedefs[otherSide]?.sector : undefined;
   const far = farIndex !== undefined ? map.sectors[farIndex] : undefined;
@@ -617,9 +618,10 @@ function hidesFromCamera(i: number, h: number, cameraSide: number): boolean {
   // (a 242 fake floor moves it) up to the ceiling.
   if (!far || farIndex === undefined) return standsOver(rayTransfers.drawnFloor(nearIndex), near.ceilHeight, h);
 
-  twoSidedBands(rayTransfers, near, nearIndex, far, farIndex, rayBands);
+  twoSidedBands(map, rayTransfers, nearIndex, farIndex, side.upper, rayBands);
   if (standsOver(rayBands.lowerBot, rayBands.lowerTop, h)) return true;
-  if (rayBands.skyPair) return false;
+  // Two sky ceilings and a ceiling trim both draw no upper, so neither hides anything.
+  if (rayBands.skyPair || rayBands.upperTrimmed) return false;
   return standsOver(rayBands.upperBot, rayBands.upperTop, h);
 }
 

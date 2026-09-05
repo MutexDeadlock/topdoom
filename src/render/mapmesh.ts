@@ -158,21 +158,12 @@ const TRIM_MAX_HEIGHT = 16;
 const TRIM_MIN_OPENING = 56;
 
 /**
- * How wide the sector whose ceiling drops may be and still be a *fixture* hung from the ceiling —
- * an exit sign, a light panel — rather than a room the step runs around. **Tuned by feel**, on
- * DOOM's 64-unit grid: every `EXITSIGN` in both id IWADs hangs in a sector no wider than this.
+ * How wide the sector whose ceiling drops may be and still be a **sign** hung from the ceiling
+ * rather than a room the step runs around — the other half of the exemption `TrimIndex.signs` is
+ * the first half of. **Tuned by feel**, on DOOM's 64-unit grid: every `EXITSIGN` in both id IWADs
+ * hangs in a sector no wider than this. docs/render.md § Ceiling trims.
  */
-const TRIM_MAX_FIXTURE = 64;
-
-/**
- * How many upper steps one texture may carry on a map before its small recesses stop reading as
- * fixtures at all. The exemption above is for a **landmark** — a sign, a panel, a display case,
- * something you look at; a texture repeated over dozens of identical niches is the room's own
- * detailing, and detailing at ceiling height is what this rule exists to remove.
- * **Tuned by feel** against the census in docs/render.md § Ceiling trims: no `EXIT*` texture in
- * the WADs to hand reaches 36, so 48 leaves headroom over every one of them.
- */
-const TRIM_FIXTURE_REPEATS = 48;
+const TRIM_MAX_SIGN = 64;
 
 /**
  * **Which bands one side of a two-sided line draws, and how tall** — the heights resolved through
@@ -199,7 +190,7 @@ export function twoSidedBands(
   out.lowerTop = transfers.drawnFloor(otherIndex);
   out.upperBot = ceilingFacing(transfers, other, otherIndex, secIndex);
   out.upperTop = sec.ceilHeight;
-  out.skyPair = sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT;
+  out.skyPair = skyCeilings(sec, other);
   out.upperTrimmed = trimsCeiling(map, out, otherIndex, upper);
 }
 
@@ -766,23 +757,27 @@ interface Build {
 function beginBuild(map: DoomMap, polys: SubSectorPoly[], bank: MaterialBank, options: MapMeshOptions): Build {
   const transfers = options.transfers ?? ownTransfers(map);
   const missing = new Set<string>();
+  const size: SizeFn = (kind, name) => {
+    // `-`/`''` names no lump that could exist, so it answers without a lookup: the
+    // peg-reference probes ask before `addWall`'s own guard — routinely so on a UDMF map's
+    // untextured one-sided lines — and `buildMoverWalls` re-probes on every refresh while a mover runs.
+    if (!isTextured(name)) return null;
+    const s = bank.size(kind, name);
+    // A 242 control line's sidedef names colormaps, not textures — absent art
+    // there is the feature working, not a hole in the WAD.
+    if (!s && !transfers.colormapName(name)) missing.add(kind + ':' + name);
+    return s;
+  };
+  // The one caller with the art, so the one that can seed the trim index — after which the auto
+  // camera's rays read the same verdict this build drew. docs/render.md § Ceiling trims.
+  trimIndex(map, size);
   return {
     map,
     polys,
     graph: buildLeafGraph(map),
     bank,
     batches: new BatchSet(),
-    size: (kind, name) => {
-      // `-`/`''` names no lump that could exist, so it answers without a lookup: the
-      // peg-reference probes ask before `addWall`'s own guard — routinely so on a UDMF map's
-      // untextured one-sided lines — and `buildMoverWalls` re-probes on every refresh while a mover runs.
-      if (!isTextured(name)) return null;
-      const s = bank.size(kind, name);
-      // A 242 control line's sidedef names colormaps, not textures — absent art
-      // there is the feature working, not a hole in the WAD.
-      if (!s && !transfers.colormapName(name)) missing.add(kind + ':' + name);
-      return s;
-    },
+    size,
     missing,
     transfers,
     occluders: [],
@@ -1847,31 +1842,38 @@ function ceilingFacing(transfers: SectorTransfers, other: Sector, otherIndex: nu
   return transfers.heightSec(viewerSector) >= 0 ? other.ceilHeight : transfers.drawnCeiling(otherIndex);
 }
 
+/** Both ceilings are sky, which draws no upper between them — see `twoSidedBands`. */
+function skyCeilings(a: Sector, b: Sector): boolean {
+  return a.ceilTex === SKY_FLAT && b.ceilTex === SKY_FLAT;
+}
+
 /**
  * Whether a side's upper is a **ceiling trim** — a thin step over an opening the player walks
- * under, which this engine draws as nothing. The four clauses and what each keeps are
+ * under, which this engine draws as nothing. The clauses and the sign exemption are
  * docs/render.md § Ceiling trims; the heights come off the record the caller has just filled, so
  * they are the drawn ones. Ordered cheapest first: the map-wide index is only consulted for a step
- * the heights already admit.
+ * the heights already admit, and its extent only for a step already wearing a sign.
+ *
+ * The index is read, never built, so a caller with no mesh behind it — the auto camera's rays
+ * before a build, tests, tools — hangs no signs and trims every thin step. `beginBuild` seeds it,
+ * which is what keeps the camera's verdict the one the mesh actually drew.
  */
 function trimsCeiling(map: DoomMap, bands: DrawnBands, otherIndex: number, upper: string): boolean {
   if (bands.skyPair) return false;
   if (bands.upperTop <= bands.upperBot) return false;
   if (bands.upperTop - bands.upperBot > TRIM_MAX_HEIGHT) return false;
   if (bands.upperBot - Math.max(bands.lowerBot, bands.lowerTop) < TRIM_MIN_OPENING) return false;
-  const index = trimIndex(map);
-  const fixture = index.extent[otherIndex] <= TRIM_MAX_FIXTURE && !index.repeated.has(upper);
-  return !fixture && index.masonry.has(upper);
+  const index = trimIndexes.get(map);
+  if (!index) return true;
+  return !(index.signs.has(upper) && index.extent[otherIndex] <= TRIM_MAX_SIGN);
 }
 
 /** What deciding a trim needs to know about the whole map — see `trimIndex`. */
 interface TrimIndex {
+  /** Every texture the map draws **whole** everywhere: never cropped, never tiled. */
+  signs: Set<string>;
   /** How wide each sector is at its widest, over the linedefs that bound it. */
   extent: Float64Array;
-  /** Every texture this map hangs somewhere other than on an upper step. */
-  masonry: Set<string>;
-  /** Every texture this map paints on more than `TRIM_FIXTURE_REPEATS` upper steps. */
-  repeated: Set<string>;
 }
 
 /** One index per map, weak on it like `bsp.ts`'s polygons — see `trimIndex`. */
@@ -1879,15 +1881,15 @@ const trimIndexes = new WeakMap<DoomMap, TrimIndex>();
 
 /**
  * The two map-wide questions a trim asks, in one pass over the linedefs, built once: a mover
- * rebuilds through here every tic it runs and neither answer moves with a height.
+ * rebuilds through here every tic it runs and neither answer moves with a height. A sector no
+ * linedef names has no extent at all, which keeps its upper.
  *
- * `masonry` is what keeps an **exit sign**, which no width test can: a sign is a 16-unit upper
- * over a walkable opening like any trim, and what makes it a sign is that `EXITSIGN` is painted
- * nowhere else. A texture the map also hangs as a wall or a step riser is ordinary material, and a
- * thin band of it overhead is trim. A sector no linedef names has no extent at all, which keeps
- * its upper.
+ * `signs` is what keeps an **exit sign**, and needs the art the map does not carry: a sign is a
+ * texture drawn at exactly the texture's own height everywhere it appears, where material is
+ * cropped or tiled to whatever band it fills. Measured off the sectors' own heights, not the drawn
+ * ones — a 242 transfer changes what a wall draws, not what the mapper sized the texture for.
  */
-function trimIndex(map: DoomMap): TrimIndex {
+function trimIndex(map: DoomMap, size: SizeFn): TrimIndex {
   const cached = trimIndexes.get(map);
   if (cached) return cached;
   const n = map.sectors.length;
@@ -1895,38 +1897,67 @@ function trimIndex(map: DoomMap): TrimIndex {
   const minY = new Float64Array(n).fill(Infinity);
   const maxX = new Float64Array(n).fill(-Infinity);
   const maxY = new Float64Array(n).fill(-Infinity);
+  const signs = new Set<string>();
+  const cropped = new Set<string>();
+  // Art heights by name, not by side: the largest map here draws 56 distinct textures over 13560
+  // sides, and `MaterialBank.size` allocates a record per call.
+  const artHeight = new Map<string, number | null>();
+  const note = (name: string, height: number) => {
+    if (!isTextured(name) || cropped.has(name)) return;
+    let art = artHeight.get(name);
+    if (art === undefined) {
+      art = size('wall', name)?.h ?? null;
+      artHeight.set(name, art);
+    }
+    if (art === null) return;
+    if (art !== height) {
+      cropped.add(name);
+      signs.delete(name);
+      return;
+    }
+    signs.add(name);
+  };
   const stretch = (sec: number, v: Vertex) => {
     if (v.x < minX[sec]) minX[sec] = v.x;
     if (v.y < minY[sec]) minY[sec] = v.y;
     if (v.x > maxX[sec]) maxX[sec] = v.x;
     if (v.y > maxY[sec]) maxY[sec] = v.y;
   };
-  const masonry = new Set<string>();
-  const upperUses = new Map<string, number>();
+  const stretchSide = (side: SideDef | undefined, v1: Vertex | undefined, v2: Vertex | undefined) => {
+    if (!side || side.sector >= n) return;
+    if (v1) stretch(side.sector, v1);
+    if (v2) stretch(side.sector, v2);
+  };
+  // Every band this side actually draws, at the height it draws it — the same three `addWall`
+  // emits, so a texture is judged on what the player sees of it and nothing else.
+  const noteSide = (side: SideDef | undefined, other: SideDef | undefined) => {
+    const sec = side && map.sectors[side.sector];
+    if (!side || !sec) return;
+    const facing = other && map.sectors[other.sector];
+    if (!facing) {
+      note(side.middle, sec.ceilHeight - sec.floorHeight);
+      return;
+    }
+    if (facing.floorHeight > sec.floorHeight) note(side.lower, facing.floorHeight - sec.floorHeight);
+    if (sec.ceilHeight > facing.ceilHeight && !skyCeilings(sec, facing)) {
+      note(side.upper, sec.ceilHeight - facing.ceilHeight);
+    }
+  };
   for (const line of map.linedefs) {
     const v1 = map.vertexes[line.v1];
     const v2 = map.vertexes[line.v2];
-    for (const sideIndex of [line.right, line.left]) {
-      if (sideIndex === NO_SIDE) continue;
-      const side = map.sidedefs[sideIndex];
-      if (!side) continue;
-      if (isTextured(side.upper)) upperUses.set(side.upper, (upperUses.get(side.upper) ?? 0) + 1);
-      if (isTextured(side.lower)) masonry.add(side.lower);
-      if (isTextured(side.middle)) masonry.add(side.middle);
-      if (side.sector >= n) continue;
-      if (v1) stretch(side.sector, v1);
-      if (v2) stretch(side.sector, v2);
-    }
+    const right = line.right === NO_SIDE ? undefined : map.sidedefs[line.right];
+    const left = line.left === NO_SIDE ? undefined : map.sidedefs[line.left];
+    stretchSide(right, v1, v2);
+    stretchSide(left, v1, v2);
+    noteSide(right, left);
+    noteSide(left, right);
   }
   const extent = new Float64Array(n);
   for (let sec = 0; sec < n; sec++) {
     extent[sec] = Math.max(maxX[sec] - minX[sec], maxY[sec] - minY[sec]);
   }
-  const repeated = new Set<string>();
-  for (const [name, uses] of upperUses) {
-    if (uses > TRIM_FIXTURE_REPEATS) repeated.add(name);
-  }
-  const index = { extent, masonry, repeated };
+  const index = { signs, extent };
   trimIndexes.set(map, index);
   return index;
 }

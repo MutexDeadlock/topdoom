@@ -320,7 +320,8 @@ MAP01's start reads as unobstructed, which it is. **Which quads exist, and how t
 not decided here at all**: `hidesFromCamera` calls `mapmesh.ts`'s `twoSidedBands`, the same function
 `addTwoSidedSide` sizes its quads from — the lower on the **lower-floored** side, the upper on the
 **higher-ceilinged** side, the upper not at all when both sides are sky or when it is a ceiling
-trim (docs/render.md § Ceiling trims), and ceilings never, so nothing above the top of a wall can
+trim (docs/render.md § Ceiling trims — judged against the level's own `trimIndex`, which the mesh
+build seeded and the ray only reads), and ceilings never, so nothing above the top of a wall can
 hide anything.
 
 That shared call is the point, not a convenience. The heights those bands are measured between are

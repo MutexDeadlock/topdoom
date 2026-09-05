@@ -384,61 +384,63 @@ under it: DOOM2 MAP01's platform (sector 23) carries an 8-unit `STEP2` upper alo
 A first-person view never has the problem — the step sits at the top of the frame, against the
 ceiling it belongs to.
 
-Four clauses (`trimsCeiling`), the first three measured off the same `DrawnBands` record, so the
-drawn heights (Boom's 242 transfers included) are the ones judged:
+Two clauses (`trimsCeiling`), measured off the same `DrawnBands` record, so the drawn heights
+(Boom's 242 transfers included) are the ones judged, and one exemption:
 
 - **The step is at most `TRIM_MAX_HEIGHT` (16) tall.** Above that it is the wall over a doorway,
   which is what tells you where a room ends.
 - **`TRIM_MIN_OPENING` (56, vanilla's `MT_PLAYER` height) is left under it**, measured from the
   higher of the two drawn floors. Under that the step is a window sill or a closed door's face,
   which is structure however thin.
-- **The sector whose ceiling drops is wider than `TRIM_MAX_FIXTURE` (64)**, at its widest over the
-  linedefs bounding it — *or* its texture is one the map paints on more than
-  `TRIM_FIXTURE_REPEATS` (48) upper steps. A narrow neighbour is something hung from the ceiling —
-  a sign, a light panel, a display case — but only while it is a **landmark**. GoingDown MAP07
-  builds 240 identical 16 x 16 `BIGDOOR6` niches and 64 `LITE3` ones; repeated that far, a recess
-  is the room's own detailing, and detailing at ceiling height is what this rule removes. 209 of
-  those stood in one view of that map's library before the repeat clause, 12 after.
-- **The texture is one the map also paints somewhere other than on an upper step** (`TrimIndex`'s
-  `masonry`: any lower, any middle). This is what keeps an **exit sign** whatever its size, and no
-  width test can: a sign is a 16-unit upper over a walkable opening like every other trim, and what
-  makes it a sign is that `EXITSIGN` is painted nowhere else on the map. A texture the map also
-  hangs as a wall or a step riser is ordinary material, and a thin band of it overhead is trim.
+- **A sign keeps its step.** A sign is a texture the map paints **whole** everywhere it draws it —
+  every wall, riser and step carrying it is exactly the texture's own height (`TrimIndex.signs`) —
+  hung in a sector no wider than `TRIM_MAX_SIGN` (64). An exit sign is a 16-tall texture on a
+  16-unit step over an 8 x 32 box; a recess rim is a 128-tall wall texture cropped to 4 or 16
+  units, and a ribbon runs round a room. Both halves are needed: GoingDown MAP08's `COMPSPAN`
+  recesses (sectors 147, 153) show that texture nowhere else, so by use alone they are signage;
+  and freedoom paints its 16-tall `STEP` riser textures only on 16-unit ribbons on some maps, so
+  by wholeness alone those ribbons are signs.
 
-Both are one pass over the linedefs, built once per map (`trimIndex`, weak on it) — a mover
-rebuilds through here every tic it runs and neither answer moves with a height. On GoingDown MAP28,
-11234 linedefs and the largest committed map, that pass costs 0.4 ms of the level load and every
-later `twoSidedBands` reads the memo.
+The sign test needs the art, which the map does not carry. `beginBuild` is the only caller holding
+a `MaterialBank`, so it is the one that seeds `trimIndex`; `trimsCeiling` only ever *reads* the
+memo, which is what keeps the auto camera's rays on the verdict the mesh actually drew without
+threading a set through `twoSidedBands`. A caller with no build behind it — tests, tools — hangs no
+signs and trims every thin step. The heights are the sectors' own, not the drawn ones: a 242
+transfer changes what a wall draws, not what the mapper sized a texture for.
 
-Censused over the committed WADs, as a share of the drawn upper sides: DOOM1 59 of 1200, DOOM2 507
-of 4585, freedoom1 4098 of 18414, freedoom2 4893 of 18200, GoingDown 17332 of 51491. **Every
-`EXIT*` upper in all five survives** — 451 sides. The detailed WADs trim four times DOOM2's share
-because they detail with ceiling steps, which is the same thing showing up more often, not a
-different thing.
+**Nothing separates a sign from a recess by shape**, and nothing by texture *use* alone either —
+the exemption needs the texture's height. Censused over 287 `EXIT*` sides and 30067 others, the
+opening under the step, the neighbour's shallowest and widest dimension, the share of a texture's
+uses that are walls, whether the recess wears the step's texture elsewhere, whether its ceiling
+flat differs from the room's (every sign's does) and whether the texture is ever drawn as a wall or
+riser (DOOM's editors set all three slots at once, so a sign's own lines carry it as an undrawn
+lower, and MAP07's sign draws it as a 16-unit riser) all overlap. A size exemption on its own — a
+neighbour no wider than 64 whose texture is on fewer than 48 steps — shipped first and kept what
+the rule exists to remove: MAP08's 64 x 32 `COMPSPAN` recesses of 4 units and its 8-unit
+`DOORTRAK` and `METAL` bits (sectors 174, 182, 184) floated over the warehouse floor like any
+ribbon.
 
-The three loose numbers were settled on that census. `TRIM_MAX_HEIGHT` at 32 takes 672 sides on
-DOOM2 and starts on door lintels (63 `METAL` sides that are door frames). Without the masonry
-clause, `TRIM_MAX_FIXTURE` alone loses 8 exit-sign sides — freedoom1 E1M9's `EXITSGN2` hangs in a
-192 x 64 strip — and raising it to 192 to save them costs a third of the effect and still loses 3
-in GoingDown. `TRIM_FIXTURE_REPEATS` is bounded from below by the exit signs and from above by the
-detailing: the most `EXIT*` uppers any one texture carries on a map here is 36, and a limit of 24
-starts costing GoingDown 36 sign sides, so 48 sits clear of both.
+Both answers come out of one pass over the linedefs, built once per map (`trimIndex`, weak on it) —
+a mover rebuilds through here every tic it runs and neither moves with a height. Art heights are
+memoised by name inside that pass, not looked up per side: GoingDown MAP28, 11234 linedefs and the
+largest committed map, draws 56 distinct textures over 13560 sides.
 
-**Nothing separates a sign from a niche by shape**, which is why the repeat clause is a count and
-not a measurement. Five other discriminators were censused over 287 `EXIT*` sides and 30067 others
-and every one of them overlaps: the opening under the step (signs 56-792, niches 56-1808), the
-neighbour's shallowest dimension (signs median 8, GoingDown's signs and its `BIGDOOR6` niches both
-exactly 16), its widest, the share of the texture's uses that are walls (signs up to 0.75 — DOOM1
-E1M3 paints `EXITSIGN` 12 times as an upper and 12 times as a wall), and whether the niche wears
-the step's texture elsewhere (which catches 2850 niches but none of MAP07's). An exit sign and a
-wall niche are the same construct in DOOM; only how often the mapper repeated it tells them
-apart.
+Censused over the committed WADs, as a share of the drawn upper sides: DOOM1 60 of 1200, DOOM2 639
+of 4585, freedoom1 4917 of 18414, freedoom2 5957 of 18200, GoingDown 18524 of 51491. **Every
+`EXIT*` upper in both id IWADs survives**, and 401 of the 451 across all five. The 50 that go are
+what the rule says they are: GoingDown MAP09's six 16 x 16 octagons (sectors 364-369) carry 8-unit
+slivers of the 72-tall `SW2EXIT` switch texture on 6-unit sides, decoration no one reads; MAP31
+tiles `EXITSIGN` down a 128-unit wall (line 82), which makes it material there; and four banners
+run along sectors wider than 64 — freedoom1 E1M9's 192-unit `EXITSGN2` strip, freedoom2 MAP28's
+120, GoingDown MAP22's 344 and MAP24's 168. `TRIM_MAX_HEIGHT` at 32 takes 672 sides on DOOM2 and
+starts on door lintels (63 `METAL` sides that are door frames); raising `TRIM_MAX_SIGN` saves the
+banners one by one and keeps a whole-textured `STEP` ribbon for each.
 
 **How many steps a level lost is on `game.ts`'s level-load line**, as `N ceiling trims` beside the
 triangle count — `BuiltMap.trimmedUppers` plus `MoverGeometry.trimmedUppers`, since a line touching
-a mover is built out of the static batches and would otherwise go uncounted (12 of DOOM2 MAP01's
-17). Read once, at load: a mover rebuild moves its own tally and nothing reports it again. DOOM2
-MAP01 17, MAP05 38, MAP29 7, GoingDown MAP01 8.
+a mover is built out of the static batches and would otherwise go uncounted. Read once, at load: a
+mover rebuild moves its own tally and nothing reports it again. DOOM2 MAP01 25, MAP05 52, MAP29 25,
+GoingDown MAP01 9.
 
 **A step either of whose sectors can move keeps its upper** (`Build.holdsStill`, the same predicate
 the vertical dicing asks). A door's upper shrinks as it opens, so without that a wide door sheds its

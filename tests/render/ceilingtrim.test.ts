@@ -69,6 +69,25 @@ describe('Rendering · ceiling trims', () => {
     assert.equal(uppers(pair(OPEN, TRIM, 65), 240).length, 0);
   });
 
+  /**
+   * A row of `cells` alternating between the two ceilings, so every boundary is a trim-shaped step
+   * over a fixture-sized neighbour. Long enough, the texture stops reading as a landmark.
+   */
+  function row(cells: number): DoomMap {
+    const art = Array.from({ length: cells }, (_, i) => (i % 2 ? 'b' : 'a')).join('');
+    const grid = gridMap([art], { heights: { a: OPEN, b: TRIM }, cell: 64 });
+    for (const side of grid.map.sidedefs) {
+      side.upper = UPPER;
+      side.lower = UPPER;
+    }
+    return grid.map;
+  }
+
+  test('a fixture texture repeated past TRIM_FIXTURE_REPEATS is detailing, not a landmark', () => {
+    assert.equal(uppers(row(4), 240).length, 3);
+    assert.equal(uppers(row(40), 240).length, 0);
+  });
+
   test('a texture the map paints nowhere else is signage and keeps its step', () => {
     const sign = 'EXITSIGN';
     const kept = uppers(pair(OPEN, TRIM, 128, sign), 240, sign);

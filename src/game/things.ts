@@ -1065,6 +1065,12 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     p.x = s.x;
     p.y = s.y;
     p.z = s.z;
+    // The save holds a position, never the sector under it, and a thing that existed at spawn
+    // still caches its *spawn* sector here. A corpse never moves again, so nothing else would ever
+    // re-derive it — and the floor ride below then snaps it to the wrong sector's floor every tic:
+    // GoingDown MAP07's terraces, 27 corpses lifted to 88.
+    // docs/savegames.md § What is saved and what is deliberately not.
+    refreshSector(p);
     p.facingDeg = s.facingDeg;
     // The heading follows the facing it was elided against — the spawn angle underneath is the
     // map's, not this save's, and a monster whose block omits `angle` means "the two agree".

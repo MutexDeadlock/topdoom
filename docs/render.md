@@ -391,8 +391,12 @@ drawn heights (Boom's 242 transfers included) are the ones judged:
   higher of the two drawn floors. Under that the step is a window sill or a closed door's face,
   which is structure however thin.
 - **The sector whose ceiling drops is wider than `TRIM_MAX_FIXTURE` (64)**, at its widest over the
-  linedefs bounding it. A narrower one is something hung from the ceiling — a sign, a light panel,
-  a ceiling box — rather than a room the step runs around.
+  linedefs bounding it — *or* its texture is one the map paints on more than
+  `TRIM_FIXTURE_REPEATS` (48) upper steps. A narrow neighbour is something hung from the ceiling —
+  a sign, a light panel, a display case — but only while it is a **landmark**. GoingDown MAP07
+  builds 240 identical 16 x 16 `BIGDOOR6` niches and 64 `LITE3` ones; repeated that far, a recess
+  is the room's own detailing, and detailing at ceiling height is what this rule removes. 209 of
+  those stood in one view of that map's library before the repeat clause, 12 after.
 - **The texture is one the map also paints somewhere other than on an upper step** (`TrimIndex`'s
   `masonry`: any lower, any middle). This is what keeps an **exit sign** whatever its size, and no
   width test can: a sign is a 16-unit upper over a walkable opening like every other trim, and what
@@ -404,19 +408,29 @@ rebuilds through here every tic it runs and neither answer moves with a height. 
 11234 linedefs and the largest committed map, that pass costs 0.4 ms of the level load and every
 later `twoSidedBands` reads the memo.
 
-Censused over the committed WADs, as a share of the drawn upper sides: DOOM1 59 of 1200, DOOM2 416
-of 4585, freedoom1 3864 of 18414, freedoom2 4491 of 18200, GoingDown 11508 of 51491. **Every
+Censused over the committed WADs, as a share of the drawn upper sides: DOOM1 59 of 1200, DOOM2 507
+of 4585, freedoom1 4098 of 18414, freedoom2 4893 of 18200, GoingDown 17332 of 51491. **Every
 `EXIT*` upper in all five survives** — 451 sides. The detailed WADs trim four times DOOM2's share
 because they detail with ceiling steps, which is the same thing showing up more often, not a
 different thing.
 
-The two loose clauses were settled on that census. `TRIM_MAX_HEIGHT` at 32 takes 672 sides on DOOM2
-and starts on door lintels (63 `METAL` sides that are door frames). Without the masonry clause,
-`TRIM_MAX_FIXTURE` alone loses 8 exit-sign sides — freedoom1 E1M9's `EXITSGN2` hangs in a 192 x 64
-strip — and raising it to 192 to save them costs a third of the effect (DOOM2 445 -> 307) and still
-loses 3 in GoingDown. The masonry clause saves all 8 for 6.5% of DOOM2's trims and 2% of
-GoingDown's, and what it spares reads right: `STEPTOP`, `LITEBLU4`, `FIREBLU2`, `BIGDOOR6`,
-`SW1BROWN` — door tops, light panels and switch faces.
+The three loose numbers were settled on that census. `TRIM_MAX_HEIGHT` at 32 takes 672 sides on
+DOOM2 and starts on door lintels (63 `METAL` sides that are door frames). Without the masonry
+clause, `TRIM_MAX_FIXTURE` alone loses 8 exit-sign sides — freedoom1 E1M9's `EXITSGN2` hangs in a
+192 x 64 strip — and raising it to 192 to save them costs a third of the effect and still loses 3
+in GoingDown. `TRIM_FIXTURE_REPEATS` is bounded from below by the exit signs and from above by the
+detailing: the most `EXIT*` uppers any one texture carries on a map here is 36, and a limit of 24
+starts costing GoingDown 36 sign sides, so 48 sits clear of both.
+
+**Nothing separates a sign from a niche by shape**, which is why the repeat clause is a count and
+not a measurement. Five other discriminators were censused over 287 `EXIT*` sides and 30067 others
+and every one of them overlaps: the opening under the step (signs 56-792, niches 56-1808), the
+neighbour's shallowest dimension (signs median 8, GoingDown's signs and its `BIGDOOR6` niches both
+exactly 16), its widest, the share of the texture's uses that are walls (signs up to 0.75 — DOOM1
+E1M3 paints `EXITSIGN` 12 times as an upper and 12 times as a wall), and whether the niche wears
+the step's texture elsewhere (which catches 2850 niches but none of MAP07's). An exit sign and a
+wall niche are the same construct in DOOM; only how often the mapper repeated it tells them
+apart.
 
 **How many steps a level lost is on `game.ts`'s level-load line**, as `N ceiling trims` beside the
 triangle count — `BuiltMap.trimmedUppers` plus `MoverGeometry.trimmedUppers`, since a line touching

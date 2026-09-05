@@ -221,3 +221,35 @@ describe('Savegames · things round-trip', () => {
     );
   });
 });
+
+describe('Savegames · a restored thing stands in the sector under it', () => {
+  /**
+   * A corpse saved far from where it spawned: two cells of different floor, the imp spawned on
+   * the high one and its corpse written back on the low one. Before the restore re-derived the
+   * cached sector, the floor ride snapped every such corpse to its *spawn* sector's floor each
+   * tic — GoingDown MAP07's terraces, 27 corpses hoisted to 88 on load.
+   * docs/savegames.md § Apply order.
+   */
+  test('a corpse restored onto a lower floor stays on it', () => {
+    clearRandom();
+    const heights = { h: { floor: 88, ceil: 256 }, l: { floor: 24, ceil: 256 } };
+    const grid = gridMap(['####', '#hl#', '####'], { cell: 128, heights });
+    grid.map.things.push(thingAt(grid, 1, 1, 1), thingAt(grid, 1, 1, ThingType.imp));
+    const layer = build(new World(grid.map));
+    const player: Pos3 = { ...grid.centre(1, 1), z: 88 };
+    layer.damage(0, 1000);
+    for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, player);
+
+    const saved = JSON.parse(JSON.stringify(layer.snapshot()));
+    const low = grid.centre(2, 1);
+    const corpse = saved.changed.find((entry: [number, unknown]) => entry[0] === 0)[1];
+    Object.assign(corpse, { x: low.x, y: low.y, z: 24 });
+
+    const fresh = gridMap(['####', '#hl#', '####'], { cell: 128, heights });
+    fresh.map.things.push(thingAt(fresh, 1, 1, 1), thingAt(fresh, 1, 1, ThingType.imp));
+    const restored = buildThingSprites(new World(fresh.map), { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
+    restored.update(DOOM_TIC, player);
+    const after = restored.snapshot().changed.find((entry) => entry[0] === 0)![1];
+    assert.equal(after.z, 24, 'the corpse rides the floor it lies on, not the one it spawned on');
+  });
+});

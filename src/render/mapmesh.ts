@@ -185,6 +185,16 @@ const TRIM_MIN_OPENING = 56;
 const TRIM_MAX_FIXTURE = 64;
 
 /**
+ * How many upper steps one texture may carry on a map before its small recesses stop reading as
+ * fixtures at all. The exemption above is for a **landmark** — a sign, a panel, a display case,
+ * something you look at; a texture repeated over dozens of identical niches is the room's own
+ * detailing, and detailing at ceiling height is what this rule exists to remove.
+ * **Tuned by feel** against the census in docs/render.md § Ceiling trims: no `EXIT*` texture in
+ * the WADs to hand reaches 36, so 48 leaves headroom over every one of them.
+ */
+const TRIM_FIXTURE_REPEATS = 48;
+
+/**
  * **Which bands one side of a two-sided line draws, and how tall** — the heights resolved through
  * Boom's 242 transfers rather than read off the two sectors. Exported because the auto camera asks
  * the same question (`autocamera.ts`'s `hidesFromCamera`), and the one owner of the rule so the
@@ -1862,7 +1872,8 @@ function trimsCeiling(map: DoomMap, bands: DrawnBands, otherIndex: number, upper
   if (bands.upperTop - bands.upperBot > TRIM_MAX_HEIGHT) return false;
   if (bands.upperBot - Math.max(bands.lowerBot, bands.lowerTop) < TRIM_MIN_OPENING) return false;
   const index = trimIndex(map);
-  return index.extent[otherIndex] > TRIM_MAX_FIXTURE && index.masonry.has(upper);
+  const fixture = index.extent[otherIndex] <= TRIM_MAX_FIXTURE && !index.repeated.has(upper);
+  return !fixture && index.masonry.has(upper);
 }
 
 /** What deciding a trim needs to know about the whole map — see `trimIndex`. */
@@ -1871,6 +1882,8 @@ interface TrimIndex {
   extent: Float64Array;
   /** Every texture this map hangs somewhere other than on an upper step. */
   masonry: Set<string>;
+  /** Every texture this map paints on more than `TRIM_FIXTURE_REPEATS` upper steps. */
+  repeated: Set<string>;
 }
 
 /** One index per map, weak on it like `bsp.ts`'s polygons — see `trimIndex`. */
@@ -1901,6 +1914,7 @@ function trimIndex(map: DoomMap): TrimIndex {
     if (v.y > maxY[sec]) maxY[sec] = v.y;
   };
   const masonry = new Set<string>();
+  const upperUses = new Map<string, number>();
   for (const line of map.linedefs) {
     const v1 = map.vertexes[line.v1];
     const v2 = map.vertexes[line.v2];
@@ -1908,6 +1922,7 @@ function trimIndex(map: DoomMap): TrimIndex {
       if (sideIndex === NO_SIDE) continue;
       const side = map.sidedefs[sideIndex];
       if (!side) continue;
+      if (isTextured(side.upper)) upperUses.set(side.upper, (upperUses.get(side.upper) ?? 0) + 1);
       if (isTextured(side.lower)) masonry.add(side.lower);
       if (isTextured(side.middle)) masonry.add(side.middle);
       if (side.sector >= n) continue;
@@ -1919,7 +1934,11 @@ function trimIndex(map: DoomMap): TrimIndex {
   for (let sec = 0; sec < n; sec++) {
     extent[sec] = Math.max(maxX[sec] - minX[sec], maxY[sec] - minY[sec]);
   }
-  const index = { extent, masonry };
+  const repeated = new Set<string>();
+  for (const [name, uses] of upperUses) {
+    if (uses > TRIM_FIXTURE_REPEATS) repeated.add(name);
+  }
+  const index = { extent, masonry, repeated };
   trimIndexes.set(map, index);
   return index;
 }

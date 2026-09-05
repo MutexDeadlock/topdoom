@@ -23,7 +23,7 @@ Features and improvements
     - the save, load and replay lists have a filter field beside their heading
     - a welcome popup at boot
   - Rendering:
-    - this ceilings are trimmed to reduce visual clutter
+    - thin ceilings are trimmed to reduce visual clutter
   - Save- and Replay files:
     - an unnamed save or replay is named after the WAD its map came from and
       the map: "DOOM2 MAP05", "NUTS MAP01"

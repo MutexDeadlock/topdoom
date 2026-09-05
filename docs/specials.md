@@ -402,9 +402,19 @@ Unlike vanilla, the door check applies uniformly regardless of speed — this en
 `CeilingMover` (real vanilla never sets `crush=true` for this mover) and to a rising `LiftMover` or
 `crush: false` `FloorMover` (covering every ordinary raise, `raiseToTexture`, `lowerAndChange`, the
 donut's ring, and stair builders — stairs never set `crush` either). Two `Occupancy` answers do it —
-`game/specials/moverblocking.ts`'s `blocksCeilingLower`/`blocksFloorRise`, both routed through the
-shared `headroomBlocked` helper there. A *rising* `CeilingMover` is deliberately not checked at all
-— it only ever opens headroom, and vanilla's ceiling-up code never reverts on contact either.
+`game/specials/moverblocking.ts`'s `blocksCeilingLower`/`blocksFloorRise`. A *rising* `CeilingMover`
+is deliberately not checked at all — it only ever opens headroom, and vanilla's ceiling-up code
+never reverts on contact either.
+
+**A rising floor measures every body — player and monster alike — against `World.groundCeiling`,
+the lowest ceiling its *box* meets, never the rising sector's own ceiling.** `groundFloor` pins a
+body straddling the sector's edge to the rising floor, so a lower-ceilinged neighbor its box still
+overlaps is what would actually crush it. Without this the mover carries the body up into that
+neighbor and pins it there — every step out reads blocked, and nothing ever reports `nofit`, so a
+lift never reverses. Repro: GoingDown.wad MAP03, the lift in sector 67 rising flush with the
+crawlspace ceiling in sector 7, with a demon on the lift's edge. `blocksFloorRise`'s cheap
+pre-filter is therefore the lowest ceiling over the sector *and its neighbors*
+(`lowestCeilingAround`), not the sector's own gap.
 
 A door reverses direction outright (it already has a `raising` state to fall back into); a
 `CeilingMover`/`FloorMover` has none, so it skips that tick's step and retries the next — reading as
@@ -416,7 +426,7 @@ result beyond letting the next tic retry.
 `res == crushed && !plat->crush` branch sets `plat->status = down` (and plays `pstart`) the instant
 a rise is blocked, rather than stalling — confirmed against `p_plats.c`. `tickLift`'s `'raising'`
 branch mirrors this exactly: on `blocksFloorRise`, it flips `state` to `'lowering'` and plays
-`pstart`, so a lift a player is standing under (or half-straddling into a lower-ceilinged neighbor —
+`pstart`, so a lift a body is standing under (or half-straddling into a lower-ceilinged neighbor —
 see docs/movement.md § Collision's `groundCeiling`) backs off immediately instead of waiting at the
 ceiling for them to move. A lowering `CeilingMover`/closing door stopped at their *own* obstruction
 check still just stalls — this asymmetry (reverse vs. stall) is vanilla's own, not a simplification
@@ -427,8 +437,8 @@ ever checked (a closing door/lowering ceiling, a rising lift/floor). The opposit
 unchecked, since `P_ThingHeightClip` rides a grounded thing along with a receding floor/ceiling
 automatically, so that direction essentially never traps anyone.
 
-**`headroomBlocked` must test sector membership with `boxOverlapsSector`, not a bare `sectorIndexAt`
-point test.** Walking up to a door leaves the collision box straddling the frame — the same
+**`blocksCeilingLower`'s `headroomBlocked` must test sector membership with `boxOverlapsSector`, not
+a bare `sectorIndexAt` point test.** Walking up to a door leaves the collision box straddling the frame — the same
 straddling `World.groundFloor` accounts for — so the player's *center* still reads as the corridor's
 sector while the door sector, the one actually about to close on them, is never checked at all. A
 plain point test was the original bug here. The overlap is approximated the way `FogOfWar` samples

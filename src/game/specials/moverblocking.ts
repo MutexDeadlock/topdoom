@@ -201,13 +201,13 @@ function blocksCeilingLower(
 }
 
 /**
- * A rising lift or non-crushing `FloorMover`. The sector's ceiling doesn't move
- * here, so it's read straight off the map for the monster fallback. The player
- * additionally gets `groundCeiling`'s straddle-aware overhead: standing half on
- * the rising sector and half in a lower-ceilinged neighbor, `groundFloor`
- * already pins the player's `z` to this sector's rising floor, so the
- * neighbor's own (unmoving) ceiling — not this sector's — is what would
- * actually crush them. Without this the player could be carried up into it.
+ * A rising lift or non-crushing `FloorMover`. Every body here is measured against
+ * `groundCeiling`'s straddle-aware overhead — the lowest ceiling its *box* meets — and never
+ * against the rising sector's own: standing half on the rising sector and half in a
+ * lower-ceilinged neighbor, `groundFloor` already pins the body's `z` to this sector's rising
+ * floor, so the neighbor's own (unmoving) ceiling is what would actually crush it. Without this
+ * the mover carries the body up into that neighbor and pins it there.
+ * docs/specials.md § Every other mover stops instead.
  */
 function blocksFloorRise(
   world: World,
@@ -222,13 +222,32 @@ function blocksFloorRise(
   // crushed there — having it silently jam the level's own machinery is the
   // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
   const map = world.map;
-  const ceilingHeight = map.sectors[sectorIndex].ceilHeight;
-  if (headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight })) return true;
-  if (boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) {
-    const ceiling = world.groundCeiling(player.x, player.y, PLAYER_RADIUS);
-    if (floorHeight + PLAYER_HEIGHT > ceiling) return true;
+  if (
+    boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex) &&
+    floorHeight + PLAYER_HEIGHT > world.groundCeiling(player.x, player.y, PLAYER_RADIUS)
+  ) {
+    return true;
+  }
+  // `headroomBlocked`'s early-out, widened to the sectors a box walk can actually reach: this
+  // sector's own gap clearing the tallest body says nothing about a neighbor's.
+  if (floorHeight + TALLEST_BODY_HEIGHT <= lowestCeilingAround(map, sectorIndex)) return false;
+  for (const m of things?.monstersInSector(map.sectors[sectorIndex]) ?? []) {
+    if (floorHeight + m.height > world.groundCeiling(m.x, m.y, m.radius, true)) return true;
   }
   return false;
+}
+
+/**
+ * The lowest ceiling `World.groundCeiling` could return for a body standing in `sectorIndex`: the
+ * sector's own and every one across a two-sided line from it, which is exactly how far the box
+ * walk reaches. `blocksFloorRise`'s pre-filter alone.
+ */
+function lowestCeilingAround(map: DoomMap, sectorIndex: number): number {
+  let lowest = Infinity;
+  for (const sector of crushNeighborhood(map, sectorIndex)) {
+    if (sector.ceilHeight < lowest) lowest = sector.ceilHeight;
+  }
+  return lowest;
 }
 
 /**
@@ -272,10 +291,10 @@ interface SectorSlot {
 
 /**
  * Whether someone standing in `sectorIndex` doesn't fit in the vertical gap the
- * mover's next step would leave — the shared test behind both obstruction
- * callbacks. Each body is measured against its **own** height
- * (`MonsterRef.height`), so a door closes on a cyberdemon well before it would
- * on an imp. docs/specials.md § Every other mover stops instead.
+ * mover's next step would leave — `blocksCeilingLower`'s test, where the plane
+ * coming down is this sector's own. Each body is measured against its **own**
+ * height (`MonsterRef.height`), so a door closes on a cyberdemon well before it
+ * would on an imp. docs/specials.md § Every other mover stops instead.
  */
 function headroomBlocked(world: World, things: ThingLayer | null, player: Pos2, slot: SectorSlot): boolean {
   const { sectorIndex, floorHeight, ceilingHeight } = slot;

@@ -171,14 +171,13 @@ docs/dehacked.md § Bits.
 **`groundCeiling`** mirrors `groundFloor`: the local sector's ceiling, lowered to the top of any
 straddled two-sided opening. It exists for the flip side of the same straddling bug — standing half
 on a rising lift/floor and half in a static neighbor sector with a lower ceiling, `groundFloor`
-correctly pins the player's `z` to the rising sector's floor, but a rise-blocking check that only
+correctly pins the body's `z` to the rising sector's floor, but a rise-blocking check that only
 compares against *that sector's own* ceiling (`game/specials/moverblocking.ts: blocksFloorRise`)
-never notices the lower neighbor and lets the floor carry the player up into the neighbor's
-ceiling/upper wall — they end up visibly stuck inside geometry. `blocksFloorRise` additionally
-checks the prospective floor height against `groundCeiling` at the player's actual position, gated
-the same way `headroomBlocked` gates sector membership (`boxOverlapsSector`), so the neighbor's real
-ceiling stops the rise before it gets that far. See docs/specials.md § Every other mover stops
-instead.
+never notices the lower neighbor and lets the floor carry the body up into the neighbor's
+ceiling/upper wall — it ends up visibly stuck inside geometry. `blocksFloorRise` therefore measures
+**every** body, player and monster alike, against `groundCeiling` at its actual position, so the
+neighbor's real ceiling stops the rise before it gets that far. See docs/specials.md § Every other
+mover stops instead.
 
 ### slideMove
 

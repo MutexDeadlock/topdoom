@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type * as THREE from 'three';
 import { SpriteActor, SpriteAnimator, VIEWER_ANGLE_DEG } from '../../src/render/sprites.ts';
-import { litColor } from '../../src/render/mapmesh.ts';
+import { litColor, viewDepthAt } from '../../src/render/sectorlight.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 
@@ -43,19 +43,21 @@ describe('Sprites · frameKey', () => {
       tint: undefined,
       sky: false,
     };
+    // Both actors stand at the origin, so the distance term samples both at this one depth.
+    const depth = viewDepthAt(0, 0, 0);
     const bright = new SpriteActor(BANK, MATERIALS, {
       spriteName: 'PLAY',
       animFrames: ['F'],
       brightFrames: new Set(['PLAYF']),
     });
     bright.setPose({ x: 0, y: 0, z: 0 }, pose);
-    assert.equal((bright.mesh.material as THREE.MeshBasicMaterial).color.r, litColor(255));
+    assert.equal((bright.mesh.material as THREE.MeshBasicMaterial).color.r, litColor(255, 0, depth));
     const plain = new SpriteActor(BANK, MATERIALS, {
       spriteName: 'PLAY',
       animFrames: ['A'],
       brightFrames: new Set(['PLAYF']),
     });
     plain.setPose({ x: 0, y: 0, z: 0 }, pose);
-    assert.equal((plain.mesh.material as THREE.MeshBasicMaterial).color.r, litColor(64));
+    assert.equal((plain.mesh.material as THREE.MeshBasicMaterial).color.r, litColor(64, 0, depth));
   });
 });

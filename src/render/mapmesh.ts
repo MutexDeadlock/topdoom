@@ -1,7 +1,8 @@
 /**
  * Builds the level's three.js meshes from the subsector polygons and linedefs — floors and walls
- * batched by texture, lit per sector — and owns `doomToWorld`/`worldToDoom`, the one place DOOM
- * space and three.js space meet. See docs/render.md § Mesh building and § Sector lighting.
+ * batched by texture, lit per sector (`render/sectorlight.ts`) — and owns `doomToWorld`/
+ * `worldToDoom`, the one place DOOM space and three.js space meet. See docs/render.md § Mesh
+ * building.
  */
 import * as THREE from 'three';
 import {
@@ -22,10 +23,11 @@ import { buildLeafGraph, buildSubSectorPolys, type LeafGraph, type SectorPoly, t
 import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2, Pos3 } from '../types.ts';
-import { BRIGHTNESS_LIFT, WATER_SURFACE_ALPHA } from '../constants.ts';
+import { WATER_SURFACE_ALPHA } from '../constants.ts';
 import { clipConvexPolygon, signedPolygonArea2, vecLength } from '../util/geom.ts';
 import { beginWallShade, wallShadeAt } from './wallshadow.ts';
 import { skyLitSector } from './skytint.ts';
+import { lightSegment, wallContrast } from './sectorlight.ts';
 
 /**
  * DOOM's map plane is (x, y) with z as height. three.js is y-up, so a DOOM
@@ -49,48 +51,26 @@ export function worldToDoom(x: number, y: number, z: number, out: Pos3 = { x: 0,
 }
 
 /**
- * What each of `COLORMAP`'s 32 rows does to brightness, as a **linear-light** multiplier —
- * measured from the real lump, one baked table for DOOM, DOOM2 and Freedoom.
- * docs/render.md § Sector lighting.
+ * Relights one run of vertices to `light` — one byte each, and the whole of a relight, since no
+ * brightness is stored per vertex. `MoverGeometry.recolorSector` is the other caller.
+ * docs/render.md § Distance lighting.
  */
-const COLORMAP_GAIN = [
-  1.0, 0.9662, 0.9055, 0.8253, 0.7552, 0.6956, 0.6437, 0.584,
-  0.5366, 0.4949, 0.4492, 0.4067, 0.3632, 0.3282, 0.2946, 0.2627,
-  0.2317, 0.2023, 0.1765, 0.1526, 0.1312, 0.1086, 0.0918, 0.0758,
-  0.0621, 0.0492, 0.0383, 0.0288, 0.0202, 0.0142, 0.0082, 0.0034,
-];
-
-/**
- * `r_main.c`'s `scale/DISTMAP` distance term, sampled at one fixed viewing distance since this
- * engine has no distance lighting. **The knob to turn if the whole game reads too dark or too
- * bright** — docs/render.md § Sector lighting.
- */
-const REFERENCE_STEPS = 4;
-
-/** `COLORMAP_GAIN` folded down to one entry per light segment, built once. */
-const LIGHT_GAIN = Array.from({ length: 16 }, (_, seg) => {
-  const row = (15 - seg) * 4 - REFERENCE_STEPS;
-  return COLORMAP_GAIN[Math.max(0, Math.min(31, row))];
-});
-
-/**
- * The fake-contrast offset for a wall running from (ax,ay) to (bx,by) — the
- * one true copy, so `addWall` and `SpecialsController.recolorSector` (which
- * needs to redo this per-quad when a sector's light changes at runtime) can't
- * drift apart.
- */
-export function wallContrast(ax: number, ay: number, bx: number, by: number): number {
-  const dx = bx - ax;
-  const dy = by - ay;
-  return dy === 0 ? -16 : dx === 0 ? 16 : 0;
+export function relightRange(
+  geom: THREE.BufferGeometry,
+  start: number,
+  count: number,
+  light: number,
+  contrast = 0,
+): void {
+  const seg = geom.getAttribute('aLightSeg') as THREE.BufferAttribute;
+  const s = lightSegment(light, contrast);
+  for (let v = start; v < start + count; v++) seg.setX(v, s);
 }
 
-/**
- * `lightToColor` plus `BRIGHTNESS_LIFT` (`constants.ts`) — what every real draw call uses.
- * `lightToColor` itself stays pure and vanilla-exact, so it can be verified in isolation.
- */
-export function litColor(light: number, contrast = 0): number {
-  return applyBrightnessLift(lightToColor(light, contrast), BRIGHTNESS_LIFT);
+/** Flags what `relightRange` wrote for upload. */
+export function markRelit(geom: THREE.BufferGeometry | undefined): void {
+  if (!geom) return;
+  geom.getAttribute('aLightSeg').needsUpdate = true;
 }
 
 /**
@@ -598,6 +578,7 @@ export function refreshMoverMesh(mesh: MoverMesh, mover: MoverBuild, sectorIndex
     writeAttribute(geom, 'position', b.positions);
     writeAttribute(geom, 'uv', b.uvs);
     writeAttribute(geom, 'color', b.colors);
+    writeAttribute(geom, 'aLightSeg', b.segs);
     // `aLightCell` is deliberately not rewritten: a mover changes heights, never a quad's
     // footprint, so the leaf each vertex faces into is the one it was built with.
     geom.computeBoundingSphere();
@@ -613,7 +594,14 @@ interface Batch {
   texture: string;
   positions: number[];
   uvs: number[];
+  /** Per vertex RGBA, but only A carries anything: RGB is a flat 1 — see `pushVertex`. */
   colors: number[];
+  /**
+   * Per vertex, the light segment the shader samples the ramp at — the `aLightSeg` attribute, and
+   * the only record of how lit a surface is (docs/render.md § Distance lighting). Constant across
+   * a quad or a fan, and the one thing a relight rewrites.
+   */
+  segs: number[];
   /**
    * Per vertex, the BSP leaf the surface faces into — the `aLightCell` attribute (docs/lights.md §
    * Light stops at walls).
@@ -640,7 +628,7 @@ class BatchSet {
     const key = batchKey(kind, texture);
     let b = this.batches.get(key);
     if (!b) {
-      b = { key, kind, texture, positions: [], uvs: [], colors: [], cells: [], shade: [], sky: [] };
+      b = { key, kind, texture, positions: [], uvs: [], colors: [], segs: [], cells: [], shade: [], sky: [] };
       this.batches.set(key, b);
     }
     return b;
@@ -664,7 +652,7 @@ function batchKey(kind: SurfaceKind, texture: string): string {
 }
 
 /**
- * One vertex into a batch's four attribute arrays. Scalars rather than a record, and the file's
+ * One vertex into a batch's attribute arrays. Scalars rather than a record, and the file's
  * only signature this long: it runs once per emitted vertex, so a point parameter would allocate
  * one per vertex — docs/conventions.md § Named arguments.
  */
@@ -675,7 +663,8 @@ function pushVertex(
   z: number,
   u: number,
   v: number,
-  c: number,
+  /** How lit the surface is — `lightSegment` of its light and fake contrast, for `Batch.segs`. */
+  seg: number,
   alpha = 1,
   /**
    * -1 leaves the leaf unresolved: wall quads get theirs from `fillWallCells` once the occluders
@@ -689,7 +678,9 @@ function pushVertex(
 ): void {
   b.positions.push(x, y, z);
   b.uvs.push(u, v);
-  b.colors.push(c, c, c, alpha);
+  // RGB is a flat 1 — the shader multiplies the light in. Only alpha varies, and the faders own it.
+  b.colors.push(1, 1, 1, alpha);
+  b.segs.push(seg);
   b.cells.push(cell);
   b.shade.push(shade);
   b.sky.push(sky);
@@ -833,6 +824,8 @@ function batchMesh(batch: Batch, material: THREE.Material): THREE.Mesh {
   geom.setAttribute('position', new THREE.Float32BufferAttribute(batch.positions, 3));
   geom.setAttribute('uv', new THREE.Float32BufferAttribute(batch.uvs, 2));
   geom.setAttribute('color', new THREE.Float32BufferAttribute(batch.colors, 4));
+  // A plain byte, not normalized: the shader wants the segment 0-15 as it is.
+  geom.setAttribute('aLightSeg', new THREE.Uint8BufferAttribute(batch.segs, 1));
   geom.setAttribute('aLightCell', new THREE.Float32BufferAttribute(batch.cells, 1));
   setUnitAttribute(geom, 'aWallShade', batch.shade);
   setUnitAttribute(geom, 'aSkyLit', batch.sky);
@@ -930,24 +923,18 @@ function applyFlatRefresh(mesh: MoverMesh, plan: FlatPlan[]): void {
     const geom = mesh.meshes.get(fan.key)?.geometry;
     if (!geom) continue;
     const pos = geom.getAttribute('position').array as Float32Array;
-    const col = geom.getAttribute('color').array as Float32Array;
-    const color = litColor(light);
     fan.height = height;
     fan.light = light;
     const end = fan.vertexStart + fan.vertexCount;
-    for (let v = fan.vertexStart; v < end; v++) {
-      // Only the plane: x and z are the footprint, which never moves.
-      pos[v * 3 + 1] = height;
-      col[v * 4] = color;
-      col[v * 4 + 1] = color;
-      col[v * 4 + 2] = color;
-    }
+    // Only the plane: x and z are the footprint, which never moves.
+    for (let v = fan.vertexStart; v < end; v++) pos[v * 3 + 1] = height;
+    relightRange(geom, fan.vertexStart, fan.vertexCount, light);
     touched.add(fan.key);
   }
   for (const key of touched) {
     const geom = mesh.meshes.get(key)!.geometry;
     geom.getAttribute('position').needsUpdate = true;
-    geom.getAttribute('color').needsUpdate = true;
+    markRelit(geom);
     geom.computeBoundingSphere();
   }
 }
@@ -967,7 +954,7 @@ function copyRefreshedQuad(dst: WallOccluder, src: WallOccluder): void {
 
 function writeAttribute(geom: THREE.BufferGeometry, name: string, values: number[]): void {
   const attr = geom.getAttribute(name) as THREE.BufferAttribute;
-  (attr.array as Float32Array).set(values);
+  (attr.array as Float32Array | Uint8Array).set(values);
   attr.needsUpdate = true;
 }
 
@@ -1555,7 +1542,7 @@ function addFlatFan(
   const uh = kind === 'flat' ? FLAT_TEX_SIZE : dim.h;
 
   if (poly.points.length < 6) return;
-  const color = litColor(spec.light);
+  const seg = lightSegment(spec.light);
   const alpha = spec.baseAlpha ?? 1;
   const batch = build.batches.get(kind, texName);
   const vertexStart = batch.positions.length / 3;
@@ -1572,7 +1559,7 @@ function addFlatFan(
   const emit = (cell: ArrayLike<number>, i: number): void => {
     const x = cell[i * 2];
     const y = cell[i * 2 + 1];
-    pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha, ss, sky, shaded ? wallShadeAt(x, y) : 0);
+    pushVertex(batch, x, height, -y, x / uw, -y / uh, seg, alpha, ss, sky, shaded ? wallShadeAt(x, y) : 0);
     xy.push(x, y);
   };
   // Each grid cell is convex and small, so fanning it costs no slivers — see `diceOnGrid`.
@@ -1646,7 +1633,8 @@ function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean
 
   // Fake contrast: east-west walls darken, north-south brighten, so corners stay legible under
   // flat sector lighting (`r_segs.c: R_StoreWallRange`).
-  const color = litColor(spec.light, wallContrast(spec.ax, spec.ay, spec.bx, spec.by));
+  const contrast = wallContrast(spec.ax, spec.ay, spec.bx, spec.by);
+  const seg = lightSegment(spec.light, contrast);
 
   const u0 = spec.xOffset / dim.w;
   const u1 = (spec.xOffset + len) / dim.w;
@@ -1686,12 +1674,12 @@ function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean
       // (DOOM's front side), as the triangles A-D-C and A-C-B. Written out rather than iterated:
       // the dicing above makes up to `chunks * bands` of these, and a mover re-runs them per refresh.
       const vertexStart = batch.positions.length / 3;
-      pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha, -1, sky); // A
-      pushVertex(batch, cax, bandBot, -cay, cu0, bandVBot, color, alpha, -1, sky); // D
-      pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, color, alpha, -1, sky); // C
-      pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha, -1, sky); // A
-      pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, color, alpha, -1, sky); // C
-      pushVertex(batch, cbx, bandTop, -cby, cu1, bandVTop, color, alpha, -1, sky); // B
+      pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, seg, alpha, -1, sky); // A
+      pushVertex(batch, cax, bandBot, -cay, cu0, bandVBot, seg, alpha, -1, sky); // D
+      pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, seg, alpha, -1, sky); // C
+      pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, seg, alpha, -1, sky); // A
+      pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, seg, alpha, -1, sky); // C
+      pushVertex(batch, cbx, bandTop, -cby, cu1, bandVTop, seg, alpha, -1, sky); // B
       build.occluders.push({
         key: batch.key,
         vertexStart,
@@ -2057,23 +2045,3 @@ function addTwoSidedSide(build: Build, line: LineView, view: SideView): void {
   }
 }
 
-/**
- * Sector light level (0..255) as a **linear-light** vertex colour — not a display value, since the
- * renderer's `outputColorSpace` encodes the fragment on the way out. `contrast` is the
- * fake-contrast offset in light units, of which ±16 is vanilla's ±1 segment.
- * docs/render.md § Sector lighting.
- */
-function lightToColor(light: number, contrast = 0): number {
-  const clamped = Math.max(0, Math.min(255, light + contrast));
-  return LIGHT_GAIN[clamped >> 4];
-}
-
-/**
- * A "lift" toward full brightness: pushes `linear` up by a fraction `lift` of its remaining
- * headroom `(1 - linear)`, so the darker a surface already is the more it moves. `lift = 0` is a
- * no-op, `lift = 1` flattens everything to full bright. docs/render.md § Sector lighting.
- */
-function applyBrightnessLift(linear: number, lift: number): number {
-  const l = Math.max(0, Math.min(1, lift));
-  return linear + l * (1 - linear);
-}

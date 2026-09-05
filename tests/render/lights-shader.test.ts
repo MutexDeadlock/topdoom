@@ -5,6 +5,9 @@ import { MaterialBank } from '../../src/render/textures.ts';
 import { DynamicLights, EMPTY_SLOT, MAX_DYN_LIGHTS } from '../../src/render/lights.ts';
 import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from '../../src/render/lightvis.ts';
 import { parseGldefs } from '../../src/wad/gldefs.ts';
+import { diminishUniform, setDistanceFlattened } from '../../src/render/sectorlight.ts';
+import { wallShadeUniform } from '../../src/render/wallshadow.ts';
+import { skyTintUniform } from '../../src/render/skytint.ts';
 import type { GraphicsBank } from '../../src/wad/graphics.ts';
 
 /** Enough of a `GraphicsBank` for `MaterialBank.get` to build a material from. */
@@ -170,13 +173,13 @@ describe('Dynamic lights · the geometry shader patch', () => {
     assert.ok(fragment.includes('if (diffuseColor.a < dither) discard;'));
   });
 
-  test('a patched material carries a program cache key; an unpatched one does not', () => {
+  test('a patched material carries a program cache key, lit and unlit apart', () => {
     // three keys its program cache on material parameters, so without this a patched material can
-    // be served the program compiled for an unpatched one.
+    // be served the program compiled for an unpatched one — a sprite's, or the other patch's.
     const lit = patched(new DynamicLights(parseGldefs('')));
     assert.equal(lit.material.customProgramCacheKey(), 'maplights');
     const unlit = patched();
-    assert.notEqual(unlit.material.customProgramCacheKey(), 'maplights');
+    assert.equal(unlit.material.customProgramCacheKey(), 'map');
   });
 
   test('a bank built without lights emits no light code at all', () => {
@@ -186,9 +189,27 @@ describe('Dynamic lights · the geometry shader patch', () => {
     assert.ok(!vertex.includes('aLightCell'));
     assert.ok(!fragment.includes('uLightVis'));
     assert.ok(!fragment.includes('uLightShadow'));
-    // The contact shading and the sky tint are the hook's other tenants and ride along unlit.
-    assert.deepEqual(Object.keys(uniforms), ['uWallShade', 'uSkyTint']);
+    // The contact shading, the sky tint and the distance term are the hook's other tenants and
+    // ride along unlit.
+    assert.deepEqual(Object.keys(uniforms), ['uWallShade', 'uSkyTint', 'uDiminish']);
     // …but still fades, which is the other tenant of the same hook.
     assert.ok(fragment.includes('if (diffuseColor.a < dither) discard;'));
+  });
+
+  test('the live uniforms are the very objects their owners mutate, not copies', () => {
+    // This is what makes a setting reach the level already running: three reads the same object
+    // per draw, so writing `.value` is the whole of the change. A copy here would leave every
+    // toggle and the visor's flattening silently inert. docs/render.md § Distance lighting.
+    const { uniforms } = patched();
+    assert.equal(uniforms.uWallShade, wallShadeUniform);
+    assert.equal(uniforms.uSkyTint, skyTintUniform);
+    assert.equal(uniforms.uDiminish, diminishUniform);
+    try {
+      setDistanceFlattened(true);
+      assert.equal((uniforms.uDiminish as { value: number }).value, 0, 'the visor reaches the shader');
+    } finally {
+      setDistanceFlattened(false);
+    }
+    assert.equal((uniforms.uDiminish as { value: number }).value, 1);
   });
 });

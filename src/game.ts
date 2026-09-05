@@ -20,6 +20,7 @@ import { islandCount } from './render/bsp.ts';
 import { PlayerShadow } from './render/playershadow.ts';
 import { VoidFloor } from './render/voidfloor.ts';
 import { setLevelSky, skyLitSector } from './render/skytint.ts';
+import { beginViewDepth } from './render/sectorlight.ts';
 import { levelSkyArt } from './wad/campaign/sky.ts';
 import { LightVisibility } from './render/lightvis.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
@@ -313,6 +314,7 @@ export class Game {
    * shadow.
    */
   private playerShadow = new PlayerShadow();
+
   /** The ground the level stands in, rebuilt per map. docs/render.md § The void floor. */
   private voidFloor: VoidFloor | null = null;
   /**
@@ -2200,7 +2202,10 @@ export class Game {
    */
   private draw(alpha: number, rawDt: number, still: boolean): void {
     const camera = this.view.camera;
+    // Every sprite the CPU lights reads its depth from this, and the camera was posed on the line
+    // above. docs/render.md § Distance lighting.
     camera.applyToCamera(alpha);
+    beginViewDepth(camera.camera);
     this.updateOverlays(rawDt, alpha);
     this.fogOfWar.updateFade(rawDt);
     // Opened before anything draws: each draw pass below offers its sprites as emitters as it goes,

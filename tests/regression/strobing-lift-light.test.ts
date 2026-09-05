@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { litColor } from '../../src/render/mapmesh.ts';
+import { lightSegment } from '../../src/render/sectorlight.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { specialsRig } from '../fixtures/specialsrig.ts';
 
@@ -17,16 +17,17 @@ import { specialsRig } from '../fixtures/specialsrig.ts';
 const BASE_LIGHT = 192;
 const NEIGHBOR_LIGHT = 160; // gridMap's default, and so the strobe's dark level
 
-/** Vertex colours are a Float32 attribute, so compare against the rounded value. */
-const expected = (light: number) => new Set([Math.fround(litColor(light))]);
-
-/** Every RGB value in `group`'s flat batches — the lift's own floor, nothing else. */
-function flatColors(group: THREE.Object3D): number[] {
+/**
+ * How lit `group`'s flat batches are — the lift's own floor, nothing else. A vertex carries no
+ * brightness (docs/render.md § Distance lighting); `aLightSeg` is the whole record of its light,
+ * and so the whole of what a relight has to move.
+ */
+function flatSegments(group: THREE.Object3D): number[] {
   const out: number[] = [];
   group.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh) || !obj.name.startsWith('flat:')) return;
-    const attr = obj.geometry.getAttribute('color') as THREE.BufferAttribute;
-    for (let i = 0; i < attr.count; i++) out.push(attr.getX(i), attr.getY(i), attr.getZ(i));
+    const attr = obj.geometry.getAttribute('aLightSeg') as THREE.BufferAttribute;
+    for (let i = 0; i < attr.count; i++) out.push(attr.getX(i));
   });
   return out;
 }
@@ -57,8 +58,8 @@ describe('Regressions · strobing lift light', () => {
     const { map, lift, scene, tick } = strobingLift();
 
     assert.deepEqual(
-      new Set(flatColors(scene)),
-      expected(BASE_LIGHT),
+      new Set(flatSegments(scene)),
+      new Set([lightSegment(BASE_LIGHT)]),
       'built at the sector’s own light',
     );
 
@@ -67,8 +68,8 @@ describe('Regressions · strobing lift light', () => {
     tick(1 / 35);
     assert.equal(map.sectors[lift].light, NEIGHBOR_LIGHT, 'the strobe went dark');
     assert.deepEqual(
-      new Set(flatColors(scene)),
-      expected(NEIGHBOR_LIGHT),
+      new Set(flatSegments(scene)),
+      new Set([lightSegment(NEIGHBOR_LIGHT)]),
       'and the mover geometry followed it',
     );
   });

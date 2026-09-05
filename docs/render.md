@@ -292,7 +292,9 @@ on it (§ Mover meshes), so nothing below `buildMapMesh`/`buildMoverMesh` branch
 batch is non-zero** (`setUnitAttribute`). An attribute three never binds reads back as 0 in the
 shader, which is what unshaded and indoors already mean, so a wall batch — never shaded — and a
 level with no sky drop the buffer outright. 1/255 of the amount is under one level of the 0-255
-colour it multiplies, so the quantization is not visible.
+colour it multiplies, so the quantization is not visible. `aLightSeg` (§ Distance lighting) is a
+plain byte too, but always bound: segment 0 is a real value, not the absence of one — and it is
+the *only* record of how lit a surface is, since the vertex colour's RGB is a flat 1.
 
 Measured over DOOM2 MAP01/07/15/29 and GoingDown MAP01/15/30, 464k vertices in all: **3.54 MB of
 attribute buffer becomes 0.65 MB**, 82% less.
@@ -693,7 +695,7 @@ it to port. What the flood does cover stays narrow on the stock IWADs — 5 leav
 (E1M7 sectors 141/142), 6 of DOOM2's 13,253 — and opens up on WADs built around the idiom:
 overboard.wad's 32 maps lid 716 leaves between them.
 
-## Sector lighting (`mapmesh.ts: lightToColor`)
+## Sector lighting (`sectorlight.ts: lightToColor`)
 
 This is vanilla's own lighting, and it is what lights everything by default. GZDoom's GLDEFS
 dynamic lights sit *on top* of it — a second, additive term patched into these same materials'
@@ -727,14 +729,22 @@ was both far too bright and far too flat.
 Vanilla builds the row index as `startmap - scale/DISTMAP` (`r_main.c`), where
 `startmap = (15 - lightnum) * 4` and the subtracted term grows as a surface gets *closer* — so in
 vanilla the light level really sets how fast a surface falls off with distance, not a flat
-brightness. This engine has no distance lighting (the camera hangs at a near-constant distance from
-everything it draws), so the ramp is sampled once at a fixed reference distance: **`REFERENCE_STEPS`
-is that subtracted term, and it is the knob to turn if the game reads too dark or too bright.** 4 (≈
-a 300-unit viewing distance) puts a uniform ~0.12 of display brightness between adjacent light
+brightness, and the term is re-sampled per fragment from each surface's own depth
+(§ Distance lighting). `REFERENCE_STEPS` (4, ≈ 320 map units) is one fixed sample of it, kept for
+the two places that need a depth and have none: what the light-amplification visor flattens the
+level to, and what `litColor` answers when called without one. It is **not** a brightness knob —
+`BRIGHTNESS_LIFT` (`constants.ts`) is that.
+
+At the reference the ramp puts a uniform ~0.12 of display brightness between adjacent light
 segments across light 112-208, which is 88% of every sector in the stock IWADs. Both ends
-necessarily saturate — vanilla spends 4 rows per light segment, so its 16 segments want 64 rows
-where only 32 exist. That is vanilla's ramp rather than a shortcut; it just never shows up in
-vanilla, where distance fills the range back in.
+necessarily saturate: vanilla spends 4 rows per light segment, so its 16 segments want 64 rows
+where only 32 exist.
+
+**Nothing about brightness is stored per vertex.** A map vertex carries its light *segment*
+(`aLightSeg`, one byte) and an alpha the faders own; its RGB is a flat 1. Sector light reaches the
+screen only through the shader, so the ramp, `BRIGHTNESS_LIFT` and the distance term all live in
+exactly one place, and relighting a sector is one byte per vertex rather than a colour and a
+segment that have to agree.
 
 **Light is quantized to DOOM's own 16 segments (`light >> 4`)**, so two sectors whose levels differ
 by less than 16 are genuinely identical on screen, as in vanilla. Every stock map's sector lights
@@ -744,11 +754,11 @@ passes ±16, which after the shift is exactly the ±1 *segment* nudge vanilla ap
 (`r_segs.c: R_StoreWallRange`) so corners stay legible under flat sector lighting — this engine had
 that sign inverted for a long time.
 
-**The returned value is linear-light, not a display value.** Vertex colours (and
-`material.color.setScalar`, for non-batched sprites) are consumed as-is by the shader, and the
-renderer's `outputColorSpace` (`SRGBColorSpace`) encodes the final fragment to sRGB on the way out.
-Returning a display-space value gets it gamma-encoded a second time, which disproportionately
-brightens the dark end.
+**The returned value is linear-light, not a display value.** Sprite tints (per instance, and
+`material.color.setScalar` for non-batched ones) and the map shader's own `liftedGain` are consumed
+as-is, and the renderer's `outputColorSpace` (`SRGBColorSpace`) encodes the final fragment to sRGB
+on the way out. Returning a display-space value gets it gamma-encoded a second time, which
+disproportionately brightens the dark end.
 
 **A vanilla-exact ramp is still too dark for this camera, so there's a fixed brightness lift on top,
 `BRIGHTNESS_LIFT` in `constants.ts`.** Vanilla's ramp assumes a first-person view a few dozen units
@@ -774,6 +784,85 @@ warning flame (`SpriteFxLayer`'s `followTargetId` case) re-resolves it every tim
 position from the target it's tracking. A stationary one-shot effect (blood, puffs, teleport fog,
 impact explosions) only needs the single lookup `spawn` already does, since it never moves and its
 lifetime is short enough that a mid-flight relight isn't worth chasing.
+
+### Distance lighting (`sectorlight.ts: diminishRows`, `DISTANCE_LIGHT_GLSL`)
+
+Vanilla's own depth cue: a surface darkens as it recedes, one `COLORMAP` row at a time, and a dim
+room's far wall is still readable because the ramp is the palette's, not a fade to black. The term
+is `floor(DIMINISH_SCALE / depth)` rows subtracted from `startmap`, capped at `MAX_DIMINISH_ROWS`:
+
+- **`DIMINISH_SCALE` is 1280 map units**, from `scalelight`'s index `rw_scale >> LIGHTSCALESHIFT`
+  with `rw_scale = projection / rw_distance` and `projection` = 160 at 320 wide (`r_segs.c`,
+  `r_main.c`), over `DISTMAP` = 2. The cap is `MAXLIGHTSCALE - 1` over `DISTMAP`. Sprites index
+  the same table by `spryscale` (`r_things.c`), so they take the same term.
+- **Planes use one formula with walls here, a deliberate deviation.** Vanilla's `zlight` indexes
+  by `distance >> LIGHTZSHIFT` (16-unit steps) and divides 160 by that, which rounds differently
+  from the wall term and has no cap; within the depths this camera frames the two agree to a row,
+  and one formula is what lets a floor and the wall standing on it darken together.
+- **Depth is view depth** — the distance along the camera's axis, `-mvPosition.z` in the shader
+  and `viewDepthAt` on the CPU — which is what vanilla's `rw_distance` and plane `distance` both
+  are; not the Euclidean distance to the eye.
+- **The term saturates by 1280 units**, so the whole effect lives inside that depth; at the
+  default framing (docs/camera.md) the frame's near edge sits ~285 units from the eye (4 rows, the
+  reference) and the player 480 (2 rows), so a frame spans about one light segment top to bottom.
+
+**The geometry does the whole ramp per fragment.** Every vertex carries `aLightSeg` (`Batch.segs`,
+a plain byte) and nothing else about its light; the fragment turns that into `startmap`, subtracts
+the rows its own depth earns, and multiplies `diffuseColor` by the lifted gain it lands on. The
+wall shade and the sky tint still scale the vertex colour on the way through, so they compose with
+it untouched.
+
+Relighting a sector is therefore `mapmesh.ts: relightRange` writing **one byte per vertex** —
+`applyFlatRefresh` and `MoverGeometry.recolorSector` both go through it, and `refreshMoverMesh`
+rebuilds the array from its `Batch`. There is no second value to keep in step: the class of bug
+where a surface is relit but keeps sampling the row its sector used to have cannot be written.
+A geometry without the attribute reads segment 0, the darkest. The dynamic-light sum is added
+*after* the multiply and never diminishes: vanilla has no such light to diminish.
+
+**Sprites take it on the CPU, one depth per sprite**, as vanilla takes one colormap per sprite:
+`litColor(light, contrast, depth)` samples the ramp at the depth `viewDepthAt` gives the
+sprite's own position, for the thing batches (`things.ts`), the effects (`spritefx.ts`) and the
+player's actor (`sprites.ts`). `beginViewDepth` opens the frame in `game.ts`'s `draw` on the line
+after the camera is posed — module-level begin-then-read, the `beginWallShade`/`wallShadeAt`
+idiom, so no signature carries a value every sprite in the frame shares. It reads the camera's
+`matrixWorldInverse`, which `applyToCamera`'s own `updateMatrixWorld` has just refreshed, so
+nothing is inverted twice. A fullbright frame skips the depth entirely: its `startmap` is row 0,
+which the term cannot move, as in vanilla.
+
+#### It has no setting
+
+Unlike the contact shading, the sky tint and the void fog, this is not switchable: it is vanilla's
+own lighting rather than an effect laid on top, and with no brightness in the vertex buffer there
+is nothing left to fall back to — switching it off would mean choosing a fixed depth to light the
+whole level at, which is a look, not an absence. The visor does exactly that, and `REFERENCE_STEPS`
+is the depth it picks. Measured at 1920×1080 on E1M1 and DOOM2 MAP01, the term costs
+**0.2–0.3 ms of GPU** on a 1.5–1.8 ms frame.
+
+One known deviation sits here: **a dynamic light does not diminish**, being added after the
+multiply. Vanilla has none to diminish, so there is no vanilla answer to match.
+
+#### The light-amplification visor flattens it
+
+While the visor is held the term contributes nothing and every surface draws at its baked
+reference sample, as vanilla does: `P_PlayerThink` sets `fixedcolormap` to row 1 ("almost full
+bright") for `pw_infrared`, `R_SetupFrame` then fills every `scalelightfixed` entry with that one
+row, and the plane and sprite draws test `fixedcolormap` themselves — so depth selects nothing
+anywhere (`p_user.c`, `r_main.c`, `r_plane.c`, `r_things.c`).
+
+- **`uDiminish` picks between the two samples rather than driving the rows to zero.** The fragment
+  is one `mix` from the reference gain to the depth's own; driving `rows` to 0 would instead draw
+  everything at `startmap`, *darker* than an undiminished surface, which is not what flattening
+  means.
+- **`litColor` reads the same flag** for the sprites the CPU lights, so a thing and the floor
+  under it flatten together.
+- **It is driven per frame from `ui/hud/screeneffects.ts`**, off the same `hasPower` answer the
+  exposure lift reads, so the visor's two halves cannot disagree about whether it is up. That also
+  means it needs no teardown of its own on level change, and `reset` clears it anyway because the
+  renderer outlives the `Game`.
+
+Vanilla's visor also ignores the *sector's* light, drawing row 1 everywhere; this engine keeps the
+`toneMappingExposure` lift as the stand-in for that half (docs/hud.md § Screen effects), so a dark
+room under the visor stays darker than a lit one.
 
 ## Wall contact shading (`wallshadow.ts`)
 

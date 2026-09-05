@@ -18,11 +18,12 @@ import * as THREE from 'three';
 import { NO_SIDE, type DoomMap } from '../../wad/map.ts';
 import { sectorLines, type World } from '../world.ts';
 import type { FogOfWar } from '../fogofwar.ts';
+import { wallContrast } from '../../render/sectorlight.ts';
 import {
   buildMoverMesh,
+  markRelit,
   refreshMoverMesh,
-  litColor,
-  wallContrast,
+  relightRange,
   type BuiltMap,
   type MapMeshOptions,
   type MoverBuild,
@@ -234,38 +235,30 @@ export class MoverGeometry {
   }
 
   /**
-   * Rewrites the vertex colours of every surface lit by `sectorIndex` to that sector's current
-   * `light` — the static batches (indexed once by `indexLightGeometry`) and any mover meshes
-   * holding its geometry. RGB only; alpha belongs to the faders (render/occlusion.ts).
-   * docs/specials.md § Light changes.
+   * Relights every surface lit by `sectorIndex` to that sector's current `light` — the static
+   * batches (indexed once by `indexLightGeometry`) and any mover meshes holding its geometry,
+   * through `relightRange` (render/mapmesh.ts). docs/specials.md § Light changes.
    */
   recolorSector(sectorIndex: number): void {
     const sector = this.mover.map.sectors[sectorIndex];
     const dirty = new Set<string>();
 
     for (const o of this.sectorOccluders.get(sectorIndex) ?? []) {
-      const c = litColor(sector.light, wallContrast(o.ax, o.ay, o.bx, o.by));
-      const attr = this.built.wallMeshes.get(o.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-      if (!attr) continue;
-      for (let v = 0; v < o.vertexCount; v++) attr.setXYZ(o.vertexStart + v, c, c, c);
+      const geom = this.built.wallMeshes.get(o.key)?.geometry;
+      if (!geom) continue;
+      relightRange(geom, o.vertexStart, o.vertexCount, sector.light, wallContrast(o.ax, o.ay, o.bx, o.by));
       dirty.add(o.key);
     }
     for (const f of this.sectorFlats.get(sectorIndex) ?? []) {
       // Indexed by the sector the fan's *light* came from, so this is that sector's level even
       // where the fan belongs to another one (a 213 transfer, a deep-water bottom).
-      const c = litColor(sector.light);
-      const attr = this.built.flatMeshes.get(f.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-      if (!attr) continue;
-      for (let v = 0; v < f.vertexCount; v++) attr.setXYZ(f.vertexStart + v, c, c, c);
+      const geom = this.built.flatMeshes.get(f.key)?.geometry;
+      if (!geom) continue;
+      relightRange(geom, f.vertexStart, f.vertexCount, sector.light);
       dirty.add(f.key);
     }
 
-    for (const key of dirty) {
-      const attr = (this.built.wallMeshes.get(key) ?? this.built.flatMeshes.get(key))?.geometry.getAttribute('color') as
-        | THREE.BufferAttribute
-        | undefined;
-      if (attr) attr.needsUpdate = true;
-    }
+    for (const key of dirty) markRelit((this.built.wallMeshes.get(key) ?? this.built.flatMeshes.get(key))?.geometry);
 
     this.recolorMoverGeometry(sectorIndex, sector.light);
   }
@@ -424,25 +417,20 @@ export class MoverGeometry {
 
       for (const q of g.mesh.wallQuads) {
         if (q.sector !== sectorIndex) continue;
-        const attr = g.mesh.meshes.get(q.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-        if (!attr) continue;
-        const c = litColor(light, wallContrast(q.ax, q.ay, q.bx, q.by));
-        for (let v = 0; v < q.vertexCount; v++) attr.setXYZ(q.vertexStart + v, c, c, c);
+        const geom = g.mesh.meshes.get(q.key)?.geometry;
+        if (!geom) continue;
+        relightRange(geom, q.vertexStart, q.vertexCount, light, wallContrast(q.ax, q.ay, q.bx, q.by));
         dirty.add(q.key);
       }
       for (const f of g.mesh.flatFans) {
         if (f.lightSector !== sectorIndex) continue;
-        const attr = g.mesh.meshes.get(f.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-        if (!attr) continue;
-        const c = litColor(light);
-        for (let v = 0; v < f.vertexCount; v++) attr.setXYZ(f.vertexStart + v, c, c, c);
+        const geom = g.mesh.meshes.get(f.key)?.geometry;
+        if (!geom) continue;
+        relightRange(geom, f.vertexStart, f.vertexCount, light);
         dirty.add(f.key);
       }
 
-      for (const key of dirty) {
-        const attr = g.mesh.meshes.get(key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-        if (attr) attr.needsUpdate = true;
-      }
+      for (const key of dirty) markRelit(g.mesh.meshes.get(key)?.geometry);
     }
   }
 }
@@ -452,3 +440,4 @@ function disposeGroup(group: THREE.Group): void {
     if (obj instanceof THREE.Mesh) obj.geometry.dispose();
   });
 }
+

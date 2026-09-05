@@ -6,7 +6,8 @@
 import * as THREE from 'three';
 import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
-import { doomToWorld, litColor } from '../render/mapmesh.ts';
+import { doomToWorld } from '../render/mapmesh.ts';
+import { litColor, viewDepthAt } from '../render/sectorlight.ts';
 import { skyLitSector } from '../render/skytint.ts';
 import { Tracer } from '../render/tracer.ts';
 import { effectEmitterId, type DynamicLights, type Tint } from '../render/lights.ts';
@@ -323,7 +324,8 @@ export class SpriteFxLayer {
       }
       tint = this.lights.offerAndTint(anim.frameKey, at.x, at.y, at.z, id, subsector);
     }
-    this.batch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(lit), tint, sky);
+    const p = this.batchPos;
+    this.batch.add(cached, p.x, p.y, p.z, 1, litColor(lit, 0, viewDepthAt(p.x, p.y, p.z)), tint, sky);
   }
 
   updateTeleportFogs(dt: number): void {

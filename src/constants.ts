@@ -24,9 +24,10 @@ export const DEVMODE = import.meta.env?.VITE_DEVMODE === 'true';
 export const DOOM_TIC = 1 / 35;
 
 /**
- * How much `render/mapmesh.ts: litColor` brightens dark sectors above vanilla's own ramp
+ * How much `render/sectorlight.ts` brightens dark sectors above vanilla's own ramp
  * (`lightToColor`), which is accurate to vanilla but reads too dark for this game's top-down
- * camera.
+ * camera. Applied by `litColor` for the sprites and by `liftedGain` in the map shader, so it is
+ * the one dial for how bright the game reads. docs/render.md § Sector lighting.
  */
 export const BRIGHTNESS_LIFT = 0.06;
 

@@ -6,7 +6,8 @@
 import * as THREE from 'three';
 import type { GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
-import { doomToWorld, litColor } from './mapmesh.ts';
+import { doomToWorld } from './mapmesh.ts';
+import { litColor, viewDepthAt } from './sectorlight.ts';
 import { DOOM_TIC } from '../constants.ts';
 import { tinted, type Tint } from './lights.ts';
 import { skyScale } from './skytint.ts';
@@ -530,7 +531,8 @@ export class SpriteActor {
     // angle has moved from that default so it keeps facing the camera.
     this.mesh.rotation.y = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);
     const bright = this.brightFrames.has(this.anim.frameKey);
-    const lit = litColor(bright ? 255 : light);
+    const at3 = this.mesh.position;
+    const lit = bright ? litColor(255) : litColor(light, 0, viewDepthAt(at3.x, at3.y, at3.z));
     // A fullbright frame lights itself, so it takes no tint (docs/render.md § Outdoor sky tint).
     const outdoors = skyScale(pose.sky && !bright);
     const lr = lit * outdoors.r;

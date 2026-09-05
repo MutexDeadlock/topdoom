@@ -19,6 +19,7 @@ import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from './lightvis.ts';
 import { glslFloat } from '../util/glsl.ts';
 import { wallShadeUniform } from './wallshadow.ts';
 import { skyTintUniform } from './skytint.ts';
+import { DISTANCE_LIGHT_GLSL, diminishUniform } from './sectorlight.ts';
 
 export type SurfaceKind = 'wall' | 'flat';
 
@@ -165,13 +166,16 @@ export class MaterialBank {
       // fading has why blending cannot work for a map-wide batch.
       const lights = this.lights;
       mat.onBeforeCompile = (shader) => {
-        // Two per-vertex amounts baked at build time, each scaled by one live uniform so its
-        // setting reaches a level already running: the shading a wall lays on the floor at its foot
-        // (docs/render.md § Wall contact shading) and whether the surface stands under sky
-        // (§ Outdoor sky tint). A geometry carrying neither attribute reads 0 for both, which is
-        // unshaded and indoors.
+        // Three per-vertex amounts written at build time, each with a live uniform beside it so a
+        // change reaches the level already running: the shading a wall lays on the floor at its
+        // foot (docs/render.md § Wall contact shading), whether the surface stands under sky
+        // (§ Outdoor sky tint), and the sector's light itself as `aLightSeg` — the vertex carries
+        // no brightness, so the ramp below is the only thing lighting map geometry (§ Distance
+        // lighting). `batchMesh` builds every geometry these materials draw, so all three are
+        // always present.
         shader.uniforms.uWallShade = wallShadeUniform;
         shader.uniforms.uSkyTint = skyTintUniform;
+        shader.uniforms.uDiminish = diminishUniform;
         shader.vertexShader = shader.vertexShader
           .replace(
             '#include <common>',
@@ -179,20 +183,35 @@ export class MaterialBank {
             attribute float aWallShade;
             attribute float aSkyLit;
             uniform float uWallShade;
-            uniform vec3 uSkyTint;`,
+            uniform vec3 uSkyTint;
+            ${DISTANCE_LIGHT_GLSL.vertexDeclarations}`,
           )
           .replace(
             '#include <color_vertex>',
             `#include <color_vertex>
             vColor.rgb *= 1.0 - aWallShade * uWallShade;
             vColor.rgb *= mix(vec3(1.0), uSkyTint, aSkyLit);`,
+          )
+          .replace(
+            '#include <project_vertex>',
+            `#include <project_vertex>
+            ${DISTANCE_LIGHT_GLSL.vertexCapture}`,
           );
         // Dynamic lights ride along in this same replacement, and they have to: `diffuseColor` is
         // consumed into `outgoingLight` a few lines below `color_fragment`, so anything added to
-        // it after that point is silently thrown away (docs/lights.md § Two lighting paths).
-        shader.fragmentShader = shader.fragmentShader.replace(
+        // it after that point is silently thrown away (docs/lights.md § Two lighting paths). The
+        // distance term goes first, on the sector's light alone: a dynamic light is added after it
+        // and never diminishes, as vanilla has none to diminish.
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            '#include <common>',
+            `#include <common>
+            ${DISTANCE_LIGHT_GLSL.fragmentDeclarations}`,
+          )
+          .replace(
           '#include <color_fragment>',
           `#include <color_fragment>
+            ${DISTANCE_LIGHT_GLSL.fragmentApply}
             {
               // Interleaved gradient noise (Jimenez) — a cheap, decorrelated
               // per-pixel threshold for screen-door transparency.
@@ -251,7 +270,7 @@ export class MaterialBank {
       // three.js keys its program cache on material *parameters*, so a patched material would
       // otherwise be served the program compiled for an unpatched one with the same parameters
       // (the same hazard `SpriteBatch`'s fuzz materials guard against).
-      if (this.lights) mat.customProgramCacheKey = () => 'maplights';
+      mat.customProgramCacheKey = () => (lights ? 'maplights' : 'map');
     }
     this.materials.set(key, mat);
     return mat;

@@ -812,7 +812,8 @@ The frame limit is `#fpscap-select`, and its `<option>` values *are* the capped 
 — changing it mid-level applies to the level already running, like volume and autorun. See
 docs/frameloop.md § The FPS cap for how a cap is actually held. Lighting is the one
 `#dynlights-checkbox`, on by default and likewise read per frame, so it too takes effect without a
-reload (docs/lights.md § The toggle).
+reload (docs/lights.md § The toggle). Distance lighting has no row here on purpose —
+docs/render.md § It has no setting.
 
 **Player sprites** is `#playersprites-select`, whose `<option>` values are the `PlayerSpriteMode`
 strings themselves (`auto` — the default — `always`, `never`); it is owned by `wad/playerskin.ts`
@@ -933,6 +934,8 @@ a setting touches one module.
 | `fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
 | `fps` | `ui/devmode/debughud.ts` (`getFpsVisible`/`setFpsVisible`) | § FPS counter below |
 | `profiler` | `ui/hud/profiler.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
+>>>
+
 | `dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
 | `voidFog` | `render/voidfloor.ts` (`getVoidFog`/`setVoidFog`) | docs/render.md § The toggle |
 | `wallShade` | `render/wallshadow.ts` (`getWallShade`/`setWallShade`) | docs/render.md § Turning it off |

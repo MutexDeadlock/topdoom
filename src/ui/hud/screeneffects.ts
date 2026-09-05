@@ -6,6 +6,7 @@
  */
 import type * as THREE from 'three';
 import { hasPower, type Inventory } from '../../game/inventory.ts';
+import { setDistanceFlattened } from '../../render/sectorlight.ts';
 import { DOOM_TIC } from '../../constants.ts';
 
 /**
@@ -19,6 +20,8 @@ const INVISIBILITY_OPACITY = 0.35;
  * `toneMappingExposure` while the light visor is held — a flat multiply, as
  * close as this gets to vanilla forcing the brightest colormap row without
  * rebuilding every surface's baked vertex lighting (docs/items.md § Powerups and the backpack).
+ * The visor's other half is `setDistanceFlattened`, which removes the depth falloff the way
+ * vanilla's `fixedcolormap` does (docs/render.md § The light-amplification visor flattens it).
  */
 const LIGHT_VISOR_EXPOSURE = 2.5;
 
@@ -68,7 +71,10 @@ export class ScreenEffects {
   update(dt: number, inv: Inventory): void {
     this.tintEl.classList.toggle('invulnerable', powerBlinkVisible(inv.powers.invulnerability));
     this.tintEl.classList.toggle('suited', powerBlinkVisible(inv.powers.radiationSuit));
-    this.renderer.toneMappingExposure = hasPower(inv, 'lightVisor') ? LIGHT_VISOR_EXPOSURE : 1;
+    // Both halves of the visor read one answer, so they cannot disagree about whether it is up.
+    const visor = hasPower(inv, 'lightVisor');
+    this.renderer.toneMappingExposure = visor ? LIGHT_VISOR_EXPOSURE : 1;
+    setDistanceFlattened(visor);
     this.setPlayerOpacity(powerBlinkVisible(inv.powers.invisibility) ? INVISIBILITY_OPACITY : 1);
     this.painFlash = Math.max(0, this.painFlash - dt / PAIN_FLASH_FADE_SECONDS);
     this.painEl.style.opacity = String(this.painFlash * PAIN_FLASH_MAX_ALPHA);
@@ -115,6 +121,7 @@ export class ScreenEffects {
     this.setColormapTint(null);
     this.painEl.style.opacity = '0';
     this.renderer.toneMappingExposure = 1;
+    setDistanceFlattened(false);
   }
 }
 

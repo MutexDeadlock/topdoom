@@ -1,7 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { buildMapMesh, litColor } from '../../src/render/mapmesh.ts';
+import { buildMapMesh } from '../../src/render/mapmesh.ts';
+import { lightSegment } from '../../src/render/sectorlight.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { gridMap, addControlSector, addTransferLine } from '../fixtures/gridmap.ts';
 import { specialsRig, BANK, TIC } from '../fixtures/specialsrig.ts';
@@ -24,13 +25,13 @@ describe('Specials · transferred lighting', () => {
 
     const built = buildMapMesh(map, BANK, { transfers: transfersOf(map) });
     const fan = built.flatSurfaces.find((f) => f.sector === lit)!;
-    const attr = built.flatMeshes.get(fan.key)!.geometry.getAttribute('color');
-    assert.equal(attr.getX(fan.vertexStart), Math.fround(litColor(LAVA_LIGHT)), 'floor takes the transferred light');
+    const attr = built.flatMeshes.get(fan.key)!.geometry.getAttribute('aLightSeg');
+    assert.equal(attr.getX(fan.vertexStart), lightSegment(LAVA_LIGHT), 'floor takes the transferred light');
 
     // `rw_lightlevel` (r_segs.c) is the sector's own level, never the floor's.
     for (const quad of built.occluders.filter((o) => o.sector === lit)) {
-      const wallAttr = built.wallMeshes.get(quad.key)!.geometry.getAttribute('color');
-      assert.notEqual(wallAttr.getX(quad.vertexStart), Math.fround(litColor(LAVA_LIGHT)), 'walls keep their own light');
+      const wallAttr = built.wallMeshes.get(quad.key)!.geometry.getAttribute('aLightSeg');
+      assert.notEqual(wallAttr.getX(quad.vertexStart), lightSegment(LAVA_LIGHT), 'walls keep their own light');
     }
   });
 
@@ -49,16 +50,16 @@ describe('Specials · transferred lighting', () => {
 
     const rig = specialsRig(map, grid.centre(1, 1));
     const fan = rig.built.flatSurfaces.find((f) => f.sector === lit)!;
-    const attr = rig.built.flatMeshes.get(fan.key)!.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const attr = rig.built.flatMeshes.get(fan.key)!.geometry.getAttribute('aLightSeg') as THREE.BufferAttribute;
     assert.equal(fan.lightSector, control, 'filed under the sector it borrows from');
-    assert.equal(attr.getX(fan.vertexStart), Math.fround(litColor(LAVA_LIGHT)));
+    assert.equal(attr.getX(fan.vertexStart), lightSegment(LAVA_LIGHT));
 
     // blink05 starts bright with an expired timer, so the first tic flips it
     // to the darkest neighbouring level.
     rig.tick(TIC);
     const dark = map.sectors[control].light;
     assert.notEqual(dark, LAVA_LIGHT, 'the control sector strobed');
-    assert.equal(attr.getX(fan.vertexStart), Math.fround(litColor(dark)), 'and the borrowing floor followed');
+    assert.equal(attr.getX(fan.vertexStart), lightSegment(dark), 'and the borrowing floor followed');
     assert.equal(map.sectors[lit].light, OWN_LIGHT, 'without touching the sector’s own level');
   });
 

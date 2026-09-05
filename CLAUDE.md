@@ -65,7 +65,8 @@ src/wad/       WAD files, merged lump directory, content IDs (checksum), map lum
                (playerskin), the menu's WAD library, and the campaign lumps — MAPINFO, level
                names, par times, the sky, the level progression (campaign/)
 src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it can't ask the tree
-               for (sectorprobe), the solids a map draws as void (solids), mesh building, materials
+               for (sectorprobe), the solids a map draws as void (solids), mesh building, what a
+               sector's light does to a surface and how it falls off with depth (sectorlight), materials
                + texture animation, occlusion fading, Boom's scrolling surfaces (scroller), sprite
                billboards + their instanced batching, the weapon-matching player skins in drawable
                form (playerskin), the blob shadow under them (playershadow), the shading a wall

@@ -20,6 +20,7 @@ import type { SpriteAnimator } from '../../render/sprites.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 import type { TeleportDest } from '../specials.ts';
 
+
 /** One attack's pose: vanilla's own state frames, with the tics each is held for. */
 export interface AttackPose {
   /**

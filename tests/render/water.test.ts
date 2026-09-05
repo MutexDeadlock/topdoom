@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMapMesh, litColor, type FlatSurface } from '../../src/render/mapmesh.ts';
+import { buildMapMesh, type FlatSurface } from '../../src/render/mapmesh.ts';
+import { lightSegment } from '../../src/render/sectorlight.ts';
 import { FlatFader } from '../../src/render/occlusion.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { WATER_SURFACE_ALPHA } from '../../src/constants.ts';
@@ -114,8 +115,12 @@ function invisiblePlatform({ platformFloor = 32, neighbourFloor = 0, unpegged = 
   };
 }
 
-const colorOf = (built: ReturnType<typeof pool>['built'], f: FlatSurface) => {
-  const attr = built.flatMeshes.get(f.key)!.geometry.getAttribute('color');
+/**
+ * How lit a fan is. The vertex colour carries no brightness (docs/render.md § Distance lighting) —
+ * `aLightSeg` is the whole record, and what the shader samples the ramp at.
+ */
+const lightOf = (built: ReturnType<typeof pool>['built'], f: FlatSurface) => {
+  const attr = built.flatMeshes.get(f.key)!.geometry.getAttribute('aLightSeg');
   return attr.getX(f.vertexStart);
 };
 
@@ -144,14 +149,14 @@ describe('Rendering · deep water planes', () => {
     // sector's flat and light.
     assert.equal(bottom.key, 'flat:' + POOL_FLAT);
     assert.equal(bottom.lightSector, control);
-    assert.equal(colorOf(built, bottom), Math.fround(litColor(90)));
+    assert.equal(lightOf(built, bottom), lightSegment(90));
     assert.equal(bottom.baseAlpha, undefined, 'the bottom is solid');
 
     // Above-water view: the control sector's height, wearing the sector's own
     // flat and light — and translucent, which vanilla's never is.
     assert.equal(surface.key, 'flat:' + WATER_FLAT);
     assert.equal(surface.lightSector, 0);
-    assert.equal(colorOf(built, surface), Math.fround(litColor(200)));
+    assert.equal(lightOf(built, surface), lightSegment(200));
     assert.equal(surface.baseAlpha, WATER_SURFACE_ALPHA);
     assert.equal(surface.isCeiling, false, 'it fades like a floor, not a ceiling');
     assert.equal(surface.subsector, bottom.subsector, 'same subsector, so fog of war covers both');
@@ -223,7 +228,7 @@ describe('Rendering · deep water planes', () => {
     assert.equal(fans[0].key, 'flat:' + POOL_FLAT, 'the control sector’s flat, as while it was submerged');
     assert.equal(fans[0].baseAlpha, undefined, 'and solid — it is dry ground now');
     assert.equal(fans[0].lightSector, control, 'lit like the pool bottom it is, not like the surface');
-    assert.equal(colorOf(built, fans[0]), Math.fround(litColor(90)));
+    assert.equal(lightOf(built, fans[0]), lightSegment(90));
   });
 
   test('a pool bottom raised clear of the water line keeps it too', () => {

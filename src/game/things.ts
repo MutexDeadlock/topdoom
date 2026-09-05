@@ -119,7 +119,8 @@ import {
   VIEWER_ANGLE_DEG,
 } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
-import { doomToWorld, litColor } from '../render/mapmesh.ts';
+import { doomToWorld } from '../render/mapmesh.ts';
+import { litColor, viewDepthAt } from '../render/sectorlight.ts';
 import { skyLitSector } from '../render/skytint.ts';
 import type { DynamicLights } from '../render/lights.ts';
 import { blastDistanceToBox, boxReach, segmentEntersBox, traceHitsBox, vecLength } from '../util/geom.ts';
@@ -183,9 +184,6 @@ const DROP_PULSE_SECONDS = 1.8;
  * **Don't raise it** — docs/items.md § Making monster drops readable says what breaks.
  */
 const DROP_DEPTH_BIAS = 16;
-
-/** The tint every `FULLBRIGHT_FRAMES` sprite draws at, whatever its sector. */
-const LIT_FULL = litColor(255);
 
 /**
  * The collider `applyKnockback` probes with, kept and refilled per body rather than rebuilt: it
@@ -624,12 +622,19 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       const x = p.drawPrevX + (p.x - p.drawPrevX) * alpha;
       const y = p.drawPrevY + (p.y - p.drawPrevY) * alpha;
       const z = p.drawPrevZ + (p.z - p.drawPrevZ) * alpha;
+      doomToWorld(x, y, z, worldPos);
       // Read live off the sector rather than cached on the thing — docs/render.md § Sector
-      // lighting on why every sprite must. A fullbright frame ignores the sector outright.
+      // lighting on why every sprite must. A fullbright frame ignores the sector outright, and
+      // its `startmap` is row 0, which no depth can move, so it skips the depth too
+      // (docs/render.md § Distance lighting).
       const bright = FULLBRIGHT_FRAMES.has(p.anim.frameKey);
       const light = bright
-        ? LIT_FULL
-        : litColor(p.sector ? transfers.spriteLight(world.sectorIndexOfSubsector(p.subsector)) : 128);
+        ? litColor(255)
+        : litColor(
+            p.sector ? transfers.spriteLight(world.sectorIndexOfSubsector(p.subsector)) : 128,
+            0,
+            viewDepthAt(worldPos.x, worldPos.y, worldPos.z),
+          );
       // Standing under sky takes the level's outdoor tint, as the floor it stands on does.
       // docs/render.md § Outdoor sky tint.
       const sky = !bright && skyLitSector(p.sector);
@@ -637,7 +642,6 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       // gated on fog of war, so an unrevealed room lights nothing. docs/lights.md § What emits.
       const tint = lights?.offerAndTint(p.anim.frameKey, x, y, z, p.id, p.subsector);
       if (!p.dropped) {
-        doomToWorld(x, y, z, worldPos);
         // A fuzzed thing (`FUZZ_TYPES`) differs only in which batch draws it; everything above
         // is the pose an ordinary thing gets.
         const into = FUZZ_TYPES.has(p.type) ? fuzzBatch : batch;

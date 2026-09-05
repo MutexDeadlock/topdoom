@@ -6,6 +6,7 @@ import { SpriteFxLayer, type FogVisibility } from '../../src/game/spritefx.ts';
 import { SILENT } from '../../src/audio/sfx.ts';
 import type { DynamicLights } from '../../src/render/lights.ts';
 
+
 /**
  * The two stubs that get `ThingLayer`/`SpriteFxLayer` running headless: both
  * layers only ever *key* their batches by lump name during a tic, so a bank

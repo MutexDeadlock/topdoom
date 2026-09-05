@@ -321,7 +321,11 @@ arithmetic:
   is a plain uniform, and `LinearToneMapping` at exposure 1 is `saturate(color)` — bit-identical to
   `NoToneMapping` for anything already in range, so it costs nothing until the visor turns it up. A
   flat multiply is an approximation of vanilla's "force the brightest colormap row everywhere";
-  matching that exactly would mean rebuilding every surface's baked vertex lighting.
+  matching that exactly would mean rebuilding every surface's baked vertex lighting. The half of
+  that vanilla behavior this engine *does* reproduce is the loss of the depth falloff: while the
+  visor is up the distance term contributes nothing, as `fixedcolormap` makes it in vanilla —
+  docs/render.md § The light-amplification visor flattens it. Both halves are driven off one
+  `hasPower` answer in `ui/hud/screeneffects.ts` so they cannot disagree.
 
 ## Skill
 

@@ -5,8 +5,8 @@
  * docs/combat.md § Auto-aim.
  */
 import * as THREE from 'three';
-import { NO_SIDE } from '../../wad/map.ts';
 import { worldToDoom } from '../../render/mapmesh.ts';
+import { NO_SIDE } from '../../wad/map.ts';
 import type { Opening, World } from '../world.ts';
 import type { Pos3 } from '../../types.ts';
 import { vecLength } from '../../util/geom.ts';
@@ -31,54 +31,6 @@ const PICK_TOLERANCE = 16;
  * risks landing a unit the wrong side of it and passing straight through the line.
  */
 const BAND_INSET = 4;
-
-/**
- * A vertical stretch of a line's face that stops a shot — the solid wall above and/or below its
- * opening.
- */
-interface Band {
-  lo: number;
-  hi: number;
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-
-/**
- * The bands of `lineIndex` a shot is stopped by — what `blocksShot`
- * (`game/world.ts`) says no to, as rectangles rather than as a predicate. A
- * one-sided line, and a two-sided one whose opening has closed, are solid over
- * their whole face; anything else is solid below the opening and above it, which
- * is exactly where a two-sided line's lower and upper textures are drawn.
- *
- * Read live off the sectors, so a rising door or a lowering lift moves the bands with it.
- */
-function shootableBands(world: World, lineIndex: number, opening: Opening): Band[] {
-  const { linedefs, sidedefs, sectors } = world.map;
-  const line = linedefs[lineIndex];
-  if (!line || line.right === NO_SIDE) return [];
-  const front = sectors[sidedefs[line.right]?.sector];
-  if (!front) return [];
-  const back = line.left === NO_SIDE ? undefined : sectors[sidedefs[line.left]?.sector];
-  const lo = back ? Math.min(front.floorHeight, back.floorHeight) : front.floorHeight;
-  const hi = back ? Math.max(front.ceilHeight, back.ceilHeight) : front.ceilHeight;
-  if (!back || !world.openingInto(lineIndex, opening) || opening.top <= opening.bottom) {
-    return hi > lo ? [{ lo, hi }] : [];
-  }
-  const bands: Band[] = [];
-  if (opening.bottom > lo) bands.push({ lo, hi: opening.bottom });
-  if (hi > opening.top) bands.push({ lo: opening.top, hi });
-  return bands;
-}
-
-/** Where in a band to aim a shot fired from `fireZ`: as flat a shot as the band admits. */
-function aimHeightIn(band: Band, fireZ: number): number {
-  const lo = band.lo + BAND_INSET;
-  const hi = band.hi - BAND_INSET;
-  if (lo >= hi) return (band.lo + band.hi) / 2;
-  return clamp(fireZ, lo, hi);
-}
 
 /**
  * Which of `lines` the pointer is over and where on it to aim, or null. `ray` is
@@ -129,7 +81,9 @@ export function pickShootAim(world: World, ray: THREE.Ray, lines: readonly numbe
     let aimZ = 0;
     let bestDelta = Infinity;
     for (const band of shootableBands(world, lineIndex, opening)) {
-      if (hz >= band.lo - PICK_TOLERANCE && hz <= band.hi + PICK_TOLERANCE) hit = true;
+      if (hz >= band.lo - PICK_TOLERANCE && hz <= band.hi + PICK_TOLERANCE) {
+        hit = true;
+      }
       const z = aimHeightIn(band, fireZ);
       const delta = Math.abs(z - fireZ);
       if (delta < bestDelta) {
@@ -148,4 +102,52 @@ export function pickShootAim(world: World, ray: THREE.Ray, lines: readonly numbe
     best = { x: a.x + (sx / len) * s, y: a.y + (sy / len) * s, z: aimZ, lineIndex };
   }
   return best;
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+/**
+ * A vertical stretch of a line's face that stops a shot — the solid wall above and/or below its
+ * opening.
+ */
+interface Band {
+  lo: number;
+  hi: number;
+}
+
+/**
+ * The bands of `lineIndex` a shot is stopped by — what `blocksShot`
+ * (`game/world.ts`) says no to, as rectangles rather than as a predicate. A
+ * one-sided line, and a two-sided one whose opening has closed, are solid over
+ * their whole face; anything else is solid below the opening and above it, which
+ * is exactly where a two-sided line's lower and upper textures are drawn.
+ *
+ * Read live off the sectors, so a rising door or a lowering lift moves the bands with it.
+ */
+function shootableBands(world: World, lineIndex: number, opening: Opening): Band[] {
+  const { linedefs, sidedefs, sectors } = world.map;
+  const line = linedefs[lineIndex];
+  if (!line || line.right === NO_SIDE) return [];
+  const front = sectors[sidedefs[line.right]?.sector];
+  if (!front) return [];
+  const back = line.left === NO_SIDE ? undefined : sectors[sidedefs[line.left]?.sector];
+  const lo = back ? Math.min(front.floorHeight, back.floorHeight) : front.floorHeight;
+  const hi = back ? Math.max(front.ceilHeight, back.ceilHeight) : front.ceilHeight;
+  if (!back || !world.openingInto(lineIndex, opening) || opening.top <= opening.bottom) {
+    return hi > lo ? [{ lo, hi }] : [];
+  }
+  const bands: Band[] = [];
+  if (opening.bottom > lo) bands.push({ lo, hi: opening.bottom });
+  if (hi > opening.top) bands.push({ lo: opening.top, hi });
+  return bands;
+}
+
+/** Where in a band to aim a shot fired from `fireZ`: as flat a shot as the band admits. */
+function aimHeightIn(band: Band, fireZ: number): number {
+  const lo = band.lo + BAND_INSET;
+  const hi = band.hi - BAND_INSET;
+  if (lo >= hi) return (band.lo + band.hi) / 2;
+  return clamp(fireZ, lo, hi);
 }

@@ -61,6 +61,14 @@ export interface PosedThing extends Pos3, MonsterBody {
   /** Native-size multiplier (`pickupScaleFor`), handed to the batch each frame. */
   scale: number;
   /**
+   * Whether auto-aim's pointer may lock onto this thing at all — a monster or a barrel, and not
+   * one of `NO_AUTO_AIM_TYPES`. Resolved once at spawn for the same reason `blockRadius` is: the
+   * answer is fixed by `type`, and `pickMonster` walks every thing on the map each tic, where two
+   * sparse-key `Set` probes per thing measured most of the pick's cost on NUTS.WAD.
+   * docs/combat.md § Auto-aim.
+   */
+  lockable: boolean;
+  /**
    * Collision radius, resolved once at spawn — a per-query `MONSTER_STATS[type]` is a sparse-key
    * dictionary hash, measured hotter than the collision arithmetic it fed (docs/monster-ai.md
    * § Spatial indexing).
@@ -451,13 +459,12 @@ export interface ThingLayer {
    * re-picking. Barrels are lockable too: `P_AimLineAttack` knows only
    * `MF_SHOOTABLE`, not "monster".
    *
-   * `viewerAngleDeg` is the yaw the billboards stand at, and must be the
-   * **tic-exact** one (`TopDownCamera.viewerAngleDeg`): tested analytically
-   * against this layer's own state, so nothing here reads the render batch and
-   * the tic no longer has to re-pose it. docs/frameloop.md § Posing for the
-   * aim ray.
+   * The ray is tested against each candidate's **`mobjinfo` box**, the same one a shot collides
+   * with — never the drawn sprite, which is WAD art and would make what the simulation does depend
+   * on which game WAD is loaded. Nothing here reads the render batch, so the tic never has to
+   * re-pose it. docs/combat.md § Auto-aim, docs/frameloop.md § Posing for the aim ray.
    */
-  pickMonster(ray: THREE.Ray, viewerAngleDeg: number): MonsterRef | null;
+  pickMonster(ray: THREE.Ray): MonsterRef | null;
   /**
    * Living monsters within `radius` (2D — matching vanilla's own radius-attack
    * distance test, which ignores height) of (x, y). Candidates for splash

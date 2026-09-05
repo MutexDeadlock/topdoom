@@ -255,6 +255,13 @@ markers, the decoded record's settings, events and check samples, and a per-key 
 - **Another JavaScript engine.** `Math.sin`/`cos`/`atan2`/`exp`/`log` are implementation-
   approximated (docs/random.md § What this does not buy). The meta records the engine; the bar
   notes a mismatch and the check samples say where it diverged.
+- **A stand-in game WAD** used to, and no longer does. A replay may run on a substitute IWAD
+  (docs/savegames.md § WAD-set identity), and auto-aim's pick tested the *drawn sprite*, so the same
+  ray locked onto a different body: 139 of 144 monster sprite quads differ between DOOM2.WAD and
+  freedoom2.wad, and a NUTS.WAD run recorded on the first desynced ~12 s into playback on the
+  second. The pick is the `mobjinfo` box now (docs/combat.md § Auto-aim), which no WAD supplies.
+  The one art-derived input left is `pushThing` skipping a thing whose sprite the set lacks, which
+  shifts every later thing's id.
 - **A changed simulation**, which is `COMPAT`'s whole job (§ Compatibility). The *build* number is
   not that signal and is never noted on the bar: every replay kept across a release was recorded on
   another build, and almost none of those releases moved a tic. The camera is carved out of the

@@ -39,17 +39,6 @@ export interface CachedSprite {
   material: THREE.MeshBasicMaterial;
   geometry: THREE.BufferGeometry;
   /**
-   * The quad `geometry` spans, in the sprite's own local units and with the
-   * hotspot shift already folded in (see `SpriteMaterialCache.get`): x runs
-   * `minX`..`maxX` across the plane, y from 0 at the feet — the plane's bottom
-   * edge, anchored to the thing's own z — up to `height`.
-   *
-   * Carried alongside the geometry so a caller can intersect the billboard
-   * *analytically*, with no mesh and no render state to raycast against:
-   * `intersectBillboard`, for `ThingLayer.pickMonster`.
-   */
-  quad: { minX: number; maxX: number; height: number };
-  /**
    * Where vanilla hangs this patch's bottom edge, relative to the thing's own z: `topoffset -
    * height`, `R_ProjectSprite`'s `gzt = z + topoffset` read from the bottom up. Zero or a few units
    * negative for floor-standing art, deeply negative for anything meant to straddle its point (a
@@ -60,67 +49,6 @@ export interface CachedSprite {
    * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
    */
   bottomOffset: number;
-}
-
-/**
- * How far a billboard can reach from its own anchor point, in local units
- * before `scale` — a conservative bound for a caller that wants to reject a
- * sprite *before* resolving which lump it currently draws
- * (`ThingLayer.pickMonster`'s broad phase, which is what keeps that from
- * being a `SpriteBank` lookup per thing per tic).
- *
- * Measured across every world sprite lump in the bundled IWADs (the player's
- * own HUD weapon art excluded, since nothing draws it in the world): the
- * furthest reach is 130 units sideways of the hotspot (`SPID`, the spider
- * mastermind) and 134 up (`CYBR`, the cyberdemon), i.e. 187 from the anchor.
- * This is double that, so a PWAD carrying outsized monster art doesn't quietly
- * go unclickable around its edges. Only ever a rejection test —
- * `intersectBillboard` is what decides an actual hit.
- */
-export const BILLBOARD_MAX_REACH = 384;
-
-/**
- * Where `ray` crosses the billboard `cached` is drawn at, as a distance along
- * the ray, or -1 for a miss. The plane is upright and turned only about its
- * vertical axis (see `SpriteMaterialCache`'s class doc), so `cos`/`sin` are
- * the shared yaw every sprite is drawn at — `Math.cos/sin` of
- * `viewerAngleDeg - VIEWER_ANGLE_DEG` in radians, exactly what
- * `SpriteBatch.begin` computes once per batch and for the same reason.
- *
- * `pos` is the sprite's world-space anchor (`doomToWorld` of its map position,
- * i.e. its feet) and `scale` its size multiplier, matching what the batch is
- * handed. Deliberately the plain quad, transparent corners included, the same
- * silhouette a mesh raycast would have hit. docs/combat.md § Auto-aim.
- */
-export function intersectBillboard(
-  ray: THREE.Ray,
-  cached: CachedSprite,
-  pos: THREE.Vector3,
-  scale: number,
-  cos: number,
-  sin: number,
-): number {
-  // The plane's own basis: local +x runs (cos, 0, -sin) in world space and
-  // local +y is straight up, so the normal is their cross product. Mirrors
-  // the instance matrix `SpriteBatch.add` writes — the two have to agree, and
-  // tests/render/billboard-pick.test.ts holds them to it.
-  const nx = sin;
-  const nz = cos;
-  const denom = ray.direction.x * nx + ray.direction.z * nz;
-  // Edge-on: a plane of zero apparent width can't be clicked, and dividing
-  // through would hand back an arbitrarily distant hit.
-  if (denom > -1e-6 && denom < 1e-6) return -1;
-  const t = ((pos.x - ray.origin.x) * nx + (pos.z - ray.origin.z) * nz) / denom;
-  if (t < 0) return -1;
-
-  const wy = ray.origin.y + ray.direction.y * t - pos.y;
-  const ly = wy / scale;
-  if (ly < 0 || ly > cached.quad.height) return -1;
-  const wx = ray.origin.x + ray.direction.x * t - pos.x;
-  const wz = ray.origin.z + ray.direction.z * t - pos.z;
-  const lx = (wx * cos - wz * sin) / scale;
-  if (lx < cached.quad.minX || lx > cached.quad.maxX) return -1;
-  return t;
 }
 
 /**
@@ -206,7 +134,6 @@ export class SpriteMaterialCache {
       result = {
         material,
         geometry,
-        quad: { minX: offsetX - bmp.width / 2, maxX: offsetX + bmp.width / 2, height: bmp.height },
         bottomOffset: (bmp.top ?? bmp.height) - bmp.height,
       };
     }

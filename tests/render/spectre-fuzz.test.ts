@@ -23,7 +23,6 @@ function sprite(): CachedSprite {
   return {
     material: new THREE.MeshBasicMaterial({ map, alphaTest: 0.5 }),
     geometry: new THREE.PlaneGeometry(64, 100),
-    quad: { minX: -32, maxX: 32, height: 100 },
     bottomOffset: 0,
   };
 }

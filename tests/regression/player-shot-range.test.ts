@@ -45,9 +45,12 @@ describe('Regressions · player hitscan range', () => {
     assert.equal(playerShotRange('hitscan', null, mapSpan), PLAYER_WEAPON_RANGE);
     assert.equal(playerShotRange('projectile', null, mapSpan), mapSpan);
 
-    // Locked on: `undefined` lets shotPath stop at the target itself.
+    // Locked on, and the two kinds part company. A bullet is instant, so it ends at the target
+    // (`undefined` lets shotPath stop there). A *missile* keeps the whole map either way:
+    // `P_SpawnMissile` hands it momentum and nothing else, so bounding it at the launch-time
+    // distance to the target made it burst in mid-air wherever that target had been standing.
     assert.equal(playerShotRange('hitscan', target, mapSpan), undefined);
-    assert.equal(playerShotRange('projectile', target, mapSpan), undefined);
+    assert.equal(playerShotRange('projectile', target, mapSpan), mapSpan);
 
     // The regression itself: a free player bullet must not fall back to the
     // monster bound, which is what shotPath uses when no range is passed.

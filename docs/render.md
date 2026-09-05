@@ -1188,7 +1188,7 @@ DEHACKED-aware for free: a patch that retunes a height moves the fade with it. O
 player-sized band was the earlier shape, and it failed the very case this section exists for — a lid
 covering only a cyberdemon's head sits well above where that band reached.
 
-The height is the **collision** height, not the drawn sprite's. `CachedSprite.quad.height` is what
+The height is the **collision** height, not the drawn sprite's. The sprite lump's own height is what
 the billboard measures on screen and is often the taller of the two, but `mobjinfo.height` is what
 every other "where is this body" question in the engine already answers with, and a fade disagreeing
 with the shot that follows it would be worse than one running a few units short.

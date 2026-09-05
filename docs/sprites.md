@@ -152,11 +152,10 @@ teleport fog and the revenant's smoke trail. Because a batched thing has no mesh
 
 **A batch is write-only: nothing reads geometry back out of it.** Auto-aim's
 `ThingLayer.pickMonster` used to raycast the instance geometry, which forced the tic to re-fill the
-whole batch at alpha 1 before every aim ray; it now intersects the billboard analytically instead
-(`intersectBillboard`, docs/combat.md § Auto-aim). What that function needs from this file is
-`CachedSprite.quad` — the rectangle the lump's geometry spans, hotspot shift folded in, feet at y=0
-— and the same yaw `begin()` fixes for the batch. The two derive their plane from the same two
-numbers so they cannot disagree about where a sprite stands.
+whole batch at alpha 1 before every aim ray. It now tests the body's own `mobjinfo` box
+(docs/combat.md § Auto-aim) and reads nothing from this file at all — not the lump, not the yaw
+`begin()` fixes — so the batch can stay wherever the last frame left it. Keeping the drawn sprite
+out of that answer is what keeps the simulation independent of the loaded WAD's art.
 
 `ThingLayer` owns **two** batches under one `things` group: ordinary things, and monster death drops
 — which are depth-biased (above) and `translucent`, so `setOpacity` can pulse them (docs/items.md §

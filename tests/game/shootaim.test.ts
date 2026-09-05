@@ -1,11 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
+import { rayThrough } from '../fixtures/aimray.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { specialsRig } from '../fixtures/specialsrig.ts';
 import { World } from '../../src/game/world.ts';
 import { pickShootAim } from '../../src/game/specials/shootaim.ts';
-import type { Pos3 } from '../../src/types.ts';
 
 /**
  * Auto-aim's second lock: the pointer over a shoot-triggered line
@@ -14,13 +13,6 @@ import type { Pos3 } from '../../src/types.ts';
  * through never fires its special.
  */
 describe('Combat · shoot-line auto-aim', () => {
-  /** The cursor ray through two DOOM-space points, in the three.js space `TopDownCamera.rayFor` hands over. */
-  function rayThrough(from: Pos3, to: Pos3): THREE.Ray {
-    const origin = new THREE.Vector3(from.x, from.z, -from.y);
-    const dir = new THREE.Vector3(to.x, to.z, -to.y).sub(origin).normalize();
-    return new THREE.Ray(origin, dir);
-  }
-
   /**
    * Three cells across, the middle of the second row swapped for `glyph`: the
    * line under test is that cell's west edge, at x=128 running y 128..256, seen

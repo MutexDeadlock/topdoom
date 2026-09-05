@@ -43,6 +43,7 @@ Features and improvements
       the console
 
 Fixed bugs
+  - fixed some auto-aim problems
   - a rising lift or floor no longer pins a monster in geometry
   - a monster standing beside a ledge taller than a step no longer levitates
     onto it when it wakes and hovers there (the two shotgun guys on E1M1)

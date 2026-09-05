@@ -584,7 +584,7 @@ export class TopDownCamera {
 
   /**
    * A world-space ray through the pointer's NDC position, which auto-aim tests against monster
-   * billboards (`ThingLayer.pickMonster`). Cast through the `THREE` camera at whatever pose it
+   * bodies (`ThingLayer.pickMonster`). Cast through the `THREE` camera at whatever pose it
    * currently holds, so a caller in the tic has to put that at alpha 1 first —
    * docs/frameloop.md § Posing for the aim ray.
    */

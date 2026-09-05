@@ -90,9 +90,10 @@ src/ui/        the page's own chrome (base styles + tokens, the loading and fata
                card, death overlay, center message, screen effects, the replay bar), menu/ the
                launcher and pause screen (WAD Library, Save/Load, Replays, settings), devmode/ the
                status text and debug hotkeys
-src/util/      helpers shared across layers: 2D geometry, the smoothing curves (damping: the
-               damped-lerp approach and the Hermite ease), GLSL float literals (glsl), per-frame
-               profiling, IndexedDB request plumbing (idb, shared by the save store and the WAD
+src/util/      helpers shared across layers: 2D geometry plus the aim ray's box test (geom), the
+               smoothing curves (damping: the damped-lerp approach and the Hermite ease), GLSL
+               float literals (glsl), per-frame profiling, IndexedDB request plumbing (idb,
+               shared by the save store and the WAD
                library), the one localStorage object every setting is a field of (storage), raw
                DEFLATE (inflate, for compressed nodes), vanilla's random table — the engine's only
                entropy source

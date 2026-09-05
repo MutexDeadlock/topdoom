@@ -6,7 +6,7 @@
 import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import { PLAYER_ORIGIN, type SoundEmitter } from '../audio/sfx.ts';
-import { playerShotRange } from './world.ts';
+import { playerShotRange, type ShotPath } from './world.ts';
 import { transfersOf } from './specials/transfers.ts';
 import { AIM_HEIGHT_OFFSET, MISSILE_HEIGHT_OFFSET, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
@@ -27,7 +27,9 @@ import type { Pos3 } from '../types.ts';
 import type { MonsterRef } from './things/defs.ts';
 import { vecLength } from '../util/geom.ts';
 
-/** The banks a `ProjectileLayer` draws and sounds a missile through, beside the world it flies in. */
+/**
+ * The banks a `ProjectileLayer` draws and sounds a missile through, beside the world it flies in.
+ */
 export interface ProjectileLayerOptions {
   effects: SpriteFxLayer;
   spriteBank: SpriteBank;
@@ -176,12 +178,15 @@ export class ProjectileLayer {
         }
       }
       if (hitMonsterId === null) {
-        // No lock, or a pellet the spread threw off it: test the path against
-        // every monster's body, so one standing between the player and the wall
-        // they're shooting at isn't invisible to the shot — and a wide pellet can
-        // still find whatever it *did* fly through. Only ever shortens the shot,
-        // never past `path.dist`.
-        const monsterHit = things?.raycastMonster(origin, shot.angleRad, path.dist) ?? null;
+        // No lock, or a pellet the spread threw off it: test the path against every monster's
+        // body, so one standing between the player and the wall they're shooting at isn't
+        // invisible to the shot. Only ever shortens the shot, never past `path.dist`.
+        // A pellet thrown off a *locked* target carries the slope the lock resolved, so a body
+        // blocks it only where the line genuinely crosses one — which is what lets the super
+        // shotgun's vertical spread miss; a shot with no lock keeps the aim cone.
+        // docs/combat.md § The vertical test.
+        const slope = target !== null && path.dist > 0 ? path.slope : undefined;
+        const monsterHit = things?.raycastMonster(origin, shot.angleRad, path.dist, { slope }) ?? null;
         if (monsterHit) {
           hitMonsterId = monsterHit.id;
           endX = monsterHit.x;
@@ -216,21 +221,23 @@ export class ProjectileLayer {
     // vanilla, so a burst of plasma layers rather than cutting itself off.
     const launch = PROJECTILE_SOUNDS[shot.sprite]?.launch;
     if (launch) this.audio.play(launch, origin);
+    const radius = PROJECTILE_RADIUS[shot.sprite] ?? PROJECTILE_RADIUS_DEFAULT;
+    // The wall, never the target: like `P_SpawnMissile`, the lock fixed this shot's slope at
+    // launch and it flies on under its own momentum.
+    // docs/monster-attacks.md § Monster projectiles in flight.
+    const flight = missileFlight(path, origin.z, radius);
     const missile: Projectile = {
       anim,
       originX: origin.x,
       originY: origin.y,
       startZ: origin.z,
-      endZ: path.z,
+      endZ: flight.endZ,
       angleRad: shot.angleRad,
       speed: shot.speed,
-      // The wall, never the target: like `P_SpawnMissile`, the lock fixed this shot's slope at
-      // launch and it flies on under its own momentum.
-      // docs/monster-attacks.md § Monster projectiles in flight.
-      maxDist: path.dist,
+      maxDist: flight.maxDist,
       traveled: 0,
       sprite: shot.sprite,
-      radius: PROJECTILE_RADIUS[shot.sprite] ?? PROJECTILE_RADIUS_DEFAULT,
+      radius,
       damage: shot.damage,
       splash: shot.splash,
       spray: shot.spray,
@@ -277,18 +284,20 @@ export class ProjectileLayer {
       if (!anim.resolve((proj.angleRad * 180) / Math.PI, VIEWER_ANGLE_DEG)) continue;
       const launch = PROJECTILE_SOUNDS[proj.sprite]?.launch;
       if (launch) this.audio.play(launch, atk);
+      const radius = PROJECTILE_RADIUS[proj.sprite] ?? PROJECTILE_RADIUS_DEFAULT;
+      const flight = missileFlight(path, atk.z, radius);
       const missile: Projectile = {
         anim,
         originX: atk.x,
         originY: atk.y,
         startZ: atk.z,
-        endZ: path.z,
+        endZ: flight.endZ,
         angleRad: proj.angleRad,
         speed: proj.speed,
-        maxDist: path.dist,
+        maxDist: flight.maxDist,
         traveled: 0,
         sprite: proj.sprite,
-        radius: PROJECTILE_RADIUS[proj.sprite] ?? PROJECTILE_RADIUS_DEFAULT,
+        radius,
         damage: atk.damage,
         splash: proj.splash ? { radius: proj.splash.radius, damage: proj.splash.damage, hitsPlayer: true } : null,
         spray: null,
@@ -383,18 +392,19 @@ export class ProjectileLayer {
       // per frame with a crowded map holding thousands in the air.
       const sectorIndex = world.sectorIndexAt(at.x, at.y);
       const sector = world.map.sectors[sectorIndex];
-      // Vanilla's `P_ZMovement`: a missile meeting the floor or ceiling explodes against it.
-      // Gated to a monster's shot, whose slope outlives the aim that set it — the player's own
-      // already stops where `shotPath` says.
-      // docs/monster-attacks.md § Monster projectiles in flight.
-      const hitGround = fromMonster && !!sector && (at.z <= sector.floorHeight || at.z >= sector.ceilHeight);
+      const arrived = p.traveled >= p.maxDist;
+      // Reaching the wall `shotPath` found. Range simply running out is not that — nothing stopped
+      // such a missile, so it does not suppress the floor test below.
+      const hitWall = arrived && p.lineIndex !== null;
+      // A missile meeting the floor or ceiling explodes against it, every missile including the
+      // player's own; a wall beats the floor on the tic both would answer to.
+      // docs/combat.md § Where an impact sits, docs/monster-attacks.md § Monster projectiles in
+      // flight.
+      const hitGround = !hitWall && !!sector && (at.z <= sector.floorHeight || at.z >= sector.ceilHeight);
       const reachedPlayer = fromMonster && !this.ctx.playerDead && this.playerStruckBy(p, from, at);
       const struck = reachedPlayer ? null : this.bodyStruckBy(p, from, at);
 
-      if (reachedPlayer || struck || hitGround || p.traveled >= p.maxDist) {
-        // Nothing nearer absorbed it, so this is the wall `shotPath` stopped it at — a point on
-        // the plane itself, which is not where a missile explodes.
-        if (!reachedPlayer && !struck && !hitGround && p.lineIndex !== null) this.backOffWall(p, at);
+      if (reachedPlayer || struck || hitGround || arrived) {
         if (reachedPlayer) {
           this.ctx.damagePlayer(p.damage, at.x, at.y, p.sourceType);
         } else if (struck) {
@@ -466,21 +476,6 @@ export class ProjectileLayer {
       this.drawAt.z = p.drawPrevZ + (p.drawZ - p.drawPrevZ) * alpha;
       this.effects.batchSprite(p.anim, this.drawAt, (p.drawAngleRad * 180) / Math.PI, p.drawLight);
     }
-  }
-
-  /**
-   * Pulls an arrival that ended against a wall back off the plane, by the missile's own radius and
-   * along the direction it was flying — never past where the shot came from, so a point-blank hit
-   * explodes at the muzzle rather than behind the shooter. docs/combat.md § Where an impact sits.
-   */
-  private backOffWall(p: Projectile, at: Pos3): void {
-    const back = Math.min(p.radius, vecLength(at.x - p.originX, at.y - p.originY));
-    if (back <= 0) return;
-    const heading = p.homing?.headingRad ?? p.angleRad;
-    at.x -= Math.cos(heading) * back;
-    at.y -= Math.sin(heading) * back;
-    // The straight flight's own slope; a homing missile eases its height per step and has none.
-    if (!p.homing && p.maxDist > 0) at.z -= ((p.endZ - p.startZ) / p.maxDist) * back;
   }
 
   /**
@@ -562,8 +557,12 @@ export class ProjectileLayer {
     homing.y += Math.sin(homing.headingRad) * step;
     const wall = world.projectileStepBlocker({ x: fromX, y: fromY, z: fromZ }, { x: homing.x, y: homing.y, z: homing.z });
     if (wall) {
-      homing.x = wall.x;
-      homing.y = wall.y;
+      // `missileFlight`'s standoff, applied where this flight meets its own wall instead:
+      // `projectileStepBlocker` reports the plane. Never back past where this step began. Height is
+      // left alone — a homing missile eases its z per step and has no launch slope to walk back.
+      const back = Math.min(p.radius, vecLength(wall.x - fromX, wall.y - fromY));
+      homing.x = wall.x - Math.cos(homing.headingRad) * back;
+      homing.y = wall.y - Math.sin(homing.headingRad) * back;
       homing.z = wall.z;
       p.lineIndex = wall.lineIndex;
       p.traveled = p.maxDist;
@@ -634,4 +633,16 @@ function pointAlong(p: Projectile, dist: number, dirX: number, dirY: number, out
   out.y = p.originY + dirY * dist;
   out.z = p.startZ + (p.endZ - p.startZ) * (p.maxDist > 0 ? dist / p.maxDist : 1);
   return out;
+}
+
+/**
+ * Where a straight missile's flight ends: `shotPath`'s distance, less the missile's radius when a
+ * wall is what stopped it. The standoff belongs to the flight, not to a correction applied where
+ * the flight is read. Height comes from `ShotPath.slope`, since shortening the distance alone would
+ * steepen the flight — `pointAlong` lerps `startZ`→`endZ` over `maxDist`.
+ * docs/combat.md § Where an impact sits.
+ */
+function missileFlight(path: ShotPath, startZ: number, radius: number): { maxDist: number; endZ: number } {
+  const maxDist = path.lineIndex === null ? path.dist : Math.max(0, path.dist - radius);
+  return { maxDist, endZ: startZ + path.slope * maxDist };
 }

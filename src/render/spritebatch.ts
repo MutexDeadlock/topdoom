@@ -126,9 +126,7 @@ export class SpriteBatch {
 
   /**
    * Starts a frame: drops last frame's instances and fixes the shared yaw
-   * every sprite is drawn at. The same yaw `render/sprites.ts`'s
-   * `intersectBillboard` takes, which has to reproduce the instance matrix
-   * `add` writes below.
+   * every sprite is drawn at.
    */
   begin(viewerAngleDeg: number): void {
     const rad = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);

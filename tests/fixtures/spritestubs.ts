@@ -33,7 +33,6 @@ export function materialsStub(over: { bottomOffset?: number; tag?: string } = {}
       lump,
       material: new THREE.MeshBasicMaterial(),
       geometry: new THREE.BufferGeometry(),
-      quad: { minX: -16, maxX: 16, height: 56 },
       bottomOffset,
     }),
   } as unknown as SpriteMaterialCache;

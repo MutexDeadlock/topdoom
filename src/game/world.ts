@@ -208,7 +208,9 @@ export function bodyFloor(
     const reach = radius + b.radius;
     if (Math.abs(b.x - x) >= reach || Math.abs(b.y - y) >= reach) continue;
     const top = b.z + b.height;
-    if (top <= z && top > best) best = top;
+    if (top <= z && top > best) {
+      best = top;
+    }
   }
   return best;
 }
@@ -265,6 +267,13 @@ export interface ShotLock {
 export interface ShotPath extends Pos3 {
   dist: number;
   /**
+   * The slope it was actually fired on — `PTR_AimTraverse`'s `aimslope` once the wedge has closed,
+   * or the caller's own when there was no lock. Returned rather than left to be recovered as
+   * `(z - origin.z) / dist`, which loses it outright on a zero-length path and silently assumes
+   * this `z` came from that slope.
+   */
+  slope: number;
+  /**
    * The line that actually stopped it short (a wall, a shut door), or null if it ran out its range
    * unobstructed — the shoot-triggered specials (`game/specials.ts: triggerShot`) key off this.
    */
@@ -285,19 +294,20 @@ export const WEAPON_RANGE = 2048;
 export const PLAYER_WEAPON_RANGE = 8192;
 
 /**
- * How far one of the *player's* shots flies. A locked-on shot ends at its
- * target (`undefined` lets `shotPath` stop there); a free one needs its own
- * bound, and neither kind takes `shotPath`'s `WEAPON_RANGE` default — that is a
- * *monster's* bullet. A missile crosses the whole map, a bullet reaches
- * `PLAYER_WEAPON_RANGE`. See docs/combat.md § Range.
+ * How far one of the *player's* shots flies. **A missile always crosses the whole map**, locked on
+ * or not: `P_SpawnMissile` gives it momentum and nothing else, and it flies until a wall, the floor
+ * or a body stops it. A *bullet* is instant, so it ends wherever aim put it: at its locked target
+ * (`undefined` lets `shotPath` stop there), and failing that at `PLAYER_WEAPON_RANGE`. Neither kind
+ * takes `shotPath`'s `WEAPON_RANGE` default — that is a *monster's* bullet.
+ * See docs/combat.md § Range.
  */
 export function playerShotRange(
   kind: 'hitscan' | 'projectile',
   target: Pos3 | null,
   mapSpan: number,
 ): number | undefined {
-  if (target !== null) return undefined;
-  return kind === 'projectile' ? mapSpan : PLAYER_WEAPON_RANGE;
+  if (kind === 'projectile') return mapSpan;
+  return target !== null ? undefined : PLAYER_WEAPON_RANGE;
 }
 
 /**
@@ -342,8 +352,11 @@ export function neighborSectorIndices(map: DoomMap, sectorIndex: number): number
     if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
     const front = map.sidedefs[line.right]?.sector;
     const back = map.sidedefs[line.left]?.sector;
-    if (front === sectorIndex && back !== undefined) out.push(back);
-    else if (back === sectorIndex && front !== undefined) out.push(front);
+    if (front === sectorIndex && back !== undefined) {
+      out.push(back);
+    } else if (back === sectorIndex && front !== undefined) {
+      out.push(front);
+    }
   }
   return out;
 }
@@ -1018,7 +1031,9 @@ export class World {
     let result = sector?.floorHeight ?? 0;
     let found = false;
     for (const n of this.neighborSectors(sectorIndex)) {
-      if (!found || n.floorHeight < result) result = n.floorHeight;
+      if (!found || n.floorHeight < result) {
+        result = n.floorHeight;
+      }
       found = true;
     }
     return result;
@@ -1029,7 +1044,9 @@ export class World {
     let result = sector?.floorHeight ?? 0;
     let found = false;
     for (const n of this.neighborSectors(sectorIndex)) {
-      if (!found || n.floorHeight > result) result = n.floorHeight;
+      if (!found || n.floorHeight > result) {
+        result = n.floorHeight;
+      }
       found = true;
     }
     return result;
@@ -1068,7 +1085,9 @@ export class World {
     let result = sector?.ceilHeight ?? 0;
     let found = false;
     for (const n of this.neighborSectors(sectorIndex)) {
-      if (!found || n.ceilHeight < result) result = n.ceilHeight;
+      if (!found || n.ceilHeight < result) {
+        result = n.ceilHeight;
+      }
       found = true;
     }
     return result;
@@ -1079,7 +1098,9 @@ export class World {
     let result = sector?.ceilHeight ?? 0;
     let found = false;
     for (const n of this.neighborSectors(sectorIndex)) {
-      if (!found || n.ceilHeight > result) result = n.ceilHeight;
+      if (!found || n.ceilHeight > result) {
+        result = n.ceilHeight;
+      }
       found = true;
     }
     return result;
@@ -1442,7 +1463,9 @@ export class World {
         const fenced = this.map.linedefs[i];
         const front = this.map.sectors[this.map.sidedefs[fenced.right]?.sector];
         const back = this.map.sectors[this.map.sidedefs[fenced.left]?.sector];
-        if (front && back) out.dropoffZ = Math.min(out.dropoffZ, front.floorHeight, back.floorHeight);
+        if (front && back) {
+          out.dropoffZ = Math.min(out.dropoffZ, front.floorHeight, back.floorHeight);
+        }
       }
       if (solid) {
         out.blocked = true;
@@ -1466,7 +1489,9 @@ export class World {
       // bigger step, so a ledge more than `MAX_STEP_UP` above these feet is never what a body
       // rests on. Skipping it here is what stops a body authored — or shoved — under such a ledge
       // from being lifted onto it. docs/movement.md § Collision.
-      if (openBottom > out.floorZ && !stepsTooHigh(openBottom, z, zFinite)) out.floorZ = openBottom;
+      if (openBottom > out.floorZ && !stepsTooHigh(openBottom, z, zFinite)) {
+        out.floorZ = openBottom;
+      }
       if (openTop < out.ceilingZ) out.ceilingZ = openTop;
       if (openingRefuses(openTop, openBottom, z, zFinite)) {
         out.blocked = true;
@@ -1709,66 +1734,72 @@ export class World {
       });
       crossings.sort((p, q) => p.t - q.t);
 
-      // The target's own silhouette, `PTR_AimTraverse`'s
-      // `thingtopslope`/`thingbottomslope` — `target.z` is the body's centre, so
-      // the pair spans `[z, z + height]`.
-      let bottomSlope = slope - lock.halfHeight / maxRange;
-      let topSlope = slope + lock.halfHeight / maxRange;
+      // **Two passes, as vanilla is two calls.** `P_AimLineAttack` finds a slope and stops at the
+      // thing it found; `P_LineAttack`/`P_SpawnPlayerMissile` then send the shot out on that slope,
+      // over a distance of their own. Narrowing over the whole flight instead lets geometry *past*
+      // the target bend the aim, which a missile crossing the map made plainly wrong.
+
+      // Pass one, the aim. The target's own silhouette opens the wedge —
+      // `PTR_AimTraverse`'s `thingtopslope`/`thingbottomslope`, `target.z` being the body's centre,
+      // so the pair spans `[z, z + height]`. Measured at the target's *own* distance, which is
+      // where its half-height subtends that angle.
+      const spread = toTarget > 0 ? lock.halfHeight / toTarget : 0;
+      let bottomSlope = slope - spread;
+      let topSlope = slope + spread;
+      let reachedTarget = true;
       for (const { t, i } of crossings) {
-        const line = this.map.linedefs[i];
+        const d = maxRange * t;
+        // Past the target: the aim traverse has found what it was looking for and ends here.
+        if (d > toTarget) break;
         // A genuinely solid wall or a shut door stops any shot outright, the
         // same two cases `blocksShot` leads with.
-        if (line.left === NO_SIDE || line.right === NO_SIDE) {
-          nearestT = t;
-          blockingLine = i;
-          break;
-        }
-        const opening = this.openingOf(i);
+        const line = this.map.linedefs[i];
+        const twoSided = line.left !== NO_SIDE && line.right !== NO_SIDE;
+        const opening = twoSided ? this.openingOf(i) : null;
         if (!opening || opening.top <= opening.bottom) {
-          nearestT = t;
-          blockingLine = i;
+          reachedTarget = false;
           break;
         }
-        const d = maxRange * t;
         if (d <= 0) continue; // a line the shot starts on contributes no constraint
         const bottom = (opening.bottom - z) / d;
         const topOfGap = (opening.top - z) / d;
         if (bottom > bottomSlope) bottomSlope = bottom;
         if (topOfGap < topSlope) topSlope = topOfGap;
         if (topSlope <= bottomSlope) {
+          reachedTarget = false;
+          break;
+        }
+      }
+      // `PTR_AimTraverse`'s `aimslope`, the middle of what survived, plus the pellet's own jitter —
+      // docs/combat.md § shotPath for why the shot is aimed at the wedge rather than at the target,
+      // and why the jitter comes after. Geometry that stopped the wedge short is `P_AimLineAttack`
+      // with no `linetarget`, which returns 0 rather than `aimslope` (`p_map.c`), so the shot goes
+      // out flat.
+      aimSlope = reachedTarget ? (bottomSlope + topSlope) / 2 + lock.slopeOffset : lock.slopeOffset;
+
+      // Pass two, the shot itself, on the slope pass one settled — so it also *ends* where a shot
+      // on that slope ends, rather than where the wedge happened to collapse. Re-traced over the
+      // crossings already gathered rather than through a second blockmap walk: same segment, same
+      // lines, and they are already nearest-first.
+      for (const { t, i } of crossings) {
+        if (t >= 1) break;
+        if (this.blocksShot(i, z + aimSlope * maxRange * t)) {
           nearestT = t;
           blockingLine = i;
           break;
         }
       }
-      if (blockingLine !== null && nearestT * maxRange < toTarget) {
-        // Geometry stopped the wedge short of the target: `P_AimLineAttack` with
-        // no `linetarget`, which returns slope 0 rather than `aimslope`
-        // (`p_map.c`). The shot is fired flat and re-traced flat, so it ends
-        // where a flat shot stops. docs/combat.md § shotPath.
-        aimSlope = lock.slopeOffset;
-        // Re-traced over the crossings already gathered above rather than through a second
-        // blockmap walk: same segment, same lines, and they are already nearest-first.
-        nearestT = 1;
-        blockingLine = null;
-        for (const { t, i } of crossings) {
-          if (t >= 1) break;
-          if (this.blocksShot(i, z)) {
-            nearestT = t;
-            blockingLine = i;
-            break;
-          }
-        }
-      } else {
-        // `PTR_AimTraverse`'s `aimslope`, the middle of what survived, plus the
-        // pellet's own jitter — docs/combat.md § shotPath for why the shot is aimed
-        // at the wedge rather than at the target, and why the jitter comes after.
-        aimSlope = (bottomSlope + topSlope) / 2 + lock.slopeOffset;
-      }
     }
 
     const dist = maxRange * nearestT;
-    return { x: x + dx * dist, y: y + dy * dist, z: z + aimSlope * dist, dist, lineIndex: blockingLine };
+    return {
+      x: x + dx * dist,
+      y: y + dy * dist,
+      z: z + aimSlope * dist,
+      dist,
+      slope: aimSlope,
+      lineIndex: blockingLine,
+    };
   }
 
   /**
@@ -1896,8 +1927,11 @@ export class World {
       t0 = tm;
     }
     const leaf = child & ~SUBSECTOR_BIT;
-    if (out.length >= 3 && out[out.length - 1] === leaf) out[out.length - 2] = t1;
-    else out.push(t0, t1, leaf);
+    if (out.length >= 3 && out[out.length - 1] === leaf) {
+      out[out.length - 2] = t1;
+    } else {
+      out.push(t0, t1, leaf);
+    }
   }
 
   /** `sectorsTouching`'s accumulator: the sector behind one sidedef, if it isn't already listed. */
@@ -1906,7 +1940,9 @@ export class World {
     const sector = this.map.sidedefs[side]?.sector;
     // Linear scan rather than a Set: this list is a handful of entries long
     // even on the worst geometry, and it runs every tic per body.
-    if (sector !== undefined && !out.includes(sector)) out.push(sector);
+    if (sector !== undefined && !out.includes(sector)) {
+      out.push(sector);
+    }
   }
 
   /**
@@ -1995,10 +2031,14 @@ function buildSectorLines(map: DoomMap): number[][] {
     const line = map.linedefs[i];
     const front = line.right !== NO_SIDE ? map.sidedefs[line.right]?.sector : undefined;
     const back = line.left !== NO_SIDE ? map.sidedefs[line.left]?.sector : undefined;
-    if (front !== undefined && out[front]) out[front].push(i);
+    if (front !== undefined && out[front]) {
+      out[front].push(i);
+    }
     // A line whose two sides name the same sector is one of that sector's
     // lines once, not twice — matching `P_GroupLines`' own per-sector count.
-    if (back !== undefined && back !== front && out[back]) out[back].push(i);
+    if (back !== undefined && back !== front && out[back]) {
+      out[back].push(i);
+    }
   }
   return out;
 }

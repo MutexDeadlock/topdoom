@@ -112,18 +112,23 @@ import { dropoffRefuses, makeCollider, makePinnedMemo, makeTouchCache, mayHitDro
 import { transfersOf } from './specials/transfers.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import {
-  BILLBOARD_MAX_REACH,
-  intersectBillboard,
   SpriteAnimator,
   SpriteMaterialCache,
   VIEWER_ANGLE_DEG,
 } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
-import { doomToWorld } from '../render/mapmesh.ts';
+import { doomToWorld, worldToDoom } from '../render/mapmesh.ts';
 import { litColor, viewDepthAt } from '../render/sectorlight.ts';
 import { skyLitSector } from '../render/skytint.ts';
 import type { DynamicLights } from '../render/lights.ts';
-import { blastDistanceToBox, boxReach, segmentEntersBox, traceHitsBox, vecLength } from '../util/geom.ts';
+import {
+  blastDistanceToBox,
+  boxReach,
+  rayEntersBox,
+  segmentEntersBox,
+  traceHitsBox,
+  vecLength,
+} from '../util/geom.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import type { TeleportDest } from './specials.ts';
 import { thingStatsPatched } from './dehacked/apply.ts';
@@ -354,7 +359,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       };
       // Written unconditionally once a patch has moved `MONSTER_HEALTH`, since the elision
       // is against a table value. docs/dehacked.md § Savegames and patched tables.
-      if (thingStatsPatched() || p.health !== spawnHealthFor(p.type, p.dropped)) block.health = p.health;
+      if (thingStatsPatched() || p.health !== spawnHealthFor(p.type, p.dropped)) {
+        block.health = p.health;
+      }
       if (p.angle !== (p.facingDeg * Math.PI) / 180) block.angle = p.angle;
       if (p.spawnX !== p.x) block.spawnX = p.spawnX;
       if (p.spawnY !== p.y) block.spawnY = p.spawnY;
@@ -529,7 +536,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
             });
             // Additive on top of the AI walk step above, as `P_XYMovement` is on `A_Chase`'s —
             // see `applyKnockback`'s doc.
-            if (p.velX !== 0 || p.velY !== 0) applyKnockback(p, dt);
+            if (p.velX !== 0 || p.velY !== 0) {
+              applyKnockback(p, dt);
+            }
             // Walk triggers this monster crossed on the way — teleports, and the handful of
             // doors/lifts vanilla lets a monster open. docs/death.md § Telefrag.
             const dest = crossLines?.(p.prev, p);
@@ -579,7 +588,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
           p.z = stats.flies ? Math.max(p.z, floorZ) : floorZ;
           // A not-yet-alerted monster can still be knocked back: `damage` always sets velX/velY,
           // and it alerts in the same call, so this mostly guards the same-frame ordering.
-          if (p.velX !== 0 || p.velY !== 0) pushAndSettle(p, dt, crossLines);
+          if (p.velX !== 0 || p.velY !== 0) {
+            pushAndSettle(p, dt, crossLines);
+          }
         }
       } else {
         // Ceiling-hung gore rides a moving ceiling (crusher, closing door) the same way
@@ -595,7 +606,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         // Barrels have no AI movement, so this is their only source of horizontal motion; a
         // corpse lands here too, finishing whatever knockback it died with and riding whatever
         // conveyor it fell onto. docs/movement.md § Knockback.
-        if (p.velX !== 0 || p.velY !== 0) pushAndSettle(p, dt, crossLines);
+        if (p.velX !== 0 || p.velY !== 0) {
+          pushAndSettle(p, dt, crossLines);
+        }
       }
 
       // Whether this thing can be seen — and so shot, and so auto-aimed at. Keyed to fog's crisp
@@ -690,43 +703,22 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     }
   }
 
-  function pickMonster(ray: THREE.Ray, viewerAngleDeg: number): MonsterRef | null {
-    // The yaw every billboard stands at, computed once here exactly as
-    // `SpriteBatch.begin` does per batch.
-    const rad = ((viewerAngleDeg - VIEWER_ANGLE_DEG) * Math.PI) / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
+  function pickMonster(ray: THREE.Ray): MonsterRef | null {
+    // DOOM space throughout, for the reason `pickShootAim` states: every candidate is map-space
+    // state and the ray is the only thing arriving in three.js space.
+    const o = worldToDoom(ray.origin.x, ray.origin.y, ray.origin.z);
+    const d = worldToDoom(ray.direction.x, ray.direction.y, ray.direction.z);
     let best: PosedThing | null = null;
     let bestDist = Infinity;
     for (const p of posed) {
-      if (!p.visible || p.dead || p.picked) continue;
-      // Broad phase before anything that costs a lookup: the ray's distance to a sphere around
-      // the thing's anchor, sized so no billboard escapes it (`BILLBOARD_MAX_REACH`). Keeps a
-      // 10,000-thing map from paying a `SpriteBank` resolve per thing per tic.
-      doomToWorld(p.x, p.y, p.z, worldPos);
-      const dx = worldPos.x - ray.origin.x;
-      const dy = worldPos.y - ray.origin.y;
-      const dz = worldPos.z - ray.origin.z;
-      const along = dx * ray.direction.x + dy * ray.direction.y + dz * ray.direction.z;
-      const reach = BILLBOARD_MAX_REACH * p.scale;
-      // Behind the camera by more than it could ever reach forward.
-      if (along < -reach) continue;
-      const offSq = dx * dx + dy * dy + dz * dz - along * along;
-      if (offSq > reach * reach) continue;
-      // Nothing this far out can beat a hit already found, whichever part of its quad is hit.
-      if (along - reach > bestDist) continue;
-      // Everything the pointer can lock onto, and nothing else. A rejected thing is skipped, not
-      // treated as a blocker: a decoration in front of a monster must not make it untargetable.
-      // Why barrels join `MONSTER_TYPES` is `ThingLayer.pickMonster`'s doc.
-      if (NO_AUTO_AIM_TYPES.has(p.type)) continue;
-      if (!MONSTER_TYPES.has(p.type) && p.type !== ThingType.barrel) continue;
-      // Tic state throughout — position, `facingDeg` and frame as `update` left them, and the
-      // tic-exact viewer angle. Nothing interpolated reaches this, which is what keeps auto-aim
-      // independent of framerate. docs/combat.md § Auto-aim.
-      const cached = p.anim.resolve(p.facingDeg, viewerAngleDeg);
-      if (!cached) continue;
-      const dist = intersectBillboard(ray, cached, worldPos, p.scale, cos, sin);
-      if (dist < 0 || dist >= bestDist) continue;
+      // A rejected thing is skipped, not treated as a blocker: a decoration in front of a monster
+      // must not make it untargetable. `lockable` is the type half of that, settled at spawn.
+      if (!p.lockable || !p.visible || p.dead || p.picked) continue;
+      // Tic state only — the position `update` left, and this body's own `mobjinfo` box. Neither
+      // the drawn sprite nor anything interpolated reaches this, which is what keeps auto-aim
+      // independent of both the frame rate and the loaded WAD's art. docs/combat.md § Auto-aim.
+      const dist = rayEntersBox(o.x, o.y, o.z, d.x, d.y, d.z, p.x, p.y, p.blockRadius, p.z, p.z + p.bodyHeight);
+      if (dist === null || dist >= bestDist) continue;
       bestDist = dist;
       best = p;
     }
@@ -781,7 +773,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   function awakeMonsterCount(): number {
     let n = 0;
     for (const p of posed) {
-      if (!p.dead && MONSTER_TYPES.has(p.type) && p.alerted) n++;
+      if (!p.dead && MONSTER_TYPES.has(p.type) && p.alerted) {
+        n++;
+      }
     }
     return n;
   }
@@ -967,6 +961,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       id: posed.length,
       anim,
       scale: pickupScaleFor(type),
+      // Everything the pointer can lock onto, and nothing else. Why barrels join `MONSTER_TYPES`
+      // is `ThingLayer.pickMonster`'s doc.
+      lockable: !NO_AUTO_AIM_TYPES.has(type) && (MONSTER_TYPES.has(type) || isBarrel),
       blockRadius: isBarrel
         ? BARREL_RADIUS
         : SOLID_DECORATION_TYPES.has(type)
@@ -1230,10 +1227,14 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       if (stats) reactToDamage(p, stats);
       // `reactToDamage` only sets `painTimer` when the stagger roll passed, so a hit that fails
       // it still alerts and retargets but doesn't flinch on screen.
-      if (p.painFrames && p.painTimer > 0) p.anim.playOnce(p.painFrames, MONSTER_ACTION_FRAME_SECONDS);
+      if (p.painFrames && p.painTimer > 0) {
+        p.anim.playOnce(p.painFrames, MONSTER_ACTION_FRAME_SECONDS);
+      }
       // `A_Pain` sits on the painstate itself, so the yelp is gated on the same stagger roll as
       // the flinch pose above, not on merely being hit.
-      if (p.painTimer > 0 && stats?.sounds.pain) sfx.play(stats.sounds.pain, p, monsterOrigin(p.id));
+      if (p.painTimer > 0 && stats?.sounds.pain) {
+        sfx.play(stats.sounds.pain, p, monsterOrigin(p.id));
+      }
       // The other event that reshuffles a revenant's guided/unguided personality (see
       // `MonsterBody.homingBias`) — a real pain flinch, same gate as the pose line above.
       if (p.painTimer > 0) p.homingBias = (pRandom() & 1) !== 0;
@@ -1442,7 +1443,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     const fromY = p.y;
     applyKnockback(p, dt);
     crossAfterPush(p, fromX, fromY, cross);
-    if (p.x !== fromX || p.y !== fromY) refreshSector(p);
+    if (p.x !== fromX || p.y !== fromY) {
+      refreshSector(p);
+    }
   }
 
   /**

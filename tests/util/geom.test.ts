@@ -6,6 +6,7 @@ import {
   clipConvexPolygon,
   distSqToSegment,
   pointInConvexPolygon,
+  rayEntersBox,
   segmentEntersBox,
   segmentMeetsConvexPolygon,
   segmentIntersect,
@@ -16,9 +17,10 @@ import { polygonArea } from '../fixtures/geometry.ts';
 import { filesUnder } from '../fixtures/files.ts';
 
 /**
- * The five primitives under every sightline in the engine — wall occlusion, fog
+ * The primitives under every sightline in the engine — wall occlusion, fog
  * reveal, and `World`'s own line queries all bottom out here, so a sign error
  * shows up as a subtle visual bug three subsystems away.
+ * docs/combat.md § How a shot deals damage, docs/movement.md § Collision.
  */
 
 const UNIT_SQUARE = [0, 0, 10, 0, 10, 10, 0, 10];
@@ -281,6 +283,59 @@ describe('Geometry · shot-vs-body', () => {
     const t = segmentEntersBox(-100, 0, 100, 0, 0, 0, 22);
     assert.ok(t !== null && Math.abs(t - 0.39) < 1e-9, `enters at x = -22, got t=${t}`);
     assert.equal(segmentEntersBox(-100, 50, 100, 50, 0, 0, 22), null);
+  });
+});
+
+/**
+ * Auto-aim's pick geometry: the camera ray against a body's own `mobjinfo` box.
+ * Unlike the two above it is not vanilla's — vanilla has no pointer — but it is
+ * what keeps the drawn sprite out of the simulation.
+ * See docs/combat.md § Auto-aim.
+ */
+describe('Geometry · aim ray vs. body box', () => {
+  // A lost soul: radius 16, height 56, standing on the floor at the origin.
+  const soul = (ox: number, oy: number, oz: number, dx: number, dy: number, dz: number) =>
+    rayEntersBox(ox, oy, oz, dx, dy, dz, 0, 0, 16, 0, 56);
+
+  test('it enters at the near face and reports the distance along the ray', () => {
+    // Due east at chest height: the box starts 16 units short of the centre.
+    const t = soul(-100, 0, 28, 1, 0, 0);
+    assert.ok(t !== null && Math.abs(t - 84) < 1e-9, `expected 84, got ${t}`);
+    // Pointing away from it.
+    assert.equal(soul(-100, 0, 28, -1, 0, 0), null);
+  });
+
+  test('the width is the body’s radius, not the sprite’s half-width', () => {
+    // `SKUL` art is 44 px wide, so the two part company between 16 and 22 —
+    // exactly the band where clicking used to lock and now does not.
+    assert.notEqual(soul(-100, 15.9, 28, 1, 0, 0), null, 'inside the box');
+    assert.equal(soul(-100, 16, 28, 1, 0, 0), null, 'exactly flush is a miss');
+    assert.equal(soul(-100, 20, 28, 1, 0, 0), null, 'inside the old sprite quad, outside the body');
+  });
+
+  test('the vertical span runs from the feet to mobjinfo.height, not around the anchor', () => {
+    // A body's `z` is where it stands, so the box is [z, z + height] rather
+    // than a band centred on z.
+    assert.notEqual(soul(-100, 0, 55, 1, 0, 0), null, 'level with the head');
+    assert.equal(soul(-100, 0, 57, 1, 0, 0), null, 'over it');
+    assert.equal(soul(-100, 0, -1, 1, 0, 0), null, 'under its feet');
+  });
+
+  test('a ray straight down hits or misses on the lateral slabs alone', () => {
+    // The camera looks down, and a yaw snapped to an axis leaves a zero
+    // component — the case the explicit guards cover instead of dividing.
+    assert.notEqual(soul(0, 0, 500, 0, 0, -1), null, 'over its head');
+    assert.equal(soul(40, 0, 500, 0, 0, -1), null, 'beside it');
+    // Straight down but starting below the head: still enters, at distance 0.
+    assert.equal(soul(0, 0, 30, 0, 0, -1), 0, 'origin already inside the box');
+  });
+
+  test('a slanted ray crosses all three slabs', () => {
+    // Down and east, the shape an actual pick ray has.
+    const d = Math.SQRT1_2;
+    assert.notEqual(rayEntersBox(-100, 0, 128, d, 0, -d, 0, 0, 16, 0, 56), null, 'arrives at chest height');
+    // The same bearing from higher up passes over the head before reaching it.
+    assert.equal(rayEntersBox(-100, 0, 300, d, 0, -d, 0, 0, 16, 0, 56), null, 'lands short and below');
   });
 });
 

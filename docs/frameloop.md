@@ -122,14 +122,17 @@ afterwards and overwrites it. With one tic per frame — the normal case — tha
 never read by anything, and the ray goes back to reading an interpolated camera. It shipped that way
 once.
 
-Nothing else has to be re-posed. `pickMonster` tests the ray against each thing's billboard
-**analytically** (`intersectBillboard`, `render/sprites.ts`) from the thing's own tic state and the
-tic-exact `viewerAngleDeg` — it reads no render state at all, so the sprite batches can stay
-wherever the last frame left them. They used to be re-filled at alpha 1 for a `THREE.Raycaster` to
-hit, a fill instrumented as `Sprites (aim)` that measured ~1.4 ms/frame on NUTS.WAD (10,617 things)
-and scaled with tics per frame — ~6.4 ms at 3 tics/frame, exactly when the machine could least
-afford it. The analytic pick is a linear scan with a cheap broad phase (`BILLBOARD_MAX_REACH`) and
-measures ~0.09 ms on the same scene, so it no longer earns its own profiler block.
+Nothing else has to be re-posed. `pickMonster` tests the ray against each body's **`mobjinfo` box**
+(`util/geom.ts: rayEntersBox`) from the thing's own tic state — it reads no render state at all, and
+since the box is engine table data rather than art it needs neither the sprite lump nor the viewer
+angle. So the sprite batches can stay wherever the last frame left them. They used to be re-filled
+at alpha 1 for a `THREE.Raycaster` to hit, a fill instrumented as `Sprites (aim)` that measured
+~1.4 ms/frame on NUTS.WAD (10,617 things) and scaled with tics per frame — ~6.4 ms at 3 tics/frame,
+exactly when the machine could least afford it. A slab test per candidate is a linear scan of
+arithmetic alone and measures 0.064 ms on the same scene, so the pick no longer earns its own
+profiler block. Most of that came from `rayEntersBox` bailing out **per axis** rather than once at
+the end: nearly every body on a crowded map misses on the first slab, and deciding that there is
+what took it from 0.22 ms to 0.06 ms.
 
 The pick is skipped entirely while the player is dead, since nothing aims then.
 

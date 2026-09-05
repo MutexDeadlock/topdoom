@@ -99,8 +99,8 @@ a note is keyed on and the rendered samples are measured, which is how "a releas
   *is* covered, being pure geometry despite where it lives; so is any pure helper a DOM module
   happens to export — `tests/ui/hud.test.ts` covers `hud.ts`'s `formatClock`/`percentOf` while `Hud`
   itself stays out; and *constructing* THREE objects is fine on its own, only rendering them isn't,
-  which is what lets `tests/render/billboard-pick.test.ts` hold `intersectBillboard` against both a
-  `SpriteBatch` instance matrix and a `THREE.Raycaster` over the same quad.
+  which is what lets `tests/regression/aim-pick-body-box.test.ts` cast a real `THREE.Ray` at a real
+  `ThingLayer`.
 - **Performance.** Hot paths are measured deliberately, in a script, on a quiet machine. A timing
   assertion in the suite turns a loaded machine into a red build and teaches everyone to ignore it.
 

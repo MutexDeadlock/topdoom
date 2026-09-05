@@ -1750,7 +1750,9 @@ export class Game {
     // like the toggles it leaves (docs/hud.md § Best times).
     this.cheated = this.cheats.used;
     // Before the load, which hands this very object to `weaponSystem.beginLevel`.
-    if (this.playerDead || reborn || getPistolStart()) this.inventory = createInventory();
+    if (this.playerDead || reborn || getPistolStart()) {
+      this.inventory = createInventory();
+    }
     // A savegame belongs to the level it was taken on; the checkpoint written
     // below is what `R` reloads from here on (docs/death.md § Player death).
     this.savedState = null;
@@ -2279,10 +2281,7 @@ export class Game {
       // docs/replays.md § The TicInput seam.
       const onPlane = input.aim(camera, aimPlaneZ);
       const ray = onPlane ? camera.rayToward(onPlane.x, onPlane.y, aimPlaneZ) : null;
-      // The tic-exact viewer angle, not the interpolated `viewAngleDeg` the
-      // billboards are drawn at, for the same framerate-independence reason
-      // the camera was posed at alpha 1 above.
-      const m = ray ? (this.things?.pickMonster(ray, camera.viewerAngleDeg) ?? null) : null;
+      const m = ray ? (this.things?.pickMonster(ray) ?? null) : null;
       // A monster in front of the switch wins: the pointer is over its body,
       // and a shot would be absorbed by it long before reaching the wall.
       const line =
@@ -2378,7 +2377,9 @@ export class Game {
     // struct: it reveals the level's own geometry. Watched for here rather than handled in
     // `applyPickup` — the same "state there, world effect at the caller" split `tryPickup`
     // already makes for removing the item itself.
-    if (taken && type === ThingType.computerMap) this.fogOfWar.revealAll();
+    if (taken && type === ThingType.computerMap) {
+      this.fogOfWar.revealAll();
+    }
     // Unattenuated, as vanilla plays every pickup: you're standing on it.
     if (taken) this.audio.play(pickupSound(type));
     return taken;

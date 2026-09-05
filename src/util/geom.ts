@@ -1,8 +1,9 @@
 /**
- * The 2D primitives more than one layer needs — segment crossings, point-to-segment distance,
- * the swept box tests and the convex-polygon queries. Pure functions on scalars, deliberately:
- * their callers compute coordinates inline thousands of times a frame, so a point-object
- * parameter here would allocate in exactly the wrong place (docs/conventions.md § Named arguments).
+ * The primitives more than one layer needs — segment crossings, point-to-segment distance, the
+ * swept box tests, the convex-polygon queries, and the one 3D test here (`rayEntersBox`, auto-aim's
+ * pick). Pure functions on scalars, deliberately: their callers compute coordinates inline
+ * thousands of times a frame, so a point-object parameter here would allocate in exactly the wrong
+ * place (docs/conventions.md § Named arguments).
  * Each is documented at its own declaration; the rules built on them live with their callers —
  * docs/movement.md § Collision, docs/render.md § Wall occlusion fading, docs/fogofwar.md and
  * docs/monster-attacks.md § Monster projectiles in flight.
@@ -17,7 +18,8 @@ import type { Pos2 } from '../types.ts';
  * implementation-approximated, where `*` and `Math.sqrt` are exactly specified IEEE-754, so this
  * form is the one that agrees bit-for-bit across engines. It is also the faster of the two —
  * `hypot`'s only edge is the overflow/underflow guard, which no map-space coordinate (|x| < 32768)
- * can reach. What that engine agreement is and isn't worth: docs/random.md § What this does not buy.
+ * can reach. What that engine agreement is and isn't worth:
+ * docs/random.md § What this does not buy.
  */
 export function vecLength(dx: number, dy: number): number {
   return Math.sqrt(dx * dx + dy * dy);
@@ -208,6 +210,80 @@ export function segmentEntersBox(
     let near = (by - half - y1) / dy;
     let far = (by + half - y1) / dy;
     if (near > far) [near, far] = [far, near];
+    if (near > t0) t0 = near;
+    if (far < t1) t1 = far;
+  }
+
+  return t0 < t1 ? t0 : null;
+}
+
+/**
+ * How far along the ray from (ox,oy,oz) in direction (dx,dy,dz) it first enters the box of
+ * half-width `half` centred on (bx, by) and standing from `floor` up to `top`, or null if it never
+ * does. The one 3D primitive here, and its only caller is auto-aim's pick
+ * (`ThingLayer.pickMonster`, docs/combat.md § Auto-aim): a body's own `mobjinfo` box against the
+ * ray from the camera.
+ *
+ * A plain box, deliberately **not** `traceHitsBox`'s diagonal. That one is
+ * `PIT_AddThingIntercepts`' shortcut for a 2D trace crossing the box, and its direction-dependent
+ * width is a property of *that* trace; this ray comes from the camera rather than from the gun, so
+ * what it should ask is simply which bodies it passes through.
+ *
+ * Slab-clipped like `segmentEntersBox`, with the same explicit guard on an axis-parallel component
+ * (which would divide by zero) and the same "exactly grazing is a miss". The far end is unbounded:
+ * a pointer ray has no length of its own, and the near crossing is what orders candidates.
+ */
+export function rayEntersBox(
+  ox: number,
+  oy: number,
+  oz: number,
+  dx: number,
+  dy: number,
+  dz: number,
+  bx: number,
+  by: number,
+  half: number,
+  floor: number,
+  top: number,
+): number | null {
+  let t0 = 0;
+  let t1 = Infinity;
+
+  if (dx === 0) {
+    if (Math.abs(ox - bx) >= half) return null;
+  } else {
+    const a = (bx - half - ox) / dx;
+    const b = (bx + half - ox) / dx;
+    const near = a < b ? a : b;
+    const far = a < b ? b : a;
+    if (near > t0) t0 = near;
+    if (far < t1) t1 = far;
+    // Bailing out per axis rather than once at the end: `pickMonster` runs this over every thing
+    // on the map each tic and nearly all of them miss, so most calls should end on the first slab.
+    if (t0 >= t1) return null;
+  }
+
+  if (dy === 0) {
+    if (Math.abs(oy - by) >= half) return null;
+  } else {
+    const a = (by - half - oy) / dy;
+    const b = (by + half - oy) / dy;
+    const near = a < b ? a : b;
+    const far = a < b ? b : a;
+    if (near > t0) t0 = near;
+    if (far < t1) t1 = far;
+    if (t0 >= t1) return null;
+  }
+
+  // The vertical slab is the body's feet-to-head span, which unlike the two above is not centred
+  // on the anchor: a thing's `z` is where it stands.
+  if (dz === 0) {
+    if (oz <= floor || oz >= top) return null;
+  } else {
+    const a = (floor - oz) / dz;
+    const b = (top - oz) / dz;
+    const near = a < b ? a : b;
+    const far = a < b ? b : a;
     if (near > t0) t0 = near;
     if (far < t1) t1 = far;
   }

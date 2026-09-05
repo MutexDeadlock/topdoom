@@ -157,14 +157,31 @@ export function servedFolder(source: WadSource): { root: string; under: string }
 }
 
 /**
- * Which DOOM's map-naming convention a WAD's maps follow, if any. DOOM names maps
- * `E<episode>M<mission>`, DOOM II `MAP<nn>` — the two schemes never mix within one game, so a
- * WAD's own maps (if it has any) say which game it belongs to. A WAD with no maps of its own (a
- * texture/sound add-on) has no style and is compatible with either.
+ * Which DOOM's map-naming convention a single map lump name follows, if any. DOOM names maps
+ * `E<episode>M<mission>`, DOOM II `MAP<nn>`, and anything else belongs to neither.
+ *
+ * **The one spelling of the two schemes**: `mapStyle` reads a file's own maps through it, and the
+ * stand-in game WAD a save resolves to is picked with it against the map *name* the save stored
+ * (docs/savegames.md § A stand-in game WAD) — a second copy is how the picker comes to accept a
+ * file the level list then names nothing in.
+ */
+export function mapNameStyle(map: string): 'doom1' | 'doom2' | null {
+  if (/^E\dM\d$/.test(map)) return 'doom1';
+  if (/^MAP\d\d$/.test(map)) return 'doom2';
+  return null;
+}
+
+/**
+ * Which DOOM's map-naming convention a WAD's maps follow, if any. The two schemes never mix within
+ * one game, so a WAD's own maps (if it has any) say which game it belongs to — the first one that
+ * names a scheme settles it. A WAD with no maps of its own (a texture/sound add-on) has no style
+ * and is compatible with either.
  */
 export function mapStyle(source: WadSource): 'doom1' | 'doom2' | null {
-  if (source.maps.some((m) => /^E\dM\d$/.test(m))) return 'doom1';
-  if (source.maps.some((m) => /^MAP\d\d$/.test(m))) return 'doom2';
+  for (const map of source.maps) {
+    const style = mapNameStyle(map);
+    if (style) return style;
+  }
   return null;
 }
 

@@ -244,10 +244,21 @@ export function replayMap(meta: Pick<ReplayMeta, 'levels'>): string {
   return meta.levels[0]?.map ?? '?';
 }
 
-/** A replay's identity for the savegame WAD gate — `wadSetRefusal` and friends, unchanged. */
+/**
+ * A replay's identity for the savegame WAD gate — `wadSetRefusal` and friends. `maps` is what a
+ * replay adds over a save: a run that advanced played levels beyond the one it started on, and a
+ * stand-in game WAD must not be what supplies any of them
+ * (docs/savegames.md § A stand-in game WAD).
+ */
 export function replayWadSet(meta: ReplayMeta): SaveWadSet {
-  const { wads, mapWad, patchWads } = meta;
-  return { map: replayMap(meta), wads, mapWad, ...(patchWads ? { patchWads } : {}) };
+  const { wads, mapWad, patchWads, levels } = meta;
+  return {
+    map: replayMap(meta),
+    maps: levels.map((level) => level.map),
+    wads,
+    mapWad,
+    ...(patchWads ? { patchWads } : {}),
+  };
 }
 
 /**

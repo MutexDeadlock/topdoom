@@ -36,7 +36,15 @@ import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { ReplaysUi, type ReplayHooks } from './replays.ts';
 import { isReplayFileName } from '../../game/replay.ts';
 import { readStorage, readStorageObject, writeStorage } from '../../util/storage.ts';
-import { requiredWads, wadLabel, type MissingWad, type SaveWadSet } from '../../game/savegames.ts';
+import {
+  requiredWads,
+  standInBlocker,
+  substitutableIwad,
+  wadLabel,
+  type MissingWad,
+  type SaveWadSet,
+  type StandInBlocker,
+} from '../../game/savegames.ts';
 import { getProfilerVisible, setProfilerVisible } from '../hud/profiler.ts';
 import { getFpsVisible, setFpsVisible } from '../devmode/debughud.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
@@ -398,22 +406,37 @@ export class Menu {
    * that rule lives, so the save row and the load path can't disagree about which files a save can
    * be played with. Matching is by content ID; the name is only the fallback *diagnosis*, and
    * `wads[0]` is the game WAD, so a file's role is its position. `requiredWads` decides which
-   * missing file stops a load. docs/savegames.md § WAD-set identity.
+   * missing file stops a load, and a stand-in taken here is the one thing that releases `wads[0]`
+   * from that (docs/savegames.md § A stand-in game WAD, § WAD-set identity).
    */
   resolveSaveWads(save: SaveWadSet): { iwad?: WadSource; pwads: WadSource[]; missing: MissingWad[] } {
     const { wads, mapWad, patchWads } = save;
     const required = requiredWads(wads, mapWad, patchWads);
+    const found = wads.map((wad) => this.sources.find((s) => s.id !== '' && s.id === wad.id));
+    // The add-ons are what decides whether a stand-in is safe — a level they supply is one the
+    // game WAD would not have to — so they are resolved before the game WAD is chosen against
+    // them. With no candidate the load is blocked after all.
+    const addOns = found.slice(1).filter((s): s is WadSource => s !== undefined);
+    const standIn = found[0] ? {} : this.substituteIwad(save, addOns);
+    found[0] ??= standIn.source;
+    // A stand-in under the game WAD's own name is left unnamed as one: that is the file in another
+    // version, which `wrongVersion` already says (docs/savegames.md § A stand-in game WAD).
+    const named = this.sourceNamed(wads[0]?.name ?? '');
+    const substitute = standIn.source && standIn.source !== named ? standIn.source.label : undefined;
+
+    // A stand-in is a note on a file that *was* found, so index 0 keeps its entry either way.
     const missing: MissingWad[] = [];
-    const found = wads.map((wad, i) => {
-      const source = this.sources.find((s) => s.id !== '' && s.id === wad.id);
-      if (source) return source;
+    wads.forEach((wad, i) => {
+      const stoodIn = i === 0 && standIn.source !== undefined;
+      if (found[i] && !stoodIn) return;
       missing.push({
         name: wadLabel(wad),
         role: i === 0 ? 'IWAD' : 'PWAD',
-        wrongVersion: this.sources.some((s) => s.label.toLowerCase() === wad.name.toLowerCase()),
-        required: required[i],
+        wrongVersion: this.sourceNamed(wad.name) !== undefined,
+        required: required[i] && !stoodIn,
+        ...(stoodIn && substitute ? { substitute } : {}),
+        ...(i === 0 && standIn.blockedBy ? { blockedBy: standIn.blockedBy } : {}),
       });
-      return undefined;
     });
     const [iwad, ...pwads] = found;
     // Add-ons the library no longer has are simply left out — a caller that
@@ -711,6 +734,55 @@ export class Menu {
     el<HTMLButtonElement>('changelog-button').addEventListener('click', () =>
       this.about.open('changelog'),
     );
+  }
+
+  /**
+   * A game WAD that may stand in for the one a save's set names, when the library no longer has
+   * it — the first loaded IWAD whose own maps follow the same scheme as the saved map name
+   * (`mapNameStyle`), since a DOOM II map needs a DOOM II asset set and a DOOM one a DOOM one.
+   * `substitutableIwad` has already said whether a stand-in is admissible at all; this only picks
+   * which. A candidate needs no content ID: nothing matches it by identity, which is the point.
+   * docs/savegames.md § A stand-in game WAD.
+   */
+  private substituteIwad(
+    save: SaveWadSet,
+    pwads: WadSource[],
+  ): { source?: WadSource; blockedBy?: StandInBlocker } {
+    if (!substitutableIwad(save.wads, save.mapWad)) return {};
+    const style = wadlib.mapNameStyle(save.map);
+    const named = this.sourceNamed(save.wads[0]?.name ?? '');
+    const candidates = this.sources.filter(
+      (s) => s.type === 'IWAD' && (style === null || wadlib.mapStyle(s) === style),
+    );
+    // The same file in another version is what the player most likely still means by it, so it
+    // wins over an unrelated game WAD — and the row then says `Other version:` rather than naming
+    // the file as a stand-in for itself (`resolveSaveWads`).
+    candidates.sort((a, b) => Number(b === named) - Number(a === named));
+
+    let blockedBy: StandInBlocker | undefined;
+    for (const source of candidates) {
+      // `mergedMaps` attributes each map to the providing file's label, so that is the identity
+      // `standInBlocker` compares here — a content ID is what the load gate compares instead.
+      const maps = this.mapsFor(source, pwads);
+      const blocker = standInBlocker(
+        save.maps ?? [],
+        source.label,
+        (map) => maps.find((m) => m.name === map)?.provider ?? null,
+      );
+      if (!blocker) return { source };
+      blockedBy ??= blocker;
+    }
+    return { blockedBy };
+  }
+
+  /**
+   * The library's file under a save's stored *name*, which is what a save falls back to where a
+   * content ID matches nothing: the same file in another version. Both readings of that fallback
+   * ask here — `resolveSaveWads` for `wrongVersion`, `substituteIwad` for the candidate a stand-in
+   * prefers — so the row and the pick cannot disagree about which file the player still means.
+   */
+  private sourceNamed(name: string): WadSource | undefined {
+    return this.sources.find((s) => s.label.toLowerCase() === name.toLowerCase());
   }
 
   /** `mergedMaps` for a set, from `mapCache` — see that field's doc. */

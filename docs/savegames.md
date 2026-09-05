@@ -452,7 +452,9 @@ the only files that can change what a stored index means are the game WAD and wh
 that map. An add-on which supplied neither gave the session textures, sprites, sounds or MAPINFO at
 most: without it the level looks or sounds different, but every index still points at the same
 thing. `requiredWads(wads, mapWad, patchWads)` is that rule, positionally, and it is why a save made
-with a test PWAD loaded still loads when the map came from the IWAD.
+with a test PWAD loaded still loads when the map came from the IWAD. Where the map came from the
+add-on instead, the same reasoning frees the game WAD as well and another may stand in for it —
+§ A stand-in game WAD.
 
 **A file carrying a `DEHACKED` lump is the exception**, and the optional `patchWads` names those.
 A patch rewrites the stat tables a restore re-derives every monster from, so dropping it changes
@@ -495,11 +497,78 @@ also grows: the button asks `blockingWad` the same question ahead of the click, 
 in the same way the Save/Overwrite disabling is (docs/menu.md § Save and Load tabs).
 
 **`wadSetRefusal` is then the gate itself, and the only statement of it.** It takes plain facts
-rather than a `Wad` — the save, `wadSetId`'s list for the set in hand, and that set's provider for
-the map — so the rule lives in the format module with the field it reads, and returns the refusal
-message or null. `verifySaveWads` (`main.ts`, on the shared `startLevel` path — see
+rather than a `Wad` — the save, `wadSetId`'s list for the set in hand, and a lookup naming that
+set's provider for a map (a lookup, not one provider, because a replay's stand-in gate asks about
+every level it visited — § A stand-in game WAD) — so the rule lives in the format module with the
+field it reads, and returns the refusal message or null. `verifySaveWads` (`main.ts`, on the shared `startLevel` path — see
 docs/menu.md § Session lifecycle) throws what it returns; `Game.matchesSession`, the checkpoint's
 fit test, compares it to null, so a checkpoint cannot refuse where a manual load would work. Both
 feed it freshly re-hashed bytes (`wadSetId`, `mapProvider` in `wad/checksum.ts`) even though
 resolution already matched IDs: a manifest ID is a build-time claim, and re-hashing what is
 actually in hand is what catches a manifest left stale by a changed file.
+
+## A stand-in game WAD
+
+**`wads[0]` is required back only when it also supplied the map.** Where `mapWad` names an add-on,
+nothing the snapshot indexes through — a sector index, a `posed` index, the fog's subsector index —
+was read out of the game WAD at all: it supplied textures, flats, sprites, sounds and music.
+Another game WAD may therefore stand in for it, and a replay recorded on `DOOM2.WAD` + `NUTS.WAD`
+plays on `freedoom2.wad` + `NUTS.WAD`. `substitutableIwad(wads, mapWad)` is that condition; a blank
+or unmatched `mapWad` is under the whole-set rule (`requiresWholeSet`) and so is never
+substitutable.
+
+**`requiredWads` does not read it.** Whether the game WAD is needed back turns on a stand-in having
+actually been *found*, which takes the library — so `requiredWads` keeps saying `[0]` is required,
+and `Menu.resolveSaveWads` is the one place that releases it, by writing `required: false` on the
+entry that names the file which stood in.
+
+**Which file may stand in is a question about maps, not IDs.** A DOOM II map needs a DOOM II asset
+set, so `Menu.substituteIwad` takes an IWAD whose own maps follow the same scheme as the *saved map
+name* — `mapNameStyle` (`wad/library/defs.ts`), the one spelling of `E<n>M<n>` vs. `MAP<nn>`, which
+`mapStyle` also reads. Among those, **a file under the saved name wins**: the same IWAD in another
+version is what the player still means by it, where anything else is a guess. A candidate needs no
+content ID: nothing matches it by identity, which is the point. `wadSetRefusal` sees content hashes only and so accepts *any* file at
+index 0 in this regime — the compatibility question is settled where the set was resolved, and
+`Game.matchesSession` inherits the same answer, so a checkpoint cannot refuse where a manual load
+would work.
+
+**The stand-in is never silent.** `MissingWad.substitute` carries the file standing in, which makes
+the row's line `Stand-in for DOOM2.WAD: freedoom2.wad` in amber (`required` is false — the load
+proceeds). It is the one entry `missingWadText` adds no advice to: naming the file that stood in is
+the whole of it, and there is nothing for the player to go and do. A stand-in under the file's *own*
+name is left without a `substitute` at all — `resolveSaveWads` omits it, since that is the file in
+another version and the existing `Other version: DOOM2.WAD` says so; naming a file as a stand-in for
+itself would only puzzle. **The producer decides that, not the label**: `substitute` means one thing
+wherever it is set. Where no candidate is found the entry keeps `required: true` and the plain
+`Missing IWAD: …`: the load has nothing to run on.
+
+**A record that walked out of the add-on's maps refuses the stand-in.** A replay can advance the
+campaign into levels no add-on supplied — NUTS.WAD's MAP01, then DOOM2.WAD's own MAP02 — and there
+the game WAD did provide a level that ran, so a stand-in would play *its* version of it.
+`standInBlocker(maps, iwad, providerOf)` names the first such map, and is the **one statement** of
+that rule: `wadSetRefusal` asks it with content IDs over the loaded set, `Menu.substituteIwad` with
+library labels over `mergedMaps` (which attributes by label), so the row and the load cannot
+disagree about which stand-in is safe.
+
+**Two reasons block it, and they are not one sentence.** A map the assembled set provides *nowhere*
+is blocked too — the record played it from somewhere, and that somewhere is gone — but that is a
+different fact from the game WAD supplying it, and only the first is fixed by loading the game WAD
+back. `StandInBlocker.fromIwad` carries which, so each says the true thing: `this recording plays
+MAP02 from the game WAD it was made with` against `the loaded WADs have no map MAP99` (the same
+sentence the single-map check below already uses), and in the row `— it provides MAP02; load it
+from disk first` against `— no loaded WAD provides MAP99`. Collapsing the two sends the player
+after a file that does not have the level.
+
+The maps come from `SaveWadSet.maps`, which `replayWadSet` fills from the replay's level markers
+(`ReplayMeta.levels`, already stored — no format change). A save has one map and leaves it out.
+Where a candidate existed and a map stopped it, `MissingWad.blockedBy` carries the blocker so the
+red line can say which: without it the same library plays one record and refuses another under one
+identical sentence.
+
+**What a stand-in can still cost is what spawns.** A thing whose sprite the merged set has no lumps for is not
+spawned at all (docs/wad.md § Art a WAD set doesn't have), which shifts every later `posed` index
+and changes the kill/item totals — so a stand-in short one sprite changes what the save means, not
+only how it looks. That cannot be checked when the row is drawn: resolution is synchronous and must
+download nothing, so all it knows about a candidate is its manifest entry. It surfaces at load
+instead, where the lumps are in hand: `missingArtMessage` puts the count on screen beside the
+console's list of doomednums.

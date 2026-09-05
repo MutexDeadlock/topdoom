@@ -80,7 +80,12 @@ import { parSecondsFor } from './wad/campaign/pars.ts';
 import { readDehacked, describeDehacked, type LoadedDehacked } from './game/dehacked.ts';
 import { applyDehacked, resetDehacked } from './game/dehacked/apply.ts';
 import { LevelProgression } from './wad/campaign/progression.ts';
-import { CenterMessage, lockedLineMessage, SECRET_MESSAGE } from './ui/hud/message.ts';
+import {
+  CenterMessage,
+  lockedLineMessage,
+  missingArtMessage,
+  SECRET_MESSAGE,
+} from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
 import { getProfilerVisible, ProfilerHud } from './ui/hud/profiler.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
@@ -1507,6 +1512,11 @@ export class Game {
     }
     if (this.things.missingArt.length > 0) {
       console.warn('things skipped, no sprite in this WAD set:', this.things.missingArt.join(', '));
+      // Said on screen too, not only in the console: a skipped thing is simply absent from the
+      // level, and nothing else explains why. Survives this load because `clearOverlays` runs
+      // ahead of the build, and sits clear of the level card's own band
+      // (docs/hud.md § Center messages).
+      this.message.show(missingArtMessage(this.things.missingArt.length));
     }
   }
 
@@ -1956,7 +1966,7 @@ export class Game {
    */
   private matchesSession(save: SaveGame): boolean {
     if (save.map !== this.currentMap || save.skill !== this.skill) return false;
-    return wadSetRefusal(save, wadSetId(this.wad), mapProvider(this.wad, save.map)) === null;
+    return wadSetRefusal(save, wadSetId(this.wad), (map) => mapProvider(this.wad, map)) === null;
   }
 
   /**

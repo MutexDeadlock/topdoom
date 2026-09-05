@@ -322,9 +322,14 @@ P_LoadSideDefs2`). That is also what keeps those names out of the missing-textur
 
 A thing whose sprite the merged set carries no lumps for is **skipped, and the level says so**:
 `buildThingSprites` collects `ThingLayer.missingArt` (`"<doomednum> (<sprite>)"`), which `game.ts`
-warns about at load beside its missing-texture warning. Vanilla `I_Error`s on startup instead, so
-skipping is the better behavior — but skipping *silently* is not, because from the outside the
-monster simply isn't in the level and nothing explains why.
+warns about at load beside its missing-texture warning, and puts on screen as a center message
+(`missingArtMessage`, docs/hud.md § Center messages) — the console names the doomednums, the message
+says how many. Vanilla `I_Error`s on startup instead, so skipping is the better behavior — but
+skipping *silently* is not, because from the outside the monster simply isn't in the level and
+nothing explains why.
+
+Skipping also **shifts every later `posed` index and the kill/item totals**, which is why it is what
+a stand-in game WAD can cost a save or replay (docs/savegames.md § A stand-in game WAD).
 
 The case that hits real users is a **PWAD placing a monster its base WAD never had**: shareware
 `DOOM1.WAD` has no `HEAD` lumps at all (the cacodemon appears in no episode-1 map), so a caco placed

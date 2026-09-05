@@ -17,11 +17,14 @@ import {
   requiredWads,
   saveFileName,
   setSaveBackend,
+  standInBlocker,
+  substitutableIwad,
   wadLabel,
   wadSetRefusal,
   writeAutosave,
   writeSave,
   type SaveCapture,
+  type SaveWad,
 } from '../../src/game/savegames.ts';
 import {
   STATE_ENCODING,
@@ -31,6 +34,9 @@ import {
   decompressText,
 } from '../../src/game/savestore.ts';
 import { memoryBackend, type MemoryBackend } from '../fixtures/savestore.ts';
+
+/** A provider lookup that answers the same file for every map — what a single-map save means. */
+const from = (wad: SaveWad | null) => (): SaveWad | null => wad;
 
 let store: MemoryBackend;
 
@@ -118,6 +124,106 @@ describe('Savegames · the store', () => {
     // sounds is not, and neither is a set whose map came from the IWAD itself.
     assert.deepEqual(requiredWads(wads, 'bbb'), [true, true, false]);
     assert.deepEqual(requiredWads(wads, 'aaa'), [true, false, false]);
+    // Whether another game WAD may stand in for `[0]` is a separate question, and only the
+    // library can answer it — `requiredWads` keeps saying the file is needed until one does.
+    assert.equal(substitutableIwad(wads, 'bbb'), true);
+    assert.equal(substitutableIwad(wads, 'aaa'), false);
+    // A blank or unmatched `mapWad` keeps the whole-set rule, so it is never substitutable.
+    assert.equal(substitutableIwad(wads, ''), false);
+    assert.equal(substitutableIwad(wads, 'gone'), false);
+  });
+
+  test('the load gate takes another game WAD under a map the add-on supplied', () => {
+    const wads = [
+      { name: 'DOOM2.WAD', id: 'aaa' },
+      { name: 'NUTS.WAD', id: 'bbb' },
+    ];
+    const nuts = { name: 'NUTS.WAD', id: 'bbb' };
+    const save = { map: 'MAP01', wads, mapWad: 'bbb' };
+    const freedoom = { name: 'freedoom2.wad', id: 'fff' };
+    assert.equal(
+      wadSetRefusal(save, [freedoom, nuts], from(nuts)),
+      null,
+      'the game WAD supplied art, not an index this save keys through',
+    );
+    assert.match(wadSetRefusal(save, [], from(null)) ?? '', /no game WAD is loaded/);
+    // The map provider is still matched exactly — a stand-in replaces the game WAD alone.
+    assert.match(
+      wadSetRefusal(save, [freedoom, { name: 'NUTS.WAD', id: 'other' }], from({ name: 'NUTS.WAD', id: 'other' })) ?? '',
+      /NUTS\.WAD provides MAP01/,
+    );
+  });
+
+  test('a record that walked into the game WAD\u2019s own maps refuses a stand-in', () => {
+    // The case: NUTS.WAD supplies MAP01, the campaign then advanced into DOOM2.WAD's MAP02. A
+    // stand-in would run *its* MAP02, which is not the level that was recorded.
+    const wads = [
+      { name: 'DOOM2.WAD', id: 'aaa' },
+      { name: 'NUTS.WAD', id: 'bbb' },
+    ];
+    const nuts = { name: 'NUTS.WAD', id: 'bbb' };
+    const freedoom = { name: 'freedoom2.wad', id: 'fff' };
+    const provider = (map: string): SaveWad | null => (map === 'MAP01' ? nuts : freedoom);
+    const walked = { map: 'MAP01', maps: ['MAP01', 'MAP02'], wads, mapWad: 'bbb' };
+    assert.match(
+      wadSetRefusal(walked, [freedoom, nuts], provider) ?? '',
+      /plays MAP02 from the game WAD it was made with/,
+    );
+    // The same run that never left the add-on's map is fine on the stand-in.
+    const stayed = { map: 'MAP01', maps: ['MAP01'], wads, mapWad: 'bbb' };
+    assert.equal(wadSetRefusal(stayed, [freedoom, nuts], provider), null);
+    // And with the real game WAD back, the walked run loads as it always did.
+    const doom2 = { name: 'DOOM2.WAD', id: 'aaa' };
+    assert.equal(wadSetRefusal(walked, [doom2, nuts], (map) => (map === 'MAP01' ? nuts : doom2)), null);
+    // A visited map nothing in the set supplies blocks the stand-in too, but for the other reason:
+    // saying it plays from the game WAD would be false — no file in hand has that level at all.
+    const wandered = { map: 'MAP01', maps: ['MAP01', 'MAP99'], wads, mapWad: 'bbb' };
+    assert.match(
+      wadSetRefusal(wandered, [freedoom, nuts], (map) => (map === 'MAP01' ? nuts : null)) ?? '',
+      /the loaded WADs have no map MAP99/,
+    );
+  });
+
+  test('standInBlocker names the first blocking map, and which of the two reasons it is', () => {
+    const provided: Record<string, string> = { MAP01: 'NUTS.WAD', MAP02: 'freedoom2.wad' };
+    const providerOf = (map: string): string | null => provided[map] ?? null;
+    assert.deepEqual(standInBlocker(['MAP01', 'MAP02'], 'freedoom2.wad', providerOf), {
+      map: 'MAP02',
+      fromIwad: true,
+    });
+    assert.equal(standInBlocker(['MAP01'], 'freedoom2.wad', providerOf), null);
+    // A map the assembled set has no provider for at all counts as blocked too — the record played
+    // it from somewhere, and that somewhere is gone — but for the other reason: no game WAD
+    // supplies it, so getting one back is not the fix and the sentences must differ.
+    assert.deepEqual(standInBlocker(['MAP01', 'MAP99'], 'freedoom2.wad', providerOf), {
+      map: 'MAP99',
+      fromIwad: false,
+    });
+  });
+
+  test('a stand-in game WAD reads as a note, not a refusal', () => {
+    const file = { name: 'DOOM2.WAD', role: 'IWAD' as const, wrongVersion: false, required: false };
+    assert.equal(missingWadLabel({ ...file, substitute: 'freedoom2.wad' }), 'Stand-in for DOOM2.WAD: freedoom2.wad');
+    // A stand-in has nothing to advise, so both lengths are the label alone.
+    assert.equal(missingWadText({ ...file, substitute: 'freedoom2.wad' }), 'Stand-in for DOOM2.WAD: freedoom2.wad');
+    // With no stand-in found the row falls back to the plain missing-file wording.
+    assert.equal(missingWadLabel({ ...file, required: true }), 'Missing IWAD: DOOM2.WAD');
+    // Where a stand-in was there to take and a visited map stopped it, the row says which map —
+    // without that, the same library plays one record and refuses another under one sentence.
+    assert.equal(
+      missingWadText({ ...file, required: true, blockedBy: { map: 'MAP02', fromIwad: true } }),
+      'Missing IWAD: DOOM2.WAD — it provides MAP02; load it from disk first',
+    );
+    // The other reason a map blocks a stand-in is that nothing loaded supplies it at all, and
+    // there this file does *not* provide it: claiming it does would send the player after the
+    // wrong file.
+    assert.equal(
+      missingWadText({ ...file, required: true, blockedBy: { map: 'MAP99', fromIwad: false } }),
+      'Missing IWAD: DOOM2.WAD — no loaded WAD provides MAP99',
+    );
+    // A stand-in under the file's own name carries no `substitute` at all (`resolveSaveWads`):
+    // it is that file in another version, and the line that already exists says so.
+    assert.equal(missingWadLabel({ ...file, wrongVersion: true }), 'Other version: DOOM2.WAD');
   });
 
   test('a file carrying a DEHACKED patch is required back too', () => {
@@ -139,10 +245,10 @@ describe('Savegames · the store', () => {
     const iwad = { name: 'DOOM2.WAD', id: 'aaa' };
     const wads = [iwad, { name: 'EPIC.WAD', id: 'bbb' }];
     const patched = { map: 'MAP03', wads, mapWad: 'aaa', patchWads: ['bbb'] };
-    assert.match(wadSetRefusal(patched, [iwad], iwad) ?? '', /EPIC\.WAD carries a DEHACKED patch/);
-    assert.equal(wadSetRefusal(patched, [iwad, wads[1]], iwad), null, 'and passes once it is back');
+    assert.match(wadSetRefusal(patched, [iwad], from(iwad)) ?? '', /EPIC\.WAD carries a DEHACKED patch/);
+    assert.equal(wadSetRefusal(patched, [iwad, wads[1]], from(iwad)), null, 'and passes once it is back');
     // The same save without the field is an older one, and keeps loading as it always did.
-    assert.equal(wadSetRefusal({ map: 'MAP03', wads, mapWad: 'aaa' }, [iwad], iwad), null);
+    assert.equal(wadSetRefusal({ map: 'MAP03', wads, mapWad: 'aaa' }, [iwad], from(iwad)), null);
   });
 
   test('a mapWad naming no file in the set requires all of them', () => {
@@ -167,18 +273,18 @@ describe('Savegames · the store', () => {
       mapWad: 'aaa',
     };
     const iwad = { name: 'DOOM2.WAD', id: 'aaa' };
-    assert.equal(wadSetRefusal(save, [iwad], iwad), null, 'the add-on supplied no lump this save indexes into');
+    assert.equal(wadSetRefusal(save, [iwad], from(iwad)), null, 'the add-on supplied no lump this save indexes into');
     assert.match(
-      wadSetRefusal(save, [{ name: 'DOOM.WAD', id: 'zzz' }], iwad) ?? '',
+      wadSetRefusal(save, [{ name: 'DOOM.WAD', id: 'zzz' }], from(iwad)) ?? '',
       /DOOM\.WAD differs from the game WAD/,
       'but the game WAD is named when it is the wrong one',
     );
     assert.match(
-      wadSetRefusal(save, [iwad], { name: 'SCYTHE.WAD', id: 'bbb' }) ?? '',
+      wadSetRefusal(save, [iwad], from({ name: 'SCYTHE.WAD', id: 'bbb' })) ?? '',
       /SCYTHE\.WAD provides MAP03/,
       'and so is a file that provides the map in another version',
     );
-    assert.match(wadSetRefusal(save, [iwad], null) ?? '', /no map MAP03/);
+    assert.match(wadSetRefusal(save, [iwad], from(null)) ?? '', /no map MAP03/);
   });
 
   test('a save naming no provider is gated on its whole set, in order', () => {
@@ -188,10 +294,10 @@ describe('Savegames · the store', () => {
       { name: 'SCYTHE.WAD', id: 'bbb' },
     ];
     const save = { map: 'MAP03', wads, mapWad: '' };
-    assert.equal(wadSetRefusal(save, wads, { name: 'SCYTHE.WAD', id: 'bbb' }), null);
-    assert.match(wadSetRefusal(save, [wads[0]], null) ?? '', /different file count/);
+    assert.equal(wadSetRefusal(save, wads, from({ name: 'SCYTHE.WAD', id: 'bbb' })), null);
+    assert.match(wadSetRefusal(save, [wads[0]], from(null)) ?? '', /different file count/);
     assert.match(
-      wadSetRefusal(save, [wads[0], { name: 'SCYTHE.WAD', id: 'other' }], null) ?? '',
+      wadSetRefusal(save, [wads[0], { name: 'SCYTHE.WAD', id: 'other' }], from(null)) ?? '',
       /SCYTHE\.WAD differs from the file this save was made with/,
     );
   });

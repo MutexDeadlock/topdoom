@@ -529,10 +529,13 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   no longer supply, one line per file — matched by *content ID* (`resolveSaveWads`, the same call
   the load path makes), so a renamed WAD is not reported and a file whose bytes have changed reads
   `Different IWAD/PWAD: …` rather than `Missing IWAD/PWAD: …`, which would send the player looking
-  for something they already have. A file the load actually needs back (the game WAD, or the map's
-  provider) is a subtle red warning; the rest are the same line in amber (`.caution`), because they
-  are still a file the save was made with and no longer has — just not one that blocks the load,
-  which is what the red says. **The line is `missingWadLabel`, not the full sentence**: every line
+  for something they already have. A file the load actually needs back (the map's provider, and the
+  game WAD where nothing may stand in for it) is a subtle red warning; the rest are the same line in
+  amber (`.caution`), because they are still a file the save was made with and no longer has — just
+  not one that blocks the load, which is what the red says. A missing game WAD the library can
+  supply a stand-in for is one of those amber lines — `Stand-in for DOOM2.WAD: freedoom2.wad`, since
+  the load proceeds on it (docs/savegames.md § A stand-in game WAD); only where no stand-in is found
+  does it go red. **The line is `missingWadLabel`, not the full sentence**: every line
   in the label column is `white-space: nowrap` with an ellipsis, so the rows keep one height beside
   the thumbnails, and the column is only ~60 characters wide at 12px (682px menu, less the thumbnail
   and the row's three buttons). The sentence saying what to *do* — `missingWadText` — goes on that

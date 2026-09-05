@@ -27,6 +27,19 @@ const MESSAGE_SECONDS = 3;
 export const SECRET_MESSAGE = 'You found a secret area';
 
 /**
+ * What the player is told when the set has no sprite for something the map placed, which means the
+ * thing did not spawn at all (docs/wad.md § Art a WAD set doesn't have). `console.warn` names the
+ * doomednums; this only says how many, because the number is what tells the player the level is
+ * not the one its author built — most often after a game WAD stood in for the one a save or replay
+ * was made on (docs/savegames.md § A stand-in game WAD). `game.ts` raises it at level load.
+ */
+export function missingArtMessage(types: number): string {
+  return types === 1
+    ? 'A thing type has no sprite in this WAD set'
+    : `${types} thing types have no sprite in this WAD set`;
+}
+
+/**
  * Each key color's own text color, sampled from that key's pickup sprite the same way
  * `COLOR_YELLOW` and `ui/hud/hud.ts`'s `LEVEL_STATS_GREEN` are — `RKEYA0`'s and `YKEYA0`'s
  * brightest pixel exactly.

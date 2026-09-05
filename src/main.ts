@@ -339,7 +339,7 @@ function takeOverSaveName(replay: Replay | null, capture: SaveCapture): string {
  * what catches a manifest ID left stale by a changed file.
  */
 function verifySaveWads(wad: Wad, save: SaveWadSet): void {
-  const refusal = wadSetRefusal(save, wadSetId(wad), mapProvider(wad, save.map));
+  const refusal = wadSetRefusal(save, wadSetId(wad), (map) => mapProvider(wad, map));
   if (refusal) throw new Error(refusal);
 }
 

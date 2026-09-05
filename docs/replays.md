@@ -135,6 +135,11 @@ An unnamed recording is named as an unnamed save is — the map's WAD without it
 the map (`DOOM2 MAP01`), from `defaultName` in `game/savegames.ts`
 (docs/savegames.md § Naming).
 
+**A recording that spans several levels is gated on all of them.** `replayWadSet` hands the level
+markers to the savegame WAD gate as `SaveWadSet.maps`, so a run that started on an add-on's map and
+advanced into the game WAD's own is refused a stand-in game WAD rather than played against the
+wrong level — docs/savegames.md § A stand-in game WAD.
+
 A stored replay is credited to `playerName` (`game/replay.ts`), which is **whatever a replay row's
 Player field was last filled in with** — entered once on a recording, inherited by every later one.
 Blank is not remembered: clearing one row's credit drops that row's, not the persisted name. No

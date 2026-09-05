@@ -14,6 +14,7 @@ import type { Progress, WadSource } from './library/defs.ts';
 // nothing outside this directory reaches into it (docs/conventions.md § File names).
 export {
   fitsGameWad,
+  mapNameStyle,
   mapStyle,
   pwadsFor,
   servedFolder,

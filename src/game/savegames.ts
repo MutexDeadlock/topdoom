@@ -100,7 +100,16 @@ export function wadRoles(set: Pick<SaveWadSet, 'wads' | 'mapWad' | 'patchWads'>,
 }
 
 /** The identity half of a save's meta: every field the WAD gate reads, and all it reads. */
-export type SaveWadSet = Pick<SaveMeta, 'map' | 'wads' | 'mapWad' | 'patchWads'>;
+export type SaveWadSet = Pick<SaveMeta, 'map' | 'wads' | 'mapWad' | 'patchWads'> & {
+  /**
+   * Every map the record actually visits, `[0]` being `map`. A save has exactly one and leaves
+   * this out; a replay can walk the campaign into levels no add-on supplied, and `replayWadSet`
+   * fills it from the level markers. Only the stand-in gate reads it — the rest of the set is
+   * about the map a snapshot indexes into, which is `map` alone.
+   * docs/savegames.md § A stand-in game WAD.
+   */
+  maps?: readonly string[];
+};
 
 /**
  * What an unnamed save or replay is called: the WAD that supplied the map, extension dropped, and
@@ -139,6 +148,9 @@ export function saveFileName(name: string): string {
  * textures, sprites or sounds at most — never an index the snapshot keys
  * through — so its absence changes how the level looks, not what it means.
  *
+ * The game WAD is released only where one actually stood in for it, which needs the library and so
+ * is `Menu.resolveSaveWads`'s answer, not this one (docs/savegames.md § A stand-in game WAD).
+ *
  * A file carrying a `DEHACKED` lump is the exception, and `patchWads` names those: a patch rewrites
  * the stat tables a restore re-derives every monster from, so dropping it would silently change
  * what the save means rather than how it looks. Defaulted to empty for a save written before the
@@ -151,17 +163,71 @@ export function requiredWads(wads: SaveWad[], mapWad: string, patchWads: readonl
 }
 
 /**
+ * Whether another game WAD may stand in for `wads[0]` — true exactly when the map came from
+ * something else, so nothing the snapshot indexes through (sector, `posed`, subsector) was read
+ * out of the game WAD at all and it supplied art, sounds and music alone. A `mapWad` that is blank
+ * or unmatched keeps the whole-set rule and so is never substitutable.
+ *
+ * It says nothing about *which* file may stand in: that is the caller's, since it needs the
+ * candidate's own maps to answer (`Menu.substituteIwad`, via `mapNameStyle`). What this rules out
+ * is the case where the answer could never be safe. docs/savegames.md § A stand-in game WAD.
+ */
+export function substitutableIwad(wads: SaveWad[], mapWad: string): boolean {
+  return !requiresWholeSet(wads, mapWad) && wads[0]?.id !== mapWad;
+}
+
+/** The first map a record visited that no stand-in game WAD can be taken under, and why. */
+export interface StandInBlocker {
+  map: string;
+  /**
+   * Whether the game WAD is what supplies that level — the stand-in would run *its* version, and
+   * the file this save was made with is the fix. False is the other reason a map blocks a stand-in:
+   * the assembled set supplies it nowhere, so the record played it from a file that is simply gone
+   * and no choice of game WAD helps. The two are one refusal and two different sentences.
+   */
+  fromIwad: boolean;
+}
+
+/**
+ * The first map of `maps` that stops a stand-in game WAD being taken, or null when none does —
+ * **the one thing that makes a stand-in unsafe** rather than merely different-looking. Which of
+ * the two reasons it found is `fromIwad`'s, because only one of them is fixed by loading the
+ * game WAD back and a single sentence for both would misstate the other.
+ *
+ * `providerOf` names the file supplying a map in the set being assembled, under whatever identity
+ * the caller can compare — a content ID for the load gate, a library label for the menu's pick,
+ * which is what `mergedMaps` attributes with. Both ask this rather than spelling the rule twice.
+ * docs/savegames.md § A stand-in game WAD.
+ */
+export function standInBlocker(
+  maps: readonly string[],
+  iwad: string,
+  providerOf: (map: string) => string | null,
+): StandInBlocker | null {
+  for (const map of maps) {
+    const provider = providerOf(map);
+    if (provider === null) return { map, fromIwad: false };
+    if (provider === iwad) return { map, fromIwad: true };
+  }
+  return null;
+}
+
+/**
  * Why the assembled set can't play this save, or null when it can — **the load
  * gate itself**, as one function over plain facts rather than over a `Wad`, so
  * the format module owns the rule and nothing has to re-derive it. `actual` is
- * `wadSetId`'s list for the set in hand and `mapProvider` the file supplying
- * `save.map` in it (null when it supplies none).
+ * `wadSetId`'s list for the set in hand and `providerOf` names the file
+ * supplying a map in it (null where it supplies none).
  *
  * Both callers are the same question asked in two shapes: `main.ts` throws the
  * message on a load, `Game.matchesSession` compares it to null for a
  * checkpoint. docs/savegames.md § WAD-set identity.
  */
-export function wadSetRefusal(save: SaveWadSet, actual: SaveWad[], mapProvider: SaveWad | null): string | null {
+export function wadSetRefusal(
+  save: SaveWadSet,
+  actual: SaveWad[],
+  providerOf: (map: string) => SaveWad | null,
+): string | null {
   if (requiresWholeSet(save.wads, save.mapWad)) {
     if (actual.length !== save.wads.length) {
       return 'the loaded WAD set has a different file count than the one this save was made with';
@@ -170,9 +236,23 @@ export function wadSetRefusal(save: SaveWadSet, actual: SaveWad[], mapProvider: 
     return differing ? `${differing.name} differs from the file this save was made with` : null;
   }
   const iwad = actual[0] as SaveWad | undefined;
-  if (!iwad || iwad.id !== save.wads[0]?.id) {
-    return `${iwad ? iwad.name : 'the game WAD'} differs from the game WAD this save was made with`;
+  if (!iwad) return 'no game WAD is loaded';
+  if (iwad.id !== save.wads[0]?.id) {
+    if (!substitutableIwad(save.wads, save.mapWad)) {
+      return `${iwad.name} differs from the game WAD this save was made with`;
+    }
+    // A stand-in is otherwise accepted by *any* ID here: this gate sees content hashes, and whether
+    // one file may replace another is a question about its maps, settled where the set was
+    // resolved. What it does check is a record that walked out of the add-on's maps and played the
+    // rest from the game WAD itself, where a stand-in would run its own version of those levels.
+    const blocker = standInBlocker(save.maps ?? [], iwad.id, (map) => providerOf(map)?.id ?? null);
+    if (blocker) {
+      return blocker.fromIwad
+        ? `this recording plays ${blocker.map} from the game WAD it was made with`
+        : `the loaded WADs have no map ${blocker.map}`;
+    }
   }
+  const mapProvider = providerOf(save.map);
   if (!mapProvider) return `the loaded WADs have no map ${save.map}`;
   if (mapProvider.id !== save.mapWad) {
     return `${mapProvider.name} provides ${save.map}, but not the version this save was made on`;
@@ -200,10 +280,24 @@ export interface MissingWad {
    */
   wrongVersion: boolean;
   /**
-   * Whether the load actually needs this file back: the game WAD and `mapWad`'s provider, nothing
-   * else. docs/savegames.md § WAD-set identity.
+   * Whether the load actually needs this file back: `mapWad`'s provider, and the game WAD where
+   * nothing may stand in for it. docs/savegames.md § WAD-set identity.
    */
   required: boolean;
+  /**
+   * The file standing in for this one, when the set resolved to one — only ever a game WAD
+   * (`substitutableIwad`), and then `required` is false because the load proceeds on it. A
+   * stand-in under this file's *own* name is left out: that is the file in another version, which
+   * `wrongVersion` already says. docs/savegames.md § A stand-in game WAD.
+   */
+  substitute?: string;
+  /**
+   * Why no stand-in was taken, where a candidate was otherwise there to take: the map that stopped
+   * it and which of `standInBlocker`'s two reasons it is. Set only alongside `required` — one of
+   * those reasons is what makes this file required back, the other is a level nothing loaded
+   * supplies. docs/savegames.md § A stand-in game WAD.
+   */
+  blockedBy?: StandInBlocker;
 }
 
 /**
@@ -214,6 +308,7 @@ export interface MissingWad {
  * `missingWadText` instead — where the surfaces showing it have the room.
  */
 export function missingWadLabel(file: MissingWad): string {
+  if (file.substitute) return `Stand-in for ${file.name}: ${file.substitute}`;
   if (!file.required) return file.wrongVersion ? `Other version: ${file.name}` : `Not loaded: ${file.name}`;
   return file.wrongVersion ? `Different ${file.role}: ${file.name}` : `Missing ${file.role}: ${file.name}`;
 }
@@ -222,15 +317,27 @@ export function missingWadLabel(file: MissingWad): string {
  * The label plus what to *do* about it: the load error and the row's tooltip,
  * both of which have a whole line's width. An optional file's clause says
  * outright that the save loads — the label alone would read as a refusal for
- * something that works. Built *from* `missingWadLabel` rather than written out
+ * something that works. A stand-in is the one case with nothing to add, and
+ * says only its label. Built *from* `missingWadLabel` rather than written out
  * again, so a row and its own tooltip cannot name the same file two ways.
  * docs/savegames.md § WAD-set identity.
  */
 export function missingWadText(file: MissingWad): string {
+  // A stand-in carries no advice at either length: the label already names the file that stood in,
+  // and there is nothing for the player to go and do about it.
+  if (file.substitute) return missingWadLabel(file);
   return `${missingWadLabel(file)} ${adviceFor(file)}`;
 }
 
 function adviceFor(file: MissingWad): string {
+  // Why no stand-in was taken, where one was there to take — without it the same library plays one
+  // record and refuses another under the same sentence. Loading this file back is the fix for only
+  // one of the two reasons: the other is a level nothing in the set supplies, which no game WAD
+  // answers for.
+  if (file.blockedBy) {
+    const { map, fromIwad } = file.blockedBy;
+    return fromIwad ? `— it provides ${map}; load it from disk first` : `— no loaded WAD provides ${map}`;
+  }
   if (!file.required) {
     return file.wrongVersion
       ? '— this level plays with the version you have, but content it added may differ'

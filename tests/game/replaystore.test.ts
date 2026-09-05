@@ -187,9 +187,12 @@ describe('Replays · the store', () => {
   test('the WAD gate is the savegames’ own', async () => {
     const meta = await writeReplay(capture(), 'x');
     const set = replayWadSet(meta);
+    const iwad = { name: 'DOOM2.WAD', id: 'iwad' };
     assert.equal(set.map, 'MAP01');
-    assert.equal(wadSetRefusal(set, [{ name: 'DOOM2.WAD', id: 'iwad' }], { name: 'DOOM2.WAD', id: 'iwad' }), null);
-    assert.ok(wadSetRefusal(set, [{ name: 'DOOM.WAD', id: 'other' }], null));
+    // Every level the run visited, which is what the stand-in gate reads.
+    assert.deepEqual(set.maps, ['MAP01']);
+    assert.equal(wadSetRefusal(set, [iwad], () => iwad), null);
+    assert.ok(wadSetRefusal(set, [{ name: 'DOOM.WAD', id: 'other' }], () => null));
   });
 
   // Last in the file: it leaves the remembered name set, which every later `writeReplay` would

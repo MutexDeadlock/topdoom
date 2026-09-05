@@ -412,7 +412,7 @@ dropped like any other — there is nothing in it to keep.
 
 `src/ui/hud/message.ts`'s `CenterMessage` draws one short line of `WadFont` text over the middle of
 the view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
-holds at dead center), for 3 seconds. Three callers so far:
+holds at dead center), for 3 seconds. Four callers so far:
 
 - the secret announcement — `Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` (this
   module's own, since it is display text) and plays the `secret` chime on the frame
@@ -423,7 +423,12 @@ holds at dead center), for 3 seconds. Three callers so far:
   `Game.frame` drained out of `specials` through `specials/tables.ts`'s `LOCKED_LINES`, where
   vanilla's and Boom's `PD_*` text lives and where a DEH patch will have replaced it (docs/items.md
   § Locked doors and use triggers, docs/dehacked.md § Locked-door lines); its `oof` was already
-  played there.
+  played there;
+- things the WAD set has no art for — `loadMapByIndex` shows `missingArtMessage(n)` when
+  `ThingLayer.missingArt` is non-empty, so a monster the set could not draw and therefore did not
+  spawn is not simply absent with nothing to explain it (docs/wad.md § Art a WAD set doesn't have).
+  Raised at level load, which `clearOverlays` precedes, and it sits in its own band clear of the
+  level card's (30% vs. 40%).
 
 `show` takes **runs**, not one string: a bare string draws in `COLOR_YELLOW`, a `{text, color}` run
 in whatever color it names, and they're laid out left to right on one canvas — which is what lets

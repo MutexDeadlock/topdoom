@@ -35,6 +35,12 @@ Features and improvements
       its own ".topdoomsave.json" suffix
     - savegames and replay snapshots store only the THINGs that are no longer
       as the map spawned them (this is why saves broke here)
+    - a save or replay of a PWAD map plays on another game WAD when the one it
+      was made with is gone: a NUTS.WAD run recorded on DOOM2.WAD runs on
+      freedoom2.wad, and the row says which file stood in — unless the run
+      advanced into a level the game WAD itself provided, which is refused
+    - a thing the WAD set has no sprite for is now said on screen, not only in
+      the console
 
 Fixed bugs
   - a rising lift or floor no longer pins a monster in geometry

@@ -19,7 +19,7 @@ export const REFERENCE_STEPS = 4;
 
 /**
  * The distance term's numerator, in map units: how many `COLORMAP` rows nearer than `startmap` a
- * surface at depth `d` is drawn is `floor(DIMINISH_SCALE / d)`. Vanilla: `scalelight` is indexed by
+ * surface at depth `d` is drawn is `DIMINISH_SCALE / d`. Vanilla: `scalelight` is indexed by
  * `rw_scale >> LIGHTSCALESHIFT` where `rw_scale = FixedDiv(projection, rw_distance)` and
  * `projection = centerx << FRACBITS` = 160 at 320 wide, so the index is `2560 / d`, and
  * `R_ExecuteSetViewSize` divides it by `DISTMAP` (2) — `r_main.c`, `r_segs.c`. Tied to vanilla's
@@ -30,7 +30,7 @@ export const DIMINISH_SCALE = 1280;
 
 /**
  * The most rows the term subtracts: `MAXLIGHTSCALE - 1` (47, `r_main.h`) over `DISTMAP`. Reached
- * within 54 units of the eye, nearer than this camera ever hangs.
+ * within 56 units of the eye, nearer than this camera ever hangs.
  */
 export const MAX_DIMINISH_ROWS = 23;
 
@@ -72,11 +72,13 @@ export function lightSegment(light: number, contrast = 0): number {
 
 /**
  * How many rows nearer than `startmap` a surface at view depth `depth` (map units along the
- * camera's axis) is drawn — the term above, as the shader computes it. Depth under one unit reads
- * as one: the term is a division, and the eye never stands on a surface.
+ * camera's axis) is drawn — the term above, as the shader computes it, and **not floored**:
+ * vanilla's is a table index, this one is read through `colormapGain`'s interpolation.
+ * docs/render.md § The term is continuous, the ramp is not. Depth under one unit reads as one: the
+ * term is a division, and the eye never stands on a surface.
  */
 export function diminishRows(depth: number): number {
-  return Math.min(MAX_DIMINISH_ROWS, Math.floor(DIMINISH_SCALE / Math.max(1, depth)));
+  return Math.min(MAX_DIMINISH_ROWS, DIMINISH_SCALE / Math.max(1, depth));
 }
 
 /**
@@ -104,10 +106,11 @@ export function litColor(light: number, contrast = 0, depth?: number): number {
  * Sector light level (0..255) as a **linear-light** multiplier — not a display value, since the
  * renderer's `outputColorSpace` encodes the fragment on the way out. `contrast` is the
  * fake-contrast offset in light units, of which ±16 is vanilla's ±1 segment; `rows` is the distance
- * term, `REFERENCE_STEPS` unless a depth decided otherwise. docs/render.md § Sector lighting.
+ * term, `REFERENCE_STEPS` unless a depth decided otherwise, and may be fractional
+ * (§ The term is continuous, the ramp is not). docs/render.md § Sector lighting.
  */
 export function lightToColor(light: number, contrast = 0, rows = REFERENCE_STEPS): number {
-  return COLORMAP_GAIN[colormapRow(lightSegment(light, contrast), rows)];
+  return colormapGain(colormapRow(lightSegment(light, contrast), rows));
 }
 
 /**
@@ -161,13 +164,14 @@ export const DISTANCE_LIGHT_GLSL = {
     uniform float uDiminish;
     const float COLORMAP_GAIN[${COLORMAP_ROWS}] = float[${COLORMAP_ROWS}](${COLORMAP_GAIN.map(glslFloat).join(', ')});
     float liftedGain(float row) {
-      float gain = COLORMAP_GAIN[int(row)];
+      float lo = floor(row);
+      float gain = mix(COLORMAP_GAIN[int(lo)], COLORMAP_GAIN[int(min(lo + 1.0, ${glslFloat(COLORMAP_ROWS - 1)}))], row - lo);
       return gain + ${glslFloat(BRIGHTNESS_LIFT)} * (1.0 - gain);
     }`,
   fragmentApply: `
     {
       float startmap = (15.0 - vLightSeg) * 4.0;
-      float rows = min(${glslFloat(MAX_DIMINISH_ROWS)}, floor(${glslFloat(DIMINISH_SCALE)} / max(1.0, vViewDepth)));
+      float rows = min(${glslFloat(MAX_DIMINISH_ROWS)}, ${glslFloat(DIMINISH_SCALE)} / max(1.0, vViewDepth));
       float atDepth = clamp(startmap - rows, 0.0, ${glslFloat(COLORMAP_ROWS - 1)});
       float atReference = clamp(startmap - ${glslFloat(REFERENCE_STEPS)}, 0.0, ${glslFloat(COLORMAP_ROWS - 1)});
       diffuseColor.rgb *= mix(liftedGain(atReference), liftedGain(atDepth), uDiminish);
@@ -178,10 +182,22 @@ export const DISTANCE_LIGHT_GLSL = {
  * The `COLORMAP` row a light segment reads through with `rows` of the distance term taken off:
  * `startmap - rows`, where `startmap = ((LIGHTLEVELS - 1 - seg) * 2) * NUMCOLORMAPS / LIGHTLEVELS`
  * (`R_InitLightTables`, `r_main.c`) = `(15 - seg) * 4`, clamped to the table as vanilla clamps it.
+ * Fractional where `rows` is — `colormapGain` reads between two rows.
  */
 function colormapRow(segment: number, rows: number): number {
   const row = (15 - segment) * 4 - rows;
   return Math.max(0, Math.min(COLORMAP_ROWS - 1, row));
+}
+
+/**
+ * `COLORMAP_GAIN` at a **fractional** row, linearly interpolated — the CPU twin of the shader's
+ * `liftedGain`, and what keeps the distance term from drawing its row boundaries as lines across a
+ * floor. An integer row is exactly the table's own entry.
+ * docs/render.md § The term is continuous, the ramp is not.
+ */
+function colormapGain(row: number): number {
+  const lo = Math.floor(row);
+  return COLORMAP_GAIN[lo] + (row - lo) * (COLORMAP_GAIN[Math.min(lo + 1, COLORMAP_ROWS - 1)] - COLORMAP_GAIN[lo]);
 }
 
 /**

@@ -40,18 +40,42 @@ function vanillaRows(depth: number): number {
 
 describe('Rendering · the distance term', () => {
   test('matches vanilla scalelight row for row across every depth the camera frames', () => {
-    for (let depth = 1; depth <= 4000; depth++) assert.equal(diminishRows(depth), vanillaRows(depth), `depth ${depth}`);
+    // Floored, since this engine's term is the same quotient left continuous — a fractional row is
+    // read between two `COLORMAP` rows. docs/render.md § The term is continuous, the ramp is not.
+    for (let depth = 1; depth <= 4000; depth++) {
+      assert.equal(Math.floor(diminishRows(depth)), vanillaRows(depth), `depth ${depth}`);
+    }
   });
 
   test('saturates: nothing is subtracted from DIMINISH_SCALE out, and never more than the cap', () => {
     assert.equal(diminishRows(DIMINISH_SCALE), 1);
-    assert.equal(diminishRows(DIMINISH_SCALE + 1), 0);
+    assert.ok(diminishRows(DIMINISH_SCALE * 4) < 0.3, 'and keeps shrinking rather than snapping to 0');
     assert.equal(diminishRows(1), MAX_DIMINISH_ROWS);
     assert.equal(diminishRows(0), MAX_DIMINISH_ROWS, 'a depth under one unit reads as one');
   });
 
   test('the reference sample is the term at a 320-unit depth', () => {
     assert.equal(diminishRows(320), REFERENCE_STEPS);
+  });
+
+  test('crosses a row boundary continuously, so no depth draws a visible edge', () => {
+    // The bug this rules out: `floor`ing the term drew its row boundaries as lines across a floor,
+    // at the fixed depths where it stepped. docs/render.md § The term is continuous, the ramp is not.
+    for (const boundary of [DIMINISH_SCALE / 4, DIMINISH_SCALE / 3, DIMINISH_SCALE / 2]) {
+      const before = litColor(160, 0, boundary - 0.5);
+      const after = litColor(160, 0, boundary + 0.5);
+      assert.ok(before > after, `darkens through ${boundary}`);
+      assert.ok(before - after < 0.005, `by no step at ${boundary}: ${before - after}`);
+    }
+  });
+
+  test('an integer row is still exactly the table entry vanilla would have read', () => {
+    // Segment 10 (light 160) starts at row 20, so these are rows 20, 16 and 24 of the lump's ramp.
+    assert.ok(Math.abs(lightToColor(160, 0, 0) - 0.1312) < 1e-12);
+    assert.ok(Math.abs(lightToColor(160, 0, REFERENCE_STEPS) - 0.2317) < 1e-12);
+    assert.ok(Math.abs(lightToColor(160, 0, -REFERENCE_STEPS) - 0.0621) < 1e-12);
+    // And a half row is halfway between two of them, which is the whole of the change.
+    assert.ok(Math.abs(lightToColor(160, 0, 0.5) - (0.1312 + 0.1526) / 2) < 1e-12);
   });
 });
 
@@ -143,7 +167,7 @@ describe('Rendering · the distance term in GLSL', () => {
     // generated from the constants above, and so cannot drift from the CPU sample beside them.
     const apply = DISTANCE_LIGHT_GLSL.fragmentApply;
     assert.ok(apply.includes(`${DIMINISH_SCALE}.0 / max(1.0, vViewDepth)`));
-    assert.ok(apply.includes(`min(${MAX_DIMINISH_ROWS}.0, floor(`));
+    assert.ok(apply.includes(`min(${MAX_DIMINISH_ROWS}.0, ${DIMINISH_SCALE}.0`), 'capped, not floored');
     assert.ok(apply.includes(`startmap - ${REFERENCE_STEPS}.0`));
   });
 });

@@ -25,9 +25,7 @@ Features and improvements
   - Rendering:
     - thin ceilings are trimmed to reduce visual clutter
     - distance lighting: surfaces and sprites darken with their
-      depth from the camera, one COLORMAP row at a time
-    - the light amplification visor flattens that falloff, as vanilla's
-      fixedcolormap does
+      depth from the camera, smoothly through the COLORMAP ramp
   - Save- and Replay files:
     - an unnamed save or replay is named after the WAD its map came from and
       the map: "DOOM2 MAP05", "NUTS MAP01"
@@ -36,9 +34,7 @@ Features and improvements
     - savegames and replay snapshots store only the THINGs that are no longer
       as the map spawned them (this is why saves broke here)
     - a save or replay of a PWAD map plays on another game WAD when the one it
-      was made with is gone: a NUTS.WAD run recorded on DOOM2.WAD runs on
-      freedoom2.wad, and the row says which file stood in — unless the run
-      advanced into a level the game WAD itself provided, which is refused
+      was made with is gone
     - a thing the WAD set has no sprite for is now said on screen, not only in
       the console
 

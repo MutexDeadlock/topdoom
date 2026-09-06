@@ -791,7 +791,8 @@ lifetime is short enough that a mid-flight relight isn't worth chasing.
 
 Vanilla's own depth cue: a surface darkens as it recedes, one `COLORMAP` row at a time, and a dim
 room's far wall is still readable because the ramp is the palette's, not a fade to black. The term
-is `floor(DIMINISH_SCALE / depth)` rows subtracted from `startmap`, capped at `MAX_DIMINISH_ROWS`:
+is `DIMINISH_SCALE / depth` rows subtracted from `startmap`, capped at `MAX_DIMINISH_ROWS` —
+unrounded, § The term is continuous, the ramp is not:
 
 - **`DIMINISH_SCALE` is 1280 map units**, from `scalelight`'s index `rw_scale >> LIGHTSCALESHIFT`
   with `rw_scale = projection / rw_distance` and `projection` = 160 at 320 wide (`r_segs.c`,
@@ -806,7 +807,7 @@ is `floor(DIMINISH_SCALE / depth)` rows subtracted from `startmap`, capped at `M
   are; not the Euclidean distance to the eye.
 - **The term saturates by 1280 units**, so the whole effect lives inside that depth; at the
   default framing (docs/camera.md) the frame's near edge sits ~285 units from the eye (4 rows, the
-  reference) and the player 480 (2 rows), so a frame spans about one light segment top to bottom.
+  reference) and the player 480 (2.7 rows), so a frame spans about one light segment top to bottom.
 
 **The geometry does the whole ramp per fragment.** Every vertex carries `aLightSeg` (`Batch.segs`,
 a plain byte) and nothing else about its light; the fragment turns that into `startmap`, subtracts
@@ -820,6 +821,21 @@ rebuilds the array from its `Batch`. There is no second value to keep in step: t
 where a surface is relit but keeps sampling the row its sector used to have cannot be written.
 A geometry without the attribute reads segment 0, the darkest. The dynamic-light sum is added
 *after* the multiply and never diminishes: vanilla has no such light to diminish.
+
+#### The term is continuous, the ramp is not
+
+**`floor` is left off the row count — a deliberate deviation.** Vanilla's term is a table index, so
+it steps: `floor(1280 / depth)`. Depth is measured along the camera axis, so each of those steps is
+a line of constant depth straight across the view, and from overhead it lands mid-floor and reads as
+a sector boundary rather than as a depth cue. First person it is masked by perspective, distance and
+walls; here it isn't.
+
+So `diminishRows` and the shader keep the quotient whole, and `colormapGain` / `liftedGain` read
+**between** two `COLORMAP` rows, lerping. An integer row is exactly the lump's own entry, so nothing
+else moves: the ramp, the segments, `startmap`, the cap and the reference sample are unchanged, and
+the per-sector quantization to 16 light segments (§ Sector lighting) stays vanilla-exact — only
+*depth* became smooth. `BRIGHTNESS_LIFT` is affine in the gain, so lifting after the lerp and
+lerping lifted values are the same number.
 
 **Sprites take it on the CPU, one depth per sprite**, as vanilla takes one colormap per sprite:
 `litColor(light, contrast, depth)` samples the ramp at the depth `viewDepthAt` gives the

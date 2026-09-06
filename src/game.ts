@@ -161,7 +161,7 @@ const MAX_TICS_PER_FRAME = 5;
  * or an ESC between slices — tuned by feel, and it buys more tics than it looks like: the frame
  * it runs in draws nothing. docs/replays.md § Seeking.
  */
-const SEEK_BUDGET_MS = 48;
+const SEEK_BUDGET_MS = 60;
 
 /** `replayAimNdc`'s projection scratch, so the per-frame reticle placement allocates nothing. */
 const AIM_SCRATCH = new THREE.Vector3();

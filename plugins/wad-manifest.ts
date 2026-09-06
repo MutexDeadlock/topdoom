@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
+import { jsonManifest, statMemo } from './manifest.ts';
 import { bytesOf, describeWad } from '../src/wad/describe.ts';
 import { hashBytes } from '../src/wad/checksum.ts';
 import { isTextFile, MANIFEST_PATH, siblingTextFile, WAD_DIR, type ManifestEntry } from '../src/wad/library.ts';
@@ -60,29 +61,10 @@ export async function manifestEntry(path: string, folder: WadFolder): Promise<Wa
 }
 
 /**
- * `manifestEntry` memoized on the file's mtime and size, which `scanFolder`'s
- * `statSync` already has. The dev middleware re-scans on *every* request for
- * the manifest, and each entry reads and hashes its file whole — ~57 MB of
- * WADs here, added to every page reload on the path that gates `Menu.init`.
- * Editing a WAD still re-describes it; reloading the page no longer does.
- *
- * The *promise* is memoized, not the entry: two overlapping requests for the manifest would
- * otherwise both miss and describe every file twice.
+ * `manifestEntry` memoized per file, which matters here because each entry reads and hashes its
+ * file whole — ~57 MB of WADs, on the path that gates `Menu.init`.
  */
-const described = new Map<string, { mtimeMs: number; size: number; entry: Promise<WadManifestEntry | null> }>();
-
-function describeCached(
-  path: string,
-  folder: WadFolder,
-  mtimeMs: number,
-  size: number,
-): Promise<WadManifestEntry | null> {
-  const hit = described.get(path);
-  if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit.entry;
-  const entry = manifestEntry(path, folder);
-  described.set(path, { mtimeMs, size, entry });
-  return entry;
-}
+const describeCached = statMemo<Promise<WadManifestEntry | null>>();
 
 /**
  * Depth cap on the recursion, so a stray symlink or a deeply nested pack can't turn a page load into
@@ -118,7 +100,7 @@ async function scanFolder(dir: string, folder: WadFolder, root: WadRoot, depth =
         continue;
       }
       if (!stat.isFile() || !/\.wad$/i.test(name)) continue;
-      const entry = await describeCached(path, folder, stat.mtimeMs, stat.size);
+      const entry = await describeCached(path, stat, () => manifestEntry(path, folder));
       if (!entry) continue;
       // The root is what decides how the file is used; a signature mismatch
       // (e.g. a PWAD dropped into the `iwad` folder) still gets listed, just flagged.
@@ -149,27 +131,8 @@ async function scan(root: string): Promise<WadManifestEntry[]> {
 
 /**
  * Publishes the contents of public/game/{iwad,pwad} as JSON so the start menu
- * can offer the WADs already on disk. Served live in dev, baked into the
- * output on build.
+ * can offer the WADs already on disk.
  */
 export function wadManifest(root = join('public', WAD_DIR)): Plugin {
-  return {
-    name: 'topdoom:wad-manifest',
-
-    configureServer(server) {
-      // Registered here, so it runs before Vite's static handler would 404.
-      server.middlewares.use((req, res, next) => {
-        if (req.url?.split('?')[0] !== '/' + MANIFEST_PATH) return next();
-        void scan(root).then((entries) => {
-          res.setHeader('Content-Type', 'application/json');
-          res.setHeader('Cache-Control', 'no-store');
-          res.end(JSON.stringify(entries));
-        }, next);
-      });
-    },
-
-    async generateBundle() {
-      this.emitFile({ type: 'asset', fileName: MANIFEST_PATH, source: JSON.stringify(await scan(root)) });
-    },
-  };
+  return jsonManifest({ name: 'topdoom:wad-manifest', path: MANIFEST_PATH, scan: () => scan(root) });
 }

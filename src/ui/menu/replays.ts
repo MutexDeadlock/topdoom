@@ -1,8 +1,9 @@
 /**
  * The menu's Replays tab: recording from the pause menu (and the light on the tab while one runs),
  * and the replay library as a list beside a detail panel — the picked replay's editable name,
- * player and notes, what it was recorded from, and play/download/delete. Pure DOM over
- * `game/replay.ts`; every failure goes to the menu's status line.
+ * player and notes, what it was recorded from, and play/download/delete. The replays the engine
+ * ships are listed here too, marked and read-only. Pure DOM over `game/replay.ts`; every failure
+ * goes to the menu's status line.
  * docs/replays.md, and docs/menu.md § Replays tab.
  */
 import {
@@ -11,7 +12,9 @@ import {
   describeReplay,
   exportReplay,
   importReplay,
+  isStockReplay,
   listReplays,
+  listStockReplays,
   readReplay,
   replayFileName,
   replaySeconds,
@@ -55,6 +58,13 @@ const NOTES_ROWS = 3;
 const NO_LEVEL_TOOLTIP = 'Nothing to record yet — start or load a level first.';
 
 /**
+ * What the mark on a stock row says on hover, and the whole explanation of why that row has no
+ * fields to type in and no trash button: the file is the server's, not this browser's.
+ * docs/replays.md § Stock replays.
+ */
+const STOCK_HINT = 'Ships with TopDoom; it cannot be edited or deleted.';
+
+/**
  * What the menu's owner (main.ts) does with a replay request — the UI never touches the running
  * game. A refusal is a thrown `Error` whose message is shown in the status line.
  */
@@ -65,6 +75,8 @@ export interface ReplayHooks {
   onStartRecording(): void | Promise<void>;
   /** Ends the recording in progress and stores it. */
   onStopRecording(): void | Promise<void>;
+  /** Ends the recording in progress and throws the record away; the level plays on. */
+  onCancelRecording(): void | Promise<void>;
   /** Why a recording can't start now, or null — `Game.recordingRefusal`; null with no game too. */
   recordingRefusal(): string | null;
   isRecording(): boolean;
@@ -76,6 +88,7 @@ export class ReplaysUi {
   private tabButton = el<HTMLButtonElement>('tab-button-replays');
   private recordSection = el<HTMLElement>('replay-record-section');
   private recordButton = el<HTMLButtonElement>('replay-record');
+  private cancelButton = el<HTMLButtonElement>('replay-cancel');
   private recordHint = el<HTMLSpanElement>('replay-record-hint');
   private fileInput = el<HTMLInputElement>('replay-file-input');
 
@@ -110,6 +123,13 @@ export class ReplaysUi {
       this.renderList(true);
     });
     this.recordButton.addEventListener('click', () => void this.toggleRecording());
+    // Wired once, and the label never rewritten afterwards: `confirmOnHold` rebuilds the button's
+    // children around a `.label` span, which a later `textContent` would throw away.
+    confirmOnHold(this.cancelButton, {
+      hint: 'Hold Cancel to throw the recording away.',
+      setStatus: (text) => this.setStatus(text),
+      action: () => void this.cancelRecording(),
+    });
     el<HTMLButtonElement>('replay-import').addEventListener('click', () => {
       this.fileInput.value = '';
       this.fileInput.click();
@@ -162,6 +182,9 @@ export class ReplaysUi {
     this.recordButton.textContent = recording ? 'Stop and save recording' : 'Record from here';
     this.recordButton.className = recording ? 'primary' : 'ghost';
     this.recordButton.disabled = !this.inGame || refusal !== null;
+    // Only while one runs: there is nothing to throw away otherwise, and a greyed second button
+    // beside a greyed first says nothing the first hasn't.
+    this.cancelButton.classList.toggle('hidden', !recording);
     this.recordHint.textContent = recording ? 'recording…' : (refusal ?? '');
     this.recordSection.title = this.inGame ? '' : NO_LEVEL_TOOLTIP;
     // The tab's own light, so a recording is visible from every tab rather than only from this
@@ -182,12 +205,24 @@ export class ReplaysUi {
     if (await attempt(this.setStatus, () => this.hooks.onStartRecording(), 'Recording.')) this.refreshRecordButton();
   }
 
+  /**
+   * Throws the running recording away. Nothing reaches the store, so the list is left alone — only
+   * the record row goes back to offering a fresh start. docs/replays.md § Recording.
+   */
+  private async cancelRecording(): Promise<void> {
+    await attempt(this.setStatus, () => this.hooks.onCancelRecording(), 'Recording discarded.');
+    this.refreshRecordButton();
+  }
+
   private async renderVisible(): Promise<void> {
     if (!this.visible || !this.stale) return;
     const epoch = ++this.renderEpoch;
     let entries: ReplayListEntry[];
     try {
-      entries = await listReplays();
+      // This browser's own recordings first, the shipped ones under them — two lists rather than
+      // one sort by date, so a stock replay never lands between two runs the player recorded.
+      const [stored, stock] = await Promise.all([listReplays(), listStockReplays()]);
+      entries = [...stored, ...stock];
     } catch (err) {
       this.setStatus((err as Error).message, true);
       return;
@@ -216,9 +251,11 @@ export class ReplaysUi {
       this.list.append(emptyLine(this.entries.length === 0 ? 'No replays yet.' : 'No replay matches that filter.'));
     }
     this.list.scrollTop = scrollTop;
-    // A keystroke that left the pick where it was leaves the panel alone: it is a form of thirty-odd
-    // elements, and a re-list is the only thing that can change what one of them says.
-    if (!fromFilter || this.selectedId !== picked) this.renderDetail();
+    // A keystroke that left the pick where it was leaves the panel alone: it is a form of
+    // thirty-odd elements, and a re-list is the only thing that can change what one of them says.
+    if (!fromFilter || this.selectedId !== picked) {
+      this.renderDetail();
+    }
   }
 
   /**
@@ -261,7 +298,9 @@ export class ReplaysUi {
     length.className = 'length';
     length.textContent = formatClock(replaySeconds(meta.ticCount));
 
-    row.append(name, player, length);
+    row.append(name);
+    if (isStockReplay(meta.id)) row.append(stockMark());
+    row.append(player, length);
     row.addEventListener('click', () => this.select(meta.id));
     return row;
   }
@@ -298,13 +337,22 @@ export class ReplaysUi {
     // Play has to be scrolled to is the one thing this layout must not produce.
     const body = document.createElement('div');
     body.className = 'detail-body';
-    const named = document.createElement('div');
-    named.className = 'field-row';
-    named.append(
-      this.makeField(meta, 'name', 'Name', 'Give it a name'),
-      this.makeField(meta, 'player', 'Player', 'Who played it'),
-    );
-    body.append(named, this.makeField(meta, 'description', 'Notes', 'Anything worth remembering'), this.makeFacts(meta, set));
+    if (isStockReplay(meta.id)) {
+      // Nothing on a served file is this browser's to change, so the three fields read rather than
+      // edit — the name carrying the mark that says why, the player joining the facts below, and
+      // the notes only where the recording came with some.
+      body.append(readOnlyField('Name', meta.name, stockMark()));
+      if (meta.description) body.append(readOnlyField('Notes', meta.description));
+    } else {
+      const named = document.createElement('div');
+      named.className = 'field-row';
+      named.append(
+        this.makeField(meta, 'name', 'Name', 'Give it a name'),
+        this.makeField(meta, 'player', 'Player', 'Who played it'),
+      );
+      body.append(named, this.makeField(meta, 'description', 'Notes', 'Anything worth remembering'));
+    }
+    body.append(this.makeFacts(meta, set));
     this.detail.append(body);
     // Red, and not a grey note among the facts above: this is why the replay cannot be played, and
     // that is what red says here — the same weight a save the load would refuse over gets. Outside
@@ -336,6 +384,9 @@ export class ReplaysUi {
       ['WADs', meta.wads.map(wadLabel).join(', ') || '—'],
       ['Engine', [meta.build && `v${meta.build}`, meta.engine].filter(Boolean).join(' · ') || '—'],
     ];
+    // Who played it is an editable field on a stored replay and a fact on a stock one, which is the
+    // only difference between the two panels beyond the fields above.
+    if (isStockReplay(meta.id)) facts.unshift(['Player', meta.player || '—']);
     const block = document.createElement('div');
     block.className = 'facts';
     for (const [label, value] of facts) {
@@ -360,7 +411,10 @@ export class ReplaysUi {
     play.textContent = 'Play';
     play.disabled = this.blockedReason(entry) !== null;
     play.addEventListener('click', () => this.play(meta.id));
-    actions.append(play, this.makeDownloadButton(meta), this.makeDeleteButton(meta));
+    actions.append(play, this.makeDownloadButton(meta));
+    // No trash on a stock row: the file is on the server, and deleting it is a matter for whoever
+    // put it there. The mark beside the name is what says so (`STOCK_HINT`).
+    if (!isStockReplay(meta.id)) actions.append(this.makeDeleteButton(meta));
     return actions;
   }
 
@@ -463,4 +517,32 @@ export class ReplaysUi {
   private download(meta: ReplayMeta): void {
     void attempt(this.setStatus, async () => downloadJson(await exportReplay(meta.id), replayFileName(meta.name)));
   }
+}
+
+/**
+ * The mark a stock replay wears in the list and at the head of its panel: a word rather than a
+ * glyph, since what it says — this one came with the game and is read-only — has no icon everybody
+ * reads the same way, and the row has the width for it.
+ */
+function stockMark(): HTMLSpanElement {
+  const mark = document.createElement('span');
+  mark.className = 'stock';
+  mark.textContent = 'included';
+  mark.title = STOCK_HINT;
+  return mark;
+}
+
+/** A panel line that only reads: `makeField`'s shape with the input replaced by its value. */
+function readOnlyField(label: string, value: string, mark?: HTMLElement): HTMLDivElement {
+  const field = document.createElement('div');
+  field.className = 'field';
+  const caption = document.createElement('span');
+  caption.className = 'label';
+  caption.textContent = label;
+  if (mark) caption.append(mark);
+  const text = document.createElement('span');
+  text.className = 'value';
+  text.textContent = value;
+  field.append(caption, text);
+  return field;
 }

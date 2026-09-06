@@ -60,6 +60,38 @@
   max-width: 40%;
 }
 
+/*
+ * The mark on a replay the engine ships (ui/menu/replays.ts: `stockMark`), in the row and at the
+ * head of its panel. A quiet chip rather than the accent `#menu .badge` carries: it says where the
+ * file came from, which is worth noticing and never worth interrupting for — the panel's own greyed
+ * Play is what shouts, and only when something is wrong.
+ */
+#menu .replays .row .stock,
+#menu .replay-detail .stock {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+  padding: 0 4px;
+}
+
+/* Beside the field's caption, which is itself uppercase and 11px — hence the gap and nothing else. */
+#menu .replay-detail .field .label .stock {
+  margin-left: 7px;
+}
+
+/*
+ * A read-only field's value (`readOnlyField`) — an input's text without its box, so a stock
+ * replay's name and notes sit exactly where the editable ones do. `pre-wrap` for the notes, which
+ * were typed with their line breaks.
+ */
+#menu .replay-detail .field .value {
+  color: var(--fg);
+  white-space: pre-wrap;
+}
+
 /* Right-aligned and fixed-width: the clocks line up as a column down the list. */
 #menu .replays .row .length {
   color: var(--fg-dim);

@@ -241,6 +241,11 @@ async function boot(): Promise<void> {
         if (!capture) throw new Error('nothing is being recorded');
         await writeReplay(capture, '');
       },
+      // The same end, with the capture dropped on the floor: nothing is stored now, and the
+      // session's own `storeRecording` finds no recording later either.
+      onCancelRecording: () => {
+        if (!game?.finishRecording()) throw new Error('nothing is being recorded');
+      },
       recordingRefusal: () => game?.recordingRefusal() ?? null,
       isRecording: () => game?.recording ?? false,
     },

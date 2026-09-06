@@ -103,8 +103,9 @@ src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DO
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 src/styles.css     the stylesheet index.html links; @imports the .css beside each ui module
 index.html         the page skeleton; @includes the .html beside each one
-plugins/       Vite plugins: the public/game/{iwad,pwad} manifest, the WAD built from assets/
-               (game-wad), index.html's @include expansion
+plugins/       Vite plugins: the public/game/{iwad,pwad} manifest and public/game/replay's
+               (replay-manifest) over the shell both serve and emit through (manifest), the WAD
+               built from assets/ (game-wad), index.html's @include expansion
 assets/        the sources that WAD is built from: gldefs.txt, secret.ogg, playerskins.wad
 scripts/       headless inspection of a WAD (inspect-wad.ts), of a savegame file
                (inspect-save.ts) and of a replay (inspect-replay.ts); building assets/

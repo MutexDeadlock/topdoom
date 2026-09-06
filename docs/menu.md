@@ -601,8 +601,10 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   a CSS transition whose duration is handed over as `--hold-time`, so the bar and the timer can't
   disagree; the label moves into a `.label` span so the `.fill` can paint behind it, and Space/Enter
   held on a focused button works the same way. **`required` makes the hold conditional** — a button
-  that only destroys something some of the time (Start new game, § One screen, two jobs) wears the
-  same confirm and acts on a plain click while the predicate says no. Both are per row; Overwrite refills that save from
+  that only destroys something some of the time (Start new game, § One screen, two jobs, and **Load**,
+  which throws the running level away exactly as a start does) wears the same confirm and acts on a
+  plain click while the predicate says no; the tooltip follows the hold, so from the launcher Load
+  carries none. Both are per row; Overwrite refills that save from
   the current moment, keeping its ID and its name (renaming has its own affordance). Delete and
   download are icon-only buttons (`⤓`, `🗑︎` with a text-presentation selector) with their meaning in
   the tooltip; Load and Overwrite are `.primary`.
@@ -690,6 +692,13 @@ Play for a set the library can't supply. What is this tab's own:
   primary while one runs, since that press is what turns the run into a stored replay. Stopping
   stores it; so does the session, for a recording still running when a level start or the campaign's
   end tears the `Game` down (§ Session lifecycle).
+- **"Cancel recording" stands beside it while one runs**, and only then: it is held to confirm
+  (`confirmOnHold`, the delete gesture) because it destroys the run recorded so far, and it is
+  hidden rather than greyed the rest of the time — a second greyed button beside a greyed first says
+  nothing the first hasn't. Nothing reaches the store, so the list is left alone and only the record
+  row goes back to offering a fresh start; the level itself plays on (docs/replays.md § Recording).
+  Its label is written in the markup and never rewritten, `confirmOnHold` having rebuilt the
+  button's children around a `.label` span.
 - **Three fields are editable**, all in the panel: name and player share a line (`.field-row` —
   two short values, and the panel is short of height rather than width), then **Notes** below them,
   a `<textarea>` of `NOTES_ROWS` lines, since a note about a run is a sentence or three and an
@@ -702,6 +711,13 @@ Play for a set the library can't supply. What is this tab's own:
   actually warns is the amber line under them: a replay recorded under a different **simulation
   epoch** says it may desync (`compatDrift`, docs/replays.md § Compatibility), where the build
   number alone says nothing.
+- **The replays the engine ships are listed under the player's own**, marked `included` and
+  read-only: play and download, no fields to type in and no trash button, since the file is the
+  server's (`public/game/replay/`, docs/replays.md § Stock replays). Two lists concatenated rather
+  than one sort by date, so a stock replay never lands between two of the player's own runs. Its
+  panel reads instead of edits — the name carrying the mark, the player joining the facts, the notes
+  only where the recording came with some — and everything else about the row, the refusal in red
+  and the amber epoch line included, is what a stored replay gets.
 - **A downloaded replay is `<name>.topdoomreplay.json`**, a downloaded save `<name>.topdoomsave.json`
   (both `downloadFileName`), and `installDropTarget` routes a drop by the replay suffix *ahead* of
   the `.json` save rule, so the two imports can't take each other's files — a save downloaded before

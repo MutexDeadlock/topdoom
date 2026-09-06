@@ -296,7 +296,16 @@ export class SavegamesUi {
       // Overwrite get: the row's red line beside it already names the file, and a
       // disabled button shows no tooltip of its own. `loadSave` stays the gate.
       load.disabled = entry.refusal !== null || blockingWad(set.missing) !== undefined;
-      load.addEventListener('click', () => this.load(meta.id));
+      // Only asked for in game, where a load throws the running level away — Start new game's own
+      // conditional hold (docs/menu.md § Save and Load tabs). The tooltip follows the hold: from
+      // the launcher this is an ordinary button and has nothing to warn about.
+      load.title = this.inGame ? 'Hold to abandon the game you are running' : '';
+      confirmOnHold(load, {
+        hint: 'Hold Load to abandon the game you are running.',
+        setStatus: (t) => this.setStatus(t),
+        action: () => this.load(meta.id),
+        required: () => this.inGame,
+      });
       actions.append(load);
     } else {
       const overwrite = document.createElement('button');

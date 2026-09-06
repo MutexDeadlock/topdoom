@@ -1,7 +1,8 @@
 # Replays
 
 `src/game/replay.ts` (store, player name) over `src/game/replay/` — `defs.ts` (format), `keys.ts`,
-`settings.ts`, `recorder.ts`, `playback.ts`; the seam in `game.ts`; the bar in
+`settings.ts`, `recorder.ts`, `playback.ts`, `stock.ts` (the ones the engine ships,
+§ Stock replays); the seam in `game.ts`; the bar in
 `ui/hud/replaybar.ts`; the tab in `ui/menu/replays.ts` (docs/menu.md § Replays tab).
 
 A replay is **the level's state at one moment plus one input record per tic**, played back through
@@ -131,6 +132,11 @@ session — a new start, the campaign's end — which stores whatever was still 
 `Game` is disposed (`main.ts: storeRecording`). Each restore event that targets a new snapshot
 embeds it whole; the same snapshot restored twice is stored once.
 
+**"Cancel recording" is the same end with the capture dropped** (`onCancelRecording`, hold to
+confirm): `finishRecording` clears the recorder either way, so nothing is stored now and the
+session's own `storeRecording` finds nothing later. It throws the *record* away, not the run — the
+level plays on from where it stands, and the reload `startRecording` did is not undone.
+
 An unnamed recording is named as an unnamed save is — the map's WAD without its extension, then
 the map (`DOOM2 MAP01`), from `defaultName` in `game/savegames.ts`
 (docs/savegames.md § Naming).
@@ -176,6 +182,14 @@ the speed a slow frame can reach (about 4.3× under a 30 fps cap) — not raised
 Before each tic `replayBeginTic` applies the due events, pins the settings and compares the
 recording's check sample; the first disagreement is `desyncedAt`, shown by the bar, and playback
 continues. The stream's end freezes the level at its last tic.
+
+**A desync opens the bar's panel by itself** (`.alerting`) for `DESYNC_ALERT_MS`, where a spent
+stream opens it for good: it is the one thing about a playback the viewer has to learn without
+having gone looking for it, and the status text says it to a bar nobody is hovering. Held for a few
+seconds rather than pinned open, because the verdict stays in that status text for the rest of the
+run — the panel has no reason to sit over the level once it has been noticed. The deadline is set
+on the frame the verdict *changes*, so a re-anchoring seek that clears one takes the alert with it
+(§ Seeking) and a later desync alerts again.
 
 **A playback answers none of the popups' keys**, so neither offers one: a death during one raises
 the overlay with its killer line and no `R` hint (docs/death.md § Player death), and the
@@ -249,6 +263,32 @@ routes a dropped file by that suffix, ahead of the `.json` save rule.
 `node scripts/inspect-replay.ts <file>` reads such a download headlessly — meta, WAD roles, level
 markers, the decoded record's settings, events and check samples, and a per-key input summary, plus
 `--tics a-b` for a decoded tic range and `--data`/`--state` dumps.
+
+## Stock replays
+
+`public/game/replay/` is a folder of downloaded replays the engine offers itself. Drop a
+`<name>.topdoomreplay.json` in, reload, and it stands on the Replays tab beside the recordings this
+browser made. `plugins/replay-manifest.ts` lists the folder, `replay/stock.ts` fetches that listing
+and one file, and `game/replay.ts` decodes it.
+
+- **The manifest carries each file's meta with its `data` left behind**, served as
+  `/game/replay/index.json` — `plugins/manifest.ts`'s `jsonManifest`, the same dev middleware and
+  build-time `emitFile` the WAD manifest is served by, with a scan of its own. A record is megabytes
+  of base64 and a listing needs none of it, so the tab shows every stock replay's name, player,
+  level and length without fetching one. Entries are memoized on mtime and size (`statMemo`), the
+  dev middleware re-scanning on every request (docs/wad.md § The `public/game/` manifest).
+- **Stock and stored replays share one id space.** A served file is `stock:<file>`
+  (`stockReplayId`), so `readReplay` and `exportReplay` route on the id and nothing above them knows
+  which of the two a replay came from. `listReplays` stays the store's alone and `listStockReplays`
+  is the folder's; the menu lists the stored rows first and the stock ones under them
+  (docs/menu.md § Replays tab).
+- **A stock replay is never stored.** It is fetched and decoded per play (`decodeFile`, the
+  import's own validation, so a file this build cannot read is refused in the same words), and
+  downloading one hands the served file over unchanged rather than re-encoding it. `describeReplay`
+  and `deleteReplay` throw: the file is the server's, not this browser's.
+- **A damaged one still lists and says why** — `metaRefusal`'s sentence, a stored row's rule. Only a
+  file that is not JSON at all is left out of the manifest, with a warning from the plugin on the
+  console where whoever dropped it will look.
 
 ## What breaks determinism
 

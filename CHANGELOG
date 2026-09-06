@@ -15,10 +15,12 @@ Features and improvements
     - replays can be watched like videos, including seeking
     - the player name a replay is credited to is entered on the replay itself
       and inherited by later recordings
-    - taking a replay over flags that level as "cheated"
+    - taking a replay over, flags that level as "cheated"
+    - replays copied into public/game/replay/ are listed on the tab as
+      "included": playable and downloadable, but not editable
   - Menu:
-    - "Start new game" has to be held while a game is running, so a stray
-      click can't throw the level away
+    - "Start new game" and a save's "Load" have to be held while a game is
+      running, so a stray click can't throw the level away
     - the status line is cleared when you switch tabs
     - the save, load and replay lists have a filter field beside their heading
     - a welcome popup at boot

@@ -28,9 +28,11 @@
   touch-action: none;
 }
 
+/* `.alerting` is the desync's own few seconds of it — replaybar.ts § DESYNC_ALERT_MS. */
 #replay-bar:hover #replay-track,
 #replay-bar:focus-within #replay-track,
-#replay-bar.ended #replay-track {
+#replay-bar.ended #replay-track,
+#replay-bar.alerting #replay-track {
   height: 10px;
 }
 
@@ -94,7 +96,8 @@
 
 #replay-bar:hover #replay-panel,
 #replay-bar:focus-within #replay-panel,
-#replay-bar.ended #replay-panel {
+#replay-bar.ended #replay-panel,
+#replay-bar.alerting #replay-panel {
   display: flex;
 }
 

@@ -44,7 +44,10 @@ import {
   type ReplayMeta,
 } from './replay/defs.ts';
 
+import { fetchStockManifest, fetchStockReplay, isStockReplay, stockReplayId } from './replay/stock.ts';
+
 export { replayMap, replayWadSet } from './replay/defs.ts';
+export { isStockReplay } from './replay/stock.ts';
 
 export type {
   Keyframe,
@@ -113,11 +116,17 @@ export function currentEngine(): string {
 /** Every stored replay, newest first; a damaged row still lists so it can be deleted. */
 export async function listReplays(): Promise<ReplayListEntry[]> {
   const raws = await store().listMeta();
-  const entries = raws.map((raw) => {
-    const id = isRecord(raw) && typeof raw.id === 'string' ? raw.id : '';
-    return { meta: asReplayMeta(raw, id), refusal: metaRefusal(raw) };
-  });
-  return entries.sort((a, b) => b.meta.at.localeCompare(a.meta.at));
+  return listing(raws.map((raw) => ({ raw, id: isRecord(raw) && typeof raw.id === 'string' ? raw.id : '' })));
+}
+
+/**
+ * Every replay served from `public/game/replay/`, newest first — the ones the engine ships rather
+ * than the ones this browser recorded. Read through the store's own degradation, so a stock file
+ * this build can't play lists with the sentence saying why. docs/replays.md § Stock replays.
+ */
+export async function listStockReplays(): Promise<ReplayListEntry[]> {
+  const entries = await fetchStockManifest();
+  return listing(entries.map((entry) => ({ raw: entry.meta, id: stockReplayId(entry.file) })));
 }
 
 /**
@@ -128,8 +137,13 @@ export function versionRefusal(version: unknown): string {
   return `this replay uses format version ${String(version)}; this build plays version ${REPLAY_VERSION}`;
 }
 
-/** The whole replay, or a thrown, user-readable refusal. */
+/**
+ * The whole replay, or a thrown, user-readable refusal — from the store, or from the served folder
+ * for a stock row (docs/replays.md § Stock replays). One id space, so nothing above this call has
+ * to know which of the two a replay came from.
+ */
 export async function readReplay(id: string): Promise<Replay> {
+  if (isStockReplay(id)) return readStock(id);
   const rawMeta = await readMeta(id);
   const refused = metaRefusal(rawMeta);
   if (refused !== null) throw new Error(refused);
@@ -176,6 +190,7 @@ export async function writeReplay(capture: ReplayCapture, name: string): Promise
  * same stored meta and the later write would drop the earlier field.
  */
 export async function describeReplay(id: string, fields: ReplayDescription): Promise<void> {
+  if (isStockReplay(id)) throw new Error(stockText);
   const patch: ReplayDescription = {};
   if (fields.name !== undefined) {
     const name = fields.name.trim();
@@ -195,11 +210,15 @@ export async function describeReplay(id: string, fields: ReplayDescription): Pro
 }
 
 export async function deleteReplay(id: string): Promise<void> {
+  if (isStockReplay(id)) throw new Error(stockText);
   await store().remove(id);
 }
 
 /** The download file: the meta in the clear, the record as its stored gzip bytes, base64'd. */
 export async function exportReplay(id: string): Promise<string> {
+  // A stock replay already *is* such a file, so it is handed over unchanged — nothing is re-encoded
+  // and a downloaded copy is byte-identical to the served one.
+  if (isStockReplay(id)) return fetchStockReplay(id);
   const [rawMeta, record] = await Promise.all([readMeta(id), store().readState(id)]);
   if (!record) throw new Error('this replay is missing its data and cannot be downloaded');
   const file = { ...asReplayMeta(rawMeta, id), dataEncoding: record.encoding, data: bytesToBase64(record.bytes) };
@@ -221,33 +240,10 @@ export function isReplayFileName(name: string): boolean {
  * one moment a foreign file's bytes are in hand, and stored as decoded rather than recompressed.
  */
 export async function importReplay(text: string): Promise<ReplayMeta> {
-  const refusal = (): Error => new Error('that file is not a TopDoom replay');
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    throw refusal();
-  }
-  if (isRecord(raw) && typeof raw.version === 'number' && raw.version !== REPLAY_VERSION) {
-    throw new Error(versionRefusal(raw.version));
-  }
-  // The imported file's own shape refusal, not the stored row's: a file this build cannot read is
-  // "not a TopDoom replay" whatever is wrong with it beyond the version above.
-  if (metaRefusal(raw) !== null) throw refusal();
-  const record = raw as Record<string, unknown>;
-  if (typeof record.data !== 'string' || record.dataEncoding !== STATE_ENCODING) throw refusal();
-  let bytes: Uint8Array<ArrayBuffer>;
-  let data: unknown;
-  try {
-    bytes = base64ToBytes(record.data);
-    data = JSON.parse(await decompressText(bytes));
-  } catch {
-    throw refusal();
-  }
-  const meta: ReplayMeta = { ...asReplayMeta(raw, await freshId()), version: REPLAY_VERSION };
-  if (!isPlayableData(data, meta.ticCount)) throw refusal();
-  await putReplay(meta, { id: meta.id, encoding: STATE_ENCODING, bytes });
-  return meta;
+  const { meta, bytes } = await decodeFile(text, 'that file is not a TopDoom replay');
+  const stored: ReplayMeta = { ...meta, id: await freshId() };
+  await putReplay(stored, { id: stored.id, encoding: STATE_ENCODING, bytes });
+  return stored;
 }
 
 /**
@@ -262,6 +258,65 @@ function rememberPlayerName(name: string): void {
 
 const damagedText = 'this replay is damaged and cannot be played';
 const damaged = (): Error => new Error(damagedText);
+
+/** Why a stock replay refuses an edit or a delete — the two things a served file cannot do. */
+const stockText = 'this replay ships with TopDoom: it can be played and downloaded, but not changed';
+
+/** A served replay, fetched and decoded — never stored, so watching one leaves nothing behind. */
+async function readStock(id: string): Promise<Replay> {
+  const { meta, data } = await decodeFile(await fetchStockReplay(id), damagedText);
+  return { ...meta, id, data: { ...data, tics: unpackTics(data.tics) } };
+}
+
+/**
+ * A download file validated into a replay: the import's path and a stock file's, which are the two
+ * ways a record reaches this build from outside the store. `message` is what a shape this build
+ * cannot read is called where the caller stands — a foreign file is "not a TopDoom replay", a
+ * served one is damaged — while a version mismatch says so in its own words either way. The
+ * returned `data` is still the stored form; `id` is the caller's to settle.
+ */
+async function decodeFile(
+  text: string,
+  message: string,
+): Promise<{ meta: ReplayMeta; data: ReplayData; bytes: Uint8Array<ArrayBuffer> }> {
+  const refusal = (): Error => new Error(message);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw refusal();
+  }
+  if (isRecord(raw) && typeof raw.version === 'number' && raw.version !== REPLAY_VERSION) {
+    throw new Error(versionRefusal(raw.version));
+  }
+  // The file's own shape refusal, not the stored row's: a file this build cannot read is the
+  // caller's own sentence whatever is wrong with it beyond the version above.
+  if (metaRefusal(raw) !== null) throw refusal();
+  const record = raw as Record<string, unknown>;
+  if (typeof record.data !== 'string' || record.dataEncoding !== STATE_ENCODING) throw refusal();
+  let bytes: Uint8Array<ArrayBuffer>;
+  let data: unknown;
+  try {
+    bytes = base64ToBytes(record.data);
+    data = JSON.parse(await decompressText(bytes));
+  } catch {
+    throw refusal();
+  }
+  const meta: ReplayMeta = { ...asReplayMeta(raw, ''), version: REPLAY_VERSION };
+  if (!isPlayableData(data, meta.ticCount)) throw refusal();
+  return { meta, data, bytes };
+}
+
+/**
+ * Raw metas as the two lists hand them over, newest first — the store's rows and the served
+ * folder's, which differ only in where the id comes from. A damaged one still gets a row, carrying
+ * the sentence saying why.
+ */
+function listing(raws: { raw: unknown; id: string }[]): ReplayListEntry[] {
+  return raws
+    .map(({ raw, id }) => ({ meta: asReplayMeta(raw, id), refusal: metaRefusal(raw) }))
+    .sort((a, b) => b.meta.at.localeCompare(a.meta.at));
+}
 
 /** Best-effort meta for the list; every field degrades to something displayable. */
 function asReplayMeta(raw: unknown, id: string): ReplayMeta {

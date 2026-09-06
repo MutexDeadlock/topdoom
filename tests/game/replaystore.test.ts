@@ -15,65 +15,16 @@ import {
   replayWadSet,
   setReplayBackend,
   writeReplay,
-  type ReplayCapture,
 } from '../../src/game/replay.ts';
 import { SAVE_VERSION, wadSetRefusal } from '../../src/game/savegames.ts';
 import { STATE_ENCODING } from '../../src/game/savestore.ts';
-import type { GameSnapshot } from '../../src/game/snapshot.ts';
 import { memoryBackend, type MemoryBackend } from '../fixtures/savestore.ts';
+import { replayCapture as capture } from '../fixtures/replay.ts';
 
 /**
  * The replay store over an in-memory backend, the gzip codec real — `tests/game/savegames.test.ts`'s
  * rig for the format it mirrors. See docs/replays.md § Storage.
  */
-
-// `things` is here because the read validates every snapshot's list — the float is what the store
-// test is actually about (the record round-trips exactly, not through a lossy encoding).
-const SNAPSHOT = {
-  player: { x: 1.000000123456789 },
-  rng: { p: 0, m: 0 },
-  things: { changed: [] },
-} as unknown as GameSnapshot;
-
-function capture(ticCount = 2): ReplayCapture {
-  return {
-    skill: 3,
-    wads: [{ name: 'DOOM2.WAD', id: 'iwad' }],
-    mapWad: 'iwad',
-    ticCount,
-    levels: [{ tic: 0, map: 'MAP01' }],
-    data: {
-      snapshots: [SNAPSHOT],
-      devmode: false,
-      keyframes: [{ tic: 0, map: 'MAP01', snapshot: 0 }],
-      settings: {
-        autorun: true,
-        autoSwitchWeapon: true,
-        rightMouse: 'use',
-        cameraMode: 'auto',
-        infiniteTallActors: false,
-        pistolStart: false,
-      },
-      tics: {
-        poseYaw: Array(ticCount).fill(0),
-        poseX: Array(ticCount).fill(0),
-        poseY: Array(ticCount).fill(0),
-        poseZ: Array(ticCount).fill(0),
-        poseDistance: Array(ticCount).fill(0),
-        poseTilt: Array(ticCount).fill(0),
-        held: Array(ticCount).fill(0),
-        pressed: Array(ticCount).fill(0),
-        buttons: Array(ticCount).fill(0),
-        wheel: Array(ticCount).fill(0),
-        aimX: Array(ticCount).fill(null),
-        aimY: Array(ticCount).fill(null),
-      },
-      typed: [],
-      events: [],
-      checks: [[0, 1.000000123456789, 2, 0]],
-    },
-  };
-}
 
 let backend: MemoryBackend;
 

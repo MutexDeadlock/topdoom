@@ -53,8 +53,11 @@ See [docs/menu.md](docs/menu.md) for the WAD manifest, settings persistence and 
 
 The **Replays** tab records a run and plays it back. Tick *Record a replay* on the New Game tab to
 record from the start, or press *Record from here* on the pause menu's Replays tab to record from
-where you are. A stored replay carries a name, a player and a description you can edit, and
-downloads as a `.topdoomreplay.json` file you can share and import back.
+where you are; *Stop and save recording* keeps the run, *Cancel recording* (held down) throws it
+away and plays on. A stored replay carries a name, a player and a description you can edit, and
+downloads as a `.topdoomreplay.json` file you can share and import back. Replays copied into
+`public/game/replay/` are offered on that tab too, marked *included*: they play and download like
+any other, but can't be renamed or deleted.
 
 Playing one shows a bar along the bottom: hover it for pause, playback speed, a camera toggle and
 *Take over*, which hands the level back to you right there and saves the game as it does. Click or

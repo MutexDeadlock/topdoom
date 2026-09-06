@@ -841,7 +841,10 @@ a permanent blank is not.
 answers on and the name it emits — the same producer-imports-from-consumer rule `ManifestEntry`
 follows, and for the same reason: a plugin serving from one folder while the menu fetches from
 another lists files it cannot load. `shipped.ts`'s own path repeats the segment on purpose
-(§ The WAD the engine ships).
+(§ The WAD the engine ships). `public/game/replay/` is a third folder under the same prefix with a
+manifest of its own, in the same two halves — docs/replays.md § Stock replays. Both halves *are*
+one implementation: `plugins/manifest.ts` owns the dev middleware, the `emitFile` and the mtime/size
+memo, and each plugin brings only its own scan (`jsonManifest`, `statMemo`).
 
 The Vite plugin scans `public/game/{iwad,pwad}/`, parsing each file's header and directory plus its
 MAPINFO and `DEHACKED` lumps if it has them, and hashing its bytes for the content ID (§ Content ID)
@@ -850,7 +853,8 @@ as `/game/index.json` (dev middleware and build-time `emitFile`), so the menu ca
 types/sizes/map counts, name levels, and know each file's *identity* without downloading anything —
 the last being what lets a savegame's WAD set resolve while the save list renders (docs/savegames.md
 § WAD-set identity). The dev middleware re-scans on every request for the manifest, so `describeWad`
-is memoized on each file's mtime and size (`statSync` is already being called for the listing):
+is memoized on each file's mtime and size (`statMemo`; `statSync` is already being called for the
+listing):
 without it every page reload would re-read and re-hash every WAD in `public/game/` — tens of MB, on
 the path that gates `Menu.init`. Editing a WAD still re-describes it. Bytes are only fetched when a
 level actually starts, and `library.ts: serverSource` memoizes them, so restarting the same WAD set

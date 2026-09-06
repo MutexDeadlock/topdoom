@@ -37,6 +37,14 @@ const EXPANDED_CLASS = 'replay-expanded';
 /** How far the arrow keys jump, in seconds — the media-player step, tuned by feel. */
 const SKIP_SECONDS = 5;
 
+/**
+ * How long a desync holds the panel open. Long enough to catch the eye of someone watching the
+ * middle of the screen, short enough not to sit over the level for the rest of the run — tuned by
+ * feel. The verdict itself stays in the status text either way; this is only what makes it
+ * noticed. docs/replays.md § Playback.
+ */
+const DESYNC_ALERT_MS = 6000;
+
 export class ReplayBar {
   private root = el<HTMLDivElement>('replay-bar');
   private track = el<HTMLDivElement>('replay-track');
@@ -67,6 +75,10 @@ export class ReplayBar {
   private dragging: number | null = null;
   /** False while the menu owns the keyboard, so its own `Space` doesn't reach the playback. */
   private keysActive = true;
+  /** The verdict the panel has already opened for, so a desync alerts once and not every frame. */
+  private alertedDesync: number | null = null;
+  /** When the desync alert stops holding the panel open, on `performance.now()`'s clock. */
+  private alertUntil = 0;
 
   constructor(hooks: ReplayBarHooks) {
     this.hooks = hooks;
@@ -185,7 +197,12 @@ export class ReplayBar {
     // enter/leave events — a restart from the keyboard fires none of those, and the HUD used to be
     // left standing clear of a panel that had closed.
     this.root.classList.toggle('ended', playback.ended);
-    const expanded = playback.ended || this.root.matches(':hover, :focus-within');
+    // A desync opens the panel by itself: it is the one thing about a playback the viewer has to
+    // learn without having gone looking for it, and the status text below says it to a bar nobody
+    // is hovering. docs/replays.md § Playback.
+    const alerting = this.alerting(playback.desyncedAt);
+    this.root.classList.toggle('alerting', alerting);
+    const expanded = playback.ended || alerting || this.root.matches(':hover, :focus-within');
     document.body.classList.toggle(EXPANDED_CLASS, expanded);
     const status = this.statusText(playback);
     setText(this.status, status);
@@ -197,7 +214,7 @@ export class ReplayBar {
     if (this.shown === null) return;
     this.shown = null;
     this.root.classList.add('hidden');
-    this.root.classList.remove('ended');
+    this.root.classList.remove('ended', 'alerting');
     this.reticle.classList.add('hidden');
     this.seekMark.classList.add('hidden');
     this.flashMark.classList.add('hidden');
@@ -207,7 +224,9 @@ export class ReplayBar {
 
   private show(playback: ReplayPlayback): void {
     this.shown = playback;
-    this.root.classList.remove('hidden', 'ended');
+    this.alertedDesync = null;
+    this.alertUntil = 0;
+    this.root.classList.remove('hidden', 'ended', 'alerting');
     document.body.classList.remove(EXPANDED_CLASS);
     this.markers.replaceChildren();
     for (const level of playback.replay.levels) {
@@ -284,6 +303,19 @@ export class ReplayBar {
     this.hover.classList.remove('hidden');
     this.hover.style.left = `${fraction * 100}%`;
     this.hover.textContent = formatClock(replaySeconds(ticAtFraction(fraction, this.shown.ticCount)));
+  }
+
+  /**
+   * Whether the desync alert is still holding the panel open. The deadline is set on the frame the
+   * verdict *changes* — a fresh desync, or a seek that re-anchored and cleared one, which takes the
+   * alert with it (docs/replays.md § Seeking).
+   */
+  private alerting(desyncedAt: number | null): boolean {
+    if (desyncedAt !== this.alertedDesync) {
+      this.alertedDesync = desyncedAt;
+      this.alertUntil = desyncedAt === null ? 0 : performance.now() + DESYNC_ALERT_MS;
+    }
+    return performance.now() < this.alertUntil;
   }
 
   private hideMark(): void {

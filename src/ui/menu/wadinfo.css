@@ -17,7 +17,7 @@
  * costs the ASCII rules and tables their alignment.
  */
 #wadinfo .panel {
-  width: min(860px, 100%);
+  width: min(720px, 100%);
   height: 85%;
   padding: 20px 24px 18px;
 }

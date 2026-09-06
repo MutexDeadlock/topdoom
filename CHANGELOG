@@ -1,4 +1,4 @@
-v0.18.0 (unreleased)
+v0.18.0 (2026-09-06)
 
 REPLAYS! A run can be recorded and played back, in this engine's own format.
 Changes to the gameplay simulation break existing replays (desync), so the
@@ -35,7 +35,7 @@ Features and improvements
       its own ".topdoomsave.json" suffix
     - savegames and replay snapshots store only the THINGs that are no longer
       as the map spawned them (this is why saves broke here)
-    - a save or replay of a PWAD map plays on another game WAD when the one it
+    - a save or replay of a PWAD map plays on another IWAD, when the one it
       was made with is gone
     - a thing the WAD set has no sprite for is now said on screen, not only in
       the console

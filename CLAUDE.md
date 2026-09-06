@@ -127,7 +127,7 @@ relevant one before changing that subsystem** — several rules there look like 
 | [lights.md](docs/lights.md) | GLDEFS dynamic lights: the grammar, what emits, the two lighting paths, the GZDoom deviations |
 | [sprites.md](docs/sprites.md) | The named doomednums (`ThingType`) every type-keyed table keys through; billboards, instanced batching, which things spawn |
 | [movement.md](docs/movement.md) | Collision, `groundFloor`, `slideMove`, straferunning, gravity/falling, knockback |
-| [world.md](docs/world.md) | `world.ts`'s shared queries: `hasLineOfSight`, the neighbor-height lookups |
+| [world.md](docs/world.md) | `world.ts`'s shared queries: `hasLineOfSight`, `groundReach`, the neighbor-height lookups |
 | [random.md](docs/random.md) | `rndtable` and the two cursors, the triangular draw, what `clearRandom` does and doesn't promise |
 | [weapons.md](docs/weapons.md) | Weapon selection, fire rates, spread, damage rolls |
 | [combat.md](docs/combat.md) | `shotPath`, range, auto-aim, what a shot hits, blood/puffs, splash and the BFG |

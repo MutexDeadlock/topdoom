@@ -266,12 +266,26 @@ body's **centre**, which is where vanilla's `aimslope` lands on an unobstructed 
 lands is still resolved geometrically against the target's body, so a spread weapon spreads (§ How a
 shot deals damage).
 
+**The one thing that does bound the ray is the ground** — `World.groundReach`, where both picks
+start their nearest-hit search (docs/world.md § groundReach owns the trace). Followed from the
+pointer's own aim point outward, the ray stops where it drops under a crossed line's floors: past
+that it runs *below* the surface the cursor is standing on, and every body it still meets out there
+is drawn somewhere else on screen entirely.
+
+**Repro: NUTS.WAD MAP01, standing on the raised walkway at (1024, -559).** Unbounded, the ray left
+the walkway a few units past the cursor and ran on through the crowd on the ground beyond, so every
+pointer position over the walkway locked a monster 400-1400 units away, up to **180° off** the
+pointer — where the shot then went, and where the player turned to face. It takes a floor the ray
+can pass *under* while bodies stand on a lower one further along, so a flat map never shows it.
+`tests/regression/aim-pick-ground-clip.test.ts` pins it.
+
 **Three of vanilla's own limits on aiming are deliberately absent**, all of them consequences of
 picking with a pointer instead of tracing down the facing, and none of them missed by accident:
 
 - **Range.** `P_BulletSlope` and `P_SpawnPlayerMissile` both aim `16*64` = 1024 units, half
   `MISSILERANGE`; past that vanilla finds nothing and fires flat. `pickMonster` has no distance test
-  at all. The real bound is
+  at all — the ground bound above is not one, since a ray out over open floor keeps going. The real
+  bound is
   what the camera draws, roughly 5,000 units (docs/fogofwar.md § Reveal radius), which is the same
   argument `PLAYER_WEAPON_RANGE` already makes for the bullet itself (§ Range).
 - **The vertical cone.** `P_AimLineAttack` opens its wedge at `±100/160` (±0.625 slope, ±32°) and
@@ -279,9 +293,10 @@ picking with a pointer instead of tracing down the facing, and none of them miss
   whatever angle it takes, because the pointer is over it and refusing would read as the click being
   ignored.
 - **Sight.** Vanilla's traverse stops at the first wall, so an unreachable monster is simply not a
-  target. The pick's only equivalent is fog of war (`visible`), which is a memory of having seen the
-  room, not a live sightline — so a monster can be locked through a wall the camera looks over. The
-  shot is still stopped by that wall; what carries is the aim.
+  target. The pick's equivalents are fog of war (`visible`) — a memory of having seen the room, not
+  a live sightline — and the ground bound above, which stops a ray that has gone underground and
+  nothing else. So a monster can still be locked through a wall the camera looks over. The shot is
+  still stopped by that wall; what carries is the aim.
 
 **`NO_AUTO_AIM_TYPES` (`game/things/tables.ts`) holds the one thing the cursor refuses to lock
 onto**: the Icon of Sin's brain (88). Its recess (DOOM2 MAP30 sector 8, floor 288) opens onto the
@@ -329,6 +344,11 @@ out dead flat, so the lock is doing nothing but fixing the *angle*. The clamp ke
 clear of the band's edges, and the aim point the same distance in from the line's ends, because the
 shot is re-traced from the player along its own angle: aiming at an edge risks landing a unit the
 wrong side of it and passing straight through.
+
+**It takes the same ground bound the body pick does**, plus `PICK_TOLERANCE` of slack along the ray:
+the face the ray is *stopped by* is a face it may well be pointing at — a switch on a ledge's lower
+band is exactly that — and the two distances come out of different arithmetic, so the boundary case
+must not turn on their last bits.
 
 **No `ShotLock` comes with it** — a wall has no silhouette to open a wedge around, and the strict
 single ray is the point: a shoot switch behind a step the shot genuinely can't clear must stay

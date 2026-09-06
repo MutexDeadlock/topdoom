@@ -38,7 +38,7 @@ import { ThingType } from './things/doomednums.ts';
 import type { CrossingBody } from './things/defs.ts';
 import type { TicInput } from './input.ts';
 import { satisfiesLock, type KeySlot } from './inventory.ts';
-import type { Placement, Pos2 } from '../types.ts';
+import type { Placement, Pos2, Pos3 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
 import type { FadeParticipant } from '../render/occlusion.ts';
 import { segmentCrossT, segmentIntersect, vecLength } from '../util/geom.ts';
@@ -886,7 +886,7 @@ export class SpecialsController {
    * tagless line that acts by tag, both fail the same guards `trigger` leads with,
    * and locking aim onto one would spend the shot on nothing.
    */
-  pickShootTarget(ray: THREE.Ray, fireZ: number): ShootAim | null {
+  pickShootTarget(ray: THREE.Ray, aimAt: Pos3, fireZ: number): ShootAim | null {
     const live: number[] = [];
     for (const i of this.shootLines) {
       const def = lookupSpecial(this.lineSpecial(i));
@@ -894,7 +894,7 @@ export class SpecialsController {
       if (!this.stillFires(i, def)) continue;
       live.push(i);
     }
-    return live.length === 0 ? null : pickShootAim(this.world, ray, live, fireZ);
+    return live.length === 0 ? null : pickShootAim(this.world, ray, aimAt, live, fireZ);
   }
 
   /**

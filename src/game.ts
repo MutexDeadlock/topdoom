@@ -2281,11 +2281,16 @@ export class Game {
       // docs/replays.md § The TicInput seam.
       const onPlane = input.aim(camera, aimPlaneZ);
       const ray = onPlane ? camera.rayToward(onPlane.x, onPlane.y, aimPlaneZ) : null;
-      const m = ray ? (this.things?.pickMonster(ray) ?? null) : null;
+      // That same point in three dimensions — where both picks' ground bound starts
+      // (`World.groundReach`, docs/combat.md § Auto-aim).
+      const aimAt = onPlane ? { x: onPlane.x, y: onPlane.y, z: aimPlaneZ } : null;
+      const m = ray && aimAt ? (this.things?.pickMonster(ray, aimAt) ?? null) : null;
       // A monster in front of the switch wins: the pointer is over its body,
       // and a shot would be absorbed by it long before reaching the wall.
       const line =
-        m || !ray ? null : (this.specials?.pickShootTarget(ray, this.player.z + AIM_HEIGHT_OFFSET) ?? null);
+        m || !ray || !aimAt
+          ? null
+          : (this.specials?.pickShootTarget(ray, aimAt, this.player.z + AIM_HEIGHT_OFFSET) ?? null);
       const at = m ?? line ?? onPlane;
       // Whatever the world is pushing the player with this tic — a conveyor
       // underfoot — onto the same momentum channel a hit's knockback uses.

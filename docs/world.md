@@ -4,12 +4,13 @@
 
 `World` is the level's read side: everything that asks the geometry a question rather than
 moving something through it. Collision and the movement queries are docs/movement.md; the shot
-queries (`shotPath`, `Range`) are docs/combat.md. This file holds the two that no single
-subsystem owns — both are called from combat, AI, fog of war and the specials alike.
+queries (`shotPath`, `Range`) are docs/combat.md. This file holds the three that no single
+subsystem owns — each is called from combat, AI, fog of war and the specials alike.
 
 **What is a method and what stays a free function is a rule, not an accident.** Anything that reads
 the level *through* a `World` is a method on it — `hasLineOfSight`, `checkPosition`,
-`positionBlocked`, `slideMove`, `shotPath`, `projectileStepBlocker`, the neighbour-height family.
+`positionBlocked`, `slideMove`, `shotPath`, `projectileStepBlocker`, `groundReach`, the
+neighbour-height family.
 Two kinds of thing stay free, and neither can be folded in:
 
 - **Map-keyed static topology** — `sectorLines`, `sectorsByTag`, `linesByTag`,
@@ -168,6 +169,30 @@ common case. The margin skips a crossing within 1 unit of the ray's start, the f
 to `WALL_OVERLAP`'s "nudge off the geometry you're standing on". Tradeoff: a rocket exploding
 against a *closed door* can in principle leak a sliver of splash through, since the door's self-hit
 is now the crossing being ignored — accepted as the same order of approximation.
+
+## groundReach
+
+**How far a ray cast from the camera gets before it passes into the ground**, and the only bound on
+what auto-aim's two picks may lock onto (docs/combat.md § Auto-aim). Walked from the pointer's aim
+point outward, it stops at the first line it crosses while below `groundOf` — the higher of the two
+floors that line separates, which is the step's own face and the same `max` `P_LineOpening` takes.
+
+Three properties are load-bearing:
+
+- **Only floors block.** A wall face and a ceiling do not: the camera looks over walls on purpose,
+  and a lock through one is a documented deviation.
+- **The stretch up to the aim point is not tested at all.** That is the occlusion faders' ground
+  (docs/render.md § Wall occlusion fading), so nothing there is hiding anything. Measured over
+  DOOM2 MAP01/07/15/29, ~2,000 walkable spots × 81 pointer cells: tracing from the camera instead
+  dropped 142 locks on MAP15 alone whose body stood within 64 units of the aim point — monsters in
+  plain sight, beside a step. From the aim point outward, none. Neither variant ever swapped one
+  monster for another; the bound only removes.
+- **It stops one crossing late by construction** — at the line after the flat the ray actually met,
+  not at the flat. The stretch that leaves open is *inside* the ground, where no body's box reaches,
+  so the imprecision costs nothing and saves a second kind of trace.
+
+`vecLength` twice rather than `Math.hypot` for the distance to the aim point: the result decides a
+lock, and `Math.hypot` is implementation-approximated (docs/testing.md § Determinism).
 
 ## Point-to-sector lookups
 

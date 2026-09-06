@@ -703,13 +703,15 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     }
   }
 
-  function pickMonster(ray: THREE.Ray): MonsterRef | null {
+  function pickMonster(ray: THREE.Ray, aimAt: Pos3): MonsterRef | null {
     // DOOM space throughout, for the reason `pickShootAim` states: every candidate is map-space
     // state and the ray is the only thing arriving in three.js space.
     const o = worldToDoom(ray.origin.x, ray.origin.y, ray.origin.z);
     const d = worldToDoom(ray.direction.x, ray.direction.y, ray.direction.z);
     let best: PosedThing | null = null;
-    let bestDist = Infinity;
+    // Bounded where the ray enters the ground past the aim point, and by nothing else —
+    // docs/combat.md § Auto-aim.
+    let bestDist = world.groundReach(o, aimAt);
     for (const p of posed) {
       // A rejected thing is skipped, not treated as a blocker: a decoration in front of a monster
       // must not make it untargetable. `lockable` is the type half of that, settled at spawn.

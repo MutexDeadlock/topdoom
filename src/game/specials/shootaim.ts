@@ -34,9 +34,9 @@ const BAND_INSET = 4;
 
 /**
  * Which of `lines` the pointer is over and where on it to aim, or null. `ray` is
- * the cursor ray in three.js space (`TopDownCamera.rayFor`) and `fireZ` the height
- * the shot leaves the player at; `lines` is every shoot-trigger line still able to
- * fire.
+ * the cursor ray in three.js space (`TopDownCamera.rayFor`), `aimAt` the point on the aim plane
+ * it was cast toward, and `fireZ` the height the shot leaves the player at; `lines` is every
+ * shoot-trigger line still able to fire.
  *
  * The ray is tested against each line's shootable **bands**, not its whole face,
  * so the pointer over a window's opening picks nothing and the shot goes through
@@ -45,7 +45,13 @@ const BAND_INSET = 4;
  * still strikes the line, since a steeper one only offers more geometry in
  * between to run into.
  */
-export function pickShootAim(world: World, ray: THREE.Ray, lines: readonly number[], fireZ: number): ShootAim | null {
+export function pickShootAim(
+  world: World,
+  ray: THREE.Ray,
+  aimAt: Pos3,
+  lines: readonly number[],
+  fireZ: number,
+): ShootAim | null {
   // DOOM space throughout: every candidate is map geometry, and the ray is the
   // only thing here that arrives in three.js space. `worldToDoom` maps the
   // direction as faithfully as the origin — the permutation has no translation.
@@ -54,7 +60,9 @@ export function pickShootAim(world: World, ray: THREE.Ray, lines: readonly numbe
 
   const opening: Opening = { top: 0, bottom: 0 };
   let best: ShootAim | null = null;
-  let bestT = Infinity;
+  // The body pick's ground bound, plus `PICK_TOLERANCE` of slack for the face the ray is stopped
+  // *by* — which is one the pointer may well be over. docs/combat.md § Auto-aim.
+  let bestT = world.groundReach({ x: ox, y: oy, z: oz }, aimAt) + PICK_TOLERANCE;
 
   for (const lineIndex of lines) {
     const line = world.map.linedefs[lineIndex];

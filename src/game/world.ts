@@ -1622,6 +1622,38 @@ export class World {
   }
 
   /**
+   * How far the ray from `from` through `through` gets before it passes **into the ground**, as a
+   * distance from `from`, or `Infinity` where nothing along `mapSpan` puts it under one — the
+   * bound on auto-aim's two picks. Only floors stop it, the stretch up to `through` is not tested,
+   * and the stop is the line after the flat rather than the flat: docs/world.md § groundReach.
+   */
+  groundReach(from: Pos3, through: Pos3): number {
+    const span = this.mapSpan;
+    // `vecLength` twice, never `Math.hypot`: ECMA-262 leaves that approximated and this distance
+    // decides a lock (docs/testing.md § Determinism).
+    const toAim = vecLength(vecLength(through.x - from.x, through.y - from.y), through.z - from.z);
+    if (toAim === 0) return 0;
+    const dirX = (through.x - from.x) / toAim;
+    const dirY = (through.y - from.y) / toAim;
+    const dirZ = (through.z - from.z) / toAim;
+    const tx = through.x + dirX * span;
+    const ty = through.y + dirY * span;
+    let nearest = Infinity;
+    this.forEachLineAlongSegment(through.x, through.y, tx, ty, (i) => {
+      const e = i * 4;
+      const ends = this.lineOverlapEnds;
+      const t = segmentCrossT(through.x, through.y, tx, ty, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
+      if (t < 0) return;
+      // The point at `t` is `through + dir * span * t` in three dimensions, so `t * span` is a
+      // distance along the ray.
+      const dist = t * span;
+      if (dist >= nearest || through.z + dirZ * dist >= this.groundOf(i)) return;
+      nearest = dist;
+    });
+    return toAim + nearest;
+  }
+
+  /**
    * Where one frame of a *curving* projectile's flight ran into geometry, or null if the step is
    * clear — the per-step counterpart to `shotPath`'s launch-time trace, for the one projectile
    * whose stopping point cannot be resolved up front: the revenant's homing missile
@@ -1943,6 +1975,22 @@ export class World {
     if (sector !== undefined && !out.includes(sector)) {
       out.push(sector);
     }
+  }
+
+  /**
+   * The ground a line stands on — the higher of the two floors it separates, `P_LineOpening`'s own
+   * `max`, or its one side's floor where it has only one. `groundReach`'s test.
+   */
+  private groundOf(lineIndex: number): number {
+    const line = this.map.linedefs[lineIndex];
+    if (!line) return -Infinity;
+    const front = this.map.sidedefs[line.right]?.sector;
+    const back = line.left === NO_SIDE ? undefined : this.map.sidedefs[line.left]?.sector;
+    const frontFloor = front !== undefined ? this.map.sectors[front]?.floorHeight : undefined;
+    const backFloor = back !== undefined ? this.map.sectors[back]?.floorHeight : undefined;
+    if (frontFloor === undefined) return backFloor ?? -Infinity;
+    if (backFloor === undefined) return frontFloor;
+    return frontFloor > backFloor ? frontFloor : backFloor;
   }
 
   /**

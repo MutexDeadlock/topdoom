@@ -28,7 +28,7 @@ describe('Combat · shoot-line auto-aim', () => {
 
   test('a solid face is aimed at flat, at the point the pointer is over', () => {
     const { world, line } = rig('#');
-    const aim = pickShootAim(world, rayThrough({ x: 0, y: 192, z: 400 }, { x: 128, y: 200, z: 40 }), [line], FIRE_Z);
+    const aim = pickShootAim(world, rayThrough({ x: 0, y: 192, z: 400 }, { x: 128, y: 200, z: 40 }), { x: 128, y: 200, z: 40 }, [line], FIRE_Z);
     assert.ok(aim, 'the wall face is picked');
     assert.equal(aim.lineIndex, line);
     assert.equal(Math.round(aim.x), 128);
@@ -40,11 +40,11 @@ describe('Combat · shoot-line auto-aim', () => {
 
   test('the pointer through an opening picks nothing', () => {
     const { world, line } = rig('h', { h: { floor: 0, ceil: 64 } });
-    const through = pickShootAim(world, rayThrough({ x: 0, y: 192, z: 400 }, { x: 128, y: 192, z: 32 }), [line], FIRE_Z);
+    const through = pickShootAim(world, rayThrough({ x: 0, y: 192, z: 400 }, { x: 128, y: 192, z: 32 }), { x: 128, y: 192, z: 32 }, [line], FIRE_Z);
     assert.equal(through, null, 'a shot at that height flies through the gap and triggers nothing');
     // The wall *above* the opening is solid, and aim drops to its lowest
     // shootable height rather than to where the pointer happens to sit.
-    const over = pickShootAim(world, rayThrough({ x: 0, y: 192, z: 400 }, { x: 128, y: 192, z: 100 }), [line], FIRE_Z);
+    const over = pickShootAim(world, rayThrough({ x: 0, y: 192, z: 400 }, { x: 128, y: 192, z: 100 }), { x: 128, y: 192, z: 100 }, [line], FIRE_Z);
     assert.ok(over);
     assert.equal(over.z, 68);
   });
@@ -54,7 +54,7 @@ describe('Combat · shoot-line auto-aim', () => {
     // stays flat — the case DOOM2 MAP19's two shoot-switches are.
     const { grid, world, line } = rig('l', { l: { floor: 64, ceil: 128 } });
     const from = grid.centre(0, 1);
-    const aim = pickShootAim(world, rayThrough({ x: 0, y: 192, z: 400 }, { x: 128, y: 192, z: 30 }), [line], FIRE_Z);
+    const aim = pickShootAim(world, rayThrough({ x: 0, y: 192, z: 400 }, { x: 128, y: 192, z: 30 }), { x: 128, y: 192, z: 30 }, [line], FIRE_Z);
     assert.ok(aim);
     assert.equal(aim.z, FIRE_Z, 'the lower band admits a flat shot');
     const origin = { x: from.x, y: from.y, z: FIRE_Z };
@@ -65,9 +65,9 @@ describe('Combat · shoot-line auto-aim', () => {
 
   test('a pointer past the line’s end misses, and one just inside it aims within the line', () => {
     const { world, line } = rig('#');
-    const past = pickShootAim(world, rayThrough({ x: 0, y: 320, z: 400 }, { x: 128, y: 300, z: 40 }), [line], FIRE_Z);
+    const past = pickShootAim(world, rayThrough({ x: 0, y: 320, z: 400 }, { x: 128, y: 300, z: 40 }), { x: 128, y: 300, z: 40 }, [line], FIRE_Z);
     assert.equal(past, null);
-    const edge = pickShootAim(world, rayThrough({ x: 0, y: 260, z: 400 }, { x: 128, y: 258, z: 40 }), [line], FIRE_Z);
+    const edge = pickShootAim(world, rayThrough({ x: 0, y: 260, z: 400 }, { x: 128, y: 258, z: 40 }), { x: 128, y: 258, z: 40 }, [line], FIRE_Z);
     assert.ok(edge, 'within the pick tolerance the line is still grabbed');
     assert.ok(edge.y <= 256 && edge.y >= 128, `aim point ${edge.y} stays on the line itself`);
   });
@@ -81,10 +81,11 @@ describe('Combat · shoot-line auto-aim', () => {
     grid.map.linedefs[line].tag = 1;
     grid.map.sectors[grid.index(3, 1)].tag = 1;
     const { specials } = specialsRig(grid.map, grid.centre(0, 1));
-    const ray = rayThrough({ x: 0, y: 192, z: 400 }, { x: 128, y: 192, z: 40 });
-    assert.ok(specials.pickShootTarget(ray, FIRE_Z), 'a live shoot line is a target');
+    const at = { x: 128, y: 192, z: 40 };
+    const ray = rayThrough({ x: 0, y: 192, z: 400 }, at);
+    assert.ok(specials.pickShootTarget(ray, at, FIRE_Z), 'a live shoot line is a target');
     specials.triggerShot(line, new Set());
-    assert.equal(specials.pickShootTarget(ray, FIRE_Z), null, 'once spent it can no longer be aimed at');
+    assert.equal(specials.pickShootTarget(ray, at, FIRE_Z), null, 'once spent it can no longer be aimed at');
   });
 
   test('a generalized shoot line with no tag is no target', () => {
@@ -94,9 +95,10 @@ describe('Combat · shoot-line auto-aim', () => {
     grid.map.linedefs[line].special = 0x6000 | 4;
     grid.map.linedefs[line].tag = 1;
     const { specials } = specialsRig(grid.map, grid.centre(0, 1));
-    const ray = rayThrough({ x: 0, y: 192, z: 400 }, { x: 128, y: 192, z: 40 });
-    assert.ok(specials.pickShootTarget(ray, FIRE_Z), 'tagged, it is a candidate');
+    const at = { x: 128, y: 192, z: 40 };
+    const ray = rayThrough({ x: 0, y: 192, z: 400 }, at);
+    assert.ok(specials.pickShootTarget(ray, at, FIRE_Z), 'tagged, it is a candidate');
     grid.map.linedefs[line].tag = 0;
-    assert.equal(specials.pickShootTarget(ray, FIRE_Z), null, 'without a tag it does nothing, so aim ignores it');
+    assert.equal(specials.pickShootTarget(ray, at, FIRE_Z), null, 'without a tag it does nothing, so aim ignores it');
   });
 });

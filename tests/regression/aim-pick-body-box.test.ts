@@ -56,13 +56,13 @@ describe('Auto-aim · the pick is the body box, not the sprite', () => {
     // Along the row from the west wall, at chest height: both imps are on this
     // line, and the near one has to absorb the pick.
     const west = { x: 0, y: row, z: CHEST };
-    const picked = layer.pickMonster(rayThrough(west, { x: 4000, y: row, z: CHEST }));
+    const east = { x: 4000, y: row, z: CHEST };
+    const picked = layer.pickMonster(rayThrough(west, east), east);
     assert.equal(picked?.type, ThingType.imp);
     assert.equal(picked?.x, grid.centre(3, 1).x, 'the nearer of the two imps');
 
     // The same line walked the other way picks the other one.
-    const east = { x: 4000, y: row, z: CHEST };
-    const back = layer.pickMonster(rayThrough(east, { x: 0, y: row, z: CHEST }));
+    const back = layer.pickMonster(rayThrough(east, west), west);
     assert.equal(back?.x, grid.centre(6, 1).x, 'the nearer one from the east');
   });
 
@@ -71,7 +71,11 @@ describe('Auto-aim · the pick is the body box, not the sprite', () => {
     const impRow = grid.centre(3, 2).y;
     const fatsoRow = grid.centre(3, 3).y;
     const alongRow = (y: number, off: number): MonsterRef | null =>
-      layer.pickMonster(rayThrough({ x: 0, y: y + off, z: CHEST }, { x: 4000, y: y + off, z: CHEST }));
+      layer.pickMonster(rayThrough({ x: 0, y: y + off, z: CHEST }, { x: 4000, y: y + off, z: CHEST }), {
+        x: 4000,
+        y: y + off,
+        z: CHEST,
+      });
 
     // An imp's `TROO` art is 41 px wide, within half a unit of its own 20-unit
     // radius, which is why the change is barely felt on one. Where box and sprite
@@ -94,7 +98,7 @@ describe('Auto-aim · the pick is the body box, not the sprite', () => {
     const { grid, layer } = arena();
     const row = grid.centre(3, 2).y;
     const atHeight = (z: number): MonsterRef | null =>
-      layer.pickMonster(rayThrough({ x: 0, y: row, z }, { x: 4000, y: row, z }));
+      layer.pickMonster(rayThrough({ x: 0, y: row, z }, { x: 4000, y: row, z }), { x: 4000, y: row, z });
 
     assert.equal(atHeight(IMP.height - 1)?.type, ThingType.imp, 'level with its head');
     assert.equal(atHeight(IMP.height + 1), null, 'over it');
@@ -106,17 +110,18 @@ describe('Auto-aim · the pick is the body box, not the sprite', () => {
     // The shape a real pick ray has: the camera hangs above and looks down.
     const over = grid.centre(3, 1);
     const above = { x: over.x, y: over.y, z: 700 };
-    assert.equal(layer.pickMonster(rayThrough(above, { ...over, z: 0 }))?.type, ThingType.imp);
+    assert.equal(layer.pickMonster(rayThrough(above, { ...over, z: 0 }), { ...over, z: 0 })?.type, ThingType.imp);
 
     // A hand's breadth beside the body is a miss, however tall the art is.
     const beside = { x: over.x + IMP.radius + 4, y: over.y };
     const off = { x: beside.x, y: beside.y, z: 700 };
-    assert.equal(layer.pickMonster(rayThrough(off, { ...beside, z: 0 })), null);
+    assert.equal(layer.pickMonster(rayThrough(off, { ...beside, z: 0 }), { ...beside, z: 0 }), null);
   });
 
   test('a barrel is lockable and the Icon of Sin’s brain is not', () => {
     const { grid, layer } = arena();
-    const along = (y: number) => layer.pickMonster(rayThrough({ x: 0, y, z: CHEST }, { x: 4000, y, z: CHEST }));
+    const along = (y: number) =>
+      layer.pickMonster(rayThrough({ x: 0, y, z: CHEST }, { x: 4000, y, z: CHEST }), { x: 4000, y, z: CHEST });
 
     assert.equal(along(grid.centre(3, 4).y)?.type, ThingType.barrel, 'barrels join the monsters');
     // `NO_AUTO_AIM_TYPES`: its whole body sits below the slot the eye watches

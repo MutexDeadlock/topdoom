@@ -463,8 +463,11 @@ export interface ThingLayer {
    * with — never the drawn sprite, which is WAD art and would make what the simulation does depend
    * on which game WAD is loaded. Nothing here reads the render batch, so the tic never has to
    * re-pose it. docs/combat.md § Auto-aim, docs/frameloop.md § Posing for the aim ray.
+   *
+   * `aimAt` is the point on the aim plane the ray was cast toward; how far past it a body may
+   * still be picked is `World.groundReach`.
    */
-  pickMonster(ray: THREE.Ray): MonsterRef | null;
+  pickMonster(ray: THREE.Ray, aimAt: Pos3): MonsterRef | null;
   /**
    * Living monsters within `radius` (2D — matching vanilla's own radius-attack
    * distance test, which ignores height) of (x, y). Candidates for splash

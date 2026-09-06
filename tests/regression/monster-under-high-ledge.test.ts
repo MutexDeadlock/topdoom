@@ -65,7 +65,7 @@ function chase(f: ReturnType<typeof beside>, seconds: number, each?: (tic: numbe
       target: f.target,
       targetRadius: PLAYER_RADIUS,
       targetHeight: PLAYER_HEIGHT,
-      blockers: [],
+      blockersFor: () => [],
     });
     each?.(i);
   }

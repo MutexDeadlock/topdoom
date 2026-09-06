@@ -61,7 +61,7 @@ import { AutoCamera, getCameraMode } from './game/autocamera.ts';
 import { SectorEffects, SpecialsController, type TeleportDest } from './game/specials.ts';
 import { scanSectors } from './game/specials/mapscan.ts';
 import type { ShootAim } from './game/specials/shootaim.ts';
-import { Forces } from './game/specials/forces.ts';
+import { Forces, type Vec2 } from './game/specials/forces.ts';
 import { transfersOf, type Transfers } from './game/specials/transfers.ts';
 import { colormapTint, type ColorTint } from './wad/colormaps.ts';
 import { VoodooDolls } from './game/voodoo.ts';
@@ -141,7 +141,7 @@ import { SoundBank } from './wad/sound.ts';
 import { MusicBank } from './wad/music.ts';
 import { MapInfo } from './wad/campaign/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
-import type { Pos2 } from './types.ts';
+import type { Pos2, Pos3 } from './types.ts';
 import { DEVMODE, DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 import { vecLength } from './util/geom.ts';
 import { readStorage, writeStorage } from './util/storage.ts';
@@ -335,6 +335,12 @@ export class Game {
   private surfaceScroller!: SurfaceScroller;
   /** The level's always-on parameter lines — scrollers and conveyors (game/specials/forces.ts). */
   private forces!: Forces;
+  /**
+   * `Forces.carryForBody` bound once rather than per tic: `ThingLayer.update` takes it or
+   * `undefined`, and building the closure at the call site allocated one every frame.
+   */
+  private carryForBody = (pos: Pos3, radius: number, cache: SectorTouchCache): Readonly<Vec2> | null =>
+    this.forces.carryForBody(pos, radius, cache);
   /**
    * The level's Boom render transfers (game/specials/transfers.ts) — read per frame for the view
    * colormap.
@@ -2528,7 +2534,7 @@ export class Game {
           (subsector) => this.fogOfWar.isVisible(subsector),
           (prev, mover) => this.thingCrossedLines(prev, mover),
           (mover, tryX, tryY) => this.thingUsedLines(mover, tryX, tryY),
-          (pos, radius, cache) => this.forces.carryForBody(pos, radius, cache),
+          this.forces.carriesAnything() ? this.carryForBody : undefined,
         ) ?? { attacks: [], barrelExplosions: [] },
     );
     this.profiler.time('Monsters', () => {

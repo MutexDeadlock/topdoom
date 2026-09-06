@@ -9,6 +9,7 @@ import {
   ANY_HEIGHT,
   dropoffRefuses,
   makeCollider,
+  makePositionCheck,
   mayHitDropoff,
   type Collider,
   type PositionCheck,
@@ -18,6 +19,7 @@ import {
 import { GRAVITY } from '../player.ts';
 import { pRandom, rollDamage } from '../../util/random.ts';
 import {
+  chaseStep,
   DIR_X,
   DIR_Y,
   DI_NODIR,
@@ -48,7 +50,13 @@ export interface MonsterStep {
   /** The target's own `info->radius` and body height, read only by the melee gate. */
   targetRadius: number;
   targetHeight: number;
-  blockers?: readonly ThingBlocker[];
+  /**
+   * The solid bodies a step can bump into, asked for on the first probe rather than handed in: a
+   * planted or flinching monster probes nothing, and the list costs a grid sweep. `probeReach` is
+   * how far from the body, per axis, this call's probes go — one chase step.
+   * docs/monster-ai.md § Spatial indexing.
+   */
+  blockersFor?: (body: MonsterBody, probeReach: number) => readonly ThingBlocker[];
   resurrect?: Resurrector;
   sfx?: SoundEmitter;
   /**
@@ -90,6 +98,8 @@ interface Chase extends MonsterStep {
   standingX: number | null;
   standingY: number;
   standingZ: number;
+  /** Cleared once `testStep` has filled `collider.blockers` from it — see there. */
+  blockersFor?: (body: MonsterBody, probeReach: number) => readonly ThingBlocker[];
   /**
    * This monster as a collision query, built once because `newChaseDir` probes up to eight
    * destinations for it. The feet height is the one field a probe varies, so each sets it first —
@@ -148,7 +158,13 @@ type StepResult = 'clear' | 'adjust' | 'blocked';
  * call, like `ThingGrid`'s own pooled result; what makes a fill *valid* rides the call instead
  * (`Chase.standingX`).
  */
-const standingCheck: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
+const standingCheck = makePositionCheck();
+
+/**
+ * `testStep`'s destination walk, kept apart from `world.ts`'s default scratch so the one a
+ * committed step lands on is still in hand when `adoptStanding` seeds the memo from it.
+ */
+const stepCheck = makePositionCheck();
 
 /**
  * The collider `standingAt` and `stepCharge` probe with: geometry only, so unlike `Chase.collider`
@@ -249,7 +265,7 @@ export function stepMonsterAI(
     target: step.target,
     targetRadius: step.targetRadius,
     targetHeight: step.targetHeight,
-    blockers: step.blockers,
+    blockersFor: step.blockersFor,
     resurrect: step.resurrect,
     useLines: step.useLines,
     sfx: step.sfx ?? SILENT,
@@ -265,7 +281,6 @@ export function stepMonsterAI(
       z: body.z,
       height: stats.height,
       forMonster: true,
-      blockers: step.blockers,
       from: body,
     }),
   };
@@ -362,7 +377,7 @@ export function stepMonsterAI(
     // `P_Move` ever judges. Sub-stepping is this engine's own and is *stricter*, not weaker.
     // docs/monster-ai.md § Movement.
     if (result === 'blocked') {
-      const full = stats.speed * stats.chaseInterval;
+      const full = chaseStep(stats);
       const fx = body.x + DIR_X[body.movedir] * full;
       const fy = body.y + DIR_Y[body.movedir] * full;
       const fullResult = testStep(c, fx, fy);
@@ -386,6 +401,7 @@ export function stepMonsterAI(
     } else {
       body.x = nx;
       body.y = ny;
+      adoptStanding(c);
       body.inFloat = false;
       body.angle = Math.atan2(DIR_Y[body.movedir], DIR_X[body.movedir]);
       // Footsteps are paced by *walking*, not by wall-clock time: a monster held still by an
@@ -664,7 +680,7 @@ function newChaseDir(c: Chase): void {
  */
 function tryWalk(c: Chase, dir: number): boolean {
   const { body, stats } = c;
-  const reach = stats.speed * stats.chaseInterval;
+  const reach = chaseStep(stats);
   const nx = body.x + DIR_X[dir] * reach;
   const ny = body.y + DIR_Y[dir] * reach;
   if (testStep(c, nx, ny) === 'blocked') return false;
@@ -702,6 +718,13 @@ function testStep(c: Chase, x: number, y: number): StepResult {
   const { body, stats, world } = c;
   // Both probes below share one collider; each sets the feet height it wants first.
   const probe = c.collider;
+  if (c.blockersFor) {
+    // Every probe of this call — the sub-step, the full-step fallback, `tryWalk`'s eight — lies
+    // within one chase step of the body, on unit directions (`DIR_X`/`DIR_Y`). Cleared as it is
+    // read, so the grid sweep is paid once per call however many probes follow.
+    probe.blockers = c.blockersFor(body, chaseStep(stats));
+    c.blockersFor = undefined;
+  }
   probe.z = body.z;
   // `P_TryMove`'s "doesn't fit", which sits *before* it sets `floatok`, so a floater is refused
   // outright rather than adjusting its height. This is the destination's own headroom, which is
@@ -709,7 +732,7 @@ function testStep(c: Chase, x: number, y: number): StepResult {
   // one sector crosses nothing, and a closed crusher would leave it strolling about underneath.
   // One walk answers all three — headroom, blocking verdict, dropoff.
   // docs/monster-ai.md § Movement.
-  const check = world.checkPosition(x, y, probe, false);
+  const check = world.checkPosition(x, y, probe, false, stepCheck);
   if (check.ceilingZ - check.floorZ < stats.height) {
     return 'blocked';
   }
@@ -764,6 +787,30 @@ function standingAt(c: Chase): PositionCheck {
     c.standingZ = body.z;
   }
   return standingCheck;
+}
+
+/**
+ * Seeds `standingAt`'s memo from the walk a committed step was approved on: `stepCheck` holds the
+ * destination the body now stands at, at the same feet and radius, so the standing walk
+ * `settleVertical` asks for next would repeat it line for line. `blocked` is false by
+ * construction — the step was refused by neither geometry nor bodies, and the standing walk
+ * carries no bodies. docs/monster-ai.md § The dropoff rule.
+ */
+function adoptStanding(c: Chase): void {
+  const { body } = c;
+  standingCheck.blocked = false;
+  standingCheck.floorZ = stepCheck.floorZ;
+  standingCheck.ceilingZ = stepCheck.ceilingZ;
+  standingCheck.dropoffZ = stepCheck.dropoffZ;
+  standingCheck.centreFloorZ = stepCheck.centreFloorZ;
+  standingCheck.subsector = stepCheck.subsector;
+  c.standingX = body.x;
+  c.standingY = body.y;
+  c.standingZ = body.z;
+  // The leaf the same descent found, so `refreshSector` needn't descend for this move.
+  body.subsector = stepCheck.subsector;
+  body.sectorX = body.x;
+  body.sectorY = body.y;
 }
 
 /** Resolves `Chase.sight` on first ask and returns it — see that field's doc. */

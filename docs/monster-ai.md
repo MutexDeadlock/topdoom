@@ -394,6 +394,10 @@ Three consequences, all vanilla:
   anyone but only sends it down for a player ("JDC: bad guys never close doors"). Without it a
   monster leaning on an open door would slam it shut every frame it stayed blocked.
 
+The walk half (`crossMonster`) keeps a flag of the same kind, `hasMonsterWalkLine`, only to skip
+its line scan outright on a map with none: a once-only line leaves the live set but nothing joins
+it, so the static specials alone settle it.
+
 Boom's `pr_opendoor` fix for monsters stuck in door tracks (a 90% answer instead of a flat one) is
 deliberately not implemented: it would draw from the random table on a path vanilla never draws on
 (docs/random.md).
@@ -473,9 +477,12 @@ The memo is keyed on the body **and its position**, so a committed move self-inv
 than obliging every future `body.x`/`body.y` write to say so; `stepMonsterAI` additionally clears it
 on entry, because a tic of movers may have changed the geometry under a body that never moved.
 `settleVertical` shares it — its walk is argument-for-argument the same one — so the two ask the
-line grid once between them. All three comparisons come off walks already in hand: the centre-floor
-clause reads `PositionCheck.centreFloorZ`, the floor under (x, y) alone that `checkPosition` records
-on the descent it already makes, rather than re-descending the BSP through `floorAt`.
+line grid once between them. A committed sub-step seeds it from the destination walk that approved
+the step (`adoptStanding`): same feet, same radius, line for line the walk `settleVertical` would
+make, so a moving monster walks the grid once per tic rather than twice. All three comparisons
+come off walks already in hand: the centre-floor clause reads `PositionCheck.centreFloorZ`, the
+floor under (x, y) alone that `checkPosition` records on the descent it already makes, rather than
+re-descending the BSP through `floorAt`.
 
 ## Floating monsters
 
@@ -571,15 +578,48 @@ Four details are load-bearing:
   per *pair* from the two radii actually involved. `blockedByThings` can never report an overlap
   outside `r1 + r2`, so a fixed box is guaranteed waste — and the wrong shape of waste, since one
   radius-128 spider mastermind on the map would otherwise widen every 20-unit grunt's search too.
+  The pair bound adds the querier's **own chase step** (`probeReach`), not `BLOCKER_MARGIN`: the
+  list is read only by that call's probes, none further than a step from the body, so a body
+  beyond it cannot change a verdict — the list shrinks, the verdicts don't. The cell box keeps
+  `BLOCKER_MARGIN`, since a body is filed where it stood at the rebuild.
 - **`BLOCKER_MARGIN` is the sum of two independent maxima**, not the max of a per-type sum: the
   monster probing (`tryWalk` tests a full `speed × chaseInterval` step ahead) and the monster that
   drifted since the grid was built (`speed × MAX_FRAME_DT`) are *different* monsters, so the worst
   case pairs the longest probe with the fastest other monster's drift.
-- **The grid is a flat array**, not a `Map`. At ~15 cell lookups per monster per frame, `Map.get` on
-  a packed numeric key cost more than everything it guarded.
+- **The grid is a counting sort into typed arrays**, not a `Map` of cell arrays: `cellStart`
+  runs over `slotThing`, with each body's rebuild position in `slotX`/`slotY` beside it, so a
+  query's first refusal — that position, its `moveBound` allowed — reads no body at all, and only
+  the few that pass read the live one. At ~15 cell lookups and ~17 candidates per monster per
+  frame, `Map.get` on a packed key and a position read off every candidate each cost more than
+  what they guarded.
 - **`PosedThing.blockRadius` is resolved once at spawn.** `MONSTER_STATS` is a `Record` with sparse
   numeric keys, so V8 backs it with a dictionary — one hash lookup per candidate per monster per
   frame was more expensive than the collision arithmetic.
+- **Each cell records its widest body** (`cellMaxRadius`), and a cell whose nearest edge lies
+  further than `ownRadius + that + probeReach` plus the cell's largest `moveBound` is skipped
+  whole (`cellSkipped`). The search box has to assume the map's widest body, and on NUTS.WAD — 795
+  spider masterminds, radius 128 — that box is 16 cells for a 20-unit grunt; this skips most of
+  them. **The skip is exact against the sweep it replaces**, and one rule makes it so: a body is
+  filed by where it stood at the rebuild and tested live, so a cell may only be skipped when
+  nothing in it could have moved into the pair test's reach since. `PosedThing.moveBound` is the
+  worst per-axis move *that* body makes in one tic — its own chase step (`chaseStep`, the same
+  quantity `testStep` probes with, which is why it has one definition), a lost soul's charge, and
+  a knockback tic (30) only while it carries momentum or the level has a conveyor to hand it some
+  (`Forces.carriesAnything`). **A teleport is the move no bound covers, so it is filed as an
+  unbounded one**: `markDisplaced`, called from `arriveAt` before the move, writes `Infinity` into
+  that body's slot and its cell's maximum, and every test already admits a body whose slack
+  reaches the query. Drop that and a replay desyncs on a body that hopped toward the querier this
+  tic. **`forEachMonsterNear` and `forEachMonsterAlongRay` skip by the same rule**, each caller
+  naming how far past a body's own radius its test still accepts (`ownReach`: a blast's radius, a
+  missile's radius plus half its step, nothing for a bullet); the ray form adds half a sample
+  stride, since a ray point can lie that far from its nearest sample. What a caller sees is the
+  old sweep's list minus bodies that could not have qualified, in the old order — which the
+  splash's per-body damage rolls depend on.
+  `tests/game/thinggrid-skip.test.ts` holds all three queries to the unskipped sweep, a hop
+  included, and goes red without the bound or the teleport's `Infinity`.
+- **The list is asked for on the first step probe, not per call** (`MonsterStep.blockersFor`,
+  resolved in `testStep`): a planted, flinching or charging monster never probes, which on NUTS.WAD
+  is a fifth of the alerted population each tic.
 
 **The same grid backs `monstersNear`, `monstersAlongStep` and `raycastMonster`**, and none can
 afford to be the linear scan they started as, because they are called *per shot in flight*, not per

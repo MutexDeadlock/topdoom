@@ -424,6 +424,15 @@ export class Forces {
   }
 
   /**
+   * Whether any body on this level can be carried at all. `game.ts` hands the thing layer no
+   * `carry` where this is false, which is what lets the thing grid bound a still body's move by
+   * its own step (docs/monster-ai.md § Spatial indexing).
+   */
+  carriesAnything(): boolean {
+    return this.carry.size > 0;
+  }
+
+  /**
    * This tic's conveyor impulse for a body of this radius standing at `z`, or null where nothing
    * carries it — `T_Scroll`'s `sc_carry` walk seen from the thing rather than from the sector.
    * Every touched sector counts, a body only rides a floor it is standing on, and overlapping

@@ -108,7 +108,7 @@ import {
   type ThingState,
 } from './snapshot.ts';
 import { createThingGrid } from './things/grid.ts';
-import { dropoffRefuses, makeCollider, makePinnedMemo, makeTouchCache, mayHitDropoff } from './world.ts';
+import { dropoffRefuses, makeCollider, makePinnedMemo, makePositionCheck, makeTouchCache, mayHitDropoff } from './world.ts';
 import { transfersOf } from './specials/transfers.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import {
@@ -201,8 +201,8 @@ const knockbackCollider = makeCollider({ radius: 0, z: 0, height: 0, forMonster:
  * step from. Module-level for the same reason the collider above is; `checkPosition`'s own scratch
  * would have the second call clobber the first.
  */
-const knockbackDest: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
-const knockbackStanding: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
+const knockbackDest = makePositionCheck();
+const knockbackStanding = makePositionCheck();
 
 /** Everything `buildThingSprites` needs beyond the `World` it populates. */
 export interface ThingLayerOptions {
@@ -397,9 +397,12 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
           if (dest) arriveAt(thing, dest);
         }
       : undefined;
+    // Same shape, for the bodies a step can bump into — resolved inside the step, on first probe.
+    const blockersNear = (body: MonsterBody, probeReach: number) => grid.blockersFor(body as PosedThing, player, probeReach);
     // Once per tic, ahead of any `blockersFor` call below — docs/monster-ai.md § Spatial indexing
     // on why a tic-granular grid is accurate enough for contact.
-    grid.rebuild();
+    // `carry` is absent on a level with no conveyor — see `Forces.carriesAnything`.
+    grid.rebuild(carry !== undefined);
     clock += dt;
     // One respawn attempt every 32 tics for the whole level, not per corpse: `P_MobjThinker`
     // reads the global `leveltime`, and `clock` is that clock in seconds. Rounded rather than
@@ -469,8 +472,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       // Every non-monster always cycles — vanilla's idle art loops unconditionally rather than
       // tracking motion the way a monster's walk cycle does. A monster starts false, and only the
       // stats branch below turns it on, off whether it stepped this frame.
-      let animating = !MONSTER_TYPES.has(p.type);
-      const stats = !p.dead ? monsterStats[p.type] : undefined;
+      let animating = !p.isMonster;
+      const stats = !p.dead ? p.stats : undefined;
       // A conveyor feeds the same momentum channel a hit's knockback does, so the integration
       // below carries it for free. Only fliers are exempt (`MF_NOGRAVITY`); a corpse is not, since
       // `P_KillMobj` strips that flag. docs/specials.md § Scrollers and conveyors.
@@ -529,7 +532,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
               target,
               targetRadius,
               targetHeight,
-              blockers: grid.blockersFor(p, player),
+              blockersFor: blockersNear,
               resurrect: grid.findRaisableCorpse,
               useLines: useBlockingLines,
               sfx,
@@ -545,9 +548,12 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
             if (dest) arriveAt(p, dest);
             p.prev.x = p.x;
             p.prev.y = p.y;
+            const moved = p.x !== beforeX || p.y !== beforeY;
+            // Sector membership is a function of position alone, which `refreshSector` keys on
+            // itself — docs/world.md § Point-to-sector lookups.
             refreshSector(p);
             p.facingDeg = (p.angle * 180) / Math.PI;
-            animating = p.x !== beforeX || p.y !== beforeY;
+            animating = moved;
             if (result?.kind === 'resurrect') {
               // Carried out here rather than reported through `attacks`: a resurrection is
               // AI-state over a `PosedThing` only this layer holds, not damage for `game.ts` to
@@ -597,7 +603,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         // everything else here rides a moving floor — see CEILING_HUNG_HEIGHT's doc.
         // A corpse still falling (the dead branch above) is the one exception: it owns its own
         // `z` until it lands, and only then rejoins the ride.
-        const hangHeight = CEILING_HUNG_HEIGHT[p.type];
+        const hangHeight = p.hangHeight;
         if (hangHeight !== undefined) {
           p.z = (p.sector?.ceilHeight ?? p.z + hangHeight) - hangHeight;
         } else if (!p.dead || p.z <= (p.sector?.floorHeight ?? p.z)) {
@@ -734,7 +740,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     const out: MonsterRef[] = [];
     // Range is measured to each body's *edge* (`blastDistanceToBox`), so the box has to reach a
     // full body-width past the blast or the widest monsters would never be considered.
-    grid.forEachMonsterNear(pos.x, pos.y, radius + grid.maxBodyRadius(), (p) => {
+    grid.forEachMonsterNear(pos.x, pos.y, radius + grid.maxBodyRadius(), radius, (p) => {
       // The grid holds solid decorations too, and those block movement but not shots —
       // docs/monster-ai.md § Spatial indexing.
       if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
@@ -751,7 +757,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     const midX = (from.x + to.x) / 2;
     const midY = (from.y + to.y) / 2;
     const half = vecLength(to.x - from.x, to.y - from.y) / 2;
-    grid.forEachMonsterNear(midX, midY, half + boxReach(reach + grid.maxBodyRadius()), (p) => {
+    grid.forEachMonsterNear(midX, midY, half + boxReach(reach + grid.maxBodyRadius()), half + reach, (p) => {
       // The grid holds solid decorations too, and those block movement but not shots —
       // docs/monster-ai.md § Spatial indexing.
       if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
@@ -763,7 +769,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
   function monsterById(id: number): MonsterRef | null {
     const p = posed[id];
-    if (!p || p.dead || !MONSTER_TYPES.has(p.type)) return null;
+    if (!p || p.dead || !p.isMonster) return null;
     return monsterRef(p);
   }
 
@@ -775,7 +781,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   function awakeMonsterCount(): number {
     let n = 0;
     for (const p of posed) {
-      if (!p.dead && MONSTER_TYPES.has(p.type) && p.alerted) {
+      if (!p.dead && p.isMonster && p.alerted) {
         n++;
       }
     }
@@ -785,7 +791,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   function awakeMonsters(): StandingBody[] {
     const out: StandingBody[] = [];
     for (const p of posed) {
-      if (p.dead || !MONSTER_TYPES.has(p.type) || !p.alerted || !p.visible) continue;
+      if (p.dead || !p.isMonster || !p.alerted || !p.visible) continue;
       out.push({ x: p.x, y: p.y, z: p.z, height: p.bodyHeight });
     }
     return out;
@@ -854,7 +860,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   function telefragAt(at: Pos2, radius: number, stomps: boolean, moverId?: number): boolean {
     for (const q of posed) {
       if (q.id === moverId || q.dead || q.hidden) continue;
-      if (!MONSTER_TYPES.has(q.type) && q.type !== ThingType.barrel) continue;
+      if (!q.isMonster && q.type !== ThingType.barrel) continue;
       if (!bodiesOverlap(at, q, radius + q.blockRadius)) continue;
       if (!stomps) return false;
       // Deliberately unattributed: a telefrag is the teleport's doing, not an attack, and
@@ -894,7 +900,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // Grid-backed rather than a scan of every thing, and sized to clear the widest body this map
     // holds — docs/monster-ai.md § Spatial indexing.
     const clearance = boxReach(grid.maxBodyRadius());
-    grid.forEachMonsterAlongRay({ from: origin, dirX: dx, dirY: dy, maxDist, clearance }, (p) => {
+    grid.forEachMonsterAlongRay({ from: origin, dirX: dx, dirY: dy, maxDist, clearance, ownReach: 0 }, (p) => {
       // The grid holds solid decorations too, and those block movement but not shots —
       // docs/monster-ai.md § Spatial indexing.
       if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
@@ -977,6 +983,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       bodyHeight: isBarrel
         ? BARREL_HEIGHT
         : (monsterStats[type]?.height ?? INERT_SHOOTABLE[type]?.height ?? BODY_HEIGHT_FALLBACK),
+      stats: monsterStats[type],
+      isMonster: MONSTER_TYPES.has(type),
+      isSolid: MONSTER_TYPES.has(type) || isBarrel || SOLID_DECORATION_TYPES.has(type),
+      hangHeight: CEILING_HUNG_HEIGHT[type],
       attackPose: MONSTER_ATTACK_POSE[type],
       painFrames: MONSTER_PAIN_FRAMES[type],
       raiseFrames: MONSTER_RAISE_FRAMES[type],
@@ -988,6 +998,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       visible: true,
       hidden: false,
       queryStamp: 0,
+      gridCell: 0,
+      gridSlot: -1,
+      moveBound: 0,
       touch: makeTouchCache(),
       pinned: makePinnedMemo(),
       x,
@@ -1005,6 +1018,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       spawnY: y,
       spawnAngle: facingDeg,
       subsector: world.subsectorAt(x, y),
+      sectorX: x,
+      sectorY: y,
       type,
       picked: false,
       health: spawnHealthFor(type, opts?.dropped ?? false),
@@ -1167,7 +1182,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     const fromX = hit?.from?.x;
     const fromY = hit?.from?.y;
     const isBarrel = p.type === ThingType.barrel;
-    if (p.dead || amount <= 0 || !(isBarrel || MONSTER_TYPES.has(p.type))) return;
+    if (p.dead || amount <= 0 || !(isBarrel || p.isMonster)) return;
     // The two AI-less shootables: no stats to roll pain against and no target to retarget, so
     // they take the health subtraction and their own `A_Pain`/`A_Scream` and skip the rest.
     const inert = INERT_SHOOTABLE[p.type];
@@ -1382,6 +1397,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // Read before the move and reapplied after: a silent arrival preserves the height above the
     // floor, and this layer is the only place it can be measured (`TeleportDest.silent`).
     const aboveFloor = dest.silent ? p.z - world.groundFloor(p.x, p.y, p.blockRadius, true) : 0;
+    grid.markDisplaced(p);
     p.x = dest.x;
     p.y = dest.y;
     p.angle = dest.angle;
@@ -1455,7 +1471,13 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * `sectorAt` would walk the tree again to reach the sector this subsector already names.
    */
   function refreshSector(p: PosedThing): void {
-    p.subsector = world.subsectorAt(p.x, p.y);
+    // A chase step already resolved the leaf it landed on (`adoptStanding`); only a body that
+    // reached this position some other way — knockback, a teleport — still descends.
+    if (p.sectorX !== p.x || p.sectorY !== p.y) {
+      p.subsector = world.subsectorAt(p.x, p.y);
+      p.sectorX = p.x;
+      p.sectorY = p.y;
+    }
     p.sector = world.sectorOfSubsector(p.subsector);
   }
 
@@ -1539,7 +1561,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     const sector = world.sectorAt(p.spawnX, p.spawnY);
     // The same ceiling-hung measurement the spawn loop makes, and for the same reason; vanilla
     // splits it as `ONCEILINGZ`/`ONFLOORZ` right here in `P_NightmareRespawn`.
-    const hangHeight = CEILING_HUNG_HEIGHT[p.type];
+    const hangHeight = p.hangHeight;
     const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
 
     // `solidBodies` skips the dead, so the corpse itself never blocks its own return; the player
@@ -1733,14 +1755,13 @@ function enterAttackPose(p: PosedThing, kind: 'melee' | 'ranged', spanSeconds: n
  */
 
 /** A monster — what a lowering ceiling measures itself against, over `refsIn`'s living bodies. */
-const isMonsterType = (p: PosedThing): boolean => MONSTER_TYPES.has(p.type);
+const isMonsterType = (p: PosedThing): boolean => p.isMonster;
 
 /**
  * Anything a crusher can damage: a living monster or a still-standing barrel, matching
  * `PIT_ChangeSector` treating any shootable mobj alike. docs/specials.md § Crushers.
  */
-const isCrushableType = (p: PosedThing): boolean =>
-  MONSTER_TYPES.has(p.type) || p.type === ThingType.barrel;
+const isCrushableType = (p: PosedThing): boolean => p.isMonster || p.type === ThingType.barrel;
 
 /**
  * A corpse a plane could still crunch. `hidden` is checked here and in neither predicate above: a
@@ -1748,8 +1769,7 @@ const isCrushableType = (p: PosedThing): boolean =>
  * The only *living* things `hidden` marks are consumed pickups, which both live predicates already
  * exclude by type. docs/specials.md § Crushed corpses.
  */
-const isSquashableCorpse = (p: PosedThing): boolean =>
-  !p.crushed && !p.hidden && MONSTER_TYPES.has(p.type);
+const isSquashableCorpse = (p: PosedThing): boolean => !p.crushed && !p.hidden && p.isMonster;
 
 /**
  * The `MonsterRef` view of `p` — what every query on `ThingLayer` hands back instead of the

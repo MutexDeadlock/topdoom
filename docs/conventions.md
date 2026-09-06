@@ -147,6 +147,10 @@ single-use.
   class, and an omitted optional, a spread or another field order each make a new one — a load site
   fed several goes megamorphic. Build such a record in one place and require every field
   (`world.ts`'s `makeCollider`; docs/world.md § The collider).
+- **A long-lived record read on a hot path is a class instance, never a literal**: literals of one
+  field count share a transition tree, and a later literal storing a wider value in a shared field
+  deprecates every map below it — a load never migrates, so the feedback stays unusable and callers
+  re-deoptimize for good (`wad/map/defs.ts`'s `Node`; docs/wad.md § Node formats).
 - **A context carries policy as well as data**: `mapmesh.ts`'s `Build` covers the whole map or one
   mover's sector, differing only in its `holdsStill`/`includeSide` predicates, so no builder below
   has to know which.

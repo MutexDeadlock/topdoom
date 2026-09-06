@@ -80,7 +80,7 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
     const { world, body, blockers, target } = scene();
     const startX = body.x;
     const startY = body.y;
-    stepFor(2, () => stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers }));
+    stepFor(2, () => stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockersFor: () => blockers }));
     assert.ok(Math.hypot(body.x - startX, body.y - startY) > 100, 'must cover real ground in two seconds');
     assert.equal(
       world.positionBlocked(body.x, body.y, asMonster(body.z, blockers)),
@@ -100,7 +100,7 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
     body.movecount = 8;
     const startX = body.x;
     const startY = body.y;
-    stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers });
+    stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockersFor: () => blockers });
     const moved = Math.hypot(body.x - startX, body.y - startY);
     // `DIR_X`/`DIR_Y`'s diagonals are vanilla's 0.71716, so a diagonal step is
     // the documented ~1.4% longer than a cardinal one.

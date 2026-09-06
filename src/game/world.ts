@@ -182,6 +182,21 @@ export interface PositionCheck {
    * the BSP at a point this call just resolved.
    */
   centreFloorZ: number;
+  /**
+   * The BSP leaf under (x, y), off the same descent — what `refreshSector` would resolve for a
+   * body that commits the step, so a committed chase step needn't descend again
+   * (`monsters/ai.ts: adoptStanding`). docs/world.md § Point-to-sector lookups.
+   */
+  subsector: number;
+}
+
+/**
+ * A zeroed `PositionCheck` for a caller keeping its own scratch record. Built in one place so
+ * every such record shares one hidden class and a new field reaches all of them —
+ * docs/conventions.md § Named arguments, the same reason `makeCollider` exists.
+ */
+export function makePositionCheck(): PositionCheck {
+  return { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0, subsector: -1 };
 }
 
 /**
@@ -478,7 +493,15 @@ const tagIndexes = new WeakMap<DoomMap, { sectors: Map<number, number[]>; lines:
  */
 let infiniteTallActors = readStorage(INFINITE_TALL_STORAGE_KEY, false);
 
-const positionScratch: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
+const positionScratch = makePositionCheck();
+
+/**
+ * The candidate lists `checkPosition`, `sectorsTouching` and `captureHeights` each own — see
+ * `linesNearInto`.
+ */
+const checkLines: number[] = [];
+const touchLines: number[] = [];
+const heightLines: number[] = [];
 
 /**
  * `World.standingAt`'s own collider, refilled per call: the walk it wants has no *height* in it,
@@ -501,7 +524,12 @@ const slideHit = { frac: Infinity, line: -1 };
  * floor here, and which lines are close enough to bump into.
  */
 export class World {
-  private grid = new Map<number, number[]>();
+  /**
+   * Linedef indices per 128-unit cell, a flat array indexed `row * gridCols + col` like the
+   * thing grid's — a `Map` keyed on the same number measured slower per lookup than the lines it
+   * guards. docs/world.md § hasLineOfSight.
+   */
+  private grid: (number[] | undefined)[];
   private gridMinX: number;
   private gridMinY: number;
   private gridCols: number;
@@ -592,6 +620,7 @@ export class World {
     this.gridCols = Math.max(1, Math.ceil((maxX - minX) / GRID_CELL) + 1);
     this.gridRows = Math.max(1, Math.ceil((maxY - minY) / GRID_CELL) + 1);
     this.lineStamp = new Int32Array(map.linedefs.length);
+    this.grid = new Array(this.gridCols * this.gridRows);
     this.lineBox = new Float64Array(map.linedefs.length * 4);
     this.lineDX = new Float64Array(map.linedefs.length);
     this.lineDY = new Float64Array(map.linedefs.length);
@@ -709,48 +738,38 @@ export class World {
     }
   }
 
+  /** Linedef indices whose cell overlaps the box around (x, y) with the given radius. */
+  linesNear(x: number, y: number, radius: number): number[] {
+    const out: number[] = [];
+    this.linesNearInto(x, y, radius, out);
+    return out;
+  }
+
   /**
-   * `linesNear` without its array: every linedef whose cell overlaps the box around (x, y), each
-   * visited at most once. The visitor may return `true` to stop the walk early, the way a `break`
-   * would.
-   *
-   * This is the form a **per-frame** caller wants — `LightVisibility.castShadows` runs it once per
-   * committed light per frame, where `linesNear`'s `Set` plus spread would be a pair of
-   * allocations per light. Dedup rides the same `lineStamp` cursor `forEachLineAlongSegment` uses.
+   * `linesNear` into a caller-owned list, deduped through the per-linedef stamp array rather than
+   * a `Set`, and neither a callback nor a spread: the collision walks run per body per tic, and
+   * this shape — unlike the callback form docs/world.md § hasLineOfSight records — measured
+   * faster. Each caller owns its list, so a walk inside another's loop cannot clobber it.
    */
-  forEachLineNear(x: number, y: number, radius: number, visit: (lineIndex: number) => boolean | void): void {
+  linesNearInto(x: number, y: number, radius: number, out: number[]): void {
+    out.length = 0;
     const stamp = ++this.queryId;
     const c0 = this.cellX(x - radius);
     const c1 = this.cellX(x + radius);
     const r0 = this.cellY(y - radius);
     const r1 = this.cellY(y + radius);
     for (let cy = r0; cy <= r1; cy++) {
+      const rowBase = cy * this.gridCols;
       for (let cx = c0; cx <= c1; cx++) {
-        const bucket = this.grid.get(cy * this.gridCols + cx);
+        const bucket = this.grid[rowBase + cx];
         if (!bucket) continue;
         for (const i of bucket) {
           if (this.lineStamp[i] === stamp) continue;
           this.lineStamp[i] = stamp;
-          if (visit(i) === true) return;
+          out.push(i);
         }
       }
     }
-  }
-
-  /** Linedef indices whose cell overlaps the box around (x, y) with the given radius. */
-  linesNear(x: number, y: number, radius: number): number[] {
-    const seen = new Set<number>();
-    const c0 = this.cellX(x - radius);
-    const c1 = this.cellX(x + radius);
-    const r0 = this.cellY(y - radius);
-    const r1 = this.cellY(y + radius);
-    for (let cy = r0; cy <= r1; cy++) {
-      for (let cx = c0; cx <= c1; cx++) {
-        const bucket = this.grid.get(cy * this.gridCols + cx);
-        if (bucket) for (const i of bucket) seen.add(i);
-      }
-    }
-    return [...seen];
   }
 
   /**
@@ -772,6 +791,13 @@ export class World {
     x2: number,
     y2: number,
     visit: (lineIndex: number) => boolean | void,
+    /**
+     * Asked after each cell's lines with the `t` the walk entered that cell at; `true` ends the
+     * walk. Every unvisited line crosses at or past that `t` — a line is filed in every cell it
+     * spans, and `WALL_OVERLAP` reaches at most into the cell just walked, never the one before
+     * — so a caller holding a nearer answer can stop without losing one. docs/combat.md § shotPath.
+     */
+    doneAfterCell?: (tEntry: number) => boolean,
   ): number {
     const stamp = ++this.queryId;
     let cx = this.cellX(x1);
@@ -797,9 +823,10 @@ export class World {
     // never reach its end cell.
     const maxSteps = this.gridCols + this.gridRows + 2;
     let work = 0;
+    let tEntry = 0;
     for (let step = 0; ; step++) {
       work++;
-      const bucket = this.grid.get(cy * this.gridCols + cx);
+      const bucket = this.grid[cy * this.gridCols + cx];
       if (bucket) {
         for (const i of bucket) {
           if (this.lineStamp[i] === stamp) continue;
@@ -809,10 +836,13 @@ export class World {
         }
       }
       if ((cx === ex && cy === ey) || step >= maxSteps) return work;
+      if (doneAfterCell && doneAfterCell(tEntry)) return work;
       if (tMaxX < tMaxY) {
+        tEntry = tMaxX;
         tMaxX += tDeltaX;
         cx += stepX;
       } else {
+        tEntry = tMaxY;
         tMaxY += tDeltaY;
         cy += stepY;
       }
@@ -912,7 +942,8 @@ export class World {
     const bottom = y - radius;
     const top = y + radius;
     // The `+ 1` is broadphase slop only, as in `checkPosition`.
-    for (const i of this.linesNear(x, y, radius + 1)) {
+    this.linesNearInto(x, y, radius + 1, touchLines);
+    for (const i of touchLines) {
       if (!this.boxOverlapsLine(left, bottom, right, top, i)) continue;
       if (this.boxOnLineSide(left, bottom, right, top, i) !== -1) continue;
       const line = this.map.linedefs[i];
@@ -951,7 +982,8 @@ export class World {
     const sectors = stamp.sectors;
     sectors.length = 0;
     sectors.push(this.sectorIndexAt(x, y));
-    for (const i of this.linesNear(x, y, radius)) {
+    this.linesNearInto(x, y, radius, heightLines);
+    for (const i of heightLines) {
       const line = this.map.linedefs[i];
       this.addTouchedSector(sectors, line.right);
       this.addTouchedSector(sectors, line.left);
@@ -1436,8 +1468,10 @@ export class World {
     out: PositionCheck = positionScratch,
   ): PositionCheck {
     const { radius, z, forMonster } = body;
-    // One BSP descent for both heights — `floorAt`/`ceilingAt` would walk it twice.
-    const here = this.sectorAt(x, y);
+    // One BSP descent for both heights and the leaf — `floorAt`/`ceilingAt` would walk it twice.
+    const subsector = this.subsectorAt(x, y);
+    const here = this.sectorOfSubsector(subsector);
+    out.subsector = subsector;
     out.blocked = blockedByThings(x, y, body);
     out.floorZ = here?.floorHeight ?? 0;
     out.ceilingZ = here?.ceilHeight ?? 0;
@@ -1451,7 +1485,8 @@ export class World {
     const top = y + radius;
     const zFinite = Number.isFinite(z);
     // The `+ 1` is broadphase slop only; `boxOverlapsLine` below is exact.
-    for (const i of this.linesNear(x, y, radius + 1)) {
+    this.linesNearInto(x, y, radius + 1, checkLines);
+    for (const i of checkLines) {
       if (!this.boxOverlapsLine(left, bottom, right, top, i)) continue;
       if (this.boxOnLineSide(left, bottom, right, top, i) !== -1) continue;
 
@@ -1746,14 +1781,24 @@ export class World {
       // slope. Walked along the trace, not gathered from a radius box around its start — a
       // missile's `range` is the whole map (see `World.mapSpan`), and `linesNear` is O(range²) in
       // cells for what is one thin line.
-      this.forEachLineAlongSegment(x, y, tx, ty, (i) => {
-        const t = crossingT(i);
-        if (t === null || t >= nearestT) return;
-        if (this.blocksShot(i, z + slope * maxRange * t)) {
-          nearestT = t;
-          blockingLine = i;
-        }
-      });
+      // Ends once the refusing line found so far crosses before the cell just walked: nothing
+      // unvisited can cross nearer (`doneAfterCell`), and a shot toward a wall would otherwise
+      // walk its whole range past it.
+      this.forEachLineAlongSegment(
+        x,
+        y,
+        tx,
+        ty,
+        (i) => {
+          const t = crossingT(i);
+          if (t === null || t >= nearestT) return;
+          if (this.blocksShot(i, z + slope * maxRange * t)) {
+            nearestT = t;
+            blockingLine = i;
+          }
+        },
+        (tEntry) => nearestT <= tEntry,
+      );
     } else {
       // Vanilla's P_AimLineAttack wedge — see this function's doc. Crossings have
       // to be walked nearest-first for the narrowing to mean anything, so unlike
@@ -1903,8 +1948,8 @@ export class World {
       for (let cy = r0; cy <= r1; cy++) {
         for (let cx = c0; cx <= c1; cx++) {
           const key = cy * this.gridCols + cx;
-          let bucket = this.grid.get(key);
-          if (!bucket) this.grid.set(key, (bucket = []));
+          let bucket = this.grid[key];
+          if (!bucket) this.grid[key] = bucket = [];
           bucket.push(i);
         }
       }

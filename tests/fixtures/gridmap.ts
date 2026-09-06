@@ -1,8 +1,7 @@
-import { LF, NO_SIDE, SUBSECTOR_BIT } from '../../src/wad/map.ts';
+import { LF, NO_SIDE, Node, SUBSECTOR_BIT } from '../../src/wad/map.ts';
 import type {
   DoomMap,
   LineDef,
-  Node,
   Sector,
   Seg,
   SideDef,
@@ -214,14 +213,16 @@ export function gridMap(art: readonly string[], options: GridMapOptions = {}): G
     const mid = (lo + hi) >> 1;
     const south = buildRows(c, mid + 1, hi);
     const north = buildRows(c, lo, mid);
-    nodes.push({
-      x: 0,
-      y: (rows - (mid + 1)) * cell,
-      dx: 1,
-      dy: 0,
-      rightChild: south,
-      leftChild: north,
-    });
+    nodes.push(
+      new Node({
+        x: 0,
+        y: (rows - (mid + 1)) * cell,
+        dx: 1,
+        dy: 0,
+        rightChild: south,
+        leftChild: north,
+      }),
+    );
     return nodes.length - 1;
   };
   const buildCols = (lo: number, hi: number): number => {
@@ -229,7 +230,7 @@ export function gridMap(art: readonly string[], options: GridMapOptions = {}): G
     const mid = (lo + hi) >> 1;
     const right = buildCols(mid + 1, hi);
     const left = buildCols(lo, mid);
-    nodes.push({ x: (mid + 1) * cell, y: 0, dx: 0, dy: 1, rightChild: right, leftChild: left });
+    nodes.push(new Node({ x: (mid + 1) * cell, y: 0, dx: 0, dy: 1, rightChild: right, leftChild: left }));
     return nodes.length - 1;
   };
   buildCols(0, cols - 1);

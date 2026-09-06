@@ -5,6 +5,7 @@
  */
 import { ThingType } from '../things/doomednums.ts';
 import {
+  chaseStep,
   DIR_X,
   DIR_Y,
   DI_NODIR,
@@ -73,7 +74,7 @@ export function tryRaiseCorpse(
   // One chase call's worth of travel ahead of the vile's own position —
   // vanilla's own viletryx/y, scaled from vanilla's per-tic speed to this
   // engine's units-per-second one.
-  const stepDist = stats.speed * stats.chaseInterval;
+  const stepDist = chaseStep(stats);
   const aheadX = body.x + DIR_X[body.movedir] * stepDist;
   const aheadY = body.y + DIR_Y[body.movedir] * stepDist;
   const found = resurrect(aheadX, aheadY, stats.radius);

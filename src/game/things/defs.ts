@@ -13,7 +13,7 @@ import type { Sector } from '../../wad/map.ts';
 import { BOSS_DEATH_TYPES } from './tables.ts';
 import { pristineFrameTables } from '../dehacked/frames.ts';
 import { ThingType } from './doomednums.ts';
-import type { MonsterAttackEvent, MonsterBody } from '../monsters/defs.ts';
+import type { MonsterAttackEvent, MonsterBody, MonsterStats } from '../monsters/defs.ts';
 import type { ThingsSnapshot } from '../snapshot.ts';
 import type { PinnedMemo, SectorTouchCache, ThingBlocker } from '../world.ts';
 import type { SpriteAnimator } from '../../render/sprites.ts';
@@ -82,6 +82,18 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   bodyHeight: number;
   /**
+   * This type's stats entry, `undefined` for anything without one, and the two type facts
+   * `update` asks per thing per tic — all resolved once at spawn for the reason `blockRadius` is.
+   */
+  stats: MonsterStats | undefined;
+  isMonster: boolean;
+  hangHeight: number | undefined;
+  /**
+   * `MF_SOLID`: a monster, a barrel or a `SOLID_DECORATION_TYPES` prop — what the thing grid files
+   * and what the player walks around. Resolved once at spawn for the reason `blockRadius` is.
+   */
+  isSolid: boolean;
+  /**
    * This type's attack poses per kind (`MONSTER_ATTACK_POSE`) and pain frame letters, resolved once
    * at spawn for the same reason `blockRadius` is. `undefined` for anything without a table entry.
    */
@@ -104,6 +116,17 @@ export interface PosedThing extends Pos3, MonsterBody {
    * Meaningless between queries.
    */
   queryStamp: number;
+  /**
+   * The thing grid cell and slot `rebuild` filed this body in — where `ThingGrid.markDisplaced`
+   * reaches to widen its move bound when a teleport moves it further than any bound covers.
+   */
+  gridCell: number;
+  gridSlot: number;
+  /**
+   * The furthest this body can stand, per axis, from where the grid's `rebuild` filed it by the
+   * time a query runs in the same tic — see `ThingGrid.rebuild`. Written there.
+   */
+  moveBound: number;
   /**
    * This body's cached touched-sector list for the per-tic conveyor query
    * (`World.sectorsTouchingCached`). Derived state, never saved.

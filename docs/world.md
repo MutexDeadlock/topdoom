@@ -149,16 +149,14 @@ running the normalize-and-extend per candidate line, which is what they used to 
 
 Both `forEachLineAlongSegment` and the lazy accessor exist because these run thousands of times a
 frame: the segment walk dedupes through a per-linedef stamp array rather than allocating a `Set` and
-spreading it per call, the way `linesNear` does. **An equivalent allocation-free `linesNear` for the
-*collision* callers was tried and measured as no faster** — the callback makes that call site
-megamorphic and costs the early-out — so `checkPosition`, the one collision caller left,
-deliberately still uses the plain array-returning `linesNear`. Don't "fix" that without measuring.
-
-`forEachLineNear` is that callback form, kept for the one caller the measurement above does not
-cover: `LightVisibility.castShadows` (docs/lights.md § Shadows), which runs once per committed light
-per frame, has no early-out to lose, and is the method's only call site — so it stays monomorphic
-where the collision path would not. The collision callers keep `linesNear`; the two coexist on
-purpose.
+spreading it per call, the way `linesNear` does. **Every repeat caller — `checkPosition`,
+`sectorsTouching`, `captureHeights`, the specials' `crossLines` and `useMonster`, and
+`LightVisibility.castShadows` (docs/lights.md § Shadows) — uses `linesNearInto`**: a caller-owned
+list filled through the same stamp array, no callback and no spread. The *callback* form was
+measured no faster for the collision callers — the call site goes megamorphic and the early-out is
+lost — where the list form measured a twentieth off the monster tic on NUTS.WAD, and no caller ever
+used the early-out, so the callback form is gone. Each caller owns its list, so a walk inside
+another's loop cannot clobber it; `linesNear` is the allocating wrapper for the cold callers.
 
 **`SELF_HIT_MARGIN`**: a rocket that explodes against a wall sits its own impact point exactly on
 that wall, and a raw segment-intersection test then reports the blast blocked by the very wall it
@@ -201,6 +199,13 @@ then resolves subsector -> sector. That second half is a table: `World.subsector
 `Int32Array` filled once in the constructor, so the resolution is one typed-array read.
 `sectorIndexOfSubsector` is the accessor; `sectorIndexAt`/`sectorAt` and the `floorAt`/`ceilingAt`
 over them, `sectorOfSubsector`, and the REJECT probe below all route through it.
+
+**A thing's leaf is re-resolved only once it has left the position it was resolved at**
+(`PosedThing.sectorX`/`sectorY`, `things.ts: refreshSector`), and a committed chase step fills it
+from the descent `checkPosition` already made for that step (`PositionCheck.subsector`,
+`monsters/ai.ts: adoptStanding`) — membership is a function of position alone, so a body that
+stayed put or walked where a walk just looked never descends. Knockback and teleports move a body
+without that walk and still descend.
 
 **The table comes from `buildSubSectorPolys`, not from `sectorOfSubSector` alone.** Vanilla's
 `subsector->sector` is the seg -> linedef -> sidedef walk `sectorOfSubSector` does, and that is what

@@ -1,3 +1,14 @@
+v0.18.1 (2026-09-0?)
+
+Features and improvements
+  - improved monster-AI performance, most noticable on monster-heavy maps
+
+Fixed bugs
+
+
+
+===============================================================================
+
 v0.18.0 (2026-09-06)
 
 REPLAYS! A run can be recorded and played back, in this engine's own format.

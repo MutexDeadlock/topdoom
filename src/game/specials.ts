@@ -148,6 +148,12 @@ const DOOR_SOUNDS: Record<'normal' | 'fast', { open: SfxId; close: SfxId }> = {
  */
 const MONSTER_CROSS_RADIUS = 136;
 
+/** `crossLines`'s own candidate list — see `World.linesNearInto`; `trigger` may walk lines of its own. */
+const crossLinesScratch: number[] = [];
+
+/** `useMonster`'s own, for the same reason: the `trigger` pass below it may walk lines itself. */
+const useLinesScratch: number[] = [];
+
 /**
  * The `use` specials whose switch flip is *not* gated on the effect having done
  * anything: `P_UseSpecialLine` calls `P_ChangeSwitchTexture` outside the
@@ -493,6 +499,12 @@ export class SpecialsController {
    */
   private monsterUseLines = new Set<number>();
   /**
+   * Whether any line on this map could be triggered by a monster walking over it, from the static
+   * special alone: a once-only line drops out of the live set but never joins it. Read only to
+   * skip `crossLines`'s scan outright on a map with none — docs/monster-ai.md § Opening doors.
+   */
+  private hasMonsterWalkLine = false;
+  /**
    * `useMonster`'s hit list — vanilla's `spechit`, refilled in place rather than allocated per
    * blocked step. Collected before anything fires, so a `trigger` that queries the world can't
    * disturb the line walk it was found in.
@@ -557,6 +569,7 @@ export class SpecialsController {
       if (!def) continue;
       if (def.trigger === 'shoot') this.shootLines.push(i);
       if (def.trigger === 'use' && def.monsterActivate && monsterCouldPush(line)) this.monsterUseLines.add(i);
+      if (def.trigger === 'walk' && def.monsterActivate) this.hasMonsterWalkLine = true;
       const entries = findSwitchEntries(map, line, switchPairs);
       if (entries.length > 0) this.switchTextures.set(i, entries);
     }
@@ -786,12 +799,13 @@ export class SpecialsController {
     hits.length = 0;
     // `PIT_CheckLine`'s own two gates, in its order — the box, then the side test. The `+ 1` is
     // broadphase slop only, as in `checkPosition`.
-    this.world.forEachLineNear(tryX, tryY, radius + 1, (i) => {
-      if (!this.monsterUseLines.has(i)) return;
-      if (!this.world.boxOverlapsLine(left, bottom, right, top, i)) return;
-      if (this.world.boxOnLineSide(left, bottom, right, top, i) !== -1) return;
+    this.world.linesNearInto(tryX, tryY, radius + 1, useLinesScratch);
+    for (const i of useLinesScratch) {
+      if (!this.monsterUseLines.has(i)) continue;
+      if (!this.world.boxOverlapsLine(left, bottom, right, top, i)) continue;
+      if (this.world.boxOnLineSide(left, bottom, right, top, i) !== -1) continue;
       hits.push(i);
-    });
+    }
     let dest: TeleportDest | null = null;
     // Where the monster *stands*, not where it was heading: a silent teleport reads the body's
     // own position, as `P_UseSpecialLine` does from `thing`.
@@ -2390,8 +2404,10 @@ export class SpecialsController {
     const { x: prevX, y: prevY } = from;
     const { x, y } = to;
     if (prevX === x && prevY === y) return null;
+    if (activator === 'monster' && !this.hasMonsterWalkLine) return null;
     const radius = activator === 'monster' ? MONSTER_CROSS_RADIUS : PLAYER_RADIUS + 8;
-    for (const i of this.world.linesNear(x, y, radius)) {
+    this.world.linesNearInto(x, y, radius, crossLinesScratch);
+    for (const i of crossLinesScratch) {
       const line = this.map.linedefs[i];
       const def = lookupSpecial(this.lineSpecial(i));
       if (!def || def.trigger !== 'walk') continue;

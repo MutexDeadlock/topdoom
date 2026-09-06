@@ -40,7 +40,7 @@ export interface LightWorld {
   subsectorAt(x: number, y: number): number;
   subsectorsAlongSegment(x1: number, y1: number, x2: number, y2: number, out: number[]): void;
   blocksSight(lineIndex: number): boolean;
-  forEachLineNear(x: number, y: number, radius: number, visit: (lineIndex: number) => boolean | void): void;
+  linesNearInto(x: number, y: number, radius: number, out: number[]): void;
   forEachLineAlongSegment(
     x1: number,
     y1: number,
@@ -104,6 +104,8 @@ export class LightVisibility {
   private castRadius = 0;
   private castOut: Float32Array = new Float32Array(0);
   private castOffset = 0;
+  /** `castShadows`'s own candidate list — see `World.linesNearInto`. */
+  private castLines: number[] = [];
 
   constructor(map: DoomMap, polys: SubSectorPoly[], world: LightWorld) {
     this.map = map;
@@ -220,7 +222,8 @@ export class LightVisibility {
     this.castRadius = radius;
     this.castOut = out;
     this.castOffset = offset;
-    this.world.forEachLineNear(x, y, radius, this.castVisit);
+    this.world.linesNearInto(x, y, radius, this.castLines);
+    for (const line of this.castLines) this.castVisit(line);
   }
 
   /**

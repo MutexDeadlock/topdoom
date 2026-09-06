@@ -8,7 +8,7 @@
  */
 import { Reader, records } from '../reader.ts';
 import { inflateZlib } from '../../util/inflate.ts';
-import { NO_LINE, SUBSECTOR_BIT, type Node, type NodeFormat, type Seg, type SubSector, type Vertex } from './defs.ts';
+import { NO_LINE, Node, SUBSECTOR_BIT, type NodeFormat, type Seg, type SubSector, type Vertex } from './defs.ts';
 
 export interface BspData {
   format: NodeFormat;
@@ -131,14 +131,14 @@ function readVanilla(segsData: Uint8Array | undefined, ssectorsData: Uint8Array 
     const dx = r.i16();
     const dy = r.i16();
     r.seek(r.pos + 16); // skip both bounding boxes
-    return {
+    return new Node({
       x,
       y,
       dx,
       dy,
       rightChild: normalizeChild(r.u16(), subsectors.length),
       leftChild: normalizeChild(r.u16(), subsectors.length),
-    };
+    });
   });
   return { format: 'vanilla', segs, subsectors, nodes };
 }
@@ -163,7 +163,7 @@ function readDeepV4(segsData: Uint8Array | undefined, ssectorsData: Uint8Array |
     const dx = r.i16();
     const dy = r.i16();
     r.seek(r.pos + 16); // skip both bounding boxes
-    return { x, y, dx, dy, rightChild: r.u32(), leftChild: r.u32() };
+    return new Node({ x, y, dx, dy, rightChild: r.u32(), leftChild: r.u32() });
   });
   return { format: 'deep-v4', segs, subsectors, nodes };
 }
@@ -262,7 +262,7 @@ function readExtended(entry: Extended, payload: Uint8Array, vertexes: Vertex[]):
     const dx = partition();
     const dy = partition();
     r.seek(r.pos + 16); // skip both bounding boxes
-    nodes[i] = { x, y, dx, dy, rightChild: r.u32(), leftChild: r.u32() };
+    nodes[i] = new Node({ x, y, dx, dy, rightChild: r.u32(), leftChild: r.u32() });
   }
 
   return { format: entry.format, segs, subsectors, nodes };

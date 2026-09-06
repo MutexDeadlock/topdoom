@@ -149,13 +149,28 @@ export interface SubSector {
  */
 export const SUBSECTOR_BIT = 0x80000000;
 
-export interface Node {
+/**
+ * A BSP partition line and its two children. A class rather than a literal shape so its hidden
+ * class has a transition tree of its own: `World.subsectorAt` reads one per step of every point
+ * query, and a literal's tree is shared with every other six-field literal opening with `x`, `y`.
+ * docs/wad.md § Node formats.
+ */
+export class Node {
   x: number;
   y: number;
   dx: number;
   dy: number;
   rightChild: number;
   leftChild: number;
+
+  constructor(fields: Node) {
+    this.x = fields.x;
+    this.y = fields.y;
+    this.dx = fields.dx;
+    this.dy = fields.dy;
+    this.rightChild = fields.rightChild;
+    this.leftChild = fields.leftChild;
+  }
 }
 
 export interface Thing {

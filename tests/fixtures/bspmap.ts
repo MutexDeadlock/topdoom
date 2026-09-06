@@ -4,11 +4,10 @@
  * whose two sides face one sector. `gridmap.ts` cannot express either: it always emits a
  * correct tree with every edge as a seg. See docs/testing.md § The BSP fixture.
  */
-import { NO_SIDE, SUBSECTOR_BIT, type DoomMap, type Vertex } from '../../src/wad/map.ts';
+import { NO_SIDE, Node, SUBSECTOR_BIT, type DoomMap, type Vertex } from '../../src/wad/map.ts';
 
 type Linedef = DoomMap['linedefs'][number];
 type Seg = DoomMap['segs'][number];
-type Node = DoomMap['nodes'][number];
 
 /** A one-sided wall from `v1` to `v2`; its right side — the side it faces — is sidedef `side`. */
 export function wall(v1: number, v2: number, side = 0): Linedef {
@@ -32,7 +31,7 @@ export function leaf(i: number): number {
 
 /** A partition through `(x, y)` along `(dx, dy)`; its right side is `cross <= 0` — see util/geom.ts. */
 export function plane(x: number, y: number, dx: number, dy: number, rightChild: number, leftChild: number): Node {
-  return { x, y, dx, dy, rightChild, leftChild };
+  return new Node({ x, y, dx, dy, rightChild, leftChild });
 }
 
 export interface BspMapParts {

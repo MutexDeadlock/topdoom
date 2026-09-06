@@ -124,6 +124,15 @@ export interface MonsterBody extends Pos3 {
    */
   walkSoundTimer: number;
   walkSoundStep: number;
+  /**
+   * The BSP leaf under the body and the position it was resolved at: `things.ts`'s
+   * `refreshSector` re-descends only once the body has left that position, and a committed chase
+   * step fills all three from the walk that approved it (`ai.ts: adoptStanding`).
+   * docs/world.md § Point-to-sector lookups.
+   */
+  subsector: number;
+  sectorX: number;
+  sectorY: number;
 }
 
 export interface AttackStats {
@@ -496,6 +505,16 @@ export interface WakeCheckBody extends Pos3 {
    * docs/world.md § REJECT.
    */
   subsector: number;
+}
+
+/**
+ * How far a monster covers in one `A_Chase` call — the full step `tryWalk` probes, and the bound
+ * the thing grid allows a candidate to have moved since its rebuild. One definition because the
+ * grid's per-cell skip is only exact while the two are the same quantity
+ * (docs/monster-ai.md § Spatial indexing).
+ */
+export function chaseStep(stats: MonsterStats): number {
+  return stats.speed * stats.chaseInterval;
 }
 
 /**

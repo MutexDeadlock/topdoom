@@ -123,6 +123,11 @@ sight rays all read the same precomputed extended endpoints (`World.lineOverlapE
 vertexes never move; it is one constant and one table for all three, not a coincidence between
 them.
 
+**The free shot's walk ends early**: once the nearest refusing line found crosses before the cell
+just walked (`doneAfterCell`), nothing unvisited can cross nearer — a line is filed in every cell it
+spans, and `WALL_OVERLAP` reaches into the cell just walked at most — so a shot into a wall stops
+there instead of walking its whole range past it, and off the map to the step bound.
+
 Candidates come from `World.forEachLineAlongSegment`, not `linesNear`, for the reason spelled out
 under `hasLineOfSight` below — and here it is load-bearing rather than merely faster: a missile's
 range is the whole map, and `linesNear`'s radius box would gather every line in it on every shot.

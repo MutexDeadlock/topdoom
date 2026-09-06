@@ -238,6 +238,13 @@ export class SpriteAnimator {
    * from the first frame instead of wherever it happened to stop.
    */
   advance(dt: number, animating: boolean): void {
+    // A still thing with nothing playing — most of a map, every tic — lands exactly here through
+    // the three steps below; taken first, since this runs per thing per tic.
+    if (!animating && !this.death.frames && !this.override.frames) {
+      this.animTimer = 0;
+      this.animIndex = 0;
+      return;
+    }
     this.death.advance(dt);
     if (this.death.frames) {
       this.animIndex = this.death.index;

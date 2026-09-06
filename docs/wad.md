@@ -156,6 +156,16 @@ eight readers. **NODES is tested before SSECTORS**, the order gzdoom's `LoadLeve
 map built with both (`zdbsp -g -X`) ships XNOD in NODES beside XGLN in SSECTORS, and the plain
 nodes are the ones it means for an engine not drawing from GL segs.
 
+**`Node` is a class, never a literal shape.** V8 gives every object literal of one field count a
+shared transition tree, so a runtime literal opening with the same fields that stores a double where
+a node holds an integer — `ShotPath` (six fields, `x`, `y` first) against
+`{x, y, dx, dy, rightChild, leftChild}` — generalizes the shared ancestor and deprecates the node
+map. A load never migrates a deprecated map, so `subsectorAt`'s feedback stays unusable and every
+caller inlining it re-deoptimizes for the rest of the level: on NUTS.WAD a quarter of the monster
+tic. A class has a tree of its own (docs/conventions.md § Named arguments). The other map records
+stay literals; `Thing`'s map is deprecated the same way and harmlessly, nothing reading it after
+spawn — a record that gains a per-tic reader gets the same treatment.
+
 ### GL nodes
 
 A GL BSP differs from a plain one in that its subsectors are **closed**: the node builder adds the

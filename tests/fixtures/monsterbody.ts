@@ -35,6 +35,9 @@ export function monsterBody(at: Pos3, over: Partial<MonsterBody> = {}): MonsterB
     homingBias: false,
     walkSoundTimer: 0,
     walkSoundStep: 0,
+    subsector: -1,
+    sectorX: NaN,
+    sectorY: NaN,
     ...over,
   };
 }

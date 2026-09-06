@@ -102,8 +102,45 @@ docs/monster-ai.md § Spatial indexing).
 hard performance requirement rather than a refinement. A stress-test map like NUTS.WAD has 10,696
 things in a single 69-subsector open arena, so essentially all of them are on screen and
 fog-of-war-revealed at once; one `THREE.Mesh` each meant ~10k draw calls per frame and a ~2fps
-slideshow. `SpriteBatch` keys one `InstancedMesh` per cached (lump, mirrored) pair and rebuilds the
-instance buffers every frame — on that map, all ~10.7k sprites in 19 draw calls.
+slideshow. `SpriteBatch` keys one `InstancedMesh` per **atlas page** and rebuilds the instance
+buffers every frame — on that map, all ~10.7k sprites in a handful of draw calls.
+
+**The atlas** (`spriteatlas.ts: SpriteAtlas`) packs every sprite lump of the loaded set into
+`ATLAS_PAGE_SIZE` (2048) square pages, tallest first in shelves, `ATLAS_GUTTER` transparent texels
+apart, once per session in `SpriteMaterialCache`'s constructor (28 ms for DOOM2's 1381 lumps; two
+pages). A batch on a page draws a unit plane that the vertex patch (`ATLAS_BEGIN_VERTEX_GLSL`,
+`ATLAS_UV_VERTEX_GLSL`) sizes, shifts and maps per instance from two extra lanes — `aSpriteRect`
+(a `vec3`: width, height, the hotspot's x offset) and `aSpriteUv` (the lump's rect, U swapped for a
+mirrored sprite) — carried on `CachedSprite.atlas`. Keying batches per lump instead cost NUTS
+~590 instanced draws a frame once the monsters woke (every rotation and walk frame of every type is
+its own lump), and the per-draw work in three.js — program and texture binds, per-material
+uniforms, the instance uploads — was 3.5 ms of a 12 ms CPU frame; per page it is under 1 ms.
+The page is sampled by the same `sampleAsSprite` a lump's own texture is (nearest, no mipmaps,
+sRGB), and drawn through the same `spriteMaterial`, so the pixels are the same; the gutter is what
+keeps a quad's edge from rounding into a neighbour.
+
+A lump wider or taller than a page is not packed (`atlas` null) and draws as before, from a
+texture and plane of its own — one `InstancedMesh` per such lump — as does everything when the
+cache was built with no lump list: the player-skin cache, whose only reader is the unbatched
+`SpriteActor`.
+
+**A `CachedSprite`'s own texture, plane and material are built on the first read of
+`material`/`geometry`, not by the `get` that returned it** (`LumpSprite`). The lookup settles only
+the atlas rect and `bottomOffset`, which is all a batched sprite ever reads; `SpriteActor` — the
+player, and the unbatched actors — is what asks for the rest. Every one of DOOM2's 1381 sprite
+lumps is atlas-backed, so building them on the lookup meant 2762 textures, planes and materials
+per session that nothing drew: 21 ms and ~5 MB, against 1 ms when they are built on demand.
+
+**Only the written part of a lane is uploaded**, and a batch nothing landed in this frame is
+hidden (`end`): a batch keeps the capacity it once grew to, and three.js otherwise uploads a
+flagged attribute whole and walks a zero-count mesh through its binds. On NUTS that was 7.8 MB of
+`bufferSubData` a frame for 0.8 MB of live instances.
+
+**`SpriteAnimator.resolve` is memoized on its inputs** — frame letter, rotation digit, sprite name
+and skin — and asks the bank nothing while they hold: the bank's answer is a function of the four
+alone and the banks never change under a level. A test that wants the frame a thing was drawn on
+asks `ThingLayer.drawnFrameKey` rather than counting bank lookups — art, deliberately not a field
+on `MonsterRef`, so no tic can read a pose by accident.
 
 Rebuilding wholesale each frame rather than maintaining instances incrementally is deliberate: which
 lump a thing uses changes constantly (every monster re-picks its rotation frame as the camera orbits

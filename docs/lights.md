@@ -123,7 +123,8 @@ light; it flood-fills the BSP out of the light's own subsector, crossing into a 
 through something that can be seen through, and attaches the light to the leaves the fill reached
 (`ADynamicLight::CollectWithinRadius`, `a_dynlight.cpp`). `render/lightvis.ts` is that fill:
 
-- **The fill starts in the emitter's own leaf** and spreads breadth-first.
+- **The fill starts in the emitter's own leaf** and spreads cheapest path first (a binary heap on
+  the path cost below), so the `MAX_REACH` cap, when it bites, keeps the nearest leaves.
 - **A boundary is crossed only where `World.blocksSight` lets it be** — the same predicate fog of
   war reveals through, and the same reason it is not `isSolidWall`: a closed door is a two-sided
   line vanilla never flags `BLOCKING`, and a window is a two-sided line that is (docs/fogofwar.md).
@@ -142,6 +143,14 @@ through something that can be seen through, and attaches the light to the leaves
   — and stops when that exceeds the radius. *Attenuation* stays straight-line, matching the shader.
   Measured over DOOM E1M1/E1M3/E1M7 and DOOM2 MAP01/MAP15/MAP29, this roughly halves the leaf pairs
   the fill joins with no sightline between them (7.4% → 3.0% on MAP15, 4.8% → 0.8% on MAP01).
+- **A leaf keeps the cheapest path found to it, and a hop past the radius never marks it off.**
+  The hop is greedy, so two routes into one leaf carry different costs; settling the leaf on
+  whichever route the fill met first made the reached set depend on the radius non-monotonically —
+  a leaf admitted only at the larger radius considered the target first, along a hop that
+  overshot, and the target was lost. Repro: GoingDown.wad MAP08, the arch-vile fire at (624, 71):
+  leaf 903, 79 units away in plain sight, was reached at radius 120 and not at 135, and the fire
+  flickers between the two every tic. `tests/render/lightvis.test.ts` holds the reached set
+  monotone in the radius.
 
 **The fill alone is not enough, and the case that proves it is the one this was reported on.**
 E1M1's two tall lamps stand in the room east of the start, 8 to 16 units *behind* the wall stubs
@@ -249,10 +258,11 @@ reaches — the falloff test still gates the whole lookup.
 ### How the answer reaches a fragment
 
 Per frame, `commit` appends each committed light's index to the reached leaves' **compacted light
-lists, indexed by subsector**: one `RGBA32UI` texel per leaf holding up to `MAX_LIGHTS_PER_LEAF`
-(16) byte-sized slots, `0xFF` past the last, uploaded as an integer texture read with `texelFetch`.
-Every map surface carries the leaf it faces into as the `aLightCell` vertex attribute, and the
-fragment loop walks **only that leaf's list**, stopping at the first empty slot.
+lists, indexed by light cell** — one cell per leaf until a leaf outgrows one (§ Light cells). One
+`RGBA32UI` texel per cell holds up to `MAX_LIGHTS_PER_LEAF` (16) byte-sized slots, `0xFF` past the
+last, uploaded as an integer texture read with `texelFetch`. Every map surface carries the cell it
+was filed under as the `aLightCell` vertex attribute, and the fragment loop walks **only that
+cell's list**, stopping at the first empty slot.
 
 **A list, not a bitmask, because the list is what bounds the fragment loop.** The first version
 stored one bit per light and looped over the whole committed set testing bits, which priced every
@@ -310,6 +320,35 @@ tests the same shadow map, so a sprite behind a pillar goes dark with the floor 
 
 The shadow map rides in a second texture, one `R32F` row per light, uploaded whole on any frame that
 has lights.
+
+### Light cells (`lightcells.ts`)
+
+The list a fragment walks is kept **per cell, not per leaf**: a leaf that fits `LIGHT_CELL_SIZE`
+(256 units) has one cell and behaves exactly as above, and a bigger leaf is gridded into sub-cells
+of that size behind a **catch-all** cell. `LightCells` lays the index space out once per polygon
+set (`lightCellsOf`, weak on the array both `mapmesh.ts` and `LightVisibility` build from):
+leaves in order, a split leaf's catch-all followed by its grid row by row. `aLightCell` indexes
+it, and so does the visibility texture. Repro: NUTS.WAD MAP01, whose arena is one 12000-unit leaf.
+Per leaf, every fireball on the map lit every floor fragment of the arena through the 16 slots
+nearest the camera — 35 ms of a 48 ms frame at 5120x2880 on an integrated GPU, against 12 ms of
+lights spread over ~2200 cells.
+
+- **A light lands in every sub-cell within `radius + LIGHT_CELL_MARGIN` of it**, and in the
+  catch-all. `commit` asks `cellsWithin` for the reached leaf, so the flood fill and its memo are
+  untouched; only the append fans out.
+- **A surface is filed by one point plus a bound.** `cellFor` takes an anchor and how far the
+  surface reaches from it: a wall chunk its midpoint and half its length, a flat dice cell the
+  centre of the grid square it was cut from and half that square's diagonal — both under the margin
+  by construction (`WALL_CHUNK_LEN`, `FLAT_CELL_EXTENT`; `tests/render/lightcells.test.ts` holds
+  them to it). Anything wider files under
+  the catch-all, which lists every light the leaf gets, so nothing a light reaches can miss it.
+  That is the whole exactness argument: a point within `radius` of the light is within
+  `radius + margin` of its surface's anchor, whose cell therefore lists the light.
+- **A sprite samples its own point's cell** (`tintAt` → `cellOf`), the leaf it hands in still
+  naming the grid.
+- **What changes on screen** is only what the cap dropped: a split leaf's sub-cell holds the 16
+  lights nearest *it* rather than the 16 nearest the camera, so a slaughter map's far fireballs
+  light their own floor instead of vanishing. A leaf that was never split draws as before.
 
 ## Two lighting paths
 

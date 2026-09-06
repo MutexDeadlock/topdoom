@@ -85,10 +85,11 @@ export function drawnLumps(layer: SpriteFxLayer, alpha = 1): string[] {
 }
 
 /**
- * `BANK`, plus what every lump it is asked for was asked as — which is how a test reads back the
- * pose a thing is actually drawn on. `asked` is the frame letter alone, the one part of a lump name
- * the animator rather than the caller chooses; `askedSprites` prefixes the sprite name, for a test
- * whose subject is a pose switching to another sprite's art entirely.
+ * `BANK`, plus what every lump it is asked for was asked as. The animator asks only when its frame,
+ * rotation or sprite changes (docs/sprites.md § Batching), so this records a pose *changing*, not
+ * the pose each draw stands in — `ThingLayer.drawnFrameKey` is that. `asked` is the frame letter
+ * alone, the one part of a lump name the animator rather than the caller chooses; `askedSprites`
+ * prefixes the sprite name, for a test whose subject is a pose switching to another sprite's art.
  */
 export function recordingBank(): { bank: SpriteBank; asked: string[]; askedSprites: string[] } {
   const asked: string[] = [];

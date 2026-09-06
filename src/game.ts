@@ -671,7 +671,7 @@ export class Game {
     // set's own graphics, not on which map is currently loaded.
     this.animatedTextures = new AnimatedTextures(gfx, this.materials, animated ?? undefined);
     this.spriteBank = new SpriteBank(wad);
-    this.spriteMaterials = new SpriteMaterialCache(gfx, view.renderer);
+    this.spriteMaterials = new SpriteMaterialCache(gfx, view.renderer, this.spriteBank.lumpNames);
     // After `applyDehacked`, which both the bank and the predicate read: a patch may have pointed
     // `PLAY` somewhere else.
     this.setDrawsPlayer = setDrawsOwnPlayer(wad);

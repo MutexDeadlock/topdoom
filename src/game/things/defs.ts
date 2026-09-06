@@ -125,6 +125,10 @@ export interface PosedThing extends Pos3, MonsterBody {
   /**
    * The furthest this body can stand, per axis, from where the grid's `rebuild` filed it by the
    * time a query runs in the same tic — see `ThingGrid.rebuild`. Written there.
+   *
+   * A field on the body rather than a parallel array or a second `moveBoundOf` call, both of which
+   * measured slower than this on every thing count tried — the fill pass would pay them per solid
+   * body per tic. CLAUDE.md § Hot paths are measured, not reasoned about.
    */
   moveBound: number;
   /**
@@ -445,6 +449,13 @@ export interface ThingLayer {
      * import edge into `specials/` forms. `cache` is the body's own
      * `PosedThing.touch`, threaded through so the query can skip its sector
      * walk for a body that hasn't moved.
+     *
+     * **Absent means the level has no conveyor at all** (`Forces.carriesAnything`), not merely
+     * that this caller declines the query: `ThingGrid.rebuild` reads its presence as `mayCarry`
+     * and widens every still body's move bound by a tic of conveyor push on the strength of it.
+     * Passing `undefined` on a level that does carry makes the grid's cell skip unsound — a body
+     * moves further than its bound and a query silently misses it. docs/monster-ai.md § Spatial
+     * indexing.
      */
     carry?: (
       pos: Pos3,
@@ -513,6 +524,15 @@ export interface ThingLayer {
    * Lets a shot fired at a monster keep tracking it across frames.
    */
   monsterById(id: number): MonsterRef | null;
+  /**
+   * The `SPRITE+LETTER` this thing was last *drawn* on (`SpriteAnimator.frameKey`), or '' for a
+   * stale ID. Art, not simulation — deliberately off `MonsterRef` so no tic can read a pose by
+   * accident (CLAUDE.md § A WAD's art never decides what a tic does). The regression tests that
+   * assert a pose are its readers: the animator asks its bank nothing while a frame holds, so a
+   * recording bank sees a pose change rather than the pose each draw stands in
+   * (docs/sprites.md § Batching).
+   */
+  drawnFrameKey(id: number): string;
   /**
    * Whether a shot landing on this thing splashes blood — vanilla's
    * `MF_NOBLOOD`, which in all of stock DOOM exactly one thing carries

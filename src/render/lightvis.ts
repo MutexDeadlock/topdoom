@@ -6,6 +6,7 @@
 import { closestTOnSegment, distSqToSegment, polygonCentroid, segmentCrossT, vecLength } from '../util/geom.ts';
 import type { DoomMap } from '../wad/map.ts';
 import type { SubSectorPoly } from './bsp.ts';
+import { lightCellsOf, type LightCells } from './lightcells.ts';
 
 /**
  * How far past a leaf's edge the neighbour probe steps. **Tuned by feel**, and the same 1.5 units
@@ -83,13 +84,22 @@ export const BIN_HALF = SHADOW_STEPS / 2;
  */
 export class LightVisibility {
   readonly subsectorCount: number;
+  /** The cells the reached leaves' lists are kept in — docs/lights.md § Light cells. */
+  readonly cells: LightCells;
 
   private map: DoomMap;
   private polys: SubSectorPoly[];
   private world: LightWorld;
   private edges: (Edges | null)[];
-  private queue: Int32Array;
+  /**
+   * `reach`'s frontier, a binary heap of leaves ordered by `cost` — see `heapPush`. A leaf enters
+   * once per path that improved on its cost, so an entry may be stale by the time it surfaces;
+   * `settled` is what tells. Reused across calls.
+   */
+  private heap: number[] = [];
+  /** Per subsector, the `stamp` of the last `reach` that gave it a cost (`seen`) and settled it. */
   private seen: Int32Array;
+  private settled: Int32Array;
   private stamp = 0;
   /** Per subsector, how far the light's path ran to reach it and where it entered — see `reach`. */
   private cost: Float64Array;
@@ -112,9 +122,10 @@ export class LightVisibility {
     this.polys = polys;
     this.world = world;
     this.subsectorCount = polys.length;
+    this.cells = lightCellsOf(polys);
     this.edges = new Array(this.subsectorCount).fill(null);
-    this.queue = new Int32Array(this.subsectorCount);
     this.seen = new Int32Array(this.subsectorCount);
+    this.settled = new Int32Array(this.subsectorCount);
     this.cost = new Float64Array(this.subsectorCount);
     this.entry = new Float64Array(this.subsectorCount * 2);
   }
@@ -125,8 +136,8 @@ export class LightVisibility {
 
   /**
    * Appends to `out` every subsector a light at (x, y) in leaf `from` reaches within `radius`,
-   * `from` included. An out array rather than a visitor because this runs once per committed light
-   * per frame, and a callback would allocate a closure per light.
+   * `from` included, nearest path first. An out array rather than a visitor because this runs once
+   * per committed light per frame, and a callback would allocate a closure per light.
    *
    * Two rules decide what is reached: a boundary is crossed only where `World.blocksSight` lets it
    * be, asked live so a door works, and `radius` bounds the **path** the light took rather than the
@@ -136,20 +147,23 @@ export class LightVisibility {
   reach(from: number, x: number, y: number, radius: number, out: number[]): void {
     if (from < 0 || from >= this.subsectorCount) return;
     const stamp = ++this.stamp;
-    const q = this.queue;
     const seen = this.seen;
+    const settled = this.settled;
     const cost = this.cost;
     const entry = this.entry;
-    let head = 0;
-    let tail = 0;
-    q[tail++] = from;
+    const heap = this.heap;
+    heap.length = 0;
     seen[from] = stamp;
     cost[from] = 0;
     entry[from * 2] = x;
     entry[from * 2 + 1] = y;
+    this.heapPush(from);
     let visited = 0;
-    while (head < tail) {
-      const s = q[head++];
+    while (heap.length > 0) {
+      const s = this.heapPop();
+      // A stale entry: a cheaper path settled this leaf since it was pushed.
+      if (settled[s] === stamp) continue;
+      settled[s] = stamp;
       out.push(s);
       if (++visited >= MAX_REACH) return;
       const { ints, geom } = this.edgesOf(s);
@@ -161,11 +175,10 @@ export class LightVisibility {
         const lines = ints[i + 1];
         const first = i + 2;
         i = first + lines;
-        if (seen[nb] === stamp || tail >= q.length) continue;
+        if (settled[nb] === stamp) continue;
         let blocked = false;
         for (let l = first; l < first + lines && !blocked; l++) blocked = this.world.blocksSight(ints[l]);
         if (blocked) continue;
-        seen[nb] = stamp;
         // Where the path crosses this edge: its nearest point to wherever the path entered `s`.
         // The straight-line funnel a proper geodesic would compute is finer than this and costs
         // more than the fill it would be bounding.
@@ -174,11 +187,15 @@ export class LightVisibility {
         const px = geom[g] + (geom[g + 2] - geom[g]) * t;
         const py = geom[g + 1] + (geom[g + 3] - geom[g + 1]) * t;
         const d = fromCost + vecLength(px - fromX, py - fromY);
-        if (d > radius) continue;
+        // A hop past the radius leaves the leaf as it was: another route may still fit, and only
+        // a cheaper one replaces what the leaf already holds. docs/lights.md § Light stops at
+        // walls, "The radius bounds the path".
+        if (d > radius || (seen[nb] === stamp && d >= cost[nb])) continue;
+        seen[nb] = stamp;
         cost[nb] = d;
         entry[nb * 2] = px;
         entry[nb * 2 + 1] = py;
-        q[tail++] = nb;
+        this.heapPush(nb);
       }
     }
   }
@@ -370,5 +387,46 @@ export class LightVisibility {
       if (!v1 || !v2) return;
       if (segmentCrossT(x1, y1, x2, y2, v1.x, v1.y, v2.x, v2.y) >= 0) out.push(line);
     });
+  }
+
+  /**
+   * `reach`'s frontier as a binary min-heap on `cost`, kept by hand because the fill runs once per
+   * committed light per frame and a sorted insert over the handful of leaves a light touches is
+   * cheaper than any allocation. Duplicates are allowed — a leaf is pushed again when a cheaper
+   * path turns up — and `reach` drops the stale ones on the way out.
+   */
+  private heapPush(leaf: number): void {
+    const heap = this.heap;
+    const cost = this.cost;
+    let i = heap.length;
+    heap.push(leaf);
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (cost[heap[parent]] <= cost[leaf]) break;
+      heap[i] = heap[parent];
+      i = parent;
+    }
+    heap[i] = leaf;
+  }
+
+  private heapPop(): number {
+    const heap = this.heap;
+    const cost = this.cost;
+    const top = heap[0];
+    const last = heap.pop()!;
+    const n = heap.length;
+    if (n === 0) return top;
+    let i = 0;
+    for (;;) {
+      const left = 2 * i + 1;
+      if (left >= n) break;
+      const right = left + 1;
+      const child = right < n && cost[heap[right]] < cost[heap[left]] ? right : left;
+      if (cost[heap[child]] >= cost[last]) break;
+      heap[i] = heap[child];
+      i = child;
+    }
+    heap[i] = last;
+    return top;
   }
 }

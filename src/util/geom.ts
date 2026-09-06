@@ -309,6 +309,38 @@ export function polygonCentroid(poly: ArrayLike<number>): Pos2 {
   return { x: x / n, y: y / n };
 }
 
+/** A flat polygon's axis-aligned extent, filled by `polygonBounds` into a caller-owned buffer. */
+export interface PolygonBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/**
+ * The axis-aligned box around a flat [x0,y0, x1,y1, …] polygon, written into `out`. An out-param
+ * rather than a fresh object for the reason the module header gives: the dicing loop asks once per
+ * cut polygon, and a mover re-cuts every frame it moves.
+ */
+export function polygonBounds(poly: ArrayLike<number>, out: PolygonBounds): void {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < poly.length; i += 2) {
+    const x = poly[i];
+    const y = poly[i + 1];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  out.minX = minX;
+  out.minY = minY;
+  out.maxX = maxX;
+  out.maxY = maxY;
+}
+
 /**
  * Point-in-convex-polygon test via consistent cross-product sign (works for
  * either winding order, since only sign *agreement* across edges matters).

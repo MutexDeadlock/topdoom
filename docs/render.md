@@ -1578,6 +1578,11 @@ Two settings in `Viewport`'s constructor decide the pixel count, and both are lo
 
 The clear and the canvas present are not a cost worth thinking about — 0.03 ms of a 14.7 MP frame.
 
+**The CPU side of a frame is priced per draw call**, in three.js's binds, uniform refreshes and
+attribute uploads, and only sprites can push that count up — the map is a few dozen batches
+whatever the level. NUTS.WAD awake reached ~750 calls and 3.5 ms a frame keyed per lump; the atlas
+holds it at a handful (docs/sprites.md § Batching).
+
 **Measure this in a browser, not by reasoning.** In-game, the profiler overlay's `gpu` line is the
 first place to look (docs/menu.md § Profiling overlay): when it dwarfs the `cpu` line beside it, no
 row above it is worth touching. For a real experiment — an A/B of two shader variants, a resolution

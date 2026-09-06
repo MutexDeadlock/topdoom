@@ -398,7 +398,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         }
       : undefined;
     // Same shape, for the bodies a step can bump into — resolved inside the step, on first probe.
-    const blockersNear = (body: MonsterBody, probeReach: number) => grid.blockersFor(body as PosedThing, player, probeReach);
+    // The player it probes against reaches it through `blockersAgainst`, so the wrapper itself is
+    // built once for the layer rather than once a tic.
+    blockersAgainst = player;
     // Once per tic, ahead of any `blockersFor` call below — docs/monster-ai.md § Spatial indexing
     // on why a tic-granular grid is accurate enough for contact.
     // `carry` is absent on a level with no conveyor — see `Forces.carriesAnything`.
@@ -548,12 +550,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
             if (dest) arriveAt(p, dest);
             p.prev.x = p.x;
             p.prev.y = p.y;
-            const moved = p.x !== beforeX || p.y !== beforeY;
-            // Sector membership is a function of position alone, which `refreshSector` keys on
-            // itself — docs/world.md § Point-to-sector lookups.
             refreshSector(p);
             p.facingDeg = (p.angle * 180) / Math.PI;
-            animating = moved;
+            animating = p.x !== beforeX || p.y !== beforeY;
             if (result?.kind === 'resurrect') {
               // Carried out here rather than reported through `attacks`: a resurrection is
               // AI-state over a `PosedThing` only this layer holds, not damage for `game.ts` to
@@ -771,6 +770,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     const p = posed[id];
     if (!p || p.dead || !p.isMonster) return null;
     return monsterRef(p);
+  }
+
+  function drawnFrameKey(id: number): string {
+    return posed[id]?.anim.frameKey ?? '';
   }
 
   function bleeds(id: number): boolean {
@@ -1467,6 +1470,17 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
+   * The body a chase step's blocker probe treats as solid besides the grid's own — the player, or
+   * null on a tic with none. Set at the top of every `update`, so `blockersNear` below can be one
+   * wrapper for the layer's life instead of a closure rebuilt per tic.
+   */
+  let blockersAgainst: Pos3 | null = null;
+
+  /** `Chase.blockersFor`: see `blockersAgainst`. */
+  const blockersNear = (body: MonsterBody, probeReach: number) =>
+    grid.blockersFor(body as PosedThing, blockersAgainst, probeReach);
+
+  /**
    * Re-derives the sector fields a thing that moved is now standing in. One BSP descent for both:
    * `sectorAt` would walk the tree again to reach the sector this subsector already names.
    */
@@ -1657,6 +1671,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     monstersNear,
     monstersAlongStep,
     monsterById,
+    drawnFrameKey,
     bleeds,
     awakeMonsterCount,
     awakeMonsters,
@@ -1776,5 +1791,14 @@ const isSquashableCorpse = (p: PosedThing): boolean => !p.crushed && !p.hidden &
  * `PosedThing` itself, so nothing outside this file can mutate a body it merely looked up.
  */
 function monsterRef(p: PosedThing): MonsterRef {
-  return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight };
+  return {
+    id: p.id,
+    x: p.x,
+    y: p.y,
+    z: p.z,
+    type: p.type,
+    angle: p.angle,
+    radius: p.blockRadius,
+    height: p.bodyHeight,
+  };
 }

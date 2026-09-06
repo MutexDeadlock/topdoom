@@ -59,6 +59,8 @@ export function resetSpriteLumps(): void {
  * so `lookup('POSS', …)` finds it with no per-call indirection.
  */
 export class SpriteBank {
+  /** Every sprite lump's name, once each, whatever `lookup` resolves to — what an atlas packs. */
+  readonly lumpNames: string[];
   private frames = new Map<string, Map<string, SpriteFrame>>();
 
   constructor(wad: Wad) {
@@ -69,6 +71,7 @@ export class SpriteBank {
       aliases.set(to, under);
     }
     const lumps = wad.markedRange(SPRITE_START, SPRITE_END);
+    this.lumpNames = [...new Set(lumps.map((l) => l.name))];
     // Both passes walk newest-first, and the aliases go first: a slot keeps its first claimant, so
     // this order is what makes the last lump in load order win a slot and an alias outrank every
     // own-name lump. `aliases` is empty for all but a `[SPRITES]` patch, so that pass is normally

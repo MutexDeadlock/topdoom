@@ -4,13 +4,14 @@
  * (`SpriteAnimator`, `SpriteActor`). See docs/sprites.md.
  */
 import * as THREE from 'three';
-import type { GraphicsBank } from '../wad/graphics.ts';
+import type { Bitmap, GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import { doomToWorld } from './mapmesh.ts';
 import { litColor, viewDepthAt } from './sectorlight.ts';
 import { DOOM_TIC } from '../constants.ts';
 import { tinted, type Tint } from './lights.ts';
 import { skyScale } from './skytint.ts';
+import { SpriteAtlas, ATLAS_PAGE_SIZE, sampleAsSprite, type AtlasPage } from './spriteatlas.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
@@ -21,6 +22,27 @@ import type { Pos3 } from '../types.ts';
  * every frame with the camera's actual current viewer angle.
  */
 export const VIEWER_ANGLE_DEG = -90;
+
+/**
+ * The material a sprite draws through. Shared with `SpriteBatch`'s per-page material, so a lump
+ * drawn off the atlas and one drawn from its own texture take the same alpha test and the same
+ * fog. `side` is double because the fixed-orientation approximation can put the camera behind a
+ * thing far from the player (`SpriteMaterialCache`'s class doc); a single-sided plane would simply
+ * vanish there.
+ */
+export function spriteMaterial(map: THREE.Texture): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, transparent: false, fog: true, side: THREE.DoubleSide });
+}
+
+/**
+ * Gives `geometry` the all-white per-vertex colour the *instanced* path (render/spritebatch.ts)
+ * needs: `vertexColors` is what makes `instanceColor` reach the fragment shader, and without this
+ * attribute WebGL's default (0, 0, 0) draws every batched sprite black. A non-instanced material
+ * ignores it and tints via `material.color`. docs/sprites.md § Batching.
+ */
+export function whiteVertexColors(geometry: THREE.BufferGeometry): void {
+  geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(12).fill(1), 3));
+}
 
 /**
  * A second bank, its material cache and the sprite name to resolve under: an actor's frames drawn
@@ -35,9 +57,34 @@ export interface SpriteSkin {
   spriteName: string;
 }
 
+/**
+ * A lump's place in the atlas as the batch shader reads it, already mirrored where the cached
+ * sprite is: `u0`/`v0` are the quad's bottom-left corner and `u1`/`v1` its top-right, so a
+ * mirrored sprite has `u0 > u1`. `offsetX` is how far the quad's centre sits right of the thing —
+ * the hotspot's `left` — negated when mirrored. docs/sprites.md § Batching.
+ */
+export interface AtlasSprite {
+  page: AtlasPage;
+  u0: number;
+  v0: number;
+  u1: number;
+  v1: number;
+  width: number;
+  height: number;
+  offsetX: number;
+}
+
 export interface CachedSprite {
+  /**
+   * The lump's own plane and the material over its own texture — **built on first read**, not on
+   * the lookup that returned this. A lump the atlas packed is drawn by `SpriteBatch` from the
+   * page's material and a shared unit plane, and most of a set's lumps are never drawn any other
+   * way; `SpriteActor` is what asks for these. docs/sprites.md § Batching.
+   */
   material: THREE.MeshBasicMaterial;
   geometry: THREE.BufferGeometry;
+  /** Where the batches draw this lump from; null with no atlas, or a lump too big for a page. */
+  atlas: AtlasSprite | null;
   /**
    * Where vanilla hangs this patch's bottom edge, relative to the thing's own z: `topoffset -
    * height`, `R_ProjectSprite`'s `gzt = z + topoffset` read from the bottom up. Zero or a few units
@@ -61,13 +108,27 @@ export interface CachedSprite {
  * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
  */
 export class SpriteMaterialCache {
-  private cache = new Map<string, CachedSprite | null>();
+  private cache = new Map<string, LumpSprite | null>();
   private gfx: GraphicsBank;
   private maxAnisotropy = 1;
+  private atlas: SpriteAtlas | null = null;
 
-  constructor(gfx: GraphicsBank, renderer?: THREE.WebGLRenderer) {
+  /**
+   * `atlasLumps` names the sprite lumps to pack into the atlas the batches draw from — every one
+   * the set has, decoded here and now (28 ms for DOOM2's 1381). Without it nothing is packed and
+   * every lump draws from its own texture: the player-skin cache, whose one reader never batches.
+   */
+  constructor(gfx: GraphicsBank, renderer?: THREE.WebGLRenderer, atlasLumps?: readonly string[]) {
     this.gfx = gfx;
     if (renderer) this.maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+    if (atlasLumps) {
+      const pictures: [string, Bitmap][] = [];
+      for (const name of atlasLumps) {
+        const bmp = gfx.picture(name);
+        if (bmp) pictures.push([name, bmp]);
+      }
+      this.atlas = new SpriteAtlas(pictures, this.maxAnisotropy);
+    }
   }
 
   get(lump: string, flip: boolean): CachedSprite | null {
@@ -76,78 +137,40 @@ export class SpriteMaterialCache {
     if (hit !== undefined) return hit;
 
     const bmp = this.gfx.picture(lump);
-    let result: CachedSprite | null = null;
+    let result: LumpSprite | null = null;
     if (bmp) {
-      const texture = new THREE.DataTexture(bmp.data, bmp.width, bmp.height, THREE.RGBAFormat);
-      texture.magFilter = THREE.NearestFilter;
-      texture.minFilter = THREE.NearestFilter;
-      texture.generateMipmaps = false;
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = this.maxAnisotropy;
-
-      // WAD bitmaps start at their top row and a plane's default UVs put v=0 along its bottom
-      // edge, so the V axis is inverted through the texture transform — `flipY` cannot do it for a
-      // `DataTexture`. docs/sprites.md § Why upright planes, not `THREE.Sprite`.
-      texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.y = -1;
-      texture.offset.y = 1;
-
-      // Horizontal centring takes the patch's `left` hotspot; the plane's bottom edge sits at the
-      // thing's own z rather than at `top`, which this view has no floor clip to cover for. What
-      // `top` says is kept as `bottomOffset` for the callers drawing art in mid-air.
+      // Horizontal centring takes the patch's `left` hotspot, mirrored with the art since DOOM
+      // reuses one lump for two mirrored rotations. Read by the plane and the atlas quad alike.
       // docs/sprites.md § Why upright planes, not `THREE.Sprite`.
       const left = bmp.left ?? bmp.width / 2;
-      let offsetX = bmp.width / 2 - left;
-      const offsetY = bmp.height / 2;
-
-      if (flip) {
-        // Mirrors the U axis: DOOM reuses one lump for two mirrored
-        // rotations. The hotspot mirrors with it.
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.repeat.x = -1;
-        texture.offset.x = 1;
-        offsetX = -offsetX;
-      }
-      texture.needsUpdate = true;
-
-      const geometry = new THREE.PlaneGeometry(bmp.width, bmp.height);
-      geometry.translate(offsetX, offsetY, 0);
-      // An all-white per-vertex colour, purely so the *instanced* path (render/spritebatch.ts) can
-      // tint each instance by its own sector light: `vertexColors` is what makes `instanceColor`
-      // reach the fragment shader, and without this attribute WebGL's default (0, 0, 0) draws every
-      // batched sprite black. The non-instanced material below ignores it and tints via
-      // `material.color`. docs/sprites.md § Batching.
-      geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(12).fill(1), 3));
-
-      const material = new THREE.MeshBasicMaterial({
-        map: texture,
-        alphaTest: 0.5,
-        transparent: false,
-        fog: true,
-        // The fixed-orientation approximation can put the camera behind a
-        // thing far from the player (see class doc); a single-sided plane
-        // would simply vanish there.
-        side: THREE.DoubleSide,
-      });
-      // Read off the same two offsets the geometry was translated by, so the
-      // analytic pick can never drift from what is actually drawn.
-      result = {
-        material,
-        geometry,
-        bottomOffset: (bmp.top ?? bmp.height) - bmp.height,
-      };
+      const offsetX = (flip ? -1 : 1) * (bmp.width / 2 - left);
+      // The same offset the plane is translated by, so the batched quad stands where the lump's
+      // own plane does. The V axis runs top-down in the page as in the lump, and is inverted the
+      // same way: `v0`, the quad's bottom, is the rect's bottom row.
+      const rect = this.atlas?.rectOf(lump);
+      const size = ATLAS_PAGE_SIZE;
+      const atlas: AtlasSprite | null = rect
+        ? {
+            page: rect.page,
+            u0: (flip ? rect.x + rect.width : rect.x) / size,
+            v0: (rect.y + rect.height) / size,
+            u1: (flip ? rect.x : rect.x + rect.width) / size,
+            v1: rect.y / size,
+            width: bmp.width,
+            height: bmp.height,
+            offsetX,
+          }
+        : null;
+      result = new LumpSprite(bmp, flip, offsetX, this.maxAnisotropy, atlas);
     }
     this.cache.set(key, result);
     return result;
   }
 
   dispose(): void {
-    for (const c of this.cache.values()) {
-      c?.material.map?.dispose();
-      c?.material.dispose();
-      c?.geometry.dispose();
-    }
+    for (const c of this.cache.values()) c?.dispose();
     this.cache.clear();
+    this.atlas?.dispose();
   }
 }
 
@@ -160,6 +183,11 @@ export class SpriteMaterialCache {
 export class SpriteAnimator {
   private lastKey = '';
   private cached: CachedSprite | null = null;
+  /** The inputs `cached` was resolved from — see `resolve`. */
+  private lastLetter = '';
+  private lastDigit = 0;
+  private lastSpriteName = '';
+  private lastSkin: SpriteSkin | null = null;
   private animIndex = 0;
   private animTimer = 0;
 
@@ -289,12 +317,31 @@ export class SpriteAnimator {
     const letter = frames[this.animIndex];
     const spriteName = this.death.frames && this.deathSpriteName ? this.deathSpriteName : this.spriteName;
     const digit = pickRotationDigit(facingDeg, viewerAngleDeg);
+    const skin = this.skin;
+    // The bank's answer is a function of these four alone and the banks never change under a
+    // level, so a sprite holding its frame and rotation — most of a map, every frame — pays
+    // neither lookup's string building. docs/sprites.md § Batching.
+    if (
+      letter === this.lastLetter &&
+      digit === this.lastDigit &&
+      spriteName === this.lastSpriteName &&
+      skin === this.lastSkin
+    ) {
+      return this.cached;
+    }
+    this.lastLetter = letter;
+    this.lastDigit = digit;
+    this.lastSpriteName = spriteName;
+    this.lastSkin = skin;
     // A skin with no lump for this frame falls through to the animator's own art, so a partial
     // skin file draws the set's sprite rather than nothing.
-    const skin = this.skin;
     const skinFound = skin ? skin.bank.lookup(skin.spriteName, letter, digit) : undefined;
     const found = skinFound ?? this.bank.lookup(spriteName, letter, digit);
-    if (!found) return null;
+    if (!found) {
+      this.cached = null;
+      this.lastKey = '';
+      return null;
+    }
 
     // The `:s` marker is what keeps the memo honest across two material caches: the same lump name
     // can exist in both, and `lastKey` gates the cached sprite and `frameKey` alike.
@@ -532,6 +579,81 @@ export class SpriteActor {
       this.translucent.set(base, clone);
     }
     return clone;
+  }
+}
+
+/**
+ * `SpriteMaterialCache`'s `CachedSprite`. The atlas rect and `bottomOffset` are settled at
+ * lookup; the texture, plane and material behind them are built on the first read that wants
+ * them — see `CachedSprite.material`. A class rather than an object literal over the lookup's
+ * locals, so what a cached lump holds onto is the four fields below and not the whole of `get`.
+ */
+class LumpSprite implements CachedSprite {
+  readonly atlas: AtlasSprite | null;
+  /**
+   * The plane's bottom edge sits at the thing's own z rather than at `top`, which this view has
+   * no floor clip to cover for; what `top` says is kept here instead — see `CachedSprite`.
+   */
+  readonly bottomOffset: number;
+  private bmp: Bitmap;
+  private flip: boolean;
+  /** How far the plane's centre sits right of the thing — the `left` hotspot, mirrored with it. */
+  private offsetX: number;
+  private anisotropy: number;
+  private builtMaterial: THREE.MeshBasicMaterial | null = null;
+  private builtGeometry: THREE.BufferGeometry | null = null;
+
+  constructor(bmp: Bitmap, flip: boolean, offsetX: number, anisotropy: number, atlas: AtlasSprite | null) {
+    this.bmp = bmp;
+    this.flip = flip;
+    this.offsetX = offsetX;
+    this.anisotropy = anisotropy;
+    this.atlas = atlas;
+    this.bottomOffset = (bmp.top ?? bmp.height) - bmp.height;
+  }
+
+  get material(): THREE.MeshBasicMaterial {
+    if (!this.builtMaterial) this.builtMaterial = spriteMaterial(this.texture());
+    return this.builtMaterial;
+  }
+
+  get geometry(): THREE.BufferGeometry {
+    if (!this.builtGeometry) {
+      const geometry = new THREE.PlaneGeometry(this.bmp.width, this.bmp.height);
+      geometry.translate(this.offsetX, this.bmp.height / 2, 0);
+      whiteVertexColors(geometry);
+      this.builtGeometry = geometry;
+    }
+    return this.builtGeometry;
+  }
+
+  /** Only what was built: reading either getter to dispose it would build it to throw it away. */
+  dispose(): void {
+    this.builtMaterial?.map?.dispose();
+    this.builtMaterial?.dispose();
+    this.builtGeometry?.dispose();
+  }
+
+  /**
+   * The lump's own texture. WAD bitmaps start at their top row and a plane's default UVs put v=0
+   * along its bottom edge, so the V axis is inverted through the texture transform — `flipY`
+   * cannot do it for a `DataTexture`. A mirrored rotation inverts U the same way.
+   * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
+   */
+  private texture(): THREE.DataTexture {
+    const bmp = this.bmp;
+    const texture = new THREE.DataTexture(bmp.data, bmp.width, bmp.height, THREE.RGBAFormat);
+    sampleAsSprite(texture, this.anisotropy);
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.y = -1;
+    texture.offset.y = 1;
+    if (this.flip) {
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.repeat.x = -1;
+      texture.offset.x = 1;
+    }
+    texture.needsUpdate = true;
+    return texture;
   }
 }
 

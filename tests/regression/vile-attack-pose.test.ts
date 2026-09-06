@@ -10,7 +10,7 @@ import { DOOM_TIC } from '../../src/constants.ts';
 import type { ThingsSnapshot } from '../../src/game/snapshot.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { MATERIALS, recordingBank } from '../fixtures/spritestubs.ts';
+import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 
 /**
  * The arch-vile's cast is 94 tics (`S_VILE_ATK1`-`ATK11`) and its pose is those
@@ -49,16 +49,14 @@ function arena(restore?: ThingsSnapshot): Fixture {
   const map = grid.map;
   map.things.push(thingAt(grid, 1, 1, 1), thingAt(grid, 3, 2, ThingType.archVile));
   const player: Pos3 = { x: map.things[0].x, y: map.things[0].y, z: 0 };
-  const { bank, asked } = recordingBank();
-  const layer = buildThingSprites(new World(map), { bank: bank, materials: MATERIALS, skill: 3, restore: restore ?? awake(map.things[1]) });
+  const layer = buildThingSprites(new World(map), { bank: BANK, materials: MATERIALS, skill: 3, restore: restore ?? awake(map.things[1]) });
+  assert.equal(layer.count, 1, 'the vile is the only thing posed');
   return {
     layer,
     player,
     frame() {
-      asked.length = 0;
       layer.draw(1, 0);
-      assert.equal(asked.length, 1, 'the vile is the only thing drawn');
-      return asked[0];
+      return layer.drawnFrameKey(0).slice(4);
     },
     tic: () => layer.update(DOOM_TIC, player).attacks.some((a) => a.kind === 'ranged' && a.blast),
   };

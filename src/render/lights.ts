@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { DOOM_TIC } from '../constants.ts';
 import { lightForFrame, type Gldefs, type LightDef } from '../wad/gldefs.ts';
 import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS, type LightVisibility } from './lightvis.ts';
+import { LIGHT_CELL_MARGIN } from './lightcells.ts';
 import { doomToWorld } from './mapmesh.ts';
 import { vecLength } from '../util/geom.ts';
 import { readStorage, writeStorage } from '../util/storage.ts';
@@ -20,7 +21,7 @@ import { readStorage, writeStorage } from '../util/storage.ts';
  * docs/lights.md § What reaches the shader.
  */
 
-export const MAX_DYN_LIGHTS = 64;
+export const MAX_DYN_LIGHTS = 96;
 
 /**
  * What a GLDEFS `size` is multiplied by to get the radius a light actually reaches. The dial for
@@ -31,10 +32,10 @@ export const MAX_DYN_LIGHTS = 64;
 export const RADIUS_SCALE = 1.25;
 
 /**
- * Texels per row of the visibility texture — the map from subsector index to the compacted list of
+ * Texels per row of the visibility texture — the map from light cell to the compacted list of
  * lights that reach it, which is how a fragment learns whether a wall stands between it and a light
- * (docs/lights.md § Light stops at walls). One `RGBA32UI` texel per subsector; a level with fewer
- * subsectors than this gets a single short row rather than a padded one.
+ * (docs/lights.md § Light stops at walls, § Light cells). One `RGBA32UI` texel per cell; a level
+ * with fewer cells than this gets a single short row rather than a padded one.
  *
  * Any width serves; 1024 keeps both axes inside the 2048-texel minimum every WebGL2 implementation
  * guarantees, for every level this engine loads.
@@ -45,10 +46,10 @@ const VIS_TEXTURE_WIDTH = 1024;
 const VIS_WORDS = 4;
 
 /**
- * How many lights one subsector's texel can name: 16 byte-sized slots in its four words, each a
+ * How many lights one cell's texel can name: 16 byte-sized slots in its four words, each a
  * committed light's index, `EMPTY_SLOT` past the last. A **list, not a bitmask** — the list is what
  * bounds the fragment loop, where a bitmask prices every fragment by the size of the whole
- * committed set. Past the cap a leaf drops the excess, which by then the clamped sum has made
+ * committed set. Past the cap a cell drops the excess, which by then the clamped sum has made
  * invisible there. Both: docs/lights.md § How the answer reaches a fragment.
  * `MAX_DYN_LIGHTS` must stay below `EMPTY_SLOT`, or a light's index is read as the terminator.
  */
@@ -203,7 +204,7 @@ export class DynamicLights {
     uLightCount: { value: 0 },
     uLightPos: { value: new Float32Array(MAX_DYN_LIGHTS * 4) },
     uLightColor: { value: new Float32Array(MAX_DYN_LIGHTS * 3) },
-    /** Subsector -> compacted list of the lights that reach it. See `bindLevel`. */
+    /** Light cell -> compacted list of the lights that reach it. See `bindLevel`. */
     uLightVis: { value: makeVisTexture(new Uint32Array(VIS_WORDS).fill(EMPTY_WORD), 1, 1) },
     /**
      * Row width of that texture, and the flag for whether it means anything: 0 = no level bound —
@@ -232,13 +233,14 @@ export class DynamicLights {
   /** Counts `commit`s, so `pruneMemos` can tell a memo used this frame from one left behind. */
   private frame = 0;
   private visSlots = new Uint32Array(VIS_WORDS).fill(EMPTY_WORD);
-  /** Per subsector, how many of its slots are filled — where the next light appends. */
+  /** Per light cell, how many of its slots are filled — where the next light appends. */
   private visCount = new Uint8Array(0);
   /**
-   * Which subsectors carry a light this frame, so clearing costs the lit ones rather than the
-   * level.
+   * Which cells carry a light this frame, so clearing costs the lit ones rather than the level.
    */
   private touched: number[] = [];
+  /** `commit`'s scratch for the cells one reached leaf hands a light. */
+  private reachedCells: number[] = [];
   /** The shadow texture's own array, one `SHADOW_STEPS` row per committed light. */
   private shadows: Float32Array;
   /**
@@ -315,10 +317,11 @@ export class DynamicLights {
       this.uniforms.uLightVisWidth.value = 0;
       return;
     }
-    const width = Math.min(VIS_TEXTURE_WIDTH, vis.subsectorCount);
-    const height = Math.ceil(vis.subsectorCount / width);
+    const cellCount = vis.cells.cellCount;
+    const width = Math.min(VIS_TEXTURE_WIDTH, cellCount);
+    const height = Math.ceil(cellCount / width);
     this.visSlots = new Uint32Array(width * height * VIS_WORDS).fill(EMPTY_WORD);
-    this.visCount = new Uint8Array(vis.subsectorCount);
+    this.visCount = new Uint8Array(cellCount);
     this.uniforms.uLightVis.value = makeVisTexture(this.visSlots, width, height);
     this.uniforms.uLightVisWidth.value = width;
   }
@@ -443,19 +446,27 @@ export class DynamicLights {
       c.dontLightSelf[i] = e.def.dontLightSelf ? 1 : 0;
       if (!vis) continue;
       const reached = this.recall(vis, e, sight, i);
-      // Which leaves this light actually reaches, appended to each one's slot list. A subsector
-      // enters `touched` the first time a light lands on it, so next frame's clear walks the lit
-      // leaves rather than the level. A full leaf drops the light — see `MAX_LIGHTS_PER_LEAF`;
-      // on the frames that overflowed the cap above, commit order is nearest-first, so what a full
-      // leaf drops is the least relevant of its lights.
-      for (const s of reached) {
-        const cnt = counts[s];
-        if (cnt === 0) this.touched.push(s);
-        if (cnt >= MAX_LIGHTS_PER_LEAF) continue;
-        const at = s * VIS_WORDS + (cnt >> 2);
-        const shift = (cnt & 3) << 3;
-        slots[at] = (slots[at] & ~(EMPTY_SLOT << shift)) | (i << shift);
-        counts[s] = cnt + 1;
+      // Which leaves this light actually reaches, appended to the slot list of each of their
+      // cells the light's box touches — a split leaf hands it to its catch-all and to the sub-cells
+      // within `radius + LIGHT_CELL_MARGIN` (docs/lights.md § Light cells). A cell enters
+      // `touched` the first time a light lands on it, so next frame's clear walks the lit cells
+      // rather than the level. A full cell drops the light — see `MAX_LIGHTS_PER_LEAF`; on the
+      // frames that overflowed the cap above, commit order is nearest-first, so what a full cell
+      // drops is the least relevant of its lights.
+      const cells = this.reachedCells;
+      const spread = e.radius + LIGHT_CELL_MARGIN;
+      for (const leaf of reached) {
+        cells.length = 0;
+        vis.cells.cellsWithin(leaf, e.x - spread, e.y - spread, e.x + spread, e.y + spread, cells);
+        for (const s of cells) {
+          const cnt = counts[s];
+          if (cnt === 0) this.touched.push(s);
+          if (cnt >= MAX_LIGHTS_PER_LEAF) continue;
+          const at = s * VIS_WORDS + (cnt >> 2);
+          const shift = (cnt & 3) << 3;
+          slots[at] = (slots[at] & ~(EMPTY_SLOT << shift)) | (i << shift);
+          counts[s] = cnt + 1;
+        }
       }
     }
     this.pruneMemos();
@@ -511,10 +522,11 @@ export class DynamicLights {
     // once some light is actually live, and most callers already hold the answer.
     const ss = subsector >= 0 ? subsector : this.vis.subsectorAt(x, y);
     if (ss < 0 || ss >= this.vis.subsectorCount) return;
-    // The leaf's own list — the CPU half of the fragment loop, walking the same slots the shader
-    // does rather than testing every committed light against this leaf.
-    const o = ss * VIS_WORDS;
-    const cnt = this.visCount[ss];
+    // The point's own cell's list — the CPU half of the fragment loop, walking the same slots the
+    // shader does rather than testing every committed light against this leaf.
+    const cell = this.vis.cells.cellOf(ss, x, y);
+    const o = cell * VIS_WORDS;
+    const cnt = this.visCount[cell];
     for (let k = 0; k < cnt; k++) {
       const i = (this.visSlots[o + (k >> 2)] >>> ((k & 3) << 3)) & EMPTY_SLOT;
       this.sampleLight(i, x, y, z, emitterId, out);

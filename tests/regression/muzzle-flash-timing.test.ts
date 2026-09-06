@@ -8,7 +8,7 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
 import { clearRandom } from '../../src/util/random.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { MATERIALS, recordingBank } from '../fixtures/spritestubs.ts';
+import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 
 /**
  * Vanilla marks a monster's firing frame `FF_FULLBRIGHT` — `S_SPOS_ATK2` and `S_CPOS_ATK2` carry
@@ -31,9 +31,8 @@ function fireOnce(type: number): { pose: string[]; shotTic: number; poseStart: n
   const map = grid.map;
   map.things.push(thingAt(grid, 1, 1, 1), thingAt(grid, 3, 2, type));
   const player = { x: map.things[0].x, y: map.things[0].y, z: 0 };
-  const { bank, asked } = recordingBank();
   const layer = buildThingSprites(new World(map), {
-    bank,
+    bank: BANK,
     materials: MATERIALS,
     skill: 3,
     restore: {
@@ -50,10 +49,11 @@ function fireOnce(type: number): { pose: string[]; shotTic: number; poseStart: n
   let poseStart = -1;
   for (let tic = 0; tic < 400; tic++) {
     const fired = layer.update(DOOM_TIC, player).attacks.length > 0;
-    asked.length = 0;
     layer.draw(1, 0);
-    const letter = asked[0];
-    if (poseStart < 0 && letter !== undefined && !walk.has(letter)) poseStart = tic;
+    const letter = layer.drawnFrameKey(0).slice(4);
+    if (poseStart < 0 && !walk.has(letter)) {
+      poseStart = tic;
+    }
     if (poseStart >= 0) pose.push(letter);
     if (fired && shotTic < 0) shotTic = tic;
     if (shotTic >= 0 && tic > shotTic) break;

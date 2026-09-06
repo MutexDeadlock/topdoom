@@ -72,7 +72,8 @@ export interface MonsterStep {
 /**
  * One call's working set: the step plus the three handles and the four values every helper below
  * derives from them. Built once by `stepMonsterAI` and threaded through, so no helper restates
- * what the call already knows.
+ * what the call already knows. The inherited `blockersFor` is consumed here rather than merely
+ * read: `testStep` clears it once it has filled `collider.blockers` from it — see there.
  */
 interface Chase extends MonsterStep {
   body: MonsterBody;
@@ -98,8 +99,6 @@ interface Chase extends MonsterStep {
   standingX: number | null;
   standingY: number;
   standingZ: number;
-  /** Cleared once `testStep` has filled `collider.blockers` from it — see there. */
-  blockersFor?: (body: MonsterBody, probeReach: number) => readonly ThingBlocker[];
   /**
    * This monster as a collision query, built once because `newChaseDir` probes up to eight
    * destinations for it. The feet height is the one field a probe varies, so each sets it first —

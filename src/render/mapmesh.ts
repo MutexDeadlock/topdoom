@@ -20,11 +20,12 @@ import {
   type Vertex,
 } from '../wad/map.ts';
 import { buildLeafGraph, buildSubSectorPolys, type LeafGraph, type SectorPoly, type SubSectorPoly } from './bsp.ts';
+import { lightCellsOf, type LightCells } from './lightcells.ts';
 import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { WATER_SURFACE_ALPHA } from '../constants.ts';
-import { clipConvexPolygon, signedPolygonArea2, vecLength } from '../util/geom.ts';
+import { clipConvexPolygon, polygonBounds, signedPolygonArea2, vecLength, type PolygonBounds } from '../util/geom.ts';
 import { beginWallShade, wallShadeAt } from './wallshadow.ts';
 import { skyLitSector } from './skytint.ts';
 import { lightSegment, wallContrast } from './sectorlight.ts';
@@ -91,6 +92,13 @@ export const WALL_CHUNK_LEN = 128;
  * edges still obey `WALL_CHUNK_LEN`. docs/render.md § Flats are diced on a world grid.
  */
 export const FLAT_GRID_LEN = WALL_CHUNK_LEN / Math.SQRT2;
+
+/**
+ * How far a diced flat cell reaches from the centre of the grid square it was cut out of: half
+ * that square's diagonal, `WALL_CHUNK_LEN / 2` = 64. What `addFlatFan` hands `LightCells.cellFor`,
+ * and one of the two halves `LIGHT_CELL_MARGIN` is sized against.
+ */
+export const FLAT_CELL_EXTENT = (FLAT_GRID_LEN * Math.SQRT2) / 2;
 
 /**
  * Every flat lump is 64x64 and aligned to the world grid, so a flat's UVs divide by this rather
@@ -594,8 +602,8 @@ interface Batch {
    */
   segs: number[];
   /**
-   * Per vertex, the BSP leaf the surface faces into — the `aLightCell` attribute (docs/lights.md §
-   * Light stops at walls).
+   * Per vertex, the light cell the surface faces into — the `aLightCell` attribute (docs/lights.md
+   * § Light stops at walls, § Light cells).
    */
   cells: number[];
   /**
@@ -658,7 +666,7 @@ function pushVertex(
   seg: number,
   alpha = 1,
   /**
-   * -1 leaves the leaf unresolved: wall quads get theirs from `fillWallCells` once the occluders
+   * -1 leaves the cell unresolved: wall quads get theirs from `fillWallCells` once the occluders
    * exist.
    */
   cell = -1,
@@ -678,23 +686,27 @@ function pushVertex(
 }
 
 /**
- * Resolves each wall quad's leaf and stamps it onto that quad's vertices, so the dynamic-light
- * shader can ask whether a light reached the room this wall faces. Runs once the quads exist
- * rather than inside `addWall`, for a value the occluder records anyway. Without
- * `MapMeshOptions.subsectorAt` (tests, tools) the quads stay at -1, which the shader reads as an
- * empty light list — unlit. docs/lights.md § Light stops at walls.
+ * Resolves each wall quad's leaf and stamps the light cell it files under onto that quad's
+ * vertices — the cell of the quad's midpoint in that leaf, the chunk reaching at most half
+ * `WALL_CHUNK_LEN` from it — so the dynamic-light shader can ask whether a light reached the room
+ * this wall faces. Runs once the quads exist rather than inside `addWall`, for a value the
+ * occluder records anyway. Without `MapMeshOptions.subsectorAt` (tests, tools) the quads stay at
+ * -1, which the shader reads as an empty light list — unlit. docs/lights.md § Light stops at
+ * walls, § Light cells.
  */
 function fillWallCells(build: Build): void {
-  const { subsectorAt, batches } = build;
+  const { subsectorAt, batches, lightCells } = build;
   if (!subsectorAt) return;
   const probe: Pos2 = { x: 0, y: 0 };
   for (const o of build.occluders) {
-    if (vecLength(o.bx - o.ax, o.by - o.ay) < 1e-6) continue;
+    const halfLen = vecLength(o.bx - o.ax, o.by - o.ay) / 2;
+    if (halfLen < 1e-6) continue;
     wallProbePoint(o.ax, o.ay, o.bx, o.by, probe);
     o.subsector = subsectorAt(probe.x, probe.y);
     const cells = batches.byKey(o.key)?.cells;
     if (!cells) continue;
-    for (let v = 0; v < o.vertexCount; v++) cells[o.vertexStart + v] = o.subsector;
+    const cell = o.subsector < 0 ? -1 : lightCells.cellFor(o.subsector, (o.ax + o.bx) / 2, (o.ay + o.by) / 2, halfLen);
+    for (let v = 0; v < o.vertexCount; v++) cells[o.vertexStart + v] = cell;
   }
 }
 
@@ -728,6 +740,8 @@ interface Build {
   wallHeightCap: number;
   movableSectors?: Set<number>;
   subsectorAt?: (x: number, y: number) => number;
+  /** The cells surfaces file their light lists under — `aLightCell`, docs/lights.md § Light cells. */
+  lightCells: LightCells;
   /**
    * Whether this build is redone when a *neighbouring* sector moves, which only a mover's is
    * (`MoverGeometry`). It decides whether a closed hole may rest its lid on a movable rim: baked
@@ -788,6 +802,7 @@ function beginBuild(map: DoomMap, polys: SubSectorPoly[], bank: MaterialBank, op
     wallHeightCap: options.wallHeightCap ?? 0,
     movableSectors: options.movableSectors,
     subsectorAt: options.subsectorAt,
+    lightCells: lightCellsOf(polys),
     holdsStill: () => true,
   };
 }
@@ -1419,6 +1434,8 @@ function processFlat(build: Build, poly: SubSectorPoly, ss: number, holeFill: nu
  */
 const FLAT_CELL_MIN_AREA = 0.05;
 
+/** `diceOnGrid`'s ring box, reused for the same reason its clip buffers are. */
+const ringBox: PolygonBounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 /** `diceOnGrid`'s clip buffers, reused across every flat on the map — see there. */
 const stripLow: number[] = [];
 const stripHigh: number[] = [];
@@ -1453,20 +1470,9 @@ function reversedRing(points: ArrayLike<number>): number[] {
  * | `y >= at` | `(0, at)` | `(-1, 0)` |
  * | `y <= at` | `(0, at)` | `(1, 0)`  |
  */
-function diceOnGrid(ring: ArrayLike<number>, fan: (cell: ArrayLike<number>) => void): void {
-  const n = ring.length / 2;
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (let i = 0; i < n; i++) {
-    const x = ring[i * 2];
-    const y = ring[i * 2 + 1];
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
+function diceOnGrid(ring: ArrayLike<number>, fan: (cell: ArrayLike<number>, cx: number, cy: number) => void): void {
+  polygonBounds(ring, ringBox);
+  const { minX, maxX, maxY } = ringBox;
   const g = FLAT_GRID_LEN;
   const c1 = Math.floor(maxX / g);
   const r1 = Math.floor(maxY / g);
@@ -1502,8 +1508,12 @@ function diceOnGrid(ring: ArrayLike<number>, fan: (cell: ArrayLike<number>) => v
         clipConvexPolygon(cell, 0, (r + 1) * g, 1, 0, 0, cellHigh);
         cell = cellHigh;
       }
-      // The scratch is handed straight on: `fan` copies what it reads before the next cell.
-      if (cell.length >= 6 && Math.abs(signedPolygonArea2(cell)) > FLAT_CELL_MIN_AREA * 2) fan(cell);
+      // The scratch is handed straight on: `fan` copies what it reads before the next cell. The
+      // grid square's centre goes with it — the cell lies wholly inside that square, so it is an
+      // anchor `fan` needs no measurement of its own to have.
+      if (cell.length >= 6 && Math.abs(signedPolygonArea2(cell)) > FLAT_CELL_MIN_AREA * 2) {
+        fan(cell, (c + 0.5) * g, (r + 0.5) * g);
+      }
     }
   }
 }
@@ -1551,14 +1561,20 @@ function addFlatFan(
   const shaded = !isCeiling && beginWallShade(build.map, build.transfers, poly, height);
   const sky = skyLitSector(build.map.sectors[poly.sector]) ? 1 : 0;
 
+  // The light cell the fan being emitted files under — see `fanCell`.
+  let lightCell = build.lightCells.wholeCell(ss);
   const emit = (cell: ArrayLike<number>, i: number): void => {
     const x = cell[i * 2];
     const y = cell[i * 2 + 1];
-    pushVertex(batch, x, height, -y, x / uw, -y / uh, seg, alpha, ss, sky, shaded ? wallShadeAt(x, y) : 0);
+    pushVertex(batch, x, height, -y, x / uw, -y / uh, seg, alpha, lightCell, sky, shaded ? wallShadeAt(x, y) : 0);
     xy.push(x, y);
   };
-  // Each grid cell is convex and small, so fanning it costs no slivers — see `diceOnGrid`.
-  const fanCell = (cell: ArrayLike<number>): void => {
+  // Each grid cell is convex and small, so fanning it costs no slivers — see `diceOnGrid`. Its
+  // light cell is the one the grid square's centre falls in: the cell lies wholly inside that
+  // square, so every vertex is within `FLAT_CELL_EXTENT` of the centre (docs/lights.md § Light
+  // cells).
+  const fanCell = (cell: ArrayLike<number>, cx: number, cy: number): void => {
+    lightCell = build.lightCells.cellFor(ss, cx, cy, FLAT_CELL_EXTENT);
     for (let i = 1; i + 1 < cell.length / 2; i++) {
       emit(cell, 0);
       emit(cell, i);

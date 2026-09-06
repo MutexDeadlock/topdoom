@@ -74,6 +74,50 @@ function roomWithHalfWalledEdge() {
 }
 
 /**
+ * Five leaves in a 512x256 box, nothing but the outer wall: S in the south-west, a tall Z above
+ * it, V and T stacked east of Z, and X the whole eastern half. A light in S's west reaches T
+ * cheaply through Z or V; the hop from X's entry to the X/T edge is far longer. Between radius
+ * 184 (X's own entry) and 276 (T through X), X is admitted and considers T first, along a hop
+ * that overshoots the radius — what an older fill marked T seen on, and lost it. Every boundary is
+ * open: the leaves are cut by partitions alone.
+ */
+function detourRoom() {
+  return bspMap({
+    vertexes: [
+      { x: 0, y: 0 },
+      { x: 512, y: 0 },
+      { x: 512, y: 256 },
+      { x: 0, y: 256 },
+      { x: 192, y: 0 },
+      { x: 192, y: 256 },
+      { x: 0, y: 128 },
+      { x: 64, y: 256 },
+    ],
+    sidedefs: [0],
+    linedefs: [wall(1, 0), wall(0, 3), wall(3, 2), wall(2, 1)],
+    segs: [seg(4, 0, 0), seg(0, 6, 1), seg(6, 3, 1), seg(3, 7, 2), seg(7, 5, 2), seg(1, 4, 0), seg(2, 1, 3), seg(5, 2, 2)],
+    // 0 S [0,192]x[0,128], 1 V [64,192]x[128,192], 2 Z [0,64]x[128,256], 3 T [64,192]x[192,256],
+    // 4 X [192,512]x[0,256].
+    subsectors: [
+      [0, 2],
+      [2, 0],
+      [2, 2],
+      [4, 1],
+      [5, 3],
+    ],
+    // Read root-first: east of x 192 is X; south of y 128 is S; west of x 64 is Z; south of y 192
+    // is V, north of it T.
+    nodes: [
+      plane(64, 192, 1, 0, leaf(1), leaf(3)),
+      plane(64, 128, 0, 1, 0, leaf(2)),
+      plane(0, 128, 1, 0, leaf(0), 1),
+      plane(192, 0, 0, 1, leaf(4), 2),
+    ],
+    half: 512,
+  });
+}
+
+/**
  * Which subsectors a light actually reaches — GZDoom's own light-list model, a flood fill out of
  * the emitter's leaf that crosses only where sight does. docs/lights.md § Light stops at walls.
  */
@@ -155,6 +199,30 @@ describe('Dynamic lights · what a light can reach', () => {
     assert.ok(reached.has(0), 'the light must at least light its own leaf');
     assert.ok(reached.has(1), 'the fill never crossed the open half of the edge');
     assert.ok(!reached.has(2), 'the fill crossed the walled half of the edge');
+  });
+  test('a leaf keeps the cheapest path to it, so a first hop past the radius cannot drop it', () => {
+    const map = detourRoom();
+    const world = new World(map);
+    const vis = new LightVisibility(map, buildSubSectorPolys(map), world);
+    const out: number[] = [];
+    vis.reach(world.subsectorAt(8, 100), 8, 100, 200, out);
+    assert.ok(out.includes(4), 'X lies within the radius and must be reached');
+    assert.ok(out.includes(3), 'T is 113 units away through Z, and X considering it first must not lose it');
+  });
+
+  test('a bigger radius never reaches fewer leaves', () => {
+    const map = detourRoom();
+    const world = new World(map);
+    const vis = new LightVisibility(map, buildSubSectorPolys(map), world);
+    const from = world.subsectorAt(8, 100);
+    let previous = new Set<number>();
+    for (let radius = 100; radius <= 300; radius += 10) {
+      const out: number[] = [];
+      vis.reach(from, 8, 100, radius, out);
+      const reached = new Set(out);
+      for (const s of previous) assert.ok(reached.has(s), `leaf ${s} reached at radius ${radius - 10} but not at ${radius}`);
+      previous = reached;
+    }
   });
 });
 

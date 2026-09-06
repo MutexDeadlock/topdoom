@@ -179,6 +179,12 @@ it of every change under `src/game/`: could an old recording run differently now
 whether it raised the epoch and why. A release, rendering, the HUD, the menu and the camera never
 do. docs/replays.md § Compatibility.
 
+**A WAD's art never decides what a tic does.** A tic reads map geometry and the engine's own
+tables; sprite lumps are drawn, never asked. Auto-aim's pick tested the billboard once, which made
+the loaded game WAD's pixel widths a simulation input and desynced a replay played on a stand-in
+IWAD — docs/combat.md § Auto-aim. The one deliberate exception is `pushThing` skipping a thing whose
+sprite the set lacks (docs/wad.md § Art a WAD set doesn't have). Nothing detects a new one.
+
 **A save or replay that can't be used says why, where the player is looking.** A greyed Load or
 Play always carries the reason in red beside the row — `SaveListEntry.refusal` /
 `ReplayListEntry.refusal`, the same sentence the read would have thrown. Greying alone is the bug:

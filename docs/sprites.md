@@ -1,6 +1,6 @@
 # Things as sprites
 
-`src/wad/sprites.ts`, `src/render/sprites.ts`, `src/render/spritebatch.ts`, `src/game/things.ts`,
+`src/wad/sprites.ts`, `src/render/sprites.ts` + `sprites/`, `src/game/things.ts`,
 `src/game/things/tables.ts`, `src/game/things/doomednums.ts`
 
 How a thing gets *lit* is docs/render.md § Sector lighting; how one gets hidden behind geometry
@@ -98,14 +98,14 @@ docs/monster-ai.md § Spatial indexing).
 
 ### Batching
 
-**Map things are drawn batched, not one mesh each** (`spritebatch.ts: SpriteBatch`), and this is a
+**Map things are drawn batched, not one mesh each** (`sprites/batch.ts: SpriteBatch`), and this is a
 hard performance requirement rather than a refinement. A stress-test map like NUTS.WAD has 10,696
 things in a single 69-subsector open arena, so essentially all of them are on screen and
 fog-of-war-revealed at once; one `THREE.Mesh` each meant ~10k draw calls per frame and a ~2fps
 slideshow. `SpriteBatch` keys one `InstancedMesh` per **atlas page** and rebuilds the instance
 buffers every frame — on that map, all ~10.7k sprites in a handful of draw calls.
 
-**The atlas** (`spriteatlas.ts: SpriteAtlas`) packs every sprite lump of the loaded set into
+**The atlas** (`sprites/atlas.ts: SpriteAtlas`) packs every sprite lump of the loaded set into
 `ATLAS_PAGE_SIZE` (2048) square pages, tallest first in shelves, `ATLAS_GUTTER` transparent texels
 apart, once per session in `SpriteMaterialCache`'s constructor (28 ms for DOOM2's 1381 lumps; two
 pages). **Each lump is dropped from `GraphicsBank`'s decode cache once it is packed**

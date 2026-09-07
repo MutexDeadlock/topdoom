@@ -11,7 +11,7 @@ import {
   type Tint,
 } from '../../src/render/lights.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
-import { LightVisibility, SHADOW_STEPS } from '../../src/render/lightvis.ts';
+import { LightVisibility, SHADOW_STEPS } from '../../src/render/lights/vis.ts';
 import { World } from '../../src/game/world.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
 import { gridMap } from '../fixtures/gridmap.ts';

@@ -51,7 +51,7 @@ const FADE_COLORS = new Float32Array([1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1]);
 
 /**
  * One material per tracer colour, session-lived, the same ownership split
- * `render/spritebatch.ts`'s `SpriteMaterialCache` makes. Nothing on a tracer's material
+ * `render/sprites.ts`'s `SpriteMaterialCache` makes. Nothing on a tracer's material
  * is per-instance since the fade moved into the vertex attribute, and a material built
  * and disposed per tracer makes three.js relink the shader program every time the live
  * count returns to zero — which it does between every trigger pull.
@@ -155,7 +155,7 @@ function materialFor(color: number): THREE.LineBasicMaterial {
       vertexColors: true,
       transparent: true,
       // One translucent line among opaque geometry, the same trade the translucent
-      // sprite materials make (render/spritebatch.ts): not writing depth keeps it
+      // sprite materials make (render/sprites/batch.ts): not writing depth keeps it
       // from punching a hole in whatever draws after it.
       depthWrite: false,
     });

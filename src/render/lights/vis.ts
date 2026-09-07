@@ -3,10 +3,10 @@
  * emitter's own BSP leaf that crosses a boundary only where sight does, so a torch stops at its
  * wall instead of shining through it. See docs/lights.md § Light stops at walls.
  */
-import { closestTOnSegment, distSqToSegment, polygonCentroid, segmentCrossT, vecLength } from '../util/geom.ts';
-import type { DoomMap } from '../wad/map.ts';
-import type { SubSectorPoly } from './bsp.ts';
-import { lightCellsOf, type LightCells } from './lightcells.ts';
+import { closestTOnSegment, distSqToSegment, polygonCentroid, segmentCrossT, vecLength } from '../../util/geom.ts';
+import type { DoomMap } from '../../wad/map.ts';
+import type { SubSectorPoly } from '../bsp.ts';
+import { lightCellsOf, type LightCells } from './cells.ts';
 
 /**
  * How far past a leaf's edge the neighbour probe steps. **Tuned by feel**, and the same 1.5 units

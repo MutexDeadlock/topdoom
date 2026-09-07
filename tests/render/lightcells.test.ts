@@ -1,10 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LIGHT_CELL_MARGIN, LIGHT_CELL_SIZE, LightCells, lightCellsOf } from '../../src/render/lightcells.ts';
+import { LIGHT_CELL_MARGIN, LIGHT_CELL_SIZE, LightCells, lightCellsOf } from '../../src/render/lights/cells.ts';
 import { FLAT_GRID_LEN, WALL_CHUNK_LEN, buildMapMesh } from '../../src/render/mapmesh.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
 import { DynamicLights } from '../../src/render/lights.ts';
-import { LightVisibility } from '../../src/render/lightvis.ts';
+import { LightVisibility } from '../../src/render/lights/vis.ts';
 import { parseGldefs } from '../../src/wad/gldefs.ts';
 import { World } from '../../src/game/world.ts';
 import { Transfers } from '../../src/game/specials/transfers.ts';

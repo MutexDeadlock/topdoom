@@ -22,7 +22,7 @@ import { VoidFloor } from './render/voidfloor.ts';
 import { setLevelSky, skyLitSector } from './render/skytint.ts';
 import { beginViewDepth } from './render/sectorlight.ts';
 import { levelSkyArt } from './wad/campaign/sky.ts';
-import { LightVisibility } from './render/lightvis.ts';
+import { LightVisibility } from './render/lights.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import { PlayerSkins } from './render/playerskin.ts';
 import type { LoadingScreen } from './ui/loading.ts';

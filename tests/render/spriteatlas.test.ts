@@ -1,9 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { ATLAS_GUTTER, ATLAS_PAGE_SIZE, SpriteAtlas } from '../../src/render/spriteatlas.ts';
+import { ATLAS_GUTTER, ATLAS_PAGE_SIZE, SpriteAtlas } from '../../src/render/sprites/atlas.ts';
 import { SpriteMaterialCache } from '../../src/render/sprites.ts';
-import { ATLAS_BEGIN_VERTEX_GLSL, ATLAS_UV_VERTEX_GLSL, SpriteBatch } from '../../src/render/spritebatch.ts';
+import { ATLAS_BEGIN_VERTEX_GLSL, ATLAS_UV_VERTEX_GLSL, SpriteBatch } from '../../src/render/sprites/batch.ts';
 import type { Bitmap, GraphicsBank } from '../../src/wad/graphics.ts';
 
 /**

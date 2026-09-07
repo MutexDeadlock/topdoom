@@ -65,17 +65,16 @@ src/wad/       WAD files, merged lump directory, content IDs (checksum), map lum
                (playerskin), the menu's WAD library, and the campaign lumps — MAPINFO, level
                names, par times, the sky, the level progression (campaign/)
 src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it can't ask the tree
-               for (sectorprobe), the solids a map draws as void (solids), mesh building, what a
-               sector's light does to a surface and how it falls off with depth (sectorlight), materials
-               + texture animation, occlusion fading, Boom's scrolling surfaces (scroller), sprite
-               billboards + their instanced batching, the weapon-matching player skins in drawable
-               form (playerskin), the blob shadow under them (playershadow), the shading a wall
-               lays on the floor at its foot (wallshadow), the colour a sky ceiling lends what
-               stands under it (skytint), the drifting fog the level stands in
-               (voidfloor), the glow bright light leaves on the frame (bloom), GLDEFS dynamic
-               lights (lights) and which subsectors one
-               reaches (lightvis), shot tracers, camera, viewport, the GPU's own frame time
-               (gputimer)
+               for (sectorprobe), the solids a map draws as void (solids), mesh building (mapmesh/),
+               what a sector's light does to a surface and how it falls off with depth
+               (sectorlight), materials + texture animation, occlusion fading (occlusion/), Boom's
+               scrolling surfaces (scroller), sprite billboards + their batching (sprites/), the
+               weapon-matching player skins in drawable form (playerskin), the blob shadow under
+               them (playershadow), the shading a wall lays on the floor at its foot (wallshadow),
+               the colour a sky ceiling lends what stands under it (skytint), the drifting fog the
+               level stands in (voidfloor), the glow bright light leaves on the frame (bloom),
+               GLDEFS dynamic lights and what they reach (lights/), shot tracers, camera,
+               viewport, the GPU's own frame time (gputimer)
 src/game/      spatial queries + collision, player controller, input, the auto camera, what each
                skill level changes (skill), thing world state, monsters (AI, attacks, the
                arch-vile), fog of war, inventory/pickups, weapons and firing, shots in flight +

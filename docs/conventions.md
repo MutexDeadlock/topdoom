@@ -17,9 +17,9 @@ context on every change and points here for the rest.
 - **A `<domain>.ts` beside a `<domain>/` is the layer's one public entry point**; the directory
   holds internals and nothing outside reaches into it. `game/things.ts`, `game/specials.ts`,
   `game/inventory.ts`, `game/spritefx.ts`, `game/replay.ts`, `wad/map.ts`, `wad/library.ts`,
-  `audio/music.ts`, and `game.ts` beside `game/`. The parent re-exports what importers need
-  (`things.ts` hands out `ThingLayer`; `map.ts` hands out `SUBSECTOR_BIT`) so no importer learns
-  which inner file a shape lives in.
+  `audio/music.ts`, `render/{mapmesh,occlusion,sprites,lights}.ts`, and `game.ts` beside `game/`.
+  The parent re-exports what importers need (`things.ts` hands out `ThingLayer`; `map.ts` hands
+  out `SUBSECTOR_BIT`) so no importer learns which inner file a shape lives in.
 - **A shape the directory's own files share goes in `<domain>/defs.ts`, never in the parent**: the
   parent imports every child, so a child importing the parent is a cycle that survives only while
   the edge is `import type`. `wad/map/defs.ts`, `wad/library/defs.ts`.

@@ -6,11 +6,19 @@
 import * as THREE from 'three';
 import { DOOM_TIC } from '../constants.ts';
 import { lightForFrame, type Gldefs, type LightDef } from '../wad/gldefs.ts';
-import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS, type LightVisibility } from './lightvis.ts';
-import { LIGHT_CELL_MARGIN } from './lightcells.ts';
+import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS, type LightVisibility } from './lights/vis.ts';
+import { LIGHT_CELL_MARGIN } from './lights/cells.ts';
 import { doomToWorld } from './mapmesh.ts';
 import { vecLength } from '../util/geom.ts';
 import { readStorage, writeStorage } from '../util/storage.ts';
+
+/**
+ * The directory's own surface, handed out here so no importer names an inner file. The cell layout
+ * is a round trip: `mapmesh.ts` files every surface into it at build time and hands the result back
+ * as `BuiltMap.lightCells` for `commit` to fill. docs/conventions.md § File names.
+ */
+export { LightVisibility, SHADOW_STEPS, BIN_HALF, BIN_PER_RADIAN, type LightWorld } from './lights/vis.ts';
+export { LightCells, lightCellsOf, LIGHT_CELL_SIZE, LIGHT_CELL_MARGIN } from './lights/cells.ts';
 
 /**
  * How many lights can reach the geometry shader at once. **Tuned by feel**, and generously: a
@@ -197,7 +205,7 @@ interface LightMemo {
 export class DynamicLights {
   /**
    * The live uniform objects, handed to every patched material once and mutated in place
-   * thereafter — the pattern `SpriteBatch`'s fuzz time uses (`render/spritebatch.ts`).
+   * thereafter — the pattern `SpriteBatch`'s fuzz time uses (`render/sprites/batch.ts`).
    * `pos` is xyz in three.js space plus the radius in w.
    */
   readonly uniforms = {
@@ -478,7 +486,9 @@ export class DynamicLights {
     this.uniforms.uLightCount.value = n;
     // Uploading a frame of all-empty lists over the last one is worth doing once; doing it every
     // frame a level sits unlit is not.
-    if (this.touched.length > 0 || hadTouched) this.uniforms.uLightVis.value.needsUpdate = true;
+    if (this.touched.length > 0 || hadTouched) {
+      this.uniforms.uLightVis.value.needsUpdate = true;
+    }
   }
 
   /**

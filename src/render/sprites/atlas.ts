@@ -5,7 +5,7 @@
  * § Batching.
  */
 import * as THREE from 'three';
-import type { Bitmap } from '../wad/graphics.ts';
+import type { Bitmap } from '../../wad/graphics.ts';
 
 /** Where a lump's pixels sit in a page, in texels from the page's top-left corner. */
 export interface AtlasRect {

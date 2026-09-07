@@ -3,11 +3,10 @@
  * the spectre fuzz shader. See docs/sprites.md § Batching and § The spectre's fuzz.
  */
 import * as THREE from 'three';
-import type { CachedSprite } from './sprites.ts';
-import { spriteMaterial, VIEWER_ANGLE_DEG, whiteVertexColors } from './sprites.ts';
-import { DOOM_TIC } from '../constants.ts';
-import { tinted, type Tint } from './lights.ts';
-import { skyScale } from './skytint.ts';
+import { spriteMaterial, VIEWER_ANGLE_DEG, whiteVertexColors, type CachedSprite } from './defs.ts';
+import { DOOM_TIC } from '../../constants.ts';
+import { tinted, type Tint } from '../lights.ts';
+import { skyScale } from '../skytint.ts';
 
 /** Instances a freshly-created batch starts with, doubling from there as needed. */
 const INITIAL_CAPACITY = 64;

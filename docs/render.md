@@ -1,6 +1,7 @@
 # Rendering
 
-`src/render/bsp.ts`, `src/render/solids.ts`, `src/render/mapmesh.ts`, `src/render/occlusion.ts`,
+`src/render/bsp.ts`, `src/render/solids.ts`, `src/render/mapmesh.ts` + `mapmesh/`,
+`src/render/occlusion.ts` + `occlusion/`,
 `src/render/textures.ts`, `src/render/textureanim.ts`, `src/render/viewport.ts`
 
 The level's own geometry: rebuilding it, lighting it, fading it and what a frame of it costs. The
@@ -253,7 +254,12 @@ they walk is the one `mapmesh.ts` already builds.
 `buildIslands` hands out are dense, so `islandCount` is the highest plus one. It reads the memo the
 fog grid's own build filled, and never partitions a second time.
 
-## Mesh building (`mapmesh.ts`)
+## Mesh building (`mapmesh.ts`, `mapmesh/`)
+
+`mapmesh.ts` is the entry point and holds `doomToWorld`/`worldToDoom`, `buildMapMesh` and the two
+mover entries. `mapmesh/defs.ts` holds the shapes a built map is handed around as and the chunk
+grid, `build.ts` the batches and the vertex push, `walls.ts` and `flats.ts` the two halves of a
+build, `movers.ts` the rebuild-in-place of one moving sector.
 
 Walls are built per linedef from sidedefs: one-sided lines get their middle texture over the full
 sector height; two-sided lines get upper/lower steps plus an optional masked middle, following
@@ -563,7 +569,7 @@ This camera always is. Walls are drawn single-sided facing into their sector —
 level reads as a dollhouse — so from overhead you look straight into a structure, past the inside of
 its near wall, and out through the far one: a black hole where a solid block should be.
 
-`solids.ts: findSolidCaps` reconstructs those rings and `mapmesh.ts: buildSolidCaps` lids them.
+`solids.ts: findSolidCaps` reconstructs those rings and `mapmesh/flats.ts: buildSolidCaps` lids them.
 Three rules decide what a lid looks like, and each has a reason:
 
 - **A ring is only a structure if its sector is outside it.** The same shape — a closed ring of
@@ -611,7 +617,7 @@ convex-only `segmentMeetsConvexPolygon` (§ Flats). Triangles keep that contract
 between the camera and the player dithers away exactly as a raised floor does — without that,
 capping them would trade a hole for something worse: a pillar you cannot see your own player behind.
 
-## Closed holes (`mapmesh.ts: closedHoleFill`)
+## Closed holes (`mapmesh/flats.ts: closedHoleFill`)
 
 A region of leaves ringed entirely by two-sided drops with no lower texture is a hole the mapper
 never meant anyone to look into. Vanilla HOMs it, which is invisible from the floor of a
@@ -815,7 +821,7 @@ the rows its own depth earns, and multiplies `diffuseColor` by the lifted gain i
 wall shade and the sky tint still scale the vertex colour on the way through, so they compose with
 it untouched.
 
-Relighting a sector is therefore `mapmesh.ts: relightRange` writing **one byte per vertex** —
+Relighting a sector is therefore `mapmesh/build.ts: relightRange` writing **one byte per vertex** —
 `applyFlatRefresh` and `MoverGeometry.recolorSector` both go through it, and `refreshMoverMesh`
 rebuilds the array from its `Batch`. There is no second value to keep in step: the class of bug
 where a surface is relit but keeps sampling the row its sector used to have cannot be written.
@@ -971,7 +977,11 @@ Settings / Visuals / Lighting, labelled *Outdoor sky tint*, on the `skyTint` set
 (docs/menu.md § Persisted settings). The colour is a uniform every map material shares, so the
 switch reaches a level already running; off is that uniform at white.
 
-## Wall occlusion fading (`occlusion.ts`, `textures.ts`)
+## Wall occlusion fading (`occlusion/`, `textures.ts`)
+
+`occlusion.ts` is the entry point and holds `FadePass` and `collectFadeTargets`.
+`occlusion/defs.ts` holds the hole the ramp shapes, the sight boxes and the crossings bag both
+faders file into; `walls.ts` and `flats.ts` hold the two faders.
 
 Single-sided back-face culling only removes walls facing away from the camera; it does nothing about
 a wall that legitimately faces the camera but sits directly on the camera→player sightline (a pillar
@@ -1493,7 +1503,7 @@ separately: `MoverGeometry.updateFading` 3.34 → 0.19 ms/frame, and with the wa
 above the block as a whole 18.2 → 1.8 ms/frame. What is left of it is the flat fader, which still
 walks its 49,716 fans a frame behind per-fan early-outs (§ Flats).
 
-## Deep water (`mapmesh.ts: processFlat`, `ceilingFacing`)
+## Deep water (`mapmesh/flats.ts: processFlat`, `mapmesh/walls.ts: ceilingFacing`)
 
 Boom's 242 makes a sector draw at another sector's heights. Vanilla picks one of two views by where
 the eye is; this engine draws both at once — an opaque water surface would hide a player who waded
@@ -1816,7 +1826,7 @@ set (an episode-exclusive animation in the wrong IWAD) is dropped entirely, matc
 
 **No geometry work needed.** This engine already keys one material per texture *name*
 (`MaterialBank`), and every quad using that name shares that one material's mesh
-(`mapmesh.ts: BatchSet`) — so animating a name just means repointing its already-built material at a
+(`mapmesh/build.ts: BatchSet`) — so animating a name just means repointing its already-built material at a
 different bitmap each tic (`MaterialBank.setFrame`), and every quad using it picks up the new frame
 for free. `MaterialBank.has` gates this to names some batch actually uses, so an animation with no
 on-screen name in the current map costs nothing beyond the initial WAD-order lookup.

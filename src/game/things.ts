@@ -115,10 +115,10 @@ import { transfersOf } from './specials/transfers.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import {
   SpriteAnimator,
+  SpriteBatch,
   SpriteMaterialCache,
   VIEWER_ANGLE_DEG,
 } from '../render/sprites.ts';
-import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, worldToDoom } from '../render/mapmesh.ts';
 import { litColor, viewDepthAt } from '../render/sectorlight.ts';
 import { skyLitSector } from '../render/skytint.ts';

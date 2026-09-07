@@ -1,6 +1,7 @@
 # Dynamic lights
 
-`src/wad/gldefs.ts`, `src/render/lights.ts`, and the patch `src/render/textures.ts` puts in every
+`src/wad/gldefs.ts`, `src/render/lights.ts` + `lights/`, and the patch `src/render/textures.ts`
+puts in every
 map material.
 
 GZDoom's GLDEFS lights, bound to sprite frames: a rocket in flight, a torch, a soulsphere, the
@@ -121,7 +122,7 @@ that, a torch lights the room on the other side of its wall, which is what the f
 **The fix is GZDoom's own model, not a shadow test.** GZDoom does not test each surface against the
 light; it flood-fills the BSP out of the light's own subsector, crossing into a neighbour only
 through something that can be seen through, and attaches the light to the leaves the fill reached
-(`ADynamicLight::CollectWithinRadius`, `a_dynlight.cpp`). `render/lightvis.ts` is that fill:
+(`ADynamicLight::CollectWithinRadius`, `a_dynlight.cpp`). `render/lights/vis.ts` is that fill:
 
 - **The fill starts in the emitter's own leaf** and spreads cheapest path first (a binary heap on
   the path cost below), so the `MAX_REACH` cap, when it bites, keeps the nearest leaves.
@@ -321,7 +322,7 @@ tests the same shadow map, so a sprite behind a pillar goes dark with the floor 
 The shadow map rides in a second texture, one `R32F` row per light, uploaded whole on any frame that
 has lights.
 
-### Light cells (`lightcells.ts`)
+### Light cells (`lights/cells.ts`)
 
 The list a fragment walks is kept **per cell, not per leaf**: a leaf that fits `LIGHT_CELL_SIZE`
 (256 units) has one cell and behaves exactly as above, and a bigger leaf is gridded into sub-cells

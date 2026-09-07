@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
-import { LightVisibility, SHADOW_STEPS } from '../../src/render/lightvis.ts';
+import { LightVisibility, SHADOW_STEPS } from '../../src/render/lights/vis.ts';
 import { bspMap, leaf, plane, seg, twoSided, wall } from '../fixtures/bspmap.ts';
 import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { gridMap, type GridMap } from '../fixtures/gridmap.ts';

@@ -7,7 +7,7 @@ import { PROFILE_SMOOTHING } from '../util/profiler.ts';
 
 /**
  * The slice of a WebGL2 context this needs, taken structurally — the same seam `LightWorld` uses
- * (render/lightvis.ts), so the query bookkeeping can be exercised without a GPU.
+ * (render/lights/vis.ts), so the query bookkeeping can be exercised without a GPU.
  */
 export interface QueryContext {
   getExtension(name: string): unknown;

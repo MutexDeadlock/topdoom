@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import type { CachedSprite } from '../../src/render/sprites.ts';
-import { SpriteBatch } from '../../src/render/spritebatch.ts';
+import { SpriteBatch } from '../../src/render/sprites/batch.ts';
 import { MaterialBank } from '../../src/render/textures.ts';
 import type { GraphicsBank } from '../../src/wad/graphics.ts';
 import { FUZZ_TYPES, THING_SPRITES } from '../../src/game/things/tables.ts';

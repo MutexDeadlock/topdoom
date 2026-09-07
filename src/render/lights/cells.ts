@@ -4,8 +4,8 @@
  * lights near it. What `aLightCell` indexes and `DynamicLights.commit` fills. See docs/lights.md
  * § Light cells.
  */
-import { polygonBounds, type PolygonBounds } from '../util/geom.ts';
-import type { SectorPoly } from './bsp.ts';
+import { polygonBounds, type PolygonBounds } from '../../util/geom.ts';
+import type { SectorPoly } from '../bsp.ts';
 
 /**
  * Edge of a sub-cell, in map units. Measured on NUTS.WAD MAP01 with the monsters awake: its arena
@@ -27,7 +27,7 @@ export const LIGHT_CELL_SIZE = 256;
  */
 export const LIGHT_CELL_MARGIN = 65;
 
-/** One layout per polygon set: `mapmesh.ts` files surfaces and `lightvis.ts` fills lists by it. */
+/** One layout per polygon set: `mapmesh.ts` files surfaces and `lights/vis.ts` fills lists by it. */
 const layouts = new WeakMap<readonly SectorPoly[], LightCells>();
 
 export function lightCellsOf(polys: readonly SectorPoly[]): LightCells {

@@ -1,6 +1,7 @@
 # Fog of war
 
-`src/game/fogofwar.ts`, `src/render/occlusion.ts`, `src/render/mapmesh.ts`
+`src/game/fogofwar.ts`, `src/render/occlusion.ts` + `occlusion/`, `src/render/mapmesh.ts` +
+`mapmesh/`
 
 The dollhouse camera can see the entire level at once, including rooms the player hasn't reached and
 secrets a wide top-down view would spoil. `FogOfWar` reveals a region once the player has line of
@@ -370,7 +371,7 @@ one place that commits the walls, once per frame, after `updateFade`.
 
 The static wall quads are probed **once at load** and their subsectors kept in `wallSubsector`.
 Mover geometry (doors, lifts — docs/render.md § Mover meshes) is built and rebuilt after that, so it
-misses that pass. It does not need its own probe either: `mapmesh.ts`'s `fillWallCells` already
+misses that pass. It does not need its own probe either: `mapmesh/build.ts`'s `fillWallCells` already
 resolves every wall quad's leaf for the dynamic lights and records it on `WallOccluder.subsector`,
 so `MoverGeometry.updateFading` reads that. `FogOfWar.wallSubsectorAt` stays as the fallback for a
 mesh built without a probe (tests, tools), where the quad is left at -1 — and it probes through

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { MaterialBank } from '../../src/render/textures.ts';
 import { DynamicLights, EMPTY_SLOT, MAX_DYN_LIGHTS } from '../../src/render/lights.ts';
-import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from '../../src/render/lightvis.ts';
+import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from '../../src/render/lights/vis.ts';
 import { parseGldefs } from '../../src/wad/gldefs.ts';
 import { diminishUniform, setDistanceFlattened } from '../../src/render/sectorlight.ts';
 import { wallShadeUniform } from '../../src/render/wallshadow.ts';
@@ -104,7 +104,7 @@ describe('Dynamic lights · the geometry shader patch', () => {
     assert.ok(fragment.includes('uniform sampler2D uLightShadow;'), 'no shadow map');
     // `angle / 2pi + 0.5`, the one convention `castShadows` and `unshadowed` also index with —
     // reading it half a turn out still looks plausible on symmetric geometry. Pinned to
-    // `lightvis.ts`'s own constants, which all three readers share.
+    // `lights/vis.ts`'s own constants, which all three readers share.
     assert.ok(
       fragment.includes(`* ${BIN_PER_RADIAN} + ${BIN_HALF}.0`),
       'the shadow map is indexed on another convention',

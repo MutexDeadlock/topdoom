@@ -6,16 +6,18 @@
 import * as THREE from 'three';
 import type { Bitmap, GraphicsBank } from '../wad/graphics.ts';
 import {
+  BIN_HALF,
+  BIN_PER_RADIAN,
   EMPTY_SLOT,
   EMPTY_WORD,
   MAX_DYN_LIGHTS,
   MAX_LIGHTS_PER_LEAF,
   SHADOW_BIAS,
   SHADOW_SOFT_BINS,
+  SHADOW_STEPS,
   SHADOW_TAPS,
   type DynamicLights,
 } from './lights.ts';
-import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from './lightvis.ts';
 import { glslFloat } from '../util/glsl.ts';
 import { wallShadeUniform } from './wallshadow.ts';
 import { skyTintUniform } from './skytint.ts';

@@ -4,8 +4,7 @@
  * See docs/combat.md § Effects and their batching.
  */
 import * as THREE from 'three';
-import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
-import { SpriteBatch } from '../render/spritebatch.ts';
+import { SpriteAnimator, SpriteBatch, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
 import { doomToWorld } from '../render/mapmesh.ts';
 import { litColor, viewDepthAt } from '../render/sectorlight.ts';
 import { skyLitSector } from '../render/skytint.ts';

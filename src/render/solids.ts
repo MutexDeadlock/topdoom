@@ -4,7 +4,7 @@
  * a camera looking down does. See docs/render.md § Solid structures.
  */
 import { NO_SIDE, type DoomMap } from '../wad/map.ts';
-import { polygonCentroid, signedPolygonArea2, vecLength } from '../util/geom.ts';
+import { polygonBounds, polygonCentroid, signedPolygonArea2, vecLength, type PolygonBounds } from '../util/geom.ts';
 import type { SectorPoly } from './bsp.ts';
 
 /**
@@ -205,22 +205,17 @@ function capFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: numbe
   return { points, height, texture, sector, probeX: probe.x, probeY: probe.y };
 }
 
+/** `enclosesFloor`'s bounding box, reused rather than allocated per ring. */
+const ringBox: PolygonBounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+
 /**
  * Whether any of the map's *floor* lies inside the ring, which makes it a building's outer wall
  * rather than a solid block. The question goes to the subsectors and not to the raw vertexes —
  * docs/render.md § Solid structures. A subsector is convex, so the mean of its points is inside it.
  */
 function enclosesFloor(polys: readonly SectorPoly[], points: Float64Array): boolean {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (let i = 0; i < points.length; i += 2) {
-    minX = Math.min(minX, points[i]);
-    maxX = Math.max(maxX, points[i]);
-    minY = Math.min(minY, points[i + 1]);
-    maxY = Math.max(maxY, points[i + 1]);
-  }
+  polygonBounds(points, ringBox);
+  const { minX, minY, maxX, maxY } = ringBox;
   for (const poly of polys) {
     if (poly.points.length < 6) continue;
     const { x: cx, y: cy } = polygonCentroid(poly.points);

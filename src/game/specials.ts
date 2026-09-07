@@ -44,6 +44,7 @@ import type { FadeParticipant } from '../render/occlusion.ts';
 import { segmentCrossT, segmentIntersect, vecLength } from '../util/geom.ts';
 import { sectorOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import { DOOM_TIC } from '../constants.ts';
+import { atan2, cos, sin } from '../util/fdlibm.ts';
 
 export {
   // Re-exported so `./specials.ts` stays the specials layer's one public entry point, the same
@@ -2134,7 +2135,7 @@ export class SpecialsController {
    * the vertexes, like every other line-geometry read in this file.
    */
   private lineAngle(lineIndex: number): number {
-    return Math.atan2(this.world.lineDY[lineIndex], this.world.lineDX[lineIndex]);
+    return atan2(this.world.lineDY[lineIndex], this.world.lineDX[lineIndex]);
   }
 
   /**
@@ -2170,7 +2171,7 @@ export class SpecialsController {
       let pos = Math.abs(dx) > Math.abs(dy) ? (at.x - from.a.x) / dx : (at.y - from.a.y) / dy;
       if (!Number.isFinite(pos)) continue;
       if (effect.reversed) pos = 1 - pos;
-      const rotateBy = (effect.reversed ? 0 : Math.PI) + Math.atan2(exitDy, exitDx) - Math.atan2(dy, dx);
+      const rotateBy = (effect.reversed ? 0 : Math.PI) + atan2(exitDy, exitDx) - atan2(dy, dx);
 
       // Interpolated back from v2, matching `l->v2 - FixedMul(pos, l->dx)`.
       let px = b.x - pos * exitDx;
@@ -2466,8 +2467,8 @@ export class SpecialsController {
 
   private handleUseTrigger(at: Placement, input: TicInput, ownedKeys: ReadonlySet<KeySlot>): void {
     if (!input.pressed('Space') && !input.rightMousePressed('use')) return;
-    const tx = at.x + Math.cos(at.angle) * USE_RANGE;
-    const ty = at.y + Math.sin(at.angle) * USE_RANGE;
+    const tx = at.x + cos(at.angle) * USE_RANGE;
+    const ty = at.y + sin(at.angle) * USE_RANGE;
 
     // Every line the trace crosses, special or not: a wall with no opening ends
     // the press before anything behind it is reached, so the scan can't skip the

@@ -108,7 +108,12 @@ buffers every frame — on that map, all ~10.7k sprites in a handful of draw cal
 **The atlas** (`spriteatlas.ts: SpriteAtlas`) packs every sprite lump of the loaded set into
 `ATLAS_PAGE_SIZE` (2048) square pages, tallest first in shelves, `ATLAS_GUTTER` transparent texels
 apart, once per session in `SpriteMaterialCache`'s constructor (28 ms for DOOM2's 1381 lumps; two
-pages). A batch on a page draws a unit plane that the vertex patch (`ATLAS_BEGIN_VERTEX_GLSL`,
+pages). **Each lump is dropped from `GraphicsBank`'s decode cache once it is packed**
+(`forgetPicture`): the pages own those pixels, and keeping the set decoded beside them costs ~18 MB
+of heap for nothing. The handful `get` still needs a bitmap for — the `left` hotspot — decode again on
+demand, as they did before there was an atlas.
+
+A batch on a page draws a unit plane that the vertex patch (`ATLAS_BEGIN_VERTEX_GLSL`,
 `ATLAS_UV_VERTEX_GLSL`) sizes, shifts and maps per instance from two extra lanes — `aSpriteRect`
 (a `vec3`: width, height, the hotspot's x offset) and `aSpriteUv` (the lump's rect, U swapped for a
 mirrored sprite) — carried on `CachedSprite.atlas`. Keying batches per lump instead cost NUTS

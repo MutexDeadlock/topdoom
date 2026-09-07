@@ -292,9 +292,28 @@ and one file, and `game/replay.ts` decodes it.
 
 ## What breaks determinism
 
-- **Another JavaScript engine.** `Math.sin`/`cos`/`atan2`/`exp`/`log` are implementation-
-  approximated (docs/random.md § What this does not buy). The meta records the engine; the bar
-  notes a mismatch and the check samples say where it diverged.
+- **Another JavaScript engine — closed, for anything recorded from v0.18.1 on.** ECMA-262 leaves
+  `sin`, `cos`, `atan2`, `exp` and `log` implementation-approximated (docs/random.md § What this
+  does not buy), and the tic no longer calls any of them: `util/fdlibm.ts` computes all five in
+  software, out of `+ - * /` alone, which IEEE-754 pins exactly.
+  `tests/docs/simmath.test.ts` is the guard — over `src/util/` as well as `src/game/`, since a
+  helper one directory over reaches the platform just as effectively (`damping.ts`'s `dampen`, which
+  the fog fade and the auto camera call, is on the software `exp` for exactly that reason) —
+  and `tests/util/fdlibm.test.ts` holds the bit pins. The meta
+  still records the engine and the bar still notes a mismatch — the record is older than the fix,
+  and a stray `Math` call in a tic would be a bug this cannot detect after the fact.
+- **`atan2` is the one that decides it.** Every monster's `A_FaceTarget` is an `atan2`, so a whole
+  level's facings diverge on the first tic; the other four are rarer and rounded apart far less
+  often. A determinism change that leaves `atan2` on the platform buys nothing.
+- **A verdict is not always a divergence.** `check` compares doubles exactly, so a ULP of drift
+  reads as a desync. `Fauler goes NUTS` is the case that says so: recorded before the fix, it still
+  reports 2:22 on any engine but its own, while the P_Random cursor matches at all 199 samples,
+  `y` never moves at all and `x` is 1-2 ULP out — the run plays out identically to its end.
+- **Vanilla's own answer was measured and rejected.** `R_PointToAngle2` is a 2049-entry
+  `tantoangle` lookup rather than a real arctangent, which would be both deterministic and more
+  faithful, but its 0.033° lattice is 12 orders of magnitude coarser than a ULP: it desynced
+  `GoingDown MAP08` after 1:05 and `Fauler goes NUTS` after 0:08, where the software `atan2` leaves
+  the first untouched.
 - **A stand-in game WAD** used to, and no longer does. A replay may run on a substitute IWAD
   (docs/savegames.md § WAD-set identity), and auto-aim's pick tested the *drawn sprite*, so the same
   ray locked onto a different body: 139 of 144 monster sprite quads differ between DOOM2.WAD and
@@ -383,6 +402,16 @@ arrive with it), the
 pinned settings, and the playback's own forward-only cursors — `ReplayPlayback.seek` re-seats the
 event and check indices and replays the settings events up to the target. A seek that re-anchors
 clears `desyncedAt`: the state is the record's own again, so what had drifted before it is gone.
+
+**What a savegame may drop as an invisible transient, a keyframe may not.** A load is allowed to
+cost a trigger pull or a look-around; a seek that lands even one tic off what the recording ran
+plays a different run from there, and the check samples call it a desync. Two such states were
+found this way, both from the shipped GoingDown MAP08 replay desyncing at 1:18 whenever the jump
+crossed its 1:00 anchor: the idle look-around, restored to phase 0 for every sleeping monster and
+now one cadence off the level clock instead (docs/monster-ai.md § Waking up), and `chainEnding`,
+now saved (docs/weapons.md § Automatic weapon switching). The general check is
+`ThingLayer`/`Player`/`WeaponSystem` state that no snapshot field carries: run the playback to a
+keyframe's tic, restore that keyframe, and diff the live objects.
 
 The cost is the interval. A jump of a minute of recording is a few frames of catch-up on an
 ordinary level, and a level swap inside the span adds a map build. Keyframes cost about 4 kB

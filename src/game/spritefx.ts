@@ -22,6 +22,7 @@ import { FULLBRIGHT_FRAMES } from './things/tables.ts';
 import { BLOOD_FRAME_SECONDS, BLOOD_FRAMES, bloodFrames, CRUSH_BLOOD_SPEED, HIT_Z_JITTER, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
 import type { TeleportFogState } from './snapshot.ts';
 import type { Placement, Pos3 } from '../types.ts';
+import { cos, sin } from '../util/fdlibm.ts';
 
 /**
  * Where the arch-vile's warning flame should sit this frame, or null to leave it where it is. The
@@ -213,8 +214,8 @@ export class SpriteFxLayer {
     if (path.lineIndex === null || this.world.hitsSky(path.lineIndex, path.z)) return;
     // Backed off the wall plane it marks, vanilla's own "position a bit closer".
     this.spawnPuff({
-      x: path.x - Math.cos(angleRad) * PUFF_WALL_OFFSET,
-      y: path.y - Math.sin(angleRad) * PUFF_WALL_OFFSET,
+      x: path.x - cos(angleRad) * PUFF_WALL_OFFSET,
+      y: path.y - sin(angleRad) * PUFF_WALL_OFFSET,
       z: path.z,
     });
   }
@@ -259,8 +260,8 @@ export class SpriteFxLayer {
   spawnTeleportPair(from: Pos3, dest: Placement, destZ: number): void {
     this.spawnTeleportFog(from);
     this.spawnTeleportFog({
-      x: dest.x + Math.cos(dest.angle) * TFOG_SPAWN_OFFSET,
-      y: dest.y + Math.sin(dest.angle) * TFOG_SPAWN_OFFSET,
+      x: dest.x + cos(dest.angle) * TFOG_SPAWN_OFFSET,
+      y: dest.y + sin(dest.angle) * TFOG_SPAWN_OFFSET,
       z: destZ,
     });
   }

@@ -94,6 +94,11 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   isSolid: boolean;
   /**
+   * A `SOLID_DECORATION_TYPES` prop: filed by the grid because it blocks movement, but skipped by
+   * every shot query because it stops none. Resolved once at spawn for the reason `blockRadius` is.
+   */
+  isDecoration: boolean;
+  /**
    * This type's attack poses per kind (`MONSTER_ATTACK_POSE`) and pain frame letters, resolved once
    * at spawn for the same reason `blockRadius` is. `undefined` for anything without a table entry.
    */
@@ -258,12 +263,6 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   ambush: boolean;
   /**
-   * Seconds since this monster's last idle look-around. Separate from the AI
-   * timers in `MonsterBody` because it only ticks *before* the monster wakes,
-   * and `game/monsters/ai.ts` has no business knowing the throttle exists.
-   */
-  lookTimer: number;
-  /**
    * Position at the end of the previous tic, so `crossLines` can test the
    * segment this monster just walked. Mutated in place; never re-allocated.
    * Maintained only on the alerted-with-a-target path, which is the only one
@@ -336,6 +335,19 @@ export interface CrossingBody extends Pos2 {
   /** Current facing, radians — what Boom's silent teleports rotate relative to. */
   angle: number;
 }
+
+/**
+ * This tic's conveyor impulse for a body of this radius standing at `pos`, map units/sec, or null
+ * where nothing carries it — `specials/forces.ts: Forces.carryForBody`. Named here rather than
+ * spelled out at each end so `ThingLayer.update`'s parameter and the field `game.ts` binds it to
+ * cannot drift apart. The return is structural (and not `Pos2`, which is a position, nor
+ * `forces.ts`'s own `Vec2`) so no import edge into `specials/` forms.
+ */
+export type CarryQuery = (
+  pos: Pos3,
+  radius: number,
+  cache: SectorTouchCache,
+) => { readonly x: number; readonly y: number } | null;
 
 /**
  * Live kill/item totals for the level, vanilla's own `totalkills`/`killcount` and
@@ -441,14 +453,10 @@ export interface ThingLayer {
      */
     useLines?: (mover: CrossingBody, tryX: number, tryY: number) => TeleportDest | null,
     /**
-     * This tic's conveyor impulse for a body of this radius standing at `pos`,
-     * map units/sec, or null where nothing carries it — `specials/forces.ts:
-     * Forces.carryForBody`. A callback rather than a `Forces` reference for the
-     * same reason `crossLines` is one: this layer owns bodies, not specials.
-     * The return is structural (and not `Pos2`, which is a position) so no
-     * import edge into `specials/` forms. `cache` is the body's own
-     * `PosedThing.touch`, threaded through so the query can skip its sector
-     * walk for a body that hasn't moved.
+     * This tic's conveyor impulse for each body — `CarryQuery`. A callback rather than a `Forces`
+     * reference for the same reason `crossLines` is one: this layer owns bodies, not specials.
+     * `cache` is the body's own `PosedThing.touch`, threaded through so the query can skip its
+     * sector walk for a body that hasn't moved.
      *
      * **Absent means the level has no conveyor at all** (`Forces.carriesAnything`), not merely
      * that this caller declines the query: `ThingGrid.rebuild` reads its presence as `mayCarry`
@@ -457,11 +465,7 @@ export interface ThingLayer {
      * moves further than its bound and a query silently misses it. docs/monster-ai.md § Spatial
      * indexing.
      */
-    carry?: (
-      pos: Pos3,
-      radius: number,
-      cache: SectorTouchCache,
-    ) => { readonly x: number; readonly y: number } | null,
+    carry?: CarryQuery,
   ): ThingUpdateResult;
   /**
    * Fills the sprite batches from the state `update` left, with every position

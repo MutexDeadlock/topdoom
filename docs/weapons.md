@@ -132,9 +132,10 @@ the wheel and the HUD strip.
 With the setting off, `checkAmmo` still returns "cannot fire" but switches nothing: an empty weapon
 stays selected and fires silently, as it did before the rule existed.
 
-Nothing here is saved. `chainEnding` is a one-tic transient reset by `beginLevel`/`restore` — losing
-it across a load costs one trigger pull — and both tables are pure functions of inventory state the
-snapshot already carries (docs/savegames.md).
+Only `chainEnding` is saved here, one boolean: one tic wide, and a load could afford to lose it for
+a trigger pull, but a replay's keyframe restore has to land on the tic the recording ran
+(docs/replays.md § Seeking). Both tables are pure functions of inventory state the snapshot already
+carries (docs/savegames.md).
 
 ## Fire rates
 

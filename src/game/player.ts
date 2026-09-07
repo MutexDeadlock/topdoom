@@ -12,6 +12,7 @@ import type { Pos2, Pos3 } from '../types.ts';
 import { vecLength } from '../util/geom.ts';
 import { decayOverTics } from '../util/damping.ts';
 import { readStorage, writeStorage } from '../util/storage.ts';
+import { atan2, cos, exp, sin } from '../util/fdlibm.ts';
 
 /** The player's own collision box, in map units — `MT_PLAYER`'s `mobjinfo` radius and height. */
 export const PLAYER_RADIUS = 16;
@@ -341,13 +342,13 @@ export class Player implements Pos3 {
     const aboveFloor = this.z - this.world.groundFloor(this.x, this.y, PLAYER_RADIUS);
     this.moveTo(dest);
     if (dest.rotateBy !== undefined) {
-      const cos = Math.cos(dest.rotateBy);
-      const sin = Math.sin(dest.rotateBy);
-      this.velX = vx * cos - vy * sin;
-      this.velY = vx * sin + vy * cos;
+      const turnCos = cos(dest.rotateBy);
+      const turnSin = sin(dest.rotateBy);
+      this.velX = vx * turnCos - vy * turnSin;
+      this.velY = vx * turnSin + vy * turnCos;
       this.velZ = vz;
-      this.momX = kx * cos - ky * sin;
-      this.momY = kx * sin + ky * cos;
+      this.momX = kx * turnCos - ky * turnSin;
+      this.momY = kx * turnSin + ky * turnCos;
     }
     // Unclamped, as in Boom: the offset is reapplied as measured. A body
     // resting on the ground has one of 0, so this is a no-op for every landing
@@ -420,8 +421,8 @@ export class Player implements Pos3 {
       // R_PointToAngle2(0,0,0,0) falls back to angle 0 here rather than an
       // undefined direction; pushing along the victim's current facing reads
       // more sensibly than always due east. Same fallback as ThingLayer.damage.
-      dx = Math.cos(this.angle);
-      dy = Math.sin(this.angle);
+      dx = cos(this.angle);
+      dy = sin(this.angle);
     } else {
       dx /= dist;
       dy /= dist;
@@ -481,12 +482,12 @@ export class Player implements Pos3 {
     // The floor's own scale on the terminal speed: ice barely changes it, mud
     // cuts it hard. Applied to the target rather than the thrust, since the
     // target *is* this model's terminal speed.
-    const targetX = (side * Math.cos(rightRad) + forward * Math.cos(forwardRad)) * ground.targetScale;
-    const targetY = (side * Math.sin(rightRad) + forward * Math.sin(forwardRad)) * ground.targetScale;
+    const targetX = (side * cos(rightRad) + forward * cos(forwardRad)) * ground.targetScale;
+    const targetY = (side * sin(rightRad) + forward * sin(forwardRad)) * ground.targetScale;
 
     // Exponential approach gives DOOM-ish inertia without a full physics model.
     // Ice stretches the ramp out, mud shortens it — see `ground`.
-    const k = 1 - Math.exp(-ACCELERATION * ground.accelScale * dt);
+    const k = 1 - exp(-ACCELERATION * ground.accelScale * dt);
     this.velX += (targetX - this.velX) * k;
     this.velY += (targetY - this.velY) * k;
 
@@ -592,7 +593,7 @@ export class Player implements Pos3 {
       this.velZ = 0;
     }
 
-    if (aim) this.angle = Math.atan2(aim.y - this.y, aim.x - this.x);
+    if (aim) this.angle = atan2(aim.y - this.y, aim.x - this.x);
   }
 
   /**

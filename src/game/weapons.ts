@@ -638,8 +638,9 @@ export class WeaponSystem {
    * `A_ReFire` has not yet closed. It is what makes `checkAmmo` run once after
    * the *last* shot of a burst even though the trigger came up — vanilla's
    * `A_ReFire` sits on the chain's final state and runs either way.
-   * A one-tic transient, deliberately not saved: losing it across a load costs
-   * one trigger pull. docs/weapons.md § Automatic weapon switching.
+   * One tic wide, and saved anyway: a replay's keyframe has to restore the tic
+   * the recording ran, where a load could afford to cost one trigger pull.
+   * docs/weapons.md § Automatic weapon switching, docs/replays.md § Seeking.
    */
   private chainEnding = false;
 
@@ -675,6 +676,7 @@ export class WeaponSystem {
       reloadTic: this.reloadTic,
       refire: this.refire,
       refireWeapon: this.refireWeapon,
+      chainEnding: this.chainEnding,
     };
   }
 
@@ -703,8 +705,9 @@ export class WeaponSystem {
     this.reloadTic = s.reloadTic ?? -1;
     this.refire = s.refire;
     this.refireWeapon = s.refireWeapon;
-    // Derived, not saved — see the field's own doc.
-    this.chainEnding = false;
+    // Absent in a save written before the field was stored, which is the same thing as no chain
+    // in flight — docs/savegames.md § The format and its version.
+    this.chainEnding = s.chainEnding ?? false;
   }
 
   /**

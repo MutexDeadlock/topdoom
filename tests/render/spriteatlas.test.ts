@@ -33,7 +33,11 @@ const PICTURES: Record<string, Bitmap> = {
 };
 
 /** Enough of a `GraphicsBank` for the cache: the pictures above, nothing else. */
-const GFX = { picture: (name: string) => PICTURES[name] ?? null } as unknown as GraphicsBank;
+const GFX = {
+  picture: (name: string) => PICTURES[name] ?? null,
+  // The atlas drops each lump it packed; this stub decodes nothing, so forgetting costs it nothing.
+  forgetPicture: () => {},
+} as unknown as GraphicsBank;
 
 /** The texel at page coordinates, as RGBA. */
 function texel(page: THREE.DataTexture, x: number, y: number): number[] {
@@ -63,12 +67,12 @@ describe('Sprites · the atlas', () => {
     const bmp = PICTURES.BAR1A0;
     for (const [x, y] of [[0, 0], [22, 0], [0, 31], [22, 31], [5, 17]]) {
       const i = y * bmp.width + x;
-      assert.deepEqual(texel(r.page.texture, r.x + x, r.y + y), [i & 255, (i >> 8) & 255, 7, 255]);
+      assert.deepEqual(texel(r.page, r.x + x, r.y + y), [i & 255, (i >> 8) & 255, 7, 255]);
     }
     // The gutter around it is transparent, which the alpha test discards.
-    assert.equal(texel(r.page.texture, r.x - 1, r.y)[3], 0);
-    assert.equal(texel(r.page.texture, r.x + r.width, r.y)[3], 0);
-    assert.equal(texel(r.page.texture, r.x, r.y + r.height)[3], 0);
+    assert.equal(texel(r.page, r.x - 1, r.y)[3], 0);
+    assert.equal(texel(r.page, r.x + r.width, r.y)[3], 0);
+    assert.equal(texel(r.page, r.x, r.y + r.height)[3], 0);
   });
 
   test('a lump too big for a page is left out rather than cropped', () => {

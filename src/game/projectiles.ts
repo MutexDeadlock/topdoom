@@ -26,6 +26,7 @@ import { BFG_SPRAY_HIT_FRAMES, IMPACT_EFFECTS, IMPACT_FRAME_SECONDS, PROJECTILE_
 import type { Pos3 } from '../types.ts';
 import type { MonsterRef } from './things/defs.ts';
 import { vecLength } from '../util/geom.ts';
+import { atan2, cos, sin } from '../util/fdlibm.ts';
 
 /**
  * The banks a `ProjectileLayer` draws and sounds a missile through, beside the world it flies in.
@@ -155,8 +156,8 @@ export class ProjectileLayer {
     const path = world.shotPath(origin, shot.angleRad, aimAt, range, lock);
 
     if (shot.kind === 'hitscan') {
-      const dirX = Math.cos(shot.angleRad);
-      const dirY = Math.sin(shot.angleRad);
+      const dirX = cos(shot.angleRad);
+      const dirY = sin(shot.angleRad);
       // A locked pellet connects only if nothing stopped it short of the target *and* this
       // pellet's own line crosses the target's body, sideways and in height: the lock supplies the
       // slope, not a guaranteed hit. One that fails falls through to `raycastMonster` below, which
@@ -331,7 +332,7 @@ export class ProjectileLayer {
     const nudge = Math.min((p.speed * DOOM_TIC) / 2, p.maxDist);
     if (nudge <= 0) return;
     p.traveled = nudge;
-    const at = pointAlong(p, nudge, Math.cos(p.angleRad), Math.sin(p.angleRad), { x: 0, y: 0, z: 0 });
+    const at = pointAlong(p, nudge, cos(p.angleRad), sin(p.angleRad), { x: 0, y: 0, z: 0 });
     p.drawX = at.x;
     p.drawY = at.y;
     p.drawZ = at.z;
@@ -379,8 +380,8 @@ export class ProjectileLayer {
         from.z = p.homing.z;
         at = this.advanceHoming(p, dt);
       } else {
-        const dirX = Math.cos(p.angleRad);
-        const dirY = Math.sin(p.angleRad);
+        const dirX = cos(p.angleRad);
+        const dirY = sin(p.angleRad);
         pointAlong(p, Math.min(p.traveled, p.maxDist), dirX, dirY, from);
         p.traveled += p.speed * dt;
         at = pointAlong(p, Math.min(p.traveled, p.maxDist), dirX, dirY, { x: 0, y: 0, z: 0 });
@@ -542,7 +543,7 @@ export class ProjectileLayer {
           : this.ctx.player
         : things?.monsterById(homing.targetId) ?? null;
     if (target) {
-      const bearing = Math.atan2(target.y - homing.y, target.x - homing.x);
+      const bearing = atan2(target.y - homing.y, target.x - homing.x);
       homing.headingRad = turnToward(homing.headingRad, bearing, REVENANT_TRACER_TURN_RATE_RAD * dt);
       // Paced by the live distance still to cover, as vanilla's own momz spring
       // is (`P_AproxDistance(dest - actor) / speed`) — not by a launch-time
@@ -553,16 +554,16 @@ export class ProjectileLayer {
     const fromX = homing.x;
     const fromY = homing.y;
     const fromZ = homing.z;
-    homing.x += Math.cos(homing.headingRad) * step;
-    homing.y += Math.sin(homing.headingRad) * step;
+    homing.x += cos(homing.headingRad) * step;
+    homing.y += sin(homing.headingRad) * step;
     const wall = world.projectileStepBlocker({ x: fromX, y: fromY, z: fromZ }, { x: homing.x, y: homing.y, z: homing.z });
     if (wall) {
       // `missileFlight`'s standoff, applied where this flight meets its own wall instead:
       // `projectileStepBlocker` reports the plane. Never back past where this step began. Height is
       // left alone — a homing missile eases its z per step and has no launch slope to walk back.
       const back = Math.min(p.radius, vecLength(wall.x - fromX, wall.y - fromY));
-      homing.x = wall.x - Math.cos(homing.headingRad) * back;
-      homing.y = wall.y - Math.sin(homing.headingRad) * back;
+      homing.x = wall.x - cos(homing.headingRad) * back;
+      homing.y = wall.y - sin(homing.headingRad) * back;
       homing.z = wall.z;
       p.lineIndex = wall.lineIndex;
       p.traveled = p.maxDist;

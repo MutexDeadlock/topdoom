@@ -23,6 +23,7 @@ import type { AudioEngine } from '../../audio/audio.ts';
 import { monsterOrigin } from '../../audio/sfx.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 import { DOOM_TIC } from '../../constants.ts';
+import { atan2, cos, sin } from '../../util/fdlibm.ts';
 
 /**
  * The arch-vile, the one monster type whose behavior does not fit the
@@ -79,7 +80,7 @@ export function tryRaiseCorpse(
   const aheadY = body.y + DIR_Y[body.movedir] * stepDist;
   const found = resurrect(aheadX, aheadY, stats.radius);
   if (!found) return null;
-  body.angle = Math.atan2(found.y - body.y, found.x - body.x); // A_FaceTarget at the corpse
+  body.angle = atan2(found.y - body.y, found.x - body.x); // A_FaceTarget at the corpse
   body.attackPause = VILE_HEAL_DURATION;
   return { kind: 'resurrect', damage: 0, bullets: [], angleRad: body.angle, resurrectId: found.id };
 }
@@ -173,8 +174,8 @@ export function vileFlameFor(ctx: CombatContext, vileId: number, targetId: numbe
  */
 function fireFrontOf(target: Pos3 & { angle: number }): Pos3 {
   return {
-    x: target.x + Math.cos(target.angle) * VILE_FIRE_OFFSET,
-    y: target.y + Math.sin(target.angle) * VILE_FIRE_OFFSET,
+    x: target.x + cos(target.angle) * VILE_FIRE_OFFSET,
+    y: target.y + sin(target.angle) * VILE_FIRE_OFFSET,
     z: target.z,
   };
 }
@@ -187,6 +188,6 @@ function fireFrontOf(target: Pos3 & { angle: number }): Pos3 {
  * two anchored billboards hide each other.
  */
 function vileBlastOffset(atk: MonsterAttackEvent, targetPos: Pos2): Pos2 {
-  const towardVile = Math.atan2(atk.y - targetPos.y, atk.x - targetPos.x);
-  return { x: Math.cos(towardVile) * VILE_FIRE_OFFSET, y: Math.sin(towardVile) * VILE_FIRE_OFFSET };
+  const towardVile = atan2(atk.y - targetPos.y, atk.x - targetPos.x);
+  return { x: cos(towardVile) * VILE_FIRE_OFFSET, y: sin(towardVile) * VILE_FIRE_OFFSET };
 }

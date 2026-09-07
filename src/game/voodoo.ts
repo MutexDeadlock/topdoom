@@ -19,6 +19,7 @@ import type { VoodooSnapshot } from './snapshot.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { vecLength } from '../util/geom.ts';
 import { decayOverTics } from '../util/damping.ts';
+import { cos, sin } from '../util/fdlibm.ts';
 
 /**
  * One doll. It has a player's radius and height because it *is* a player mobj —
@@ -165,12 +166,12 @@ export class VoodooDolls {
           doll.momX = 0;
           doll.momY = 0;
         } else {
-          const cos = Math.cos(dest.rotateBy);
-          const sin = Math.sin(dest.rotateBy);
+          const turnCos = cos(dest.rotateBy);
+          const turnSin = sin(dest.rotateBy);
           const mx = doll.momX;
           const my = doll.momY;
-          doll.momX = mx * cos - my * sin;
-          doll.momY = mx * sin + my * cos;
+          doll.momX = mx * turnCos - my * turnSin;
+          doll.momY = mx * turnSin + my * turnCos;
         }
       }
 

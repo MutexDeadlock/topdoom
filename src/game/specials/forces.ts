@@ -15,6 +15,7 @@ import { DOOM_TIC } from '../../constants.ts';
 import type { Pos3 } from '../../types.ts';
 import type { ScrollerSnapshot } from '../snapshot.ts';
 import { vecLength } from '../../util/geom.ts';
+import { atan2, cos, log, sin } from '../../util/fdlibm.ts';
 
 /**
  * `P_SpawnScrollers`' `SCROLL_SHIFT` of 5: a scroller's rate is its control
@@ -64,6 +65,9 @@ const MORE_FRICTION_MOMENTUM = 15000 / 0x10000;
  * pin `friction` at exactly 1 would otherwise read as an infinite terminal.
  * docs/movement.md § Friction.
  */
+/** The normal floor's own continuous rate, the divisor every friction sector's ramp is taken over. */
+const LOG_ORIG_FRICTION = log(ORIG_FRICTION);
+
 const MAX_TARGET_SCALE = 30 / ((50 * ORIG_FRICTION_FACTOR) / 0x10000 / (1 - ORIG_FRICTION));
 
 /**
@@ -286,7 +290,7 @@ export class Forces {
     // And the ramp: a per-tic decay of `f` is a continuous rate of `−ln(f)·35`,
     // so matching vanilla's time constant here is that rate over the normal
     // floor's. docs/movement.md § Friction.
-    this.frictionScratch.accelScale = Math.log(bounded) / Math.log(ORIG_FRICTION);
+    this.frictionScratch.accelScale = log(bounded) / LOG_ORIG_FRICTION;
     return this.frictionScratch;
   }
 
@@ -508,9 +512,9 @@ export class Forces {
         this.sightScratch.z = pos.z;
         if (!this.world.hasLineOfSight(pos, this.sightScratch)) continue;
         // `R_PointToAngle2(thing, source)`, turned around by 180° for a pusher.
-        const angle = Math.atan2(p.y - pos.y, p.x - pos.x) + (p.away ? Math.PI : 0);
-        px += Math.cos(angle) * speed * TICS_PER_SECOND;
-        py += Math.sin(angle) * speed * TICS_PER_SECOND;
+        const angle = atan2(p.y - pos.y, p.x - pos.x) + (p.away ? Math.PI : 0);
+        px += cos(angle) * speed * TICS_PER_SECOND;
+        py += sin(angle) * speed * TICS_PER_SECOND;
         continue;
       }
       if (!touching.includes(p.sector)) continue;

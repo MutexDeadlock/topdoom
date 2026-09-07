@@ -39,8 +39,19 @@ table.
 
 ## Waking up
 
-A monster stays inert until it spots the player, checked on a throttle (`LOOK_INTERVAL`, ~0.3s)
-rather than every frame — vanilla runs idle `A_Look` every 10 tics, not continuously.
+A monster stays inert until it spots the player, checked on a throttle (`LOOK_INTERVAL_TICS`, 11
+tics) rather than every frame — vanilla runs idle `A_Look` every 10 tics, not continuously.
+
+**The throttle is one cadence for the whole level**, counted off `ThingLayer`'s own `clock` like the
+respawn roll beside it, not a timer per monster. Every map-placed monster was already in phase
+(each spawns at 0 and accumulates the same `dt`), and a phase a monster keeps privately is a phase a
+restore cannot put back: a keyframe restored every sleeper's look to phase 0, which woke them up to
+10 tics off what the recording ran and desynced any seek past the first minute
+(docs/replays.md § Seeking). What did change with it: a monster spawned, revived or respawned
+mid-level, and one that has lost its target and gone idle again, now join the level's cadence
+instead of starting one of their own, and the cadence no longer stops while the player is dead
+(`updateThings` passes no player then — docs/death.md § Player death); nobody wakes either way,
+since the wake check still wants a living player.
 
 This sweep is the engine's largest consumer of `hasLineOfSight`, and the only caller that hands it
 subsector hints for the REJECT test — docs/world.md § REJECT.

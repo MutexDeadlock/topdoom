@@ -1,15 +1,22 @@
 v0.18.1 (2026-09-0?)
 
 Features and improvements
+  - replays now play back identically in every browser: 
+    the simulation computes sin/cos/atan2/exp/log itself instead of asking 
+    the engine, which rounds them differently from one version to the next
   - improved monster-AI performance, most noticable on monster-heavy maps
   - improved renderer performance:
     - sprites draw from a texture atlas: a few draw calls a frame instead of 
-      one per lump
+      one per lump, and the atlas frees the decoded art it packed (~18 MB)
     - dynamic lights are also more efficient now, so I also raised their limit
 
 Fixed bugs
   - a dynamic light could skip a leaf in plain sight, flickering with 
     the light's radius
+  - seeking a replay past a keyframe desynced the run: sleeping monsters
+    woke up to 10 tics off, and a fire chain in flight was lost
+  - a monster restored next to a teleporter could fire it on the first tic
+    after the load, without having walked over it
 
 
 

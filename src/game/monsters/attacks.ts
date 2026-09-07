@@ -18,6 +18,7 @@ import type { MonsterAttackEvent } from './defs.ts';
 import { resolveVileBlast, spawnWindupFire, vileFlameFor } from './vile.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import type { Pos3 } from '../../types.ts';
+import { cos, sin } from '../../util/fdlibm.ts';
 
 /**
  * How far off-aim each monster bullet is thrown — `p_enemy.c`'s
@@ -181,8 +182,8 @@ export class MonsterAttacks {
       includeHidden: true,
       slope,
     });
-    const dirX = Math.cos(angleRad);
-    const dirY = Math.sin(angleRad);
+    const dirX = cos(angleRad);
+    const dirY = sin(angleRad);
     // The player's own box, on `PIT_AddThingIntercepts`' diagonal test — the
     // same rule `ThingLayer.raycastMonster` puts every monster on.
     const playerHit = traceHitsBox(atk.x, atk.y, dirX, dirY, player.x, player.y, PLAYER_RADIUS);

@@ -90,6 +90,14 @@ export interface WeaponsSnapshot {
   reloadTic?: number;
   refire: number;
   refireWeapon: WeaponId | null;
+  /**
+   * Whether a fire chain is still waiting for its `A_ReFire`. One tic wide and
+   * invisible to a player reloading a save, but a replay's keyframe has to land
+   * on the tic the recording ran (docs/replays.md § Seeking). Optional because
+   * it was added without a `SAVE_VERSION` bump: absent means no chain, which is
+   * what a save from before it restored to.
+   */
+  chainEnding?: boolean;
 }
 
 /**
@@ -179,7 +187,6 @@ export const MONSTER_SAVE_KEYS = [
   'velY',
   'velZ',
   'alerted',
-  'lookTimer',
   'targetId',
   'attackPause',
   'burstLeft',
@@ -247,7 +254,6 @@ export const MONSTER_FIELD_DEFAULTS: {
   velY: 0,
   velZ: 0,
   alerted: false,
-  lookTimer: 0,
   targetId: null,
   attackPause: 0,
   burstLeft: 0,

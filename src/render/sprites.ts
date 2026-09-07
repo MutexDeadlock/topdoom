@@ -11,7 +11,7 @@ import { litColor, viewDepthAt } from './sectorlight.ts';
 import { DOOM_TIC } from '../constants.ts';
 import { tinted, type Tint } from './lights.ts';
 import { skyScale } from './skytint.ts';
-import { SpriteAtlas, ATLAS_PAGE_SIZE, sampleAsSprite, type AtlasPage } from './spriteatlas.ts';
+import { SpriteAtlas, ATLAS_PAGE_SIZE, sampleAsSprite } from './spriteatlas.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
@@ -64,7 +64,7 @@ export interface SpriteSkin {
  * the hotspot's `left` — negated when mirrored. docs/sprites.md § Batching.
  */
 export interface AtlasSprite {
-  page: AtlasPage;
+  page: THREE.DataTexture;
   u0: number;
   v0: number;
   u1: number;
@@ -128,6 +128,10 @@ export class SpriteMaterialCache {
         if (bmp) pictures.push([name, bmp]);
       }
       this.atlas = new SpriteAtlas(pictures, this.maxAnisotropy);
+      // The pages own these pixels now. Without this the whole set stays decoded in the bank for
+      // the session on top of them — see `GraphicsBank.forgetPicture`. `get` re-decodes the
+      // handful it needs a `left` hotspot for, as it did before there was an atlas.
+      for (const name of atlasLumps) gfx.forgetPicture(name);
     }
   }
 

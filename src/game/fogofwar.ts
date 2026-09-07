@@ -4,7 +4,8 @@
  */
 import { buildIslands, buildSubSectorPolys } from '../render/bsp.ts';
 import { polygonCentroid, segmentCrossT, vecLength } from '../util/geom.ts';
-import { dampen } from '../util/damping.ts';
+import { dampenWith } from '../util/damping.ts';
+import { exp } from '../util/fdlibm.ts';
 import { decodeRuns, encodeRuns } from './snapshot.ts';
 import { scanSectors } from './specials/mapscan.ts';
 import { VIEW_DISTANCE } from '../constants.ts';
@@ -382,10 +383,13 @@ export class FogOfWar {
   updateFade(dt: number): void {
     this.changedWallCount = 0;
     this.changedAny = false;
+    // One exponential for the sweep rather than one per subsector: every alpha here fades at the
+    // same rate over the same frame, which is the case `dampenWith` is for.
+    const lerpT = 1 - exp(-FADE_SPEED * dt);
     for (let ss = 0; ss < this.alpha.length; ss++) {
       const target = this.targetAlpha(ss);
       if (this.alpha[ss] === target) continue;
-      this.alpha[ss] = dampen(this.alpha[ss], target, FADE_SPEED, dt, SNAP_EPS);
+      this.alpha[ss] = dampenWith(this.alpha[ss], target, lerpT, SNAP_EPS);
       // Where the reveal is happening, for `changedBounds`.
       if (!this.changedAny) {
         this.changedAny = true;

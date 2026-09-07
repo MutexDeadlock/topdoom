@@ -82,14 +82,16 @@ of nothing-but-`triangularDraw` has a small nonzero mean. The distribution is sy
 
 ## What this does not buy
 
-**Not cross-engine determinism.** `clearRandom()` runs at level load (`game.ts: loadMapByIndex`,
-vanilla's `G_InitNew` position), so a level always starts from the same table position, and the
-simulation is tic-locked (docs/frameloop.md), so which draw lands on which entry no longer varies
-with framerate. Across *browsers* it still varies: ECMA-262 leaves `Math.sin`, `cos`, `atan2`, `exp`
-and `log` implementation-approximated, so a position drifts in its last bits and a comparison
-eventually falls the other way. `Math.hypot` and `Math.pow` were the two that had exact replacements
-and are gone from `src/` (`util/geom.ts: vecLength`, `util/damping.ts: decayOverTics`, each held by
-a test); the trigonometry is what a same-run-everywhere replay would still have to replace.
+**Cross-engine determinism, now that the tic computes its own transcendentals.** `clearRandom()`
+runs at level load (`game.ts: loadMapByIndex`, vanilla's `G_InitNew` position), so a level always
+starts from the same table position, and the simulation is tic-locked (docs/frameloop.md), so which
+draw lands on which entry no longer varies with framerate. Across *browsers* it used to vary:
+ECMA-262 leaves `Math.sin`, `cos`, `atan2`, `exp` and `log` implementation-approximated, so a
+position drifted in its last bits and a comparison eventually fell the other way. All five now come
+from `util/fdlibm.ts` and the rest of a tic is `+ - * /` with `sqrt`/`round`/`floor`, every one of
+them exactly pinned. `Math.hypot` and `Math.pow` had exact replacements and are gone from `src/`
+(`util/geom.ts: vecLength`, `util/damping.ts: decayOverTics`, each held by a test).
+docs/replays.md § What breaks determinism.
 
 Within one engine the cursors are exactly reproducible, and the replays rest on that: a recording
 samples the P_Random cursor once a second and its playback compares (docs/replays.md § Playback),

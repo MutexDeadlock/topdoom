@@ -14,6 +14,7 @@ import { readStorage, writeStorage } from '../util/storage.ts';
 import { NO_SIDE } from '../wad/map.ts';
 import { EYE_HEIGHT } from './player.ts';
 import type { Opening, World } from './world.ts';
+import { cos, sin } from '../util/fdlibm.ts';
 
 /** Which camera mode is active — a menu setting, see docs/menu.md § Persisted settings. */
 export type CameraMode = 'auto' | 'manual';
@@ -124,7 +125,7 @@ const CLEARANCE_SNAP_EPS = 0.01;
  */
 const RAY_DIRS: readonly { dx: number; dy: number }[] = Array.from({ length: OPENNESS_RAY_COUNT }, (_, i) => {
   const angle = (i / OPENNESS_RAY_COUNT) * Math.PI * 2;
-  return { dx: Math.cos(angle), dy: Math.sin(angle) };
+  return { dx: cos(angle), dy: sin(angle) };
 });
 
 /** Per-ray clear distances, reused across measurements so a tic allocates nothing. */
@@ -168,8 +169,8 @@ export function measureOpenness(world: World, from: Pos3, viewDeg: number): Open
   rayY = from.y;
   rayEyeZ = from.z + EYE_HEIGHT;
   const viewRad = (viewDeg * Math.PI) / 180;
-  const vx = Math.cos(viewRad);
-  const vy = Math.sin(viewRad);
+  const vx = cos(viewRad);
+  const vy = sin(viewRad);
   let weighted = 0;
   let weight = 0;
 
@@ -651,10 +652,10 @@ function traceObstruction(i: number): void {
 function eyeDirection(tiltDeg: number, yawDeg: number): void {
   const tilt = (tiltDeg * Math.PI) / 180;
   const yaw = (yawDeg * Math.PI) / 180;
-  const horiz = Math.sin(tilt);
-  eyeDirX = horiz * Math.sin(yaw);
-  eyeDirY = -horiz * Math.cos(yaw);
-  eyeDirZ = Math.cos(tilt);
+  const horiz = sin(tilt);
+  eyeDirX = horiz * sin(yaw);
+  eyeDirY = -horiz * cos(yaw);
+  eyeDirZ = cos(tilt);
 }
 
 /**

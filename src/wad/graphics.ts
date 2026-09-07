@@ -139,6 +139,16 @@ export class GraphicsBank {
     this.cache.set(key, result);
     return result;
   }
+
+  /**
+   * Drops a decoded `picture` from the cache. For a caller that reads a lump once and keeps what
+   * it needs elsewhere — `render/sprites.ts` packs every sprite in the set into the atlas pages,
+   * and holding all 1381 of DOOM2's decoded bitmaps as well costs ~18 MB for nothing. A later
+   * `picture` of the same name simply decodes again.
+   */
+  forgetPicture(name: string): void {
+    this.cache.delete('P:' + name.toUpperCase());
+  }
 }
 
 /** Standalone graphic (sprite, HUD element) as a bitmap. */

@@ -94,16 +94,16 @@ player's, as in vanilla.
 **At most `MAX_STARTS_PER_TIC` copies of one sample may *start* within one `DOOM_TIC`**
 (`audio.ts: admitBurst`), and the copies that do are spaced `BURST_STAGGER` apart. Both are
 deliberate non-vanilla additions, and both exist because of one event: a `noiseAlert` floods a
-region, every unalerted monster in it wakes on the **same frame** — `PosedThing` spawns with
-`lookTimer: 0` and they all accumulate the same `dt`, so a region's `LOOK_INTERVAL` ticks are in
-phase — and each raises a sight sound over a second long (`DSBGSIT1` 1.24 s, `DSSGTSIT` 1.01 s).
+region, every unalerted monster in it wakes on the **same frame** — the idle look-around is one cadence for
+the whole level (docs/monster-ai.md § Waking up), so a region's look checks all land on the same
+tic — and each raises a sight sound over a second long (`DSBGSIT1` 1.24 s, `DSSGTSIT` 1.01 s).
 A dozen of those own a third of `CHANNELS` for the length of the cry, and vanilla's per-origin and
 per-priority culls catch neither: every waker has its own `monsterOrigin`, and every sight sound
 shares priority 98.
 
-The rule stays in the mixer. Scattering the wake itself would change a spawn default the snapshot's
-sparse encodings elide against and would consume `pRandom` draws in the play simulation — this
-changes no game state at all.
+The rule stays in the mixer. Scattering the wake itself would consume `pRandom` draws in the play
+simulation, and a per-monster phase is the thing a restore cannot put back
+(docs/monster-ai.md § Waking up) — this changes no game state at all.
 
 - **The budget counts starts per tic, not voices in flight.** A sound that layers by design across
   tics is untouched: `plasma` carries no origin (§ Weapons and projectiles) and a held trigger

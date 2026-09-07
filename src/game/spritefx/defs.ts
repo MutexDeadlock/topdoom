@@ -9,6 +9,7 @@
 import type { SpriteAnimator } from '../../render/sprites.ts';
 import type { Pos3 } from '../../types.ts';
 import { segmentEntersBox } from '../../util/geom.ts';
+import { atan2, cos, sin } from '../../util/fdlibm.ts';
 
 /**
  * Map units a second, for the one effect kind that carries momentum — the crusher's blood spray,
@@ -182,7 +183,7 @@ const PROJECTILE_HEIGHT = 8;
  * turn (see `REVENANT_TRACER_TURN_RATE_RAD`).
  */
 export function turnToward(from: number, to: number, maxDelta: number): number {
-  const diff = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+  const diff = atan2(sin(to - from), cos(to - from));
   return from + Math.max(-maxDelta, Math.min(maxDelta, diff));
 }
 

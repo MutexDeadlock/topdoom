@@ -20,6 +20,7 @@ import { GRAVITY } from '../player.ts';
 import { pRandom, rollDamage } from '../../util/random.ts';
 import {
   chaseStep,
+  DIR_ANGLE,
   DIR_X,
   DIR_Y,
   DI_NODIR,
@@ -38,6 +39,7 @@ import { monsterOrigin, SILENT, type SoundEmitter } from '../../audio/sfx.ts';
 import type { Pos3 } from '../../types.ts';
 import { DOOM_TIC } from '../../constants.ts';
 import { vecLength } from '../../util/geom.ts';
+import { atan2, cos, sin } from '../../util/fdlibm.ts';
 
 /** Everything one `stepMonsterAI` call is given about the step it is being asked to take. */
 export interface MonsterStep {
@@ -70,7 +72,7 @@ export interface MonsterStep {
 }
 
 /**
- * One call's working set: the step plus the three handles and the four values every helper below
+ * One call's working set: the step plus the three handles and the five values every helper below
  * derives from them. Built once by `stepMonsterAI` and threaded through, so no helper restates
  * what the call already knows. The inherited `blockersFor` is consumed here rather than merely
  * read: `testStep` clears it once it has filled `collider.blockers` from it — see there.
@@ -83,6 +85,8 @@ interface Chase extends MonsterStep {
   dist: number;
   dx: number;
   dy: number;
+  /** This species' full `A_Chase` step (`chaseStep`), which every probe below is sized from. */
+  step: number;
   /**
    * Line of sight to the target, resolved by `canSee` on demand and at most once per call: only
    * the refire loop and `runChaseCall` consume it, and both run far less often than
@@ -271,6 +275,7 @@ export function stepMonsterAI(
     dx,
     dy,
     dist: vecLength(dx, dy),
+    step: chaseStep(stats),
     sight: null,
     standingX: null,
     standingY: 0,
@@ -305,7 +310,7 @@ export function stepMonsterAI(
   // The swing already decided on, landing partway into its own state chain rather than on the
   // chase call that chose it. docs/monster-ai.md § The windup.
   if (body.swinging && body.burstLeft > 0) {
-    body.angle = Math.atan2(dy, dx); // A_FaceTarget, re-run through the windup
+    body.angle = atan2(dy, dx); // A_FaceTarget, re-run through the windup
     body.burstTimer -= dt;
     if (body.burstTimer <= 0) {
       body.burstLeft = 0;
@@ -317,7 +322,7 @@ export function stepMonsterAI(
   // Shots of an attack already under way, spaced out inside its own state sequence rather than
   // each costing a fresh chase call.
   if (ranged && !body.swinging && body.burstLeft > 0) {
-    body.angle = Math.atan2(dy, dx); // A_FaceTarget, re-run between volley shots
+    body.angle = atan2(dy, dx); // A_FaceTarget, re-run between volley shots
     body.burstTimer -= dt;
     if (body.burstTimer <= 0) {
       const shotIndex = (ranged.shots ?? 1) - body.burstLeft;
@@ -376,7 +381,7 @@ export function stepMonsterAI(
     // `P_Move` ever judges. Sub-stepping is this engine's own and is *stricter*, not weaker.
     // docs/monster-ai.md § Movement.
     if (result === 'blocked') {
-      const full = chaseStep(stats);
+      const full = c.step;
       const fx = body.x + DIR_X[body.movedir] * full;
       const fy = body.y + DIR_Y[body.movedir] * full;
       const fullResult = testStep(c, fx, fy);
@@ -402,7 +407,7 @@ export function stepMonsterAI(
       body.y = ny;
       adoptStanding(c);
       body.inFloat = false;
-      body.angle = Math.atan2(DIR_Y[body.movedir], DIR_X[body.movedir]);
+      body.angle = DIR_ANGLE[body.movedir];
       // Footsteps are paced by *walking*, not by wall-clock time: a monster held still by an
       // attack or stuck against a wall stops stomping, the way vanilla's walk-state chain stops
       // advancing. Only the three heavy types have any (`MonsterSounds.walk`).
@@ -446,7 +451,7 @@ function runChaseCall(c: Chase): MonsterAttack | null {
   }
 
   if (stats.melee && inMeleeReach(c)) {
-    body.angle = Math.atan2(dy, dx); // A_FaceTarget
+    body.angle = atan2(dy, dx); // A_FaceTarget
     body.attackPause = stats.melee.duration;
     // Melee has no `P_CheckMissileRange` equivalent — `A_Chase` swings whenever the target is in
     // reach, so the swing's own length is the entire wait. It does have a windup: the claw lands
@@ -483,7 +488,7 @@ function beginRangedAttack(c: Chase): MonsterAttack | null {
   const { body, stats, dx, dy, sfx } = c;
   const ranged = stats.ranged;
   if (!ranged) return null;
-  body.angle = Math.atan2(dy, dx); // A_FaceTarget
+  body.angle = atan2(dy, dx); // A_FaceTarget
   body.attackPause = ranged.duration;
   body.refiring = !!ranged.refire;
   // The windup's own sound, on the missilestate chain's first frame — the mancubus's `manatk`
@@ -602,8 +607,8 @@ function stepCharge(c: Chase): MonsterAttack | null {
     return fireAttack('melee', stats.ranged, body.chargeAngle);
   }
   const step = charge.speed * dt;
-  const nx = body.x + Math.cos(body.chargeAngle) * step;
-  const ny = body.y + Math.sin(body.chargeAngle) * step;
+  const nx = body.x + cos(body.chargeAngle) * step;
+  const ny = body.y + sin(body.chargeAngle) * step;
   probeCollider.radius = stats.radius;
   probeCollider.z = body.z;
   probeCollider.height = stats.height;
@@ -678,8 +683,8 @@ function newChaseDir(c: Chase): void {
  * instead of re-routing away from it.
  */
 function tryWalk(c: Chase, dir: number): boolean {
-  const { body, stats } = c;
-  const reach = chaseStep(stats);
+  const { body } = c;
+  const reach = c.step;
   const nx = body.x + DIR_X[dir] * reach;
   const ny = body.y + DIR_Y[dir] * reach;
   if (testStep(c, nx, ny) === 'blocked') return false;
@@ -721,7 +726,7 @@ function testStep(c: Chase, x: number, y: number): StepResult {
     // Every probe of this call — the sub-step, the full-step fallback, `tryWalk`'s eight — lies
     // within one chase step of the body, on unit directions (`DIR_X`/`DIR_Y`). Cleared as it is
     // read, so the grid sweep is paid once per call however many probes follow.
-    probe.blockers = c.blockersFor(body, chaseStep(stats));
+    probe.blockers = c.blockersFor(body, c.step);
     c.blockersFor = undefined;
   }
   probe.z = body.z;
@@ -875,7 +880,7 @@ function settleVertical(c: Chase): void {
 function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: number, playerX: number, playerY: number): boolean {
   const dist = vecLength(playerX - monsterX, playerY - monsterY);
   if (dist <= MELEE_RANGE) return true;
-  const toPlayerDeg = (Math.atan2(playerY - monsterY, playerX - monsterX) * 180) / Math.PI;
+  const toPlayerDeg = (atan2(playerY - monsterY, playerX - monsterX) * 180) / Math.PI;
   const diff = Math.abs((((toPlayerDeg - facingDeg + 180) % 360) + 360) % 360 - 180);
   return diff <= 90;
 }

@@ -95,8 +95,9 @@ src/util/      helpers shared across layers: 2D geometry plus the aim ray's box 
                float literals (glsl), per-frame profiling, IndexedDB request plumbing (idb,
                shared by the save store and the WAD
                library), the one localStorage object every setting is a field of (storage), raw
-               DEFLATE (inflate, for compressed nodes), vanilla's random table — the engine's only
-               entropy source
+               DEFLATE (inflate, for compressed nodes), the five approximated Math functions in
+               software so a tic runs the same on every engine (fdlibm), vanilla's random table —
+               the engine's only entropy source
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
                    BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE +
                    FOG_START_FRACTION, WATER_SURFACE_ALPHA)

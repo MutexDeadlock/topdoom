@@ -11,6 +11,7 @@ import { PLAYER_HEIGHT, SIGHT_EYE_HEIGHT } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './things/doomednums.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
+import { cos, sin } from '../util/fdlibm.ts';
 
 /** The tallest step a body walks up without jumping, in map units — vanilla's `MAXSTEPSIZE`. */
 
@@ -1751,8 +1752,8 @@ export class World {
     lock: ShotLock | null = null,
   ): ShotPath {
     const { x, y, z } = origin;
-    const dx = Math.cos(angleRad);
-    const dy = Math.sin(angleRad);
+    const dx = cos(angleRad);
+    const dy = sin(angleRad);
     const toTarget = target ? vecLength(target.x - x, target.y - y) : 0;
     const maxRange = range ?? (target ? toTarget : WEAPON_RANGE);
     // Held for the whole trace, so a `range` past the target keeps climbing or

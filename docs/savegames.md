@@ -110,8 +110,9 @@ from before cheats existed also means — docs/cheats.md § Saves and best times
 keys ride the optional `keySlots` — the always-written `keys` colors keep the save readable by
 pre-slot builds, and a save without `keySlots` restores each color as both slots, exactly the
 merged semantics those builds had), teleport fogs still
-playing, `WeaponSystem`'s fire timing (including the super shotgun's reload clock, `reloadTic` —
-**optional** for the same no-bump reason `teleportFogs` is: absent means no reload in flight) and
+playing, `WeaponSystem`'s fire timing (including the super shotgun's reload clock, `reloadTic`, and
+`chainEnding`, whether a fire chain is still waiting for its `A_ReFire` — both **optional** for the
+same no-bump reason `teleportFogs` is: absent means neither is in flight) and
 its per-slot selection memory (`slotWeapon`, optional the same way: absent means only the restored
 weapon's own slot is remembered, docs/weapons.md § Slot keys),
 the *changed* sectors' mutable fields (`floorHeight`/`ceilHeight`/`light`/`special`/
@@ -216,8 +217,9 @@ nearly so:
   (`tests/game/specials-snapshot.test.ts`).
 - **A pristine killable thing's AI block**: a monster still exactly in its spawn state saves no
   block at all — not even the sparse block's always-saved `homingBias` (`isPristine` in
-  `game/things.ts`); its `lookTimer` phase and `homingBias` coin flip are re-seeded on restore,
-  both invisible before first contact. This plus the sparse encoding is what keeps a 10k-monster
+  `game/things.ts`); its `homingBias` coin flip is re-seeded on restore, invisible before first
+  contact. The idle look-around it used to lose with it is no longer per-monster at all — one
+  cadence off the level clock, which the save already carries (docs/monster-ai.md § Waking up). This plus the sparse encoding is what keeps a 10k-monster
   map's save inside the quota (§ Storage).
 - **A save's thing list keeps only what the run changed**: `changed` holds `[id, state]` pairs for
   the things no longer as the map spawned them, in ascending id. There is one restore path and it
@@ -228,6 +230,13 @@ nearly so:
 - **`applyThingState` sets `angle` from `facingDeg`**, since the spawn underneath it is the *map's*
   angle rather than this save's, and a monster block omits `angle` precisely when the two agree.
   Without it a restored monster faces where the map placed it, not where the run left it.
+- **`applyThingState` also re-seats `prev`**, the point the walk's line-crossing test measures from,
+  which `pushThing` seeded at the map's spawn point. Without it the first tic after a load tests a
+  segment running from a restored monster's spawn all the way to where the save left it. The
+  candidates are still only the walk lines within `MONSTER_CROSS_RADIUS` of where it now stands
+  (`SpecialsController.crossLines`), so what fires is one of those the long segment happens to pass
+  through — a monster restored just past a teleporter it spawned on the far side of teleports on
+  load without having walked anywhere.
 - **Saving is refused mid-intermission, mid-exit and while dead** (`Game.saveRefusal`), which keeps
   the intermission/exit cascade out of the format entirely. `captureSave` *throws* that refusal
   rather than returning a sentinel, so the whole save path has one refusal convention and the

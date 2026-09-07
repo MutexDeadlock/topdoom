@@ -11,6 +11,7 @@ import { AIM_SLOPE_LIMIT, type MonsterRef } from '../../src/game/things/defs.ts'
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { blastDistanceToBox, segmentEntersBox, traceHitsBox } from '../../src/util/geom.ts';
+import { cos, sin } from '../../src/util/fdlibm.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 import type { Pos3 } from '../../src/types.ts';
@@ -60,8 +61,10 @@ function ids(refs: readonly MonsterRef[]): number[] {
 }
 
 function nearestByScan(refs: readonly MonsterRef[], origin: Pos3, angle: number, maxDist: number): { id: number; dist: number } | null {
-  const dx = Math.cos(angle);
-  const dy = Math.sin(angle);
+  // The same trig the ray under test casts with, or the two directions differ in the last bit and
+  // so do the distances this compares exactly. docs/replays.md § What breaks determinism.
+  const dx = cos(angle);
+  const dy = sin(angle);
   let nearest: { id: number; dist: number } | null = null;
   for (const m of refs) {
     const t = traceHitsBox(origin.x, origin.y, dx, dy, m.x, m.y, m.radius);

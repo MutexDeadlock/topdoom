@@ -5,7 +5,6 @@
 import * as THREE from 'three';
 import type { CachedSprite } from './sprites.ts';
 import { spriteMaterial, VIEWER_ANGLE_DEG, whiteVertexColors } from './sprites.ts';
-import type { AtlasPage } from './spriteatlas.ts';
 import { DOOM_TIC } from '../constants.ts';
 import { tinted, type Tint } from './lights.ts';
 import { skyScale } from './skytint.ts';
@@ -88,7 +87,7 @@ interface Batch {
 }
 
 /** What a batch is keyed by: the page every atlas-backed lump on it shares, or a lump of its own. */
-type BatchKey = AtlasPage | CachedSprite;
+type BatchKey = THREE.DataTexture | CachedSprite;
 
 /**
  * Draws many sprites as a few `InstancedMesh`es instead of one `THREE.Mesh` each, rebuilt from
@@ -341,10 +340,10 @@ export class SpriteBatch {
    * The material every lump on `page` draws through: the page as its map, sized and mapped per
    * instance by the atlas patch, otherwise built exactly as a lump's own is.
    */
-  private pageMaterialFor(page: AtlasPage): THREE.MeshBasicMaterial {
+  private pageMaterialFor(page: THREE.DataTexture): THREE.MeshBasicMaterial {
     const hit = this.materials.get(page);
     if (hit) return hit;
-    const material = spriteMaterial(page.texture);
+    const material = spriteMaterial(page);
     material.vertexColors = true;
     this.applyBatchLook(material);
     const fuzzTime = this.fuzzTime;

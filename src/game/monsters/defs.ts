@@ -9,6 +9,7 @@
 import { ThingType } from '../things/doomednums.ts';
 import type { SfxId } from '../../audio/sfx.ts';
 import type { Pos3 } from '../../types.ts';
+import { atan2 } from '../../util/fdlibm.ts';
 
 /**
  * The mutable chase/attack state `stepMonsterAI` (`monsters/ai.ts`) reads and
@@ -607,6 +608,13 @@ export const DI_NODIR = 8;
  */
 export const DIR_X = [1, 0.71716, 0, -0.71716, -1, -0.71716, 0, 0.71716];
 export const DIR_Y = [0, 0.71716, 1, 0.71716, 0, -0.71716, -1, -0.71716];
+
+/**
+ * The facing each `movedir` turns a monster to, radians. Derived from the two tables above with
+ * the same `atan2` the caller would have used, once at load rather than per walking monster per
+ * tic: `movedir` indexes constants, so the answer is one of eight values.
+ */
+export const DIR_ANGLE = DIR_X.map((x, i) => atan2(DIR_Y[i], x));
 
 /**
  * Height above a monster's feet its hitscan leaves from, on this species' own

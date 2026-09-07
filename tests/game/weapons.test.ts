@@ -428,6 +428,25 @@ describe('Game rules · running dry', () => {
     assert.equal(afterFiring('pistol', { bullets: 1, shells: 10 }, ['shotgun'], 80, true), 'shotgun');
   });
 
+  /**
+   * The chain is one tic wide and a load could afford to lose it, but a replay's keyframe restore
+   * has to land on the tic the recording ran — docs/replays.md § Seeking.
+   */
+  test('a save taken mid-chain still ends the chain after the restore', () => {
+    const inv = createInventory();
+    inv.ammo = { bullets: 1, shells: 10, rockets: 0, cells: 0 };
+    inv.weapons = new Set<WeaponId>(['pistol', 'shotgun']);
+    inv.currentWeapon = 'pistol';
+    const ws = started(inv);
+    ws.fire(true, inv, 0);
+    const saved = JSON.parse(JSON.stringify(ws.snapshot()));
+
+    const loaded = started(inv);
+    loaded.restore(saved, inv);
+    for (let i = 0; i < 80; i++) loaded.fire(false, inv, 0);
+    assert.equal(inv.currentWeapon, 'shotgun', 'the restored chain still ran its A_ReFire check');
+  });
+
   test('nothing switches mid-chain, only once the cooldown has run out', () => {
     const cooldown = Math.round(WEAPONS.rocketLauncher.cooldown / DOOM_TIC);
     for (let t = 1; t <= cooldown; t++) {

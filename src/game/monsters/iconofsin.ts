@@ -25,6 +25,7 @@ import type { Pos3 } from '../../types.ts';
 import { DOOM_TIC } from '../../constants.ts';
 import { pRandom, triangularDraw } from '../../util/random.ts';
 import { vecLength } from '../../util/geom.ts';
+import { atan2, cos, sin } from '../../util/fdlibm.ts';
 
 /**
  * Where the eye sights from, above its own floor: `MT_BOSSSPIT`'s `mobjinfo.height` of 32, less the
@@ -361,7 +362,7 @@ export class IconOfSin {
     const dy = target.y - this.shooter.y;
     const at = { x: this.shooter.x, y: this.shooter.y, z: this.ctx.world.floorAt(this.shooter.x, this.shooter.y) };
     const cube = this.makeCube(at, {
-      angleRad: Math.atan2(dy, dx),
+      angleRad: atan2(dy, dx),
       target,
       remaining: vecLength(dx, dy),
       soundTimer: 0,
@@ -390,8 +391,8 @@ export class IconOfSin {
         this.spawnFly(c.target);
         continue;
       }
-      c.x += Math.cos(c.angleRad) * step;
-      c.y += Math.sin(c.angleRad) * step;
+      c.x += cos(c.angleRad) * step;
+      c.y += sin(c.angleRad) * step;
       // Eased toward the destination's own floor rather than held flat — the eye and the spawn
       // spots sit at different heights, and vanilla's cube carries a real `momz` for that reason.
       const flat = vecLength(c.target.x - c.x, c.target.y - c.y);
@@ -419,7 +420,7 @@ export class IconOfSin {
     const entry = SPAWN_CUBE_MONSTERS.find((e) => roll < e.below) ?? last;
     // Facing the player: vanilla's newly spawned monster goes straight to its seestate with the
     // player acquired, so there is no idle facing for it to keep.
-    const angleRad = Math.atan2(this.ctx.player.y - at.y, this.ctx.player.x - at.x);
+    const angleRad = atan2(this.ctx.player.y - at.y, this.ctx.player.x - at.x);
     const spawned = this.ctx.things?.spawnMonster(entry.type, at, angleRad);
     if (!spawned || this.ctx.playerDead) return;
     // The player half of the telefrag — `ThingLayer.spawnMonster` already did every other body.

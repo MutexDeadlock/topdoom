@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import type { Sector } from '../wad/map.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
-import type { PositionCheck, SectorTouchCache, World } from './world.ts';
+import type { PositionCheck, World } from './world.ts';
 import {
   clampMomentum,
   GRAVITY,
@@ -32,6 +32,7 @@ import {
   pickupScaleFor,
   TELEFRAG_DAMAGE,
   type BarrelExplosion,
+  type CarryQuery,
   type CrossingBody,
   type DamageHit,
   type LevelKillItemStats,
@@ -49,6 +50,7 @@ export {
   monstersTelefrag,
   TELEFRAG_DAMAGE,
   type BarrelExplosion,
+  type CarryQuery,
   type CrossingBody,
   type DamageHit,
   type MonsterRef,
@@ -133,6 +135,7 @@ import type { Pos2, Pos3 } from '../types.ts';
 import type { TeleportDest } from './specials.ts';
 import { thingStatsPatched } from './dehacked/apply.ts';
 import { decayOverTics } from '../util/damping.ts';
+import { cos, sin } from '../util/fdlibm.ts';
 
 /**
  * Vanilla's per-tic XY friction, `P_XYMovement`'s `FRICTION = 0xE800/0x10000`. `applyKnockback`
@@ -150,9 +153,13 @@ const MOMENTUM_SPLIT_STEP = MAX_MOMENTUM_SPEED / 35 / 2;
 
 /**
  * How often an unalerted monster re-checks line of sight to the player — vanilla's idle `A_Look`
- * runs every 10 tics, not every tic. docs/monster-ai.md § Waking up.
+ * runs every 10 tics, not every tic. Counted off the level clock for the whole layer rather than
+ * accumulated per monster, so a restore re-derives the cadence instead of resetting it to a phase
+ * the run was never in (docs/replays.md § Seeking). 11 tics rather than vanilla's 10 is the 0.3 s
+ * accumulator this replaced, kept to the tic so no existing recording moves.
+ * docs/monster-ai.md § Waking up.
  */
-const LOOK_INTERVAL = 0.3;
+const LOOK_INTERVAL_TICS = 11;
 
 /**
  * How long a corpse has to lie still before a nightmare respawn will even roll for it —
@@ -380,11 +387,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     fogVisible?: (subsector: number) => boolean,
     crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
     useLines?: (mover: CrossingBody, tryX: number, tryY: number) => TeleportDest | null,
-    carry?: (
-      pos: Pos3,
-      radius: number,
-      cache: SectorTouchCache,
-    ) => { readonly x: number; readonly y: number } | null,
+    carry?: CarryQuery,
   ): ThingUpdateResult {
     const attacks: MonsterAttackEvent[] = [];
     const barrelExplosions: BarrelExplosion[] = [];
@@ -398,9 +401,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         }
       : undefined;
     // Same shape, for the bodies a step can bump into — resolved inside the step, on first probe.
-    // The player it probes against reaches it through `blockersAgainst`, so the wrapper itself is
-    // built once for the layer rather than once a tic.
-    blockersAgainst = player;
+    const blockersNear = (body: MonsterBody, probeReach: number) =>
+      grid.blockersFor(body as PosedThing, player, probeReach);
     // Once per tic, ahead of any `blockersFor` call below — docs/monster-ai.md § Spatial indexing
     // on why a tic-granular grid is accurate enough for contact.
     // `carry` is absent on a level with no conveyor — see `Forces.carriesAnything`.
@@ -410,7 +412,11 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // reads the global `leveltime`, and `clock` is that clock in seconds. Rounded rather than
     // floored — the simulation advances whole tics, so this is an exact tic index up to float
     // noise. docs/monster-ai.md § Respawning monsters.
-    const respawnTic = respawns && Math.round(clock / DOOM_TIC) % RESPAWN_ROLL_INTERVAL_TICS === 0;
+    const tic = Math.round(clock / DOOM_TIC);
+    const respawnTic = respawns && tic % RESPAWN_ROLL_INTERVAL_TICS === 0;
+    // The idle look-around, on the same clock and for the same reason: one cadence for the level,
+    // which a restore gets back with `clock` itself. docs/monster-ai.md § Waking up.
+    const lookTic = tic % LOOK_INTERVAL_TICS === 0;
     // One BSP descent for the whole sweep: the wake check wants the player's subsector, and the
     // player moves once a frame rather than once per monster.
     const playerSubsector = player ? world.subsectorAt(player.x, player.y) : -1;
@@ -490,21 +496,17 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         // Only the wake check needs a living player: `P_LookForPlayers` skips
         // `player->health <= 0`, so a dead player rouses nobody new. An alerted monster keeps
         // stepping either way — it may be mid-infight, and `resolveTarget` decides that.
-        if (!p.alerted && player) {
-          // This loop owns only the throttle (`LOOK_INTERVAL`); the wake decision itself is
+        if (lookTic && !p.alerted && player) {
+          // This loop owns only the throttle (`LOOK_INTERVAL_TICS`); the wake decision itself is
           // `monsters/ai.ts`'s `tryWake`. docs/monster-ai.md § Waking up.
-          p.lookTimer += dt;
-          if (p.lookTimer >= LOOK_INTERVAL) {
-            p.lookTimer = 0;
-            // One of the two events that reshuffle a revenant's guided/unguided personality —
-            // see `MonsterBody.homingBias`'s doc. A no-op for every other type.
-            if (tryWake(p, world, p.sector, player, playerSubsector)) {
-              p.homingBias = (pRandom() & 1) !== 0;
-              // `A_Look`'s sight sound, randomized within its family and unattenuated for the
-              // two bosses.
-              const see = stats.sounds.see;
-              if (see) sfx.play(randomVariant(see), BOSS_TYPES.has(p.type) ? null : p, monsterOrigin(p.id));
-            }
+          // One of the two events that reshuffle a revenant's guided/unguided personality —
+          // see `MonsterBody.homingBias`'s doc. A no-op for every other type.
+          if (tryWake(p, world, p.sector, player, playerSubsector)) {
+            p.homingBias = (pRandom() & 1) !== 0;
+            // `A_Look`'s sight sound, randomized within its family and unattenuated for the
+            // two bosses.
+            const see = stats.sounds.see;
+            if (see) sfx.play(randomVariant(see), BOSS_TYPES.has(p.type) ? null : p, monsterOrigin(p.id));
           }
         }
         if (p.alerted) {
@@ -629,7 +631,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     dropBatch.begin(viewAngleDeg);
     fuzzBatch.begin(viewAngleDeg);
     fuzzBatch.setFuzzTime(clock);
-    const pulse = Math.sin((clock / DROP_PULSE_SECONDS) * Math.PI * 2) * 0.5 + 0.5;
+    const pulse = sin((clock / DROP_PULSE_SECONDS) * Math.PI * 2) * 0.5 + 0.5;
     dropBatch.setOpacity(DROP_OPACITY_MIN + (DROP_OPACITY_MAX - DROP_OPACITY_MIN) * pulse);
     for (const p of posed) {
       // Resolving the lump is only worth doing for something actually drawn: on a map like
@@ -668,7 +670,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       }
       // Phase-shifted per instance, so two drops side by side ripple instead of bobbing in
       // unison. docs/items.md § Making monster drops readable.
-      const bob = Math.sin((clock / DROP_BOB_SECONDS + p.id * 0.7) * Math.PI * 2) * DROP_BOB;
+      const bob = sin((clock / DROP_BOB_SECONDS + p.id * 0.7) * Math.PI * 2) * DROP_BOB;
       doomToWorld(x, y, z + DROP_HOVER + bob, worldPos);
       dropBatch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, tint, sky);
     }
@@ -742,7 +744,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     grid.forEachMonsterNear(pos.x, pos.y, radius + grid.maxBodyRadius(), radius, (p) => {
       // The grid holds solid decorations too, and those block movement but not shots —
       // docs/monster-ai.md § Spatial indexing.
-      if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
+      if (p.dead || p.isDecoration) return;
       if (blastDistanceToBox(pos.x, pos.y, p.x, p.y, p.blockRadius) >= radius) return;
       out.push(monsterRef(p));
     });
@@ -759,7 +761,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     grid.forEachMonsterNear(midX, midY, half + boxReach(reach + grid.maxBodyRadius()), half + reach, (p) => {
       // The grid holds solid decorations too, and those block movement but not shots —
       // docs/monster-ai.md § Spatial indexing.
-      if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
+      if (p.dead || p.isDecoration) return;
       if (segmentEntersBox(from.x, from.y, to.x, to.y, p.x, p.y, p.blockRadius + reach) === null) return;
       out.push(monsterRef(p));
     });
@@ -893,8 +895,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     maxDist: number,
     opts?: { ignoreId?: number; includeHidden?: boolean; slope?: number },
   ): (MonsterRef & { dist: number }) | null {
-    const dx = Math.cos(angleRad);
-    const dy = Math.sin(angleRad);
+    const dx = cos(angleRad);
+    const dy = sin(angleRad);
     // The span this trace reaches vertically: one slope for a shot that already has one,
     // `P_AimLineAttack`'s cone for a trace that is an aim. docs/combat.md § The vertical test.
     const topSlope = opts?.slope ?? AIM_SLOPE_LIMIT;
@@ -906,7 +908,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     grid.forEachMonsterAlongRay({ from: origin, dirX: dx, dirY: dy, maxDist, clearance, ownReach: 0 }, (p) => {
       // The grid holds solid decorations too, and those block movement but not shots —
       // docs/monster-ai.md § Spatial indexing.
-      if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
+      if (p.dead || p.isDecoration) return;
       if (p.id === opts?.ignoreId) return;
       // Fog of war is a *player*-facing conceit; a monster shooting another monster in an
       // unrevealed room must still connect.
@@ -968,16 +970,18 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // pointing at a missing lump.
     if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) return null;
     const { x, y, z } = at;
+    const isMonster = MONSTER_TYPES.has(type);
+    const isDecoration = SOLID_DECORATION_TYPES.has(type);
     const thing: PosedThing = {
       id: posed.length,
       anim,
       scale: pickupScaleFor(type),
       // Everything the pointer can lock onto, and nothing else. Why barrels join `MONSTER_TYPES`
       // is `ThingLayer.pickMonster`'s doc.
-      lockable: !NO_AUTO_AIM_TYPES.has(type) && (MONSTER_TYPES.has(type) || isBarrel),
+      lockable: !NO_AUTO_AIM_TYPES.has(type) && (isMonster || isBarrel),
       blockRadius: isBarrel
         ? BARREL_RADIUS
-        : SOLID_DECORATION_TYPES.has(type)
+        : isDecoration
           ? (SOLID_DECORATION_RADIUS_OVERRIDE[type] ?? SOLID_DECORATION_RADIUS)
           : // `INERT_SHOOTABLE` before the fallback: Keen and the brain have a real `mobjinfo`
             // radius, they just have no `MONSTER_STATS` to carry it.
@@ -987,8 +991,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         ? BARREL_HEIGHT
         : (monsterStats[type]?.height ?? INERT_SHOOTABLE[type]?.height ?? BODY_HEIGHT_FALLBACK),
       stats: monsterStats[type],
-      isMonster: MONSTER_TYPES.has(type),
-      isSolid: MONSTER_TYPES.has(type) || isBarrel || SOLID_DECORATION_TYPES.has(type),
+      isMonster,
+      isSolid: isMonster || isBarrel || isDecoration,
+      isDecoration,
       hangHeight: CEILING_HUNG_HEIGHT[type],
       attackPose: MONSTER_ATTACK_POSE[type],
       painFrames: MONSTER_PAIN_FRAMES[type],
@@ -1086,6 +1091,13 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     p.x = s.x;
     p.y = s.y;
     p.z = s.z;
+    // Where the crossing test starts from, which `pushThing` seeded at the *map's* spawn point:
+    // left there, the first tic after a load tests a segment running all the way from the spawn to
+    // here, and a walk line beside the monster that segment happens to pass through fires without
+    // it having walked over anything.
+    // docs/savegames.md § What is saved and what is deliberately not.
+    p.prev.x = s.x;
+    p.prev.y = s.y;
     // The save holds a position, never the sector under it, and a thing that existed at spawn
     // still caches its *spawn* sector here. A corpse never moves again, so nothing else would ever
     // re-derive it — and the floor ride below then snaps it to the wrong sector's floor every tic:
@@ -1125,7 +1137,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   function restoreAttackPose(p: PosedThing): void {
     if (p.burstLeft <= 0) return;
     const kind = p.swinging ? 'melee' : 'ranged';
-    const duration = monsterStats[p.type]?.[kind]?.duration ?? 0;
+    const duration = p.stats?.[kind]?.duration ?? 0;
     // No span to spread the frames over means no way to say where in the pose this save sat, so
     // it keeps the idle frame rather than guessing a rate.
     if (duration <= 0) return;
@@ -1159,8 +1171,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // `4*FRACUNIT + 3*(actor->info->radius + skullRadius)/2`. Both radii are plain map units
     // here, so the shared scaling factor divides back out.
     const prestep = 4 + 1.5 * (originRadius + skullRadius);
-    const x = origin.x + Math.cos(angleRad) * prestep;
-    const y = origin.y + Math.sin(angleRad) * prestep;
+    const x = origin.x + cos(angleRad) * prestep;
+    const y = origin.y + sin(angleRad) * prestep;
     const z = origin.z + 8;
     const at = makeCollider({ radius: skullRadius, z, height: skullStats.height, forMonster: true });
     if (world.positionBlocked(x, y, at)) return;
@@ -1221,7 +1233,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     }
     if (fromX !== undefined && fromY !== undefined) {
       // `P_DamageMobj`'s horizontal thrust — see `thrustSpeed`'s doc.
-      const mass = isBarrel ? BARREL_MASS : monsterStats[p.type]?.mass ?? 100;
+      const mass = isBarrel ? BARREL_MASS : p.stats?.mass ?? 100;
       const speed = thrustSpeed(amount, mass);
       let dx = p.x - fromX;
       let dy = p.y - fromY;
@@ -1230,8 +1242,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         // Attacker and victim essentially coincide (point-blank melee), so there is no direction
         // to push along; vanilla's `R_PointToAngle2(0,0,0,0)` falls back to angle 0 for the same
         // reason. docs/movement.md § Knockback.
-        dx = Math.cos(p.angle);
-        dy = Math.sin(p.angle);
+        dx = cos(p.angle);
+        dy = sin(p.angle);
       } else {
         dx /= dist;
         dy /= dist;
@@ -1243,7 +1255,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       // `MT_BARREL` has no painstate or painchance at all, so a barrel that survives a hit just
       // sits there — no flinch, no wake, no infighting.
       if (isBarrel) return;
-      const stats = monsterStats[p.type];
+      const stats = p.stats;
       if (stats) reactToDamage(p, stats);
       // `reactToDamage` only sets `painTimer` when the stagger roll passed, so a hit that fails
       // it still alerts and retargets but doesn't flinch on screen.
@@ -1289,7 +1301,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     const gibbed = enterDeathPose(p);
     // `A_Scream`'s death cry, randomized within its family and unattenuated for the two bosses —
     // or `A_XScream`'s wet `slop` for a gib, which the xdeathstate chain plays *instead*.
-    const death = gibbed ? 'slop' : monsterStats[p.type]?.sounds.death;
+    const death = gibbed ? 'slop' : p.stats?.sounds.death;
     if (death) {
       sfx.play(randomVariant(death), BOSS_TYPES.has(p.type) ? null : p, monsterOrigin(p.id));
     }
@@ -1344,7 +1356,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     knockbackCollider.height = p.bodyHeight;
     // Vanilla's two exemptions from the dropoff rule: `MF_FLOAT`, and the `MF_DROPOFF` `P_KillMobj`
     // hands every corpse (`p_inter.c`) so a gibbed body still slides off whatever it died on.
-    const holdsLedge = !p.dead && !monsterStats[p.type]?.flies;
+    const holdsLedge = !p.dead && !p.stats?.flies;
     do {
       let stepX = moveX;
       let stepY = moveY;
@@ -1413,12 +1425,12 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       p.velY = 0;
       p.velZ = 0;
     } else {
-      const cos = Math.cos(dest.rotateBy);
-      const sin = Math.sin(dest.rotateBy);
+      const turnCos = cos(dest.rotateBy);
+      const turnSin = sin(dest.rotateBy);
       const vx = p.velX;
       const vy = p.velY;
-      p.velX = vx * cos - vy * sin;
-      p.velY = vx * sin + vy * cos;
+      p.velX = vx * turnCos - vy * turnSin;
+      p.velY = vx * turnSin + vy * turnCos;
     }
     // Collapse the interpolation window onto the arrival point, or the thing is drawn gliding
     // across the whole map over one tic. docs/frameloop.md § Interpolation.
@@ -1468,17 +1480,6 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       refreshSector(p);
     }
   }
-
-  /**
-   * The body a chase step's blocker probe treats as solid besides the grid's own — the player, or
-   * null on a tic with none. Set at the top of every `update`, so `blockersNear` below can be one
-   * wrapper for the layer's life instead of a closure rebuilt per tic.
-   */
-  let blockersAgainst: Pos3 | null = null;
-
-  /** `Chase.blockersFor`: see `blockersAgainst`. */
-  const blockersNear = (body: MonsterBody, probeReach: number) =>
-    grid.blockersFor(body as PosedThing, blockersAgainst, probeReach);
 
   /**
    * Re-derives the sector fields a thing that moved is now standing in. One BSP descent for both:
@@ -1612,7 +1613,6 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // has to catch sight of the player all over again, `isAmbush` included.
     p.alerted = false;
     p.targetId = null;
-    p.lookTimer = 0;
     p.movedir = DI_NODIR;
     p.movecount = 0;
     p.chaseTimer = 0;
@@ -1639,7 +1639,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /**
    * Whether a killable thing is still in its exact spawn state, in which case the save needs no
    * `MonsterFields` block at all: the restore's own `pushThing` recreates those defaults. Alerted,
-   * damaged, moving or dead all disqualify; `lookTimer` and `homingBias` are deliberately ignored.
+   * damaged, moving or dead all disqualify; `homingBias` is deliberately ignored.
    * docs/savegames.md § Storage, and docs/dehacked.md § Savegames and patched tables for why
    * reading `spawnHealthFor` here stays safe under a patch.
    */

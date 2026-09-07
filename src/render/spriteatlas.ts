@@ -7,14 +7,9 @@
 import * as THREE from 'three';
 import type { Bitmap } from '../wad/graphics.ts';
 
-/** One page: a square texture of `ATLAS_PAGE_SIZE` texels. */
-export interface AtlasPage {
-  texture: THREE.DataTexture;
-}
-
 /** Where a lump's pixels sit in a page, in texels from the page's top-left corner. */
 export interface AtlasRect {
-  page: AtlasPage;
+  page: THREE.DataTexture;
   x: number;
   y: number;
   width: number;
@@ -47,7 +42,7 @@ export function sampleAsSprite(texture: THREE.DataTexture, anisotropy: number): 
 }
 
 export class SpriteAtlas {
-  readonly pages: AtlasPage[] = [];
+  readonly pages: THREE.DataTexture[] = [];
   private rects = new Map<string, AtlasRect>();
 
   /**
@@ -60,8 +55,7 @@ export class SpriteAtlas {
     );
     const size = ATLAS_PAGE_SIZE;
     const gutter = ATLAS_GUTTER;
-    let data: Uint8Array | null = null;
-    let page: AtlasPage | null = null;
+    let page: THREE.DataTexture | null = null;
     let x = gutter;
     let y = gutter;
     let shelfHeight = 0;
@@ -75,15 +69,15 @@ export class SpriteAtlas {
         shelfHeight = 0;
       }
       if (!page || y + h + gutter > size) {
-        data = new Uint8Array(size * size * 4);
-        page = { texture: makePageTexture(data, size, anisotropy) };
+        page = makePageTexture(new Uint8Array(size * size * 4), size, anisotropy);
         this.pages.push(page);
         x = gutter;
         y = gutter;
         shelfHeight = 0;
       }
+      const data = page.image.data as Uint8Array;
       for (let row = 0; row < h; row++) {
-        data!.set(bmp.data.subarray(row * w * 4, (row + 1) * w * 4), ((y + row) * size + x) * 4);
+        data.set(bmp.data.subarray(row * w * 4, (row + 1) * w * 4), ((y + row) * size + x) * 4);
       }
       this.rects.set(name.toUpperCase(), { page, x, y, width: w, height: h });
       x += w + gutter;
@@ -97,7 +91,7 @@ export class SpriteAtlas {
   }
 
   dispose(): void {
-    for (const p of this.pages) p.texture.dispose();
+    for (const p of this.pages) p.dispose();
     this.pages.length = 0;
     this.rects.clear();
   }

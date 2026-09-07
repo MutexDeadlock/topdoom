@@ -319,6 +319,14 @@ silently resolved nothing would satisfy every negative assertion in the file.
 
 ## Doc references
 
+`tests/docs/simmath.test.ts` greps for the `Math` functions ECMA-262 leaves approximated: a tic
+that calls one plays differently in another browser, and `util/fdlibm.ts` is where those come from
+instead (docs/replays.md § What breaks determinism). Two scopes, since a simulation file reaches
+the platform through a helper as easily as directly — every approximated function under
+`src/game.ts` and `src/game/`, and the five with replacements under `src/util/`, which is what
+`src/game/` imports. `tests/util/fdlibm.test.ts` holds those five to a ULP of the platform and pins
+their results to the bit.
+
 `tests/docs/references.test.ts` asserts that every `docs/<name>.md § <Heading>` pointer in `src/`,
 `tests/`, `scripts/` and `plugins/` resolves — the file exists and some heading in it starts with
 the quoted words. It exists because splitting the Icon of Sin's own doc out of the monster AI one

@@ -9,7 +9,6 @@
 import {
   SPEED_STEPS,
   compatDrift,
-  currentEngine,
   positionFraction,
   replaySeconds,
   replayTics,
@@ -236,16 +235,14 @@ export class ReplayBar {
       tick.title = level.map;
       this.markers.append(tick);
     }
-    // The two standing notes, both about *this* playback being at risk rather than about which
-    // release wrote it: the simulation epoch and the JavaScript engine. The build number is
-    // deliberately not one — every replay kept across a release was written on another build, and
-    // whether that build's simulation moved is what `compat` answers (docs/replays.md
-    // § Compatibility). Either way `desyncedAt` is the verdict; these are the warning.
-    const { replay } = playback;
-    const drift = compatDrift(replay.compat);
+    // The one standing note, about *this* playback being at risk rather than about which release
+    // wrote it: the simulation epoch. Neither the build number nor the recording engine is one —
+    // both differ on most kept replays and neither says the run will diverge, where `compat` does
+    // (docs/replays.md § Compatibility). `desyncedAt` is the verdict either way; this is the
+    // warning.
+    const drift = compatDrift(playback.replay.compat);
     this.notes = [];
     if (drift !== null) this.notes.push(`${drift} game rules — may desync`);
-    if (replay.engine !== currentEngine()) this.notes.push(`recorded on ${replay.engine}`);
   }
 
   /**

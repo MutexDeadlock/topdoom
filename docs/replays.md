@@ -300,8 +300,9 @@ and one file, and `game/replay.ts` decodes it.
   helper one directory over reaches the platform just as effectively (`damping.ts`'s `dampen`, which
   the fog fade and the auto camera call, is on the software `exp` for exactly that reason) —
   and `tests/util/fdlibm.test.ts` holds the bit pins. The meta
-  still records the engine and the bar still notes a mismatch — the record is older than the fix,
-  and a stray `Math` call in a tic would be a bug this cannot detect after the fact.
+  still records the engine — the record is older than the fix, and a stray `Math` call in a tic
+  would be a bug this cannot detect after the fact. The bar does not note a mismatch: like the
+  build, it differs on most kept replays and says nothing about whether this one diverges.
 - **`atan2` is the one that decides it.** Every monster's `A_FaceTarget` is an `atan2`, so a whole
   level's facings diverge on the first tic; the other four are rarer and rounded apart far less
   often. A determinism change that leaves `atan2` on the platform buys nothing.
@@ -322,8 +323,8 @@ and one file, and `game/replay.ts` decodes it.
   The one art-derived input left is `pushThing` skipping a thing whose sprite the set lacks, which
   shifts every later thing's id.
 - **A changed simulation**, which is `COMPAT`'s whole job (§ Compatibility). The *build* number is
-  not that signal and is never noted on the bar: every replay kept across a release was recorded on
-  another build, and almost none of those releases moved a tic. The camera is carved out of the
+  not that signal and is never noted on the bar — nor is the recording engine: every replay kept
+  across a release was recorded on another build, and almost none of those releases moved a tic. The camera is carved out of the
   epoch too — its pose is recorded per tic (§ Camera state), so changing how the camera behaves
   moves no old recording.
 - **`DEVMODE`** — covered by the recorded flag.
@@ -344,6 +345,7 @@ It is deliberately *not* `REPLAY_VERSION` and not `VERSION`:
 | `REPLAY_VERSION` | can this build **read** the file? | refuses to play, with `versionRefusal` |
 | `COMPAT` | did this build's **simulation** record it? | plays, and warns it may desync |
 | `build` (`VERSION`) | which release wrote it? | nothing — it is provenance, shown on the row |
+| `engine` | which JavaScript engine ran it? | nothing — provenance too, shown in the Replays panel |
 
 `compatDrift(compat)` is the one comparison: `null` when the epochs agree, `'older'`/`'newer'`
 otherwise — **not** "older than ours", since a replay from a later epoch (a file from a newer build,

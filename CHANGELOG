@@ -4,6 +4,7 @@ Features and improvements
   - replays now play back identically in every browser: 
     the simulation computes sin/cos/atan2/exp/log itself instead of asking 
     the engine, which rounds them differently from one version to the next
+  - the replay bar no longer notes the engine a replay was recorded on
   - improved monster-AI performance, most noticable on monster-heavy maps
   - improved renderer performance:
     - sprites draw from a texture atlas: a few draw calls a frame instead of 
@@ -17,7 +18,6 @@ Fixed bugs
     woke up to 10 tics off, and a fire chain in flight was lost
   - a monster restored next to a teleporter could fire it on the first tic
     after the load, without having walked over it
-
 
 
 ===============================================================================

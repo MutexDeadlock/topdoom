@@ -375,8 +375,8 @@ export class ReplaysUi {
   /** What the replay was recorded from and on — read-only, one label/value pair per line. */
   private makeFacts(meta: ReplayMeta, set: SaveSetInfo): HTMLDivElement {
     const levels = meta.levels.length > 1 ? ` (+${meta.levels.length - 1} more)` : '';
-    // A replay recorded on another build or another JavaScript engine is likely to desync, so both
-    // are here, where they are read before playing (docs/replays.md § What breaks determinism).
+    // The build and the JavaScript engine are provenance, not a warning: both differ on most kept
+    // replays and neither says this one diverges (docs/replays.md § Compatibility).
     const facts: [string, string][] = [
       ['Level', `${set.level}${levels}`],
       ['Skill', SKILL_NAMES[meta.skill]],

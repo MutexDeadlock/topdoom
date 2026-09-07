@@ -968,6 +968,12 @@ export class Game {
       while (!swapped && playback.cursor < target && playback.hasTic) {
         this.replayBeginTic();
         swapped = this.tic(playback, this.simCamera);
+        // The timed overlays' clocks run on frames, and a catch-up draws none: without this a
+        // secret found at 0:10 is still announced on a landing at 0:30. Ticked in sim time, so
+        // what the landing tic would show when watched is what it shows. docs/replays.md § Seeking.
+        this.message.update(DOOM_TIC);
+        this.levelCard.update(DOOM_TIC);
+        this.deathOverlay.update(DOOM_TIC);
         if (performance.now() >= until) break;
       }
     } finally {

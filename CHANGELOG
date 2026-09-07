@@ -18,6 +18,8 @@ Fixed bugs
     woke up to 10 tics off, and a fire chain in flight was lost
   - a monster restored next to a teleporter could fire it on the first tic
     after the load, without having walked over it
+  - seeking a replay forwards showed the messages the jump passed over 
+    (a secret found, a locked door) as if they had just happened
 
 
 ===============================================================================

@@ -389,6 +389,13 @@ reason the sound is off: every hit the catch-up passed through added to it and n
 no frame was drawn — so the frame the jump lands on would open at full red over a fight the viewer
 never saw. A hit taken after the landing flashes normally.
 
+**The timed overlays are ticked once per catch-up tic** (`CenterMessage`, `LevelCard`,
+`DeathOverlay`, each `update(DOOM_TIC)`), since their clocks otherwise run on frames and a catch-up
+draws none: without it a secret found at 0:10 — or a locked-door line, a cheat's response, the
+level card of a map the jump passed into — is still up on a landing at 0:30. Ticked in sim time
+rather than dropped at the landing, so a message the landing tic would show when watched (a secret
+found two seconds before it) is still showing.
+
 **The picture stands still until the target lands.** A catching-up frame draws nothing, so the last
 frame before the jump stays on screen and `#replay-seek` pulses a double triangle over it, pointing
 the way `ReplayPlayback.seekBack` says the viewer asked to go — not the way the tics run, which is

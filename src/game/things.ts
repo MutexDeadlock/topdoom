@@ -695,10 +695,15 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       if (p.picked) continue;
       // `PIT_CheckThing`'s box at both ends of the move, because vanilla picks items up at the
       // destination before rejecting the move. docs/items.md § Collecting things.
-      if (!bodiesOverlap(from, p, blockdist) && !bodiesOverlap(to, p, blockdist)) continue;
+      const settled = bodiesOverlap(from, p, blockdist);
+      if (!settled && !bodiesOverlap(to, p, blockdist)) continue;
       // `PIT_CheckThing`'s overhead/underneath gate: a thing on a not-yet-lowered pillar is in
       // 2D range but out of reach (DOOM2 MAP04's blue key). docs/items.md § Collecting things.
       if (Math.abs((p.sector?.floorHeight ?? 0) - from.z) > PLAYER_HEIGHT) continue;
+      // The attempted end alone reaches a whole tic past where the collector stands, so unlike
+      // vanilla's own stepping it can land deep inside sealed geometry. Only that end is gated —
+      // the settled box is vanilla's, walls and all. docs/items.md § Collecting things.
+      if (!settled && world.sealedBetween(from, p)) continue;
       if (consume(p.type, p.dropped)) {
         p.picked = true;
         p.hidden = true;

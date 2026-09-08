@@ -1452,6 +1452,29 @@ export class World {
   }
 
   /**
+   * True if closed geometry stands between the two points: a one-sided wall, or a two-sided line
+   * with no vertical opening at all — a shut door, or the sides of a crate whose sector has its
+   * floor at its ceiling.
+   *
+   * `blocksSight`'s test rather than `positionBlocked`'s, and the difference is the whole point: a
+   * ledge too high to climb or a gap too low to fit through refuses a *move* but is not closed, and
+   * the pickup reach this gates still passes it. docs/items.md § Collecting things.
+   */
+  sealedBetween(from: Pos2, to: Pos2): boolean {
+    let sealed = false;
+    this.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
+      if (!this.blocksSight(i)) return;
+      const line = this.map.linedefs[i];
+      const a = this.map.vertexes[line.v1];
+      const b = this.map.vertexes[line.v2];
+      if (!a || !b) return;
+      if (segmentCrossT(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y) < 0) return;
+      return (sealed = true);
+    });
+    return sealed;
+  }
+
+  /**
    * One `P_CheckPosition` over the lines `body`'s box at (x, y) spans, filling `out` with the
    * verdict and all three accumulated heights at once — vanilla accumulates them in a single
    * `PIT_CheckLine` walk, and so does this.

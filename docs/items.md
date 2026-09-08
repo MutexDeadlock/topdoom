@@ -136,6 +136,21 @@ through `checkPosition` instead would match vanilla exactly and give voodoo doll
 at the cost of a callback in the engine's hottest predicate for every mover
 (docs/movement.md § Collision).
 
+**The attempted end does not reach through sealed geometry**, and only that end is gated: a thing in
+reach at `attempted` but not at the settled box is skipped when `World.sealedBetween` finds a
+one-sided wall, or a two-sided line with its floor at its ceiling (a crate's own sides, a shut
+door), across the straight line to it. It is the *simplification* that overreaches, not vanilla:
+`P_XYMovement` splits a move over `MAXMOVE/2` and each `P_TryMove` probes from where the last one
+landed, so a player already stopped by a wall attempts a unit or two past it rather than a whole
+tic's 14.3 — deep enough here to reach into a closed sector. Without the gate, Going Down MAP08's
+invulnerability sphere is collected through the crate around it (sector 1, lines 327/330/331/871,
+8-unit sides): the sphere is 48 units from where the player's box stops, and the tic that hits the
+wall at full run attempts 14.3 of that away. Sealed is `blocksSight`'s test, not
+`positionBlocked`'s — a ledge too high to climb or a gap too low to fit through refuses the *move*
+but is not sealed, and the EPIC.WAD reach above still passes it. The settled box stays ungated and
+so stays vanilla's: an item behind a wall thin enough to stand next to is vanilla's own through-wall
+grab.
+
 **A voodoo doll collects on the player's behalf.** It is an `MT_PLAYER` like the player, so it
 carries `MF_PICKUP` and `PIT_CheckThing` runs `P_TouchSpecialThing` for it, which credits
 `toucher->player` — the console player, for every doll. `VoodooDolls.update` therefore takes a

@@ -9,6 +9,7 @@ Features and improvements
 Fixed bugs
   - a crate's top cropped its texture mid-face: it now starts at the structure's
     own corner, on the face its walls show
+  - running into a wall no longer collects an item sealed behind it
 
 
 ===============================================================================

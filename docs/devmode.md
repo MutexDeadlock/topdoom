@@ -1,41 +1,51 @@
-# Dev mode, the FPS counter and the profiling overlay
+# Dev mode, the status text and the profiling overlay
 
 `src/constants.ts: DEVMODE`, `src/ui/devmode/debughud.ts`, `src/ui/hud/profiler.ts`,
 `src/util/profiler.ts`, `src/render/gputimer.ts`
 
-The three diagnostics drawn over a running level, and what `DEVMODE` decides about each. The
-checkboxes that show two of them are docs/menu.md § Settings tab.
+The three diagnostics drawn over a running level — the fps counter, the debug block behind it and
+the profiling overlay — each its own checkbox under Settings → General → `Debug / Dev`
+(docs/menu.md § Settings tab).
 
 ## Dev mode (`DEVMODE`)
 
 `DEVMODE` reads `import.meta.env.VITE_DEVMODE`, defaulting to `false`; set `VITE_DEVMODE=true` in a
 git-ignored `.env.local` at the repo root to turn it on (Vite loads `.env.local` itself, no plugin
-needed). It gates two things — `ui/devmode/debughud.ts` and `ui/hud/profiler.ts` — both because a
-player has no legitimate reason to reach for them:
+needed).
 
-- **What `#hud` says** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, the
-  element shows only the fps counter; on, the full
-  map/pos/sector/camera-state/awake-monster-count/sound-channel block. `DEVMODE` decides how much
-  that text says, **not** whether it shows at all — that is the player's own setting (§ FPS counter
-  below), which is why the `visible` check sits ahead of the `!DEVMODE` branch. **Everything it
-  prints is live state.** The last line is the auto camera's own readout — `AutoCamera.readout` in
-  `game/autocamera.ts`, which owns the smoothed state it prints rather than exposing it to
-  `game.ts` (docs/camera.md § Auto camera), and reads `manual` in the
-  other camera mode. Under a playback it reads `replay camera: recording`/`manual` instead: the
-  camera comes from the record there, so the auto camera's dials stand still and printing them
-  would be a readout of nothing (docs/replays.md § Playback). It used to end with two static hotkey
-  hint lines as well, which were the game's only controls reference and so invisible to exactly the
-  players who needed them; that list is now the menu's Settings tab (docs/menu.md § Settings tab).
+**It gates nothing, and that is the whole of it.** It is the *default* of those three checkboxes —
+a dev build opens with all three on, a shipped one with none — and a stored choice overrides it
+either way, so every diagnostic here is reachable in any build. No key, no cheat and no game
+behavior is behind it: jumping to another map is IDCLEV (docs/cheats.md § IDCLEV), and the camera's
+`+`/`-` and `[`/`]` are player-facing framing controls `handleHotkeys` holds for every build.
 
-No key is dev-only. `handleHotkeys` holds `+`/`-` (camera distance) and `[`/`]` (camera tilt)
-alone, which are player-facing framing controls in every build — gating them only meant a shipped
-player couldn't adjust how much of the level fits on screen. Jumping to another map is
-**IDCLEV**, a cheat like any other and available everywhere (docs/cheats.md § IDCLEV); the `N`/`P`
-map jump it replaced was the one key pair `DEVMODE` used to gate.
+## FPS counter
 
-Neither the profiling overlay nor the status text's visibility is on that list: `DEVMODE` only picks
-the default of each, and a player can turn either on in any build (§ FPS counter, § Profiling
-overlay below).
+`#hud`, top-left, carries two independent settings: **`Show FPS counter`**, the `N fps` figure, and
+**`Show debug infos`**, the block behind it — map, triangles, awake monsters, position, sector,
+sound channels, camera. Either one alone keeps the element up, and with the counter off the debug
+block simply omits its figure (`Game.debugLines` takes `fps: number | null`).
+
+Both are `debughud.ts`'s own (`fps`, `getFpsVisible`/`setFpsVisible`; `debuginfo`,
+`getDebugInfo`/`setDebugInfo`), both **default to `DEVMODE`**, and both are memoized: `DebugHud.update`
+asks each every frame. That is the rule the profiling overlay follows too, and for the same reason:
+all three are diagnostics a player may want and none should be on top of a shipped game unasked.
+
+`applyHudVisible` is the single writer of `#hud`'s `visible` class and reads both settings, called by
+`DebugHud`'s constructor to seed it for the level starting and by either checkbox to change it live;
+debughud.css shows the element by that same class, and **`DebugHud.update` early-returns on it**, so
+a hidden text costs no per-frame DOM write and never runs the `details` closure. The frame
+*counting* ahead of that return is not gated — three arithmetic operations, and skipping them would
+make a counter switched on mid-level read a rate built from its first half second.
+
+**Everything the block prints is live state.** Its last line is the auto camera's own readout —
+`AutoCamera.readout` in `game/autocamera.ts`, which owns the smoothed state it prints rather than
+exposing it to `game.ts` (docs/camera.md § Auto camera), and reads `manual` in the other camera
+mode. Under a playback it reads `replay camera: recording`/`manual` instead: the camera comes from
+the record there, so the auto camera's dials stand still and printing them would be a readout of
+nothing (docs/replays.md § Playback). The block used to end with two static hotkey hint lines as
+well, which were the game's only controls reference and so invisible to exactly the players who
+needed them; that list is now the menu's Settings tab (docs/menu.md § Settings tab).
 
 `Game.debugLines` reports `ThingLayer.awakeMonsterCount()` — the number of living monsters
 currently alerted (chasing/attacking, or mid-`reactionTicks` delay) — useful for judging whether a
@@ -45,28 +55,6 @@ mixer model) — which is how you see a scene running the pool dry and cutting s
 beside it is how many copies the same-tic start budget has turned away since the level loaded
 (docs/audio.md § Same-tic bursts): it climbing while the pool sits half empty is the burst rule
 working, not a scene in trouble.
-
-## FPS counter
-
-`#hud`, top-left, is the one element two settings meet on: **whether it shows** is the player's
-`FPS counter` checkbox, **what it says** is `DEVMODE` (§ Dev mode above) — the bare `N fps` outside
-dev mode, the full status block inside it. One switch for the whole element, not one per line: in a
-dev build the fps *is* that block's first line, so splitting them would need `Game.debugLines` cut
-in two for a distinction nobody asked the menu for.
-
-The setting is `debughud.ts`'s own (`fps`, `getFpsVisible`/`setFpsVisible`) and **defaults
-to `DEVMODE`** — on in a dev build, off in a shipped one, a stored `true`/`false` overriding that
-either way. It is deliberately the same rule the profiling overlay follows, and for the same reason:
-both are diagnostics a player may want and neither should be on top of a shipped game unasked.
-**This is a change from the counter always being drawn**, which is what every build did before the
-checkbox existed.
-
-`applyFpsVisible` is the single writer of `#hud`'s `visible` class, called by `DebugHud`'s
-constructor to seed it for the level starting and by the checkbox to change it live; debughud.css
-shows the element by that same class, and **`DebugHud.update` early-returns on it**, so a hidden
-counter costs no per-frame DOM write and never runs the `details` closure. The frame *counting*
-ahead of that return is not gated — three arithmetic operations, and skipping them would make a
-counter switched on mid-level read a rate built from its first half second.
 
 ## Profiling overlay
 

@@ -2695,15 +2695,20 @@ export class Game {
     return this.gfx.texture(name) ?? this.gfx.picture(name);
   }
 
-  /** DEVMODE's status text. Only ever called while the panel is shown — see `DebugHud.update`. */
-  private debugLines(fps: number): string[] {
+  /**
+   * The status text's debug block. Only ever called while it is shown, and with a null `fps` where
+   * the counter beside it is switched off — see `DebugHud.update`, docs/devmode.md § FPS counter.
+   */
+  private debugLines(fps: number | null): string[] {
     const { camera } = this.view;
     const sector = this.world.sectorIndexAt(this.player.x, this.player.y);
     const channels = this.audio.channelUsage;
     const cameraDeg = ((Math.round(camera.yawDeg) % 360) + 360) % 360;
+    const counts = [`${this.built?.triangles ?? 0} tris`, `monsters awake ${this.things?.awakeMonsterCount() ?? 0}`];
+    if (fps !== null) counts.unshift(`${fps} fps`);
     return [
       `${this.currentMap}   ${this.title}`,
-      `${fps} fps   ${this.built?.triangles ?? 0} tris   monsters awake ${this.things?.awakeMonsterCount() ?? 0}`,
+      counts.join('   '),
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
       `Sound channels: ${channels.playing}/${channels.total} (${channels.dropped} burst-dropped)`,
       `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${cameraDeg}°yaw`,

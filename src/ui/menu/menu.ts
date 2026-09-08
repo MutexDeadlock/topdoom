@@ -48,7 +48,7 @@ import {
   type StandInBlocker,
 } from '../../game/savegames.ts';
 import { getProfilerVisible, setProfilerVisible } from '../hud/profiler.ts';
-import { getFpsVisible, setFpsVisible } from '../devmode/debughud.ts';
+import { getDebugInfo, getFpsVisible, setDebugInfo, setFpsVisible } from '../devmode/debughud.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import { FIRST_RUN_WADS, VERSION } from '../../constants.ts';
 
@@ -128,6 +128,7 @@ export class Menu {
   private pistolStartCheckbox = el<HTMLInputElement>('pistolstart-checkbox');
   private autoSwitchCheckbox = el<HTMLInputElement>('autoswitch-checkbox');
   private fpsCheckbox = el<HTMLInputElement>('fps-checkbox');
+  private debugInfoCheckbox = el<HTMLInputElement>('debuginfo-checkbox');
   private profilerCheckbox = el<HTMLInputElement>('profiler-checkbox');
   private tabButtons = {
     newgame: el<HTMLButtonElement>('tab-button-newgame'),
@@ -275,6 +276,8 @@ export class Menu {
     this.installPistolStart();
     this.installAutoSwitch();
     this.installFps();
+    // What the status text says beyond the frame rate, read live by `DebugHud.update`.
+    this.installToggle(this.debugInfoCheckbox, getDebugInfo, setDebugInfo);
     this.installProfiler();
     this.installRecordToggle();
     this.installAbout();

@@ -534,9 +534,9 @@
 /*
  * Short key lists that don't need the panel's full width sit side by side,
  * each only as wide as its own content so they pack left instead of being
- * stretched apart. Flex rather than fixed grid tracks so the DEVMODE-only
- * section simply becomes a third column when it's shown and leaves two when
- * it isn't — `display: none` drops it out of the flex line entirely.
+ * stretched apart. Flex rather than fixed grid tracks so a section that is
+ * hidden leaves the row with no empty cell to suppress — `display: none`
+ * drops it out of the flex line entirely.
  */
 #menu .columns {
   display: flex;

@@ -17,6 +17,7 @@ Features and improvements
   - replays now store an additional keyframe after level change
   - added IDCLEV cheat to warp to any map of the loaded set 
     (replaces the dev-mode N/P map jump)
+  - the status text's debug lines are now a setting of their own
 
 Fixed bugs
   - running into a wall no longer collects an item sealed behind it

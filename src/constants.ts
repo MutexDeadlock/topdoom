@@ -12,7 +12,8 @@ import { ThingType } from './game/things/doomednums.ts';
 export const VERSION = '0.18.1';
 
 /**
- * Set VITE_DEVMODE=true in .env.local to enable in-game debug info and dev hotkeys.
+ * Set VITE_DEVMODE=true in .env.local to default the three Debug / Dev settings on. It gates
+ * nothing else: no key and no game behavior is behind it — docs/devmode.md § Dev mode.
  */
 export const DEVMODE = import.meta.env?.VITE_DEVMODE === 'true';
 

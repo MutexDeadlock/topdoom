@@ -247,9 +247,13 @@ cap: `blockedByThings` reads its flag per call, and so do the other two.
 a weapon running dry — no key is involved, so it is not a key's behavior in the sense the paragraph
 above uses.
 
-General ends with **`Debug / Dev`, the section holding the `FPS counter` and `Profiler overlay`
-checkboxes** (docs/devmode.md § FPS counter, docs/devmode.md § Profiling overlay). It is shown in
-every build — both are player-facing settings, only their *defaults* follow `DEVMODE`.
+General ends with **`Debug / Dev`, the section holding the `Show FPS counter`, `Show debug infos`
+and `Show profiler overlay` checkboxes** (docs/devmode.md § FPS counter, docs/devmode.md
+§ Profiling overlay). It is shown in every build — all three are player-facing settings, only their
+*defaults* follow `DEVMODE` (docs/devmode.md § Dev mode). They read `Show …` alike: three
+neighbouring rows all switching a readout on, where one worded differently would read as a
+different kind of setting. The first two are independent — the counter off does not take the debug
+block with it (docs/devmode.md § FPS counter).
 
 **The `Shift` row's description is the word autorun currently makes true** — `walk` when it's on,
 `run` when it's off — so `installAutorun` writes `#shift-action` from the same `show` helper that

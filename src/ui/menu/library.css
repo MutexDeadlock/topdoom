@@ -271,29 +271,22 @@
 }
 
 /*
- * First of the fixed-width columns, and fixed-width even when empty — see `LibraryUi.baseRow`.
+ * First of the fixed-width columns, and on the rows that carry one only — see `LibraryUi.baseRow`.
  * Everything but the width is `#menu .badge`'s (menu.css), shared with the add-on list.
  *
- * 16ch, not the 12 `DOOM II maps` counts: `ch` measures the font's own advance and takes no account
- * of the `letter-spacing`, which adds a pixel per character on top — 13ch clipped the longest
- * reason to `DOOM II MAP…`.
+ * 12ch, not the 10 `won't load` — the longest reason this pane gives — counts: `ch` measures the
+ * font's own advance and takes no account of the `letter-spacing`, which adds a pixel per character
+ * on top, so that string measures 11.5ch.
  */
 #wadlibrary .badge {
-  flex: 0 0 16ch;
-}
-
-#wadlibrary .badge.quiet {
-  color: var(--fg-faint);
-  text-transform: none;
-  letter-spacing: 0;
+  flex: 0 0 12ch;
 }
 
 /*
  * Why a row can't be picked. The accent at full strength, because it is the only thing on a row the
  * player needs before they try to click it — and it sits on a row dimmed for being unpickable, so
- * anything quieter reads as part of the dimming. It restates `#menu .badge`'s colour (menu.css) to
- * out-specify `.quiet` above — the two match at equal specificity, so source order decides — and
- * `.row.disabled .meta` cannot reach it at all.
+ * anything quieter reads as part of the dimming. It restates `#menu .badge`'s colour (menu.css)
+ * because `.row.disabled .meta` cannot reach it at all.
  */
 #wadlibrary .badge.reason {
   color: var(--accent-text-hover);

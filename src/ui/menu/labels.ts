@@ -4,7 +4,7 @@
  * `wad/library.ts` already resolved; no WAD is read here.
  * See docs/menu-wads.md.
  */
-import type { MergedMap, WadSource } from '../../wad/library.ts';
+import { mapStyle, type MergedMap, type WadSource } from '../../wad/library.ts';
 import { describeSupport, supportLevel, type SupportLevel } from '../../wad/support.ts';
 
 function formatSize(bytes: number): string {
@@ -51,17 +51,26 @@ const SUPPORT_GLYPHS: Record<SupportLevel, string> = {
 /**
  * A file row's badge, in the two lists that render one: the WAD Library's file pane and the New
  * Game tab's narrower add-on list. `'reason'` is why the row can't be picked and is the one thing
- * worth interrupting for, so it is the only kind that carries the accent; `'quiet'` is an aside,
- * and the empty default is the spacer that keeps the columns behind it lined up.
+ * worth interrupting for, so it is the kind that carries the accent; the empty default is both the
+ * plain wording and the spacer that keeps the columns behind it lined up.
  *
  * Here rather than at either call site for `sourceColumnSpans`' reason: the `badge`/`badge reason`
  * class names both `menu.css` and `library.css` target have one definition.
  */
-export function badge(text: string, kind: '' | 'quiet' | 'reason' = ''): HTMLSpanElement {
+export function badge(text: string, kind: '' | 'reason' = ''): HTMLSpanElement {
   const span = document.createElement('span');
   span.className = kind ? `badge ${kind} truncate` : 'badge truncate';
   span.textContent = text;
   return span;
+}
+
+/**
+ * Which game a mapset is for, as the badge both WAD lists refuse it with — `library.ts: mapStyle`
+ * put into words. Here so the two lists cannot word the same refusal differently, which they did:
+ * the overlay said `DOOM II maps` where the New Game tab said `DOOM II`.
+ */
+export function mapStyleLabel(src: WadSource): string {
+  return mapStyle(src) === 'doom1' ? 'DOOM 1' : 'DOOM II';
 }
 
 /**

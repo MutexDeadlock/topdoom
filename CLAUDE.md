@@ -92,7 +92,7 @@ src/util/      helpers shared across layers: 2D geometry plus the aim ray's box 
                (fdlibm), vanilla's random table — the engine's only entropy source
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
                    BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE +
-                   FOG_START_FRACTION, WATER_SURFACE_ALPHA)
+                   FOG_START_FRACTION, WATER_SURFACE_ALPHA, FIRST_RUN_WADS)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 src/styles.css     the stylesheet index.html links; @imports the .css beside each ui module
 index.html         the page skeleton; @includes the .html beside each one

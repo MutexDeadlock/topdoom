@@ -377,7 +377,9 @@ level (docs/savegames.md § The format and its version).
 ## Remembered selection
 
 The `selection` field holds `{ iwad, pwads, map }` as `WadSource.key`s. Precedence when `init`
-resolves it is **URL > stored > first IWAD on offer**, and every key is resolved against the current
+resolves it is **URL > stored > `FIRST_RUN_WADS` > first IWAD on offer** — the third step being the
+preselection a player with nothing stored gets, `constants.ts` and docs/menu-wads.md § The first
+start — and every key is resolved against the current
 library, so a WAD that has since left `public/game/` is silently dropped (an unknown map falls back
 to the set's first, via `selectLevel`'s no-op). Restoring can pair a stored add-on with a
 `?wad=`-forced game WAD it doesn't suit; that pick is **kept**, refused rather than dropped, so the

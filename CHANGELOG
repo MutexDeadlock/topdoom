@@ -5,8 +5,15 @@ Features and improvements
     straight down into one
     - can be switched off under Settings -> Visuals -> Top-down extras
       (requires level reload)
-  - hiding thin ceiling steps can now be switched off under
-    Settings -> Visuals -> Top-down extras (also requires level reload)
+  - Menues & WAD Library:
+    - hiding thin ceiling steps can now be switched off under
+      Settings -> Visuals -> Top-down extras (also requires level reload)
+    - the WAD Library no longer prints "game WAD" against every row of the
+      Game WADs folder
+    - a WAD row with no refusal to show no longer reserves the badge column's
+      width, in the WAD Library and the add-on list alike
+    - a first start now opens on a preselected WAD set,
+      configurable in constants.ts
 
 Fixed bugs
   - a crate's top cropped its texture mid-face: it now starts at the structure's

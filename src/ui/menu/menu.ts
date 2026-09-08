@@ -4,7 +4,7 @@
  */
 import * as wadlib from '../../wad/library.ts';
 import type { WadSource } from '../../wad/library.ts';
-import { badge, describeMap, describeSource, rowButton, sourceColumnSpans } from './labels.ts';
+import { badge, describeMap, describeSource, mapStyleLabel, rowButton, sourceColumnSpans } from './labels.ts';
 import { AboutUi } from './about.ts';
 import { WelcomeUi } from './welcome.ts';
 import { confirmOnHold } from './hold.ts';
@@ -50,7 +50,7 @@ import {
 import { getProfilerVisible, setProfilerVisible } from '../hud/profiler.ts';
 import { getFpsVisible, setFpsVisible } from '../devmode/debughud.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
-import { DEVMODE, VERSION } from '../../constants.ts';
+import { DEVMODE, FIRST_RUN_WADS, VERSION } from '../../constants.ts';
 
 export interface Selection {
   iwad: WadSource;
@@ -286,8 +286,9 @@ export class Menu {
   }
 
   /**
-   * Reads the server library, then resolves the selection: the URL wins, the
-   * stored selection is next, and failing both the first game WAD on offer.
+   * Reads the server library, then resolves the selection: the URL wins, the stored selection is
+   * next, then the first-run set (`FIRST_RUN_WADS`) for a player who has none, and failing all
+   * three the first game WAD on offer.
    */
   async init(defaults: MenuDefaults): Promise<void> {
     this.setStatus('Scanning public/game/ …');
@@ -302,19 +303,37 @@ export class Menu {
     this.mapCache.clear();
 
     const stored = this.loadSelection();
+    // Nothing stored at all is the player's first start, and only then: `FIRST_RUN_WADS`
+    // (constants.ts) stands in for the stored selection they don't have yet. A stored one that
+    // names files the library has since lost is *not* a first start — that player keeps the old
+    // fallback. docs/menu-wads.md § The first start.
+    const firstRun = stored ? null : FIRST_RUN_WADS;
 
     this.selectedIwad =
       (defaults.iwad ? this.findSource(defaults.iwad) : undefined) ??
       (stored ? this.findSource(stored.iwad) : undefined) ??
+      (firstRun ? this.findSource(firstRun.iwad) : undefined) ??
       this.sources.find((s) => s.type === 'IWAD') ??
       null;
 
-    const wantedPwads = defaults.pwads?.length ? defaults.pwads : (stored?.pwads ?? []);
+    const urlPwads = defaults.pwads?.length ? defaults.pwads : null;
+    const wantedPwads = urlPwads ?? stored?.pwads ?? firstRun?.pwads.map((p) => p.file) ?? [];
     this.selectedPwads = wantedPwads
       .map((key) => this.findSource(key))
-      .filter((s): s is WadSource => s !== undefined && s !== this.selectedIwad);
-    // A key naming an add-on that is no longer picked is harmless — it simply matches nothing.
-    this.disabledPwads = new Set(stored?.disabled ?? []);
+      .filter((s): s is WadSource => s !== undefined && s !== this.selectedIwad)
+      // A stored add-on that doesn't suit a `?wad=`-forced game WAD is kept and refused, because it
+      // is a set the player assembled (docs/menu.md § Remembered selection). A first-run one is
+      // nobody's set, so it is simply left out rather than opening a first visit on a red refusal.
+      .filter((s) => !firstRun || wadlib.fitsGameWad(this.selectedIwad, s));
+    // A key naming an add-on that is no longer picked is harmless — it simply matches nothing. The
+    // first-run off-flags are read back off the resolved picks, so they carry the library's own
+    // keys whatever case the constant spells a file in; an add-on the URL asked for is never one of
+    // them, having been asked for.
+    const startsOff = new Set(firstRun?.pwads.filter((p) => !p.on).map((p) => p.file.toLowerCase()));
+    this.disabledPwads = new Set(
+      stored?.disabled ??
+        (urlPwads ? [] : this.selectedPwads.filter((p) => startsOff.has(p.key.toLowerCase())).map((p) => p.key)),
+    );
 
     this.render();
     const wantedMap = defaults.map ?? stored?.map ?? null;
@@ -969,12 +988,10 @@ export class Menu {
     const scrollTop = this.pwadList.scrollTop;
     this.pwadList.replaceChildren();
     const active = this.activePwads();
-    // The badge column is only rendered when something in the list has a reason to give — it costs
-    // the name column its width, and a game WAD that suits every pick is the ordinary case. When it
-    // is rendered it is rendered on *every* row, empty ones included, or the fixed-width columns
-    // behind it would begin somewhere different on each row.
+    // A badge is rendered on the rows that have a reason to give and on no others: it leads the
+    // fixed-width block, so a row without one only widens its name — the WAD Library's rows do the
+    // same (docs/menu-wads.md § The file rows).
     const reasons = this.selectedPwads.map((source) => this.mismatchReason(source));
-    const anyReason = reasons.some((reason) => reason !== '');
     for (const [index, source] of this.selectedPwads.entries()) {
       const reason = reasons[index];
       const enabled = reason === '' && !this.disabledPwads.has(source.key);
@@ -1007,7 +1024,7 @@ export class Menu {
       row.append(
         input,
         name,
-        ...(anyReason ? [badge(reason, 'reason')] : []),
+        ...(reason ? [badge(reason, 'reason')] : []),
         // The same columns the WAD Library lists, so a file reads identically in both places —
         // just narrower, since this panel has a fraction of the overlay's width.
         ...sourceColumnSpans(source, () => this.wadinfo.open(source)),
@@ -1022,13 +1039,13 @@ export class Menu {
   /**
    * Why the selected game WAD can't merge one of the picks, as the badge its row carries — '' when
    * it can. The rule is `library.ts: fitsGameWad`'s, the same one `pwadsFor` and the WAD Library's
-   * greying read; only the wording is shorter than the overlay's, this panel being a fraction of
-   * its width. See docs/menu-wads.md § Picking a WAD set.
+   * greying read, and the wording is `labels.ts: mapStyleLabel`'s, the same one the overlay's rows
+   * carry. See docs/menu-wads.md § Picking a WAD set.
    */
   private mismatchReason(source: WadSource): string {
     if (this.selectedIwad && source.key === this.selectedIwad.key) return 'game WAD';
     if (wadlib.fitsGameWad(this.selectedIwad, source)) return '';
-    return wadlib.mapStyle(source) === 'doom1' ? 'DOOM 1' : 'DOOM II';
+    return mapStyleLabel(source);
   }
 
   /**

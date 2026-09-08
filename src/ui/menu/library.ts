@@ -10,7 +10,7 @@ import type { WadSource } from '../../wad/library.ts';
 import { nothingLoads } from '../../wad/support.ts';
 import { confirmOnHold } from './hold.ts';
 import { OverlayShell, type MenuOverlay } from './overlay.ts';
-import { badge, sourceColumnSpans } from './labels.ts';
+import { badge, mapStyleLabel, sourceColumnSpans } from './labels.ts';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -583,7 +583,9 @@ export class LibraryUi implements MenuOverlay {
 
   private iwadRow(source: WadSource, chosen: boolean): HTMLLabelElement {
     const dead = unplayable(source);
-    const mark = dead ? badge(REFUSED, 'reason') : badge('game WAD', chosen ? '' : 'quiet');
+    // Nothing to say on a row that can be picked: the radio already says it is a game WAD, and
+    // naming it again down a folder of nothing else was a column of the same two words.
+    const mark = dead ? badge(REFUSED, 'reason') : null;
     const row = this.baseRow(source, chosen, mark, dead);
     const input = document.createElement('input');
     input.type = 'radio';
@@ -620,8 +622,8 @@ export class LibraryUi implements MenuOverlay {
       : isGameWad
         ? badge('game WAD')
         : incompatible
-          ? badge(wadlib.mapStyle(source) === 'doom1' ? 'DOOM 1 maps' : 'DOOM II maps', 'reason')
-          : badge('');
+          ? badge(mapStyleLabel(source), 'reason')
+          : null;
     const row = this.baseRow(source, index >= 0, mark, refused);
 
     const input = document.createElement('input');
@@ -639,13 +641,15 @@ export class LibraryUi implements MenuOverlay {
    /**
    * Name, badge, detail. The badge leads the fixed-width block because what it carries is the
    * *reason a row can't be picked*, which has to be read before the file's stats rather than after
-   * them — and it is **always present even when it says nothing**, or the columns behind it would
-   * slide to a different place on every row, which is the whole point of their being columns.
+   * them. A row with no reason renders **no badge at all** rather than an empty one: the badge
+   * leads the fixed-width block, so dropping it only widens the flexing name and nothing behind it
+   * moves. `labels.ts: infoColumn` is the opposite case — it has a column behind it, so an empty
+   * one there stays a spacer.
    */
   private baseRow(
     source: WadSource,
     selected: boolean,
-    mark: HTMLSpanElement,
+    mark: HTMLSpanElement | null,
     disabled = false,
   ): HTMLLabelElement {
     const row = document.createElement('label');
@@ -655,7 +659,11 @@ export class LibraryUi implements MenuOverlay {
     name.className = 'name truncate';
     name.textContent = source.label;
 
-    row.append(name, mark, ...sourceColumnSpans(source, () => this.hooks.showTextFile(source)));
+    row.append(
+      name,
+      ...(mark ? [mark] : []),
+      ...sourceColumnSpans(source, () => this.hooks.showTextFile(source)),
+    );
     return row;
   }
 

@@ -171,9 +171,13 @@ the filter, choosing a folder, and the one status line.
 
 - **A game WAD is a radio, an add-on a checkbox.** An IWAD-typed row is a choice of one and says so
   with the control rather than with a rule the player has to discover; a PWAD-typed row stacks.
+  The control saying it is also why an IWAD row's badge is **empty**: it carried `game WAD` on every
+  row of a folder of nothing else. Only `won't load` is left there. A *PWAD*-typed row that is the
+  current game WAD keeps its `game WAD` badge — there it is the reason the row is refused.
 - **Incompatible add-ons render disabled rather than hidden**, the same `mapStyle` rule and the same
   reasoning as `renderPwads` (§ Picking a WAD set), with the mismatched game named in the row's
-  badge. **One already in the draft keeps a live checkbox** (`refused && index < 0`): unticking is
+  badge — `labels.ts: mapStyleLabel`, the wording the New Game tab's rows carry too, so one refusal
+  cannot be worded two ways in one menu. **One already in the draft keeps a live checkbox** (`refused && index < 0`): unticking is
   the only way to drop a pick from this pane, and a game WAD that no longer suits one is exactly
   when the player might want to — what the row must not do is accept a *new* pick the set can't
   use.
@@ -202,8 +206,10 @@ the filter, choosing a folder, and the one status line.
   the game-WAD select's one-line label; the support verdict is deliberately not in it, being a glyph
   rather than text.) The badge **leads** the fixed-width block, ahead of the size: what it carries
   is the reason a row can't be picked, which has to be read before the file's stats rather than
-  after them. It is rendered **even when it says nothing**, or every column behind it would land
-  somewhere different on each row, which is the whole thing they exist for.
+  after them. It is rendered **only on a row that has one**, and it is the one column that may be
+  left out: it *leads* the fixed-width block, so dropping it widens the flexing name and moves
+  nothing behind it. Every other empty column stays a spacer, having a column behind it that would
+  shift.
 - **The last column says whether the file will run at all** — a green tick, an amber warning or a
   red cross, with the reasons in its tooltip, each naming at most three of the maps that raise it
   (sorted, then a count of the rest — a longer list stops being readable at a glance, and directory
@@ -333,12 +339,11 @@ overlay lists, narrower — and the two controls mean **different things**:
 dimmed, with an untickable box, `off` in the order column and the reason in a badge — and its
 off-flag is left alone, so picking a game WAD that suits it again brings it back exactly as it was.
 Switching from DOOM II to DOOM 1 and back must not cost a set the player assembled once; the old
-behavior pruned those picks out of the list and out of storage. The badge column is rendered **only
-when some row in the list has a reason to give**, and then on every row, empty ones included: it
-costs the name column its width, and the fixed-width columns behind it have to begin in the same
-place on every row. Its wording is shorter than the overlay's (`DOOM II` against `DOOM II maps`)
-because this panel is a fraction of that one's width; the *rule* behind both is the one
-`fitsGameWad`.
+behavior pruned those picks out of the list and out of storage. The badge is rendered **on the rows
+that have a reason and on no others**, the same rule and for the same reason as the WAD Library's
+(§ The file rows). The wording is the overlay's own (`labels.ts: mapStyleLabel`) and the rule behind
+both is `fitsGameWad` — one refusal cannot read two ways in one menu, which it did while this panel
+said `DOOM II` and the overlay `DOOM II maps`.
 
 `Menu.activePwads()` — picked, ticked, *and* mergeable (`pwadsFor`) — is what everything resolving a
 WAD set reads: the level list, the start, and the library-permission check. `selectedPwads` alone is
@@ -417,3 +422,24 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
   takes, and the only thing every map has. The label itself is `ui/menu/labels.ts`'s `describeMap`,
   shared with the save rows (docs/menu-saves.md § Save and Load tabs) so a level can't be named two
   ways in one menu.
+
+### The first start
+
+`Menu.init` resolves the selection in four steps: `?wad=`/`?pwad=`, then the stored selection, then
+**`FIRST_RUN_WADS` (`constants.ts`)**, then the first game WAD the manifest lists.
+
+- **The third step runs only when nothing is stored at all.** A stored selection naming files the
+  library has since lost is a player with a configuration, not a first start, and keeps the
+  last-listed fallback.
+- **It is a preselection, not a preference**: nothing is written for it. The first thing the player
+  changes writes their own selection through `saveSelection`, and the constant is never read again.
+- **An add-on it names with `on: false` is picked but unticked** — in the list, in the merge order,
+  merging nothing until the player ticks it. It reaches `disabledPwads` the same way a remembered
+  off-flag does (§ The Add-ons list on the New Game tab).
+- **A file the library doesn't have is skipped**, add-on and game WAD alike; a set whose game WAD
+  is missing falls through to the manifest's first. The off-flags are read back off the resolved
+  picks, so the constant may spell a file in any case.
+- **An add-on that doesn't suit the game WAD is left out**, not shown refused — the one place that
+  differs from a stored set, which is kept and refused because the player assembled it
+  (docs/menu.md § Remembered selection). `?wad=DOOM1.WAD` on a first visit opens on DOOM 1 with no
+  add-ons rather than on two red DOOM II rows.

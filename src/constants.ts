@@ -17,9 +17,7 @@ export const VERSION = '0.18.1';
 export const DEVMODE = import.meta.env?.VITE_DEVMODE === 'true';
 
 /**
- * One vanilla tic in seconds. DOOM's whole game clock runs at 35 Hz, so every duration lifted from
- * `info.c`'s state tables, `p_pspr.c`'s weapon chains or `p_spec.c`'s wait counts is quoted in tics
- * and reaches this engine's dt-scaled model as `<tics> * DOOM_TIC`.
+ * One vanilla tic in seconds. DOOM's whole game clock runs at 35 Hz
  */
 export const DOOM_TIC = 1 / 35;
 
@@ -32,11 +30,7 @@ export const DOOM_TIC = 1 / 35;
 export const BRIGHTNESS_LIFT = 0.06;
 
 /**
- * How far the player can see, in map units: the scene's distance fog (`game.ts`) is fully opaque at
- * this range, `TopDownCamera`'s far plane follows it, and so does the fog of war's reveal, which
- * reads this dial rather than keeping a radius of its own — the player shoots what they can see.
- * Tuned by feel — it is what keeps a big open map from reading as a floorplan — but moving it moves
- * what is revealed, and so what is shootable, not just how far the view fades.
+ * How far the player can see, in map units.
  * docs/render.md § View distance, docs/fogofwar.md § Reveal radius.
  */
 export const VIEW_DISTANCE = 16000;
@@ -44,9 +38,8 @@ export const VIEW_DISTANCE = 16000;
 /**
  * Where that fog starts hazing, as a fraction of `VIEW_DISTANCE` (fully opaque at 1.0), so moving
  * the one dial above keeps the fade band in proportion — which is why it lives beside it rather
- * than with the `game.ts` line that reads it. Tuned by feel: wide enough that distant geometry
- * dissolves instead of meeting a wall of black, narrow enough that the room the player is actually
- * fighting in stays at full brightness. docs/render.md § View distance.
+ * than with the `game.ts` line that reads it.
+ * docs/render.md § View distance.
  */
 export const FOG_START_FRACTION = 0.54;
 
@@ -99,10 +92,27 @@ export const PICKUP_SCALE_TYPES: Set<number> = new Set([
 ]);
 
 /**
+ * **The WAD set a player sees on their very first start** — nothing stored, no `?wad=` in the URL.
+ * Without it the menu falls to whatever game WAD the manifest happens to list first, which is a
+ * curator's decision left to file order. A name no `public/game/` file answers to is skipped, so a
+ * stripped deployment falls back to that first-listed WAD as before.
+ * docs/menu-wads.md § The first start.
+ */
+export const FIRST_RUN_WADS: { iwad: string; pwads: {
+  /** a served `WadSource.key`, matched case-insensitively  */
+  file: string;
+  on: boolean;
+}[] } = {
+  iwad: 'freedoom2.wad',
+  pwads: [
+    { file: 'GoingDown.wad', on: false },
+    { file: 'NUTS.WAD', on: false },
+  ],
+};
+
+/**
  * How solid a Boom deep-water surface draws over the pool bottom beneath it
- * (0 = invisible, 1 = opaque). **Tuned by feel** — vanilla's water surface is
- * opaque and hides whatever wades into it, which a camera looking straight down
- * cannot afford; this is the dial that decides how much of a submerged player
- * still reads through. docs/specials-transfers.md § Deep water.
+ * (0 = invisible, 1 = opaque, tuned by feel).
+ * docs/specials-transfers.md § Deep water.
  */
 export const WATER_SURFACE_ALPHA = 0.5;

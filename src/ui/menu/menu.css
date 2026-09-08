@@ -339,9 +339,10 @@
 /*
  * Why a row can't be picked, leading the fixed-width columns in both WAD lists — the accent at full
  * strength, because it is the only thing on a row the player needs to read *before* trying to click
- * it, and it sits on a row already dimmed for being unpickable. Fixed-width and present even when
- * it says nothing, or the columns behind it would begin somewhere different on every row. Only the
- * width is per-list: `#wadlibrary .badge` (library.css) has room for the longer wording.
+ * it, and it sits on a row already dimmed for being unpickable. Fixed-width, and rendered **only on
+ * a row that has a reason**: it leads the fixed-width block, so a row without one gives that width
+ * back to the flexing name and nothing behind it moves. Only the width is per-list:
+ * `#wadlibrary .badge` (library.css) has room for the longer wording.
  */
 #menu .badge {
   text-align: right;

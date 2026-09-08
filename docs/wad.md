@@ -1,7 +1,7 @@
 # WAD loading and merging
 
 `src/wad/`, `src/wad/library.ts`, `plugins/wad-manifest.ts` — the menu that drives all this is
-docs/menu.md
+docs/menu-wads.md
 
 ## Loading and merging
 
@@ -313,7 +313,8 @@ set's own `PLAY` art, and secrets silent; none of it may keep a level from start
 Beside `COLORMAP` itself, a Boom WAD can ship **named colormap lumps** — 34 rows of 256 palette
 indexes each (32 light levels, the invulnerability row, one spare) — and point a 242 line's sidedef
 at them to recolour the view inside, under or over that sector
-(docs/specials.md § Deep water). BOOMEDIT.WAD ships seven (`BLUMAP`, `REDMAP`, `GRNMAP`, …).
+(docs/specials-transfers.md § Deep water). BOOMEDIT.WAD ships seven (`BLUMAP`, `REDMAP`, `GRNMAP`,
+…).
 
 `wad/colormaps.ts: colormapTint` decodes one to a single **per-channel multiplier**, not to a
 remap table: for each of the 256 palette entries it sums the channel through row 0 and without it,
@@ -366,9 +367,9 @@ of them a voodoo-doll row and the 27th the real start.
 ## Level names
 
 `campaign/names.ts` answers "what is this map called" for the level card (docs/hud.md § Level card)
-and for the menu's level list (docs/menu.md § Picking a WAD set). A map lump name is not an answer
-on its own: DOOM II, Plutonia and TNT all ship `MAP01`-`MAP32` with completely different titles, and
-a PWAD's `MAP01` is not the IWAD's level of that name at all.
+and for the menu's level list (docs/menu-wads.md § Picking a WAD set). A map lump name is not an
+answer on its own: DOOM II, Plutonia and TNT all ship `MAP01`-`MAP32` with completely different
+titles, and a PWAD's `MAP01` is not the IWAD's level of that name at all.
 
 A file may ship several MAPINFO flavours (`UMAPINFO`, `ZMAPINFO`, `MAPINFO`), which are alternatives
 for different engines rather than layers, so **exactly one of them is read per file** — the first
@@ -616,7 +617,7 @@ differ on purpose:
 
 A folder on the player's disk, listed in the menu beside the server's own WADs and remembered
 between visits — `library/disk.ts` and `library/store.ts`, driven by `ui/menu/library.ts`
-(docs/menu.md § WAD Library).
+(docs/menu-wads.md § WAD Library).
 
 `library.ts` is the layer's one entry point and re-exports everything under `library/`; nothing
 outside the directory imports into it. The split is by where a source comes from, over the shapes
@@ -691,7 +692,8 @@ Three rules that are easy to get wrong:
   from the memo alone. `ensureLibraryAccess` is what actually asks, and **must be reached from a
   user gesture** — a browser refuses a file-permission request outside one. That is why
   `Menu.startWithSkill` calls it synchronously before its first `await`, the same
-  transient-activation trick `main.ts` uses for `audio.resume()` (docs/menu.md § Session lifecycle).
+  transient-activation trick `main.ts` uses for `audio.resume()` (docs/session.md § Session
+  lifecycle).
 - **Boot rescans, but only where the permission already stands.** `Menu.init` chains
   `rescanIfPermitted` onto the restore, so a WAD dropped into the folder between visits is listed
   without the player opening the overlay first — the memo made the stale-until-rescanned list the
@@ -725,8 +727,8 @@ written by index, not pushed, so a pool finishing out of order doesn't scramble 
 ## The text file beside a WAD
 
 A release's `.txt` — `SCYTHE.TXT` next to `SCYTHE.WAD` — offered from the info column of both WAD
-lists and read in the popup (docs/menu.md § The text file popup). `wad/library/textfile.ts` owns
-both halves: `siblingTextFile` finds the name, `decodeTextFile` turns the bytes into text. It
+lists and read in the popup (docs/menu-wads.md § The text file popup). `wad/library/textfile.ts`
+owns both halves: `siblingTextFile` finds the name, `decodeTextFile` turns the bytes into text. It
 reaches the menu as `WadSource.textFile`, a name plus a `read()`.
 
 - **Matched on the base name, case-insensitively, in the WAD's own folder.** `DOOM2.WAD` takes
@@ -786,7 +788,7 @@ scan catch it and leave the file out of the listing instead.
 
 `wad/support.ts` answers one question about a file the menu has not loaded: **can this engine run
 what it ships?** The answer is a `WadSupport` — every reason it can't, worst first, each naming the
-maps that raise it — and it is what the WAD Library's support column shows (docs/menu.md § WAD
+maps that raise it — and it is what the WAD Library's support column shows (docs/menu-wads.md § WAD
 Library). `describeWad` computes it, so every listing path gets the same verdict.
 
 The `ok`/`partial`/`broken` level is **derived** (`supportLevel`), never stored. Both persisted
@@ -884,8 +886,8 @@ maps); the plugin warns on mismatch but still serves it.
 relative to `public/game/` rather than one segment — `pwad`, or `pwad/megawads`. It is still exactly
 the URL the file is served from, so a subfolder costs no extra bookkeeping; `serverSource` encodes
 each segment separately so the separators survive. What it buys is that a collection can be filed on
-disk the way it is thought about, and the menu shows it as a tree (docs/menu.md § WAD Library) — the
-same shape the player's own library folder already had. Only the **first** segment decides
+disk the way it is thought about, and the menu shows it as a tree (docs/menu-wads.md § WAD Library)
+— the same shape the player's own library folder already had. Only the **first** segment decides
 iwad-vs-pwad, so everything under `pwad/` is an add-on however deeply it is nested. `servedFolder`
 is the one place that split is made — the menu groups by the two halves it hands back rather than
 decoding the path itself.
@@ -901,4 +903,4 @@ consumer casts raw JSON to is one the producer has to be checked against.
 `MAPxx` → DOOM II, and the two never mix within one game. A WAD with no maps of its own (textures, sounds,
 …) has no style and fits either — `describeSource` (`ui/menu/labels.ts`) shows its lump count
 instead of a map count so it doesn't read as an empty file. What the menu *does* with that is
-docs/menu.md § Picking a WAD set.
+docs/menu-wads.md § Picking a WAD set.

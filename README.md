@@ -47,7 +47,8 @@ Your game WAD, add-ons, level and difficulty are remembered for the next visit.
 `ESC` pauses and brings up the menu over the level; **Return to game** or `ESC` again resumes
 where you left off. `?wad=DOOM2.WAD&pwad=SCYTHE.WAD&map=MAP05` preselects and skips the menu.
 
-See [docs/menu.md](docs/menu.md) for the WAD manifest, settings persistence and URL parameters.
+See [docs/menu-wads.md](docs/menu-wads.md) for the WAD manifest and [docs/menu.md](docs/menu.md) for
+settings persistence and URL parameters.
 
 ## Replays
 
@@ -111,7 +112,7 @@ faster than either alone. See [docs/movement.md](docs/movement.md).
 Set `VITE_DEVMODE=true` in a `.env.local` file at the repo root (git-ignored, create it
 yourself) and restart `npm run dev` to turn on the debug overlay and the hotkeys marked
 *(dev mode only)* above. Without it those keys are simply inert.
-See [docs/menu.md](docs/menu.md#dev-mode-devmode).
+See [docs/devmode.md](docs/devmode.md).
 
 ## Sound and music
 

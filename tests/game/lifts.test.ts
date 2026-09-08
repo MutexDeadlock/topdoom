@@ -5,7 +5,7 @@ import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
 
 /**
  * `EV_DoPlat` (`p_plats.c`) — what a second trigger does to a lift that has
- * already finished its stroke. See docs/specials.md § Retriggering a door,
+ * already finished its stroke. See docs/specials-movers.md § Retriggering a door,
  * whose rule the lift shares.
  */
 describe('Specials · lifts', () => {

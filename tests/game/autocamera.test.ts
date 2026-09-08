@@ -681,7 +681,7 @@ describe('Auto camera · framing past an occluder', () => {
  * The occlusion trace counts the bands the *mesh* drew, not the ones the two
  * sectors' raw heights imply. Boom's 242 is where those part company: a deep
  * water sector's upper is sized down to its control sector's ceiling
- * (`mapmesh.ts`'s `twoSidedBands`, docs/specials.md § Deep water), so the wall
+ * (`mapmesh.ts`'s `twoSidedBands`, docs/specials-transfers.md § Deep water), so the wall
  * across from one reaches far lower than `ceilHeight` says. Reading the raw
  * heights here made the camera blind to exactly that stretch.
  */

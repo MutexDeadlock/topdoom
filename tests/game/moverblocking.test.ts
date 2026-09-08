@@ -15,7 +15,7 @@ import type { Pos3 } from '../../src/types.ts';
  * `MoverOccupancy` is the binding `SpecialsController` reaches a level's bodies through, and the
  * three functions under it have their own tests — so what this covers is the binding itself: that
  * the thing layer is read late, the player object live, and the dolls and damage sink the ones the
- * session passed. docs/specials.md § Crushers.
+ * session passed. docs/specials-crushers.md § Crushers.
  */
 
 const CELL = 128;
@@ -51,7 +51,7 @@ describe('Specials · the bodies a mover reaches', () => {
     const doll = grid.centre(1, 1);
     const stands = grid.centre(3, 1);
     // Every player-1 start but the last is a doll, so the crushed one is the doll and the
-    // untouched one is where the real player stands. docs/specials.md § Voodoo dolls.
+    // untouched one is where the real player stands. docs/specials-forces.md § Voodoo dolls.
     grid.map.things.push({ x: doll.x, y: doll.y, angle: 0, type: ThingType.playerStart, flags: 0 });
     grid.map.things.push({ x: stands.x, y: stands.y, angle: 0, type: ThingType.playerStart, flags: 0 });
     const world = new World(grid.map);

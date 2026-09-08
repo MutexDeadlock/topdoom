@@ -129,8 +129,9 @@ Rules that go with it:
 - **The blocker broadphase stays 2D** (`things/grid.ts: blockersFor`). A z pre-filter would shrink
   the candidate set but put the vertical rule in a second place; `blockedByThings` stays its one
   home.
-- The player can be **stood on**, and stands on bodies — § Vertical physics below. Nothing else
-  does: two vertically disjoint monsters simply pass through each other's column.
+- The player can be **stood on**, and stands on bodies (§ Vertical physics: stairs, falling,
+  gap-crossing). Nothing else does: two vertically disjoint monsters simply pass through each
+  other's column.
 
 ### Solid decorations
 
@@ -176,8 +177,8 @@ compares against *that sector's own* ceiling (`game/specials/moverblocking.ts: b
 never notices the lower neighbor and lets the floor carry the body up into the neighbor's
 ceiling/upper wall — it ends up visibly stuck inside geometry. `blocksFloorRise` therefore measures
 **every** body, player and monster alike, against `groundCeiling` at its actual position, so the
-neighbor's real ceiling stops the rise before it gets that far. See docs/specials.md § Every other
-mover stops instead.
+neighbor's real ceiling stops the rise before it gets that far. See docs/specials-movers.md § Every
+other mover stops instead.
 
 ### slideMove
 
@@ -363,7 +364,7 @@ it, unlike some later source ports.
 Everything that moves a body **without** its own input goes through one channel — vanilla's
 `momx`/`momy`, which this engine keeps separate from the input-driven velocity for the reason
 spelled out at the end of this section. Two things feed it: damage knockback, and the world forces
-Boom's parameter lines apply (conveyors, wind, current — docs/specials.md § Scrollers and
+Boom's parameter lines apply (conveyors, wind, current — docs/specials-forces.md § Scrollers and
 conveyors).
 
 ### Knockback
@@ -472,7 +473,7 @@ and momentum, but the input channel is bounded on its own (§ Friction's `MAX_TA
 ### Friction
 
 Boom's linedef 223 gives a sector a friction other than vanilla's 0.90625 — ice or mud. The scan
-and the per-sector arrays are docs/specials.md § Friction; what reaches *movement* is
+and the per-sector arrays are docs/specials-forces.md § Friction; what reaches *movement* is
 `FrictionEffect`, three numbers `specials/forces.ts: frictionUnder` hands `Player.update` for
 whatever floor the player is standing on. On any floor with no 223 line it is `NO_FRICTION`,
 `{0.90625, 1, 1}` — one declaration in `specials/defs.ts` serving as both `frictionUnder`'s
@@ -542,9 +543,9 @@ Two details that are not shared with knockback:
 - **Monsters are carried but not slowed.** A conveyor moves any non-flying body standing on it —
   monsters, barrels, decorations and corpses alike, since `P_KillMobj` strips `MF_NOGRAVITY` from
   what it kills — because `sc_carry` moves every mobj in the sector, and a thing it carries fires
-  walk lines exactly as a monster's own step does (docs/specials.md § Scrollers and conveyors).
-  Monster *walking* is unaffected by sector friction — that is vanilla too, since `A_Chase` moves by
-  `P_TryMove` rather than by momentum.
+  walk lines exactly as a monster's own step does (docs/specials-forces.md § Scrollers and
+  conveyors). Monster *walking* is unaffected by sector friction — that is vanilla too, since
+  `A_Chase` moves by `P_TryMove` rather than by momentum.
 
 **`PlayerSnapshot` still names the pair `knockVelX`/`knockVelY`.** That is the saved wire format
 from before the channel widened past knockback, and renaming it would orphan every existing save

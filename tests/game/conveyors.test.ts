@@ -9,7 +9,7 @@ import { PLAYER_RADIUS } from '../../src/game/player.ts';
  * The conveyor half of Boom's scrollers (`T_Scroll`'s `sc_carry`) seen from a
  * body rather than from the sector: which sectors count as underfoot, the
  * carry rate, and the standing-on-the-floor gate.
- * See docs/specials.md § Scrollers and conveyors.
+ * See docs/specials-forces.md § Scrollers and conveyors.
  */
 describe('Specials · conveyors', () => {
   const TICS = 35;

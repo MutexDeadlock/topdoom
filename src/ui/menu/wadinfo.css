@@ -1,5 +1,5 @@
 /*
- * The text-file popup — docs/menu.md § The text file popup. Structurally #about's and
+ * The text-file popup — docs/menu-wads.md § The text file popup. Structurally #about's and
  * #wadlibrary's sibling: a child of #menu, so it can only exist while the menu is up, at a z-index
  * local to #menu's own stacking context rather than a rung of base.css's global ladder. **6, one
  * above #wadlibrary's 5**: it opens from a row inside that overlay, so it has to cover it.

@@ -109,13 +109,13 @@ the next `applyToCamera` because two paths render without one (the pause loop's 
 collapse for the orbit angle — which is why `snapTo` is called *after* whichever branch set the yaw.
 
 **A teleport is the same discontinuity** and takes the same pair, in the same order
-(docs/specials.md § Teleporters). It used to snap only the yaw, which left the camera flying to the
-landing spot over roughly a third of a second while the player was already there and shooting. A
-loud teleport aims the yaw at the landing angle; a silent one turns it by `TeleportDest.rotateBy`
-through `turnYaw` (§ Camera orbit), which is what preserves the player's own orbit across the trip. What
-still glides after either snap is the aim lead alone — `tick` re-applies it to the fresh target on
-the very next tic — which is bounded by `MAX_AIM_LEAD` and is the intended follow-the-cursor feel
-rather than a leftover.
+(docs/specials-teleporters.md § Teleporters). It used to snap only the yaw, which left the camera
+flying to the landing spot over roughly a third of a second while the player was already there and
+shooting. A loud teleport aims the yaw at the landing angle; a silent one turns it by
+`TeleportDest.rotateBy` through `turnYaw` (§ Camera orbit), which is what preserves the player's own
+orbit across the trip. What still glides after either snap is the aim lead alone — `tick` re-applies
+it to the fresh target on the very next tic — which is bounded by `MAX_AIM_LEAD` and is the intended
+follow-the-cursor feel rather than a leftover.
 
 ## Aim lead
 
@@ -140,9 +140,10 @@ same height once the follow smoother has caught up — the camera is handed `eye
 exactly when it matters: the camera lags by up to the whole drop for about a third of a second, so a
 plane pinned to the player's live `z` drifts away from the camera under it, moving the cursor's
 world point and turning the player toward it. Deriving the plane from the camera locks the two
-together, so a fall pans the view and changes nothing else. Boom's deep water (docs/specials.md
-§ Deep water) is what surfaced this: 242 is render-only, so walking into a pool drawn as a flat
-sheet of water still drops the player up to 200 units, with nothing on screen to explain the swing.
+together, so a fall pans the view and changes nothing else. Boom's deep water
+(docs/specials-transfers.md § Deep water) is what surfaced this: 242 is render-only, so walking into
+a pool drawn as a flat sheet of water still drops the player up to 200 units, with nothing on screen
+to explain the swing.
 
 ## Auto camera (`game/autocamera.ts`, `camera.ts`)
 

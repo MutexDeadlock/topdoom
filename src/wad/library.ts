@@ -1,7 +1,7 @@
 /**
  * The menu's WAD library, and this layer's one entry point: what a source is and where one comes
  * from (`library/`), which maps a game-WAD + add-on selection yields, and loading the picked set
- * into `WadFile`s. See docs/wad.md and docs/menu.md.
+ * into `WadFile`s. See docs/wad.md and docs/menu-wads.md.
  */
 import { WadFile } from './wad.ts';
 import { idOf } from './checksum.ts';
@@ -145,7 +145,7 @@ export function mergedMaps(iwad: WadSource, pwads: WadSource[]): MergedMap[] {
  * sum of their manifest `size`s and is fixed before the first byte: the bar only ever moves
  * forward. A source already in memory (an upload, a second start on the same set) declares nothing
  * and is left out, which is why a warm start shows no bar rather than a full one.
- * docs/menu.md § The loading screen.
+ * docs/session.md § The loading screen.
  */
 export async function loadWadFiles(iwad: WadSource, pwads: WadSource[], onProgress?: Progress): Promise<WadFile[]> {
   const sources = [iwad, ...pwads];

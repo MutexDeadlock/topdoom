@@ -1,6 +1,6 @@
 /**
  * Renderer, canvas, camera and input, bundled because all four live for the whole session — a new
- * level must not cost a new WebGL context. See docs/menu.md § Session lifecycle.
+ * level must not cost a new WebGL context. See docs/session.md § Session lifecycle.
  */
 import * as THREE from 'three';
 import { TopDownCamera } from './camera.ts';
@@ -13,7 +13,7 @@ export class Viewport {
   readonly camera: TopDownCamera;
   readonly input: Input;
   /**
-   * GPU time for the profiler overlay, measured around the render call — see docs/menu.md §
+   * GPU time for the profiler overlay, measured around the render call — see docs/devmode.md §
    * Profiling overlay.
    */
   readonly gpuTimer: GpuTimer;

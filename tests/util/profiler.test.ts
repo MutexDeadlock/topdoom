@@ -6,7 +6,7 @@ import { FrameProfiler } from '../../src/util/profiler.ts';
  * The panel's one structural promise is that its bars sum to the total it reports, which is what
  * makes `Other` mean "everything unmeasured" rather than "whatever is left over after the
  * bookkeeping" — and the off-frame category (`Music`) is the case that can break it, since that
- * work happens in the gap between two frames. See docs/menu.md § Profiling overlay.
+ * work happens in the gap between two frames. See docs/devmode.md § Profiling overlay.
  */
 
 /** Runs the same frame often enough for the exponential smoothing to settle on it. */

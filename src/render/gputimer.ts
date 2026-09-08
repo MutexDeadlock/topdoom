@@ -1,7 +1,7 @@
 /**
  * `GpuTimer`: how long the GPU actually spent on a frame — the half of the frame `FrameProfiler`
  * cannot see, since every row it keeps is main-thread wall clock inside one `requestAnimationFrame`
- * callback and the GPU finishes long after that returns. See docs/menu.md § Profiling overlay.
+ * callback and the GPU finishes long after that returns. See docs/devmode.md § Profiling overlay.
  */
 import { PROFILE_SMOOTHING } from '../util/profiler.ts';
 

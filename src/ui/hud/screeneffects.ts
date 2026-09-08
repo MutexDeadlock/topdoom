@@ -84,7 +84,7 @@ export class ScreenEffects {
   /**
    * The colour cast of the Boom colormap the player is currently under, or null
    * for none — `R_SetupFrame`'s view colormap, which a 242 sector picks by eye
-   * height (docs/specials.md § Deep water). Driven from `game.ts` rather than
+   * height (docs/specials-transfers.md § Deep water). Driven from `game.ts` rather than
    * from `update`, which only ever sees the inventory.
    */
   setColormapTint(tint: { r: number; g: number; b: number } | null): void {

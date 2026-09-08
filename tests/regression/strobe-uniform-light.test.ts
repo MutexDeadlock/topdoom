@@ -10,7 +10,7 @@ import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
  * level it starts from is `P_FindMinSurroundingLight` — seeded with the
  * sector's own level, so it never resolves *upward*. Reported against EPIC.WAD
  * MAP02 sector 0, a type-2 sector at light 240 whose one neighbour is also 240:
- * the strobe was invisible. See docs/specials.md § Lights.
+ * the strobe was invisible. See docs/specials-lights.md § Lights.
  */
 
 const LIGHT = 240;

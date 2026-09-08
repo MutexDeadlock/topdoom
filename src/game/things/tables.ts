@@ -363,7 +363,7 @@ export const MONSTER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
  *
  * `frames` is empty only where a patch left `S_GIBS` drawing nothing — `crushCorpse` then leaves
  * the corpse alone rather than posing it on art that isn't there.
- * See docs/specials.md § Crushed corpses.
+ * See docs/specials-crushers.md § Crushed corpses.
  */
 export const CORPSE_GIB: { sprite: string; frames: string[] } = {
   sprite: pristineFrameTables().gibs?.sprite ?? '',

@@ -303,7 +303,7 @@ export interface MissingWad {
 /**
  * What a file the library can't supply is called in a **save row**: which file,
  * and what is wrong with it, in no more than a few words plus the name. The row
- * ellipsizes every line it can't fit on one (docs/menu.md § Save and Load tabs),
+ * ellipsizes every line it can't fit on one (docs/menu-saves.md § Save and Load tabs),
  * and the label column is only ~55 characters wide, so the advice lives in
  * `missingWadText` instead — where the surfaces showing it have the room.
  */

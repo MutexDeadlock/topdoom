@@ -2,7 +2,7 @@
  * The top-left status text, the fps counter behind it, and the debug hotkeys —
  * the text collapsing to "`N` fps" and the hotkeys to the camera framing keys
  * once DEVMODE is off. Whether the text shows at all is the player's own
- * setting. See docs/menu.md § Dev mode and § FPS counter.
+ * setting. See docs/devmode.md § Dev mode and § FPS counter.
  */
 import type { TicInput } from '../../game/input.ts';
 import type { TopDownCamera } from '../../render/camera.ts';
@@ -43,7 +43,7 @@ let fpsVisible: boolean | null = null;
 /**
  * Whether the top-left status text is wanted. Defaults to `DEVMODE`, like the
  * profiling overlay's own setting, and a stored choice overrides that either
- * way. See docs/menu.md § FPS counter.
+ * way. See docs/devmode.md § FPS counter.
  */
 export function getFpsVisible(): boolean {
   if (fpsVisible === null) fpsVisible = readStorage(FPS_STORAGE_KEY, DEVMODE);

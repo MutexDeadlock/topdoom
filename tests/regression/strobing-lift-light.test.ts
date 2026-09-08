@@ -11,7 +11,7 @@ import { specialsRig } from '../fixtures/specialsrig.ts';
  * pattern only ever showed while it happened to be moving (a height change
  * rebuilds the mesh from the live `sector.light` anyway). Reported against
  * DOOM1 E1M5 sectors 2 and 32, the tag-1 strobing lifts; reproduced here on
- * synthetic geometry. See docs/specials.md § Light changes.
+ * synthetic geometry. See docs/specials-lights.md § Light changes.
  */
 
 const BASE_LIGHT = 192;

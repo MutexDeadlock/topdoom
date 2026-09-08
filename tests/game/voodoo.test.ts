@@ -16,7 +16,7 @@ import type { DoomMap } from '../../src/wad/map.ts';
 /**
  * Voodoo dolls: which player starts become one, being carried across a walk
  * line, and the two ways damage to a doll reaches the real player.
- * See docs/specials.md § Voodoo dolls.
+ * See docs/specials-forces.md § Voodoo dolls.
  */
 describe('Specials · voodoo dolls', () => {
   function addStart(map: DoomMap, x: number, y: number): void {
@@ -195,7 +195,7 @@ describe('Specials · voodoo dolls', () => {
     }
     // `P_PlayerInSpecialSector` reads `player->mo`, and only `P_PlayerThink` calls it, so a doll
     // never runs it — Sunder 2512 MAP20 parks one in slime and would otherwise bleed the player
-    // from the first second of the level. docs/specials.md § Voodoo dolls.
+    // from the first second of the level. docs/specials-forces.md § Voodoo dolls.
     assert.equal(dealt, 0, 'a doll is not the body the damage floor checks');
   });
 

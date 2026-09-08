@@ -1,6 +1,7 @@
 /**
  * `SpecialsController`: drives every linedef/sector special in a loaded map — doors, lifts, floor
- * movers, crushers, stair builders, teleporters, lights and exits. See docs/specials.md.
+ * movers, crushers, stair builders, teleporters, lights and exits. See docs/specials.md, which
+ * routes to the per-mechanism docs beside it.
  */
 import * as THREE from 'three';
 import { isTextured, LF, NO_SIDE, type DoomMap, type LineDef, type Sector } from '../wad/map.ts';
@@ -75,7 +76,7 @@ export interface LightState {
  * arrival (`angle`, radians — see `Placement`), plus what the Boom silent
  * family needs on top. The three optional fields are absent for a vanilla
  * teleport, which is exactly its old behavior.
- * See docs/specials.md § Silent and line-to-line teleporters.
+ * See docs/specials-teleporters.md § Silent and line-to-line teleporters.
  */
 export interface TeleportDest extends Placement {
   /**
@@ -225,7 +226,7 @@ interface LiftMover {
   /**
    * `plat->crush`. Only a toggle plat sets it (`p_plats.c`), and it means the
    * grind-through rule rather than the reverse-on-obstruction one every other
-   * lift follows — docs/specials.md § Toggle plats.
+   * lift follows — docs/specials-movers.md § Toggle plats.
    */
   crush?: boolean;
 }
@@ -244,7 +245,7 @@ interface FloorMover {
    * *far* side of it, which `T_MovePlane` then takes in one step rather than
    * travelling the wrong way at mover speed. Absent on a mover from a save
    * written before this field existed, where re-deriving is the old behavior.
-   * docs/specials.md § Inverted plane moves.
+   * docs/specials-movers.md § Inverted plane moves.
    */
   direction?: 'up' | 'down';
   /**
@@ -266,7 +267,7 @@ interface FloorMover {
  * state, no periodic crush *damage*: nothing that reaches this mover needs
  * them. It still stalls rather than lowering through someone in its way —
  * `tickCeiling`'s `blocksCeilingLower` check.
- * docs/specials.md § One-way ceiling movers.
+ * docs/specials-movers.md § One-way ceiling movers.
  */
 interface CeilingMover {
   kind: 'ceiling';
@@ -299,7 +300,7 @@ interface CeilingMover {
  * **The one plane mover with no `direction` of its own**, and the one that doesn't need one:
  * reading the direction off the target each tick is exactly Boom for all three variants, and the
  * clamp `tickFloor`/`tickCeiling` carry has nothing to catch here.
- * docs/specials.md § Inverted plane moves.
+ * docs/specials-movers.md § Inverted plane moves.
  */
 interface ElevatorMover {
   kind: 'elevator';
@@ -328,7 +329,7 @@ interface CrusherMover {
    * `EV_CeilingCrushStop` and put back by `P_ActivateInStasisCeiling`. Optional
    * because a mover saved before this field existed has none; `'lowering'` is
    * the compatible default there, matching the old unconditional behavior.
-   * docs/specials.md § Crushers.
+   * docs/specials-crushers.md § Crushers.
    */
   stoppedFrom?: 'lowering' | 'raising';
   /** Vanilla's `silentCrushAndRaise` (special 141) — see `CrusherEffect.silent`. */
@@ -746,7 +747,7 @@ export class SpecialsController {
     this.tickMovers(dt, dirty);
     // `P_ChangeSector` after every plane that actually moved, which is what `dirty` already is —
     // corpses are crunched by an ordinary door or floor, not only by a crusher, and on no clock.
-    // docs/specials.md § Crushed corpses.
+    // docs/specials-crushers.md § Crushed corpses.
     for (const sectorIndex of dirty) this.occupancy.squash(sectorIndex);
     this.lastTeleport = null;
     // Read once, up front: `player` is the live `Player`, and a use-triggered teleport moves it
@@ -771,7 +772,7 @@ export class SpecialsController {
    * A monster walking from `prev` to `pos` crosses whatever walk triggers lie between, gated to the
    * short allow-list `SpecialDef.monsterActivate` carries. Returns the landing spot if the crossing
    * teleported it, so the caller can move the monster and puff the fog; everything else happens as
-   * a side effect, as it does under the player. See docs/specials.md § Teleporters.
+   * a side effect, as it does under the player. See docs/specials-teleporters.md § Teleporters.
    */
   crossMonster(prev: Pos2, pos: CrossingBody, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
     return this.crossLines(prev, pos, 'monster', ownedKeys);
@@ -819,7 +820,7 @@ export class SpecialsController {
    * `crossMonster`'s voodoo-doll twin: whatever walk lines the doll was carried
    * across this tic fire as though the player had walked them — same keys, same
    * lines — but the landing spot of a teleport comes back for the caller to
-   * move the *doll*, not the player. See docs/specials.md § Voodoo dolls.
+   * move the *doll*, not the player. See docs/specials-forces.md § Voodoo dolls.
    */
   crossVoodoo(prev: Pos2, pos: Placement, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
     return this.crossLines(prev, pos, 'voodoo', ownedKeys);
@@ -1250,7 +1251,7 @@ export class SpecialsController {
       // `T_MovePlane`'s clamp branch: a target on the far side of the fixed
       // direction is reached in the step it starts and put straight back if a
       // body no longer fits — the `pastdest` revert has no `crush` exception,
-      // unlike the per-step one below. docs/specials.md § Inverted plane moves.
+      // unlike the per-step one below. docs/specials-movers.md § Inverted plane moves.
       if (!this.occupancy.blocksFloorRise(mover.sectorIndex, mover.target)) sector.floorHeight = mover.target;
       this.finishFloor(mover);
       if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
@@ -1260,7 +1261,7 @@ export class SpecialsController {
     if (dir > 0 && !mover.crush && this.occupancy.blocksFloorRise(mover.sectorIndex, next)) {
       // Same un-crush rule as the lift above, but only while `crush` is false:
       // the raiseFloorCrush family (55/56/65/94) keeps grinding through
-      // instead, damaging via tickCrush below. docs/specials.md § Crushers.
+      // instead, damaging via tickCrush below. docs/specials-crushers.md § Crushers.
       return;
     }
     sector.floorHeight = next;
@@ -1287,7 +1288,7 @@ export class SpecialsController {
    * hold/reversal state, unlike a door. A *lowering* move stalls on whoever is
    * underneath (`blocksCeilingLower`, the same test a closing door makes);
    * a rising one never blocks.
-   * docs/specials.md § Every other mover stops instead.
+   * docs/specials-movers.md § Every other mover stops instead.
    */
   private tickCeiling(mover: CeilingMover, dt: number, dirty: Set<number>): void {
     if (mover.state === 'done') return;
@@ -1296,7 +1297,7 @@ export class SpecialsController {
     const dir = mover.direction ? (mover.direction === 'up' ? 1 : -1) : mover.target > sector.ceilHeight ? 1 : -1;
     if (dir > 0 ? mover.target < sector.ceilHeight : mover.target > sector.ceilHeight) {
       // `T_MovePlane`'s clamp branch, `tickFloor`'s exactly — the plane is
-      // shared in vanilla. docs/specials.md § Inverted plane moves.
+      // shared in vanilla. docs/specials-movers.md § Inverted plane moves.
       if (!this.occupancy.blocksCeilingLower(mover.sectorIndex, mover.target)) sector.ceilHeight = mover.target;
       this.finishCeiling(mover);
       if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
@@ -1414,7 +1415,7 @@ export class SpecialsController {
    * Asks `Occupancy` whether anything in `sectorIndex` is caught under the mover, dealing
    * `CRUSH_DAMAGE` at the same time only on the shared `crushDamageDue` clock — two rates in one
    * call because vanilla has two, and the damage one is level-wide rather than per mover.
-   * See docs/specials.md § Crushers.
+   * See docs/specials-crushers.md § Crushers.
    */
   private tickCrush(sectorIndex: number): boolean {
     return this.occupancy.crush(sectorIndex, this.crushDamageDue);
@@ -1481,7 +1482,7 @@ export class SpecialsController {
    * manual door's own back sector — returning that sector's share of vanilla's
    * `rtn`. A settled door record is rebuilt from this trigger's effect rather
    * than reused, and only a `reverseWhenMoving` press touches a door still in
-   * motion. See docs/specials.md § Retriggering a door.
+   * motion. See docs/specials-movers.md § Retriggering a door.
    */
   private triggerDoor(sectorIndex: number, effect: defs.DoorEffect, activator: defs.Activator = 'player'): boolean {
     // `ceilingActive` is vanilla's `sec->specialdata`, so a settled
@@ -1536,7 +1537,7 @@ export class SpecialsController {
    * `EV_DoPlat` against one tag-matched sector, returning that sector's share
    * of vanilla's `rtn`. Like `triggerDoor`, a settled record is rebuilt from
    * this trigger's own effect rather than restarted in place — see
-   * docs/specials.md § Retriggering a door.
+   * docs/specials-movers.md § Retriggering a door.
    */
   private triggerLift(sectorIndex: number, effect: defs.LiftEffect): boolean {
     const target = effect.target ?? 'lowestNeighborFloor';
@@ -1551,7 +1552,7 @@ export class SpecialsController {
         // `plat->status = plat->oldstatus==up ? down : up`. And unlike every
         // other wake, this one reports a hit — `EV_DoPlat` sets `rtn = 1`
         // unconditionally for toggleUpDn — so an SR 211 always flips its
-        // switch. docs/specials.md § Toggle plats.
+        // switch. docs/specials-movers.md § Toggle plats.
         existing.state = existing.stasisFrom === 'raising' ? 'lowering' : 'raising';
         existing.stasisFrom = undefined;
         return true;
@@ -1559,7 +1560,7 @@ export class SpecialsController {
       // For the perpetual family vanilla's rtn stays 0: stasis never cleared
       // the sector's specialdata, so the spawn loop skips the sector (same
       // shape as the crusher's in-stasis restart).
-      // docs/specials.md § Perpetual lifts and the stop line.
+      // docs/specials-movers.md § Perpetual lifts and the stop line.
       if (target === 'perpetual') {
         existing.state = existing.stasisFrom ?? 'lowering';
         existing.stasisFrom = undefined;
@@ -1794,7 +1795,7 @@ export class SpecialsController {
    * sector that got a *new* thinker. Restarting an in-stasis crusher deliberately reports `false` —
    * vanilla runs `P_ActivateInStasisCeiling` before the loop, and the loop then `continue`s past
    * that sector because stasis never cleared its `specialdata`, so `rtn` stays 0 and the switch
-   * neither flips nor is spent. docs/specials.md § Crushers.
+   * neither flips nor is spent. docs/specials-crushers.md § Crushers.
    */
   private triggerCrusher(sectorIndex: number, effect: defs.CrusherEffect): boolean {
     const existing = this.ceilingMovers.get(sectorIndex);
@@ -1924,7 +1925,7 @@ export class SpecialsController {
    * `resolveFloorTarget`): the shortest lower-texture pixel height among the sector's bordering
    * two-sided lines, both sidedefs of each. With no candidate at all, vanilla's `minsize` sentinel
    * (`MAXINT`) is replicated as `Infinity` and the floor rises forever, which only a malformed map
-   * can reach. See docs/specials.md § raiseToTexture, lowerAndChange.
+   * can reach. See docs/specials-movers.md § raiseToTexture, lowerAndChange.
    */
   private triggerRaiseToTexture(sectorIndex: number): boolean {
     if (this.floorActive(sectorIndex)) return false;
@@ -2105,7 +2106,7 @@ export class SpecialsController {
 
   /**
    * Where a crossing of `line` puts the body — vanilla's loud landing, or one
-   * of Boom's two silent kinds. See docs/specials.md § Silent and line-to-line
+   * of Boom's two silent kinds. See docs/specials-teleporters.md § Silent and line-to-line
    * teleporters.
    */
   private teleportArrival(
@@ -2142,7 +2143,7 @@ export class SpecialsController {
    * `EV_SilentLineTeleport`: the body keeps its position *along* the crossed line and is re-laid
    * onto the first tag-matched two-sided linedef that isn't this one, turned by the angle between
    * them; `reversed` (262-265) flips both. The landing floor and the side the body must end on are
-   * both load-bearing — docs/specials.md § Silent and line-to-line teleporters.
+   * both load-bearing — docs/specials-teleporters.md § Silent and line-to-line teleporters.
    */
   private lineArrival(
     lineIndex: number,
@@ -2234,7 +2235,7 @@ export class SpecialsController {
    * `fromBackSide` is vanilla's `P_CrossSpecialLine` `side` argument — the side
    * the thing was on *before* the move (`P_TryMove` passes `oldside`). Only the
    * teleport branch reads it, matching vanilla, where `side` reaches nothing but
-   * `EV_Teleport`. See docs/specials.md § Teleporters.
+   * `EV_Teleport`. See docs/specials-teleporters.md § Teleporters.
    *
    * `at` is where the activator is standing and which way it faces. Only Boom's
    * silent teleports read it — they rotate the body relative to its current
@@ -2291,7 +2292,7 @@ export class SpecialsController {
       // walking one does nothing at all. 39/97 work for either.
       if (effect.monsterOnly && activator !== 'monster') return null;
       // A back-side crossing is `EV_Teleport`'s "so you can get out of
-      // teleporter" case, shared by every variant here. docs/specials.md § Teleporters.
+      // teleporter" case, shared by every variant here. docs/specials-teleporters.md § Teleporters.
       const dest = fromBackSide ? null : this.teleportArrival(lineIndex, def, effect, at, activator);
       // Vanilla's `case 39` clears `line->special` regardless of the result
       // (`|| demo_compatibility`), so a blocked crossing still spends the
@@ -2618,7 +2619,7 @@ const GLOW_HALF_CYCLE = 1.3;
  * `T_LightFlash`'s `mintime`/`maxtime`, used as **bit masks** and not as
  * durations: `&7` is 0-7 tics dark, but `&64` is 0 *or* 64 and nothing between,
  * so a broken light's lit period is either 1 tic or 65. That split is the whole
- * character of the pattern. docs/specials.md § Lights.
+ * character of the pattern. docs/specials-lights.md § Lights.
  */
 const FLASH_DARK_MASK = 7;
 const FLASH_BRIGHT_MASK = 64;
@@ -2637,7 +2638,7 @@ function makeLightState(pattern: defs.LightPattern, baseLight: number, minLight:
   // A strobe with nothing darker around it blinks to black instead of standing
   // still: `P_SpawnStrobeFlash`'s `if (minlight == maxlight) minlight = 0`, and
   // its alone — `P_SpawnLightFlash`, `P_SpawnGlowingLight` and
-  // `P_SpawnFireFlicker` all leave the two equal. docs/specials.md § Lights.
+  // `P_SpawnFireFlicker` all leave the two equal. docs/specials-lights.md § Lights.
   const darkLight = minLight === baseLight && STROBE_PATTERNS.has(pattern) ? 0 : minLight;
   // `P_SpawnLightFlash` seeds its counter with the same `(P_Random()&64)+1` the
   // tick uses, so a map's broken lights start out of phase with each other.
@@ -2662,7 +2663,7 @@ function tickLight(s: LightState, dt: number): number {
       // The floor is the darkest neighbour + 16, and the `< min` test reads the
       // *current* level while the assignment uses the sector's own — vanilla's
       // own asymmetry, and what makes the pattern sit at its floor as often as
-      // it does. docs/specials.md § Lights.
+      // it does. docs/specials-lights.md § Lights.
       s.timer -= dt;
       if (s.timer <= 0) {
         s.timer = FLICKER_INTERVAL;
@@ -2751,7 +2752,7 @@ function resolveFloorTarget(
     case 'turboLower': {
       // `p_floor.c`'s `case turboLower` adds the 8 only where the found height differs from the
       // sector's own; unconditionally it hands a lowering mover a target *above* its floor.
-      // docs/specials.md § The turboLower quad.
+      // docs/specials-movers.md § The turboLower quad.
       const highest = world.highestNeighborFloor(sectorIndex);
       return highest === map.sectors[sectorIndex].floorHeight ? highest : highest + defs.EIGHT_UNIT_GAP;
     }

@@ -77,7 +77,7 @@ const state: LibraryState = { handle: null, files: new Map(), descriptors: [], n
  * because they call for two different things from the player: `'unsupported'` is their browser and
  * nothing can change it, while `'framed'` is *this window* and opening the game in a tab of its own
  * fixes it. The overlay says which — an unexplained fallback is what made the embedded case read as
- * a broken button (docs/menu.md § WAD Library).
+ * a broken button (docs/menu-wads.md § WAD Library).
  *
  * `''` doubles as "this browser can remember the folder between visits": the persistence and the
  * picker are the same API, so they are one predicate rather than two names for it.
@@ -152,7 +152,7 @@ async function readPermissionStands(handle: FileSystemDirectoryHandle & HandlePe
 /**
  * Whether the folder can be read, prompting when the browser wants it. **Must be reached from a
  * user gesture** — Chromium refuses a permission request outside one, which is why
- * `Menu.startWithSkill` calls this before its first `await` (docs/menu.md § Session lifecycle).
+ * `Menu.startWithSkill` calls this before its first `await` (docs/session.md § Session lifecycle).
  */
 export async function ensureLibraryAccess(): Promise<boolean> {
   const handle = permissionedHandle();

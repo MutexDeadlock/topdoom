@@ -176,7 +176,7 @@ function brokenIssue(map: MapLumpSummary): SupportCode | null {
 
 /**
  * Whether the file has maps and **not one of them** will load — the WAD Library greys such a row
- * out, since picking it could only ever end at a level that isn't there (docs/menu.md § WAD
+ * out, since picking it could only ever end at a level that isn't there (docs/menu-wads.md § WAD
  * Library).
  *
  * Deliberately *not* `supportLevel(support) === 'broken'`. A megawad with one UDMF map among

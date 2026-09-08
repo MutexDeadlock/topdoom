@@ -12,8 +12,8 @@ import { NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
  * which the switch on linedef 445 (special 71) is supposed to drop into the room below it.
  *
  * Second defect on the same press, and the reason the platform *rose*: vanilla's `turboLower` adds
- * its 8 only when the search found a height other than the sector's own (docs/specials.md § The
- * turboLower quad).
+ * its 8 only when the search found a height other than the sector's own (docs/specials-movers.md §
+ * The turboLower quad).
  */
 
 /**

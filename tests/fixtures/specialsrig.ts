@@ -114,7 +114,7 @@ export interface SpecialsRigOptions {
 /**
  * A `SoundEmitter` that just remembers what it was asked to play, for a test
  * whose subject is which sound an event makes — or, as often, that it makes
- * none (`EV_VerticalDoor`'s silent reversal, docs/specials.md § Retriggering a
+ * none (`EV_VerticalDoor`'s silent reversal, docs/specials-movers.md § Retriggering a
  * door). Pass it as `sfx` and read the array.
  */
 export function soundLog(): { sfx: SoundEmitter; played: SfxId[] } {
@@ -159,7 +159,7 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
   // switch must see its geometry diced the way the session would dice it.
   const { moving: movingSectors, movable: movableSectors } = scanSectors(map);
   // The same table `game.ts` hands both builders, so a rig test sees the Boom
-  // render transfers the real session would (docs/specials.md § Render transfers).
+  // render transfers the real session would (docs/specials-transfers.md § Render transfers).
   const transfers = transfersOf(map);
   const built = buildMapMesh(map, BANK, { movableSectors, movingSectors, transfers });
   const scene = new THREE.Group();

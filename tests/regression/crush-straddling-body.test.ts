@@ -18,7 +18,7 @@ import { savedThing } from '../fixtures/snapshot.ts';
  * aware) but never damaged it, so a room split into a tagged and an untagged
  * half left a row of monsters standing frozen and unhurt under the ceiling
  * grinding over them. Repro: NoSp2.wad MAP04, sectors 198 (tag 84) and 141.
- * See docs/specials.md § Crushers.
+ * See docs/specials-crushers.md § Crushers.
  */
 
 const KNIGHT = MONSTER_STATS[ThingType.hellKnight];

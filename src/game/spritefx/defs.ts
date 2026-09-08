@@ -14,7 +14,7 @@ import { atan2, cos, sin } from '../../util/fdlibm.ts';
 /**
  * Map units a second, for the one effect kind that carries momentum — the crusher's blood spray,
  * integrated by `SpriteFxLayer.updateImpacts`. Boxed rather than flat `velX`/`velY`/`velZ` fields
- * so its presence is the "is this one flying" flag. See docs/specials.md § Crushers.
+ * so its presence is the "is this one flying" flag. See docs/specials-crushers.md § Crushers.
  */
 export interface EffectMotion {
   velX: number;
@@ -60,7 +60,7 @@ export interface OneShotEffect extends Pos3 {
    * Set only for an effect thrown with momentum of its own — the crusher's blood spray
    * (`spawnCrushBlood`). Cleared where it lands, which is what ends the per-tic arithmetic; every
    * other effect here is fixed where it spawned and leaves this undefined.
-   * See docs/specials.md § Crushers.
+   * See docs/specials-crushers.md § Crushers.
    */
   motion?: EffectMotion;
   /**

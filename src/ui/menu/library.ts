@@ -3,7 +3,7 @@
  * ships, a folder the player nominates from their own disk, and anything dropped on the menu — with
  * the picking done in place. The picks are **staged**: ticking a row edits a draft, `Apply` hands
  * the whole set to the menu and `Close` discards it. Owned by `Menu`, which it reaches only through
- * `LibraryHooks`. See docs/menu.md § WAD Library.
+ * `LibraryHooks`. See docs/menu-wads.md § WAD Library.
  */
 import {
   acceptableWads,
@@ -56,9 +56,9 @@ export interface LibraryHooks {
   pickFiles(): void;
   /**
    * Opens one file's own text file over this overlay — the info column's click
-   * (docs/menu.md § The text file popup). The popup is the menu's, like every other overlay: this
-   * one covers the WAD Library rather than nesting inside it, and `closeTopOverlay` has to know
-   * which of the two ESC takes first.
+   * (docs/menu-wads.md § The text file popup). The popup is the menu's, like every other overlay:
+   * this one covers the WAD Library rather than nesting inside it, and `closeTopOverlay` has to
+   * know which of the two ESC takes first.
    */
   showTextFile(source: WadSource): void;
 }
@@ -66,7 +66,7 @@ export interface LibraryHooks {
 /**
  * One row of the left-hand tree. The two counts answer different questions: `sources` is the
  * folder's own WADs, what the file pane lists; `total` is every WAD at or below it, the row's count
- * and what decides whether the row is drawn at all. See docs/menu.md § WAD Library.
+ * and what decides whether the row is drawn at all. See docs/menu-wads.md § WAD Library.
  */
 export interface FolderNode {
   id: string;
@@ -120,7 +120,7 @@ const REFUSED = "won't load";
  * subfolders they hold, the player's library the same way, and anything dropped on the menu. A
  * folder with no WAD beneath it is not a row, the one exception being a library root the player has
  * set — which then reports that the folder held none. Pure, and separate from `LibraryUi` so it can
- * be tested without a DOM — docs/menu.md § WAD Library.
+ * be tested without a DOM — docs/menu-wads.md § WAD Library.
  */
 export function buildFolderTree(
   sources: readonly WadSource[],
@@ -151,7 +151,7 @@ export function buildFolderTree(
  * Applies the header's filter to the tree: a row survives if its own name matches, if a folder
  * above it matched, or if it holds a matching WAD at or below it. The game WADs are exempt and stay
  * listed in full whatever the filter says. Pure, and separate from `LibraryUi` so it can be tested
- * without a DOM — docs/menu.md § WAD Library.
+ * without a DOM — docs/menu-wads.md § WAD Library.
  */
 export function filterTree(nodes: readonly FolderNode[], filter: string): FilterMatch {
   const rows = new Set<string>();
@@ -199,7 +199,7 @@ export function filterTree(nodes: readonly FolderNode[], filter: string): Filter
  * What a finished scan says, as `say`'s two arguments — quoting the first skipped file's own reason
  * rather than only counting, since "no WADs here" and "every WAD here was unreadable" call for
  * completely different things from the player. Pure, so the wording is testable without a DOM —
- * docs/menu.md § WAD Library.
+ * docs/menu-wads.md § WAD Library.
  */
 export function scanResult(found: number, skipped: readonly LibrarySkip[]): [string, boolean] {
   const first = skipped[0];
@@ -238,14 +238,14 @@ export class LibraryUi implements MenuOverlay {
   /**
    * The pick being assembled, **not the menu's**: every tick in here edits this pair and nothing
    * else, `Apply` hands it over and every other way out throws it away. Snapshotted from the menu
-   * on every `open`. docs/menu.md § WAD Library.
+   * on every `open`. docs/menu-wads.md § WAD Library.
    */
   private draftIwad: WadSource | null = null;
   private draftPwads: WadSource[] = [];
   /**
    * Folder rows whose children are shown, tracked as *expanded* rather than collapsed so that
-   * "folded by default" is expressible at all — see docs/menu.md § WAD Library. Seeded with the
-   * top-level rows; everything below them starts folded.
+   * "folded by default" is expressible at all — see docs/menu-wads.md § WAD Library. Seeded with
+   * the top-level rows; everything below them starts folded.
    */
   private expanded = new Set<string>(TOP_LEVEL_FOLDERS);
   /** True while a scan is running, so a second click can't start an overlapping walk. */
@@ -320,7 +320,7 @@ export class LibraryUi implements MenuOverlay {
   /**
    * The overlay's footer line, and the only place anything raised while the overlay is up is
    * reported — it covers `#menu` completely. Public because it works the other way too:
-   * `Menu.setStatus` routes here while `isOpen`. docs/menu.md § WAD Library.
+   * `Menu.setStatus` routes here while `isOpen`. docs/menu-wads.md § WAD Library.
    */
   showStatus(text: string, isError = false): void {
     this.statusEl.textContent = text;
@@ -332,7 +332,8 @@ export class LibraryUi implements MenuOverlay {
 
   /**
    * Commits the draft and closes — the one path out that changes anything the menu holds. Closed
-   * *first*, since applying redraws the menu and with it this overlay. docs/menu.md § WAD Library.
+   * *first*, since applying redraws the menu and with it this overlay. docs/menu-wads.md § WAD
+   * Library.
    */
   private async apply(): Promise<void> {
     this.close();
@@ -692,8 +693,8 @@ export class LibraryUi implements MenuOverlay {
   /**
    * Takes one source into the draft the way its type asks — a game WAD replaces the pick, anything
    * else joins the add-ons, and a game WAD the picked add-ons don't suit drops none of them
-   * (docs/menu.md § Picking a WAD set). No redraw of its own, so a batch draws once, and membership
-   * is by **key**, not identity — see `carryDraft`.
+   * (docs/menu-wads.md § Picking a WAD set). No redraw of its own, so a batch draws once, and
+   * membership is by **key**, not identity — see `carryDraft`.
    */
   private draftTake(source: WadSource): void {
     // The one place a file can reach the draft without going through a row: `stage`, for a file
@@ -710,7 +711,7 @@ export class LibraryUi implements MenuOverlay {
    * Re-resolves the draft against the sources the menu now holds, by key — a rescan builds fresh
    * `WadSource` objects for the same files, and a file the folder no longer has drops out. Called
    * from `refresh` alone, which is every path by which the sources can move under the overlay.
-   * docs/menu.md § WAD Library.
+   * docs/menu-wads.md § WAD Library.
    */
   private carryDraft(): void {
     const byKey = new Map(this.hooks.sources().map((s) => [s.key, s]));
@@ -724,7 +725,7 @@ export class LibraryUi implements MenuOverlay {
     const iwad = this.draftIwad;
     const held = this.draftPwads.length;
     // Picks the game WAD can't take stay in the draft, so the count says both numbers rather than
-    // quietly promising a merge that won't happen (docs/menu.md § Picking a WAD set).
+    // quietly promising a merge that won't happen (docs/menu-wads.md § Picking a WAD set).
     const unused = held - pwadsFor(iwad, this.draftPwads).length;
     const addons = `${held === 1 ? '1 add-on' : `${held} add-ons`}${unused > 0 ? ` (${unused} not merged)` : ''}`;
     const set = iwad ? `${iwad.label} · ${addons}` : 'No game WAD picked yet';
@@ -783,7 +784,7 @@ export class LibraryUi implements MenuOverlay {
   /**
    * The `<input webkitdirectory>` path: a folder for this session only, with no handle to store.
    * All three outcomes are answered — the folder, a dismissed dialog, and the dialog never opening,
-   * which has no event of its own and so gets a watchdog. docs/menu.md § WAD Library.
+   * which has no event of its own and so gets a watchdog. docs/menu-wads.md § WAD Library.
    */
   private chooseWithoutPicker(): void {
     this.folderInput.value = '';
@@ -800,7 +801,7 @@ export class LibraryUi implements MenuOverlay {
   /**
    * The dialog handed nothing back. Fires on Chromium and Firefox; the watchdog covers the rest.
    * Not necessarily a dismissal — a suppressed confirmation looks the same from here — so the line
-   * names both readings and offers the route that needs none. docs/menu.md § WAD Library.
+   * names both readings and offers the route that needs none. docs/menu-wads.md § WAD Library.
    */
   private onFolderCancelled(): void {
     window.clearTimeout(this.pickTimer);
@@ -881,7 +882,7 @@ export class LibraryUi implements MenuOverlay {
 /**
  * The lookups every walk over the tree needs, built once per render and threaded down — rebuilding
  * either inside the walk that wants it makes a render quadratic in the row count, on every
- * keystroke in the filter box. See docs/menu.md § WAD Library.
+ * keystroke in the filter box. See docs/menu-wads.md § WAD Library.
  */
 interface TreeIndex {
   byId: Map<string, FolderNode>;

@@ -6,7 +6,7 @@ import type { SpecialsSnapshot } from '../../src/game/snapshot.ts';
 
 /**
  * Boom's instant toggle plats, 211 (SR) and 212 (WR) — `EV_DoPlat(toggleUpDn)`.
- * See docs/specials.md § Toggle plats.
+ * See docs/specials-movers.md § Toggle plats.
  */
 describe('Specials · toggle plats', () => {
   /**

@@ -9,7 +9,7 @@ import { specialsRig, BANK, TIC } from '../fixtures/specialsrig.ts';
 
 /**
  * Boom's 213/261: which sector a surface takes its light from, and what keeps
- * that live when the source is a strobe. See docs/specials.md § Transferred lighting.
+ * that live when the source is a strobe. See docs/specials-transfers.md § Transferred lighting.
  */
 
 const OWN_LIGHT = 160; // gridMap's default

@@ -2,7 +2,7 @@
  * What a WAD the menu can offer looks like — `WadSource`, the `index.json` row a served one is
  * built from, and the pure rules over those shapes: which folder a file is served under, which
  * game its maps belong to, and which add-ons a game WAD leaves standing.
- * See docs/wad.md and docs/menu.md.
+ * See docs/wad.md and docs/menu-wads.md.
  */
 import type { WadType } from '../wad.ts';
 import type { WadSupport } from '../support.ts';

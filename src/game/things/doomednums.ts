@@ -155,7 +155,7 @@ export const ThingType = {
   bossTarget: 87, // MT_BOSSTARGET
   bossShooter: 89, // MT_BOSSSPIT
   // Boom's point pusher/puller (MT_PUSH/MT_PULL): the source point a type-226
-  // line's force radiates from or pulls toward — see docs/specials.md § Pushers.
+  // line's force radiates from or pulls toward — see docs/specials-forces.md § Pushers.
   pointPusher: 5001,
   pointPuller: 5002,
 } as const;

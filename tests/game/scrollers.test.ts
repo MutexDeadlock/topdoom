@@ -8,7 +8,7 @@ import { NO_SIDE, type DoomMap, type LineDef, type Sector, type SideDef, type Ve
  * Boom's scroller family as `P_SpawnScrollers`/`T_Scroll` define it: the
  * `SCROLL_SHIFT` rate, `CARRYFACTOR`, the displacement and accelerative
  * variants, and 254's rotation into the target wall's own frame.
- * See docs/specials.md § Scrollers and conveyors.
+ * See docs/specials-forces.md § Scrollers and conveyors.
  */
 describe('Specials · Boom scrollers', () => {
   const TICS = 35;

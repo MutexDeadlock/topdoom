@@ -68,7 +68,7 @@ const TEXTMAP_BYTES_PER_LINEDEF_BYTE = 40;
  * unit — without reading a byte of it: a directory lookup and the entry's own length.
  * `game.ts` estimates what building the map will cost from this, which is why it must stay
  * a lookup: the point is to answer *before* the map is loaded.
- * See docs/menu.md § The loading screen.
+ * See docs/session.md § The loading screen.
  */
 export function mapLinedefBytes(wad: Wad, name: string): number {
   // `mapLumps` throws where the marker is missing; a caller asking about a map that isn't there

@@ -218,7 +218,7 @@ export interface FlatSurface {
   sector: number;
   /**
    * Sector this fan's colour was taken from — its own, unless a Boom light
-   * transfer or a deep-water bottom borrowed another's (docs/specials.md
+   * transfer or a deep-water bottom borrowed another's (docs/specials-transfers.md
    * § Render transfers). This is what `MoverGeometry` files its relight index
    * under, so recoloring the *source* repaints everything drawing from it.
    */

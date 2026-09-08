@@ -10,7 +10,7 @@ import { PLAYER_RADIUS } from '../../src/game/player.ts';
  * Boom's wind, current and point pushers (`Add_Pusher`/`T_Pusher`/
  * `PIT_PushThing`): where the force comes from, how being off the floor
  * changes it, and the two gates — the sector's own push bit and, for a point
- * source, line of sight. See docs/specials.md § Pushers.
+ * source, line of sight. See docs/specials-forces.md § Pushers.
  */
 describe('Specials · Boom pushers', () => {
   const TICS = 35;

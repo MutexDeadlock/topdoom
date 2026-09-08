@@ -134,7 +134,7 @@ export const BLOOD_FRAMES = ['C', 'B', 'A'];
  * How fast a crusher's spray flies out of the body it came from, map units a second at the extreme
  * of its triangular draw — `PIT_ChangeSector`'s own `(P_Random()-P_Random())<<12`, which is 15.9
  * units a *tic*. It falls from there under `GRAVITY`, `MT_BLOOD` carrying no `MF_NOGRAVITY`.
- * See docs/specials.md § Crushers.
+ * See docs/specials-crushers.md § Crushers.
  */
 export const CRUSH_BLOOD_SPEED = (255 * 0x1000) / 0x10000 / DOOM_TIC;
 

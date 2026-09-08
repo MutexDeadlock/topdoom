@@ -11,7 +11,7 @@ import { BANK } from '../fixtures/specialsrig.ts';
  * Boom's 260: a midtexture drawn at 66% through the same vertex-alpha channel
  * occlusion fading and fog of war already share, and the sidedef-name overload
  * that can leave it with no texture at all.
- * See docs/specials.md § Translucent midtextures.
+ * See docs/specials-transfers.md § Translucent midtextures.
  */
 
 const GRATE = 'MIDGRATE';

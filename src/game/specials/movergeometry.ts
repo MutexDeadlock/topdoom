@@ -11,7 +11,7 @@
  * crusher is; it takes sector indices.
  *
  * See docs/render.md § Mover meshes for what a rebuild costs and when it can be
- * done in place, and docs/specials.md § Relighting mover geometry and § Light
+ * done in place, and docs/specials-lights.md § Relighting mover geometry and § Light
  * changes for the colour half.
  */
 import * as THREE from 'three';
@@ -240,7 +240,7 @@ export class MoverGeometry {
   /**
    * Relights every surface lit by `sectorIndex` to that sector's current `light` — the static
    * batches (indexed once by `indexLightGeometry`) and any mover meshes holding its geometry,
-   * through `relightRange` (render/mapmesh.ts). docs/specials.md § Light changes.
+   * through `relightRange` (render/mapmesh.ts). docs/specials-lights.md § Light changes.
    */
   recolorSector(sectorIndex: number): void {
     const sector = this.mover.map.sectors[sectorIndex];
@@ -282,7 +282,7 @@ export class MoverGeometry {
    * re-scans the map. **Every sector, not just the ones with a load-time blink pattern**: the
    * `lightChange` line specials can recolor any tag-matched sector on demand. Static batches only —
    * mover-mesh geometry is reached through `moverLightTargets`.
-   * docs/specials.md § Relighting mover geometry.
+   * docs/specials-lights.md § Relighting mover geometry.
    */
   private indexLightGeometry(): void {
     this.sectorOccluders.clear();
@@ -327,7 +327,7 @@ export class MoverGeometry {
     });
     // A mesh holds its own sector's flats plus wall quads from *both* sides of every bordering
     // line, so the sectors it must be relit for are not just `sectorIndex`; a rebuild never changes
-    // which those are. docs/specials.md § Relighting mover geometry.
+    // which those are. docs/specials-lights.md § Relighting mover geometry.
     for (const q of mesh.wallQuads) this.trackMoverLight(q.sector, sectorIndex);
     for (const f of mesh.flatFans) this.trackMoverLight(f.lightSector, sectorIndex);
   }
@@ -382,7 +382,7 @@ export class MoverGeometry {
    * dependent's own movable neighbours, whose upper steps are sized against the
    * ceiling it draws rather than the one it has. Linked one way only (control →
    * dependent): moving the water does not move the control sector.
-   * docs/specials.md § Deep water.
+   * docs/specials-transfers.md § Deep water.
    */
   private indexWaterDependents(): void {
     const transfers = this.mover.options.transfers;
@@ -429,7 +429,7 @@ export class MoverGeometry {
    * `recolorSector`'s mover-mesh half: geometry in a `moverMeshes` entry is not reachable through
    * `sectorOccluders`/`sectorFlats`, and a sector's light must reach its geometry whether or not
    * that geometry currently lives in a mover mesh. Repro: DOOM1 E1M5 sectors 2 and 32, the tag-1
-   * strobing lifts. docs/specials.md § Relighting mover geometry.
+   * strobing lifts. docs/specials-lights.md § Relighting mover geometry.
    */
   private recolorMoverGeometry(sectorIndex: number, light: number): void {
     for (const moverIndex of this.moverLightTargets.get(sectorIndex) ?? []) {

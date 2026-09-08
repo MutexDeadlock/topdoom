@@ -179,7 +179,7 @@ const BUILD_MS_PER_KB = 1.1;
 /**
  * How slow a level load has to be predicted to be before it gets the loading screen rather than
  * just happening. **Tuned by feel**: below this the overlay is up for fewer frames than it takes to
- * read, which is a flicker rather than feedback. docs/menu.md § The loading screen.
+ * read, which is a flicker rather than feedback. docs/session.md § The loading screen.
  */
 const SLOW_LOAD_MS = 200;
 
@@ -239,7 +239,7 @@ export interface GameOptions {
   checkpoint?: CheckpointStore | null;
   /**
    * Called when the campaign is over and nothing follows: the session layer's cue to tear this
-   * `Game` down and put the menu back up (docs/menu.md § Session lifecycle). A port like
+   * `Game` down and put the menu back up (docs/session.md § Session lifecycle). A port like
    * `checkpoint` — this class knows nothing about the menu.
    */
   onCampaignEnd?: (() => void) | null;
@@ -259,7 +259,7 @@ export interface GameOptions {
   /**
    * The session's loading screen, so a level too big to build between two frames can put it up
    * first. A port like `checkpoint`: absent means the load simply happens inline.
-   * docs/menu.md § The loading screen.
+   * docs/session.md § The loading screen.
    */
   loading?: LoadingScreen | null;
   /**
@@ -1299,7 +1299,7 @@ export class Game {
     // render/mapmesh.ts's MapMeshOptions doc for why).
     // The same memoized table the pre-restore call above built: the mesh takes
     // its transferred lighting and water planes from here, as does the
-    // movable-sector scan. docs/specials.md § Render transfers.
+    // movable-sector scan. docs/specials-transfers.md § Render transfers.
     const transfers = transfersOf(map, (name) => this.wad.find(name)?.size ?? null);
     this.transfers = transfers;
     this.colormapTints.clear();
@@ -1412,13 +1412,13 @@ export class Game {
         const from = { x: this.player.x, y: this.player.y, z: this.player.z };
         this.player.teleportTo(dest);
         // Boom's silent family spawns neither puff and plays no `telept` —
-        // docs/specials.md § Silent and line-to-line teleporters.
+        // docs/specials-teleporters.md § Silent and line-to-line teleporters.
         if (!dest.silent) this.effects.spawnTeleportPair(from, dest, this.player.z);
         // The follow point always snaps; the yaw is reoriented by a vanilla teleport and turned
         // *relatively* by a silent one, which is what preserves the player's own Q/E orbit —
         // `turnYaw`, not an assignment, so a step still animating survives the trip
-        // (docs/specials.md § Silent and line-to-line teleporters). Yaw first either way: `snapTo`
-        // poses the camera with it.
+        // (docs/specials-teleporters.md § Silent and line-to-line teleporters). Yaw first either
+        // way: `snapTo` poses the camera with it.
         // Both cameras: a replay's viewer must not be left gliding across the map either, and
         // the operations are applied rather than the state copied, so a manual view keeps its zoom.
         this.forEachCamera((camera) => {
@@ -1564,9 +1564,9 @@ export class Game {
    * Runs the walk triggers **any non-player thing** crossed this tic
    * (`SpecialsController.crossMonster` — teleports plus the few door/lift types
    * vanilla lets one activate). Usually that is a monster walking, but a barrel or a decoration a
-   * conveyor carried counts too — docs/specials.md § Scrollers and conveyors. A teleport gets the
-   * same `TFOG` puff at both ends the player's own does; vanilla spawns it for any thing that
-   * teleports, not just the player.
+   * conveyor carried counts too — docs/specials-forces.md § Scrollers and conveyors. A teleport
+   * gets the same `TFOG` puff at both ends the player's own does; vanilla spawns it for any thing
+   * that teleports, not just the player.
    */
   private thingCrossedLines(prev: Pos2, mover: CrossingBody): TeleportDest | null {
     return this.realizeThingTeleport(this.specials?.crossMonster(prev, mover, this.inventory.keys), mover);
@@ -1598,7 +1598,7 @@ export class Game {
       if (!this.monsterStomps) return null;
       this.damagePlayer(TELEFRAG_DAMAGE, dest.x, dest.y, mover.type);
     }
-    // Boom's silent numbers puff at neither end (docs/specials.md § Silent and
+    // Boom's silent numbers puff at neither end (docs/specials-teleporters.md § Silent and
     // line-to-line teleporters). A fog puff has no body, so the plain sector
     // floor is the whole answer — `groundFloor` at radius 0 would walk the
     // lines to arrive at the same number.
@@ -1722,7 +1722,7 @@ export class Game {
    * Every level load that happens while the loop is running goes through here: `run` at once, or
    * parked for the next frame with the loading screen up when the map is big enough that building
    * it would freeze visibly. The constructor's own first load does not — there is no frame to defer
-   * to yet, and nothing on screen to freeze. docs/menu.md § The loading screen.
+   * to yet, and nothing on screen to freeze. docs/session.md § The loading screen.
    */
   private loadLevel(index: number, run: () => void): void {
     if (this.loading && this.estimatedBuildMs(index) > SLOW_LOAD_MS) {
@@ -2252,7 +2252,7 @@ export class Game {
     this.profiler.time('Lights', () => this.lights.commit());
 
     // Measured only while the overlay is up: a timer query is cheap but not free, and nothing
-    // reads the answer otherwise. docs/menu.md § Profiling overlay.
+    // reads the answer otherwise. docs/devmode.md § Profiling overlay.
     const gpu = getProfilerVisible() ? this.view.gpuTimer : null;
     this.profiler.time('Render', () => {
       gpu?.begin();
@@ -2509,7 +2509,7 @@ export class Game {
    * of the 242 control sector the player is standing in, chosen by eye height
    * against that sector's floor and ceiling as `R_SetupFrame` does — except
    * that the underwater (bottom) colormap is deliberately not applied here.
-   * docs/specials.md § Deep water.
+   * docs/specials-transfers.md § Deep water.
    */
   private viewColormap(): ColorTint | null {
     if (this.colormapTints.size === 0) return null;
@@ -2521,7 +2521,7 @@ export class Game {
     // Below the surface vanilla would cast the whole view through the control
     // sector's bottom colormap; this camera stays above the water while the
     // player sinks, so that blue would recolour a view that is mostly still
-    // dry land. docs/specials.md § Deep water.
+    // dry land. docs/specials-transfers.md § Deep water.
     if (eye < sector.floorHeight) return null;
     return eye > sector.ceilHeight ? tints.top : tints.mid;
   }

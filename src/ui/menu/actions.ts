@@ -4,7 +4,7 @@
  * place of rows, the download and delete icon buttons, and handing an export file to the browser.
  * Pure DOM; each tab keeps what differs — the store call, the noun and which fields the filter
  * looks through.
- * docs/menu.md § Save and Load tabs.
+ * docs/menu-saves.md § Save and Load tabs.
  */
 
 /** The menu's status line, as the tabs are handed it. */

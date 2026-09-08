@@ -370,7 +370,7 @@ export class ProjectileLayer {
     const remaining: Projectile[] = [];
     const from = this.stepFrom;
     // Hoisted: the sprite light of every missile in the air is looked up here
-    // each frame, and the table is per level (docs/specials.md § Transferred lighting).
+    // each frame, and the table is per level (docs/specials-transfers.md § Transferred lighting).
     const transfers = transfersOf(world.map);
     for (const p of this.projectiles) {
       let at: Pos3;

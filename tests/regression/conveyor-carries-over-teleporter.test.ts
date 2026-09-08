@@ -23,7 +23,7 @@ import { changedThing, savedThing } from '../fixtures/snapshot.ts';
  * exclusions are the six projectile types — and the "monster only" numbers mean
  * "not the player", not "monsters only". So a decoration counts, and the only
  * reason one never triggered anything in vanilla is that nothing but a conveyor
- * ever moves it. docs/specials.md § Scrollers and conveyors.
+ * ever moves it. docs/specials-forces.md § Scrollers and conveyors.
  */
 describe('Regressions · a conveyor carries a thing over a teleporter', () => {
   /**

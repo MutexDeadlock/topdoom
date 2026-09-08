@@ -202,7 +202,7 @@ export interface PosedThing extends Pos3, MonsterBody {
   /**
    * Set once a moving plane has crunched this corpse to giblets — `PIT_ChangeSector`'s
    * `P_SetMobjState(thing, S_GIBS)`. Read by `enterDeathPose`, which is what makes the pool the
-   * pose a restored save comes back holding. docs/specials.md § Crushed corpses.
+   * pose a restored save comes back holding. docs/specials-crushers.md § Crushed corpses.
    */
   crushed: boolean;
   /**
@@ -434,7 +434,7 @@ export interface ThingLayer {
    * otherwise spoil a secret room whose geometry is faded out. `crossLines`
    * gets each alerted monster and where it stepped from, so the caller can
    * fire the walk triggers in between and resolve a teleport landing's
-   * telefrag (docs/specials.md § Teleporters). Also ticks barrel death clocks
+   * telefrag (docs/specials-teleporters.md § Teleporters). Also ticks barrel death clocks
    * and reports any `A_Explode` due this frame.
    *
    * **Advances the world only — it draws nothing.** `draw` is the other half,
@@ -576,19 +576,19 @@ export interface ThingLayer {
    * `monstersInSector` plus any still-standing barrel, over a *set* of sectors. Crush damage
    * (`specials/moverblocking.ts: applyCrushDamage`) is the only user, and asks for the crushing
    * sector *and its neighbors* in one pass; the headroom-blocked check other movers use
-   * deliberately stays on `monstersInSector` alone. docs/specials.md § Crushers.
+   * deliberately stays on `monstersInSector` alone. docs/specials-crushers.md § Crushers.
    */
   crushablesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
   /**
    * The monster corpses lying in `sectors` that no plane has crunched yet, over the same sector
    * set `crushablesInSectors` takes. `height` is each body's living `mobjinfo.height`; a corpse's
-   * own is a quarter of it (`CORPSE_HEIGHT_FRACTION`). docs/specials.md § Crushed corpses.
+   * own is a quarter of it (`CORPSE_HEIGHT_FRACTION`). docs/specials-crushers.md § Crushed corpses.
    */
   corpsesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
   /**
    * Crunches the corpse `id` to a pool of blood — `PIT_ChangeSector`'s `S_GIBS` branch. A no-op on
    * a stale or already-crunched id, and on a WAD set carrying no `CORPSE_GIB` art, which
-   * would leave the corpse drawing nothing at all. docs/specials.md § Crushed corpses.
+   * would leave the corpse drawing nothing at all. docs/specials-crushers.md § Crushed corpses.
    */
   crushCorpse(id: number): void;
   /**

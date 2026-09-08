@@ -91,7 +91,7 @@ interface StoredSelection {
  * The start screen: pick a game WAD, stack any add-ons on top, choose a level.
  * WADs come from public/game/, from the player's own library folder, or straight
  * off their disk — all three list and behave identically (`LibraryUi`,
- * docs/menu.md § WAD Library). It doubles as the pause screen once a level is
+ * docs/menu-wads.md § WAD Library). It doubles as the pause screen once a level is
  * running — see `open` and docs/menu.md.
  */
 export class Menu {
@@ -470,7 +470,7 @@ export class Menu {
    * completely, so everything raised behind it (a file the overlay's own `Add single WADs…` just
    * loaded, a WAD that wouldn't parse) would otherwise be reported to a line nobody can see, and
    * would then surface on the New Game tab once the overlay closed, out of the context that
-   * explains it. docs/menu.md § WAD Library.
+   * explains it. docs/menu-wads.md § WAD Library.
    */
   setStatus(text: string, isError = false): void {
     if (this.library.isOpen) {
@@ -487,7 +487,7 @@ export class Menu {
    * Starts with whatever is currently selected — used by ?map= deep links,
    * which skip the menu entirely and so run at the last skill picked. Settled
    * either way when the start is over, which is how `main.ts` knows a
-   * deep-linked level has taken the screen (docs/menu.md § Session lifecycle).
+   * deep-linked level has taken the screen (docs/session.md § Session lifecycle).
    */
   submit(): Promise<void> {
     return this.startWithSkill(this.currentSkill());
@@ -676,7 +676,7 @@ export class Menu {
   /**
    * The record toggle beside the level and difficulty pickers. A button rather than a checkbox:
    * it reads as one of the three things being chosen about the game, and says which state it is
-   * in rather than what ticking it would mean. docs/menu.md § Replays tab.
+   * in rather than what ticking it would mean. docs/menu-saves.md § Replays tab.
    */
   private installRecordToggle(): void {
     const show = () => {
@@ -708,7 +708,7 @@ export class Menu {
   /**
    * The top-left status text's on/off switch, beside the profiler's in the
    * Debug / Dev section. Like it, `setFpsVisible` applies to `#hud` itself, so
-   * it takes effect on the running level — see docs/menu.md § FPS counter.
+   * it takes effect on the running level — see docs/devmode.md § FPS counter.
    */
   private installFps(): void {
     this.fpsCheckbox.checked = getFpsVisible();
@@ -807,7 +807,7 @@ export class Menu {
     this.renderPwads();
     this.renderLevels();
     // The overlay draws against the same `sources`, so it redraws with the lists under it — its own
-    // draft is untouched by this (docs/menu.md § WAD Library).
+    // draft is untouched by this (docs/menu-wads.md § WAD Library).
     this.library.refresh();
   }
 
@@ -871,8 +871,9 @@ export class Menu {
 
   /**
    * Adopts the WAD Library's whole pick in one go — the overlay stages its ticks and commits them
-   * here, on Apply (docs/menu.md § WAD Library). A set rather than a row at a time, so a game WAD
-   * and the add-ons picked beside it land together rather than in an order the player never chose.
+   * here, on Apply (docs/menu-wads.md § WAD Library). A set rather than a row at a time, so a game
+   * WAD and the add-ons picked beside it land together rather than in an order the player never
+   * chose.
    */
   private async applyPicks(iwad: WadSource | null, pwads: readonly WadSource[]): Promise<void> {
     // Together, since each may read and hash a whole file off disk and no two touch each other.
@@ -897,8 +898,8 @@ export class Menu {
    */
   private takeAsIwad(source: WadSource): void {
     // Nothing is dropped from the add-ons here: one a new game WAD can't take goes quiet in the
-    // list instead, and comes back the moment one that can is picked (docs/menu.md § Picking a WAD
-    // set).
+    // list instead, and comes back the moment one that can is picked (docs/menu-wads.md § Picking a
+    // WAD set).
     this.selectedIwad = source;
   }
 
@@ -951,7 +952,7 @@ export class Menu {
 
   /**
    * The add-ons **the player has picked**, in merge order — not every add-on on offer. Browsing is
-   * the WAD Library's job (docs/menu.md § WAD Library), so this list is the picks themselves:
+   * the WAD Library's job (docs/menu-wads.md § WAD Library), so this list is the picks themselves:
    * short, always exactly what a start will merge, and never a second picker that would have to
    * agree with the first about what is compatible.
    */
@@ -977,8 +978,8 @@ export class Menu {
       input.type = 'checkbox';
       input.checked = enabled;
       // A pick the game WAD can't take keeps its row and its off-flag untouched, so it comes back
-      // ticked the moment a game WAD that suits it is picked again (docs/menu.md § Picking a WAD
-      // set).
+      // ticked the moment a game WAD that suits it is picked again (docs/menu-wads.md § Picking a
+      // WAD set).
       input.disabled = reason !== '';
       input.title =
         reason === ''
@@ -1015,7 +1016,7 @@ export class Menu {
    * Why the selected game WAD can't merge one of the picks, as the badge its row carries — '' when
    * it can. The rule is `library.ts: fitsGameWad`'s, the same one `pwadsFor` and the WAD Library's
    * greying read; only the wording is shorter than the overlay's, this panel being a fraction of
-   * its width. See docs/menu.md § Picking a WAD set.
+   * its width. See docs/menu-wads.md § Picking a WAD set.
    */
   private mismatchReason(source: WadSource): string {
     if (this.selectedIwad && source.key === this.selectedIwad.key) return 'game WAD';
@@ -1196,7 +1197,7 @@ export class Menu {
 
   private async onFilesChosen(): Promise<void> {
     const files = [...(this.fileInput.files ?? [])];
-    // Reported rather than dropped, for the reason every folder-pick path is (docs/menu.md §
+    // Reported rather than dropped, for the reason every folder-pick path is (docs/menu-wads.md §
     // WAD Library): a picker that answers nothing at all is indistinguishable from a broken button.
     if (files.length === 0) {
       this.setStatus('No files chosen.');
@@ -1214,7 +1215,7 @@ export class Menu {
    * **Where the picks land depends on what is on top.** With the WAD Library up they are ticked
    * into its draft instead, which applies on Apply — the same routing `setStatus` does, and for the
    * same reason: the overlay covers `#menu`, so a selection made behind it is one the player never
-   * saw happen and `Close` would not undo (docs/menu.md § WAD Library).
+   * saw happen and `Close` would not undo (docs/menu-wads.md § WAD Library).
    */
   private async addFiles(files: File[]): Promise<void> {
     const added: WadSource[] = [];
@@ -1293,7 +1294,7 @@ export class Menu {
     // Reached synchronously, before the first `await`, while the click's transient activation is
     // still live: a browser refuses a file-permission prompt raised any later, and the set may
     // include a library file whose folder needs re-granting. The same trick `main.ts` uses for
-    // `audio.resume()` — docs/menu.md § Session lifecycle.
+    // `audio.resume()` — docs/session.md § Session lifecycle.
     const access = this.needsLibraryAccess() ? wadlib.ensureLibraryAccess() : Promise.resolve(true);
     this.startButton.disabled = true;
     // The level being replaced is disposed part-way through this, so there is

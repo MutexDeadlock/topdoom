@@ -307,8 +307,8 @@ gate sits on top of it and the island comes from geometry, which a save does not
 **The island being left cuts to black rather than fading out** (`enterIsland` snaps every alpha to
 its new target, as the spawn seed does), and whatever is already explored in the one being entered
 is lit at once; leaves the sweep reveals after arriving fade in as they always do. Arriving in an
-island means a teleport, which the camera cuts for too — docs/specials.md § Silent and line-to-line
-teleporters.
+island means a teleport, which the camera cuts for too — docs/specials-teleporters.md § Silent and
+line-to-line teleporters.
 
 **A sample ray that reveals a leaf in another island merges the two** (`mergeIsland`), and that is
 the only merge rule. A ray cannot cross a one-sided wall, so reaching one is proof the partition was

@@ -9,7 +9,7 @@ import { PLAYER_RADIUS } from '../../src/game/player.ts';
  * Boom's sector friction (linedef 223): the two curves out of `P_SpawnFriction`,
  * `P_GetFriction`'s straddle rule, `P_GetMoveFactor`'s momentum boost, and the
  * mapping onto this engine's movement model.
- * See docs/specials.md § Friction and docs/movement.md § Friction.
+ * See docs/specials-forces.md § Friction and docs/movement.md § Friction.
  */
 describe('Specials · Boom friction', () => {
   const ORIG_FRICTION = 0xe800 / 0x10000;

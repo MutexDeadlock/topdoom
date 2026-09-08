@@ -529,7 +529,7 @@ function applyFrames(
     if (!same(before.missiles[sprite], after.missiles[sprite])) writeMissile(sprite, before.missiles[sprite], after.missiles[sprite]);
   }
   // A patch that repoints `S_GIBS` moves what a crushed corpse is drawn as — the one derived pose
-  // no `mobjinfo` chain reaches. docs/specials.md § Crushed corpses.
+  // no `mobjinfo` chain reaches. docs/specials-crushers.md § Crushed corpses.
   if (after.gibs && !same(before.gibs, after.gibs)) {
     CORPSE_GIB.sprite = after.gibs.sprite;
     CORPSE_GIB.frames = after.gibs.frames;

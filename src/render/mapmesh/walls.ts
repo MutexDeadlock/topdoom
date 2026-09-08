@@ -474,7 +474,7 @@ const sideBands = newDrawnBands();
 /**
  * How opaque a Boom 260 midtexture draws: `tran_filter_pct`'s default of 66 (`m_misc.c`'s config
  * table), the percentage Boom generates its `TRANMAP` at. Every 260 line gets this one value —
- * docs/specials.md § Translucent midtextures.
+ * docs/specials-transfers.md § Translucent midtextures.
  */
 const TRANSLUCENT_ALPHA = 0.66;
 function addTwoSidedSide(build: Build, line: LineView, view: SideView): void {
@@ -547,7 +547,7 @@ function addTwoSidedSide(build: Build, line: LineView, view: SideView): void {
 
   // Middle: optional masked texture (grates, bars) hung across the line. Boom's 260 makes one
   // translucent and overloads the same name to point at the translucency map, in which case there
-  // is no texture to draw at all. docs/specials.md § Translucent midtextures.
+  // is no texture to draw at all. docs/specials-transfers.md § Translucent midtextures.
   if (isTextured(side.middle) && !transfers.midtexSuppressed(line.index)) {
     const dim = size('wall', side.middle);
     if (dim) {

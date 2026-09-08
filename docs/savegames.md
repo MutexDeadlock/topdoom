@@ -8,7 +8,7 @@ overwrites the mutable state, so everything the constructors derive (BSP polys, 
 grids) is always derived from restored data rather than patched afterwards. The store lives in
 `game/savegames.ts` over `game/savestore.ts`'s IndexedDB backend and byte codecs, the payload
 types and encoding helpers in `game/snapshot.ts`, the menu surface in `ui/menu/savegames.ts`
-(docs/menu.md § Save and Load tabs).
+(docs/menu-saves.md § Save and Load tabs).
 
 ## The format and its version
 
@@ -24,7 +24,7 @@ deliberate encodings, all owned by `game/snapshot.ts`:
   with zeros, JSON-native numbers rather than base64 so Node tests need no `atob`.
 - **Things → only the changed ones** (`ThingsSnapshot.changed`, `[id, state][]`): the same idea one
   layer over, and the same reason — a restore re-spawns the map, so a thing nothing has touched is
-  already correct. § What is saved has the rule.
+  already correct (§ What is saved and what is deliberately not).
 - **Sectors → only the changed ones** (`snapshotSectors`/`applySectors`, `[index, fields][]`): a
   restore applies them to a *freshly loaded* map, so a sector no door, lift, light or secret has
   touched is already correct and is left out. `Game` takes the baseline to diff against straight
@@ -130,8 +130,8 @@ per-doll damage pass, is simply ignored), fog of war's `explored`, sound-alerted
 sectors, every thing, the Icon of Sin, projectiles in flight, the optional `voodoo` block — where
 each of the level's dolls has been carried to and the momentum it is carrying, absent in any save
 from before dolls existed, which leaves them standing on their own player starts exactly as a fresh
-load does (docs/specials.md § Voodoo dolls) — the optional `scrollers` block (the accelerative
-scrollers' built-up speed, below), level time, camera yaw,
+load does (docs/specials-forces.md § Voodoo dolls) — the optional `scrollers` block (the
+accelerative scrollers' built-up speed, below), level time, camera yaw,
 `cheated` (so a `?pos=` run, a cheat or a taken-over replay can't launder its level's eligibility
 through a save), and the RNG cursors.
 
@@ -148,23 +148,23 @@ because their integrator is not visual — an accelerative conveyor (216/217) ke
 built-up speed with the control sector standing still, so dropping it on load would park everything
 on the belt until that sector moved again. The optional `scrollers` block holds those integrators
 and only those: `[scrollerIndex, vdx, vdy]` per scroller that has built up any, indexed against the
-level's spawn order, absent when none has (`Forces.snapshot`, docs/specials.md § Scrollers and
-conveyors). `lastHeight` — what a displacement scroller watches — needs no field at all, because
+level's spawn order, absent when none has (`Forces.snapshot`, docs/specials-forces.md § Scrollers
+and conveyors). `lastHeight` — what a displacement scroller watches — needs no field at all, because
 `Forces` is constructed *after* `applySectors` (§ Apply order, step 6).
 
 **The render transfers are not saved either, and need no field.** 213/242/260/261 are read straight
-off the map at load (docs/specials.md § Render transfers), and the one thing about them that can
-change at runtime — a 242 control sector's floor height, which sets the water level — is already an
-ordinary `SectorEntry.floorHeight`. The apply order does the rest: `applySectors` runs before
-`buildMapMesh`, so a restored save bakes its water surfaces at the heights it was saved with.
+off the map at load (docs/specials-transfers.md § Render transfers), and the one thing about them
+that can change at runtime — a 242 control sector's floor height, which sets the water level — is
+already an ordinary `SectorEntry.floorHeight`. The apply order does the rest: `applySectors` runs
+before `buildMapMesh`, so a restored save bakes its water surfaces at the heights it was saved with.
 
 **`transfersOf` is nevertheless called before `applySectors`**, once, purely to fix the two scans in
 `Transfers`' constructor that compare sector heights — `markFakeFloors` and `markPools`. Those
 classify the map as *authored*; run against restored heights instead, a saved mover reads at the
 height it stopped at and a raised pool bottom comes back as a sector that never had water over it
-(docs/specials.md § Deep water). Everything read from the table afterwards is a live height lookup,
-so nothing else about it depends on when it was built — `transfersOf` memoizes per map, and the
-later call in `beginLevel` gets the same instance.
+(docs/specials-transfers.md § Deep water). Everything read from the table afterwards is a live
+height lookup, so nothing else about it depends on when it was built — `transfersOf` memoizes per
+map, and the later call in `beginLevel` gets the same instance.
 
 Deliberately not saved, each a sub-second transient whose absence on restore is invisible or
 nearly so:
@@ -191,12 +191,12 @@ nearly so:
   after a load than before it (docs/death.md § Monster death). This is why `health` is saved with
   its negative overkill intact — and why the corpse's `crushed` flag *is* an ordinary AI-block
   field: a squashed corpse's pool is `enterDeathPose`'s answer like any other pose
-  (docs/specials.md § Crushed corpses). It defaults to false, so a save written before it existed
-  restores an uncrushed corpse and needs no `SAVE_VERSION` bump. **The exception is an attack pose
-  with shots still pending** (`restoreAttackPose`), replayed and fast-forwarded the same way off
-  `AttackStats.duration - attackPause` — the same "long enough to save inside and notice" argument
-  the teleport fog above makes, and for the same reason it is the *only* pose that gets it: the
-  arch-vile's cast is 94 tics, most of them after its warning flame appears, so a save taken
+  (docs/specials-crushers.md § Crushed corpses). It defaults to false, so a save written before it
+  existed restores an uncrushed corpse and needs no `SAVE_VERSION` bump. **The exception is an
+  attack pose with shots still pending** (`restoreAttackPose`), replayed and fast-forwarded the same
+  way off `AttackStats.duration - attackPause` — the same "long enough to save inside and notice"
+  argument the teleport fog above makes, and for the same reason it is the *only* pose that gets it:
+  the arch-vile's cast is 94 tics, most of them after its warning flame appears, so a save taken
   mid-cast otherwise loaded a vile standing in its idle frame with a flame burning on the player
   (docs/monster-archvile.md § The windup flame). `burstLeft > 0` is the test — something pending
   only ever means an attack under way, never its tail or the arch-vile's deliberately poseless
@@ -241,7 +241,7 @@ nearly so:
   the intermission/exit cascade out of the format entirely. `captureSave` *throws* that refusal
   rather than returning a sentinel, so the whole save path has one refusal convention and the
   player is told which of the three applies instead of all of them. The menu also asks the same
-  question *before* the click, to disable Save and Overwrite and name the reason (docs/menu.md
+  question *before* the click, to disable Save and Overwrite and name the reason (docs/menu-saves.md
   § Save and Load tabs) — the throw is still what enforces it.
 
 ## Apply order
@@ -298,7 +298,7 @@ load gets a fresh object per read either way and does not depend on it.
     takes the restored inventory**. `WeaponSystem.beginLevel` ran back at the top of the load
     against the *outgoing* inventory, so `weaponLastFrame` is left pointing at whatever weapon was
     in hand before, which is why it is derived from `inventory.currentWeapon` here rather than
-    saved (see § What is not saved). (`levelTime` is taken back in step 3's block, with the sector
+    saved (see § What is saved and what is deliberately not). (`levelTime` is taken back in step 3's block, with the sector
     state.)
 15. `levelCard.show(...)` — **skipped on a restore**: the card announces *entering* a level, and a
     save resumes one already under way (docs/hud.md § Level card). The checkpoint restart is a
@@ -405,9 +405,9 @@ it: the row already shows `at`. `game/savegames.ts` owns the rule and **replays 
 A downloaded save is `<name>.topdoomsave.json` (`saveFileName`) — the save's own name, anything a
 filesystem could object to replaced, so the file on disk is the row the player clicked. The suffix
 pairs with the replays' `.topdoomreplay.json`; both come from `downloadFileName`, and it is what
-`Menu.installDropTarget` routes a dropped file by (docs/menu.md § Replays tab). A save downloaded
-before the suffix existed still imports: the drop rule takes any other `.json` as a save, and the
-importer reads content, not names.
+`Menu.installDropTarget` routes a dropped file by (docs/menu-saves.md § Replays tab). A save
+downloaded before the suffix existed still imports: the drop rule takes any other `.json` as a save,
+and the importer reads content, not names.
 
 `node scripts/inspect-save.ts <file>` reads a downloaded save headlessly — meta, WAD roles, the
 player's position out of the decoded state, and `--state`/`--thumb` dumps — through the same codec
@@ -503,14 +503,14 @@ Loading resolves every entry before anything is torn down, so the running level 
 that can't happen — only a *required* missing file stops it (`blockingWad`); the rest are simply
 left out of the assembled set. That refusal is the gate, not the greyed-out Load button the row
 also grows: the button asks `blockingWad` the same question ahead of the click, and is a courtesy
-in the same way the Save/Overwrite disabling is (docs/menu.md § Save and Load tabs).
+in the same way the Save/Overwrite disabling is (docs/menu-saves.md § Save and Load tabs).
 
 **`wadSetRefusal` is then the gate itself, and the only statement of it.** It takes plain facts
 rather than a `Wad` — the save, `wadSetId`'s list for the set in hand, and a lookup naming that
 set's provider for a map (a lookup, not one provider, because a replay's stand-in gate asks about
 every level it visited — § A stand-in game WAD) — so the rule lives in the format module with the
 field it reads, and returns the refusal message or null. `verifySaveWads` (`main.ts`, on the shared `startLevel` path — see
-docs/menu.md § Session lifecycle) throws what it returns; `Game.matchesSession`, the checkpoint's
+docs/session.md § Session lifecycle) throws what it returns; `Game.matchesSession`, the checkpoint's
 fit test, compares it to null, so a checkpoint cannot refuse where a manual load would work. Both
 feed it freshly re-hashed bytes (`wadSetId`, `mapProvider` in `wad/checksum.ts`) even though
 resolution already matched IDs: a manifest ID is a build-time claim, and re-hashing what is

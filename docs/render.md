@@ -37,7 +37,7 @@ heights went blind to the wall across from deep water (docs/camera.md § Framing
 
 Every vertex carries three attributes beyond position and UV: the sector's baked light as a vertex
 colour (docs/render-lighting.md § Sector lighting), the fade alpha both faders and fog of war write
-(§ Wall occlusion fading), and **`aLightCell`, the BSP leaf that surface faces into** — a flat's
+(docs/render-occlusion.md), and **`aLightCell`, the BSP leaf that surface faces into** — a flat's
 own, a wall's the one its face looks at, probed once by `fillWallCells` and recorded on the occluder
 so fog of war can take the same answer. It is what lets a dynamic light stop at a wall
 (docs/lights.md § Light stops at walls), and it is written once: a mover changes heights, never a
@@ -285,10 +285,10 @@ refuses on the same 255 as the old rebuild-everything check, never more.) A leaf
 have produced a vertex produced no fan either and never will, so it is skipped wherever the mesh
 holds nothing for it.
 
-Repro for both: literalism.wad MAP18, whose voodoo-doll scripts (docs/specials.md § Voodoo dolls)
-keep ~95 sectors moving per tic over 10.6k subsectors and 14.5k linedefs. Before the two, that map
-spent the entire frame in `rebuildAround` and the profiler overlay's "Specials" row read in the
-hundreds of milliseconds.
+Repro for both: literalism.wad MAP18, whose voodoo-doll scripts (docs/specials-forces.md § Voodoo
+dolls) keep ~95 sectors moving per tic over 10.6k subsectors and 14.5k linedefs. Before the two,
+that map spent the entire frame in `rebuildAround` and the profiler overlay's "Specials" row read in
+the hundreds of milliseconds.
 
 ### A mover dices vertically only where nothing moves
 
@@ -355,7 +355,7 @@ sunken boat is 16 sectors between −272 and −160, its inner walls fully textu
 
 A hole *inside a pool* is left alone by all of this — the flood declines the moment a 242 is
 involved, Boom's idioms being built on missing textures. What it gets instead is the pool's own
-surface drawn over it, docs/specials.md § Deep water's island rule.
+surface drawn over it, docs/specials-transfers.md § Deep water's island rule.
 
 **The test is per leaf, and the flood crosses BSP splits the SEGS lump cannot describe.** Scanning a
 sector's linedefs instead is the same test with the recursion already done, and it was what this did
@@ -414,14 +414,14 @@ into it, which a camera looking straight down cannot afford. So a water subsecto
 the pool bottom at the real floor height wearing the control sector's flat and light, and a
 translucent surface at the control sector's floor height wearing the sector's own. The full rule,
 including which vanilla branch each fan comes from and when no surface is drawn at all, is in
-docs/specials.md § Deep water. A control sector *below* the real floor is the other idiom — an
-invisible platform, one fan at the fake floor and no surface at all (docs/specials.md § The fake
-floor).
+docs/specials-transfers.md § Deep water. A control sector *below* the real floor is the other idiom
+— an invisible platform, one fan at the fake floor and no surface at all (docs/specials-transfers.md
+§ The fake floor).
 
 Mechanically it is one extra `FlatSurface` reusing the same subsector index, so fog of war and
 `FlatFader` need no notion of it, and the surface fades like any other raised floor. What it does
 need is a rebuild edge: a water sector shares no linedef with its control sector, so `MoverGeometry`
-links the two explicitly (`indexWaterDependents`, docs/specials.md § Deep water).
+links the two explicitly (`indexWaterDependents`, docs/specials-transfers.md § Deep water).
 
 **242 reaches the walls too**, and not only the flats: `R_FakeFlat` replaces the drawn *ceiling* as
 well as the floor, and `r_bsp.c: R_AddLine` runs it over the backsector of every seg. So a
@@ -440,7 +440,7 @@ Two limits on the substitution, both load-bearing:
   control sector **below** the real floor draws no bottom and no surface — only the fake floor — so
   there the walls do move, in step with the one fan `processFlat` puts at `Transfers.drawnFloor`.
   Which sectors that covers, and why it is not simply every one of them, is
-  docs/specials.md § The fake floor.
+  docs/specials-transfers.md § The fake floor.
 - **A fake floor moves both sides of a line, a fake ceiling only the neighbour's.** Vanilla fakes
   front and back sector alike (`r_bsp.c: R_AddLine`); the ceiling half needs the exception above
   because its branch turns on where the eye is, and the floor half does not — `R_FakeFlat`'s plain
@@ -498,9 +498,9 @@ whatever the level. NUTS.WAD awake reached ~750 calls and 3.5 ms a frame keyed p
 holds it at a handful (docs/sprites.md § Batching).
 
 **Measure this in a browser, not by reasoning.** In-game, the profiler overlay's `gpu` line is the
-first place to look (docs/menu.md § Profiling overlay): when it dwarfs the `cpu` line beside it, no
-row above it is worth touching. For a real experiment — an A/B of two shader variants, a resolution
-sweep — docs/lights.md § Profiling has the recipe
+first place to look (docs/devmode.md § Profiling overlay): when it dwarfs the `cpu` line beside it,
+no row above it is worth touching. For a real experiment — an A/B of two shader variants, a
+resolution sweep — docs/lights.md § Profiling has the recipe
 (`EXT_disjoint_timer_query_webgl2`, which GPU chromium is pointed at, sizing the drawing buffer like
 the player's). Halving a number that turns out to be 4% of the frame is how time gets wasted here.
 
@@ -651,11 +651,11 @@ the stock IWADs, 250 linedefs across both games, for waterfalls and lava streams
 scroller family beside it, walls and floor/ceiling flats alike.
 
 **It computes nothing.** Which surfaces scroll and by how much is simulation state owned by
-`game/specials/forces.ts: Forces` (docs/specials.md § Scrollers and conveyors); this class indexes
-the affected geometry once and applies the offsets it is handed. The read side is the structural
-`ScrollOffsets` interface declared there and satisfied by `Forces`, so the render layer keeps no
-import edge into the game layer — the same shape as `SwitchPairLookup`. The geometry it indexes
-arrives as one `ScrollableGeometry`, which `BuiltMap` satisfies.
+`game/specials/forces.ts: Forces` (docs/specials-forces.md § Scrollers and conveyors); this class
+indexes the affected geometry once and applies the offsets it is handed. The read side is the
+structural `ScrollOffsets` interface declared there and satisfied by `Forces`, so the render layer
+keeps no import edge into the game layer — the same shape as `SwitchPairLookup`. The geometry it
+indexes arrives as one `ScrollableGeometry`, which `BuiltMap` satisfies.
 
 Mechanically it is `WallFader`/`FlatFader` again: index the affected vertex ranges once, rewrite one
 attribute every frame — here `uv` instead of vertex alpha. Walls convert map units to UV through
@@ -677,8 +677,8 @@ scroller is constructed with them (`game.ts`), so the buffer cannot go stale; a 
 static geometry mid-level would have to rebuild the scroller with it.
 
 **Static-batch geometry only** — unlike `recolorSector`, which also reaches mover meshes
-(docs/specials.md § Relighting mover geometry), this indexes the static batch alone, so a sector
-that both scrolls and moves keeps its mover mesh unscrolled. In practice this excludes almost
+(docs/specials-lights.md § Relighting mover geometry), this indexes the static batch alone, so a
+sector that both scrolls and moves keeps its mover mesh unscrolled. In practice this excludes almost
 nothing real: a mapper puts a scroller on decorative or conveyor geometry, rarely on a sector that
 also has to move.
 

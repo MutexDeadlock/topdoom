@@ -14,7 +14,7 @@ import { changedThing } from '../fixtures/snapshot.ts';
  * `arriveAt` used to leave `z` alone, so a monster walking out of a closet
  * raised above the arena it teleports into kept the closet's height and then
  * fell the difference under gravity: the "monsters dropping out of the sky"
- * every teleport ambush read as. docs/specials.md § Teleporters.
+ * every teleport ambush read as. docs/specials-teleporters.md § Teleporters.
  */
 
 const CLOSET_FLOOR = 192;

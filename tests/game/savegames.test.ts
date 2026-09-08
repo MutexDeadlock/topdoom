@@ -339,7 +339,7 @@ describe('Savegames · the store', () => {
 
   test('every row label fits the save row, which ellipsizes what it cannot show', () => {
     // ~55 characters is what the label column holds at 12px
-    // (docs/menu.md § Save and Load tabs); the advice lives in `missingWadText`
+    // (docs/menu-saves.md § Save and Load tabs); the advice lives in `missingWadText`
     // precisely because it does not fit here.
     const name = 'a-rather-long-addon.wad';
     for (const required of [false, true]) {
@@ -393,7 +393,7 @@ describe('Savegames · the store', () => {
 
     const [entry] = await listSaves();
     // The row's red line is the sentence the load would have thrown: a greyed Load always says why.
-    // docs/menu.md § Save and Load tabs.
+    // docs/menu-saves.md § Save and Load tabs.
     assert.match(entry.refusal ?? '', new RegExp(`version ${SAVE_VERSION + 1}.*version ${SAVE_VERSION}`));
     assert.equal(entry.meta.name, 'old', 'the row still shows its own name');
     await assert.rejects(readSave(meta.id), new RegExp(entry.refusal ?? ''));

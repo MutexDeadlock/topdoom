@@ -14,7 +14,7 @@ import { fadeFrame, targetAt } from '../fixtures/fade.ts';
  * Boom's 242 as geometry: the two fans this engine draws where vanilla picks
  * one of them by eye height, the alpha that keeps a submerged player visible
  * through the surface, and the fake ceiling the walls across from one are sized
- * against. See docs/specials.md § Deep water.
+ * against. See docs/specials-transfers.md § Deep water.
  */
 
 const POOL_FLAT = 'FLAT14';

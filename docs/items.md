@@ -144,7 +144,7 @@ the same two endpoints the player's own pass uses. Only a doll that *moved* coll
 reaches the pickup through `P_XYMovement`, which a parked doll never enters, so an item under a doll
 standing still stays put. One deliberate simplification: it is gated on the player being alive,
 standing in for vanilla's per-mobj `toucher->health` check, which a doll has no separate health for
-here. See docs/specials.md § Voodoo dolls.
+here. See docs/specials-forces.md § Voodoo dolls.
 
 **`tryPickup`'s `z` check** exists because 2D distance alone lets a player standing at the *base* of
 a not-yet-lowered pillar collect an item still on top of it — DOOM2 MAP04's blue key does exactly

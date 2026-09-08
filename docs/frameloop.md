@@ -2,7 +2,7 @@
 
 `src/game.ts: frame`, `tic`, `draw`, `dueThisFrame`, `resume`, `pause`, `stillFrame`, `stop`
 
-Who starts and stops a session around this loop is docs/menu.md § Session lifecycle.
+Who starts and stops a session around this loop is docs/session.md § Session lifecycle.
 
 **The simulation runs at a fixed 35 Hz and the display runs as fast as it can.** Every gameplay
 system advances by exactly `DOOM_TIC`, vanilla's own 35 Hz clock, and never by a frame
@@ -68,7 +68,7 @@ The whole simulation, in the order it has always run — several orderings are l
 - `forces.tick` runs **after** the movers, since a displacement scroller's rate is the height change
   its control sector just made this tic; the voodoo dolls run after *that*, so a conveyor's impulse
   and the walk lines it pushes a doll across land in the same tic
-  (docs/specials.md § Scrollers and conveyors, § Voodoo dolls).
+  (docs/specials-forces.md § Scrollers and conveyors, § Voodoo dolls).
 
 Only the *visual* half of scrolling stays on the frame clock — `Forces.advanceOffsets`, drawn by
 `SurfaceScroller` — so a waterfall doesn't step at 35 Hz. Nothing the simulation reads is
@@ -219,7 +219,7 @@ draws as the instant move vanilla shows (rule two above); `trackPlaneMove` detec
 that travelled further than the mover's own speed allows, so no per-branch marking exists to
 forget. A frozen
 simulation is covered by the alpha-1 rule: `drawMovers(1)` is the tic-exact pose, and a window
-whose ends match is skipped, not re-refreshed. docs/specials.md § Lights covers the light
+whose ends match is skipped, not re-refreshed. docs/specials-lights.md § Lights covers the light
 patterns' own tic timing.
 
 ## The FPS cap (`game.ts: dueThisFrame`, `getFpsCap`)
@@ -283,4 +283,4 @@ of tics.
 
 Reordering `frame` must keep both properties — the check ahead of the cap, and the resync after the
 build. Why the load is parked rather than awaited, and what decides "slow", is
-docs/menu.md § The loading screen.
+docs/session.md § The loading screen.

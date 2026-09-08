@@ -1,7 +1,7 @@
 /*
- * The WAD Library overlay — docs/menu.md § WAD Library. A sibling of #about in every structural
- * way: a child of #menu, so it can only exist while the menu is up, at a z-index local to #menu's
- * own stacking context rather than a rung of base.css's global ladder.
+ * The WAD Library overlay — docs/menu-wads.md § WAD Library. A sibling of #about in every
+ * structural way: a child of #menu, so it can only exist while the menu is up, at a z-index local
+ * to #menu's own stacking context rather than a rung of base.css's global ladder.
  */
 #wadlibrary {
   z-index: 5;
@@ -317,7 +317,7 @@
 /*
  * The summary names the current pick, the status line reports what just happened. The status takes
  * the slack so the two buttons sit at the right — and it lives *here* rather than only in
- * `#menu-status`, which this overlay covers completely (docs/menu.md § WAD Library).
+ * `#menu-status`, which this overlay covers completely (docs/menu-wads.md § WAD Library).
  */
 #wadlibrary-summary {
   flex: none;
@@ -327,10 +327,10 @@
 
 /*
  * Two lines, not one. What lands here is often a sentence explaining a failure and what to do about
- * it (docs/menu.md § WAD Library), and one clipped line was truncating exactly the half that said
- * what to do. Still clamped, because the footer sits inside a fixed-height panel and an unbounded
- * message would eat the file list. `line-clamp` needs the `-webkit-box` display and the two
- * properties beside it; every browser that can run a WebGL2 game honours the prefixed pair.
+ * it (docs/menu-wads.md § WAD Library), and one clipped line was truncating exactly the half that
+ * said what to do. Still clamped, because the footer sits inside a fixed-height panel and an
+ * unbounded message would eat the file list. `line-clamp` needs the `-webkit-box` display and the
+ * two properties beside it; every browser that can run a WebGL2 game honours the prefixed pair.
  */
 #wadlibrary-status {
   flex: 1;

@@ -1,6 +1,6 @@
 /**
  * The menu's Save and Load tabs: listing, naming, overwrite/delete, download and import.
- * See docs/menu.md § Save and Load tabs and docs/savegames.md.
+ * See docs/menu-saves.md § Save and Load tabs and docs/savegames.md.
  */
 import {
   blockingWad,
@@ -65,7 +65,7 @@ export interface SaveSetInfo {
  * The Save and Load tab panels: the two save lists (thumbnail, editable name,
  * level, meta, download/delete per row), the save form, and import from disk.
  * Pure DOM over `game/savegames.ts`; every failure goes to the menu's own status
- * line. docs/menu.md § Save and Load tabs.
+ * line. docs/menu-saves.md § Save and Load tabs.
  */
 export class SavegamesUi {
   /** The two list containers, keyed like `stale` and `filters` — everything per tab indexes alike. */
@@ -273,7 +273,7 @@ export class SavegamesUi {
 
     label.append(this.makeNameInput(meta), level, detail);
     // Red, and never only a greyed button: a row that cannot be loaded says why, in the same weight
-    // as a missing file the load would refuse over. docs/menu.md § Save and Load tabs.
+    // as a missing file the load would refuse over. docs/menu-saves.md § Save and Load tabs.
     if (entry.refusal !== null) label.append(noteLine('warning', entry.refusal, entry.refusal));
     // One line per missing file, so a set short two add-ons names both. Both are
     // warnings; only a required one is the accent's red, since red is what says
@@ -297,8 +297,8 @@ export class SavegamesUi {
       // disabled button shows no tooltip of its own. `loadSave` stays the gate.
       load.disabled = entry.refusal !== null || blockingWad(set.missing) !== undefined;
       // Only asked for in game, where a load throws the running level away — Start new game's own
-      // conditional hold (docs/menu.md § Save and Load tabs). The tooltip follows the hold: from
-      // the launcher this is an ordinary button and has nothing to warn about.
+      // conditional hold (docs/menu-saves.md § Save and Load tabs). The tooltip follows the hold:
+      // from the launcher this is an ordinary button and has nothing to warn about.
       load.title = this.inGame ? 'Hold to abandon the game you are running' : '';
       confirmOnHold(load, {
         hint: 'Hold Load to abandon the game you are running.',

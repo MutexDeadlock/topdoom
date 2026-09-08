@@ -1,6 +1,6 @@
 /**
  * The per-frame timing `game.ts` feeds and the profiler overlay reads back — the measuring side
- * only, with no UI of its own. See docs/menu.md § Profiling overlay.
+ * only, with no UI of its own. See docs/devmode.md § Profiling overlay.
  */
 
 /** One profiled category's smoothed per-frame cost, in milliseconds. */
@@ -104,7 +104,7 @@ export class FrameProfiler {
    * time (`OFF_FRAME_SPREAD`) rather than dumped on the frame that follows —
    * dumping it spikes the total, and with it the "fps eq." readout that divides
    * by it. A stall's oversized backlog is capped away entirely
-   * (`OFF_FRAME_PENDING_CAP`). docs/menu.md § Profiling overlay.
+   * (`OFF_FRAME_PENDING_CAP`). docs/devmode.md § Profiling overlay.
    */
   offFrame(label: string, ms: number): void {
     if (ms <= 0) return;

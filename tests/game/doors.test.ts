@@ -6,7 +6,7 @@ import { specialsRig, soundLog, TIC } from '../fixtures/specialsrig.ts';
 /**
  * `EV_DoDoor` and `EV_VerticalDoor` (`p_doors.c`) — which trigger builds a new
  * door, which takes over the one already running, and which is refused.
- * See docs/specials.md § Retriggering a door.
+ * See docs/specials-movers.md § Retriggering a door.
  */
 describe('Specials · doors', () => {
   /**

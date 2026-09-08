@@ -164,7 +164,7 @@ export class Player implements Pos3 {
    * Vanilla's `momx`/`momy` for everything that is **not** the player's own
    * held-key input, map units/sec: damage knockback (`P_DamageMobj`), and the
    * forces the world applies — conveyors, wind and current
-   * (`applyForce`, docs/specials.md § Scrollers and conveyors).
+   * (`applyForce`, docs/specials-forces.md § Scrollers and conveyors).
    *
    * Kept entirely separate from `velX`/`velY` above rather than added into them, and integrated
    * and decayed (`ORIG_FRICTION`) on its own as a displacement additive to ordinary movement —
@@ -328,7 +328,7 @@ export class Player implements Pos3 {
    * player's momentum through the angle the facing turned, and `TeleportDest.silent` preserves the
    * height above ground for a body that was mid-air. That offset is measured *here* because the
    * specials controller is never told the player's height; absent, the landing is vanilla's
-   * exactly. See docs/specials.md § Silent and line-to-line teleporters.
+   * exactly. See docs/specials-teleporters.md § Silent and line-to-line teleporters.
    */
   teleportTo(dest: TeleportDest): void {
     // Read before `moveTo` overwrites them, reapplied after — the four velocity

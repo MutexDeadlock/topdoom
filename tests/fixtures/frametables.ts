@@ -676,7 +676,8 @@ export const GOLDEN_BARREL = { idleFrames: ["A","B"], idleTics: 6, deathSprite: 
 
 /**
  * `S_GIBS` as `info.c` writes it: `{SPR_POL5, 0, -1, NULL, S_NULL}` — sprite `POL5`, frame `A`,
- * held forever. Reached by name, not by any `mobjinfo` chain — docs/specials.md § Crushed corpses.
+ * held forever. Reached by name, not by any `mobjinfo` chain — docs/specials-crushers.md § Crushed
+ * corpses.
  */
 export const GOLDEN_GIBS = { sprite: "POL5", frames: ["A"] };
 

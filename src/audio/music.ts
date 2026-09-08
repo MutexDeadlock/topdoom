@@ -165,8 +165,8 @@ export class MusicPlayer {
   /**
    * Main-thread milliseconds spent synthesizing since the last call, zeroed by the read. Driven by
    * a timer rather than the frame loop, so the frame that follows reports it
-   * (`FrameProfiler.offFrame`, DEVMODE's `Music` bar — docs/menu.md § Profiling overlay). Zero for
-   * a container-format track, which the browser decodes.
+   * (`FrameProfiler.offFrame`, DEVMODE's `Music` bar — docs/devmode.md § Profiling overlay). Zero
+   * for a container-format track, which the browser decodes.
    */
   takeRenderMs(): number {
     const ms = this.renderMs;

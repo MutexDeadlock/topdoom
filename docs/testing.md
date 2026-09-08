@@ -349,6 +349,15 @@ Three matching rules it deliberately encodes, because all three shapes are all o
 - **It must be a heading**, not a bold lead-in paragraph. A bold paragraph isn't addressable, so a
   pointer at one is repaired by promoting the paragraph to a `###`.
 
+**A bare `§ Heading`, with no file in front of it, is checked against its own doc** — the fourth
+test. It is the pointer a split breaks silently: `docs/specials.md` carried a `§ Boss death below`
+for a section that lives in `docs/death.md`, and the scan above never saw it because that scan only
+reads pointers naming a file. Splitting `specials.md` and `menu.md` turned up eleven more.
+Three shapes are exempt, each because it resolves somewhere real: a `§` inside a code span (this
+doc quotes the format), a roman-numeral one (the UDMF spec's own sections, docs/wad.md), and one
+whose file was already named by an earlier `§` in the same clause — `docs/x.md § A, § B` states the
+file once, and a `.`, `)` or `;` in between ends that carry.
+
 ## WAD-backed tests
 
 **A test never reads `public/game/`, and every WAD a test reads lives in `tests/fixtures/wads/`.**
@@ -531,11 +540,12 @@ and was retimed.
 
 `scroll-frame-delta.test.ts` guards the same property from the other direction. `Forces`
 deliberately runs on **two** clocks — the fixed tic for anything the simulation reads, the frame
-delta for scrolling textures' visual offsets alone (docs/specials.md § Scrollers and conveyors) —
-and collapsing that into one "advance everything by `dt`" call is an easy accident that would make a
-conveyor's strength depend on the display. The tests pin that a conveyor impulse never moves however
-many frames are drawn, that a scroller's visual offset integrates identically at any step size, and
-that a negative first-frame delta leaves it finite (the same hazard as `animated-negative-dt`).
+delta for scrolling textures' visual offsets alone (docs/specials-forces.md § Scrollers and
+conveyors) — and collapsing that into one "advance everything by `dt`" call is an easy accident that
+would make a conveyor's strength depend on the display. The tests pin that a conveyor impulse never
+moves however many frames are drawn, that a scroller's visual offset integrates identically at any
+step size, and that a negative first-frame delta leaves it finite (the same hazard as
+`animated-negative-dt`).
 
 ## Writing a new test
 

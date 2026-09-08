@@ -8,7 +8,7 @@ import { specialsRig, type SpecialsRigOptions } from '../fixtures/specialsrig.ts
  * A floor or ceiling mover whose resolved target sits on the far side of its
  * vanilla direction: `T_MovePlane` takes it in one step and reverts it whole if
  * a body no longer fits, rather than travelling there at mover speed. See
- * docs/specials.md § Inverted plane moves.
+ * docs/specials-movers.md § Inverted plane moves.
  */
 describe('Specials · inverted plane moves', () => {
   /**

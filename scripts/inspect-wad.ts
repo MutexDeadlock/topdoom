@@ -76,7 +76,7 @@ console.log(`  bounds x[${map.bounds.minX}..${map.bounds.maxX}] y[${map.bounds.m
 // Textures referenced by the map must all resolve.
 // Boom overloads sidedef texture names on two parameter lines: a 242 control
 // line names colormaps and a 260 line can name a translucency map. Neither is a
-// texture, and neither is missing art (docs/specials.md § Render transfers).
+// texture, and neither is missing art (docs/specials-transfers.md § Render transfers).
 const transfers = new Transfers(map, (name) => wad.find(name)?.size ?? null);
 const lineOfSide = new Map<number, number>();
 for (const [i, l] of map.linedefs.entries()) {

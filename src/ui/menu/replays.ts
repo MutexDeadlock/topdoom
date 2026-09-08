@@ -4,7 +4,7 @@
  * player and notes, what it was recorded from, and play/download/delete. The replays the engine
  * ships are listed here too, marked and read-only. Pure DOM over `game/replay.ts`; every failure
  * goes to the menu's status line.
- * docs/replays.md, and docs/menu.md § Replays tab.
+ * docs/replays.md, and docs/menu-saves.md § Replays tab.
  */
 import {
   compatDrift,
@@ -274,7 +274,7 @@ export class ReplaysUi {
    * A list row: what tells one replay from another at a glance — its name, who played it, how long
    * it runs. Everything else is the panel's, one click away. A replay that cannot be played is
    * dimmed here with the reason on its tooltip, and the panel prints that reason in red beside the
-   * Play button it greys (docs/menu.md § Replays tab).
+   * Play button it greys (docs/menu-saves.md § Replays tab).
    */
   private makeRow(entry: ReplayListEntry): HTMLDivElement {
     const { meta } = entry;

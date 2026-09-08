@@ -10,7 +10,7 @@ import type { TeleportDest } from '../../src/game/specials.ts';
  * Boom's silent (207-210, 268/269) and line-to-line (243/244, 262-267)
  * teleporters. What separates them from vanilla 39/97 is the *arrival*: no
  * fog, a rotation rather than an absolute facing, and a preserved height.
- * See docs/specials.md § Silent and line-to-line teleporters.
+ * See docs/specials-teleporters.md § Silent and line-to-line teleporters.
  */
 describe('Specials · silent teleporters', () => {
   /**

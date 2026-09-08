@@ -185,7 +185,7 @@ export class SpriteFxLayer {
   /**
    * The spray a crushing mover wrings out of a body every damage pulse — thrown from `at`, the
    * body's middle, rather than placed, and starting at `S_BLOOD1` whatever the damage.
-   * See docs/specials.md § Crushers.
+   * See docs/specials-crushers.md § Crushers.
    */
   spawnCrushBlood(at: Pos3): void {
     const effect = this.spawn('BLUD', BLOOD_FRAMES, BLOOD_FRAME_SECONDS, at);
@@ -254,7 +254,7 @@ export class SpriteFxLayer {
   /**
    * Vanilla `P_Teleport`'s pair, for anything that teleports: a puff where the thing stood and
    * another ahead of where it lands. `destZ` is the landing floor, which only the caller can
-   * resolve. See docs/specials.md § Teleporters.
+   * resolve. See docs/specials-teleporters.md § Teleporters.
    */
   spawnTeleportPair(from: Pos3, dest: Placement, destZ: number): void {
     this.spawnTeleportFog(from);
@@ -390,7 +390,8 @@ export class SpriteFxLayer {
 
   /**
    * One tic of an effect thrown with momentum — the crusher's blood. Flies at its own speed, falls
-   * under `GRAVITY`, and sticks where it lands rather than sliding on. docs/specials.md § Crushers.
+   * under `GRAVITY`, and sticks where it lands rather than sliding on. docs/specials-crushers.md §
+   * Crushers.
    */
   private fly(e: OneShotEffect, dt: number): void {
     const motion = e.motion;

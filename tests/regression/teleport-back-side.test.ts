@@ -11,7 +11,7 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
  * can get out of teleporter" — without it, stepping off the pad you just landed
  * on crosses that pad's own teleport line and bounces you straight back.
  * Reported against freedoom2 MAP01's tag-3/tag-5 pair (sectors 167 and 133),
- * reproduced here on synthetic geometry. See docs/specials.md § Teleporters.
+ * reproduced here on synthetic geometry. See docs/specials-teleporters.md § Teleporters.
  */
 
 const WR_TELEPORT = 97;

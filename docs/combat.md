@@ -474,7 +474,7 @@ weapons are unaffected — `player.angle` is set from the same lock (`Math.atan2
 end of `Player.update`, after the frame's movement), so their perpendicular offset is exactly 0.
 
 The vertical half of the test only ever fires for the super shotgun, the one weapon with a
-`slopeSpread` (§ Spread), and only on the locked-on path: the free-shot `raycastMonster` is a 2D ray
+`slopeSpread` (docs/weapons.md § Spread), and only on the locked-on path: the free-shot `raycastMonster` is a 2D ray
 that carries no slope of its own, and admits any body inside `P_AimLineAttack`'s aim cone
 (§ The vertical test), so a wide pellet's *vertical* miss is not reproduced once it falls through to
 that branch.
@@ -683,7 +683,7 @@ splash starts at `S_BLOOD1` whatever the damage, it comes out of the body's midd
 a trace stopped, and it is **thrown**: `momx`/`momy` off the random table, and a fall to the floor,
 `MT_BLOOD` carrying no `MF_NOGRAVITY`. `SpriteFxLayer.spawnCrushBlood` is that one and
 `OneShotEffect.motion` is the only moving-effect machinery here besides the arch-vile's following
-flame; docs/specials.md § Crushers owns the rest.
+flame; docs/specials-crushers.md § Crushers owns the rest.
 
 `SpriteFxLayer.spawnBlood` is one `OneShotEffect` like any other. Two details are vanilla's and look
 arbitrary: the frame letters run **backwards** (`S_BLOOD1`-`3` are `BLUD` C, B, A at 8 tics each),
@@ -696,7 +696,7 @@ splashes into one sprite — the table has no two adjacent entries equal, so the
 exactly zero. `P_SpawnBlood`'s brief upward hop (`momz = 2` falling back under gravity) is
 deliberately **not** reproduced: it peaks about 3 units, which from overhead is nothing, and a
 splash that stays put is one `OneShotEffect.motion` less to integrate. The *crusher's* splash does
-move, and its `momx`/`momy` are far too big to drop — § below.
+move, and its `momx`/`momy` are far too big to drop — docs/specials-crushers.md § Crushers.
 
 **`ThingLayer.bleeds` is vanilla's `MF_NOBLOOD` flag**, which in all of stock DOOM exactly one thing
 carries — `MT_BARREL`, which takes a bullet puff instead. It is keyed by ID rather than type because
@@ -737,7 +737,7 @@ per-weapon flag: `P_SpawnPuff` skips to `S_PUFF3` (`PUFF_MELEE_FRAMES`) when `at
 MELEERANGE`, and `A_Saw` therefore traces `MELEERANGE+1` — with its own comment saying so — purely
 to dodge that test. `WEAPONS.chainsaw.meleeRange` carries the `+1` and `spawnPlayerShot` compares
 `shot.range` against `PLAYER_MELEE_RANGE`, so the mechanism is reproduced, not the outcome. In this
-engine it only ever shows on a barrel: a melee swing never traces geometry at all (§ WeaponSystem),
+engine it only ever shows on a barrel: a melee swing never traces geometry at all (docs/weapons.md § WeaponSystem),
 so unlike vanilla it can't puff against a wall.
 
 `S_PUFF1`'s `FF_FULLBRIGHT` is reproduced the way every fullbright frame is — `PUFFA` is in

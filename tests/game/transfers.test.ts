@@ -8,7 +8,7 @@ import { NO_SIDE } from '../../src/wad/map.ts';
  * Boom's render transfers as data: which sector or line each parameter number
  * marks, and what it resolves to. The rendering of them lives in
  * tests/render/water.test.ts and tests/render/translucency.test.ts.
- * See docs/specials.md § Render transfers.
+ * See docs/specials-transfers.md § Render transfers.
  */
 describe('Specials · render transfer scan', () => {
   test('213 and 261 point a sector at the control sector behind the line', () => {

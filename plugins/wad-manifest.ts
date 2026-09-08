@@ -14,7 +14,7 @@ export type WadRoot = 'iwad' | 'pwad';
  * Where a WAD sits under `public/game/`, relative to it and `/`-separated — also the URL path it is
  * served under. A root on its own (`pwad`), or a subfolder below one (`pwad/megawads`): both roots
  * are scanned recursively, so a collection can be filed the same way it would be on disk and the
- * menu shows it as a tree (docs/menu.md § WAD Library).
+ * menu shows it as a tree (docs/menu-wads.md § WAD Library).
  */
 export type WadFolder = string;
 

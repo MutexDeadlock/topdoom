@@ -6,7 +6,7 @@ import { NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
 
 /**
  * `Forces` runs on two clocks — the simulation's fixed tic for anything the
- * game reads, the frame delta for the visual offsets alone (docs/specials.md
+ * game reads, the frame delta for the visual offsets alone (docs/specials-forces.md
  * § Scrollers and conveyors). These pin that split, which is easy to collapse
  * by accident into "advance everything by `dt`" and would make a conveyor's
  * strength depend on the display it is drawn on.

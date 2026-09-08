@@ -76,7 +76,7 @@ and one stereo panner per voice, both computed the way `S_AdjustSoundParams` com
   channel instead of flushing the pool — which is why a second cull, § Same-tic bursts, stands in
   front of it. `AudioEngine.channelUsage` reports how much of the pool is live and how much the
   burst rule turned away, printed as the DEVMODE status text's sound-channel line
-  (docs/menu.md § Dev mode).
+  (docs/devmode.md § Dev mode).
 - **Origins** are vanilla's `origin` mobj pointer as a numeric key (`monsterOrigin`,
   `sectorOrigin`, `PLAYER_ORIGIN`, in disjoint ranges). One sound per origin at a time is
   what makes a held chaingun trigger sound like a chaingun instead of a dozen layered shots

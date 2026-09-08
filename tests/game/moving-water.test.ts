@@ -9,7 +9,7 @@ import type { Pos2 } from '../../src/types.ts';
 /**
  * A Boom 242 control sector whose floor moves moves the drawn water surface
  * with it — the two share no linedef, so the rebuild edge is explicit.
- * See docs/specials.md § Deep water.
+ * See docs/specials-transfers.md § Deep water.
  */
 
 /**

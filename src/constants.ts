@@ -4,7 +4,7 @@
  *
  * Cross-cutting, so there is no `docs/` page of its own: each dial is documented where it takes
  * effect — docs/render.md § View distance, docs/render-lighting.md § Sector lighting,
- * docs/sprites.md § Pickup scale, docs/menu.md § Dev mode, docs/frameloop.md.
+ * docs/sprites.md § Pickup scale, docs/devmode.md § Dev mode, docs/frameloop.md.
  */
 import { ThingType } from './game/things/doomednums.ts';
 
@@ -103,6 +103,6 @@ export const PICKUP_SCALE_TYPES: Set<number> = new Set([
  * (0 = invisible, 1 = opaque). **Tuned by feel** — vanilla's water surface is
  * opaque and hides whatever wades into it, which a camera looking straight down
  * cannot afford; this is the dial that decides how much of a submerged player
- * still reads through. docs/specials.md § Deep water.
+ * still reads through. docs/specials-transfers.md § Deep water.
  */
 export const WATER_SURFACE_ALPHA = 0.5;

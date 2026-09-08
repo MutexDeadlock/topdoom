@@ -2,7 +2,7 @@
  * The strings the menu labels its WAD and level rows with, plus the parts the two WAD lists render
  * them as — the detail columns and the small controls that sit among them. Formatting over what
  * `wad/library.ts` already resolved; no WAD is read here.
- * See docs/menu.md.
+ * See docs/menu-wads.md.
  */
 import type { MergedMap, WadSource } from '../../wad/library.ts';
 import { describeSupport, supportLevel, type SupportLevel } from '../../wad/support.ts';
@@ -15,10 +15,10 @@ function formatSize(bytes: number): string {
 
 /**
  * The three things a WAD row says about a file, kept apart so the two lists that have room for
- * columns can line them up down the list (docs/menu.md § WAD Library) — `sourceColumnSpans` below
- * is what renders them. `describeSource` joins the same values into one line for the IWAD select,
- * which has room for nothing else, so the two can't disagree about what a file is — only about how
- * much room there is to say it.
+ * columns can line them up down the list (docs/menu-wads.md § WAD Library) — `sourceColumnSpans`
+ * below is what renders them. `describeSource` joins the same values into one line for the IWAD
+ * select, which has room for nothing else, so the two can't disagree about what a file is — only
+ * about how much room there is to say it.
  *
  * The support verdict is deliberately **not** one of these: it is a coloured glyph, not text, and
  * the `<select>` holds only text. A game WAD's verdict is on its WAD Library row instead.
@@ -115,7 +115,7 @@ function metaSpan(kind: string, text: string): HTMLSpanElement {
  * source carrying no verdict says nothing rather than claiming the file is fine
  * (docs/wad.md § Will it run?). The info column sits in front of it and takes `onInfo`, being the
  * one column that is a control rather than a reading; a file with no text file renders it as a
- * spacer (docs/menu.md § The text file popup).
+ * spacer (docs/menu-wads.md § The text file popup).
  */
 export function sourceColumnSpans(src: WadSource, onInfo: () => void): HTMLElement[] {
   const { size, content, dehacked } = sourceColumns(src);
@@ -143,8 +143,8 @@ export function describeSource(src: WadSource): string {
   const parts = [size, src.maps.length > 0 ? content : `no maps (${content})`];
   if (dehacked) parts.push(dehacked);
   // What the file *is*, never where it sits: a library file's folder is already the row it was
-  // found under (docs/menu.md § WAD Library), and repeating it in every detail line only crowds
-  // the column. An upload belongs to no folder at all, so that one note stays.
+  // found under (docs/menu-wads.md § WAD Library), and repeating it in every detail line only
+  // crowds the column. An upload belongs to no folder at all, so that one note stays.
   if (src.origin === 'upload') parts.push('from disk');
   return parts.join(' · ');
 }

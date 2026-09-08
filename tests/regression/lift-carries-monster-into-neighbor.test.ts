@@ -17,7 +17,7 @@ import { crushSources } from '../fixtures/specialsrig.ts';
  * because nothing reported `nofit`. The player already had the straddle-aware
  * overhead (`World.groundCeiling`); monsters did not. Repro: GoingDown.wad
  * MAP03, the lift in sector 67 against the crawlspace in sector 7.
- * See docs/specials.md § Every other mover stops instead.
+ * See docs/specials-movers.md § Every other mover stops instead.
  */
 
 const DEMON = MONSTER_STATS[ThingType.demon];

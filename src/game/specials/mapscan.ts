@@ -146,7 +146,7 @@ function bossDeathSectors(map: DoomMap): number[] {
  *   exception (special 124) never appears as a `use` special in
  *   `LINE_SPECIALS`, so this engine has no exception at all.
  * - **The `side` a walk trigger hands `trigger`**, which only teleports act on
- *   — docs/specials.md § Teleporters.
+ *   — docs/specials-teleporters.md § Teleporters.
  */
 export function isFrontSide(ax: number, ay: number, bx: number, by: number, x: number, y: number): boolean {
   const dx = bx - ax;
@@ -334,7 +334,7 @@ export function scanSectors(map: DoomMap, pairs?: SwitchPairLookup): SectorScan 
  *
  * Iterated to a fixpoint because a water sector can itself be another one's
  * control sector; the loop is bounded by the set only ever growing.
- * docs/specials.md § Deep water.
+ * docs/specials-transfers.md § Deep water.
  */
 function addWaterDependents(map: DoomMap, out: Set<number>): void {
   const transfers = transfersOf(map);

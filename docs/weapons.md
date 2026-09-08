@@ -274,7 +274,7 @@ used to fly at 1000 while the cyberdemon's — already converted correctly — f
 
 **A melee swing is resolved entirely differently from every other shot**: `spawnPlayerShot` returns
 before `shotPath` even runs and just raycasts `WeaponDef.meleeRange` (vanilla's `MELEERANGE`, 64 —
-the chainsaw's own `+1` is about its puff, § Bullet puffs) along the aim angle. A swing doesn't
+the chainsaw's own `+1` is about its puff, docs/combat.md § Bullet puffs) along the aim angle. A swing doesn't
 travel, so it needs none of `shotPath`'s wall/step blocking, matching `A_Punch`/`A_Saw`. It needs no
 lock-on case either: `player.angle` is already set from the same `aim` the lock uses, so the ray
 finds a hovered monster on its own and simply can't reach one further off than the swing's range.

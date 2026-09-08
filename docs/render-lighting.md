@@ -24,7 +24,7 @@ bugs.
 another sector's light, and each of the three consumers reads a different one — flats take
 `floorLight`/`ceilingLight`, walls take the sector's own level untransferred, and sprites take the
 average of the two. The rules and their vanilla sources are in
-docs/specials.md § Transferred lighting; what the renderer carries for them is
+docs/specials-transfers.md § Transferred lighting; what the renderer carries for them is
 `FlatSurface.lightSector`, the sector a fan's colour actually came from, which is also what
 `MoverGeometry` files its relight index under. On a map with no transfer line all three are the
 sector's own light and nothing about this changes.

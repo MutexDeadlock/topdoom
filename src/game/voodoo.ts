@@ -1,7 +1,7 @@
 /**
  * Voodoo dolls: the extra player-1 starts a map places as script actors, carried around by
  * conveyors to fire walk lines and to take damage on the real player's behalf.
- * See docs/specials.md § Voodoo dolls.
+ * See docs/specials-forces.md § Voodoo dolls.
  */
 import {
   makePinnedMemo,
@@ -91,7 +91,7 @@ export class VoodooDolls {
    * `collect` runs only for a doll that actually moved, and before `cross`, which is vanilla's own
    * order — docs/items.md § Collecting things. A doll has no gravity: it rides whatever floor it
    * stands on (`groundFloor`), and one a belt pins against a wall skips the whole tic through the
-   * `rest` memo, the impulse compare being what breaks it. docs/specials.md § Voodoo dolls,
+   * `rest` memo, the impulse compare being what breaks it. docs/specials-forces.md § Voodoo dolls,
    * docs/movement.md § Pinned-body memo.
    */
   update(

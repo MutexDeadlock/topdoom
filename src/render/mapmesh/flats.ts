@@ -160,7 +160,7 @@ export function flatSpecsOf(
   // Boom's 242. Vanilla picks one of two views by where the eye is; a deep pool draws both at
   // once, so a player who wades in stays visible. Too shallow for that, and the one fan is
   // vanilla's above-water view; a control sector *below* instead is the invisible-platform idiom,
-  // one fan at `drawnFloor`. docs/specials.md § Deep water.
+  // one fan at `drawnFloor`. docs/specials-transfers.md § Deep water.
   const surfaceHeight = transfers.waterHeight(poly.sector);
   const deep = surfaceHeight !== null && surfaceHeight - sector.floorHeight >= WATER_MIN_DEPTH;
   // A bottom a mover has raised clear of the surface keeps the control sector's flat and light
@@ -220,7 +220,7 @@ export function flatSpecsOf(
   // Which pool's surface covers this fan: this sector's own, or — for a sector walled in by a pool
   // but left out of its tag — that pool's, so the sheet runs over the island rather than stopping
   // at it. Only where the island is submerged: a chamber whose ceiling stands above the surface is
-  // dry inside, whatever surrounds it. docs/specials.md § Deep water.
+  // dry inside, whatever surrounds it. docs/specials-transfers.md § Deep water.
   const island = deep ? -1 : transfers.poolIsland(poly.sector);
   const islandSurface = island < 0 ? null : transfers.waterHeight(island);
   const submerged = islandSurface !== null && sector.ceilHeight <= islandSurface;
@@ -688,7 +688,7 @@ interface FlatSpec {
 /**
  * How much water a Boom 242 sector needs before its surface is drawn over a pool bottom rather
  * than simply *being* the drawn floor. **Tuned by feel** against the artifact it stops: two fans
- * a map unit apart z-fight (BOOMEDIT MAP01 sector 405). docs/specials.md § Deep water.
+ * a map unit apart z-fight (BOOMEDIT MAP01 sector 405). docs/specials-transfers.md § Deep water.
  */
 const WATER_MIN_DEPTH = 8;
 

@@ -53,7 +53,7 @@ export const CRUSH_DAMAGE = 10;
  * Ticked as **one clock shared by every crusher on the map**, not a per-mover
  * countdown — `SpecialsController`'s `crushDamageTimer`/`crushDamageDue`, the
  * same shared-clock shape `MOVE_SOUND_INTERVAL` uses for the grind sound.
- * docs/specials.md § Crushers has why a per-mover countdown is wrong.
+ * docs/specials-crushers.md § Crushers has why a per-mover countdown is wrong.
  */
 export const CRUSH_DAMAGE_INTERVAL = 4 * DOOM_TIC;
 /**
@@ -64,7 +64,8 @@ export const CRUSH_SLOWDOWN = 8;
 /**
  * How tall a corpse is against the living body's `mobjinfo.height` — `P_KillMobj`'s
  * `target->height >>= 2`. Only the squish test reads it (`squashCorpses`): a corpse blocks nothing
- * here, so nothing else in this engine cares how tall one is. docs/specials.md § Crushed corpses.
+ * here, so nothing else in this engine cares how tall one is. docs/specials-crushers.md § Crushed
+ * corpses.
  */
 export const CORPSE_HEIGHT_FRACTION = 1 / 4;
 
@@ -176,7 +177,7 @@ export interface DoorEffect {
    * the five repeatable raise numbers it names literally (1/26-28/117), so
    * this is set on exactly those and nothing else. Absent everywhere else on
    * purpose: a generalized Push door is `manual` and `openClose` too, but
-   * falls outside that switch. See docs/specials.md § Retriggering a door.
+   * falls outside that switch. See docs/specials-movers.md § Retriggering a door.
    */
   reverseWhenMoving?: true;
 }
@@ -190,7 +191,7 @@ export interface DoorEffect {
  *
  * `'toggle'` is Boom's `toggleUpDn` (211/212), the odd one out: it snaps the
  * floor between its own start height and its ceiling with no travel time and
- * no wait, crushing whatever is between — docs/specials.md § Toggle plats.
+ * no wait, crushing whatever is between — docs/specials-movers.md § Toggle plats.
  */
 export type LiftTarget =
   | 'lowestNeighborFloor'
@@ -235,7 +236,7 @@ export type MoveTarget =
   /**
    * The 36/70/71/98 family's own target, named for its `EV_DoFloor` case rather than its
    * arithmetic: the highest neighbor, plus 8 **only where that differs from the sector's own
-   * floor**. Not a reusable "+8" — see docs/specials.md § The turboLower quad.
+   * floor**. Not a reusable "+8" — see docs/specials-movers.md § The turboLower quad.
    */
   | 'turboLower'
   /**
@@ -294,7 +295,7 @@ export interface FloorEffect {
    * chasing. It only bites when the resolved target lands on the *far* side of
    * it — `T_MovePlane`'s first step then clamps straight there and reports
    * `pastdest` instead of travelling the wrong way at mover speed
-   * (`FloorMover.direction`). docs/specials.md § Inverted plane moves.
+   * (`FloorMover.direction`). docs/specials-movers.md § Inverted plane moves.
    */
   direction: 'up' | 'down';
   /**
@@ -330,7 +331,7 @@ export interface ExitEffect {
  * Ceiling repeatedly lowers to floor+`EIGHT_UNIT_GAP`, then returns to its
  * start height, forever, dealing `CRUSH_DAMAGE` every `CRUSH_DAMAGE_INTERVAL`
  * to anyone it doesn't leave room for — **only while lowering**, never on the
- * way back up. docs/specials.md § Crushers.
+ * way back up. docs/specials-crushers.md § Crushers.
  */
 export interface CrusherEffect {
   kind: 'crusher';
@@ -347,7 +348,7 @@ export interface CrusherEffect {
    * at `CRUSH_SLOWDOWN`-th speed, restored to full at the bottom. Set on
    * 25/49/73/141 and deliberately not on the fast pair 6/77. Not cosmetic — it
    * multiplies the damage a single stroke deals by eight.
-   * docs/specials.md § Crushers.
+   * docs/specials-crushers.md § Crushers.
    */
   slowsWhenCrushing: boolean;
   /**
@@ -368,7 +369,7 @@ export interface CrusherStopEffect {
  * Every teleport number, vanilla and Boom, in one effect — the three optional
  * axes are exactly what separates Boom's silent family from vanilla's 39/97.
  * Absent means the vanilla behavior, so the four vanilla entries are unchanged.
- * See docs/specials.md § Silent and line-to-line teleporters.
+ * See docs/specials-teleporters.md § Silent and line-to-line teleporters.
  */
 export interface TeleportEffect {
   kind: 'teleport';
@@ -452,7 +453,7 @@ export type CeilingTarget =
  * damage** despite the latter's name — so this shape carries no `crush` field
  * and `game/specials.ts`'s `CeilingMover` has no damage handling. Special 40's
  * *floor* half is faithfully omitted (`tables.ts`).
- * docs/specials.md § One-way ceiling movers has the source for both.
+ * docs/specials-movers.md § One-way ceiling movers has the source for both.
  */
 export interface CeilingEffect {
   kind: 'ceiling';
@@ -462,7 +463,7 @@ export interface CeilingEffect {
    * `ceiling->direction`, the mirror of `FloorEffect.direction` and fixed the
    * same way — by the `EV_DoCeiling` case this number belongs to
    * (`p_ceilng.c`), never re-derived from the height being chased.
-   * docs/specials.md § Inverted plane moves.
+   * docs/specials-movers.md § Inverted plane moves.
    */
   direction: 'up' | 'down';
   /**
@@ -524,7 +525,7 @@ export interface RaiseToTextureEffect {
  * then copies the texture and `special` of whichever neighbor already sits at
  * that height — **on arrival, not at trigger time** (`T_MoveFloor`'s `pastdest`
  * branch). A genuinely different texture-source rule from
- * `FloorEffect.changeTexture`'s. See docs/specials.md § raiseToTexture,
+ * `FloorEffect.changeTexture`'s. See docs/specials-movers.md § raiseToTexture,
  * lowerAndChange.
  */
 export interface LowerAndChangeEffect {
@@ -537,7 +538,7 @@ export interface LowerAndChangeEffect {
  * also taking its texture on arrival. Ring and outer sector are discovered at
  * trigger time, as arbitrarily as vanilla's own search. This engine does
  * vanilla's two-sided check *correctly* rather than reproducing its
- * operator-precedence bug. docs/specials.md § The donut.
+ * operator-precedence bug. docs/specials-movers.md § The donut.
  */
 export interface DonutEffect {
   kind: 'donut';
@@ -619,7 +620,7 @@ export type LockRule =
  *
  * A **voodoo doll** gates like the player it is a copy of, with two differences: its teleport
  * destination comes back to the caller the way a monster's does, and it raises no HUD feedback.
- * docs/specials.md § Voodoo dolls.
+ * docs/specials-forces.md § Voodoo dolls.
  */
 export type Activator = 'player' | 'monster' | 'voodoo';
 

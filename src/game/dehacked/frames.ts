@@ -283,7 +283,8 @@ export interface FrameTables {
   } | null;
   /**
    * `S_GIBS`' own art — the pool a crushed corpse becomes. Null where the chain draws nothing at
-   * all, which is a patch's doing: vanilla always has it. docs/specials.md § Crushed corpses.
+   * all, which is a patch's doing: vanilla always has it. docs/specials-crushers.md § Crushed
+   * corpses.
    */
   gibs: { sprite: string; frames: string[] } | null;
 }
@@ -674,7 +675,8 @@ const GIBS_STATE = STATES.findIndex((row) => row[5] === 'S_GIBS');
 
 /**
  * `S_GIBS`' chain off the patched table — one held frame in vanilla, and whatever a patch that
- * repoints its sprite or gives it a tail leaves behind. docs/specials.md § Crushed corpses.
+ * repoints its sprite or gives it a tail leaves behind. docs/specials-crushers.md § Crushed
+ * corpses.
  */
 function deriveGibs(states: readonly StateRow[]): FrameTables['gibs'] {
   if (GIBS_STATE < 0) return null;

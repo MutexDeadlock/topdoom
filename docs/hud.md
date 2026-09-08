@@ -7,7 +7,7 @@
 Everything on screen that isn't the world. What the readouts *report* — the inventory, pickups and
 powerups behind them — is docs/items.md. The two other things drawn over a running level are
 documented where they are raised: `src/ui/hud/deathoverlay.ts` in docs/death.md § Player death, and
-the profiling overlay `src/ui/hud/profiler.ts` in docs/menu.md § Profiling overlay.
+the profiling overlay `src/ui/hud/profiler.ts` in docs/devmode.md § Profiling overlay.
 
 ## The HUD
 
@@ -319,7 +319,7 @@ Control flow, continuing § Intermission's:
   both popups.
 - The card's continue key loads `nextMapIndex` where there is one, and otherwise calls `Game`'s
   `onCampaignEnd` port — the session layer's cue to dispose the `Game` and reopen the menu as a
-  launcher (docs/menu.md § Session lifecycle).
+  launcher (docs/session.md § Session lifecycle).
 - Both popups freeze the level identically — `tic` advances nothing, `frame` draws at the tic-exact
   pose, `saveRefusal` refuses both — and both print their lines with `hud.ts: drawText`, the shared
   half of every card in this directory.
@@ -550,10 +550,10 @@ Boom's 242 colormaps get a third element, `#colormap-tint`, at the same `--z-tin
 the powerup tints in being a **multiply** blend rather than a wash, because that is all a colormap
 can do — take light away — and in being driven from `game.ts` rather than from inventory state:
 which of the control sector's colormaps applies depends on the player's eye height against that
-sector (docs/specials.md § Deep water). `Game.viewColormap` resolves it,
+sector (docs/specials-transfers.md § Deep water). `Game.viewColormap` resolves it,
 `ScreenEffects.setColormapTint` writes it, and `reset` clears it with the rest. **The underwater
-colormap is deliberately never applied** — see docs/specials.md § Deep water for why the top-down
-camera can't wear it.
+colormap is deliberately never applied** — see docs/specials-transfers.md § Deep water for why the
+top-down camera can't wear it.
 
 **Invulnerability's tint, the suit's tint and invisibility's sprite translucency all blink for their
 last `POWER_BLINK_WARNING_SECONDS` (3s)**, via the shared `powerBlinkVisible(secondsLeft)`. Not a

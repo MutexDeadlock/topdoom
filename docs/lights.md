@@ -652,7 +652,7 @@ fails leaves the base empty and the game unlit rather than unplayable.
 
 ## Profiling
 
-`commit` reports under the `Lights` row of the profiler overlay (docs/menu.md § Profiling
+`commit` reports under the `Lights` row of the profiler overlay (docs/devmode.md § Profiling
 overlay). Note that this is CPU only — the per-pixel cost of the fragment loop lands on the GPU,
 where it shows up in the frame total rather than in any row.
 

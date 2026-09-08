@@ -255,11 +255,11 @@ just the one under its centre — vanilla's `touching_sectorlist`, built by `P_C
 iterator applies: the body's box must overlap the line's bounding box, and `boxOnLineSide` must not
 put the box wholly on one side. Both sectors of a surviving line join the list, centre sector first.
 
-Every force that belongs to a *sector* rather than a point reads this (docs/specials.md § Friction,
-§ Scrollers and conveyors, § Pushers), and it exists because the centre-point answer is genuinely
-wrong for them: a player straddling the edge of a conveyor or an ice patch is standing on it in
-vanilla, and `sectorAt` alone would say they aren't. That is the same straddle rule `groundFloor`
-already follows for heights, arrived at from the other direction.
+Every force that belongs to a *sector* rather than a point reads this (docs/specials-forces.md §
+Friction, § Scrollers and conveyors, § Pushers), and it exists because the centre-point answer is
+genuinely wrong for them: a player straddling the edge of a conveyor or an ice patch is standing on
+it in vanilla, and `sectorAt` alone would say they aren't. That is the same straddle rule
+`groundFloor` already follows for heights, arrived at from the other direction.
 
 The result is written into a caller-owned array so the per-tic queries reuse one; the membership
 check inside is a linear `includes` rather than a `Set`, since the list is a handful of entries even
@@ -337,7 +337,8 @@ door's "open" target at its own closed height instead of the corridor's actual c
 vanilla never calls with anything but the sector's own light level as its `max` — so it only ever
 lowers from there, and a sector surrounded entirely by brighter ones dims to its own level rather
 than *up* to the darkest neighbour. Nothing here is left with nowhere to go, since a light pattern
-with min == max is a legal outcome — one the strobes then override (docs/specials.md § Lights).
+with min == max is a legal outcome — one the strobes then override (docs/specials-lights.md §
+Lights).
 
 ### Self-referencing lines
 
@@ -408,8 +409,8 @@ destination to appear mid-run.
 
 `sectorsByTag` backs `resolveTargets` (`specials/mapscan.ts`), which every tag-driven trigger goes
 through, and the boss-death `triggerTag`. `linesByTag` exists for Boom's line-to-line teleporters
-(docs/specials.md § Silent and line-to-line teleporters), the one family whose tag names a linedef
-rather than a sector.
+(docs/specials-teleporters.md § Silent and line-to-line teleporters), the one family whose tag names
+a linedef rather than a sector.
 
 Measured on the same EPIC.WAD MAP03: resolving one tag per tagged special line (218 of them, what
 `scanSectors` does at load and what every trigger repeats at runtime) went from 0.35 ms

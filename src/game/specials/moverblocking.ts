@@ -3,7 +3,7 @@
  * through (`Occupancy`): crush damage, the corpse squish, and the two obstruction tests that stall
  * or reverse a mover. The controller owns the moving geometry and knows only a sector index — plus,
  * for the two obstruction tests, the height its next step would put the plane at. See
- * docs/specials.md § Crushers, § Crushed corpses and § Every other mover stops instead.
+ * docs/specials-crushers.md § Crushers, § Crushed corpses and § Every other mover stops instead.
  */
 import type { DoomMap, Sector } from '../../wad/map.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
@@ -19,7 +19,7 @@ import { CORPSE_HEIGHT_FRACTION, CRUSH_DAMAGE } from './defs.ts';
  * squish it commands. It owns the moving geometry and reaches the level's bodies through this; the
  * rig in `tests/fixtures/specialsrig.ts` supplies its own to drive a mover into an obstruction with
  * no body anywhere near the sector.
- * docs/specials.md § Crushers, § Crushed corpses and § Every other mover stops instead.
+ * docs/specials-crushers.md § Crushers, § Crushed corpses and § Every other mover stops instead.
  */
 export interface Occupancy {
   /** A closing door or lowering ceiling — see `blocksCeilingLower`. */
@@ -77,7 +77,7 @@ const neighborhoods = new WeakMap<DoomMap, Map<number, Set<Sector>>>();
  * sector's moving plane has left without the headroom to stand in, and sprays blood out of each.
  * Gated on `crushed` rather than on merely standing in the sector, so a crusher parked at the top
  * of its travel deals none. Monsters and barrels share one loop, matching `PIT_ChangeSector`
- * treating any shootable mobj the same. docs/specials.md § Crushers.
+ * treating any shootable mobj the same. docs/specials-crushers.md § Crushers.
  */
 export function applyCrushDamage(
   world: World,
@@ -104,7 +104,7 @@ export function applyCrushDamage(
     // so this is not an edge case. Damage is dealt once per body caught, exactly
     // as vanilla's per-mobj loop does. A doll sprays no blood, unlike the player it stands for:
     // `dolls` carries no height to spray it at, and a doll is drawn as nothing anyway.
-    // docs/specials.md § Voodoo dolls.
+    // docs/specials-forces.md § Voodoo dolls.
     for (const body of dolls) {
       if (!crushed(world, body.x, body.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) continue;
       caught = true;
@@ -128,7 +128,7 @@ export function applyCrushDamage(
       if (!dealDamage) continue;
       // Before the damage, as `PTR_ShootTraverse` does it: whatever this blow kills still
       // bleeds. `bleeds` is `MF_NOBLOOD`, so a barrel takes the pulse without spraying —
-      // vanilla checks no flag here at all (docs/specials.md § Crushers).
+      // vanilla checks no flag here at all (docs/specials-crushers.md § Crushers).
       if (things?.bleeds(m.id)) sprayBlood({ x: m.x, y: m.y, z: m.z + m.height / 2 });
       things?.damage(m.id, CRUSH_DAMAGE);
     }
@@ -141,7 +141,7 @@ export function applyCrushDamage(
  * corpse's own height is crunched to a pool of blood. Unlike crush damage this is not rationed on
  * the damage clock and not the crushers' alone — vanilla runs it from `P_ChangeSector` after *any*
  * plane move, which is what squashes a body under an ordinary closing door.
- * docs/specials.md § Crushed corpses.
+ * docs/specials-crushers.md § Crushed corpses.
  */
 export function squashCorpses(world: World, things: ThingLayer | null, sectorIndex: number): void {
   if (!things) return;
@@ -207,7 +207,7 @@ function blocksCeilingLower(
  * lower-ceilinged neighbor, `groundFloor` already pins the body's `z` to this sector's rising
  * floor, so the neighbor's own (unmoving) ceiling is what would actually crush it. Without this
  * the mover carries the body up into that neighbor and pins it there.
- * docs/specials.md § Every other mover stops instead.
+ * docs/specials-movers.md § Every other mover stops instead.
  */
 function blocksFloorRise(
   world: World,
@@ -294,7 +294,7 @@ interface SectorSlot {
  * mover's next step would leave — `blocksCeilingLower`'s test, where the plane
  * coming down is this sector's own. Each body is measured against its **own**
  * height (`MonsterRef.height`), so a door closes on a cyberdemon well before it
- * would on an imp. docs/specials.md § Every other mover stops instead.
+ * would on an imp. docs/specials-movers.md § Every other mover stops instead.
  */
 function headroomBlocked(world: World, things: ThingLayer | null, player: Pos2, slot: SectorSlot): boolean {
   const { sectorIndex, floorHeight, ceilingHeight } = slot;
@@ -344,7 +344,7 @@ function crushNeighborhood(map: DoomMap, sectorIndex: number): ReadonlySet<Secto
  * here fall short of its own height, and is the mover's sector what took that headroom away.
  * Measured against the openings its box spans (`World.headroom`), never the sector's gap at its
  * centre point — a body pinned half under a descending ceiling is crushed. Height first: it rejects
- * everyone in an ordinary room for one box walk. docs/specials.md § Crushers.
+ * everyone in an ordinary room for one box walk. docs/specials-crushers.md § Crushers.
  *
  * The box stays **scalars**, matching `world.headroom` and `boxOverlapsSector` — the
  * coordinate exception in docs/conventions.md § Named arguments; a record here would only move the

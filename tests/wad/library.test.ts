@@ -86,7 +86,7 @@ describe('WAD parsing · the menu level list', () => {
 /**
  * What the loading screen's bar is fed while a set downloads — the aggregate across files, against
  * a total that must be known before the first byte and must not move.
- * See docs/menu.md § The loading screen.
+ * See docs/session.md § The loading screen.
  */
 describe('WAD parsing · download progress', () => {
   /**

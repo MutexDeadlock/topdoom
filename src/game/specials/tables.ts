@@ -160,7 +160,7 @@ function floor(
  * Boom's silent teleport to a landing marker (207-210, 268/269). Every one is
  * monster-activatable — `p_spec.c`'s crossing allow-list and `p_switch.c`'s
  * use allow-list both name them — and every one clears its line only on
- * success, unlike vanilla 39. See docs/specials.md § Silent and line-to-line
+ * success, unlike vanilla 39. See docs/specials-teleporters.md § Silent and line-to-line
  * teleporters.
  */
 function silentTeleport(
@@ -422,7 +422,7 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   // One-way ceiling movers — see CeilingEffect's doc. 44/72 deal no damage
   // despite the "crush" in their name, and 40 ("RaiseCeilingLowerFloor") is
   // deliberately ceiling-only: its floor half is unreachable in vanilla too.
-  // docs/specials.md § One-way ceiling movers has both traces.
+  // docs/specials-movers.md § One-way ceiling movers has both traces.
   40: { trigger: 'walk', repeatable: false, effect: ceiling('highestNeighborCeiling') },
   44: { trigger: 'walk', repeatable: false, effect: ceiling('floorPlus8') },
   72: { trigger: 'walk', repeatable: true, effect: ceiling('floorPlus8') },
@@ -439,7 +439,7 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
 
   // Stair builders — 7/8 are 8-unit steps, 100/127 16-unit turbo steps. None
   // carries a crush effect: the wiki's "...and Crush" naming of 100/127 is
-  // wrong and the source settles it. docs/specials.md § Crushers.
+  // wrong and the source settles it. docs/specials-crushers.md § Crushers.
   7: { trigger: 'use', repeatable: false, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
   8: { trigger: 'walk', repeatable: false, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
   100: {
@@ -531,7 +531,7 @@ export const DAMAGE_FLOOR_INTERVAL = 32 * DOOM_TIC;
  * Everything in this set is implemented, by one of two owners: `forces.ts` for
  * the numbers that change how things move, `transfers.ts` for the ones that
  * change how a sector is drawn.
- * docs/specials.md § Scrollers and conveyors, § Friction, § Pushers, § Render transfers.
+ * docs/specials-forces.md § Scrollers and conveyors, § Friction, § Pushers, § Render transfers.
  */
 export const PARAM_LINE_SPECIALS: Set<number> = new Set([
   48, // scroll wall left — vanilla's own, and Boom's `Add_Scroller(sc_side, FRACUNIT, 0)`
@@ -689,7 +689,7 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   // Grouped by family rather than by trigger: the whole point of these
   // fourteen numbers is the three axes below, and reading them down the
   // columns is how they were checked against `p_spec.c`/`p_switch.c`.
-  // docs/specials.md § Silent and line-to-line teleporters.
+  // docs/specials-teleporters.md § Silent and line-to-line teleporters.
   207: silentTeleport('walk', false),
   208: silentTeleport('walk', true),
   209: silentTeleport('use', false),
@@ -699,7 +699,7 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
 
   // Toggle plats.
   // `EV_DoPlat(toggleUpDn)`: speed and wait are set but never used, since each
-  // stroke is instant — docs/specials.md § Toggle plats.
+  // stroke is instant — docs/specials-movers.md § Toggle plats.
   211: { trigger: 'use', repeatable: true, effect: lift(LIFT_SPEED, LIFT_WAIT, 'toggle') },
   212: { trigger: 'walk', repeatable: true, effect: lift(LIFT_SPEED, LIFT_WAIT, 'toggle') },
 
@@ -776,7 +776,7 @@ export function lookupSpecial(special: number): SpecialDef | null {
  * `Sector.special` values spawning a one-shot delayed door at map load rather
  * than waiting for a linedef trigger — `P_SpawnDoorCloseIn30`/
  * `P_SpawnDoorRaiseIn5Mins`. Each assumes the sector starts in the opposite
- * state. docs/specials.md § Delayed doors.
+ * state. docs/specials-movers.md § Delayed doors.
  */
 export const SECTOR_DOOR_SPECIALS: Record<number, SectorDoorTimer> = {
   10: 'closeIn30',

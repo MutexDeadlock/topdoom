@@ -34,7 +34,7 @@ means a corpse still participates in fog-of-war fading exactly as it did alive.
 be re-targeted.
 
 **A corpse is not the end of it**: a door, floor or crusher that leaves it no headroom crunches it
-to a pool of blood — docs/specials.md § Crushed corpses.
+to a pool of blood — docs/specials-crushers.md § Crushed corpses.
 
 **A corpse left in the air falls.** `P_KillMobj` strips `MF_NOGRAVITY` from everything it kills
 except `MT_SKULL`, so a cacodemon shot off its hover (docs/monster-ai.md § Floating monsters) or a
@@ -96,8 +96,8 @@ returns 0 on a failed move — so anything standing on the far pad (another mons
 player) leaves the monster exactly where it was, and *nothing* is damaged: vanilla bails on the
 first body in the way, before dealing any of the stomps it would otherwise have dealt. The gate is
 `monstersTelefrag(mapName)`, vanilla's `gamemap` check, resolved once per level at load the way the
-boss-death table is. The one-shot line is still spent (§ Teleporters in docs/specials.md), same as
-any other blocked teleport.
+boss-death table is. The one-shot line is still spent (docs/specials-teleporters.md § Teleporters),
+same as any other blocked teleport.
 
 Only **shootable** bodies are stomped or block: monsters and barrels, `MF_SHOOTABLE`. A solid
 decoration is neither — a floor lamp on the landing pad is passed straight through. The overlap is
@@ -348,7 +348,7 @@ applies here for free.
 **A crusher can kill a barrel**, exactly as vanilla's crush damage (real `P_DamageMobj` against
 anything `MF_SHOOTABLE`) allows — `ThingLayer.crushablesInSectors` covers barrels alongside
 `MONSTER_TYPES` for this one caller, rather than widening the `MONSTER_TYPES`-gated
-`monstersInSector` every other system relies on. See docs/specials.md § Crushers.
+`monstersInSector` every other system relies on. See docs/specials-crushers.md § Crushers.
 
 ## Boss death
 

@@ -16,7 +16,7 @@ import { savedThing } from '../fixtures/snapshot.ts';
 /**
  * `PIT_ChangeSector`'s corpse branch: a body a moving plane leaves no room for is crunched to a
  * pool of blood, at a quarter of its living height and under any mover at all — not only a crusher,
- * and on no damage clock. docs/specials.md § Crushed corpses.
+ * and on no damage clock. docs/specials-crushers.md § Crushed corpses.
  */
 
 const DEMON = MONSTER_STATS[ThingType.demon];

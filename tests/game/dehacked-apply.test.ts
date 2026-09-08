@@ -530,8 +530,8 @@ describe('DEHACKED · applying', () => {
 
   /**
    * `S_GIBS` is reached by name, not by walking a `mobjinfo` chain — no thing's states point at it
-   * — so it is the one derived pose that could silently miss a patch. docs/specials.md § Crushed
-   * corpses.
+   * — so it is the one derived pose that could silently miss a patch. docs/specials-crushers.md §
+   * Crushed corpses.
    */
   test('a repointed S_GIBS moves what a crushed corpse is drawn as', () => {
     assert.deepEqual({ ...CORPSE_GIB }, { sprite: 'POL5', frames: ['A'] });

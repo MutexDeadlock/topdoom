@@ -1,6 +1,6 @@
 /**
  * The profiling overlay: per-category frame-time bars against the 60fps budget.
- * See docs/menu.md § Profiling overlay.
+ * See docs/devmode.md § Profiling overlay.
  */
 import type { FrameProfiler } from '../../util/profiler.ts';
 import { DEVMODE } from '../../constants.ts';
@@ -27,7 +27,7 @@ let visible: boolean | null = null;
 /**
  * Whether the overlay is wanted. Defaults to `DEVMODE` — a dev build shows it
  * as it did before the checkbox existed, a release build starts hidden — and a
- * stored choice overrides that either way. See docs/menu.md § Profiling overlay.
+ * stored choice overrides that either way. See docs/devmode.md § Profiling overlay.
  */
 export function getProfilerVisible(): boolean {
   // Memoized because `Game.draw` asks every frame to decide whether to run the GPU timer, and the
@@ -47,7 +47,7 @@ export function setProfilerVisible(on: boolean): void {
  * The per-category timing overlay (top-right — see profiler.css). Renders `FrameProfiler`'s
  * smoothed samples as bars sized against one 60fps frame's budget rather than against each other,
  * so bar *length* alone says whether a category is the reason a frame is being missed.
- * docs/menu.md § Profiling overlay.
+ * docs/devmode.md § Profiling overlay.
  *
  * Rows are created lazily and reused, the same "build once, update every frame" shape `Hud` uses,
  * and re-sorted worst-first on each update (`appendChild` on an existing child just moves it).
@@ -85,7 +85,7 @@ export class ProfilerHud {
     // which cannot see the GPU — a scene whose fragment work takes 20 ms still reports a few
     // milliseconds and a four-figure "fps eq." while the game runs at 50. The HUD's own FPS
     // counter is the real rate; this is the ceiling the CPU alone would allow.
-    // docs/menu.md § Profiling overlay.
+    // docs/devmode.md § Profiling overlay.
     this.cpuEl.textContent = msRow('cpu', totalMs);
     // The two totals are concurrent, not cumulative: the larger one is what sets the frame rate,
     // and a frame that is GPU-bound shows a small `cpu` beside a large `gpu`. `n/a` is the honest

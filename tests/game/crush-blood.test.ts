@@ -17,7 +17,7 @@ import { stepFor } from '../fixtures/tics.ts';
 
 /**
  * `PIT_ChangeSector`'s other half: every crush pulse also sprays `MT_BLOOD` out of the body it
- * damaged, at that body's middle. docs/specials.md § Crushers.
+ * damaged, at that body's middle. docs/specials-crushers.md § Crushers.
  */
 
 const DEMON = MONSTER_STATS[ThingType.demon];

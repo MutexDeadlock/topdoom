@@ -1,6 +1,6 @@
 /**
  * The session: boots the page, runs the menu as launcher and pause screen, starts and tears down
- * one `Game` per level, and autosaves around the edges. See docs/menu.md § Session lifecycle.
+ * one `Game` per level, and autosaves around the edges. See docs/session.md § Session lifecycle.
  */
 import { Wad } from './wad/wad.ts';
 import { mapProvider, wadSetId } from './wad/checksum.ts';
@@ -49,7 +49,7 @@ async function boot(): Promise<void> {
   const audio = new AudioEngine();
   /**
    * Session-level like the AudioEngine, and already on screen: `#loading` is the boot overlay, and
-   * every level load after it takes the same screen (docs/menu.md § The loading screen).
+   * every level load after it takes the same screen (docs/session.md § The loading screen).
    */
   const loading = new LoadingScreen();
   let game: Game | null = null;
@@ -112,7 +112,7 @@ async function boot(): Promise<void> {
         autoSave: () => withCapture((capture) => writeSave(capture, takeOverSaveName(replay, capture))),
         checkpoint: { write: writeAutosave, read: readAutosave },
         // Nulled before `dispose()` — the call arrives from inside this very `Game`'s tic — and
-        // the menu reopens as a launcher (docs/menu.md § Session lifecycle).
+        // the menu reopens as a launcher (docs/session.md § Session lifecycle).
         onCampaignEnd: () => {
           const finished = game;
           game = null;
@@ -314,8 +314,8 @@ async function boot(): Promise<void> {
   }
 
   // Whatever just took the screen replaces `#loading`, which is in the page from
-  // the first paint (docs/menu.md § Session lifecycle). A deep link's own load has already put it
-  // back up and taken it down again by now; this is the boot screen's own hand-over.
+  // the first paint (docs/session.md § Session lifecycle). A deep link's own load has already put
+  // it back up and taken it down again by now; this is the boot screen's own hand-over.
   loading.hide();
 }
 
@@ -351,7 +351,7 @@ function verifySaveWads(wad: Wad, save: SaveWadSet): void {
 /**
  * `#fatal-error` sits above `#loading` on the stacking ladder, so it covers the boot screen rather
  * than having to take it down. Why `new Viewport` is the one call wrapped, and why the GPU-specific
- * message is conditional: docs/menu.md § Session lifecycle.
+ * message is conditional: docs/session.md § Session lifecycle.
  */
 function showFatalError(err: unknown): void {
   const overlay = document.getElementById('fatal-error')!;

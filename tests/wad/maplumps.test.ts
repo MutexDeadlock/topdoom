@@ -7,7 +7,7 @@ import { fixtureWad } from '../fixtures/wadfile.ts';
 /**
  * `mapLinedefBytes` answers from the lump directory alone, which is the whole point: `game.ts`
  * asks it how big a map is *before* deciding whether building it needs the loading screen.
- * See docs/menu.md § The loading screen.
+ * See docs/session.md § The loading screen.
  */
 describe('WAD parsing · map size without loading', () => {
   const wad = new Wad(fixtureWad('doom1_e1m1.wad'));

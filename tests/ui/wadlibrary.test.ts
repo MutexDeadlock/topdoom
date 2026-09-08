@@ -4,10 +4,10 @@ import { buildFolderTree, filterTree, scanResult } from '../../src/ui/menu/libra
 import type { WadSource } from '../../src/wad/library.ts';
 
 /**
- * The WAD Library overlay's left pane (docs/menu.md § WAD Library). The tree is a flat list of rows
- * carrying their own depth, built purely from the sources the menu holds — which is what lets it be
- * checked without a DOM. What matters is the grouping: which files land under which row, that a
- * parent folder always precedes its children, and that a row lists its own WADs while counting
+ * The WAD Library overlay's left pane (docs/menu-wads.md § WAD Library). The tree is a flat list of
+ * rows carrying their own depth, built purely from the sources the menu holds — which is what lets
+ * it be checked without a DOM. What matters is the grouping: which files land under which row, that
+ * a parent folder always precedes its children, and that a row lists its own WADs while counting
  * everything at or below it.
  */
 function source(key: string, over: Partial<WadSource> = {}): WadSource {
@@ -294,8 +294,9 @@ describe('WAD library · what a scan reports', () => {
 });
 
 /**
- * The header's filter, over the same tree (docs/menu.md § WAD Library). It has to reach both kinds
- * of row: a file name pulls the folders holding it on screen, and a folder name opens the folder.
+ * The header's filter, over the same tree (docs/menu-wads.md § WAD Library). It has to reach both
+ * kinds of row: a file name pulls the folders holding it on screen, and a folder name opens the
+ * folder.
  */
 describe('WAD library · the filter', () => {
   const tree = () =>

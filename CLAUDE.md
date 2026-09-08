@@ -9,8 +9,7 @@ off vertical. Level geometry, textures and flats are parsed straight out of `DOO
 **No vanilla C is transliterated — but little of the behavior is invented.** Movement, collision
 and the camera are this engine's own, because the view needs them to be; nearly everything else is
 written fresh and matched to `linuxdoom-1.10` and Boom/MBF *by behavior* — the specials tables,
-`mobjinfo` stats, weapon rates, `P_RadiusAttack`, the random table, `GENMIDI`. That match is what
-the fidelity rule below costs.
+`mobjinfo` stats, weapon rates, `P_RadiusAttack`, the random table, `GENMIDI`.
 
 ## Commands
 
@@ -108,20 +107,19 @@ scripts/       headless inspection of a WAD (inspect-wad.ts), of a savegame file
 
 ## Subsystem documentation
 
-Each documents how one part actually works and which of its decisions are load-bearing. **Read the
-relevant one before changing that subsystem** — several rules there look like accidents and aren't.
+**Read the relevant one before changing that subsystem** — several rules there look like accidents
+and aren't. A row naming a family links its lead doc, which names the siblings.
 
 | Doc | Covers |
 |---|---|
 | [wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD override rules, level names, the `public/game/` manifest |
 | [dehacked.md](docs/dehacked.md) | DEHACKED/BEX patches: the record grammar, the index bridges, units, `Bits`, the unsupported corners |
-| [menu.md](docs/menu.md) | The menu as launcher and pause screen, the WAD Library, difficulty, persisted settings, URL parameters, `main.ts`'s session lifecycle, `DEVMODE` |
+| [menu.md](docs/menu.md) → docs/menu-wads.md, docs/menu-saves.md | Launcher and pause screen, panel sizing, settings and their storage, URL parameters; the WAD Library and what a set is; the Save/Load/Replays tabs |
+| [session.md](docs/session.md) | `main.ts`: boot, what a level start tears down, the loading screen |
+| [devmode.md](docs/devmode.md) | `DEVMODE`, the FPS counter, the profiling overlay and the GPU timer |
 | [frameloop.md](docs/frameloop.md) | `game.ts`'s frame: the delta, the FPS cap, pausing |
 | [render.md](docs/render.md) | Mesh building, mover meshes, closed holes, deep water, what a frame costs, view distance, texture animation |
-| [render-bsp.md](docs/render-bsp.md) | Subsector polygons from the nodes, the leaf repairs, islands |
-| [render-solids.md](docs/render-solids.md) | Lids on crates and pillars: the ring rules, pockets, blocks built out of a sector |
-| [render-lighting.md](docs/render-lighting.md) | The `COLORMAP` ramp, distance lighting, wall contact shading, the outdoor sky tint |
-| [render-occlusion.md](docs/render-occlusion.md) | The fade that keeps the player visible through walls and raised floors |
+| docs/render-bsp.md, -solids, -lighting, -occlusion | Subsector polygons and the leaf repairs; lids on crates and pillars; the `COLORMAP` ramp, wall shading, the sky tint; the fade that keeps the player visible through a wall |
 | [camera.md](docs/camera.md) | Camera orbit and camera-relative movement, the camera as simulation state, aim lead, the auto camera and its framing |
 | [lights.md](docs/lights.md) | GLDEFS dynamic lights: the grammar, what emits, the two lighting paths, the GZDoom deviations |
 | [sprites.md](docs/sprites.md) | The named doomednums (`ThingType`) every type-keyed table keys through; billboards, instanced batching, which things spawn |
@@ -131,17 +129,14 @@ relevant one before changing that subsystem** — several rules there look like 
 | [weapons.md](docs/weapons.md) | Weapon selection, fire rates, spread, damage rolls |
 | [combat.md](docs/combat.md) | `shotPath`, range, auto-aim, what a shot hits, blood/puffs, splash and the BFG |
 | [death.md](docs/death.md) | Monster death, telefrag, player death, exploding barrels, boss-death triggers |
-| [monster-ai.md](docs/monster-ai.md) | Waking, chase pathing, the decision to attack, infighting, per-type quirks, spatial indexing |
-| [monster-attacks.md](docs/monster-attacks.md) | Hitscan vs. projectile, monster missiles in flight, the revenant's homing |
-| [monster-archvile.md](docs/monster-archvile.md) | The monster that breaks the `MONSTER_STATS` model: raising corpses, the blast attack |
-| [monster-iconofsin.md](docs/monster-iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
+| docs/monster-ai.md, -attacks, -archvile, -iconofsin | Waking, chase pathing, infighting, spatial indexing; hitscan vs. projectile and the revenant's homing; the two monsters that break the `MONSTER_STATS` model |
 | [items.md](docs/items.md) | Pickups, inventory, keys/locked doors, monster drops, powerups |
 | [cheats.md](docs/cheats.md) | IDDQD, IDKFA, IDCLIP: typing one, what each does, saves and best times |
 | [hud.md](docs/hud.md) | The HUD, level stats and timer, level card, intermission, best times, center messages, `WadFont`, screen effects |
 | [styles.md](docs/styles.md) | Which `.html`/`.css` owns which element, the `index.html`/`styles.css` entries, the palette/stacking tokens |
 | [savegames.md](docs/savegames.md) | The save format and its version, the snapshot apply order, the store, download/import, WAD-set identity |
 | [replays.md](docs/replays.md) | Recording and playing back a run: the `TicInput` seam, the record, restore events, the store, the playback bar |
-| [specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, secrets, voodoo dolls |
+| [specials.md](docs/specials.md) → docs/specials-movers.md, -crushers, -teleporters, -lights, -forces, -transfers | Which number means what and who may trigger it, damage floors, secrets; then the movers, the crusher, teleporters, light patterns, scrollers/friction/pushers/dolls, Boom's deep water |
 | [fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
 | [music.md](docs/music.md) | The OPL chip and `GENMIDI`, MUS/MIDI decoding, which track a level plays, music volume |
@@ -187,7 +182,7 @@ sprite the set lacks (docs/wad.md § Art a WAD set doesn't have). Nothing detect
 **A save or replay that can't be used says why, where the player is looking.** A greyed Load or
 Play always carries the reason in red beside the row — `SaveListEntry.refusal` /
 `ReplayListEntry.refusal`, the same sentence the read would have thrown. Greying alone is the bug:
-a disabled button shows no tooltip. docs/menu.md § Save and Load tabs.
+a disabled button shows no tooltip. docs/menu-saves.md § Save and Load tabs.
 
 **A deliberate deviation is fine; an undocumented one is not.** Where this engine knowingly departs
 from vanilla, the departure says so at the declaration, names what it follows instead, and explains
@@ -246,10 +241,10 @@ sweep; `.claude/hooks/conventions.mjs` is the list.
   commit message.
 - **README.md** holds the overview, setup steps and how to play. Keep implementation detail out of
   it — link to `docs/` instead.
-- **`docs/` is flat, and a group of related docs shares a name prefix** (`monster-ai`,
-  `monster-attacks`, …) rather than living in a subdirectory: a flat prefix keeps every pointer one
-  path segment — the shape `tests/docs/references.test.ts` and the hundreds of pointers in `src/`
-  are written against.
+- **`docs/` is flat, and a family shares a name prefix** (`specials-movers`, `menu-wads`, …) rather
+  than living in a subdirectory: a flat prefix keeps every pointer one path segment, which
+  `tests/docs/references.test.ts` and the thousand pointers in `src/` are written against. A bare
+  `§` points inside its own doc, and that test checks it too.
 
 ## Code comments
 

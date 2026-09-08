@@ -1,7 +1,7 @@
 /**
  * Press-and-hold confirm: a destructive button that fills over `HOLD_MS` and only acts when the
  * fill lands. Shared by the save list's Delete and Overwrite, the WAD Library's Forget folder and
- * Start new game while a level is running. See docs/menu.md § Save and Load tabs.
+ * Start new game while a level is running. See docs/menu-saves.md § Save and Load tabs.
  */
 
 /**

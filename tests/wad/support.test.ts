@@ -194,8 +194,8 @@ describe('WAD parsing · will it run?', () => {
 });
 
 /**
- * What the WAD Library greys a row out on (docs/menu.md § WAD Library). Deliberately narrower than
- * `broken`: one bad map in a megawad must not cost the player the other thirty-one.
+ * What the WAD Library greys a row out on (docs/menu-wads.md § WAD Library). Deliberately narrower
+ * than `broken`: one bad map in a megawad must not cost the player the other thirty-one.
  */
 describe('WAD parsing · a file with nothing left to load', () => {
   // A UDMF map shipped without its ZNODES: refused, there being no node builder here.

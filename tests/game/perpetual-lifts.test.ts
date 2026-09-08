@@ -7,7 +7,7 @@ import type { DoomMap } from '../../src/wad/map.ts';
 /**
  * The perpetual plat family (53/87) and its stop line (54/89) — vanilla
  * numbers this engine gained only with the Boom work.
- * See docs/specials.md § Perpetual lifts and the stop line.
+ * See docs/specials-movers.md § Perpetual lifts and the stop line.
  */
 describe('Specials · perpetual lifts', () => {
   /**

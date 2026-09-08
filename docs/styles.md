@@ -19,7 +19,7 @@ src/ui/fatalerror.*   #fatal-error — owned by src/main.ts, hence not in a subf
 src/ui/loading.*      #loading and its panel (#loading-title, #loading-bar/#loading-fill,
                       #loading-detail) — the boot screen and every level load after it, main.ts's
                       too, and the one element in the markup that starts visible
-                      (docs/menu.md § The loading screen)
+                      (docs/session.md § The loading screen)
 src/ui/hud/           everything drawn over the running level (docs/hud.md's own file list)
     hud.*             #hud-bar, #game-hud, #hud-levelstats, #hud-run (#hud-timer,
                       #hud-recording)
@@ -41,7 +41,7 @@ src/ui/menu/
     replays.css       #menu's Replays panel: the record button, the list and the detail panel
     library.css       #wadlibrary, the WAD Library overlay inside #menu
     wadinfo.*         #wadinfo, the popup reading the .txt beside a WAD, over both WAD lists
-                      (docs/menu.md § The text file popup)
+                      (docs/menu-wads.md § The text file popup)
     hold.css          .hold/.holding, the press-and-hold confirm on any #menu button
 src/ui/devmode/
     debughud.*        #hud

@@ -283,7 +283,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /** Scratch for `doomToWorld`, reused across every sprite — this runs per thing per frame. */
   const worldPos = new THREE.Vector3();
   // A sprite's light is the sector's, which a Boom transfer can source from another sector
-  // entirely — docs/specials.md § Transferred lighting.
+  // entirely — docs/specials-transfers.md § Transferred lighting.
   const transfers = transfersOf(map);
 
   /**
@@ -484,7 +484,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       const stats = !p.dead ? p.stats : undefined;
       // A conveyor feeds the same momentum channel a hit's knockback does, so the integration
       // below carries it for free. Only fliers are exempt (`MF_NOGRAVITY`); a corpse is not, since
-      // `P_KillMobj` strips that flag. docs/specials.md § Scrollers and conveyors.
+      // `P_KillMobj` strips that flag. docs/specials-forces.md § Scrollers and conveyors.
       if (carry && !stats?.flies) {
         const impulse = carry(p, p.blockRadius, p.touch);
         if (impulse) {
@@ -1406,7 +1406,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * Puts a thing down where a walk-line teleport sent it, height included: the arrival floor for a
    * loud teleport, the departure height above the floor for a silent one. Momentum follows the two
    * arrivals — zeroed outright, or rotated by the angle the body turned (`TeleportDest.rotateBy`).
-   * docs/specials.md § Silent and line-to-line teleporters.
+   * docs/specials-teleporters.md § Silent and line-to-line teleporters.
    */
   function arriveAt(p: PosedThing, dest: TeleportDest): void {
     // Read before the move and reapplied after: a silent arrival preserves the height above the
@@ -1446,7 +1446,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * The walk lines a thing crossed while the *world* moved it — a conveyor's carry, or a
    * knockback — as opposed to walking there itself. `P_CrossSpecialLine` fires for **every**
    * non-player mobj that moves, so a barrel riding a conveyor over a line teleporter really does
-   * teleport. docs/specials.md § Scrollers and conveyors.
+   * teleport. docs/specials-forces.md § Scrollers and conveyors.
    */
   function crossAfterPush(
     p: PosedThing,
@@ -1533,7 +1533,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     p.hidden = false;
     // A crunched corpse is raisable in vanilla too, and comes back at its own full size here —
     // vanilla's own raise leaves it at the zeroed radius/height `PIT_ChangeSector` wrote, which is
-    // where its ghost monsters come from. docs/specials.md § Crushed corpses.
+    // where its ghost monsters come from. docs/specials-crushers.md § Crushed corpses.
     p.crushed = false;
     // Clears any stale knockback velocity from however it died: it would otherwise sit unread
     // for the rest of the level and then jump on revival.
@@ -1725,7 +1725,7 @@ function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
   }
   if (p.crushed) {
     // Whatever it died of, a plane has since crunched it flat — one held `S_GIBS` frame, and the
-    // pose a save restores to. docs/specials.md § Crushed corpses.
+    // pose a save restores to. docs/specials-crushers.md § Crushed corpses.
     p.deathFrameCount = CORPSE_GIB.frames.length;
     p.anim.die(CORPSE_GIB.frames, MONSTER_DEATH_FRAME_SECONDS, CORPSE_GIB.sprite);
     return false;
@@ -1774,7 +1774,7 @@ const isMonsterType = (p: PosedThing): boolean => p.isMonster;
 
 /**
  * Anything a crusher can damage: a living monster or a still-standing barrel, matching
- * `PIT_ChangeSector` treating any shootable mobj alike. docs/specials.md § Crushers.
+ * `PIT_ChangeSector` treating any shootable mobj alike. docs/specials-crushers.md § Crushers.
  */
 const isCrushableType = (p: PosedThing): boolean => p.isMonster || p.type === ThingType.barrel;
 
@@ -1782,7 +1782,7 @@ const isCrushableType = (p: PosedThing): boolean => p.isMonster || p.type === Th
  * A corpse a plane could still crunch. `hidden` is checked here and in neither predicate above: a
  * corpse that died with no death art is drawn as nothing, so there is nothing to turn into a pool.
  * The only *living* things `hidden` marks are consumed pickups, which both live predicates already
- * exclude by type. docs/specials.md § Crushed corpses.
+ * exclude by type. docs/specials-crushers.md § Crushed corpses.
  */
 const isSquashableCorpse = (p: PosedThing): boolean => !p.crushed && !p.hidden && p.isMonster;
 

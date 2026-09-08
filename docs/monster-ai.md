@@ -29,7 +29,7 @@ vanilla helpers; `tables.ts` holds the data read through those shapes —
 anything from the other three, and `tables.ts` imports only `defs.ts` — the same `defs`/`tables`
 split the thing layer makes (docs/conventions.md § The role names). `ai.ts` and `attacks.ts` are
 the two halves above. `vile.ts` is the arch-vile, the one type whose behavior does not fit the
-data-driven model the rest are expressed in; both halves call into it (§ The arch-vile).
+data-driven model the rest are expressed in; both halves call into it (docs/monster-archvile.md).
 
 **Sounds are the one exception to that split**: `stepMonsterAI` and `ThingLayer` raise them
 directly through a `SoundEmitter`, since several of vanilla's sit at moments that produce no event

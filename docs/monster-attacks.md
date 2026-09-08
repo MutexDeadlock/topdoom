@@ -232,8 +232,8 @@ position (`playerStruckBy`) and every other living body it might clip (`bodyStru
 run over `spritefx/defs.ts`'s `stepTouchesBody`, and **the player's own missiles now take the
 identical path** — docs/combat.md § How a projectile finds its target covers the shared contact
 rule, the per-missile `PROJECTILE_RADIUS` and why the step is swept rather than sampled — and
-§ Where a missile starts for the half-tic `P_CheckMissileSpawn` nudge every missile takes at launch,
-a monster's own included.
+docs/combat.md § Where a missile starts for the half-tic `P_CheckMissileSpawn` nudge every missile
+takes at launch, a monster's own included.
 
 **What `sourceId` still decides is only what a hit *means***, not whether it happens: who the damage
 is attributed to for infighting, whether `sameSpecies` can fizzle the shot, and whether the player

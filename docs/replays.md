@@ -3,7 +3,7 @@
 `src/game/replay.ts` (store, player name) over `src/game/replay/` — `defs.ts` (format), `keys.ts`,
 `settings.ts`, `recorder.ts`, `playback.ts`, `stock.ts` (the ones the engine ships,
 § Stock replays); the seam in `game.ts`; the bar in
-`ui/hud/replaybar.ts`; the tab in `ui/menu/replays.ts` (docs/menu.md § Replays tab).
+`ui/hud/replaybar.ts`; the tab in `ui/menu/replays.ts` (docs/menu-saves.md § Replays tab).
 
 A replay is **the level's state at one moment plus one input record per tic**, played back through
 the same `Game.tic`. It rests on the fixed 35 Hz simulation (docs/frameloop.md) and the table RNG
@@ -153,9 +153,9 @@ setting writes it — the Settings tab has no player-name field.
 
 **A running recording shows a red light in two places**: beside the level clock in the HUD
 (`#hud-recording`, docs/hud.md § The HUD) and on the menu's Replays tab
-(`#menu .tab.recording`, set by `ReplaysUi.refreshRecordButton`, docs/menu.md § Replays tab). Two,
-because the menu covers the HUD: opening it must not hide the one fact the tab is about, and the
-tab carries it from every tab rather than only from the Replays panel. Both pulse on the same
+(`#menu .tab.recording`, set by `ReplaysUi.refreshRecordButton`, docs/menu-saves.md § Replays tab).
+Two, because the menu covers the HUD: opening it must not hide the one fact the tab is about, and
+the tab carries it from every tab rather than only from the Replays panel. Both pulse on the same
 cadence and neither shows during a playback.
 
 Every `CHECK_INTERVAL` tics the recorder samples the player's position and the P_Random cursor.
@@ -198,7 +198,7 @@ belong to the record's input, while the viewer's `Space` pauses the playback. **
 all three back** (`Game.takeOver`, through each popup's own setter): the keys are the viewer's from
 that moment, and a popup already on screen does not redraw itself. DEVMODE's status text says `replay camera: recording`/`manual` for
 the same reason — the auto camera is not driving, so its dials would be a frozen readout
-(docs/menu.md § Dev mode).
+(docs/devmode.md § Dev mode).
 
 **The simulation keeps a camera of its own** (`Game.simCamera`, the viewport's outside a replay).
 The camera is simulation state — `viewerAngleDeg` is the movement basis and the camera's position
@@ -251,7 +251,7 @@ prefix — the same meta/bytes split as the saves, in a separate database like t
 (docs/savegames.md § Storage). `listReplays` reads metas alone; a damaged row lists, deletes and
 downloads but does not play. Each entry carries a `refusal`, null when the row is playable and
 otherwise the sentence `readReplay` would have thrown (the saves list does the same —
-docs/menu.md § Save and Load tabs) — the format version (which covers the
+docs/menu-saves.md § Save and Load tabs) — the format version (which covers the
 savegame version with it), or a meta too damaged to read. The list prints it in red beside the row
 and greys Play, so a row that cannot be played says why without being clicked.
 
@@ -281,7 +281,7 @@ and one file, and `game/replay.ts` decodes it.
   (`stockReplayId`), so `readReplay` and `exportReplay` route on the id and nothing above them knows
   which of the two a replay came from. `listReplays` stays the store's alone and `listStockReplays`
   is the folder's; the menu lists the stored rows first and the stock ones under them
-  (docs/menu.md § Replays tab).
+  (docs/menu-saves.md § Replays tab).
 - **A stock replay is never stored.** It is fetched and decoded per play (`decodeFile`, the
   import's own validation, so a file this build cannot read is refused in the same words), and
   downloading one hands the served file over unchanged rather than re-encoding it. `describeReplay`

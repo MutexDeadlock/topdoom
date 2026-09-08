@@ -1,7 +1,8 @@
 /**
  * Boom's parameter lines: the specials consumed once at level spawn to give a surface or a sector
  * a permanent physical property, rather than dispatched from a trigger — scrolling walls and flats,
- * conveyors, sector friction and the pushers. See docs/specials.md § Scrollers and conveyors.
+ * conveyors, sector friction and the pushers. See docs/specials-forces.md § Scrollers and
+ * conveyors.
  */
 import type { DoomMap, Thing } from '../../wad/map.ts';
 import { NO_SIDE } from '../../wad/map.ts';
@@ -171,7 +172,7 @@ const NO_OFFSET: Readonly<Vec2> = { x: 0, y: 0 };
  * **Two clocks, deliberately.** `tick` advances everything the simulation can observe exactly once
  * per tic; `advanceOffsets` integrates the *visual* offsets per rendered frame off the rate `tick`
  * last computed, so a scrolling waterfall doesn't step at 35 Hz.
- * docs/specials.md § Scrollers and conveyors.
+ * docs/specials-forces.md § Scrollers and conveyors.
  */
 export class Forces {
   private map: DoomMap;
@@ -217,7 +218,7 @@ export class Forces {
    * The level's render transfers, for the one thing they change about
    * *movement*: a Boom 242 sector's water surface, which both the conveyor and
    * the pusher channels test against instead of the real floor
-   * (docs/specials.md § Deep water).
+   * (docs/specials-transfers.md § Deep water).
    */
   private transfers: Transfers;
 
@@ -236,7 +237,7 @@ export class Forces {
    * radius does to its movement, or `NO_FRICTION` where nothing does.
    *
    * Every sector the body **touches** is a candidate, and vanilla's own selection rule is
-   * transcribed rather than simplified to a minimum — docs/specials.md § Friction.
+   * transcribed rather than simplified to a minimum — docs/specials-forces.md § Friction.
    *
    * `speed` is the body's current horizontal speed in map units/sec, which only a muddy floor
    * reads: `P_GetMoveFactor` boosts the thrust in three steps as momentum builds, and the
@@ -440,7 +441,7 @@ export class Forces {
    * This tic's conveyor impulse for a body of this radius standing at `z`, or null where nothing
    * carries it — `T_Scroll`'s `sc_carry` walk seen from the thing rather than from the sector.
    * Every touched sector counts, a body only rides a floor it is standing on, and overlapping
-   * belts sum. docs/specials.md § Scrollers and conveyors.
+   * belts sum. docs/specials-forces.md § Scrollers and conveyors.
    *
    * `cache` must be the caller's **own body's** (docs/world.md § Sectors under a body). Scalars
    * rather than a record: this runs per thing per frame, through `ThingLayer.update`'s carry
@@ -482,7 +483,7 @@ export class Forces {
    * does; a point source radiates from its `MT_PUSH`/`MT_PULL` thing and needs line of sight.
    *
    * **Players only** — including voodoo dolls, which are player mobjs. A conveyor's carry has no
-   * such gate (`carryForBody`); the asymmetry is deliberate. See docs/specials.md § Pushers.
+   * such gate (`carryForBody`); the asymmetry is deliberate. See docs/specials-forces.md § Pushers.
    *
    * Like `carryForBody`, the caller supplies its per-body `cache` and gets
    * back **shared** scratch that this method's next call overwrites — read it
@@ -637,7 +638,7 @@ export class Forces {
    * rather than a thinker re-stamping every mobj. The control line's **length** is the dial, and
    * both curves are transcribed as written — including the C's own warning that a *higher*
    * `friction` value means *less* friction. MBF's clamps are a deliberate deviation, applied
-   * unconditionally here. docs/specials.md § Friction.
+   * unconditionally here. docs/specials-forces.md § Friction.
    */
   private spawnFriction(): void {
     this.friction = new Float64Array(this.map.sectors.length).fill(ORIG_FRICTION);

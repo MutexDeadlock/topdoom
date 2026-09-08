@@ -41,7 +41,7 @@
 }
 
 /*
- * Boom's 242 colormaps (docs/specials.md § Deep water): the whole view takes
+ * Boom's 242 colormaps (docs/specials-transfers.md § Deep water): the whole view takes
  * the colour cast of the control sector's colormap while the player is in one.
  * A multiply blend rather than a translucent wash, because that is what a
  * colormap does — it can only ever take light away.

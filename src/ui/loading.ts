@@ -1,7 +1,7 @@
 /**
  * The loading screen: the boot overlay, and what covers a WAD download or a level too big to build
  * between two frames. One instance per session, owned by `main.ts`.
- * See docs/menu.md § The loading screen.
+ * See docs/session.md § The loading screen.
  */
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;

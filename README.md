@@ -1,46 +1,62 @@
 # TopDoom
 
-A top-down DOOM built on the original IWADs. The camera hangs above the player and is
-tilted slightly off vertical, so walls show some of their height and levels read as
-spaces rather than floor plans; it can also orbit around the player with `Q`/`E`. Level
-geometry, textures and flats come straight out of `DOOM.WAD` / `DOOM2.WAD`. The code is new —
-no vanilla C is ported — but the behavior is vanilla's wherever a WAD can tell the difference:
-monster stats, weapon rates, the specials, even the random table are reproduced from the original
-source. Movement, collision and the camera are the deliberate exceptions, rebuilt for the view.
+A top-down DOOM built on the original IWADs. The camera hangs above the player and is tilted
+slightly off vertical, so walls show some of their height and levels read as spaces rather than
+floor plans. Level geometry, textures and flats come straight out of the loaded WAD — `DOOM.WAD`,
+`DOOM2.WAD`, Freedoom or any PWAD. The code is new — no vanilla C is ported — but the behavior is
+vanilla's wherever a WAD can tell the difference: monster stats, weapon rates, the specials, even
+the random table are reproduced from the original source. Movement, collision and the camera are
+the deliberate exceptions, rebuilt for the view.
 
-## Running it
+## Hop right in
+
+I provide an current, running build right here:
+https://topdoom.vercel.app
+
+## Running it on our machine
+
+After cloning this repo:
 
 ```bash
 npm install
-cp /path/to/DOOM.WAD public/game/iwad/       # the game WADs
-cp /path/to/SomeMod.wad public/game/pwad/    # any add-ons you want on the menu
-npm run dev                                  # http://localhost:5173
+
+# optional: copy your favorite WADs
+cp /path/to/DOOM.WAD public/game/iwad/
+cp /path/to/SomeMod.wad public/game/pwad/
+
+# run development server (http://localhost:5173)
+npm run dev
+# ... or make a build, which lands in dist/
+npm run build
 ```
 
-WADs are not part of the repo. Copying them in is optional — the **WAD Library** on the start menu
-can point at a folder of your own instead, without anything being moved or uploaded.
+**Freedoom** and the shareware `DOOM1.WAD` ship with the repo, so it plays as soon as it starts.
+The copies above are one of three ways to add your own: the **WAD Library** on the start menu reads
+a folder anywhere on your disk, and a WAD dropped on the window plays straight away. Nothing is
+moved or uploaded either way.
 
 ## Start menu
 
-Everything under `public/game/iwad/` and `public/game/pwad/` shows up on the **New Game** tab
-automatically:
+The **New Game** tab is what a run is made of:
 
-- **Game WAD** — offered from `public/game/iwad/`. Normally an IWAD, but a PWAD carrying maps
+- **Game WAD** — the files under `public/game/iwad/`. Normally an IWAD, but a PWAD carrying maps
   works too if you put it there.
-- **Add-ons** — offered from `public/game/pwad/`, any number, merged in the order they were
-  ticked. An add-on whose maps clash with the selected game WAD's naming scheme is disabled
-  automatically; ones with no maps of their own (textures, sounds, ...) always stay selectable.
+- **Add-ons** — the ones you have picked, any number, merged in the order you picked them. An
+  add-on whose maps clash with the selected game WAD's naming scheme is greyed out rather than
+  dropped, so switching game WAD and back leaves your set intact; ones with no maps of their own
+  (textures, sounds, ...) always fit. The checkbox switches one off for a run without losing its
+  place in the order.
 - **Level** — every map in the resulting set, grouped by episode for DOOM 1.
-- **Difficulty** — the five vanilla skills; **Start new game** runs the level at the one picked.
-  Skill decides which monsters are placed at all, and — as in the original — halves the damage you
-  take on *I'm Too Young to Die*, doubles ammo pickups on that skill and on *Nightmare!*, and on
-  *Nightmare!* runs the demons at double speed and brings every monster you kill back again.
+- **Difficulty** — the five vanilla skills, changing everything they change in the original: which
+  monsters are placed at all, the damage and ammo multipliers at either end, and *Nightmare!*'s
+  fast, respawning demons.
 
-**WAD Library** opens a browser over everything on offer: the folders above, plus one on your own
-disk that you nominate once. It lists each file's size, map count and whether it carries a DEHACKED
-patch, and ticking a row picks it straight into the lists above. Chrome and Edge remember the folder
-between visits; Firefox and Safari have no way to, so it has to be picked again after a reload.
-Dropping a WAD on the window still works for one-off files.
+**WAD Library** is where those come from: a browser over `public/game/iwad/`, `public/game/pwad/`,
+a folder on your own disk that you nominate once, and anything dropped on the window. Each row says
+what the file is — size, how many maps, whether it ships a DEHACKED patch or a text file to read,
+and whether this engine can run it — and ticking one picks it into the lists above. Chrome and
+Edge remember your folder between visits; Firefox and Safari have no way to, so it has to be
+picked again after a reload.
 
 Your game WAD, add-ons, level and difficulty are remembered for the next visit.
 
@@ -49,25 +65,6 @@ where you left off. `?wad=DOOM2.WAD&pwad=SCYTHE.WAD&map=MAP05` preselects and sk
 
 See [docs/menu-wads.md](docs/menu-wads.md) for the WAD manifest and [docs/menu.md](docs/menu.md) for
 settings persistence and URL parameters.
-
-## Replays
-
-The **Replays** tab records a run and plays it back. Tick *Record a replay* on the New Game tab to
-record from the start, or press *Record from here* on the pause menu's Replays tab to record from
-where you are; *Stop and save recording* keeps the run, *Cancel recording* (held down) throws it
-away and plays on. A stored replay carries a name, a player and a description you can edit, and
-downloads as a `.topdoomreplay.json` file you can share and import back. Replays copied into
-`public/game/replay/` are offered on that tab too, marked *included*: they play and download like
-any other, but can't be renamed or deleted.
-
-Playing one shows a bar along the bottom: hover it for pause, playback speed, a camera toggle and
-*Take over*, which hands the level back to you right there and saves the game as it does. Click or
-drag the track to jump anywhere in the run; `Space` or a click on the level pauses and resumes, and
-the arrow keys skip five seconds either way. Switching
-the camera to *manual* lets you orbit and zoom around the recorded run with the usual keys without
-changing what the run itself does. A replay never sets a best time.
-A replay is only guaranteed to reproduce on the browser and build that recorded it — the bar says
-when either differs, and reports where a run diverged. See [docs/replays.md](docs/replays.md).
 
 ## Controls
 
@@ -88,7 +85,8 @@ does (autorun and the right mouse button), so both are there while you play — 
 | `+` / `-` | camera distance *(manual camera mode)* |
 | `[` / `]` | camera tilt *(manual camera mode)* |
 | `N` / `P` | next / previous map *(dev mode only)* |
-| `R` | restart the level (once dead) |
+| `R` | reload the level from your save, or from the checkpoint it wrote on the way in (once dead) |
+| `F2` / `F3` / `F4` | menu on Save / Load / Settings |
 | `ESC` | menu / resume |
 
 Ceilings are never rendered — from directly above, one would hide everything underneath it. See
@@ -103,9 +101,118 @@ See [docs/camera.md](docs/camera.md).
 sets no best times, and its end-of-level screen says `You cheated` instead of showing how the level
 went. See [docs/cheats.md](docs/cheats.md).
 
-**Straferunning works.** Forward and sideways are separate speeds that are never blended into
-one, exactly as in vanilla, so running forward and sideways at once (`W`+`D`+`Shift`) moves you
-faster than either alone. See [docs/movement.md](docs/movement.md).
+
+## Gameplay
+
+It plays like DOOM because the rules are DOOM's: monster stats, weapon rates, damage rolls, powerup
+timers and the random table all come out of the original source. All nine weapons are in, on the
+number keys or the mouse wheel. Every stock monster is in — DOOM II's Commander Keen and Icon of
+Sin included — and they wake, hunt, shoot back and fight each other on vanilla's own eight-direction
+pathing. Health, armor, ammo, keys, weapons, the backpack and all six powerups are collected by
+walking into them, and the bar along the bottom tracks what you are carrying.
+
+**Aiming is by mouse, and putting the cursor on a monster locks onto it.** The shot is then aimed
+at that monster's actual position and height instead of at wherever the cursor's projection onto
+the floor plane lands — so shooting an enemy up on a ledge angles the shot to reach it. It's the
+pointer-driven equivalent of DOOM's own auto-aim, which had no cursor to work from. Real walls
+and closed doors still stop a shot short and explode it there.
+
+**The player sprite shows the weapon you are holding** — the art shipped with the engine is the
+ZDoom community's weapon-matching marine — so what you have out reads off the level and not only
+off the bar. A WAD that draws the player its own way is left alone, and the skins have an off
+switch under Settings -> Visuals.
+
+See [docs/items.md](docs/items.md), [docs/weapons.md](docs/weapons.md),
+[docs/combat.md](docs/combat.md), [docs/monster-ai.md](docs/monster-ai.md) and
+[docs/hud.md](docs/hud.md).
+
+## Saves and best times
+
+`F2` and `F3` open the menu on **Save** and **Load** (`F4` on Settings); both tabs are also on the
+pause menu. A save carries a thumbnail, the level and the time on the clock, keeps the WAD set it
+was made with, and downloads as a `.topdoomsave.json` file you can drop back on the window. A row
+whose WADs the library can no longer supply says so in red rather than failing on the click.
+
+Entering a level also writes a checkpoint of its own, so `R` after a death costs you the level and
+not the run — unless you saved in that level, which `R` prefers. Finishing a level records its
+**best time**, shown on the end-of-level screen and beaten in green; a cheated run and a replay
+both set none. See [docs/savegames.md](docs/savegames.md) and [docs/hud.md](docs/hud.md).
+
+## Replays
+
+The **Replays** tab records a run and plays it back. Flip the New Game tab's **Replay** toggle to
+*● Recording* to record from the start, or press *Record from here* on the pause menu's Replays tab
+to record from where you are; *Stop and save recording* keeps the run, *Cancel recording* (held
+down) throws it away and plays on. A stored replay carries a name, a player and a description you
+can edit, and downloads as a `.topdoomreplay.json` file you can share and import back. Replays
+copied into `public/game/replay/` are offered on that tab too, marked *included*: they play and
+download like any other, but can't be renamed or deleted.
+
+Playing one shows a bar along the bottom: hover it for pause, playback speed, the crosshair and
+camera toggles, and *Take over*, which hands the level back to you right there and saves the game as
+it does. Click or drag the track to jump anywhere in the run; `Space` or a click on the level pauses
+and resumes, and the arrow keys skip five seconds either way. Switching the camera to *manual* lets
+you orbit and zoom around the recorded run with the usual keys without changing what the run itself
+does. A replay never sets a best time.
+
+**A replay plays back the same in any browser**: the simulation computes its own trigonometry
+instead of asking the JavaScript engine, which is free to round it differently. What can still
+differ is the build — a run recorded under older game rules is flagged as such, and the bar reports
+where one actually diverged. See [docs/replays.md](docs/replays.md).
+
+## Sound and music
+
+Sound comes out of the loaded WAD, so it matches whichever set is in use — an add-on replacing
+individual sounds replaces those, modern Ogg/WAV/FLAC ones included. Shareware `DOOM1.WAD` only
+carries 49 of the 108 sounds, so parts of it are quiet.
+
+Each level plays its own music, and **the OPL2/OPL3 chip is emulated** to play it: the score is
+synthesized from the WAD's own instrument bank the way a DOS Sound Blaster did it, so nothing
+outside the WAD is needed. A music PWAD shipping Ogg/FLAC/MP3/WAV plays that directly instead.
+
+Both volumes live on the start menu and are remembered between sessions.
+See [docs/audio.md](docs/audio.md) and [docs/music.md](docs/music.md).
+
+## State
+
+A level is walkable, fightable and finishable, start to end of the campaign:
+
+- **Levels** — geometry, textures, flats, sector lighting, animated textures and switches, off the
+  WAD's own nodes. Map switching and PWAD merging work; fog of war hides a room until you have
+  seen it, and doubles as the automap.
+- **Movement** — vanilla's wall-sliding, straferunning and falling over this engine's own
+  collision ([docs/movement.md](docs/movement.md)), under an orbitable camera that fades the walls
+  between you and it.
+- **Fighting and items** — every weapon, monster and pickup, on vanilla's own tables
+  (see [Gameplay](#gameplay) above).
+- **Specials** — doors, lifts, floor movers, crushers, switches, teleporters, locked doors,
+  damage floors and secrets.
+- **Around the level** — sound and music out of the loaded WAD, savegames and best times, replays,
+  and three of vanilla's cheat codes typed in as they always were.
+
+**BOOM-format maps load and play**: extended BSP nodes, generalized linedefs and sector types, the
+extended linedef numbers, six-slot keys and generalized locks, elevators, silent and line-to-line
+teleporters, a WAD's own `ANIMATED` and `SWITCHES` tables, scrolling surfaces,
+conveyors, friction, wind and pushers, voodoo dolls, deep water, transfer lighting, translucent
+midtextures and custom colormaps. The one number deliberately left out is MBF's sky transfer —
+nothing draws sky in a top-down view. `inspect-wad` classifies every special a map uses, so what a
+particular WAD would lose is answerable before you play it.
+See [docs/specials.md](docs/specials.md).
+
+**UDMF maps load** (experimental): a `TEXTMAP` map parses into the same records a binary map
+yields, with its BSP read from the `ZNODES` lump — there is no node builder, so a map saved without
+nodes won't load. A map in the `doom` or `ZDoomTranslated` namespace plays in full, Boom specials
+included; other namespaces draw, collide and fight, but their ZDoom-style action specials don't run
+— the library flags such a WAD red and still lets you pick it, for walking a map whose doors won't
+open.
+See [docs/wad.md](docs/wad.md#udmf).
+
+**`DEHACKED`/BEX patches are read** from a WAD that ships one: level titles, par times, monster,
+weapon and ammo stats, `Frame` records, repointed frames and `[SPRITES]` renames — and **action
+pointers (`Pointer`, `[CODEPTR]`), MBF's included**, so a repointed chain fires the attack that
+pointer belongs to at the timing the chain implies. A patch asking for something out of scope
+still loads and plays, and what was skipped is reported rather than dropped silently.
+See [docs/dehacked.md](docs/dehacked.md).
 
 ## Dev mode
 
@@ -114,136 +221,24 @@ yourself) and restart `npm run dev` to turn on the debug overlay and the hotkeys
 *(dev mode only)* above. Without it those keys are simply inert.
 See [docs/devmode.md](docs/devmode.md).
 
-## Sound and music
+## Working on it
 
-Sound effects are decoded from the loaded WAD, so they match whichever set is in use — and an
-add-on that replaces individual `DS*` lumps replaces those sounds, including modern Ogg/WAV/FLAC
-ones. Shareware `DOOM1.WAD` only carries 49 of the 108 sounds, so parts of it are quiet.
-
-Each level plays its own music, synthesized the way DOS DOOM did it: the `D_*` score is played on
-an emulated OPL2/OPL3 FM chip using the WAD's own `GENMIDI` instrument bank, so nothing outside the
-WAD is needed. MUS and MIDI lumps both play, and a music PWAD shipping Ogg/FLAC/MP3/WAV plays those
-directly.
-
-Both volumes live on the start menu and are remembered between sessions; drag one to 0 for silence.
-See [docs/audio.md](docs/audio.md) and [docs/music.md](docs/music.md).
-
-## HUD
-
-Walking within range of a health, armor, ammo, key, weapon, backpack or powerup pickup collects
-it automatically — no key press needed. The bar along the bottom shows health, armor, all four
-ammo counts, one slot per key color, and the weapon you currently have selected. That last one
-matters here in a way it doesn't in the original: the player sprite looks the same whatever it's
-holding, so the HUD icon is the only thing telling you what you're about to fire. See
-[docs/items.md](docs/items.md) and [docs/hud.md](docs/hud.md).
-
-## Powerups
-
-All six spheres and the backpack work, on the original's own timers:
-
-| Pickup | Effect |
-| --- | --- |
-| Invulnerability (30s) | Nothing can hurt you; the screen goes inverted, as in the original |
-| Berserk (rest of the level) | Heals you to 100, switches to the fist and makes it hit ten times as hard |
-| Partial invisibility (60s) | You're drawn semi-transparent and monsters shoot wide of you |
-| Radiation suit (60s) | Nukage/slime floors stop hurting; the screen tints green |
-| Computer area map (rest of the level) | Reveals the whole level's geometry at once (this game's fog of war *is* its automap) |
-| Light amplification visor (120s) | Brightens the whole view |
-| Backpack | Doubles every ammo cap and hands over a clip of each; kept across levels |
-
-Powerups (but not the backpack) run out at the end of a level, exactly as in the original.
-
-## Weapons
-
-All nine weapons work. Picking one up selects it, as in the original; `1`–`7` pick a slot and
-pressing the same slot again toggles between the two weapons that share it — coming back to a slot
-later returns whichever of them you last used. The mouse wheel cycles through everything you own.
-Hold the left mouse button to fire at the weapon's own rate.
-
-**Aiming is by mouse, and putting the cursor on a monster locks onto it.** The shot is then aimed
-at that monster's actual position and height instead of at wherever the cursor's projection onto
-the floor plane lands — so shooting an enemy up on a ledge angles the shot to reach it. It's the
-pointer-driven equivalent of DOOM's own auto-aim, which had no cursor to work from. Real walls
-and closed doors still stop a shot short and explode it there.
-
-**Monsters wake, hunt, shoot back and fight each other**, walking the original's
-eight-direction pathing and blocking both you and one another. Damage, gibbing, monster drops,
-explosion splash and knockback all follow vanilla's own rules and tables — the one deliberate
-exception is the damage numbers, tuned softer than the original's so the rhythm matches but the
-bite doesn't.
-
-See [docs/weapons.md](docs/weapons.md), [docs/combat.md](docs/combat.md) and
-[docs/monster-ai.md](docs/monster-ai.md) for how any of it
-actually works.
-
-## Layout
-
-[CLAUDE.md](CLAUDE.md) has the source tree, the project-wide conventions and the full index of
-`docs/`, where every subsystem — WAD parsing, rendering, movement, combat, the monsters, specials,
-saves — is documented in depth.
-
-## Checking a WAD without a browser
+[CLAUDE.md](CLAUDE.md) has the source tree, the project-wide conventions and the index of `docs/`,
+where every subsystem — WAD parsing, rendering, movement, combat, the monsters, specials, saves —
+is documented in depth.
 
 ```bash
+npm test          # Node's own runner: no extra dependencies, no browser
+npm run typecheck # both must be clean
+
+# what a WAD holds and whether this engine can run it, down to the specials and
+# DEHACKED records each map uses — headless, no browser
 node scripts/inspect-wad.ts public/game/iwad/DOOM.WAD E1M1
 node scripts/inspect-wad.ts public/game/iwad/DOOM2.WAD MAP05 public/game/pwad/SCYTHE.WAD
 ```
 
-Reports lump and map counts, which file a map came from, whether this engine can run each file,
-any textures a map references but the WAD set lacks, how many subsector polygons came out
-degenerate, whether the player start is walkable, and two coverage reports — every linedef and
-sector special the map uses, and every record of a `DEHACKED` patch it ships, each classified by
-whether this engine understands it.
-
-## Running the tests
-
-```bash
-npm test
-npm run typecheck
-```
-
-Both must be clean. The suite uses Node's built-in test runner — no extra dependencies, no
-browser. See [docs/testing.md](docs/testing.md).
-
-## State
-
-Playable as a walkable level viewer you can fight in: geometry, textures, sector lighting,
-collision and movement with vanilla's own wall-sliding, straferunning and falling, map switching,
-PWAD loading, and an orbitable camera with wall-occlusion fading. Fog of war hides rooms and
-secrets until the player has actually seen them. THINGS render as upright sprites, and the player
-is drawn as the real `PLAY` sprite. Health, armor, ammo, keys, weapons, the backpack and all six
-powerups are collectible and tracked on a HUD (see [Powerups](#powerups) above); doors, lifts,
-floor movers, crushers, switches and teleporters all work, including locked doors. All nine
-weapons fire, and every stock monster is in — including both DOOM II oddities, Commander Keen and
-the Icon of Sin. Three of vanilla's cheat codes are typed in as they always were
-(see [Controls](#controls) above). Sound effects and music both come out of the loaded WAD (see
-[Sound and music](#sound-and-music) above). A run can be recorded and played back
-(see [Replays](#replays) above).
-
-**BOOM-format maps load and play** (experimental): extended BSP nodes, generalized linedefs and
-sector types, the extended linedef numbers, six-slot keys and generalized locks, elevators,
-silent and line-to-line teleporters, a WAD's own `ANIMATED` and `SWITCHES` tables, scrolling
-surfaces, conveyors, friction, wind and pushers, voodoo dolls, deep water, transfer lighting,
-translucent midtextures and custom colormaps. What is deliberately **not** in: MBF's sky transfer —
-nothing draws sky in a top-down view. See [docs/specials.md](docs/specials.md) for the per-number
-detail.
-
-**UDMF maps load** (experimental): a `TEXTMAP` map parses into the same records a binary map
-yields, with its BSP read from the `ZNODES` lump — there is no node builder, so a map saved
-without nodes won't load. A map in the `doom` namespace plays in full, Boom specials included;
-other namespaces (`zdoom` and friends) draw, collide and fight, but their ZDoom-style action
-specials don't run — so the WAD is flagged red in the library while staying **pickable**, for
-walking a map whose doors won't open. See [docs/wad.md](docs/wad.md#udmf).
-
-**`DEHACKED`/BEX patches are read** from a WAD that ships one: level titles, par times, monster,
-weapon and ammo stats, `Frame` records and repointed monster and weapon frames — applied by
-re-deriving the engine's sprite lists and its fire rates from vanilla's frame table — and
-`[SPRITES]` renames. **Action pointers (`Pointer`, `[CODEPTR]`) apply too**, including MBF's own:
-a repointed chain fires the attack that pointer belongs to, at the timing its chain implies, and
-`A_Scratch`, `A_PlaySound` and `A_Spawn` land as well. What a pointer can't reach here is named per
-action rather than skipped as a class. A patch asking for something out of scope still loads and
-plays; what was skipped is reported rather than dropped silently. See
-[docs/dehacked.md](docs/dehacked.md).
+See [docs/testing.md](docs/testing.md), and [CLAUDE.md](CLAUDE.md) for what every line of the
+inspection report means.
 
 ## License
 

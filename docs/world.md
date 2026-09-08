@@ -256,8 +256,9 @@ iterator applies: the body's box must overlap the line's bounding box, and `boxO
 put the box wholly on one side. Both sectors of a surviving line join the list, centre sector first.
 
 Every force that belongs to a *sector* rather than a point reads this (docs/specials-forces.md §
-Friction, § Scrollers and conveyors, § Pushers), and it exists because the centre-point answer is
-genuinely wrong for them: a player straddling the edge of a conveyor or an ice patch is standing on
+Friction, § Scrollers and conveyors, § Pushers), as does `boxOverlapsSector`, which decides who a
+mover is squeezing (docs/specials-movers.md § Every other mover stops instead). It exists because
+the centre-point answer is genuinely wrong for them: a player straddling the edge of a conveyor or an ice patch is standing on
 it in vanilla, and `sectorAt` alone would say they aren't. That is the same straddle rule
 `groundFloor` already follows for heights, arrived at from the other direction.
 

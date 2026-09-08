@@ -302,24 +302,24 @@ ever checked (a closing door/lowering ceiling, a rising lift/floor). The opposit
 unchecked, since `P_ThingHeightClip` rides a grounded thing along with a receding floor/ceiling
 automatically, so that direction essentially never traps anyone.
 
-**`blocksCeilingLower`'s `headroomBlocked` must test sector membership with `boxOverlapsSector`, not
-a bare `sectorIndexAt` point test.** Walking up to a door leaves the collision box straddling the frame — the same
-straddling `World.groundFloor` accounts for — so the player's *center* still reads as the corridor's
-sector while the door sector, the one actually about to close on them, is never checked at all. A
-plain point test was the original bug here. The overlap is approximated the way `FogOfWar` samples
-polygons: the box's four corners and four edge midpoints, ample for a doorway-sized sector.
-`applyCrushDamage`, in the same file and directly below it, is box aware for the same reason and
-then some — it measures the body's whole clipped headroom (docs/specials-crushers.md § Crushers).
+**Both tests ask who is in the moving sector with `boxOverlapsSector`, never a bare `sectorIndexAt`
+point test, and for every body — the player and each monster alike.** Walking up to a door leaves
+the collision box straddling the frame — the same straddling `World.groundFloor` accounts for — so a
+body's *center* still reads as the corridor's sector while the door sector, the one actually about
+to close on it, is never checked at all. The candidates therefore come from `crushNeighborhood`, the
+moving sector *and everything across a two-sided line from it*, exactly as `applyCrushDamage` takes
+them (docs/specials-crushers.md § Crushers).
+
+**`boxOverlapsSector` is `World.sectorsTouching`** (docs/world.md § Sectors under a body), not a
+sampling of the box. Sampling its eight corners and edge midpoints — what this did — steps over any
+sector narrower than the body's radius: GoingDown.wad MAP08's crate-lift is an 8-unit ring (sector
+1) around its inner sector, and a demon beside it had every rim point land either outside the crate
+or in the middle of it, so the lift read as unobstructed and carried the demon up to be pinned
+there. `tests/regression/mover-sector-narrow-strip.test.ts`.
 
 Both take prospective heights as explicit parameters rather than reading `player.z`/`m.z`: the
 caller is always asking about the height a boundary is *about* to move to, matching
 `P_ThingHeightClip` re-syncing a grounded thing's `z` to the new floor before testing it.
-
-**`blocksFloorRise` also checks `World.groundCeiling` at the player's position**, beyond
-`headroomBlocked`'s own-sector-only test — straddling half onto a rising lift/floor and half into a
-static neighbor sector with a lower ceiling is a case `headroomBlocked` alone misses, since it only
-compares against the *rising* sector's own ceiling and the neighbor's lower one never enters the
-check. See docs/movement.md § Collision for `groundCeiling` itself.
 
 ## Movers simulate at the tic rate, draw interpolated
 

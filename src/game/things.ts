@@ -778,34 +778,33 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
-   * The one `posed` walk the three sector queries below share: every body standing in `where` — a
-   * single sector or a set of them — that is `dead` and that `accept` keeps. The predicates are the
-   * module-level constants beside `monsterRef`, so a call allocates no closure and `accept` stays
-   * one of three stable targets.
+   * The one `posed` walk the three sector queries below share: every body standing in one of
+   * `where` that is `dead` and that `accept` keeps. The predicates are the module-level constants
+   * beside `monsterRef`, so a call allocates no closure and `accept` stays one of three stable
+   * targets.
    *
    * `dead` is a parameter rather than part of `accept` because it is the one test cheap and
    * selective enough to be worth making before the sector lookup: most of a level's bodies are on
    * the wrong side of it, and rejecting them costs one boolean compare instead of a `Set` probe.
    */
   function refsIn(
-    where: Sector | ReadonlySet<Sector>,
+    where: ReadonlySet<Sector>,
     dead: boolean,
     accept: (p: PosedThing) => boolean,
   ): MonsterRef[] {
     const out: MonsterRef[] = [];
-    const set = where instanceof Set ? where : null;
     for (const p of posed) {
       if (p.dead !== dead) continue;
       const sector = p.sector;
-      if (!sector || (set ? !set.has(sector) : sector !== where)) continue;
+      if (!sector || !where.has(sector)) continue;
       if (!accept(p)) continue;
       out.push(monsterRef(p));
     }
     return out;
   }
 
-  function monstersInSector(sector: Sector): MonsterRef[] {
-    return refsIn(sector, false, isMonsterType);
+  function monstersInSectors(sectors: ReadonlySet<Sector>): MonsterRef[] {
+    return refsIn(sectors, false, isMonsterType);
   }
 
   function crushablesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[] {
@@ -1650,7 +1649,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     bleeds,
     awakeMonsterCount,
     awakeMonsters,
-    monstersInSector,
+    monstersInSectors,
     crushablesInSectors,
     corpsesInSectors,
     crushCorpse,

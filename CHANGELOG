@@ -16,9 +16,11 @@ Features and improvements
       configurable in constants.ts
 
 Fixed bugs
+  - running into a wall no longer collects an item sealed behind it
+  - a lift or door narrower than a monster no longer moves straight through
+    one standing at its edge, pinning it in mid-air
   - a crate's top cropped its texture mid-face: it now starts at the structure's
     own corner, on the face its walls show
-  - running into a wall no longer collects an item sealed behind it
 
 
 ===============================================================================

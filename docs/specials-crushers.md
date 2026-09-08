@@ -35,7 +35,7 @@ whose crusher room is two sectors, 198 (tag 84) and 141, with identical heights:
 cybruisers penned there stood at the join and survived stroke after stroke.
 `tests/regression/crush-straddling-body.test.ts`.
 
-Membership in the crushing sector is still required — the eight-point `boxOverlapsSector` sampling —
+Membership in the crushing sector is still required — `boxOverlapsSector`, i.e. `World.sectorsTouching` —
 so a body squeezed by something else next door is that mover's business, not this one's. Its
 candidates are `ThingLayer.crushablesInSectors` over the crushing sector *and its neighbors*
 (`crushNeighborhood`), standing in for vanilla's walk of the blockmap blocks covering the sector's
@@ -65,12 +65,12 @@ layer collides with anything, so a sliding splash would slide through the wall i
 against. Landing also clears `motion`, so a splash costs its BSP descent only while it is in the
 air.
 
-**A barrel takes the same crush damage as a monster**, via `crushablesInSectors` (`monstersInSector`
+**A barrel takes the same crush damage as a monster**, via `crushablesInSectors` (`monstersInSectors`
 plus any living barrel in those sectors) — vanilla's `PIT_ChangeSector` doesn't distinguish
 `MT_BARREL` from any other `MF_SHOOTABLE` mobj, so a barrel under a crusher dies and explodes
 exactly as if it'd been shot (docs/death.md § Exploding barrels covers the death→explode delay
-itself). The headroom-blocked check other movers use (`game/specials/moverblocking.ts`) deliberately
-stays on `monstersInSector` alone — whether a barrel should also stall a closing door is a separate
+itself). The two obstruction checks other movers use (`game/specials/moverblocking.ts`) deliberately
+stay on `monstersInSectors` alone — whether a barrel should also stall a closing door is a separate
 question this change doesn't touch.
 
 **Only a *lowering* `CrusherMover` deals damage, matching `T_MoveCeiling`** (`p_ceilng.c`): its

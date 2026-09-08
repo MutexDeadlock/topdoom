@@ -231,7 +231,8 @@ function blocksFloorRise(
   // `headroomBlocked`'s early-out, widened to the sectors a box walk can actually reach: this
   // sector's own gap clearing the tallest body says nothing about a neighbor's.
   if (floorHeight + TALLEST_BODY_HEIGHT <= lowestCeilingAround(map, sectorIndex)) return false;
-  for (const m of things?.monstersInSector(map.sectors[sectorIndex]) ?? []) {
+  for (const m of things?.monstersInSectors(crushNeighborhood(map, sectorIndex)) ?? []) {
+    if (!boxOverlapsSector(world, m.x, m.y, m.radius, sectorIndex)) continue;
     if (floorHeight + m.height > world.groundCeiling(m.x, m.y, m.radius, true)) return true;
   }
   return false;
@@ -250,36 +251,23 @@ function lowestCeilingAround(map: DoomMap, sectorIndex: number): number {
   return lowest;
 }
 
-/**
- * The eight points of a `radius`-box's rim that `boxOverlapsSector` samples —
- * its four corners and its four edge midpoints, as multiples of `radius`.
- */
-const BOX_RIM = [
-  [-1, -1],
-  [0, -1],
-  [1, -1],
-  [1, 0],
-  [1, 1],
-  [0, 1],
-  [-1, 1],
-  [-1, 0],
-] as const;
+/** `boxOverlapsSector`'s scratch list — the answer is read and dropped inside the one call. */
+const touched: number[] = [];
 
 /**
- * Whether a `radius`-box at (x, y) overlaps `sectorIndex` at all, not just
- * whichever sector its bare centre point resolves to. A plain point test misses
- * the player standing half in a doorway.
+ * Whether a `radius`-box at (x, y) overlaps `sectorIndex` at all, not just whichever sector its
+ * bare centre point resolves to: `World.sectorsTouching`, vanilla's own `touching_sectorlist`,
+ * through the same box-vs-line pair the movement code clips with
+ * (docs/world.md § Sectors under a body).
  *
- * Still a rim approximation where vanilla walks the sector's own blockmap, but
- * sampling the same box the movement code clips (docs/movement.md § Collision)
- * rather than a circle.
+ * A plain point test misses the player standing half in a doorway. Sampling the box's rim instead
+ * — the eight corners and edge midpoints, which this used to do — misses a sector *narrower* than
+ * the sampling step: GoingDown.wad MAP08's crate-lift is an 8-unit ring (sector 1) around its
+ * inner sector, so every rim point of a demon beside it landed either outside the crate or in the
+ * middle of it, and the lift read as unobstructed while it carried the demon up.
  */
 function boxOverlapsSector(world: World, x: number, y: number, radius: number, sectorIndex: number): boolean {
-  if (world.sectorIndexAt(x, y) === sectorIndex) return true;
-  for (const [dx, dy] of BOX_RIM) {
-    if (world.sectorIndexAt(x + dx * radius, y + dy * radius) === sectorIndex) return true;
-  }
-  return false;
+  return world.sectorsTouching(x, y, radius, touched).includes(sectorIndex);
 }
 
 /** The gap one sector's moving plane would leave: which sector, and the two heights around it. */
@@ -309,8 +297,8 @@ function headroomBlocked(world: World, things: ThingLayer | null, player: Pos2, 
   // everyone — worth the early-out because it skips the sector query entirely,
   // which is the expensive half and runs per mover per tic.
   if (floorHeight + TALLEST_BODY_HEIGHT <= ceilingHeight) return false;
-  const sector = map.sectors[sectorIndex];
-  for (const m of things?.monstersInSector(sector) ?? []) {
+  for (const m of things?.monstersInSectors(crushNeighborhood(map, sectorIndex)) ?? []) {
+    if (!boxOverlapsSector(world, m.x, m.y, m.radius, sectorIndex)) continue;
     if (floorHeight + m.height > ceilingHeight) return true;
   }
   return false;

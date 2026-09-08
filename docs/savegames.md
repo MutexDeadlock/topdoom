@@ -86,7 +86,7 @@ freshly loaded map — **a thing's from its saved position** (`applyThingState` 
 since the spawn loop cached the sector under its *spawn* point and a corpse never moves again to
 re-derive it. Without that the floor ride (`ThingLayer.update`'s non-AI branch) snaps every
 restored corpse to its spawn sector's floor each tic: GoingDown MAP07's terraces, 27 corpses hoisted
-to 88 on load, pinned in `tests/game/things-snapshot.test.ts` (the reference-equality hazard is real: `ThingLayer.monstersInSector` compares
+to 88 on load, pinned in `tests/game/things-snapshot.test.ts` (the reference-equality hazard is real: `ThingLayer.monstersInSectors` compares
 `Sector` objects by identity). Cross-*thing* references (`targetId`, `sourceId`) were already IDs —
 `PosedThing.id` is its index in `posed`, and the saved thing list keeps that order, which is why a
 restore must never skip an entry (`buildThingSprites` throws on missing art instead).

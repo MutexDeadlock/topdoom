@@ -547,21 +547,20 @@ export interface ThingLayer {
    */
   awakeMonsters(): StandingBody[];
   /**
-   * Living monsters standing in exactly `sector` — a reference-equality check
-   * against the same mutable `Sector` object `PosedThing.sector` was seeded
+   * Living monsters standing in one of `sectors` — a reference-equality check
+   * against the same mutable `Sector` objects `PosedThing.sector` was seeded
    * from (see that field's doc), not a sector-index lookup this layer has no
-   * way to perform on its own. Backs crush damage
-   * (`specials/moverblocking.ts: applyCrushDamage`) and the headroom-blocked check every
+   * way to perform on its own. Backs the two obstruction checks every
    * non-crushing mover uses to stop rather than clip through a monster
-   * (`game/specials/moverblocking.ts`'s `headroomBlocked`) — either way, a mover only knows which
-   * sector it's squeezing, not who's standing in it.
+   * (`game/specials/moverblocking.ts`), which ask for the moving sector *and its neighbors* —
+   * a body's centre can stand next door while its box reaches into the mover.
+   * docs/specials-movers.md § Every other mover stops instead.
    */
-  monstersInSector(sector: Sector): MonsterRef[];
+  monstersInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
   /**
-   * `monstersInSector` plus any still-standing barrel, over a *set* of sectors. Crush damage
-   * (`specials/moverblocking.ts: applyCrushDamage`) is the only user, and asks for the crushing
-   * sector *and its neighbors* in one pass; the headroom-blocked check other movers use
-   * deliberately stays on `monstersInSector` alone. docs/specials-crushers.md § Crushers.
+   * `monstersInSectors` plus any still-standing barrel. Crush damage
+   * (`specials/moverblocking.ts: applyCrushDamage`) is the only user; whether a barrel should also
+   * stall a closing door is a separate question. docs/specials-crushers.md § Crushers.
    */
   crushablesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
   /**

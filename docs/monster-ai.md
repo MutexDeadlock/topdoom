@@ -641,7 +641,7 @@ per monster hitscan. `raycastMonster`'s query is a ray rather than a box, so
 step — deliberately simpler than `World.forEachLineAlongSegment`'s exact DDA, and conservative by a
 wide margin. Monsters are deduped with a stamp on `PosedThing.queryStamp` rather than a `Set`, since
 consecutive steps overlap heavily. All were verified to return results identical to the linear scans
-across NUTS.WAD, DOOM2 MAP07 and DOOM E1M7. `monstersInSector` is deliberately left linear — it runs
+across NUTS.WAD, DOOM2 MAP07 and DOOM E1M7. `monstersInSectors` is deliberately left linear — it runs
 on a crusher tick, not per frame.
 
 **`stepMonsterAI` resolves sight lazily and memoizes it for the call** (`sightCached`/`canSee`).

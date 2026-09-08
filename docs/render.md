@@ -207,6 +207,12 @@ a mover is built out of the static batches and would otherwise go uncounted. Rea
 mover rebuild moves its own tally and nothing reports it again. DOOM2 MAP01 25, MAP05 52, MAP29 25,
 GoingDown MAP01 9.
 
+**The whole rule is a setting** — *Visuals → Top-down extras → Hide thin ceiling steps*, on by
+default, on the `ceilingTrims` setting (`getCeilingTrims`/`setCeilingTrims` in `mapmesh/walls.ts`).
+Off, every upper the mapper textured is drawn. Read once per level, where `trimIndex` builds the
+memo, and latched on it: a trim is baked into the static batches, so a toggle mid-level would leave
+a mover rebuild disagreeing with them. The row says it takes the next level load.
+
 **A step either of whose sectors can move keeps its upper** (`Build.holdsStill`, the same predicate
 the vertical dicing asks). A door's upper shrinks as it opens, so without that a wide door sheds its
 header the tic it passes 16 units, mid-travel.

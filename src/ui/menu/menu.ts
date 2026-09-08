@@ -24,6 +24,7 @@ import { getInfiniteTallActors, setInfiniteTallActors } from '../../game/world.t
 import { getDynamicLights, setDynamicLights } from '../../render/lights.ts';
 import { getVoidFog, setVoidFog } from '../../render/voidfloor.ts';
 import { getSolidCaps, setSolidCaps } from '../../render/solids.ts';
+import { getCeilingTrims, setCeilingTrims } from '../../render/mapmesh/walls.ts';
 import { getBloom, setBloom } from '../../render/bloom.ts';
 import { getWallShade, setWallShade } from '../../render/wallshadow.ts';
 import { getSkyTint, setSkyTint } from '../../render/skytint.ts';
@@ -120,6 +121,7 @@ export class Menu {
   private dynLightsCheckbox = el<HTMLInputElement>('dynlights-checkbox');
   private voidFogCheckbox = el<HTMLInputElement>('voidfog-checkbox');
   private solidCapsCheckbox = el<HTMLInputElement>('solidcaps-checkbox');
+  private ceilingTrimsCheckbox = el<HTMLInputElement>('ceilingtrims-checkbox');
   private bloomCheckbox = el<HTMLInputElement>('bloom-checkbox');
   private wallShadeCheckbox = el<HTMLInputElement>('wallshade-checkbox');
   private skyTintCheckbox = el<HTMLInputElement>('skytint-checkbox');
@@ -262,9 +264,10 @@ export class Menu {
     // docs/lights.md § Turning it on for the bloom, which is **off** by default alone among them
     // because of what it costs.
     this.installToggle(this.voidFogCheckbox, getVoidFog, setVoidFog);
-    // The one that isn't live: the caps are baked into the level's mesh, so it takes the next load
-    // — which is what the row says. docs/render-solids.md.
+    // The two that aren't live: caps and trims are baked into the level's mesh, so each takes the
+    // next load — which is what the rows say. docs/render-solids.md, docs/render.md § Ceiling trims.
     this.installToggle(this.solidCapsCheckbox, getSolidCaps, setSolidCaps);
+    this.installToggle(this.ceilingTrimsCheckbox, getCeilingTrims, setCeilingTrims);
     this.installToggle(this.wallShadeCheckbox, getWallShade, setWallShade);
     this.installToggle(this.skyTintCheckbox, getSkyTint, setSkyTint);
     this.installToggle(this.bloomCheckbox, getBloom, setBloom);

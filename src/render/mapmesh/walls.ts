@@ -9,8 +9,27 @@ import type { Pos2 } from '../../types.ts';
 import { vecLength } from '../../util/geom.ts';
 import { skyLitSector } from '../skytint.ts';
 import { lightSegment, wallContrast } from '../sectorlight.ts';
+import { readStorage, writeStorage } from '../../util/storage.ts';
 import { pushVertex, type Build, type SizeFn } from './build.ts';
 import { WALL_CHUNK_LEN, type SectorTransfers } from './defs.ts';
+
+const STORAGE_KEY = 'ceilingTrims';
+
+/**
+ * Whether thin ceiling steps are left out at all. On by default, and read once per level
+ * (`trimIndex`): a trim is baked into the static batches, so a toggle mid-level would leave a
+ * mover rebuild disagreeing with them. docs/render.md § Ceiling trims.
+ */
+let enabled = readStorage(STORAGE_KEY, true);
+
+export function getCeilingTrims(): boolean {
+  return enabled;
+}
+
+export function setCeilingTrims(on: boolean): void {
+  enabled = on;
+  writeStorage(STORAGE_KEY, on);
+}
 
 /** The two solid tiers one side of a two-sided line draws — see `twoSidedBands`. */
 export interface DrawnBands {
@@ -168,6 +187,12 @@ export function processLine(build: Build, line: LineDef, lineIndex: number): voi
 export function trimIndex(map: DoomMap, size: SizeFn): TrimIndex {
   const cached = trimIndexes.get(map);
   if (cached) return cached;
+  // The setting is read here and nowhere else, so it is latched for the level the memo belongs to.
+  if (!enabled) {
+    const off: TrimIndex = { trims: false, signs: new Set(), extent: new Float64Array(0) };
+    trimIndexes.set(map, off);
+    return off;
+  }
   const n = map.sectors.length;
   const minX = new Float64Array(n).fill(Infinity);
   const minY = new Float64Array(n).fill(Infinity);
@@ -233,7 +258,7 @@ export function trimIndex(map: DoomMap, size: SizeFn): TrimIndex {
   for (let sec = 0; sec < n; sec++) {
     extent[sec] = Math.max(maxX[sec] - minX[sec], maxY[sec] - minY[sec]);
   }
-  const index = { signs, extent };
+  const index = { trims: true, signs, extent };
   trimIndexes.set(map, index);
   return index;
 }
@@ -454,11 +479,14 @@ function trimsCeiling(map: DoomMap, bands: DrawnBands, otherIndex: number, upper
   if (bands.upperBot - Math.max(bands.lowerBot, bands.lowerTop) < TRIM_MIN_OPENING) return false;
   const index = trimIndexes.get(map);
   if (!index) return true;
+  if (!index.trims) return false;
   return !(index.signs.has(upper) && index.extent[otherIndex] <= TRIM_MAX_SIGN);
 }
 
 /** What deciding a trim needs to know about the whole map — see `trimIndex`. */
 interface TrimIndex {
+  /** Whether the setting was on when this level built — off leaves every upper standing. */
+  trims: boolean;
   /** Every texture the map draws **whole** everywhere: never cropped, never tiled. */
   signs: Set<string>;
   /** How wide each sector is at its widest, over the linedefs that bound it. */

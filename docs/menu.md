@@ -201,10 +201,11 @@ the two a player picks *before* a run rather than sets once and forgets.
 
 **Visuals is Camera, Frame rate, Lighting, Top-down extras, Player sprites** — everything that
 changes what the running level *looks* like, in that order: the camera first, being the one a player
-actually goes looking for. *Top-down extras* holds the two this camera needs and vanilla never did:
-the void fog and the tops on crates and pillars (docs/render-solids.md, docs/render.md § The void
-floor). The second is the one setting on the tab that is **not** live — the caps are baked into the
-level's mesh — and its row says so.
+actually goes looking for. *Top-down extras* holds the three this camera needs and vanilla never
+did: the void fog, the tops on crates and pillars, and the hidden thin ceiling steps
+(docs/render-solids.md, docs/render.md § The void floor and § Ceiling trims). The last two are the
+settings on the tab that are **not** live — caps and trims are baked into the level's mesh — and
+their rows say so.
 
 **Camera** is `#cameramode-select`, whose `<option>` values are the `CameraMode` strings themselves
 (`auto`, the default, vs `manual`); it is owned by `game/autocamera.ts`
@@ -343,6 +344,7 @@ a setting touches one module.
 | `dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
 | `voidFog` | `render/voidfloor.ts` (`getVoidFog`/`setVoidFog`) | docs/render.md § The toggle |
 | `solidCaps` | `render/solids.ts` (`getSolidCaps`/`setSolidCaps`) | docs/render-solids.md |
+| `ceilingTrims` | `render/mapmesh/walls.ts` (`getCeilingTrims`/`setCeilingTrims`) | docs/render.md § Ceiling trims |
 | `wallShade` | `render/wallshadow.ts` (`getWallShade`/`setWallShade`) | docs/render-lighting.md § Turning it off |
 | `skyTint` | `render/skytint.ts` (`getSkyTint`/`setSkyTint`) | docs/render-lighting.md § Turning the tint off |
 | `bloom` | `render/bloom.ts` (`getBloom`/`setBloom`) | docs/lights.md § Turning it on |

@@ -5,6 +5,8 @@ Features and improvements
     straight down into one
     - can be switched off under Settings -> Visuals -> Top-down extras
       (requires level reload)
+  - hiding thin ceiling steps can now be switched off under
+    Settings -> Visuals -> Top-down extras (also requires level reload)
 
 Fixed bugs
   - a crate's top cropped its texture mid-face: it now starts at the structure's

@@ -1,9 +1,14 @@
 v0.18.2 (2026-09-0?)
 
 Features and improvements
+  - crates and pillars now have tops, so from overhead you no longer look
+    straight down into one
+    - can be switched off under Settings -> Visuals -> Top-down extras
+      (requires level reload)
 
 Fixed bugs
-
+  - a crate's top cropped its texture mid-face: it now starts at the structure's
+    own corner, on the face its walls show
 
 
 ===============================================================================

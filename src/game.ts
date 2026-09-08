@@ -60,7 +60,7 @@ import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { AutoCamera, getCameraMode } from './game/autocamera.ts';
 import { SectorEffects, SpecialsController, type TeleportDest } from './game/specials.ts';
-import { scanSectors } from './game/specials/mapscan.ts';
+import { addBlockMates, scanSectors } from './game/specials/mapscan.ts';
 import type { ShootAim } from './game/specials/shootaim.ts';
 import { Forces } from './game/specials/forces.ts';
 import { transfersOf, type Transfers } from './game/specials/transfers.ts';
@@ -1324,6 +1324,8 @@ export class Game {
         movableSectors.add(sectorIndex);
         movingSectors.add(sectorIndex);
       }
+      // The scan's own block rule again, over a sector it never saw.
+      addBlockMates(map, movableSectors);
     }
     // Shared with the mover meshes below, so a door's walls carry the same leaf attribute the
     // static ones do — without it a mover would be the one surface a light shone through.

@@ -32,6 +32,7 @@ import {
 } from '../../render/mapmesh.ts';
 import type { SubSectorPoly } from '../../render/bsp.ts';
 import type { MaterialBank } from '../../render/textures.ts';
+import { movableBlocks } from '../../render/solids.ts';
 import {
   boxesOverlap,
   fadeReach,
@@ -147,6 +148,7 @@ export class MoverGeometry {
     this.movableSectors = movableSectors;
     this.indexMovableNeighbors();
     this.indexWaterDependents();
+    this.indexBlockMates();
     for (const sectorIndex of movableSectors) this.createMoverMesh(sectorIndex);
     this.indexLightGeometry();
   }
@@ -395,6 +397,25 @@ export class MoverGeometry {
       }
     }
     for (const [from, to] of edges) this.link(from, to);
+  }
+
+  /**
+   * The last rebuild edges that aren't adjacency: every sector of one solid block linked to every
+   * other, so a block rebuilds whole. Its cap is one decision over all of it (`blockCapHeight`) and
+   * `rebuildAround` reaches one hop, so a light well two sectors in from the rim would otherwise
+   * keep the lid the rim just dropped — `movableBlocks`, which `game.ts` made the whole block
+   * mover-owned for. docs/render.md § Blocks built out of a sector.
+   */
+  private indexBlockMates(): void {
+    for (const block of movableBlocks(this.mover.map, this.movableSectors)) {
+      // `game.ts` made the whole block mover-owned; a rig that didn't links only the part that is.
+      const mates = block.filter((sectorIndex) => this.movableSectors.has(sectorIndex));
+      for (const from of mates) {
+        for (const to of mates) {
+          if (from !== to) this.link(from, to);
+        }
+      }
+    }
   }
 
   private link(from: number, to: number): void {

@@ -31,13 +31,13 @@ export function planFlatRefresh(build: Build, mesh: MoverMesh, sectorIndex: numb
   beginHoleFills(build);
   let at = 0;
   for (const ss of index.subsectorsOf(sectorIndex)) {
-    const count = flatSpecsOf(build, build.polys[ss], closedHoleFill(ss), flatSpecs);
+    const count = flatSpecsOf(build, build.polys[ss], ss, closedHoleFill(ss), flatSpecs);
     // A leaf too degenerate to have produced a vertex produced no fan either, and never will.
     // `buildMoverFlats` appended the rest in this same order.
     if (fans[at]?.subsector !== ss) continue;
     for (let i = 0; i < count; i++) {
       const spec = flatSpecs[i];
-      if (!flatArt('flat', spec.texName, build.size)) continue;
+      if (!flatArt(spec.kind, spec.texName, build.size)) continue;
       const fan = fans[at];
       if (
         fan === undefined ||

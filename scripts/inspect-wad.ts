@@ -28,7 +28,7 @@ import { Transfers } from '../src/game/specials/transfers.ts';
 import { VoodooDolls } from '../src/game/voodoo.ts';
 import { decodeSectorType, sectorTypeUnderstood } from '../src/game/specials/sectortypes.ts';
 import { buildSubSectorPolys, sectorOfSubSector } from '../src/render/bsp.ts';
-import { findSolidCaps } from '../src/render/solids.ts';
+import { findSolidBlocks, findSolidCaps, pocketsOf } from '../src/render/solids.ts';
 import { makeCollider, World } from '../src/game/world.ts';
 import { SoundBank } from '../src/wad/sound.ts';
 import { SFX_NAMES } from '../src/audio/sfx.ts';
@@ -167,11 +167,14 @@ for (const [ssIndex, p] of polys.entries()) {
     flatArea += Math.abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)) / 2;
   }
 }
+const solidCaps = findSolidCaps(map, polys);
+const blocks = findSolidBlocks(map);
 console.log(
   `subsector polys: ${polys.length} total, ${empty} degenerate, ${redirected} drawn as another sector` +
     `${refiled > 0 ? ` (${refiled} refiled for gameplay too)` : ''}, ${minVerts}..${maxVerts} verts,\n` +
     `  total floor area ${Math.round(flatArea).toLocaleString('en-US')} map units²,\n` +
-    `  ${findSolidCaps(map, polys).length} solid structures lidded`,
+    `  ${solidCaps.length} solid structures lidded, ${blocks.length} blocks built out of roomless sectors capped,\n` +
+    `  ${pocketsOf(map, polys, [...solidCaps, ...blocks]).roofs.size} pockets in them roofed`,
 );
 
 // REJECT: how much sight this map's own table rules out up front.

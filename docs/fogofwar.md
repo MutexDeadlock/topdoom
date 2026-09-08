@@ -341,7 +341,9 @@ Which subsector a given surface belongs to is resolved differently per surface t
 some of them know it natively:
 
 - `FlatSurface` (the `WallOccluder` counterpart for floor/ceiling triangle fans) carries its
-  subsector straight from the BSP polygon it was built from.
+  subsector straight from the BSP polygon it was built from — except a solid structure's cap, which
+  was built from no polygon at all and carries `revealedBy`, the leaves around its ring, of which the
+  most revealed wins (`FlatFader`'s `fogAlpha`, docs/render.md § Solid structures).
 - Things resolve theirs with `subsectorAt`.
 - **Wall quads can't**: they're built from a linedef's own geometry, so `FogOfWar` derives each one
   itself by nudging the quad's midpoint `WALL_PROBE_OFFSET` along its front normal (`mapmesh` builds

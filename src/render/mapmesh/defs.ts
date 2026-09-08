@@ -206,6 +206,14 @@ export interface FlatSurface {
   vertexStart: number;
   vertexCount: number;
   subsector: number;
+  /**
+   * Every subsector that reveals this fan, where its own is not the whole answer: a solid
+   * structure's cap belongs to no leaf — the ring encloses void — and is seen from any side of the
+   * structure, so any one of the leaves its ring borders showing is enough
+   * (docs/fogofwar.md § How reveal reaches the geometry). Absent on an ordinary flat, which is a
+   * leaf's own floor and answers with `subsector` alone.
+   */
+  revealedBy?: readonly number[];
   /** Sector this fan belongs to — for specials-driven relight. */
   sector: number;
   /**

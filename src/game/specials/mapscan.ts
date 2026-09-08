@@ -15,6 +15,7 @@
 import { NO_SIDE, type DoomMap, type LineDef } from '../../wad/map.ts';
 import type { SwitchPairLookup } from '../../wad/switches.ts';
 import { nextSectorIndices, sectorLines, sectorsByTag } from '../world.ts';
+import { movableBlocks } from '../../render/solids.ts';
 import { BOSS_DEATH_TYPES } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
 import { lookupSpecial } from './tables.ts';
@@ -322,6 +323,7 @@ export function scanSectors(map: DoomMap, pairs?: SwitchPairLookup): SectorScan 
   // Run again over the widened set rather than trusting the pass above: a
   // switch sector could itself be a 242 control.
   addWaterDependents(map, movable);
+  addBlockMates(map, movable);
   return { moving, movable };
 }
 
@@ -346,6 +348,18 @@ function addWaterDependents(map: DoomMap, out: Set<number>): void {
         changed = true;
       }
     }
+  }
+}
+
+/**
+ * A solid block's cap is one decision over the whole of it (`blockCapHeight`), so a block with one
+ * mover-owned sector is mover-owned whole: the half left in the static batches keeps its lid over
+ * the hole the other half opens. Never `moving` — nothing about the rest of the block moves.
+ * docs/render.md § Blocks built out of a sector.
+ */
+export function addBlockMates(map: DoomMap, out: Set<number>): void {
+  for (const block of movableBlocks(map, out)) {
+    for (const sectorIndex of block) out.add(sectorIndex);
   }
 }
 

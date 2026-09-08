@@ -283,7 +283,10 @@ describe('Rendering · deep water planes', () => {
     // pool, 64 units under the surface and carrying none of its tag. Boom draws
     // no surface over it — from overhead that is a square hole in the water.
     const { fans } = island();
-    assert.equal(fans.length, 2, 'its own top, and the pool’s surface over it');
+    // Below the surface only: the pillar is a solid block, so `findSolidBlocks` caps its top at
+    // the room's ceiling as well, across as many leaves as the BSP split it into.
+    const under = fans.filter((fan) => fan.height <= 0);
+    assert.equal(under.length, 2, 'its own top, and the pool’s surface over it');
     assert.equal(fans[0].height, -32, 'the island’s own floor');
     assert.equal(fans[0].key, 'flat:' + POOL_FLAT, 'wearing its own flat, seen through the water');
     assert.equal(fans[1].height, 0, 'the pool’s surface, at the control sector’s floor');
@@ -302,7 +305,7 @@ describe('Rendering · deep water planes', () => {
     // The cell north of it is not water, so the sheet around it is not one pool
     // closing over it — the same test `markPoolIslands` makes.
     const { fans } = island({ untagged: [1, 0] });
-    assert.equal(fans.length, 1);
+    assert.equal(fans.filter((fan) => fan.height <= 0).length, 1);
   });
 
   test('the surface over a submerged player is never faded away', () => {

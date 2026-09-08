@@ -23,6 +23,7 @@ import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
 import { getInfiniteTallActors, setInfiniteTallActors } from '../../game/world.ts';
 import { getDynamicLights, setDynamicLights } from '../../render/lights.ts';
 import { getVoidFog, setVoidFog } from '../../render/voidfloor.ts';
+import { getSolidCaps, setSolidCaps } from '../../render/solids.ts';
 import { getBloom, setBloom } from '../../render/bloom.ts';
 import { getWallShade, setWallShade } from '../../render/wallshadow.ts';
 import { getSkyTint, setSkyTint } from '../../render/skytint.ts';
@@ -118,6 +119,7 @@ export class Menu {
   private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private dynLightsCheckbox = el<HTMLInputElement>('dynlights-checkbox');
   private voidFogCheckbox = el<HTMLInputElement>('voidfog-checkbox');
+  private solidCapsCheckbox = el<HTMLInputElement>('solidcaps-checkbox');
   private bloomCheckbox = el<HTMLInputElement>('bloom-checkbox');
   private wallShadeCheckbox = el<HTMLInputElement>('wallshade-checkbox');
   private skyTintCheckbox = el<HTMLInputElement>('skytint-checkbox');
@@ -259,6 +261,9 @@ export class Menu {
     // level already running — docs/render.md, and docs/lights.md § Turning it on for the bloom,
     // which is **off** by default alone among them because of what it costs.
     this.installToggle(this.voidFogCheckbox, getVoidFog, setVoidFog);
+    // The one that isn't live: the caps are baked into the level's mesh, so it takes the next load
+    // — which is what the row says. docs/render.md § Solid structures.
+    this.installToggle(this.solidCapsCheckbox, getSolidCaps, setSolidCaps);
     this.installToggle(this.wallShadeCheckbox, getWallShade, setWallShade);
     this.installToggle(this.skyTintCheckbox, getSkyTint, setSkyTint);
     this.installToggle(this.bloomCheckbox, getBloom, setBloom);

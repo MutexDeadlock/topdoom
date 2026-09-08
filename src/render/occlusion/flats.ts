@@ -359,7 +359,7 @@ export class FlatFader {
       const s = this.surfaces[i];
       const start = this.vertexStart[i];
       const count = this.vertexCount[i];
-      const scale = (s.baseAlpha ?? 1) * fogAlphaOf(s.subsector);
+      const scale = (s.baseAlpha ?? 1) * fogAlpha(s, fogAlphaOf);
       // Nothing damped and the same fog: this fan already holds what it should,
       // and walking its vertices to prove it is the whole cost on a big map.
       const settled = this.moved[i] === 0 && scale === this.lastScale[i];
@@ -464,4 +464,21 @@ export class FlatFader {
     }
     return true;
   }
+}
+
+/**
+ * How much fog of war lets a fan through. An ordinary flat is one leaf's own floor and answers with
+ * its own subsector; a solid structure's cap belongs to no leaf and is revealed by any side of the
+ * structure being seen, so it takes the **most** revealed of the leaves its ring borders
+ * (`FlatSurface.revealedBy`, docs/render.md § Solid structures).
+ */
+function fogAlpha(surface: FlatSurface, fogAlphaOf: (subsector: number) => number): number {
+  const also = surface.revealedBy;
+  if (also === undefined) return fogAlphaOf(surface.subsector);
+  let most = 0;
+  for (const subsector of also) {
+    const alpha = fogAlphaOf(subsector);
+    if (alpha > most) most = alpha;
+  }
+  return most;
 }

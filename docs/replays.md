@@ -377,6 +377,12 @@ recording's own start, which is what a playback builds its level from. A keyfram
 cheat half typed); a refused one waits for the next tic rather than being skipped, so the anchors
 drift later but never go missing.
 
+**Every level entered lays one down too**, at the level's first tic — `Game.runEnterLevel`, right
+after the entry checkpoint (docs/savegames.md § The checkpoint), on the same capture rules as the
+interval anchor. It shares its tic with the level's track marker, so a jump to a marker lands on
+the level itself instead of restoring an anchor in the level before it and catching up through a
+level end and two map builds. The interval is measured from the last keyframe of either kind.
+
 `Game.seekTo` restores the last keyframe at or before the target and then **runs the tics** from
 there — a jump that stays ahead of the current position and passes no keyframe skips the reload and
 runs on from where it is. The catch-up is spent `SEEK_BUDGET_MS` per frame (`advanceSeek`), so the

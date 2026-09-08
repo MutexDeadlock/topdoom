@@ -1766,6 +1766,13 @@ export class Game {
     this.savedState = null;
     this.loadMapByIndex(index);
     this.writeCheckpoint();
+
+    // The level's own seek anchor, on the tic its track marker gets: the advancing tic's row was
+    // closed before this ran, so `ticCount` is already the new level's first. docs/replays.md
+    // § Seeking.
+    if (this.recorder && !this.cheats.typing && this.saveRefusal() === null) {
+      this.recorder.keyframe(this.currentMap, this.captureSave({ thumbnail: false }).state);
+    }
   }
 
   /**

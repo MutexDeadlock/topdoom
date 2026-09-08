@@ -289,6 +289,25 @@ describe('Replays · recording and playing back', () => {
     assert.equal(playback.keyframeAt(KEYFRAME_INTERVAL * 9).tic, KEYFRAME_INTERVAL);
   });
 
+  test('a level entered anchors a jump at its own first tic', () => {
+    const recorder = new ReplayRecorder(scripted([]), start());
+    const state = { player: {}, rng: { p: 1, m: 0 } } as unknown as GameSnapshot;
+    for (let i = 0; i < 100; i++) recorder.endTic();
+    // `Game.runEnterLevel`'s order: the track marker, then the anchor at the same tic.
+    recorder.levelLoaded('E1M2');
+    recorder.keyframe('E1M2', state);
+    const playback = new ReplayPlayback(replayOf(recorder));
+    const marker = playback.replay.levels[1];
+    assert.equal(marker.tic, 100);
+    assert.equal(playback.keyframeAt(marker.tic).tic, marker.tic, 'a jump to the marker lands on the level');
+    assert.equal(playback.keyframeAt(marker.tic).map, 'E1M2');
+    // And the interval measures from it, not from the last anchor before the level.
+    for (let i = 0; i < KEYFRAME_INTERVAL - 1; i++) recorder.endTic();
+    assert.equal(recorder.keyframeDue, false);
+    recorder.endTic();
+    assert.equal(recorder.keyframeDue, true);
+  });
+
   test('the check samples catch a divergence at the first sample that disagrees', () => {
     clearRandom();
     const rows: Row[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));

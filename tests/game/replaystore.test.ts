@@ -22,8 +22,8 @@ import { memoryBackend, type MemoryBackend } from '../fixtures/savestore.ts';
 import { replayCapture as capture } from '../fixtures/replay.ts';
 
 /**
- * The replay store over an in-memory backend, the gzip codec real — `tests/game/savegames.test.ts`'s
- * rig for the format it mirrors. See docs/replays.md § Storage.
+ * The replay store over an in-memory backend, the gzip codec real —
+ * `tests/game/savegames.test.ts`'s rig for the format it mirrors. See docs/replays.md § Storage.
  */
 
 let backend: MemoryBackend;

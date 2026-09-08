@@ -87,27 +87,6 @@ export function pickerBlock(): '' | 'unsupported' | 'framed' {
   return inCrossOriginFrame() ? 'framed' : '';
 }
 
-/**
- * Whether this document is framed by a page of another origin. The File System Access API refuses
- * to run there — the pickers are available to a top-level document or a *same-origin* frame only,
- * and a cross-origin one gets a `SecurityError` — so the method existing on `window` is not enough
- * to know it can be called.
- *
- * The case that hits real users is **VS Code's Simple Browser**, which loads the dev server into an
- * `<iframe>` inside a `vscode-webview://` page. Reading the framing page's origin is itself blocked
- * cross-origin, so the throw *is* the answer.
- */
-function inCrossOriginFrame(): boolean {
-  const win = globalThis as { self?: unknown; top?: { location: Location } | null; location?: Location };
-  // Unframed, or no window at all (a test, a worker) — nothing to be blocked by.
-  if (!win.top || win.self === win.top) return false;
-  try {
-    return win.top.location.origin !== win.location?.origin;
-  } catch {
-    return true;
-  }
-}
-
 /** The folder's display name, or '' when none is set. */
 export function libraryName(): string {
   return state.name;
@@ -132,21 +111,6 @@ export async function restoreLibrary(): Promise<void> {
   state.handle = handle;
   state.name = handle.name;
   state.descriptors = [...(await readDescriptors()).values()];
-}
-
-/** `state.handle` under the permission methods `lib.dom` doesn't declare. */
-function permissionedHandle(): (FileSystemDirectoryHandle & HandlePermissions) | null {
-  return state.handle;
-}
-
-/**
- * Whether the folder can already be read, asking for nothing — the half of the permission rule the
- * boot path can use, since it may not prompt. Absent `queryPermission` counts as usable, not as a
- * refusal (docs/wad.md § The player's own library).
- */
-async function readPermissionStands(handle: FileSystemDirectoryHandle & HandlePermissions): Promise<boolean> {
-  if (!handle.queryPermission) return true;
-  return (await handle.queryPermission({ mode: 'read' })) === 'granted';
 }
 
 /**
@@ -479,4 +443,40 @@ function relativePath(file: File): string {
   // The first segment is the picked folder itself, which is the tree's root row, not part of the
   // path.
   return full.split('/').slice(1).join('/') || file.name;
+}
+
+/**
+ * Whether this document is framed by a page of another origin. The File System Access API refuses
+ * to run there — the pickers are available to a top-level document or a *same-origin* frame only,
+ * and a cross-origin one gets a `SecurityError` — so the method existing on `window` is not enough
+ * to know it can be called.
+ *
+ * The case that hits real users is **VS Code's Simple Browser**, which loads the dev server into an
+ * `<iframe>` inside a `vscode-webview://` page. Reading the framing page's origin is itself blocked
+ * cross-origin, so the throw *is* the answer.
+ */
+function inCrossOriginFrame(): boolean {
+  const win = globalThis as { self?: unknown; top?: { location: Location } | null; location?: Location };
+  // Unframed, or no window at all (a test, a worker) — nothing to be blocked by.
+  if (!win.top || win.self === win.top) return false;
+  try {
+    return win.top.location.origin !== win.location?.origin;
+  } catch {
+    return true;
+  }
+}
+
+/** `state.handle` under the permission methods `lib.dom` doesn't declare. */
+function permissionedHandle(): (FileSystemDirectoryHandle & HandlePermissions) | null {
+  return state.handle;
+}
+
+/**
+ * Whether the folder can already be read, asking for nothing — the half of the permission rule the
+ * boot path can use, since it may not prompt. Absent `queryPermission` counts as usable, not as a
+ * refusal (docs/wad.md § The player's own library).
+ */
+async function readPermissionStands(handle: FileSystemDirectoryHandle & HandlePermissions): Promise<boolean> {
+  if (!handle.queryPermission) return true;
+  return (await handle.queryPermission({ mode: 'read' })) === 'granted';
 }

@@ -14,6 +14,12 @@ import { FAST_MONSTER_STATS, MONSTER_STATS } from '../../src/game/monsters/table
 import { ThingType } from '../../src/game/things/doomednums.ts';
 
 /**
+ * What the chosen skill decides: which THINGs spawn at all, the flags the spawn reads, and the
+ * ammo and damage adjustments the two extreme skills make.
+ * See docs/items.md § Skill and docs/sprites.md § Which things spawn.
+ */
+
+/**
  * Which THINGs a map spawns at each difficulty. Pure flag arithmetic against
  * vanilla's `P_LoadThings`, so the whole matrix is cheap to pin.
  */

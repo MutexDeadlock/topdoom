@@ -66,8 +66,7 @@ export class ProfilerHud {
     // without clearing the row container first, the previous instance's rows
     // stay put above this one's, reading as a second stacked overlay.
     this.rowsEl.replaceChildren();
-    // The menu's checkbox owns the setting and toggles the same class live, so
-    // this only has to seed it for the level starting now.
+    // Seeds the class for the level starting now; the menu's checkbox toggles it live.
     applyProfilerVisible();
   }
 

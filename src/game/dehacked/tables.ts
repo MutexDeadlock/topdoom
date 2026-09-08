@@ -336,12 +336,8 @@ export function unhonoredFlags(mask: number): { name: string; support: DehShortf
  *
  * A bridge rather than a second table of rolls: every one of those figures is already written once
  * in `MONSTER_SEED` with its `p_enemy.c` citation, and a copy here would be exactly the drift the
- * one-home rule exists to prevent. It is the reasoning `MISSILE_SINKS` rests on — in vanilla the
- * imp's fireball *is* one shared `mobjinfo`, so the owning type's own numbers are the faithful
- * answer rather than an approximation.
- *
- * `A_BrainSpit` has no row on purpose: the Icon of Sin's cube is not an `AttackStats` at all, and
- * carries its own constants in `monsters/iconofsin.ts`.
+ * one-home rule exists to prevent. `A_BrainSpit` has no row on purpose — the Icon of Sin's cube is
+ * not an `AttackStats` at all, and carries its own constants in `monsters/iconofsin.ts`.
  */
 export const ATTACK_ACTION_SOURCES: Record<string, number> = {
   A_PosAttack: ThingType.zombieman,

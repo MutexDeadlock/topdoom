@@ -391,7 +391,9 @@ describe('Rendering · what the fade still refuses to touch', () => {
   const screenedRow = (texture: string) => {
     const grid = gridMap(['.....'], { cell: CELL });
     for (const l of grid.map.linedefs) {
-      if (l.left !== NO_SIDE && l.right !== NO_SIDE) grid.map.sidedefs[l.right].middle = texture;
+      if (l.left !== NO_SIDE && l.right !== NO_SIDE) {
+        grid.map.sidedefs[l.right].middle = texture;
+      }
     }
     const b = buildMapMesh(grid.map, BANK, { transfers: new Transfers(grid.map) });
     assert.ok(b.occluders.length > 0, 'the fixture builds midtexture quads');

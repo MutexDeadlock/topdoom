@@ -6,6 +6,7 @@ import { loadCorridor } from '../fixtures/corridor.ts';
  * Both chaingunner regression tests are built on this one map, so a fixture
  * that quietly stopped being what it claims would weaken every assertion in
  * them without failing anything. It gets pinned here instead.
+ * See docs/testing.md § Writing a new test.
  */
 describe('Regressions · the corridor fixture itself', () => {
   test('long_corridor_with_chaingunner.wad loads, and holds the geometry it claims', () => {

@@ -221,22 +221,15 @@ export const MONSTER_SAVE_KEYS = [
 export type MonsterFields = Pick<PosedThing, (typeof MONSTER_SAVE_KEYS)[number]>;
 
 /**
- * Spawn defaults for the sparse encoding: a field equal to its entry here is
- * omitted from the saved block, and the restore loop lets `pushThing`'s own
- * default stand for any absent key. `pushThing` spreads this very table into
- * the thing it builds, so the elision baseline *is* the spawn record rather
- * than a copy of it — a default changed in one place and not the other would
- * otherwise elide a field that restores to something else. Mapped over the key
- * tuple so adding a key to `MONSTER_SAVE_KEYS` without deciding its default is
- * a compile error.
- * Six keys have no constant spawn default and are special-cased in
- * `snapshotThings`: `health` (per type, `spawnHealthFor`), `angle`
- * (`facingDeg` in radians, already in every `ThingState`), `homingBias`
- * (a random draw — always saved), and the three `spawn*` fields, whose default
- * is wherever this particular thing was created — so each is written only when
- * it no longer matches the `x`/`y`/`facingDeg` the same `ThingState` carries,
- * which for anything that never moved is never.
- * docs/savegames.md § The format and its version.
+ * Spawn defaults for the sparse encoding: a field equal to its entry here is omitted from the saved
+ * block. `pushThing` spreads this very table into the thing it builds, so the elision baseline *is*
+ * the spawn record rather than a copy of it. Mapped over the key tuple, so adding a key to
+ * `MONSTER_SAVE_KEYS` without deciding its default is a compile error.
+ *
+ * Six keys have no constant spawn default and are special-cased in `snapshotThings`: `health` (per
+ * type), `angle` (already in every `ThingState`), `homingBias` (a random draw, always saved), and
+ * the three `spawn*` fields, written only where they no longer match the `x`/`y`/`facingDeg` beside
+ * them. docs/savegames.md § The format and its version.
  */
 export const MONSTER_FIELD_DEFAULTS: {
   readonly [K in Exclude<
@@ -631,7 +624,9 @@ export function deserializeInventory(s: InventorySnapshot): Inventory {
   const inv = createInventory();
   if (Number.isFinite(s.health)) inv.health = s.health;
   if (Number.isFinite(s.armor)) inv.armor = s.armor;
-  if (s.armorType === 0 || s.armorType === 1 || s.armorType === 2) inv.armorType = s.armorType;
+  if (s.armorType === 0 || s.armorType === 1 || s.armorType === 2) {
+    inv.armorType = s.armorType;
+  }
   for (const t of AMMO_TYPES) {
     if (Number.isFinite(s.ammo?.[t])) inv.ammo[t] = s.ammo[t];
   }
@@ -642,7 +637,9 @@ export function deserializeInventory(s: InventorySnapshot): Inventory {
           .filter((k): k is KeyColor => (KEY_COLORS as readonly string[]).includes(k))
           .flatMap((c): KeySlot[] => [`${c}Card`, `${c}Skull`]),
       );
-  if (Array.isArray(s.weapons) && s.weapons.length > 0) inv.weapons = new Set(s.weapons);
+  if (Array.isArray(s.weapons) && s.weapons.length > 0) {
+    inv.weapons = new Set(s.weapons);
+  }
   if (typeof s.currentWeapon === 'string') inv.currentWeapon = s.currentWeapon;
   for (const p of POWER_IDS) {
     const v = s.powers?.[p];

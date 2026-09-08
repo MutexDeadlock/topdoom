@@ -39,6 +39,23 @@ interface Huffman {
   symbols: Int32Array;
 }
 
+/** Decodes a zlib stream (RFC 1950): header checks, raw DEFLATE, adler32 verify. */
+export function inflateZlib(data: Uint8Array): Uint8Array {
+  if (data.length < 6) throw new Error('inflate: zlib stream too short');
+  const cmf = data[0];
+  const flg = data[1];
+  if ((cmf & 0x0f) !== 8) throw new Error('inflate: not a zlib deflate stream');
+  if (((cmf << 8) | flg) % 31 !== 0) throw new Error('inflate: bad zlib header check');
+  if (flg & 0x20) throw new Error('inflate: preset dictionary not supported');
+  const s = inflateState(data.subarray(2));
+  const out = s.out.subarray(0, s.outLen);
+  if (s.pos + 4 > s.data.length) throw new Error('inflate: missing adler32 trailer');
+  const stored32 =
+    ((s.data[s.pos] << 24) | (s.data[s.pos + 1] << 16) | (s.data[s.pos + 2] << 8) | s.data[s.pos + 3]) >>> 0;
+  if (stored32 !== adler32(out)) throw new Error('inflate: adler32 mismatch');
+  return out;
+}
+
 function bits(s: State, need: number): number {
   let val = s.bitBuf;
   while (s.bitCnt < need) {
@@ -214,21 +231,4 @@ function adler32(data: Uint8Array): number {
     b = (b + a) % 65521;
   }
   return ((b << 16) | a) >>> 0;
-}
-
-/** Decodes a zlib stream (RFC 1950): header checks, raw DEFLATE, adler32 verify. */
-export function inflateZlib(data: Uint8Array): Uint8Array {
-  if (data.length < 6) throw new Error('inflate: zlib stream too short');
-  const cmf = data[0];
-  const flg = data[1];
-  if ((cmf & 0x0f) !== 8) throw new Error('inflate: not a zlib deflate stream');
-  if (((cmf << 8) | flg) % 31 !== 0) throw new Error('inflate: bad zlib header check');
-  if (flg & 0x20) throw new Error('inflate: preset dictionary not supported');
-  const s = inflateState(data.subarray(2));
-  const out = s.out.subarray(0, s.outLen);
-  if (s.pos + 4 > s.data.length) throw new Error('inflate: missing adler32 trailer');
-  const stored32 =
-    ((s.data[s.pos] << 24) | (s.data[s.pos + 1] << 16) | (s.data[s.pos + 2] << 8) | s.data[s.pos + 3]) >>> 0;
-  if (stored32 !== adler32(out)) throw new Error('inflate: adler32 mismatch');
-  return out;
 }

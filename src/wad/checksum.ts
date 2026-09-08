@@ -42,10 +42,6 @@ export function hashBytes(bytes: Uint8Array): string {
   return hex32(a) + hex32(b);
 }
 
-function hex32(n: number): string {
-  return (n >>> 0).toString(16).padStart(8, '0');
-}
-
 /**
  * A buffer's content ID, computed once and memoized against the buffer itself. Everything that
  * needs an ID goes through here rather than calling `hashBytes` directly — the menu hashes an
@@ -82,4 +78,8 @@ export function wadSetId(wad: Wad): { name: string; id: string }[] {
 export function mapProvider(wad: Wad, map: string): { name: string; id: string } | null {
   const file = wad.providerOf(map);
   return file ? { name: file.name, id: wadId(file) } : null;
+}
+
+function hex32(n: number): string {
+  return (n >>> 0).toString(16).padStart(8, '0');
 }

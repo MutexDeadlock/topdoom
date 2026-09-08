@@ -83,7 +83,9 @@ export function confirmOnHold(button: HTMLButtonElement, confirm: HoldConfirm): 
   // A button also activates on Space/Enter, so holding the key holds the button — `repeat` keeps
   // auto-repeat from restarting anything.
   button.addEventListener('keydown', (e) => {
-    if (!e.repeat && (e.key === ' ' || e.key === 'Enter')) start();
+    if (!e.repeat && (e.key === ' ' || e.key === 'Enter')) {
+      start();
+    }
   });
   button.addEventListener('keyup', cancel);
   // The unheld half: a click is what acts while no hold is required, keyboard activation included.

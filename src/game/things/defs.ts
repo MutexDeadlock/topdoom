@@ -418,27 +418,20 @@ export interface ThingLayer {
    */
   solidBodies(pos: Pos2): ThingBlocker[];
   /**
-   * Re-poses every thing at the camera's viewer angle and, for a living
-   * monster, ticks its AI: unalerted ones re-check sight every
-   * `LOOK_INTERVAL`, alerted ones run `stepMonsterAI` every frame. Gravity and
-   * `groundFloor` mirror `Player.update`, but movement is vanilla's 8-way
-   * `P_NewChaseDir` rather than `slideMove` (docs/monster-ai.md § Movement).
-   * Returns every attack fired this frame for the caller to apply.
+   * Re-poses every thing at the camera's viewer angle and, for a living monster, ticks its AI:
+   * unalerted ones re-check sight every `LOOK_INTERVAL`, alerted ones run `stepMonsterAI` every
+   * frame, moving on vanilla's 8-way `P_NewChaseDir` rather than `slideMove`
+   * (docs/monster-ai.md § Movement). Also ticks barrel death clocks, and returns every attack and
+   * `A_Explode` due this frame for the caller to apply.
    *
-   * `player` is `null` while the player is dead, freezing every monster in
-   * place without touching pose/animation/fog-visibility. For anything else,
-   * `z` refreshes from the sector's live `floorHeight` — the "ride a moving
-   * floor for free" trick, so a corpse left on a lift still rides it.
+   * `player` is `null` while the player is dead, freezing every monster in place; otherwise `z`
+   * refreshes from the sector's live height, the "ride a mover" trick (docs/movement.md § Solid
+   * decorations). `fogVisible` hides things in an unrevealed subsector; `crossLines` gets each
+   * alerted monster and where it stepped from, so the caller can fire the walk triggers in between
+   * and resolve a teleport landing's telefrag (docs/specials-teleporters.md § Teleporters).
    *
-   * `fogVisible` hides things in an unrevealed subsector, which would
-   * otherwise spoil a secret room whose geometry is faded out. `crossLines`
-   * gets each alerted monster and where it stepped from, so the caller can
-   * fire the walk triggers in between and resolve a teleport landing's
-   * telefrag (docs/specials-teleporters.md § Teleporters). Also ticks barrel death clocks
-   * and reports any `A_Explode` due this frame.
-   *
-   * **Advances the world only — it draws nothing.** `draw` is the other half,
-   * and runs on the render clock. docs/frameloop.md § What runs in a tic.
+   * **Advances the world only — it draws nothing.** `draw` is the other half, and runs on the
+   * render clock. docs/frameloop.md § What runs in a tic.
    */
   update(
     dt: number,
@@ -490,20 +483,12 @@ export interface ThingLayer {
     consume: (type: number, dropped: boolean) => boolean,
   ): void;
   /**
-   * The visible monster whose billboard this ray crosses nearest the camera,
-   * or null — auto-aim's lock-on (docs/combat.md § Auto-aim). Nothing fog of
-   * war hides, nothing already dead. The returned `id` is what `damage` takes,
-   * so a shot fired this frame can land on exactly this instance later without
-   * re-picking. Barrels are lockable too: `P_AimLineAttack` knows only
-   * `MF_SHOOTABLE`, not "monster".
-   *
-   * The ray is tested against each candidate's **`mobjinfo` box**, the same one a shot collides
-   * with — never the drawn sprite, which is WAD art and would make what the simulation does depend
-   * on which game WAD is loaded. Nothing here reads the render batch, so the tic never has to
-   * re-pose it. docs/combat.md § Auto-aim, docs/frameloop.md § Posing for the aim ray.
-   *
-   * `aimAt` is the point on the aim plane the ray was cast toward; how far past it a body may
-   * still be picked is `World.groundReach`.
+   * The monster whose body this ray crosses nearest the camera, or null — auto-aim's lock-on, over
+   * the `mobjinfo` box a shot collides with and never the drawn sprite. Nothing fog of war hides,
+   * nothing already dead; barrels lock on too. The returned `id` is what `damage` takes, so a shot
+   * fired this frame lands on exactly this instance without re-picking. `aimAt` is the point on the
+   * aim plane the ray was cast toward, and `World.groundReach` bounds how far past it a body may
+   * still be picked. docs/combat.md § Auto-aim.
    */
   pickMonster(ray: THREE.Ray, aimAt: Pos3): MonsterRef | null;
   /**
@@ -606,20 +591,14 @@ export interface ThingLayer {
    */
   damage(id: number, amount: number, hit?: DamageHit): void;
   /**
-   * `P_TeleportMove`'s stomp for a body arriving at `at` with `radius`: every overlapping
-   * shootable thing — a monster or a barrel, vanilla's `MF_SHOOTABLE`, so a solid decoration is
-   * passed straight through — takes `TELEFRAG_DAMAGE`, unattributed. Returns whether the arrival
-   * may go ahead.
-   *
-   * `stomps` is `PIT_StompThing`'s own `!tmthing->player && gamemap != 30`: the player always
-   * stomps, a monster only on MAP30 (`monstersTelefrag`). When it is false the first body in the
-   * way ends the call — nothing is damaged and `false` comes back, which is the caller's cue to
-   * refuse the teleport outright, exactly as `EV_Teleport` does on a failed `P_TeleportMove`.
-   * `moverId` is the arriving body when it is one of this layer's own, so it can't stomp itself.
-   *
-   * Only the *thing* half happens here: this layer holds no player reference, so the caller tests
-   * the player against the same reach itself. 2D and height-blind, matching `PIT_StompThing`,
-   * which never looks at `z`. docs/death.md § Telefrag.
+   * `P_TeleportMove`'s stomp for a body arriving at `at` with `radius`: every overlapping shootable
+   * thing takes `TELEFRAG_DAMAGE`, unattributed, so a solid decoration passes straight through.
+   * Returns whether the arrival may go ahead — with `stomps` false the first body in the way ends
+   * the call damaging nothing, the caller's cue to refuse the teleport outright. `moverId` is the
+   * arriving body when it is one of this layer's own, so it can't stomp itself. Only the *thing*
+   * half happens here: this layer holds no player reference, so the caller tests the player against
+   * the same reach itself. 2D and height-blind, matching `PIT_StompThing`.
+   * docs/death.md § Telefrag.
    */
   telefragAt(at: Pos2, radius: number, stomps: boolean, moverId?: number): boolean;
   /**
@@ -635,21 +614,14 @@ export interface ThingLayer {
    */
   spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null;
   /**
-   * Nearest living monster the ray crosses within `maxDist`, or null — the
-   * "didn't click anything, but something's in the path anyway" case for a
-   * free shot. Tested laterally against each body's **own** `MonsterRef.radius`
-   * and vertically against its own `MonsterRef.height`, as a slope span at that
-   * body's distance rather than a flat height band — docs/combat.md
-   * § The vertical test.
-   *
-   * `opts.slope` is the trace's own fixed slope, `PTR_ShootTraverse`'s
-   * `aimslope`; omitting it takes `P_AimLineAttack`'s `±AIM_SLOPE_LIMIT` cone,
-   * which is what every caller that would run an aim in vanilla wants.
-   *
-   * The rest of `opts` serves a *monster's* own hitscan: `ignoreId` excludes the
-   * shooter from its own trace, `includeHidden` skips the fog-of-war filter,
-   * since fog is a player-facing conceit — two monsters fighting in a room the
-   * player hasn't seen must still connect.
+   * Nearest living monster the ray crosses within `maxDist`, or null — the "didn't click anything,
+   * but something's in the path anyway" case for a free shot. Tested against each body's own
+   * `MonsterRef.radius` and `.height`, as a slope span at that body's distance rather than a flat
+   * height band (docs/combat.md § The vertical test). `opts.slope` is the trace's own fixed slope,
+   * `PTR_ShootTraverse`'s `aimslope`; omitting it takes `P_AimLineAttack`'s `±AIM_SLOPE_LIMIT`
+   * cone. The rest of `opts` serves a *monster's* own hitscan: `ignoreId` excludes the shooter, and
+   * `includeHidden` skips the fog-of-war filter, since two monsters fighting in a room the player
+   * hasn't seen must still connect.
    */
   raycastMonster(
     origin: Pos3,

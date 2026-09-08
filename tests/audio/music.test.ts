@@ -171,7 +171,8 @@ describe('Music · the WAD side', () => {
       else free.push(PERCUSSION_FIRST_NOTE + i - 128);
     }
     assert.deepEqual(free, [58, 70, 78]);
-    // The bank's 33 two-voice instruments all get their second voice, or a note plays half an instrument.
+    // The bank's 33 two-voice instruments all get their second voice, or a note plays half an
+    // instrument.
     assert.equal(instruments.filter((i) => i.voices.length === 2).length, 33);
     // The record's fields land where they should: DOOM's grand piano, whose
     // modulator carries a key-scale-level of 0x40 and a level of 20.
@@ -374,7 +375,9 @@ describe('Music · the synth', () => {
     // passing sample too, 576k times over.
     let differs = -1;
     for (let i = 0; i < frames && differs < 0; i++) {
-      if (chunked.left[i] !== whole.left[i] || chunked.right[i] !== whole.right[i]) differs = i;
+      if (chunked.left[i] !== whole.left[i] || chunked.right[i] !== whole.right[i]) {
+        differs = i;
+      }
     }
     assert.equal(differs, -1, `chunked output differs from one-pass output at sample ${differs}`);
   });

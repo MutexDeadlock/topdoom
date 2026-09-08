@@ -17,9 +17,9 @@
  * `p_enemy.c:1759-1775` has each of them call `A_Chase` after its sound.
  *
  * Durations are whole tics (vanilla's own unit) rather than seconds, so nothing here depends on
- * `DOOM_TIC`'s binary rounding. `chaseSeconds` stays in seconds at three decimals — the unit `MonsterStats.chaseInterval` itself
- * holds, so the comparison does not amplify its rounding.
- * See docs/dehacked.md § Frames.
+ * `DOOM_TIC`'s binary rounding. `chaseSeconds` stays in seconds at three decimals — the unit
+ * `MonsterStats.chaseInterval` itself holds, so the comparison does not amplify its rounding. See
+ * docs/dehacked.md § Frames.
  */
 
 /** One monster type's shipped reading. `null` means "no such chain", not "zero". */

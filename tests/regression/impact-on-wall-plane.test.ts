@@ -24,10 +24,10 @@ import type { MonsterAttackEvent } from '../../src/game/monsters/defs.ts';
  * `tmbbox` crosses it. See docs/combat.md § Where an impact sits.
  *
  * Both flights have to do it, and they resolve their wall in different places: a straight shot gets
- * the standoff at launch (`missileFlight`), a revenant's tracer when `projectileStepBlocker` reports
- * the plane mid-flight (`advanceHoming`). Only the straight one was covered when the standoff moved
- * out of a shared post-hoc correction, and the homing one silently went back to exploding on the
- * plane. docs/monster-attacks.md § The revenant's homing missile.
+ * the standoff at launch (`missileFlight`), a revenant's tracer when `projectileStepBlocker`
+ * reports the plane mid-flight (`advanceHoming`). Only the straight one was covered when the
+ * standoff moved out of a shared post-hoc correction, and the homing one silently went back to
+ * exploding on the plane. docs/monster-attacks.md § The revenant's homing missile.
  */
 
 

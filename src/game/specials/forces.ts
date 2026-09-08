@@ -55,6 +55,9 @@ const PUSH_DIVISOR = 1 << 7;
 const ORIG_FRICTION_FACTOR = 2048;
 const MORE_FRICTION_MOMENTUM = 15000 / 0x10000;
 
+/** The normal floor's own continuous rate, the divisor every friction sector's ramp is taken over. */
+const LOG_ORIG_FRICTION = log(ORIG_FRICTION);
+
 /**
  * `p_local.h`'s `MAXMOVE` (30 units/tic), the clamp `P_XYMovement` puts on
  * momentum however slippery the floor underneath is, expressed as a multiple of
@@ -66,9 +69,6 @@ const MORE_FRICTION_MOMENTUM = 15000 / 0x10000;
  * pin `friction` at exactly 1 would otherwise read as an infinite terminal.
  * docs/movement.md § Friction.
  */
-/** The normal floor's own continuous rate, the divisor every friction sector's ramp is taken over. */
-const LOG_ORIG_FRICTION = log(ORIG_FRICTION);
-
 const MAX_TARGET_SCALE = 30 / ((50 * ORIG_FRICTION_FACTOR) / 0x10000 / (1 - ORIG_FRICTION));
 
 /**
@@ -233,19 +233,13 @@ export class Forces {
   }
 
   /**
-   * `P_GetFriction` + `P_GetMoveFactor`: what the floor under a body of this
-   * radius does to its movement, or `NO_FRICTION` where nothing does.
-   *
-   * Every sector the body **touches** is a candidate, and vanilla's own selection rule is
-   * transcribed rather than simplified to a minimum — docs/specials-forces.md § Friction.
-   *
+   * `P_GetFriction` + `P_GetMoveFactor`: what the floor under a body of this radius does to its
+   * movement, or `NO_FRICTION` where nothing does. Every sector the body **touches** is a
+   * candidate, and vanilla's own selection rule is transcribed rather than simplified to a minimum.
    * `speed` is the body's current horizontal speed in map units/sec, which only a muddy floor
-   * reads: `P_GetMoveFactor` boosts the thrust in three steps as momentum builds, and the
-   * thresholds are low enough that anything actually walking sits in the top step.
-   *
-   * The result is **shared** scratch overwritten by the next call. `cache` is
-   * the caller's per-body touch cache, shared with the other two body queries —
-   * see `carryForBody`.
+   * reads. The result is **shared** scratch overwritten by the next call; `cache` is the caller's
+   * per-body touch cache, shared with the other two body queries (`carryForBody`).
+   * docs/specials-forces.md § Friction.
    */
   frictionUnder(pos: Pos3, body: FrictionQuery): Readonly<FrictionEffect> {
     if (!this.hasFriction) return NO_FRICTION;
@@ -307,7 +301,9 @@ export class Forces {
   scrollingLines(): readonly number[] {
     const out: number[] = [];
     for (const s of this.scrollers) {
-      if (s.target === 'side' && !out.includes(s.affectee)) out.push(s.affectee);
+      if (s.target === 'side' && !out.includes(s.affectee)) {
+        out.push(s.affectee);
+      }
     }
     return out;
   }

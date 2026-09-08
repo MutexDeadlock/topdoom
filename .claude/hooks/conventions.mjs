@@ -74,9 +74,13 @@ function report(file, found) {
   process.exit(2);
 }
 
-/** Every `src/` file opens with a header block pointing at the doc that owns it. */
+/**
+ * Every `src/` file opens with a header block pointing at the doc that owns it. A test file carries
+ * the same block below its imports, and an import list alone can run past 40 lines, so the window
+ * is wide: over-scanning only costs a finding this tool was never the judge of.
+ */
 function headerPointer(lines, at) {
-  const head = lines.slice(0, 40).join('\n');
+  const head = lines.slice(0, 120).join('\n');
   if (!head.startsWith('/**') && !head.startsWith('import') && !head.startsWith('//')) return;
   if (/docs\/[a-z-]+\.md|CLAUDE\.md/.test(head)) return;
   at(1, 'header', 'no `docs/x.md` pointer in the opening block');
@@ -105,13 +109,31 @@ function sourceOrder(rel, lines, at) {
 
 /** An inline `if` is for early outs; a multi-clause condition with a real statement gets braces. */
 function inlineIf(line, number, at) {
-  const m = /^\s*(\}\s*else\s+)?if \((.*)\)\s+(\S.*)$/.exec(line);
-  if (!m) return;
-  const [, , condition, statement] = m;
-  if (statement.startsWith('{')) return;
+  const head = /^\s*(?:\}\s*else\s+)?if \(/.exec(line);
+  if (!head) return;
+  const open = head[0].length - 1;
+  const close = closingParen(line, open);
+  if (close < 0) return;
+  const condition = line.slice(open + 1, close);
+  const statement = line.slice(close + 1).trimStart();
+  if (!statement || statement.startsWith('{')) return;
   if (/^(return|continue|break|throw)\b/.test(statement)) return;
   if (!/&&|\|\|/.test(condition)) return;
   at(number, 'inline if', 'multi-clause condition carrying a statement — brace it');
+}
+
+/**
+ * Index of the `)` closing the `(` at `open`, or -1 when the line never closes it. Counted rather
+ * than matched: a greedy `if \((.*)\)` reads `if (a || b) return f(x);` as a condition ending at
+ * `f(`, which hides the `return` an early out is exempt for.
+ */
+function closingParen(line, open) {
+  let depth = 0;
+  for (let i = open; i < line.length; i++) {
+    if (line[i] === '(') depth++;
+    else if (line[i] === ')' && --depth === 0) return i;
+  }
+  return -1;
 }
 
 /** Comments wrap at 100 columns; an unbreakable token (a URL, a long `code` span) is exempt. */

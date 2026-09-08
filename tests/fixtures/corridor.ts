@@ -13,6 +13,7 @@ import { fixtureWad } from './wadfile.ts';
  * The map both chaingunner regressions were reported on, and the reason it is
  * a real WAD rather than a `gridMap`: it exercises the parser on the way in,
  * and it is the geometry the player actually stood in.
+ * See docs/testing.md § The fixtures.
  */
 export interface Corridor {
   world: World;

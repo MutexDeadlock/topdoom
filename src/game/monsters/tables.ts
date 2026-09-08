@@ -437,21 +437,11 @@ export const MONSTER_STATS = MONSTER_SEED as Record<number, MonsterStats>;
 
 /**
  * The frame-derived fields the walker reads differently from the hand transcription, kept at their
- * shipped values on purpose. This is the whole list — a new row is a decision, never a shrug — and
- * `tests/game/dehacked-frames.test.ts` fails if one of them stops differing.
- *
- * There is deliberately no `chase` row: the walk loop is the walker's alone, footstep states
- * included — docs/monster-ai.md § Timings and damage come from vanilla, not from feel.
- *
- * - **`ranged` on the SS.** Its two `A_FaceTarget` states sit ahead of the `A_CPosRefire` loop, and
- *   the walker measures the loop alone. `MONSTER_ATTACK_POSE`'s matching override is in
- *   `things/tables.ts`; duration, pose and windup all follow the same span, so they move together.
- * - **`windup` on the lost soul and pain elemental.** A charge and a spawn both return straight out
- *   of `beginRangedAttack`, so the burst timer `startDelaySeconds` is read through never runs.
- *   Writing one would be a trap, not a no-op.
- * - **`melee` on the cacodemon.** Its `meleestate` is `S_NULL` — `A_HeadAttack` bites from inside
- *   the missile chain — so there is no chain for the walker to measure the bite's length or its
- *   windup from; both are written out as the missile chain's own.
+ * shipped values on purpose: the SS's attack span, the lost soul's and pain elemental's windup, and
+ * the cacodemon's melee. This is the whole list — a new row is a decision, never a shrug — and
+ * `tests/game/dehacked-frames.test.ts` fails if one of them stops differing. There is deliberately
+ * no `chase` row: the walk loop is the walker's alone, footstep states included.
+ * docs/dehacked.md § Frames.
  */
 const FRAME_OVERRIDES: Record<number, { melee?: true; ranged?: true; windup?: true }> = {
   [ThingType.wolfensteinSS]: { ranged: true, windup: true },
@@ -476,15 +466,21 @@ for (const [key, m] of Object.entries(pristineFrameTables().monsters)) {
   if (!stats) continue;
   const keep = FRAME_OVERRIDES[dn] ?? {};
   stats.painDuration = m.painDuration;
-  if (stats.melee && m.meleeDuration !== null && !keep.melee) stats.melee.duration = m.meleeDuration;
-  if (stats.melee && m.meleeDelay !== null && !keep.melee) stats.melee.startDelaySeconds = m.meleeDelay;
+  if (stats.melee && m.meleeDuration !== null && !keep.melee) {
+    stats.melee.duration = m.meleeDuration;
+  }
+  if (stats.melee && m.meleeDelay !== null && !keep.melee) {
+    stats.melee.startDelaySeconds = m.meleeDelay;
+  }
   if (stats.ranged && !keep.ranged) {
     if (m.rangedDuration !== null) stats.ranged.duration = m.rangedDuration;
     // A single-shot chain leaves both unset and reads as vanilla's default of one shot.
     if (m.rangedShots > 1) stats.ranged.shots = m.rangedShots;
     if (m.rangedInterval !== null) stats.ranged.shotInterval = m.rangedInterval;
   }
-  if (stats.ranged && m.rangedDelay !== null && !keep.windup) stats.ranged.startDelaySeconds = m.rangedDelay;
+  if (stats.ranged && m.rangedDelay !== null && !keep.windup) {
+    stats.ranged.startDelaySeconds = m.rangedDelay;
+  }
   if (m.chase) {
     stats.chaseInterval = m.chase.interval;
     // `mobjinfo.speed` is map units per `A_Chase`; the loop factor turns it into units per second.

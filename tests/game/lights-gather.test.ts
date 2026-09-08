@@ -11,6 +11,12 @@ import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { MATERIALS, ROT0_BANK, fxLayer } from '../fixtures/spritestubs.ts';
 
+/**
+ * Which draw funnels hand the light pass its emitters — the thing sprites and the transient
+ * effects — and what each one contributes.
+ * See docs/lights.md § What emits.
+ */
+
 
 /** What `offer` was called with, in draw order. */
 interface Offer {

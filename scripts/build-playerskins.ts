@@ -127,7 +127,9 @@ function decodePng(bytes: Buffer, what: string): Image {
       r = palette![index * 3];
       g = palette![index * 3 + 1];
       b = palette![index * 3 + 2];
-      if (alpha && index < alpha.length) a = alpha[index];
+      if (alpha && index < alpha.length) {
+        a = alpha[index];
+      }
     } else if (colorType === 0 || colorType === 4) {
       r = g = b = rows[src];
       if (colorType === 4) a = rows[src + 1];

@@ -4,6 +4,11 @@ import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 
+/**
+ * The order the fog sweep visits subsectors in, which decides what a single frame can reveal.
+ * See docs/fogofwar.md § Sweep order.
+ */
+
 /** Grid cell size this fixture measures its distances in. */
 const CELL = 128;
 /**

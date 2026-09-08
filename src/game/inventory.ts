@@ -99,7 +99,9 @@ export function hasPower(inv: Inventory, power: PowerId): boolean {
  */
 export function tickPowers(inv: Inventory, dt: number): void {
   for (const p of POWER_IDS) {
-    if (inv.powers[p] > 0 && inv.powers[p] !== Infinity) inv.powers[p] = Math.max(0, inv.powers[p] - dt);
+    if (inv.powers[p] > 0 && inv.powers[p] !== Infinity) {
+      inv.powers[p] = Math.max(0, inv.powers[p] - dt);
+    }
   }
 }
 

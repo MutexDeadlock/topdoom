@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import { GpuTimer, type QueryContext } from '../../src/render/gputimer.ts';
 import { PROFILE_SMOOTHING } from '../../src/util/profiler.ts';
 
+/**
+ * `GpuTimer` over a stub query context: the disjoint reset, the pending-query bookkeeping, and the
+ * smoothing the reported milliseconds carry.
+ * See docs/devmode.md § Profiling overlay.
+ */
+
 const TIME_ELAPSED_EXT = 0x88bf;
 const GPU_DISJOINT_EXT = 0x8fbb;
 const QUERY_RESULT_AVAILABLE = 0x9194;

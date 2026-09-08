@@ -7,9 +7,9 @@
  */
 
 /**
- * What `Menu` needs of a popup that can cover it. `close` reports whether it *was* up, which is what
- * lets `closeTopOverlay` dismiss exactly one thing per `ESC`; `Menu.overlays` holds them in one
- * ordered list rather than naming them at each of the three sites that walk them.
+ * What `Menu` needs of a popup that can cover it. `close` reports whether it *was* up, which is
+ * what lets `closeTopOverlay` dismiss exactly one thing per `ESC`; `Menu.overlays` holds them in
+ * one ordered list rather than naming them at each of the three sites that walk them.
  */
 export interface MenuOverlay {
   close(): boolean;

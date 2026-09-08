@@ -1,18 +1,12 @@
 /**
- * Every DOOM thing type (doomednum) this engine knows about, under a readable name.
- *
- * The number is what a map lump actually stores in `Thing.type` (`wad/map.ts`) and what every
- * type-keyed table in `things/tables.ts`, `monsters/tables.ts`, `things/defs.ts` and `inventory.ts`
- * is keyed on; this table only gives those numbers names, so a table entry says which monster it is
- * without a comment having to. Nothing here is a rule about behavior — the rules live in the tables
- * that use these names. See docs/sprites.md § Thing types have names.
+ * Every DOOM thing type (doomednum) this engine knows about, under a readable name: the number a
+ * map lump stores in `Thing.type` and every type-keyed table is keyed on, so an entry says which
+ * monster it is without a comment having to. Nothing here is a rule about behavior.
  *
  * **Each entry cites its vanilla `mobjtype_t`**, read off `linuxdoom-1.10/info.c`'s `mobjinfo`
- * array (whose order is the `mobjtype_t` order and whose first field is the doomednum) — that
- * pairing, not the readable name, is what makes an entry checkable. The names themselves are the
- * standard editor names for those types.
- *
- * A leaf: this module imports nothing, so any table module can take it without a cycle.
+ * array — that pairing, not the readable name, is what makes an entry checkable. A leaf: this
+ * module imports nothing, so any table module can take it without a cycle.
+ * See docs/sprites.md § Thing types have names.
  */
 export const ThingType = {
   // Monsters

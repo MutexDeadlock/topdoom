@@ -42,18 +42,6 @@ const SYSTEM_EVENTS: Record<number, MusicController> = {
 };
 
 /**
- * MUS reserves its **channel 15** for percussion where MIDI reserves channel 9,
- * so the two swap places — the same remap `mus2mid` makes. Every other channel
- * passes through, and the swap keeps the count at 16 rather than shifting a
- * whole block of channels around.
- */
-function midiChannel(musChannel: number): number {
-  if (musChannel === 15) return 9;
-  if (musChannel === 9) return 15;
-  return musChannel;
-}
-
-/**
  * A MUS score's events with absolute times. Returns null when the bytes aren't
  * a MUS lump or its header points outside them — a truncated score simply ends
  * where the bytes do, which is all a player can do about it.
@@ -138,4 +126,16 @@ export function decodeMus(bytes: Uint8Array): Song | null {
   }
 
   return buildSong(events, tick / MUS_TICKS_PER_SECOND);
+}
+
+/**
+ * MUS reserves its **channel 15** for percussion where MIDI reserves channel 9,
+ * so the two swap places — the same remap `mus2mid` makes. Every other channel
+ * passes through, and the swap keeps the count at 16 rather than shifting a
+ * whole block of channels around.
+ */
+function midiChannel(musChannel: number): number {
+  if (musChannel === 15) return 9;
+  if (musChannel === 9) return 15;
+  return musChannel;
 }

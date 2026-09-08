@@ -320,18 +320,11 @@ export interface SolidPockets {
 }
 
 /**
- * The pockets **in** the map's solid structures: a nook carved out of one, with the structure's
- * own level running over it. GoingDown.wad MAP08's sector 39 is the case — floor 0, ceiling 64,
- * ceiling flat `CRATOP1`, walled by the crate stack's faces and open to the room on one side. Every
- * one-sided wall such a sector has is a face of some ring that stops where the level beside it
- * begins (`SolidCap.buried`) — a wall of its own would make it a room — and those walls are at
- * least `POCKET_SHARE` of its perimeter.
- *
- * Two things follow, and both are what a top-down camera wants: the pocket is **roofed at the
- * lid's height**, so the structure's top face is unbroken, and that ceiling flat is **what the lid
- * wears** — the mapper drew the crate top there, on the one surface of the crate this camera can
- * never see.
- * docs/render-solids.md.
+ * The pockets **in** the map's solid structures: a nook carved out of one, with the structure's own
+ * level running over it — GoingDown.wad MAP08's sector 39. Every one-sided wall such a sector has
+ * is a face of some ring that stops where the level beside it begins (`SolidCap.buried`), and those
+ * walls are at least `POCKET_SHARE` of its perimeter. The pocket is roofed at the lid's height and
+ * that ceiling flat is what the lid wears. docs/render-solids.md § The pockets in them.
  */
 export function pocketsOf(map: DoomMap, polys: readonly SectorPoly[], caps: readonly SolidLid[]): SolidPockets {
   const area = new Float64Array(map.sectors.length);

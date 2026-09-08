@@ -22,22 +22,7 @@ import type {
   DehWeaponEdit,
 } from './defs.ts';
 import { isFlashState, MAX_STATE_INDEX, SPRITE_NAMES, stateTableSize, STATES } from './states.ts';
-import {
-  FRAME_ARG_FIELDS,
-  FRAME_FIELD_SINKS,
-  MOBJ_INFO,
-  SFX_ORDER,
-  THING_SOUND_FIELDS,
-  THING_STATE_FIELDS,
-  WEAPON_STATE_FIELDS,
-  classifyDehackedField,
-  classifyDehackedFlag,
-  classifyDehackedFrame,
-  classifyDehackedRecord,
-  classifyDehackedString,
-  unhonoredFlags,
-  type MobjRow,
-} from './tables.ts';
+import * as tables from './tables.ts';
 
 /**
  * One `key = value` line, as every field reader sees it: what it says, the record word a warning
@@ -63,7 +48,7 @@ const HEADER_KEYS = new Set(['doom version', 'patch format']);
 const SPRITE_MNEMONICS = new Set(SPRITE_NAMES.map((name) => name.toLowerCase()));
 
 /** `S_sfx[]`'s own names, for the `[SOUNDS]` lookup — slot 0 is `sfx_None`, which names no lump. */
-const SFX_MNEMONICS = new Set(SFX_ORDER.filter((name) => name !== null).map((name) => name.toLowerCase()));
+const SFX_MNEMONICS = new Set(tables.SFX_ORDER.filter((name) => name !== null).map((name) => name.toLowerCase()));
 
 /**
  * Collects warnings deduped by `(record, field, support)`, and the merge point across a set's
@@ -131,7 +116,7 @@ export function parseDehacked(
   /** The record the following `key = value` lines belong to. */
   let kind: DehRecordKind = 'header';
   let label = '';
-  let row: MobjRow | undefined;
+  let row: tables.MobjRow | undefined;
   let edit: DehThingEdit | null = null;
   /** Whether the open `Thing` record has had a field land on it — see `closeRecord`. */
   let editTouched = false;
@@ -174,7 +159,7 @@ export function parseDehacked(
     // belonging to whichever record is open.
     const header = /^(\[[A-Za-z]+\]|[A-Za-z]+)(?:\s+(-?\d+))?/.exec(trimmed);
     const word = header ? header[1] : '';
-    const classified = classifyDehackedRecord(word);
+    const classified = tables.classifyDehackedRecord(word);
     // A bracketed BEX section runs until the next bracket or a record kind we know — otherwise
     // `[PARS]`' own `par 1 30` lines read as `Word N` record headers and eat the whole section.
     const inSection = kind === 'pars' || kind === 'strings';
@@ -209,16 +194,16 @@ export function parseDehacked(
       pointerState = kind === 'pointer' ? pointerTarget(trimmed, states, warnings) : null;
 
       if (kind === 'thing') {
-        row = MOBJ_INFO[index - 1];
+        row = tables.MOBJ_INFO[index - 1];
         if (!row) {
-          warnings.add(word, 'unknown', `\`${trimmed}\` names no mobjtype (there are ${MOBJ_INFO.length})`);
+          warnings.add(word, 'unknown', `\`${trimmed}\` names no mobjtype (there are ${tables.MOBJ_INFO.length})`);
           continue;
         }
         edit = { index };
       } else if (kind === 'frame') {
         // Addressing a row is what grows the table, so the classification reads the grown one.
         states.address(index);
-        const support = classifyDehackedFrame(index, states.count);
+        const support = tables.classifyDehackedFrame(index, states.count);
         if (support !== 'applied') {
           warnings.add(word, support, frameDetailFor(index, support, states));
           skipping = true;
@@ -274,7 +259,7 @@ export function parseDehacked(
       continue;
     }
 
-    const support = classifyDehackedField(kind, pair.key, row);
+    const support = tables.classifyDehackedField(kind, pair.key, row);
     if (support !== 'applied') {
       warnings.add(label, support, detailFor(kind, pair.key, support, row), pair.key);
       continue;
@@ -488,7 +473,7 @@ function parseBits(value: string): { mask: number; unknown: string[] } {
   let mask = 0;
   const unknown: string[] = [];
   for (const token of value.split(/[+|,\s]+/).filter(Boolean)) {
-    const row = classifyDehackedFlag(token);
+    const row = tables.classifyDehackedFlag(token);
     if (row) mask |= row.bit;
     else unknown.push(token);
   }
@@ -531,7 +516,7 @@ function frameDetailFor(index: number, support: DehSupport, states: StateTable):
 }
 
 /** One sentence naming what was skipped, rather than restating the class. */
-function detailFor(kind: DehRecordKind, field: string, support: DehSupport, row?: MobjRow): string {
+function detailFor(kind: DehRecordKind, field: string, support: DehSupport, row?: tables.MobjRow): string {
   if (support === 'unknown') return `\`${field}\` is not a field of a \`${kind}\` record`;
   if (support === 'noTarget' && kind === 'thing' && row && row.doomednum === -1) {
     return `\`${field}\` on ${row.type}, which no table here keys`;
@@ -624,7 +609,7 @@ function readSpriteRename(line: FieldLine, spriteRenames: Map<string, string>): 
  * the edit, which is what tells `closeRecord` an otherwise-empty record is worth filing.
  * docs/dehacked.md § Units.
  */
-function readThingField(edit: DehThingEdit, row: MobjRow, line: FieldLine): boolean {
+function readThingField(edit: DehThingEdit, row: tables.MobjRow, line: FieldLine): boolean {
   const { field, value, label, warnings } = line;
   const raw = Number(value);
   const key = field.trim().toLowerCase();
@@ -666,25 +651,25 @@ function readThingField(edit: DehThingEdit, row: MobjRow, line: FieldLine): bool
       }
       // Keyed per flag, so the report names the one a patch wanted rather than counting `Bits`
       // lines. The line still applies — only these flags of it don't.
-      for (const flag of unhonoredFlags(bits.mask)) {
+      for (const flag of tables.unhonoredFlags(bits.mask)) {
         const detail = `\`Bits\` asks for \`MF_${flag.name}\`, which has no sink here`;
         warnings.add(label, flag.support, detail, `Bits/${flag.name}`);
       }
       return true;
     }
     default: {
-      const pointer = THING_STATE_FIELDS[key];
+      const pointer = tables.THING_STATE_FIELDS[key];
       if (pointer) {
         if (!line.states.point(raw, line, () => dropStatePointer(edit, pointer, raw))) return false;
         edit.states = { ...edit.states, [pointer]: raw };
         return true;
       }
-      const slot = THING_SOUND_FIELDS[key];
+      const slot = tables.THING_SOUND_FIELDS[key];
       if (!slot) return false;
       // Index 0 is `sfx_None`; `MonsterSounds`' fields are already optional, so it means silence.
-      const name = SFX_ORDER[raw];
+      const name = tables.SFX_ORDER[raw];
       if (name === undefined) {
-        warnings.add(label, 'unknown', `\`${field} = ${value}\` names no sound (there are ${SFX_ORDER.length})`, field);
+        warnings.add(label, 'unknown', `\`${field} = ${value}\` names no sound (there are ${tables.SFX_ORDER.length})`, field);
         return false;
       }
       edit.sounds = { ...edit.sounds, [slot]: name };
@@ -702,8 +687,8 @@ function readFrameField(frame: DehFrameEdit, line: FieldLine): boolean {
   const { field, value, label, warnings } = line;
   const raw = Number(value);
   const key = field.trim().toLowerCase();
-  const sink = FRAME_FIELD_SINKS[key];
-  const arg = FRAME_ARG_FIELDS[key];
+  const sink = tables.FRAME_FIELD_SINKS[key];
+  const arg = tables.FRAME_ARG_FIELDS[key];
   if (!sink && arg === undefined) return false;
   if (!Number.isInteger(raw)) {
     warnings.add(label, 'unknown', `\`${field} = ${value}\` is not a whole number`, field);
@@ -831,7 +816,7 @@ function filePointer(
  * as written.
  */
 function readWeaponField(weapon: DehWeaponEdit, value: number, line: FieldLine): void {
-  const pointer = WEAPON_STATE_FIELDS[line.field.trim().toLowerCase()];
+  const pointer = tables.WEAPON_STATE_FIELDS[line.field.trim().toLowerCase()];
   if (!pointer) {
     weapon.ammoType = value;
     return;
@@ -873,7 +858,7 @@ function readString(line: FieldLine, cursor: TextCursor, strings: Map<string, st
     .replace(/\\t/g, '\t')
     .replace(/\\"/g, '"')
     .replace(/\\\\/g, '\\');
-  const support = classifyDehackedString(key);
+  const support = tables.classifyDehackedString(key);
   if (support !== 'applied') {
     // Only an unrecognised mnemonic earns a row: a `GOT*` or an `OB_MPFIST` is recognised and
     // deliberately homeless.

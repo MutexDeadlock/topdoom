@@ -46,7 +46,8 @@ describe('Menu · the WAD Library tree', () => {
       [
         source('DOOM2.WAD', { type: 'IWAD', folder: 'iwad' }),
         source('SCYTHE.WAD', { folder: 'pwad' }),
-        // A PWAD-signed mapset placed in game/iwad/ is a game WAD — docs/wad.md § The `public/game/` manifest.
+        // A PWAD-signed mapset placed in game/iwad/ is a game WAD — docs/wad.md § The
+        // `public/game/` manifest.
         source('EPIC.WAD', { type: 'PWAD', folder: 'iwad' }),
       ],
       'Your library',

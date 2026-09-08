@@ -5,7 +5,8 @@ import { WallFader } from '../../src/render/occlusion.ts';
 import type { WallOccluder } from '../../src/render/mapmesh.ts';
 
 /**
- * **A fader must write into the batch its quad belongs to *now*, not the one it was built against.**
+ * **A fader must write into the batch its quad belongs to *now*, not the one it was built
+ * against.**
  *
  * `WallFader` resolves each quad's colour buffer once and keeps it, rather than looking the mesh up
  * by key on every commit. That is only safe because `invalidateWritten` re-resolves, and it is

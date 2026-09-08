@@ -1,8 +1,9 @@
 /**
  * Fake `Input`s, in the two shapes the engine asks for. `Player.update` asks its input for nothing
- * but `held`: `heldInput`/`IDLE_INPUT`. `SpecialsController.update` and `WeaponSystem.handleSwitching`
- * ask for `pressed`/`rightMousePressed`: `NO_INPUT`, `USE_INPUT`, `PREV_WEAPON_INPUT`. A test takes
- * one of these rather than casting its own object literal. See docs/testing.md § The specials rig.
+ * but `held`: `heldInput`/`IDLE_INPUT`. `SpecialsController.update` and
+ * `WeaponSystem.handleSwitching` ask for `pressed`/`rightMousePressed`: `NO_INPUT`, `USE_INPUT`,
+ * `PREV_WEAPON_INPUT`. A test takes one of these rather than casting its own object literal. See
+ * docs/testing.md § The specials rig.
  */
 import type { Input } from '../../src/game/input.ts';
 

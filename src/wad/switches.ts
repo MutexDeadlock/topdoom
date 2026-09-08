@@ -44,7 +44,9 @@ export function readSwitches(wad: Wad): SwitchPair[] | null {
     const off = r.name(9);
     const on = r.name(9);
     if (r.i16() === 0) break;
-    if (off && on) out.push({ off, on });
+    if (off && on) {
+      out.push({ off, on });
+    }
   }
   return out;
 }

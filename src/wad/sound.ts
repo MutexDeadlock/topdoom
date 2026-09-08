@@ -80,7 +80,9 @@ export class SoundBank {
     const out: T[] = [];
     for (const name of sfxNames) {
       const lump = this.wad.find(soundLumpName(name));
-      if (lump && lump.size >= 2 && this.wad.reader(lump).u16() !== DMX_FORMAT) out.push(name);
+      if (lump && lump.size >= 2 && this.wad.reader(lump).u16() !== DMX_FORMAT) {
+        out.push(name);
+      }
     }
     return out;
   }

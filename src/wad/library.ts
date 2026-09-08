@@ -60,10 +60,10 @@ export interface MergedMap {
 }
 
 /**
- * Parses an uploaded file far enough to categorise it, then keeps it in memory. `text` is the `.txt`
- * picked or dropped alongside it, which `Menu.addFiles` pairs by name — an upload sits in no folder,
- * so a sibling can only ever arrive in the same batch. The `File` itself, not its bytes: a handle
- * keeps the read where every other source has it, at the moment the player opens the popup
+ * Parses an uploaded file far enough to categorise it, then keeps it in memory. `text` is the
+ * `.txt` picked or dropped alongside it, which `Menu.addFiles` pairs by name — an upload sits in no
+ * folder, so a sibling can only ever arrive in the same batch. The `File` itself, not its bytes: a
+ * handle keeps the read where every other source has it, at the moment the player opens the popup
  * (docs/wad.md § The text file beside a WAD).
  */
 export async function uploadedSource(name: string, buffer: ArrayBuffer, text?: File): Promise<WadSource> {

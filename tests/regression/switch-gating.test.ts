@@ -153,7 +153,9 @@ describe('Regressions · switch gating and crusher stasis', () => {
     let damageTics = 0;
     const specials = specialsRig(map, start, {
       onCrush: (_s, dealDamage) => {
-        if (caught && dealDamage) damageTics++;
+        if (caught && dealDamage) {
+          damageTics++;
+        }
         return caught;
       },
     }).specials as unknown as {

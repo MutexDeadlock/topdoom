@@ -10,32 +10,7 @@ import {
   MONSTER_STATS,
   rebuildDerivedMonsterStats,
 } from '../monsters/tables.ts';
-import {
-  CEILING_HUNG_HEIGHT,
-  CORPSE_GIB,
-  COUNTITEM_TYPES,
-  COUNTKILL_TYPES,
-  FUZZ_TYPES,
-  MONSTER_ATTACK_POSE,
-  MONSTER_CORPSE_VANISHES,
-  MONSTER_DEATH_FRAMES,
-  MONSTER_DEATH_SPRITE_OVERRIDE,
-  MONSTER_DROPS,
-  MONSTER_HEALTH,
-  MONSTER_IDLE_FRAMES,
-  MONSTER_WALK_FRAMES,
-  MONSTER_PAIN_FRAMES,
-  MONSTER_RAISE_FRAMES,
-  MONSTER_TYPES,
-  MONSTER_WALK_FRAMES_OVERRIDE,
-  MONSTER_XDEATH_FRAMES,
-  OBITUARIES,
-  rebuildFullbrightFrames,
-  SOLID_DECORATION_RADIUS_OVERRIDE,
-  SOLID_DECORATION_TYPES,
-  THING_ANIM_FRAMES,
-  THING_SPRITES,
-} from '../things/tables.ts';
+import * as things from '../things/tables.ts';
 import { BARREL_CHAIN, type AttackPose } from '../things/defs.ts';
 import { MELEE_RANGE, type AttackStats, type MonsterSounds } from '../monsters/defs.ts';
 import { IMPACT_EFFECTS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_SOUNDS } from '../spritefx/tables.ts';
@@ -84,11 +59,11 @@ import {
  * can never be patched without being restored.
  */
 const FLAG_SETS: readonly (readonly [Set<number>, (mask: number) => boolean])[] = [
-  [COUNTKILL_TYPES, (mask) => Boolean(mask & MF_FLAGS.COUNTKILL.bit)],
-  [COUNTITEM_TYPES, (mask) => Boolean(mask & MF_FLAGS.COUNTITEM.bit)],
-  [MONSTER_TYPES, (mask) => Boolean(mask & MF_FLAGS.SHOOTABLE.bit)],
-  [SOLID_DECORATION_TYPES, isSolidDecoration],
-  [FUZZ_TYPES, (mask) => Boolean(mask & MF_FLAGS.SHADOW.bit)],
+  [things.COUNTKILL_TYPES, (mask) => Boolean(mask & MF_FLAGS.COUNTKILL.bit)],
+  [things.COUNTITEM_TYPES, (mask) => Boolean(mask & MF_FLAGS.COUNTITEM.bit)],
+  [things.MONSTER_TYPES, (mask) => Boolean(mask & MF_FLAGS.SHOOTABLE.bit)],
+  [things.SOLID_DECORATION_TYPES, isSolidDecoration],
+  [things.FUZZ_TYPES, (mask) => Boolean(mask & MF_FLAGS.SHADOW.bit)],
 ];
 
 /**
@@ -99,39 +74,39 @@ const FLAG_SETS: readonly (readonly [Set<number>, (mask: number) => boolean])[] 
 const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(MONSTER_STATS),
   patchable(INERT_SHOOTABLE),
-  patchable(MONSTER_HEALTH),
-  patchable(MONSTER_DROPS),
-  patchable(CEILING_HUNG_HEIGHT),
-  patchable(SOLID_DECORATION_RADIUS_OVERRIDE),
+  patchable(things.MONSTER_HEALTH),
+  patchable(things.MONSTER_DROPS),
+  patchable(things.CEILING_HUNG_HEIGHT),
+  patchable(things.SOLID_DECORATION_RADIUS_OVERRIDE),
   patchable(PROJECTILE_RADIUS),
   patchable(WEAPONS),
   patchable(WEAPON_PICKUPS),
-  patchable(OBITUARIES),
+  patchable(things.OBITUARIES),
   patchable(LOCKED_LINES),
   patchable(CHEAT_MESSAGES),
   // What a `Frame` record or a repointed `Thing` re-derives — docs/dehacked.md § Frames.
-  patchable(THING_SPRITES),
-  patchable(THING_ANIM_FRAMES),
-  patchable(MONSTER_WALK_FRAMES_OVERRIDE),
-  patchable(MONSTER_IDLE_FRAMES),
-  patchable(MONSTER_DEATH_FRAMES),
-  patchable(MONSTER_XDEATH_FRAMES),
-  patchable(MONSTER_DEATH_SPRITE_OVERRIDE),
-  patchable(MONSTER_ATTACK_POSE),
-  patchable(MONSTER_PAIN_FRAMES),
-  patchable(MONSTER_RAISE_FRAMES),
+  patchable(things.THING_SPRITES),
+  patchable(things.THING_ANIM_FRAMES),
+  patchable(things.MONSTER_WALK_FRAMES_OVERRIDE),
+  patchable(things.MONSTER_IDLE_FRAMES),
+  patchable(things.MONSTER_DEATH_FRAMES),
+  patchable(things.MONSTER_XDEATH_FRAMES),
+  patchable(things.MONSTER_DEATH_SPRITE_OVERRIDE),
+  patchable(things.MONSTER_ATTACK_POSE),
+  patchable(things.MONSTER_PAIN_FRAMES),
+  patchable(things.MONSTER_RAISE_FRAMES),
   patchable(PROJECTILE_FRAMES),
   patchable(IMPACT_EFFECTS),
   patchable(PROJECTILE_SOUNDS),
   patchable(BARREL_CHAIN),
-  patchable(CORPSE_GIB),
+  patchable(things.CORPSE_GIB),
 ];
 
 /**
  * Every patchable `Set` — the flag sets plus the one the frame walker writes — as arrays, since
  * `structuredClone` is not used on them.
  */
-const PATCHED_SETS: readonly Set<number>[] = [...FLAG_SETS.map(([set]) => set), MONSTER_CORPSE_VANISHES];
+const PATCHED_SETS: readonly Set<number>[] = [...FLAG_SETS.map(([set]) => set), things.MONSTER_CORPSE_VANISHES];
 const PRISTINE_SETS = PATCHED_SETS.map((set) => [...set]);
 
 /**
@@ -169,7 +144,7 @@ export function resetDehacked(): void {
   resetSoundLumps();
   resetMusicLumps();
   resetSpriteLumps();
-  rebuildFullbrightFrames();
+  things.rebuildFullbrightFrames();
   rebuildDerivedMonsterStats();
   patchedThings = false;
 }
@@ -236,7 +211,7 @@ function applyThing(edit: DehThingEdit): void {
   const stats = MONSTER_STATS[dn];
   const inert = INERT_SHOOTABLE[dn];
 
-  if (edit.health !== undefined) MONSTER_HEALTH[dn] = edit.health;
+  if (edit.health !== undefined) things.MONSTER_HEALTH[dn] = edit.health;
   if (edit.mass !== undefined && stats) {
     stats.mass = edit.mass;
   }
@@ -250,13 +225,13 @@ function applyThing(edit: DehThingEdit): void {
     // The membership this record *ends* with, not the one it started with: `Bits` is applied last
     // (it needs the patched height), so a record that turns a prop solid and resizes it in one go
     // would otherwise write no override and leave it at the shared 16 units.
-    const solid = edit.bits === undefined ? SOLID_DECORATION_TYPES.has(dn) : isSolidDecoration(edit.bits);
-    if (solid) SOLID_DECORATION_RADIUS_OVERRIDE[dn] = edit.radius;
+    const solid = edit.bits === undefined ? things.SOLID_DECORATION_TYPES.has(dn) : isSolidDecoration(edit.bits);
+    if (solid) things.SOLID_DECORATION_RADIUS_OVERRIDE[dn] = edit.radius;
   }
   if (edit.height !== undefined) {
     if (stats) stats.height = edit.height;
     if (inert) inert.height = edit.height;
-    if (dn in CEILING_HUNG_HEIGHT) CEILING_HUNG_HEIGHT[dn] = edit.height;
+    if (dn in things.CEILING_HUNG_HEIGHT) things.CEILING_HUNG_HEIGHT[dn] = edit.height;
   }
 
   // A walker's `Speed` arrives in vanilla's own map-units-per-`A_Chase`, and is applied by
@@ -335,11 +310,11 @@ function applyBits(dn: number, mask: number, height: number | undefined): void {
   // `MF_SHOOTABLE` without a health entry would leave `spawnHealthFor` returning Infinity, so a
   // type that gains it and gave no `Hit points` takes vanilla's default rather than being
   // unkillable; one that loses it stops being shootable at all.
-  if (mask & MF_FLAGS.SHOOTABLE.bit) MONSTER_HEALTH[dn] ??= 1000;
-  else delete MONSTER_HEALTH[dn];
+  if (mask & MF_FLAGS.SHOOTABLE.bit) things.MONSTER_HEALTH[dn] ??= 1000;
+  else delete things.MONSTER_HEALTH[dn];
 
-  if (mask & MF_FLAGS.SPAWNCEILING.bit) CEILING_HUNG_HEIGHT[dn] ??= height ?? 0;
-  else delete CEILING_HUNG_HEIGHT[dn];
+  if (mask & MF_FLAGS.SPAWNCEILING.bit) things.CEILING_HUNG_HEIGHT[dn] ??= height ?? 0;
+  else delete things.CEILING_HUNG_HEIGHT[dn];
 
   // The exact pair `MonsterStats.flies`' own doc names: vanilla floats a monster with both.
   const stats = MONSTER_STATS[dn];
@@ -406,7 +381,7 @@ function applyObituaries(strings: ReadonlyMap<string, string>): void {
       .replace(/%hself|%[oghps]/g, (token) => OBITUARY_TOKENS[token])
       .trim()
       .replace(/\byou was\b/, 'you were');
-    OBITUARIES[sink] = line.charAt(0).toUpperCase() + line.slice(1);
+    things.OBITUARIES[sink] = line.charAt(0).toUpperCase() + line.slice(1);
   }
 }
 
@@ -499,7 +474,7 @@ function applyFrames(
   // Only a `Frame` record can move a fullbright bit — a `Thing` state repoint moves pointers
   // between rows, never the rows' own sprite/frame words. Which rows those are is also what lets an
   // MBF or extended state vote at all (`rebuildFullbrightFrames`).
-  if (frameEdits.length > 0) rebuildFullbrightFrames(patched.states, patched.written);
+  if (frameEdits.length > 0) things.rebuildFullbrightFrames(patched.states, patched.written);
 
   const before = pristineFrameTables();
   const after = deriveFrameTables(patched);
@@ -519,11 +494,11 @@ function applyFrames(
   }
   for (const key of Object.keys(after.sprites)) {
     const dn = Number(key);
-    if (!same(before.sprites[dn], after.sprites[dn])) THING_SPRITES[dn] = after.sprites[dn];
+    if (!same(before.sprites[dn], after.sprites[dn])) things.THING_SPRITES[dn] = after.sprites[dn];
   }
   for (const key of Object.keys(after.anims)) {
     const dn = Number(key);
-    if (!same(before.anims[dn], after.anims[dn])) put(THING_ANIM_FRAMES, dn, after.anims[dn]);
+    if (!same(before.anims[dn], after.anims[dn])) put(things.THING_ANIM_FRAMES, dn, after.anims[dn]);
   }
   for (const sprite of Object.keys(after.missiles)) {
     if (!same(before.missiles[sprite], after.missiles[sprite])) writeMissile(sprite, before.missiles[sprite], after.missiles[sprite]);
@@ -531,8 +506,8 @@ function applyFrames(
   // A patch that repoints `S_GIBS` moves what a crushed corpse is drawn as — the one derived pose
   // no `mobjinfo` chain reaches. docs/specials-crushers.md § Crushed corpses.
   if (after.gibs && !same(before.gibs, after.gibs)) {
-    CORPSE_GIB.sprite = after.gibs.sprite;
-    CORPSE_GIB.frames = after.gibs.frames;
+    things.CORPSE_GIB.sprite = after.gibs.sprite;
+    things.CORPSE_GIB.frames = after.gibs.frames;
   }
   if (after.barrel && !same(before.barrel, after.barrel)) {
     BARREL_CHAIN.idleFrames = after.barrel.idleFrames;
@@ -546,25 +521,25 @@ function applyFrames(
 /** One monster type's changed entries, field by field, onto the pose tables and its stat block. */
 function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
   if (b.sprite !== undefined && a.sprite !== b.sprite) {
-    THING_SPRITES[dn] = b.sprite;
+    things.THING_SPRITES[dn] = b.sprite;
   }
-  if (!same(a.walk, b.walk)) put(MONSTER_WALK_FRAMES_OVERRIDE, dn, same(b.walk, MONSTER_WALK_FRAMES) || b.walk.length === 0 ? null : b.walk);
-  if (!same(a.idle, b.idle)) put(MONSTER_IDLE_FRAMES, dn, b.idle);
-  if (!same(a.death, b.death)) put(MONSTER_DEATH_FRAMES, dn, b.death);
-  if (!same(a.xdeath, b.xdeath)) put(MONSTER_XDEATH_FRAMES, dn, b.xdeath);
-  if (!same(a.deathSprite, b.deathSprite)) put(MONSTER_DEATH_SPRITE_OVERRIDE, dn, b.deathSprite);
+  if (!same(a.walk, b.walk)) put(things.MONSTER_WALK_FRAMES_OVERRIDE, dn, same(b.walk, things.MONSTER_WALK_FRAMES) || b.walk.length === 0 ? null : b.walk);
+  if (!same(a.idle, b.idle)) put(things.MONSTER_IDLE_FRAMES, dn, b.idle);
+  if (!same(a.death, b.death)) put(things.MONSTER_DEATH_FRAMES, dn, b.death);
+  if (!same(a.xdeath, b.xdeath)) put(things.MONSTER_XDEATH_FRAMES, dn, b.xdeath);
+  if (!same(a.deathSprite, b.deathSprite)) put(things.MONSTER_DEATH_SPRITE_OVERRIDE, dn, b.deathSprite);
   if (a.vanishes !== b.vanishes) {
-    if (b.vanishes) MONSTER_CORPSE_VANISHES.add(dn);
-    else MONSTER_CORPSE_VANISHES.delete(dn);
+    if (b.vanishes) things.MONSTER_CORPSE_VANISHES.add(dn);
+    else things.MONSTER_CORPSE_VANISHES.delete(dn);
   }
-  if (!same(a.pain, b.pain)) put(MONSTER_PAIN_FRAMES, dn, b.pain);
+  if (!same(a.pain, b.pain)) put(things.MONSTER_PAIN_FRAMES, dn, b.pain);
   if (!same(a.meleePose, b.meleePose) || !same(a.rangedPose, b.rangedPose)) {
     const pose: { melee?: AttackPose; ranged?: AttackPose } = {};
     if (b.meleePose) pose.melee = b.meleePose;
     if (b.rangedPose) pose.ranged = b.rangedPose;
-    put(MONSTER_ATTACK_POSE, dn, Object.keys(pose).length ? pose : null);
+    put(things.MONSTER_ATTACK_POSE, dn, Object.keys(pose).length ? pose : null);
   }
-  if (!same(a.raise, b.raise)) put(MONSTER_RAISE_FRAMES, dn, b.raise);
+  if (!same(a.raise, b.raise)) put(things.MONSTER_RAISE_FRAMES, dn, b.raise);
 
   const stats = MONSTER_STATS[dn];
   if (!stats) return;
@@ -644,7 +619,7 @@ function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
   // 1-based `mobjinfo` index; a type no map can place has no doomednum to drop.
   if (b.drop !== null && b.drop !== a.drop) {
     const dropped = MOBJ_INFO[b.drop - 1]?.doomednum ?? -1;
-    if (dropped !== -1) put(MONSTER_DROPS, dn, dropped);
+    if (dropped !== -1) put(things.MONSTER_DROPS, dn, dropped);
   }
   // The walk loop changed: the chase clock follows it outright, and `speed` — already scaled by any
   // `Speed` line `applyThing` read — is rescaled by the loop factor's change, so the two compose in
@@ -689,19 +664,13 @@ function shotAttacksFor(chain: AttackStats, actions: readonly string[]): AttackS
 }
 
 /**
- * The `AttackStats` a repointed chain carries: a copy of the attack the action's own type
- * fires in vanilla (`ATTACK_ACTION_SOURCES`), or null where the chain fires nothing at all.
- *
- * Two fallbacks, both deliberate. An action this bridge doesn't name — MBF's own, or one whose
- * behavior is not an attack — leaves the type's existing attack alone rather than clearing it, so
- * a repoint that says nothing about the attack changes nothing about it. And where the owning type
- * has no attack in *this* slot the other one is taken: vanilla's actions don't care which chain
- * they sit in, so `A_PosAttack` in a melee chain still fires bullets, gated by the melee range the
- * chain is entered at.
- *
- * The copy is taken **after** `applyThing`, so a patch that retunes the imp and then repoints
- * something at `A_TroopAttack` gets the retuned figures — vanilla shares the one `mobjinfo` the
- * same way. docs/dehacked.md § Action pointers.
+ * The `AttackStats` a repointed chain carries: a copy of the attack the action's own type fires in
+ * vanilla (`ATTACK_ACTION_SOURCES`), or null where the chain fires nothing at all. Two deliberate
+ * fallbacks — an action this bridge doesn't name leaves the type's existing attack alone rather
+ * than clearing it, and where the owning type has no attack in *this* slot the other one is taken,
+ * since vanilla's actions don't care which chain they sit in. The copy is taken **after**
+ * `applyThing`, so a patch that retunes the imp and then repoints something at `A_TroopAttack` gets
+ * the retuned figures. docs/dehacked.md § Action pointers.
  */
 function attackFor(
   action: string | null,

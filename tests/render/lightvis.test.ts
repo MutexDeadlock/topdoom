@@ -8,6 +8,12 @@ import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { gridMap, type GridMap } from '../fixtures/gridmap.ts';
 import { BANK } from '../fixtures/specialsrig.ts';
 
+/**
+ * How far a light carries once walls are in the way: what it can reach, where its shadows fall,
+ * and the leaf attribute map geometry carries for it.
+ * See docs/lights.md § Light stops at walls.
+ */
+
 /** The flood fill's reached set, as subsector indices. */
 function reachFrom(vis: LightVisibility, world: World, grid: GridMap, col: number, row: number, radius: number): Set<number> {
   const at = grid.centre(col, row);
@@ -123,7 +129,8 @@ function detourRoom() {
  */
 describe('Dynamic lights · what a light can reach', () => {
   test('a wall stops the fill however large the radius', () => {
-    // Two closets either side of a solid cell: nothing connects them, so no radius should bridge it.
+    // Two closets either side of a solid cell: nothing connects them, so no radius should bridge
+    // it.
     const grid = gridMap(['#####', '#.#.#', '#####'], { cell: 128 });
     const world = new World(grid.map);
     const vis = new LightVisibility(grid.map, buildSubSectorPolys(grid.map), world);

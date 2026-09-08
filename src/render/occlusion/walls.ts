@@ -7,24 +7,7 @@ import type { WallOccluder } from '../mapmesh.ts';
 import { segmentCrossT, vecLength } from '../../util/geom.ts';
 import { dampenWith } from '../../util/damping.ts';
 import type { Opening } from '../../game/world.ts';
-import {
-  boxesOverlap,
-  emptyBox,
-  FADE_RADIUS,
-  FADE_SPEED,
-  FadeCrossings,
-  grownBox,
-  holeAlpha,
-  maxFadeRadius,
-  resolveColorAttrs,
-  sightBox,
-  SNAP_EPS,
-  stretchBox,
-  TargetPlanes,
-  type ChangedQuads,
-  type FadeBox,
-  type FadeFrame,
-} from './defs.ts';
+import * as defs from './defs.ts';
 
 /**
  * Total occluder count below which `WallFader` scans them all instead of building an index: over a
@@ -39,7 +22,7 @@ const GRID_MIN_OCCLUDERS = 256;
  * once per fader per frame across a level's thousands of them, and the box
  * never outlives the compare it feeds.
  */
-const scratchReach: FadeBox = emptyBox();
+const scratchReach: defs.FadeBox = defs.emptyBox();
 
 /**
  * Fades the wall quads currently sitting on a camera→target sightline. `update` only computes
@@ -105,7 +88,7 @@ export class WallFader {
   private hitSpread = new Float64Array(0);
   private hitTarget = new Float64Array(0);
   /** This frame's per-target hole dials and cut planes. */
-  private planes = new TargetPlanes();
+  private planes = new defs.TargetPlanes();
   /**
    * Which group last recorded a crossing for each hit slot — a stamp, so dedup needs no per-group
    * clear.
@@ -117,7 +100,7 @@ export class WallFader {
    * them shares one instead (`collectCrossings`). Allocated on first use, since
    * a level's mover faders — thousands of them — only ever take the shared one.
    */
-  private crossings: FadeCrossings | null = null;
+  private crossings: defs.FadeCrossings | null = null;
   /**
    * Uniform grid over chunk midpoints, so a crossing can find the quads around it without scanning
    * the map. Null below `GRID_MIN_OCCLUDERS`.
@@ -145,7 +128,7 @@ export class WallFader {
    * everything. `MoverGeometry` seeds its mesh bounds from it rather than
    * walking the same quads again.
    */
-  readonly footprint: FadeBox = emptyBox();
+  readonly footprint: defs.FadeBox = defs.emptyBox();
   /**
    * The runs of quads sharing a line side, which `addWall` emits together —
    * `[runFirst[r], runLast[r]]` plus that side's own segment and linedef. Pass
@@ -228,7 +211,7 @@ export class WallFader {
     this.runSegBy = new Float64Array(occluders.length);
     this.trackVisibility = trackVisibility;
     this.buildRuns();
-    resolveColorAttrs(this.occluders, this.meshes, this.attrs);
+    defs.resolveColorAttrs(this.occluders, this.meshes, this.attrs);
     if (occluders.length > GRID_MIN_OCCLUDERS) this.buildGrid();
     else for (let i = 0; i < occluders.length; i++) this.candidates[i] = i;
   }
@@ -254,7 +237,7 @@ export class WallFader {
     this.lastCombined.fill(NaN);
     this.commitAll = true;
     // The same refresh that rewrote the buffers may have moved a quad to another batch.
-    resolveColorAttrs(this.occluders, this.meshes, this.attrs);
+    defs.resolveColorAttrs(this.occluders, this.meshes, this.attrs);
   }
 
   /**
@@ -266,8 +249,8 @@ export class WallFader {
    * lookup is per line but the test it feeds is per **quad**, which is load-bearing.
    * docs/render-occlusion.md.
    */
-  update(frame: FadeFrame): void {
-    const bag = (this.crossings ??= new FadeCrossings());
+  update(frame: defs.FadeFrame): void {
+    const bag = (this.crossings ??= new defs.FadeCrossings());
     bag.reset();
     this.collectCrossings(frame, bag);
     this.applyCrossings(frame, bag);
@@ -283,12 +266,12 @@ export class WallFader {
    * Pairs with `applyCrossings`, and runs first: it is where the frame's
    * `passable` memo is stamped.
    */
-  collectCrossings(frame: FadeFrame, out: FadeCrossings): void {
+  collectCrossings(frame: defs.FadeFrame, out: defs.FadeCrossings): void {
     const { camX, camY, camZ, targets, openingInto } = frame;
     const n = targets.length;
     this.frameStamp++;
     this.ensureTargetScratch(n);
-    const { minX: boxMinX, maxX: boxMaxX, minY: boxMinY, maxY: boxMaxY } = sightBox(camX, camY, targets);
+    const { minX: boxMinX, maxX: boxMaxX, minY: boxMinY, maxY: boxMaxY } = defs.sightBox(camX, camY, targets);
     for (let k = 0; k < n; k++) {
       const t = targets[k];
       this.tx[k] = t.x;
@@ -365,9 +348,9 @@ export class WallFader {
    * Runs after `collectCrossings`, which is what stamps the `passable` memo the
    * quad tests below read.
    */
-  applyCrossings(frame: FadeFrame, hits: FadeCrossings): void {
+  applyCrossings(frame: defs.FadeFrame, hits: defs.FadeCrossings): void {
     const { dt, camX, camY, targets, openingInto } = frame;
-    const lerpT = 1 - Math.exp(-FADE_SPEED * dt);
+    const lerpT = 1 - Math.exp(-defs.FADE_SPEED * dt);
     this.planes.fill(camX, camY, targets);
     // Only what is still fading needs a fresh target: every other quad's
     // `wanted` is read nowhere until a crossing folds it, and `markActive`
@@ -384,7 +367,7 @@ export class WallFader {
     // reject each crossing in turn — the shared bag hands every fader the map's crossings, a mover
     // fader awake only because it is still damping back to 1 included. Only the folding is skipped;
     // the damping below still has to run, which is exactly what such a fader is awake for.
-    const reachable = boxesOverlap(this.footprint, grownBox(hits.bounds, maxFadeRadius(targets), scratchReach));
+    const reachable = defs.boxesOverlap(this.footprint, defs.grownBox(hits.bounds, defs.maxFadeRadius(targets), scratchReach));
     const crossingCount = reachable ? hits.count : 0;
 
     for (let c = 0; c < crossingCount; c++) {
@@ -454,7 +437,7 @@ export class WallFader {
         // Most corners sit on their target most frames, and `dampenWith` would
         // return it unchanged — skipping the store keeps their cache lines clean.
         if (this.occlusionAlpha[e] !== want) {
-          this.occlusionAlpha[e] = dampenWith(this.occlusionAlpha[e], want, lerpT, SNAP_EPS);
+          this.occlusionAlpha[e] = dampenWith(this.occlusionAlpha[e], want, lerpT, defs.SNAP_EPS);
         }
         if (this.occlusionAlpha[e] !== 1) settled = false;
       }
@@ -489,7 +472,7 @@ export class WallFader {
    * — a *third* input to this one channel, and the only one that never changes
    * after the build. docs/render-occlusion.md.
    */
-  commit(fogAlphaOf: (occluderIndex: number) => number, fogChanged?: ChangedQuads | null): void {
+  commit(fogAlphaOf: (occluderIndex: number) => number, fogChanged?: defs.ChangedQuads | null): void {
     const dirty = this.dirtyBuffers;
     dirty.clear();
     if (this.trackVisibility) this.maxAlphaByKey.clear();
@@ -563,8 +546,8 @@ export class WallFader {
     let front = false;
     for (let i = 0; i < this.occluders.length; i++) {
       const o = this.occluders[i];
-      stretchBox(this.footprint, o.ax, o.ay);
-      stretchBox(this.footprint, o.bx, o.by);
+      defs.stretchBox(this.footprint, o.ax, o.ay);
+      defs.stretchBox(this.footprint, o.bx, o.by);
       if (this.runCount === 0 || o.line !== line || o.frontSide !== front) {
         line = o.line;
         front = o.frontSide;
@@ -614,14 +597,14 @@ export class WallFader {
    */
   private buildGrid(): void {
     let halfChunk = 0;
-    const bounds = emptyBox();
+    const bounds = defs.emptyBox();
     for (const o of this.occluders) {
       const half = vecLength(o.bx - o.ax, o.by - o.ay) / 2;
       if (half > halfChunk) halfChunk = half;
-      stretchBox(bounds, (o.ax + o.bx) / 2, (o.ay + o.by) / 2);
+      defs.stretchBox(bounds, (o.ax + o.bx) / 2, (o.ay + o.by) / 2);
     }
     const { minX, minY } = bounds;
-    const cell = FADE_RADIUS + halfChunk;
+    const cell = defs.FADE_RADIUS + halfChunk;
     const cols = Math.max(1, Math.ceil((bounds.maxX - minX) / cell) + 1);
     const rows = Math.max(1, Math.ceil((bounds.maxY - minY) / cell) + 1);
     const start = new Int32Array(cols * rows + 1);
@@ -713,7 +696,7 @@ export class WallFader {
    * crossing fades it hardest.
    */
   private foldCorner(slot: number, distanceSquared: number, floor: number, radius: number): void {
-    const a = holeAlpha(distanceSquared, floor, radius);
+    const a = defs.holeAlpha(distanceSquared, floor, radius);
     if (a < this.wanted[slot]) this.wanted[slot] = a;
   }
 }

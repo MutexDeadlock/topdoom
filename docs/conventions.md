@@ -2,10 +2,9 @@
 
 Where a file goes, what it is called, the order things sit in inside it, and the shape of a
 comment. § Source order inside a file, § Publics above privates and § Inline `if` are
-**prescriptive** and not every file conforms; the rest describe the shape `src/` already has. A
-file is brought into line when it is next touched for another reason, never in a sweep —
-§ Known deviations says how to find what is pending. CLAUDE.md keeps only the rules that must be in
-context on every change and points here for the rest.
+**prescriptive**; the rest describe the shape `src/` already has. The tree conforms to all three —
+§ Known deviations says how to check, and what the one standing exception is. CLAUDE.md keeps only
+the rules that must be in context on every change and points here for the rest.
 
 ## File names
 
@@ -193,6 +192,10 @@ A doc-owned comment holding something the doc lacks moves it into the doc.
   violation.
 - **100 columns**, comments and `docs/` prose alike; a `/** … */` that would overrun becomes a
   block. Exempt: tables, code fences, a single unbreakable token. Code is not held to it.
+- **A `code span` that fits on a line is never split across one.** Break before it, or let the line
+  run a few columns over — a call sliced into `` `tick(TIC, x, `` / `` y)` `` reads as two things.
+  Only a span too long for any line wraps (`combat.ts`'s `P_RadiusAttack(…)`, `skill.ts`'s
+  `P_LoadThings` quote), and then it has no choice.
 
 ## Abbreviations
 
@@ -211,13 +214,17 @@ A doc-owned comment holding something the doc lacks moves it into the doc.
 - **Names arrive named; a namespace import is for three cases**: a package with one name
   (`THREE`), two modules whose exports collide (`map.ts`'s `hexen`/`udmf`), and **any module a file
   takes a dozen-odd names from and reads each a handful of times** — `specials.ts`'s `defs.`,
-  `menu.ts`'s `wadlib.` over `wad/library.ts`. It costs `noUnusedLocals` on that module — a
-  namespace is always used — so dense use sites (`specials/tables.ts`) and a file importing two
-  `defs.ts` at once stay on named imports.
+  `things.ts`'s `tables.`, `menu.ts`'s and `menu/library.ts`'s `wadlib.` over `wad/library.ts`. It
+  costs `noUnusedLocals` on that module — a namespace is always used — so dense use sites
+  (`specials/tables.ts`) stay on named imports.
 - **A densely read name stays named beside the namespace**, in its own `import type`/`import`:
   `menu.ts` reads `WadSource` at 26 sites and takes it named, everything else through `wadlib`.
 - **The namespace is named for the module, never for a word the file already uses**: `wadlib`, not
   `library` — `menu.ts` holds a `LibraryUi` in `this.library`.
+- **A `defs.ts`/`tables.ts` the file's own directory owns takes the bare role name; one from
+  another directory takes that directory's**: `things.ts` reads its own through `tables.`,
+  `dehacked/apply.ts` reads `things/tables.ts` through `things.`. So the several `defs.ts`/
+  `tables.ts` one file imports never collide, and which one a call means is on the line.
 
 ## Whitespace
 
@@ -241,10 +248,12 @@ this.moverLerp.delete(id);` is braced.
 
 ## Known deviations
 
-Pending, not precedent: what `node .claude/hooks/conventions.mjs <file>` reports on a module — a
-private helper above the last export in a module that is not a bag of pure functions, a
-multi-clause condition carrying its statement. Fixed when the file is next touched; the hook is the
-list.
+`node .claude/hooks/conventions.mjs <file>` reports nothing across `src/`, `tests/` and `scripts/`
+bar four files, and those are the bag-of-pure-functions exception (§ Source order inside a file),
+which the hook cannot recognise: `specials/mapscan.ts`, `ui/menu/labels.ts`, `wad/support.ts`,
+`dehacked/frames.ts`. Each keeps its private helpers beside the export that reads them, so the file
+reads one analysis at a time. A finding in any other file is new drift, and is fixed in the file
+that carries it rather than left to accumulate.
 
 Not a deviation: a layer entry point re-exporting its own — `specials.ts` hands out
 `SectorEffects`, built before the `World` the controller needs (docs/savegames.md § Apply order).

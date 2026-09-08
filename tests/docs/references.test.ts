@@ -55,9 +55,9 @@ function words(text: string): string[] {
 }
 
 /**
- * The words a pointer has to quote: a heading's own leading words, stopping before the parenthetical
- * file list most of them carry (`## Pausing (game.ts: pause, stillFrame, stop)`), which no pointer
- * repeats.
+ * The words a pointer has to quote: a heading's own leading words, stopping before the
+ * parenthetical file list most of them carry (`## Pausing (game.ts: pause, stillFrame, stop)`),
+ * which no pointer repeats.
  */
 function headingCore(heading: string): string[] {
   return words(heading.split('(')[0]);

@@ -360,7 +360,9 @@ export class FogOfWar {
     this.explored.set(decodeRuns(runs, this.explored.length));
     this.pending = 0;
     for (let ss = 0; ss < this.sights.length; ss++) {
-      if (this.sights[ss] && !this.explored[ss]) this.pending++;
+      if (this.sights[ss] && !this.explored[ss]) {
+        this.pending++;
+      }
     }
     this.snapAlpha();
   }

@@ -70,7 +70,8 @@ describe('Regressions · self-referencing lines and the neighbour search', () =>
     const d = rig(71, 64);
     d.press();
     d.run(5);
-    // `P_FindHighestFloorSurrounding` is 0 and differs from the platform's own 64, so the 8 applies.
+    // `P_FindHighestFloorSurrounding` is 0 and differs from the platform's own 64, so the 8
+    // applies.
     assert.equal(d.floor(), 8);
   });
 

@@ -128,7 +128,9 @@ export class Input implements TicInput {
       this.typedThisTic += e.key.toLowerCase();
     }
     // Keep the browser from scrolling the page with the movement keys.
-    if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
+    if (e.code.startsWith('Arrow') || e.code === 'Space') {
+      e.preventDefault();
+    }
   };
 
   private onKeyUp = (e: KeyboardEvent) => {
@@ -239,11 +241,6 @@ export class Input implements TicInput {
   }
 }
 
-function readStoredRightMouseAction(): RightMouseAction {
-  const stored = readStorage(RIGHT_MOUSE_STORAGE_KEY, 'previousweapon');
-  return RIGHT_MOUSE_ACTIONS.find((a) => a === stored) ?? 'previousweapon';
-}
-
 /**
  * Whether a key belongs to a focused form control rather than to the game — the
  * menu's name fields, its sliders, checkboxes and dropdowns. The listeners below
@@ -259,4 +256,9 @@ export function isTyping(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
   );
+}
+
+function readStoredRightMouseAction(): RightMouseAction {
+  const stored = readStorage(RIGHT_MOUSE_STORAGE_KEY, 'previousweapon');
+  return RIGHT_MOUSE_ACTIONS.find((a) => a === stored) ?? 'previousweapon';
 }

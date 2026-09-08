@@ -22,35 +22,12 @@ const BLOCK_EVERYTHING = 0x8000;
 /** `LF.BLOCKING`, named here because this module states Hexen's own bit layout. */
 const BLOCKING = 0x0001;
 
-/**
- * A Hexen line's flags as `LF` bits. From `ML_REPEAT_SPECIAL` (0x0200) up the two
- * layouts disagree, so those bits are dropped rather than copied.
- *
- * Deliberate deviation: `ML_BLOCK_PLAYERS` and `ML_BLOCKEVERYTHING` both become plain
- * `BLOCKING`, there being no `LF` bit for "blocks the player but not monsters".
- * docs/wad.md § Flags are translated, not copied.
- */
-function lineFlags(flags: number): number {
-  const out = flags & SHARED_LINE_FLAGS;
-  return flags & (BLOCK_PLAYERS | BLOCK_EVERYTHING) ? out | BLOCKING : out;
-}
-
 /** The skill bits and `MTF_AMBUSH`, which Hexen and Doom agree on. */
 const SHARED_THING_FLAGS = 0x000f;
 /** `MTF_SINGLE` — set when a thing appears in single player, where Doom states the opposite. */
 const SINGLE = 0x0100;
 /** Doom's `MTF_NOTSINGLE`, the bit `SINGLE`'s absence maps onto. */
 const NOTSINGLE = 0x0010;
-
-/**
- * A Hexen thing's flags as Doom's. The single-player gate inverts, and `MTF_DORMANT` —
- * which sits on Doom's `MTF_NOTSINGLE` — and the player-class bits are dropped.
- * docs/wad.md § Flags are translated, not copied.
- */
-function thingFlags(flags: number): number {
-  const out = flags & SHARED_THING_FLAGS;
-  return flags & SINGLE ? out : out | NOTSINGLE;
-}
 
 /**
  * `special` and `tag` come out 0: a Hexen action special is a ZDoom number in a namespace
@@ -92,4 +69,27 @@ export function readThings(data: Uint8Array | undefined): Thing[] {
       flags: thingFlags(r.u16()),
     };
   });
+}
+
+/**
+ * A Hexen line's flags as `LF` bits. From `ML_REPEAT_SPECIAL` (0x0200) up the two
+ * layouts disagree, so those bits are dropped rather than copied.
+ *
+ * Deliberate deviation: `ML_BLOCK_PLAYERS` and `ML_BLOCKEVERYTHING` both become plain
+ * `BLOCKING`, there being no `LF` bit for "blocks the player but not monsters".
+ * docs/wad.md § Flags are translated, not copied.
+ */
+function lineFlags(flags: number): number {
+  const out = flags & SHARED_LINE_FLAGS;
+  return flags & (BLOCK_PLAYERS | BLOCK_EVERYTHING) ? out | BLOCKING : out;
+}
+
+/**
+ * A Hexen thing's flags as Doom's. The single-player gate inverts, and `MTF_DORMANT` —
+ * which sits on Doom's `MTF_NOTSINGLE` — and the player-class bits are dropped.
+ * docs/wad.md § Flags are translated, not copied.
+ */
+function thingFlags(flags: number): number {
+  const out = flags & SHARED_THING_FLAGS;
+  return flags & SINGLE ? out : out | NOTSINGLE;
 }

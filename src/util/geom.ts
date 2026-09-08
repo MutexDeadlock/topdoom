@@ -221,17 +221,11 @@ export function segmentEntersBox(
  * How far along the ray from (ox,oy,oz) in direction (dx,dy,dz) it first enters the box of
  * half-width `half` centred on (bx, by) and standing from `floor` up to `top`, or null if it never
  * does. The one 3D primitive here, and its only caller is auto-aim's pick
- * (`ThingLayer.pickMonster`, docs/combat.md § Auto-aim): a body's own `mobjinfo` box against the
- * ray from the camera.
- *
- * A plain box, deliberately **not** `traceHitsBox`'s diagonal. That one is
- * `PIT_AddThingIntercepts`' shortcut for a 2D trace crossing the box, and its direction-dependent
- * width is a property of *that* trace; this ray comes from the camera rather than from the gun, so
- * what it should ask is simply which bodies it passes through.
- *
- * Slab-clipped like `segmentEntersBox`, with the same explicit guard on an axis-parallel component
- * (which would divide by zero) and the same "exactly grazing is a miss". The far end is unbounded:
- * a pointer ray has no length of its own, and the near crossing is what orders candidates.
+ * (`ThingLayer.pickMonster`): a body's own `mobjinfo` box against the ray from the camera, a plain
+ * box and deliberately **not** `traceHitsBox`'s direction-dependent diagonal. Slab-clipped like
+ * `segmentEntersBox`, with the same explicit guard on an axis-parallel component and the same
+ * "exactly grazing is a miss". The far end is unbounded: a pointer ray has no length of its own,
+ * and the near crossing is what orders candidates. docs/combat.md § Auto-aim.
  */
 export function rayEntersBox(
   ox: number,

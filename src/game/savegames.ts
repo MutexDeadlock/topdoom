@@ -143,19 +143,12 @@ export function saveFileName(name: string): string {
 }
 
 /**
- * Which entries of a save's set a load actually requires back, positionally:
- * the game WAD (`[0]`), and the file `mapWad` names. Everything else supplied
- * textures, sprites or sounds at most — never an index the snapshot keys
- * through — so its absence changes how the level looks, not what it means.
- *
- * The game WAD is released only where one actually stood in for it, which needs the library and so
- * is `Menu.resolveSaveWads`'s answer, not this one (docs/savegames.md § A stand-in game WAD).
- *
- * A file carrying a `DEHACKED` lump is the exception, and `patchWads` names those: a patch rewrites
- * the stat tables a restore re-derives every monster from, so dropping it would silently change
- * what the save means rather than how it looks. Defaulted to empty for a save written before the
- * field existed — correct for those, which were made by a build that applied no patch.
- * docs/savegames.md § WAD-set identity.
+ * Which entries of a save's set a load actually requires back, positionally: the game WAD (`[0]`),
+ * the file `mapWad` names, and — `patchWads`, defaulted to empty for a save written before the
+ * field — any file carrying a `DEHACKED` lump, since a patch rewrites the stat tables a restore
+ * re-derives every monster from. Everything else supplied art or sound at most. Releasing the game
+ * WAD needs the library and is `Menu.resolveSaveWads`'s answer, not this one.
+ * docs/savegames.md § WAD-set identity, § A stand-in game WAD.
  */
 export function requiredWads(wads: SaveWad[], mapWad: string, patchWads: readonly string[] = []): boolean[] {
   const wholeSet = requiresWholeSet(wads, mapWad);
@@ -329,23 +322,6 @@ export function missingWadText(file: MissingWad): string {
   return `${missingWadLabel(file)} ${adviceFor(file)}`;
 }
 
-function adviceFor(file: MissingWad): string {
-  // Why no stand-in was taken, where one was there to take — without it the same library plays one
-  // record and refuses another under the same sentence. Loading this file back is the fix for only
-  // one of the two reasons: the other is a level nothing in the set supplies, which no game WAD
-  // answers for.
-  if (file.blockedBy) {
-    const { map, fromIwad } = file.blockedBy;
-    return fromIwad ? `— it provides ${map}; load it from disk first` : `— no loaded WAD provides ${map}`;
-  }
-  if (!file.required) {
-    return file.wrongVersion
-      ? '— this level plays with the version you have, but content it added may differ'
-      : '— this level plays without it, but content it added may be missing';
-  }
-  return file.wrongVersion ? '— not the version this save was made with' : '— load it from disk first';
-}
-
 /**
  * The one file of a set that stops a load, or undefined when the set is playable — what greys Load
  * out and what `loadSave` refuses over.
@@ -436,41 +412,6 @@ export const asWad = (v: unknown): SaveWad => {
 };
 
 /**
- * Best-effort meta for the list; every field degrades to something displayable rather than failing
- * the whole row.
- */
-function asMeta(raw: unknown, id: string): SaveMeta {
-  const r = isRecord(raw) ? raw : {};
-  return {
-    id,
-    version: asNumber(r.version),
-    at: asText(r.at),
-    name: typeof r.name === 'string' && r.name.length > 0 ? r.name : '(unreadable save)',
-    map: typeof r.map === 'string' ? r.map : '?',
-    skill: asSkill(r.skill),
-    wads: Array.isArray(r.wads) ? r.wads.map(asWad) : [],
-    mapWad: asText(r.mapWad),
-    // Absent for every save written before the field existed, which is the right reading: those
-    // were made by a build that applied no patch. docs/dehacked.md § Savegames and patched tables.
-    ...(Array.isArray(r.patchWads) ? { patchWads: r.patchWads.filter((v) => typeof v === 'string') } : {}),
-    levelTime: asNumber(r.levelTime),
-    thumb: asText(r.thumb),
-  };
-}
-
-/**
- * The meta half of loadability — everything checkable without the state record
- * in hand, which is all a listing ever sees. Deliberately says nothing about
- * `mapWad`: a save without one is still perfectly loadable, since a blank only
- * makes the WAD gate stricter (`requiresWholeSet`).
- */
-function metaRefusal(raw: unknown): string | null {
-  if (!isRecord(raw)) return damagedText;
-  if (raw.version !== SAVE_VERSION) return versionRefusal(raw.version);
-  return typeof raw.map === 'string' && Array.isArray(raw.wads) ? null : damagedText;
-}
-
-/**
  * The state half: without these the restore path would crash mid-load. Checked wherever a snapshot
  * is actually decoded.
  */
@@ -528,31 +469,6 @@ export async function readSave(id: string): Promise<SaveGame> {
   }
   if (!isLoadableState(state)) throw damaged();
   return { ...asMeta(rawMeta, id), state };
-}
-
-/**
- * The one place a snapshot is serialized, so `roundFloat` is applied exactly where the bytes it
- * saves are counted.
- */
-async function encodeState(id: string, state: GameSnapshot): Promise<StoredState> {
-  return { id, encoding: STATE_ENCODING, bytes: await compressText(JSON.stringify(state, roundFloat)) };
-}
-
-/**
- * Owns the naming rule for both writers: a blank (or all-whitespace) name falls
- * back to `defaultName`, shared with replays. `levelTime` is rounded here — the meta is stored as
- * an object, where digits cost nothing, but the export file stringifies it without a replacer.
- */
-function createMeta(id: string, name: string, capture: SaveCapture): SaveMeta {
-  const { state: _state, ...rest } = capture;
-  return {
-    ...rest,
-    id,
-    version: SAVE_VERSION,
-    at: new Date().toISOString(),
-    name: name.trim() || defaultName(capture),
-    levelTime: Math.round(capture.levelTime * 1e6) / 1e6,
-  };
 }
 
 /** Stores a fresh capture under a new ID; throws (readably) at the storage quota. */
@@ -701,4 +617,81 @@ export async function importSave(text: string): Promise<SaveMeta> {
  */
 function requiresWholeSet(wads: SaveWad[], mapWad: string): boolean {
   return mapWad === '' || !wads.some((wad) => wad.id === mapWad);
+}
+
+function adviceFor(file: MissingWad): string {
+  // Why no stand-in was taken, where one was there to take — without it the same library plays one
+  // record and refuses another under the same sentence. Loading this file back is the fix for only
+  // one of the two reasons: the other is a level nothing in the set supplies, which no game WAD
+  // answers for.
+  if (file.blockedBy) {
+    const { map, fromIwad } = file.blockedBy;
+    return fromIwad ? `— it provides ${map}; load it from disk first` : `— no loaded WAD provides ${map}`;
+  }
+  if (!file.required) {
+    return file.wrongVersion
+      ? '— this level plays with the version you have, but content it added may differ'
+      : '— this level plays without it, but content it added may be missing';
+  }
+  return file.wrongVersion ? '— not the version this save was made with' : '— load it from disk first';
+}
+
+/**
+ * Best-effort meta for the list; every field degrades to something displayable rather than failing
+ * the whole row.
+ */
+function asMeta(raw: unknown, id: string): SaveMeta {
+  const r = isRecord(raw) ? raw : {};
+  return {
+    id,
+    version: asNumber(r.version),
+    at: asText(r.at),
+    name: typeof r.name === 'string' && r.name.length > 0 ? r.name : '(unreadable save)',
+    map: typeof r.map === 'string' ? r.map : '?',
+    skill: asSkill(r.skill),
+    wads: Array.isArray(r.wads) ? r.wads.map(asWad) : [],
+    mapWad: asText(r.mapWad),
+    // Absent for every save written before the field existed, which is the right reading: those
+    // were made by a build that applied no patch. docs/dehacked.md § Savegames and patched tables.
+    ...(Array.isArray(r.patchWads) ? { patchWads: r.patchWads.filter((v) => typeof v === 'string') } : {}),
+    levelTime: asNumber(r.levelTime),
+    thumb: asText(r.thumb),
+  };
+}
+
+/**
+ * The meta half of loadability — everything checkable without the state record
+ * in hand, which is all a listing ever sees. Deliberately says nothing about
+ * `mapWad`: a save without one is still perfectly loadable, since a blank only
+ * makes the WAD gate stricter (`requiresWholeSet`).
+ */
+function metaRefusal(raw: unknown): string | null {
+  if (!isRecord(raw)) return damagedText;
+  if (raw.version !== SAVE_VERSION) return versionRefusal(raw.version);
+  return typeof raw.map === 'string' && Array.isArray(raw.wads) ? null : damagedText;
+}
+
+/**
+ * The one place a snapshot is serialized, so `roundFloat` is applied exactly where the bytes it
+ * saves are counted.
+ */
+async function encodeState(id: string, state: GameSnapshot): Promise<StoredState> {
+  return { id, encoding: STATE_ENCODING, bytes: await compressText(JSON.stringify(state, roundFloat)) };
+}
+
+/**
+ * Owns the naming rule for both writers: a blank (or all-whitespace) name falls
+ * back to `defaultName`, shared with replays. `levelTime` is rounded here — the meta is stored as
+ * an object, where digits cost nothing, but the export file stringifies it without a replacer.
+ */
+function createMeta(id: string, name: string, capture: SaveCapture): SaveMeta {
+  const { state: _state, ...rest } = capture;
+  return {
+    ...rest,
+    id,
+    version: SAVE_VERSION,
+    at: new Date().toISOString(),
+    name: name.trim() || defaultName(capture),
+    levelTime: Math.round(capture.levelTime * 1e6) / 1e6,
+  };
 }

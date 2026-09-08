@@ -293,7 +293,9 @@ export class AudioEngine implements SoundEmitter {
     this.burstDropped = 0;
     this.buffers.clear();
     this.decoding.clear();
-    if (bank && this.ctx) for (const name of bank.encodedNames(SFX_NAMES)) this.decodeEncoded(name);
+    if (bank && this.ctx) {
+      for (const name of bank.encodedNames(SFX_NAMES)) this.decodeEncoded(name);
+    }
   }
 
   /**
@@ -317,7 +319,9 @@ export class AudioEngine implements SoundEmitter {
    */
   resume(): void {
     const ctx = this.ensureContext();
-    if (ctx && ctx.state !== 'running') void ctx.resume();
+    if (ctx && ctx.state !== 'running') {
+      void ctx.resume();
+    }
   }
 
   /**

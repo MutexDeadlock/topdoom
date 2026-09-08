@@ -13,6 +13,12 @@ import {
 } from '../../src/game/besttimes.ts';
 import { fakeStorage, installStorage } from '../fixtures/storage.ts';
 
+/**
+ * The per-level best times: what the store keeps, what it refuses, and the one-time migration
+ * off `localStorage`.
+ * See docs/hud.md § Best times.
+ */
+
 const LEGACY_STORAGE_KEY = 'topdoom.bestTimes';
 
 /**

@@ -5,25 +5,8 @@
  * the whole set to the menu and `Close` discards it. Owned by `Menu`, which it reaches only through
  * `LibraryHooks`. See docs/menu-wads.md § WAD Library.
  */
-import {
-  acceptableWads,
-  adoptFolderFiles,
-  ensureLibraryAccess,
-  fitsGameWad,
-  forgetLibrary,
-  libraryName,
-  libraryPicked,
-  librarySkips,
-  librarySources,
-  mapStyle,
-  pickerBlock,
-  pickLibraryFolder,
-  pwadsFor,
-  rescanLibrary,
-  servedFolder,
-  type LibrarySkip,
-  type WadSource,
-} from '../../wad/library.ts';
+import * as wadlib from '../../wad/library.ts';
+import type { WadSource } from '../../wad/library.ts';
 import { nothingLoads } from '../../wad/support.ts';
 import { confirmOnHold } from './hold.ts';
 import { OverlayShell, type MenuOverlay } from './overlay.ts';
@@ -131,9 +114,9 @@ export function buildFolderTree(
   const uploads = sources.filter((s) => s.origin === 'upload');
   const library = sources.filter((s) => s.origin === 'library');
   // How a served path splits into root and subfolder is `wad/library.ts`'s to know, not the menu's.
-  const under = (s: WadSource) => servedFolder(s).under;
-  const iwads = server.filter((s) => servedFolder(s).root === 'iwad');
-  const pwads = server.filter((s) => servedFolder(s).root !== 'iwad');
+  const under = (s: WadSource) => wadlib.servedFolder(s).under;
+  const iwads = server.filter((s) => wadlib.servedFolder(s).root === 'iwad');
+  const pwads = server.filter((s) => wadlib.servedFolder(s).root !== 'iwad');
 
   const nodes: FolderNode[] = [
     ...rootedSubtree({ id: SERVER_IWADS, label: 'Game WADs' }, iwads, under),
@@ -169,7 +152,9 @@ export function filterTree(nodes: readonly FolderNode[], filter: string): Filter
 
   // Parent-first, so a matched folder hands `whole` down to everything nested inside it.
   for (const node of nodes) {
-    if (hits(node.label) || (node.parent !== undefined && whole.has(node.parent))) whole.add(node.id);
+    if (hits(node.label) || (node.parent !== undefined && whole.has(node.parent))) {
+      whole.add(node.id);
+    }
   }
   // Backwards for the opposite reason: a surviving row pulls its ancestors on screen with it, and
   // walking from the leaves means those ancestors are reached before they are themselves tested.
@@ -201,7 +186,7 @@ export function filterTree(nodes: readonly FolderNode[], filter: string): Filter
  * completely different things from the player. Pure, so the wording is testable without a DOM —
  * docs/menu-wads.md § WAD Library.
  */
-export function scanResult(found: number, skipped: readonly LibrarySkip[]): [string, boolean] {
+export function scanResult(found: number, skipped: readonly wadlib.LibrarySkip[]): [string, boolean] {
   const first = skipped[0];
   if (found === 0) {
     return first
@@ -341,7 +326,7 @@ export class LibraryUi implements MenuOverlay {
   }
 
   private render(): void {
-    const nodes = buildFolderTree(this.hooks.sources(), libraryName() || 'Your library', libraryPicked());
+    const nodes = buildFolderTree(this.hooks.sources(), wadlib.libraryName() || 'Your library', wadlib.libraryPicked());
     const tree = indexTree(nodes);
     const match = filterTree(nodes, this.filter);
     // A filter overrides the fold state: a row it kept but a collapsed parent hides would be a
@@ -503,10 +488,10 @@ export class LibraryUi implements MenuOverlay {
     // With no folder set this is the only thing in the panel that does anything, and the panel
     // above it is empty — so it carries the primary weight until it has been used, and drops back
     // to a ghost like its neighbours once there is a folder to change.
-    const pick = this.controlButton(libraryPicked() ? 'Change…' : 'Choose folder…', () => void this.choose());
-    if (!libraryPicked()) pick.classList.add('primary');
+    const pick = this.controlButton(wadlib.libraryPicked() ? 'Change…' : 'Choose folder…', () => void this.choose());
+    if (!wadlib.libraryPicked()) pick.classList.add('primary');
     folderRow.append(pick);
-    if (libraryPicked()) {
+    if (wadlib.libraryPicked()) {
       folderRow.append(this.controlButton('Rescan', () => void this.rescan()));
       folderRow.append(this.forgetButton());
     }
@@ -518,7 +503,7 @@ export class LibraryUi implements MenuOverlay {
     // it is what the player already expects, and saying so is one more thing to read every visit.
     // The two reasons it can't get different notes: one is the browser and nothing helps, the other
     // is this window and says what to do about it.
-    const block = pickerBlock();
+    const block = wadlib.pickerBlock();
     if (block !== '') {
       const note = document.createElement('p');
       note.className = 'hint';
@@ -618,7 +603,7 @@ export class LibraryUi implements MenuOverlay {
   ): HTMLLabelElement {
     // The rule itself is `wad/library.ts`'s, shared with the prune that runs when a game WAD is
     // picked — so a row this pane offers is one the menu will still be holding afterwards.
-    const incompatible = !fitsGameWad(iwad, source);
+    const incompatible = !wadlib.fitsGameWad(iwad, source);
     const dead = unplayable(source);
     // One rule behind both the greying-out and the input: a row that looks pickable and isn't
     // would be the failure mode of letting these two drift.
@@ -635,7 +620,7 @@ export class LibraryUi implements MenuOverlay {
       : isGameWad
         ? badge('game WAD')
         : incompatible
-          ? badge(mapStyle(source) === 'doom1' ? 'DOOM 1 maps' : 'DOOM II maps', 'reason')
+          ? badge(wadlib.mapStyle(source) === 'doom1' ? 'DOOM 1 maps' : 'DOOM II maps', 'reason')
           : badge('');
     const row = this.baseRow(source, index >= 0, mark, refused);
 
@@ -726,7 +711,7 @@ export class LibraryUi implements MenuOverlay {
     const held = this.draftPwads.length;
     // Picks the game WAD can't take stay in the draft, so the count says both numbers rather than
     // quietly promising a merge that won't happen (docs/menu-wads.md § Picking a WAD set).
-    const unused = held - pwadsFor(iwad, this.draftPwads).length;
+    const unused = held - wadlib.pwadsFor(iwad, this.draftPwads).length;
     const addons = `${held === 1 ? '1 add-on' : `${held} add-ons`}${unused > 0 ? ` (${unused} not merged)` : ''}`;
     const set = iwad ? `${iwad.label} · ${addons}` : 'No game WAD picked yet';
     // Nothing here is live until Apply, and a footer that read like the menu's own selection would
@@ -746,7 +731,7 @@ export class LibraryUi implements MenuOverlay {
 
   /** Opens the folder picker, or the `webkitdirectory` input where there is none. */
   private async choose(): Promise<void> {
-    const block = pickerBlock();
+    const block = wadlib.pickerBlock();
     if (block !== '') {
       this.showStatus(
         block === 'framed'
@@ -757,9 +742,9 @@ export class LibraryUi implements MenuOverlay {
       return;
     }
 
-    let handle: Awaited<ReturnType<typeof pickLibraryFolder>>;
+    let handle: Awaited<ReturnType<typeof wadlib.pickLibraryFolder>>;
     try {
-      handle = await pickLibraryFolder();
+      handle = await wadlib.pickLibraryFolder();
     } catch (err) {
       // The picker exists but refused — a permissions policy, or an embedding `pickerBlock` did not
       // catch. The plain input still works, so fall through to it rather than leaving the button
@@ -826,25 +811,25 @@ export class LibraryUi implements MenuOverlay {
 
     // Counted by the rule the scan itself applies, never a second copy of it: a folder whose WADs
     // are all too deep to be taken must not be told that they are about to be read.
-    const wads = acceptableWads(files);
+    const wads = wadlib.acceptableWads(files);
     if (wads.length === 0) {
       this.showStatus(`No usable .wad files in that folder — it held ${files.length} other file${files.length === 1 ? '' : 's'}.`, true);
       return;
     }
 
-    await this.withScan(`Reading ${wads.length} WADs …`, (progress) => adoptFolderFiles(files, progress));
+    await this.withScan(`Reading ${wads.length} WADs …`, (progress) => wadlib.adoptFolderFiles(files, progress));
   }
 
   private async rescan(): Promise<void> {
-    if (!(await ensureLibraryAccess())) {
+    if (!(await wadlib.ensureLibraryAccess())) {
       this.showStatus('Permission to read your WAD folder was refused.', true);
       return;
     }
-    await this.withScan('Scanning your WAD folder …', (progress) => rescanLibrary(progress));
+    await this.withScan('Scanning your WAD folder …', (progress) => wadlib.rescanLibrary(progress));
   }
 
   private async forget(): Promise<void> {
-    await forgetLibrary();
+    await wadlib.forgetLibrary();
     this.hooks.setLibrarySources([]);
     this.showStatus('Forgot your WAD folder.');
     this.render();
@@ -863,12 +848,14 @@ export class LibraryUi implements MenuOverlay {
     this.showStatus(initial);
     try {
       await work((done, total) => {
-        if (total > 0 && done % 16 === 0) this.showStatus(`Reading WADs … ${done}/${total}`);
+        if (total > 0 && done % 16 === 0) {
+          this.showStatus(`Reading WADs … ${done}/${total}`);
+        }
       });
-      const found = librarySources();
+      const found = wadlib.librarySources();
       // Hands the menu the new list, whose render re-binds the draft to it (`refresh`).
       this.hooks.setLibrarySources(found);
-      this.showStatus(...scanResult(found.length, librarySkips()));
+      this.showStatus(...scanResult(found.length, wadlib.librarySkips()));
       this.selectedFolder = LIBRARY_ROOT;
     } catch (err) {
       this.showStatus(`Could not read that folder: ${(err as Error).message}`, true);

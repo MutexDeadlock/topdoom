@@ -137,9 +137,10 @@ export interface SpecialsRig {
   movableSectors: Set<number>;
   /**
    * One tic of the player standing at (`x`, `y`) facing `angle` — the same call `game.ts` makes, in
-   * `update`'s own argument order. Defaults to one `TIC` at the rig's start position facing east, so
-   * a test that moves nobody writes `tick()` and one that moves the player writes `tick(TIC, x, y)`.
-   * The facing only matters to Boom's silent teleports, which rotate the body relative to it.
+   * `update`'s own argument order. Defaults to one `TIC` at the rig's start position facing east,
+   * so a test that moves nobody writes `tick()` and one that moves the player writes
+   * `tick(TIC, x, y)`. The facing only matters to Boom's silent teleports, which rotate the body
+   * relative to it.
    */
   tick(dt?: number, x?: number, y?: number, angle?: number): void;
   /**

@@ -21,7 +21,9 @@ function walled() {
   const grid = gridMap(['...']);
   const map = grid.map;
   for (const l of map.linedefs) {
-    if (l.left !== NO_SIDE && l.right !== NO_SIDE) map.sidedefs[l.right].middle = WALLTEX;
+    if (l.left !== NO_SIDE && l.right !== NO_SIDE) {
+      map.sidedefs[l.right].middle = WALLTEX;
+    }
   }
   return buildMapMesh(map, BANK, { transfers: new Transfers(map) });
 }

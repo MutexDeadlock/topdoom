@@ -16,6 +16,12 @@ import { World } from '../../src/game/world.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 
+/**
+ * What `DynamicLights` puts in front of the shader: the uniform packing, the animation, the sprite
+ * tint, and the toggle.
+ * See docs/lights.md § What reaches the shader.
+ */
+
 const tint = (): Tint => ({ r: 0, g: 0, b: 0 });
 
 /** Runs one frame: open, offer each emitter, close. Returns the controller for inspection. */

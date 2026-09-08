@@ -57,36 +57,7 @@ export {
   type StandingBody,
   type ThingLayer,
 } from './things/defs.ts';
-import {
-  attackPoseFrameSeconds,
-  CEILING_HUNG_HEIGHT,
-  CORPSE_GIB,
-  COUNTITEM_TYPES,
-  COUNTKILL_TYPES,
-  FULLBRIGHT_FRAMES,
-  FUZZ_TYPES,
-  MONSTER_ACTION_FRAME_SECONDS,
-  MONSTER_ATTACK_POSE,
-  MONSTER_CORPSE_VANISHES,
-  MONSTER_DEATH_FRAME_SECONDS,
-  MONSTER_DEATH_FRAMES,
-  MONSTER_DEATH_SPRITE_OVERRIDE,
-  MONSTER_DROPS,
-  MONSTER_HEALTH,
-  MONSTER_IDLE_FRAMES,
-  MONSTER_PAIN_FRAMES,
-  MONSTER_WALK_FRAMES,
-  MONSTER_WALK_FRAMES_OVERRIDE,
-  MONSTER_RAISE_FRAMES,
-  MONSTER_TYPES,
-  MONSTER_XDEATH_FRAMES,
-  NO_AUTO_AIM_TYPES,
-  SOLID_DECORATION_RADIUS,
-  SOLID_DECORATION_RADIUS_OVERRIDE,
-  SOLID_DECORATION_TYPES,
-  THING_ANIM_FRAMES,
-  THING_SPRITES,
-} from './things/tables.ts';
+import * as tables from './things/tables.ts';
 import { ThingType } from './things/doomednums.ts';
 import { fastMonsters, isAmbush, isMultiplayerOnly, respawnMonsters, spawnAngleDeg, spawnsAtSkill, type Skill } from './skill.ts';
 import {
@@ -250,8 +221,7 @@ export interface ThingLayerOptions {
 /** One static upright plane per map THING whose type is a known, visible sprite. */
 export function buildThingSprites(world: World, options: ThingLayerOptions): ThingLayer {
   const { bank, materials, skill, sfx = SILENT, onBossDeath, restore, onRespawn, lights } = options;
-  // Taken off `World` rather than passed alongside it: the two must describe the same level, and
-  // a second parameter is a second chance to disagree.
+  // Taken off `World`, never passed beside it — docs/conventions.md § Named arguments.
   const map = world.map;
 
   /**
@@ -305,23 +275,23 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
   {
     for (const t of map.things) {
-      if (!THING_SPRITES[t.type]) continue;
+      if (!tables.THING_SPRITES[t.type]) continue;
       if (isMultiplayerOnly(t.flags)) continue;
       if (!spawnsAtSkill(t.flags, skill)) continue;
 
       // MF_SPAWNCEILING things (ceiling-hung gore, Commander Keen) measure z down from the ceiling
       // instead of up from the floor — see CEILING_HUNG_HEIGHT's doc.
       const sector = world.sectorAt(t.x, t.y);
-      const hangHeight = CEILING_HUNG_HEIGHT[t.type];
+      const hangHeight = tables.CEILING_HUNG_HEIGHT[t.type];
       const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
       if (!pushThing(t.type, { x: t.x, y: t.y, z }, spawnAngleDeg(t.angle), { ambush: isAmbush(t.flags) })) {
-        missingArt.add(`${t.type} (${THING_SPRITES[t.type]})`);
+        missingArt.add(`${t.type} (${tables.THING_SPRITES[t.type]})`);
         continue;
       }
       // `P_SpawnMapThing`'s own totals, raised only for a thing that actually spawned — past
       // every filter above, art included. docs/hud.md § Level stats.
-      if (COUNTKILL_TYPES.has(t.type)) stats.totalKills++;
-      else if (COUNTITEM_TYPES.has(t.type)) stats.totalItems++;
+      if (tables.COUNTKILL_TYPES.has(t.type)) stats.totalKills++;
+      else if (tables.COUNTITEM_TYPES.has(t.type)) stats.totalItems++;
     }
     // Before anything a restore changes: this is the state a thing left out of `changed` stands
     // for, in both directions — what `snapshotThings` elides against and what `restoreThings`
@@ -460,8 +430,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         } else if (
           // These two types leave no corpse at all — see `MONSTER_CORPSE_VANISHES`'s doc. Without
           // it `SpriteAnimator.die`'s hold-last-frame leaves their last death frame on screen.
-          MONSTER_CORPSE_VANISHES.has(p.type) &&
-          p.deadTime >= p.deathFrameCount * MONSTER_DEATH_FRAME_SECONDS
+          tables.MONSTER_CORPSE_VANISHES.has(p.type) &&
+          p.deadTime >= p.deathFrameCount * tables.MONSTER_DEATH_FRAME_SECONDS
         ) {
           p.hidden = true;
           p.visible = false;
@@ -470,7 +440,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         // `P_MobjThinker`'s respawn branch in its own order: `MF_COUNTKILL` only, then 12 seconds
         // face down, then the level-wide gate above, then a 5-in-256 roll. The corpse-removal
         // branches above already `continue`, so nothing vanilla removes outright reaches this.
-        if (respawnTic && p.deadTime >= NIGHTMARE_RESPAWN_DELAY && COUNTKILL_TYPES.has(p.type) && pRandom() <= 4) {
+        if (respawnTic && p.deadTime >= NIGHTMARE_RESPAWN_DELAY && tables.COUNTKILL_TYPES.has(p.type) && pRandom() <= 4) {
           // No `continue` on success: the monster is alive as of this line and falls through to
           // the live path below, looking around in the same tic.
           respawnCorpse(p, player);
@@ -647,7 +617,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       // lighting on why every sprite must. A fullbright frame ignores the sector outright, and
       // its `startmap` is row 0, which no depth can move, so it skips the depth too
       // (docs/render-lighting.md § Distance lighting).
-      const bright = FULLBRIGHT_FRAMES.has(p.anim.frameKey);
+      const bright = tables.FULLBRIGHT_FRAMES.has(p.anim.frameKey);
       const light = bright
         ? litColor(255)
         : litColor(
@@ -664,7 +634,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       if (!p.dropped) {
         // A fuzzed thing (`FUZZ_TYPES`) differs only in which batch draws it; everything above
         // is the pose an ordinary thing gets.
-        const into = FUZZ_TYPES.has(p.type) ? fuzzBatch : batch;
+        const into = tables.FUZZ_TYPES.has(p.type) ? fuzzBatch : batch;
         into.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, tint, sky);
         continue;
       }
@@ -710,7 +680,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         p.visible = false;
         // `P_TouchSpecialThing`'s `if (special->flags & MF_COUNTITEM) player->itemcount++`. A
         // monster drop never matches, so no `dropped` guard is needed.
-        if (COUNTITEM_TYPES.has(p.type)) stats.items++;
+        if (tables.COUNTITEM_TYPES.has(p.type)) stats.items++;
       }
     }
   }
@@ -851,7 +821,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     if (!p || p.crushed) return;
     // A set without the pool's own art would draw nothing where the corpse was, so the corpse is
     // left as it is — the same "no art, don't pose it" rule `pushThing` applies at spawn.
-    if (!CORPSE_GIB.frames.length || !bank.lookup(CORPSE_GIB.sprite, CORPSE_GIB.frames[0], 1)) return;
+    if (!tables.CORPSE_GIB.frames.length || !bank.lookup(tables.CORPSE_GIB.sprite, tables.CORPSE_GIB.frames[0], 1)) return;
     p.crushed = true;
     // `deadTime` deliberately keeps running: the corpse has been lying there just as long, which
     // is what the arch-vile's settle gate and the nightmare respawn delay both measure.
@@ -956,14 +926,14 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     facingDeg: number,
     opts?: { ambush?: boolean; dropped?: boolean; alerted?: boolean; targetId?: number | null },
   ): PosedThing | null {
-    const spriteName = THING_SPRITES[type];
+    const spriteName = tables.THING_SPRITES[type];
     if (!spriteName) return null;
     const isBarrel = type === ThingType.barrel;
-    const itemAnim = THING_ANIM_FRAMES[type];
+    const itemAnim = tables.THING_ANIM_FRAMES[type];
     // A monster walks, a barrel sways, an item blinks — and the two AI-less monsters hold a
     // spawnstate frame of their own (see `MONSTER_IDLE_FRAMES`).
-    const animFrames = MONSTER_TYPES.has(type)
-      ? (MONSTER_IDLE_FRAMES[type] ?? MONSTER_WALK_FRAMES_OVERRIDE[type] ?? MONSTER_WALK_FRAMES)
+    const animFrames = tables.MONSTER_TYPES.has(type)
+      ? (tables.MONSTER_IDLE_FRAMES[type] ?? tables.MONSTER_WALK_FRAMES_OVERRIDE[type] ?? tables.MONSTER_WALK_FRAMES)
       : isBarrel
         ? BARREL_CHAIN.idleFrames
         : itemAnim
@@ -975,19 +945,19 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // pointing at a missing lump.
     if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) return null;
     const { x, y, z } = at;
-    const isMonster = MONSTER_TYPES.has(type);
-    const isDecoration = SOLID_DECORATION_TYPES.has(type);
+    const isMonster = tables.MONSTER_TYPES.has(type);
+    const isDecoration = tables.SOLID_DECORATION_TYPES.has(type);
     const thing: PosedThing = {
       id: posed.length,
       anim,
       scale: pickupScaleFor(type),
       // Everything the pointer can lock onto, and nothing else. Why barrels join `MONSTER_TYPES`
       // is `ThingLayer.pickMonster`'s doc.
-      lockable: !NO_AUTO_AIM_TYPES.has(type) && (isMonster || isBarrel),
+      lockable: !tables.NO_AUTO_AIM_TYPES.has(type) && (isMonster || isBarrel),
       blockRadius: isBarrel
         ? BARREL_RADIUS
         : isDecoration
-          ? (SOLID_DECORATION_RADIUS_OVERRIDE[type] ?? SOLID_DECORATION_RADIUS)
+          ? (tables.SOLID_DECORATION_RADIUS_OVERRIDE[type] ?? tables.SOLID_DECORATION_RADIUS)
           : // `INERT_SHOOTABLE` before the fallback: Keen and the brain have a real `mobjinfo`
             // radius, they just have no `MONSTER_STATS` to carry it.
             monsterStats[type]?.radius ?? INERT_SHOOTABLE[type]?.radius ?? MONSTER_HIT_RADIUS,
@@ -999,10 +969,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       isMonster,
       isSolid: isMonster || isBarrel || isDecoration,
       isDecoration,
-      hangHeight: CEILING_HUNG_HEIGHT[type],
-      attackPose: MONSTER_ATTACK_POSE[type],
-      painFrames: MONSTER_PAIN_FRAMES[type],
-      raiseFrames: MONSTER_RAISE_FRAMES[type],
+      hangHeight: tables.CEILING_HUNG_HEIGHT[type],
+      attackPose: tables.MONSTER_ATTACK_POSE[type],
+      painFrames: tables.MONSTER_PAIN_FRAMES[type],
+      raiseFrames: tables.MONSTER_RAISE_FRAMES[type],
       // Every AI/damage field the save can elide, straight from the table the snapshot compares
       // against: one definition of "spawn state", so the two can't drift (see
       // `MONSTER_FIELD_DEFAULTS`). The `opts`-driven and per-type ones below override it.
@@ -1086,7 +1056,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       dropped: s.dropped === true,
     });
     if (!p) {
-      throw new Error(`this WAD set has no art for thing ${s.type} (${THING_SPRITES[s.type] ?? '?'}) the save needs`);
+      throw new Error(`this WAD set has no art for thing ${s.type} (${tables.THING_SPRITES[s.type] ?? '?'}) the save needs`);
     }
     return p;
   }
@@ -1211,17 +1181,17 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       if (p.health > 0) {
         // Unconditional, unlike every other monster's: vanilla's painchance here is 256 (Keen)
         // and 255 (the brain).
-        if (p.painFrames) p.anim.playOnce(p.painFrames, MONSTER_ACTION_FRAME_SECONDS);
+        if (p.painFrames) p.anim.playOnce(p.painFrames, tables.MONSTER_ACTION_FRAME_SECONDS);
         sfx.play(inert.painSound, inert.unattenuated ? null : p, monsterOrigin(p.id));
         return;
       }
       p.dead = true;
       p.deadTime = 0;
-      if (COUNTKILL_TYPES.has(p.type)) stats.kills++;
-      const deathFrames = MONSTER_DEATH_FRAMES[p.type];
+      if (tables.COUNTKILL_TYPES.has(p.type)) stats.kills++;
+      const deathFrames = tables.MONSTER_DEATH_FRAMES[p.type];
       p.deathFrameCount = deathFrames ? deathFrames.length : 0;
       sfx.play(inert.deathSound, inert.unattenuated ? null : p, monsterOrigin(p.id));
-      if (deathFrames) p.anim.die(deathFrames, MONSTER_DEATH_FRAME_SECONDS);
+      if (deathFrames) p.anim.die(deathFrames, tables.MONSTER_DEATH_FRAME_SECONDS);
       // `A_KeenDie`'s tag-666 door and `A_BrainDie`'s level exit both hang off the same
       // all-of-this-type-are-dead scan the ordinary death branch ends with.
       if (DEATH_NOTIFY_TYPES.has(p.type) && posed.every((q) => q.type !== p.type || q.dead)) {
@@ -1265,7 +1235,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       // `reactToDamage` only sets `painTimer` when the stagger roll passed, so a hit that fails
       // it still alerts and retargets but doesn't flinch on screen.
       if (p.painFrames && p.painTimer > 0) {
-        p.anim.playOnce(p.painFrames, MONSTER_ACTION_FRAME_SECONDS);
+        p.anim.playOnce(p.painFrames, tables.MONSTER_ACTION_FRAME_SECONDS);
       }
       // `A_Pain` sits on the painstate itself, so the yelp is gated on the same stagger roll as
       // the flinch pose above, not on merely being hit.
@@ -1291,7 +1261,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // `P_KillMobj`'s unconditional `if (target->flags & MF_COUNTKILL) killcount++`, with no
     // "already counted" guard. Barrels never match, so this sits before the barrel branch without
     // needing one of its own. docs/hud.md § Level stats.
-    if (COUNTKILL_TYPES.has(p.type)) stats.kills++;
+    if (tables.COUNTKILL_TYPES.has(p.type)) stats.kills++;
     if (isBarrel) {
       // The splash fires later, once `BARREL_CHAIN.explodeDelaySeconds` elapses in `update`, so
       // `source` is captured now to stay attributable then — see `PosedThing.explodeSource`.
@@ -1311,7 +1281,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       sfx.play(randomVariant(death), BOSS_TYPES.has(p.type) ? null : p, monsterOrigin(p.id));
     }
 
-    const dropType = MONSTER_DROPS[p.type];
+    const dropType = tables.MONSTER_DROPS[p.type];
     if (dropType) spawnDrop(p, p.sector, p.facingDeg, dropType);
 
     // `A_PainDie`: three more lost souls fanned around the elemental's last facing, fired
@@ -1532,9 +1502,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // ZDoom's `AActor::Revive` ("[RH] If it's a monster, it gets to count as another kill",
     // `p_mobj.cpp`) rather than vanilla, which adjusts neither counter and reads over 100%.
     // docs/hud.md § Level stats.
-    if (COUNTKILL_TYPES.has(p.type)) stats.totalKills++;
+    if (tables.COUNTKILL_TYPES.has(p.type)) stats.totalKills++;
     p.dead = false;
-    p.health = MONSTER_HEALTH[p.type] ?? p.health;
+    p.health = tables.MONSTER_HEALTH[p.type] ?? p.health;
     p.hidden = false;
     // A crunched corpse is raisable in vanilla too, and comes back at its own full size here —
     // vanilla's own raise leaves it at the zeroed radius/height `PIT_ChangeSector` wrote, which is
@@ -1562,12 +1532,12 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     p.chargeTimer = 0;
     p.painTimer = 0;
     p.inFloat = false;
-    p.attackPause = (p.raiseFrames?.length ?? 0) * MONSTER_DEATH_FRAME_SECONDS;
+    p.attackPause = (p.raiseFrames?.length ?? 0) * tables.MONSTER_DEATH_FRAME_SECONDS;
     // `A_VileChase` plays `slop` on the corpse as it comes back up — the same sound a gib death
     // makes, which is why a resurrection sounds like one played backwards.
     sfx.play('slop', p, monsterOrigin(p.id));
     p.anim.revive();
-    if (p.raiseFrames) p.anim.playOnce(p.raiseFrames, MONSTER_DEATH_FRAME_SECONDS);
+    if (p.raiseFrames) p.anim.playOnce(p.raiseFrames, tables.MONSTER_DEATH_FRAME_SECONDS);
   }
 
   /**
@@ -1608,7 +1578,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
     p.dead = false;
     p.deadTime = 0;
-    p.health = MONSTER_HEALTH[p.type] ?? p.health;
+    p.health = tables.MONSTER_HEALTH[p.type] ?? p.health;
     p.hidden = false;
     p.crushed = false;
     p.velX = 0;
@@ -1697,7 +1667,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
  */
 function spawnHealthFor(type: number, dropped: boolean): number {
   if (type === ThingType.barrel) return BARREL_HEALTH;
-  return dropped ? Infinity : MONSTER_HEALTH[type] ?? Infinity;
+  return dropped ? Infinity : tables.MONSTER_HEALTH[type] ?? Infinity;
 }
 
 /**
@@ -1731,19 +1701,19 @@ function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
   if (p.crushed) {
     // Whatever it died of, a plane has since crunched it flat — one held `S_GIBS` frame, and the
     // pose a save restores to. docs/specials-crushers.md § Crushed corpses.
-    p.deathFrameCount = CORPSE_GIB.frames.length;
-    p.anim.die(CORPSE_GIB.frames, MONSTER_DEATH_FRAME_SECONDS, CORPSE_GIB.sprite);
+    p.deathFrameCount = tables.CORPSE_GIB.frames.length;
+    p.anim.die(tables.CORPSE_GIB.frames, tables.MONSTER_DEATH_FRAME_SECONDS, tables.CORPSE_GIB.sprite);
     return false;
   }
-  const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
-  const gibbed = p.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type];
-  const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
+  const maxHealth = tables.MONSTER_HEALTH[p.type] ?? 0;
+  const gibbed = p.health < -maxHealth && tables.MONSTER_XDEATH_FRAMES[p.type];
+  const frames = gibbed || tables.MONSTER_DEATH_FRAMES[p.type];
   p.deathFrameCount = frames ? frames.length : 0;
   if (frames) {
     // A patched death chain may borrow another type's sprite (docs/dehacked.md § Frames); the
     // stock roster has no entry here and dies in its own.
-    const sprite = MONSTER_DEATH_SPRITE_OVERRIDE[p.type];
-    p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS, gibbed ? sprite?.xdeath : sprite?.death);
+    const sprite = tables.MONSTER_DEATH_SPRITE_OVERRIDE[p.type];
+    p.anim.die(frames, tables.MONSTER_DEATH_FRAME_SECONDS, gibbed ? sprite?.xdeath : sprite?.death);
     if (deadTime > 0) p.anim.advance(deadTime, false);
   } else {
     p.hidden = true;
@@ -1765,16 +1735,15 @@ function enterAttackPose(p: PosedThing, kind: 'melee' | 'ranged', spanSeconds: n
   // A type with only the other kind of pose lends it: the cacodemon bites from its missile chain.
   const pose = p.attackPose?.[kind] ?? p.attackPose?.[kind === 'melee' ? 'ranged' : 'melee'];
   if (!pose) return;
-  p.anim.playOnce(pose.frames, attackPoseFrameSeconds(pose, spanSeconds));
+  p.anim.playOnce(pose.frames, tables.attackPoseFrameSeconds(pose, spanSeconds));
   if (elapsed > 0) p.anim.advance(elapsed, false);
 }
 
 /**
- * The three `refsIn` predicates. Module-level so a query allocates no closure, and separate
- * because each says something different about what its caller is asking for.
+ * The first of the three `refsIn` predicates: a monster — what a lowering ceiling measures itself
+ * against, over `refsIn`'s living bodies. All three are module-level so a query allocates no
+ * closure, and separate because each says something different about what its caller is asking for.
  */
-
-/** A monster — what a lowering ceiling measures itself against, over `refsIn`'s living bodies. */
 const isMonsterType = (p: PosedThing): boolean => p.isMonster;
 
 /**

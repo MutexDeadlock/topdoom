@@ -41,18 +41,6 @@ import { atan2, cos, sin } from '../../util/fdlibm.ts';
 const VILE_HEAL_DURATION = 30 * DOOM_TIC;
 
 /**
- * How long the arch-vile's windup flame tracks its target — read off the
- * vile's own `startDelaySeconds` rather than duplicated, so the flame can't
- * drift away from the moment the real shot lands or fizzles. Derived from
- * `MONSTER_STATS` rather than sitting in `spritefx/tables.ts` beside the other
- * `VILE_FIRE_*` values: that file is otherwise free of `MONSTER_STATS`, and
- * keeping it that way is what lets this file import it.
- */
-function vileWindupTrackSeconds(): number {
-  return MONSTER_STATS[ThingType.archVile].ranged?.startDelaySeconds ?? 0;
-}
-
-/**
  * `ThingLayer`'s `findRaisableCorpse`, as `stepMonsterAI` receives it — a lookahead point and the
  * vile's own radius in, the one corpse to raise out.
  */
@@ -190,4 +178,16 @@ function fireFrontOf(target: Pos3 & { angle: number }): Pos3 {
 function vileBlastOffset(atk: MonsterAttackEvent, targetPos: Pos2): Pos2 {
   const towardVile = atan2(atk.y - targetPos.y, atk.x - targetPos.x);
   return { x: cos(towardVile) * VILE_FIRE_OFFSET, y: sin(towardVile) * VILE_FIRE_OFFSET };
+}
+
+/**
+ * How long the arch-vile's windup flame tracks its target — read off the
+ * vile's own `startDelaySeconds` rather than duplicated, so the flame can't
+ * drift away from the moment the real shot lands or fizzles. Derived from
+ * `MONSTER_STATS` rather than sitting in `spritefx/tables.ts` beside the other
+ * `VILE_FIRE_*` values: that file is otherwise free of `MONSTER_STATS`, and
+ * keeping it that way is what lets this file import it.
+ */
+function vileWindupTrackSeconds(): number {
+  return MONSTER_STATS[ThingType.archVile].ranged?.startDelaySeconds ?? 0;
 }

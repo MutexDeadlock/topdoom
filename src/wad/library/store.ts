@@ -59,20 +59,6 @@ const openDb = idbOpener(DB_NAME, DB_VERSION, (db) => {
 });
 
 /**
- * Every call here is best-effort: the library is a convenience, and a browser with IndexedDB
- * disabled (or a private window that refuses it) must fall back to "no remembered folder" rather
- * than take `Menu.init` down on the boot path.
- */
-async function attempt<T>(work: () => Promise<T>, fallback: T): Promise<T> {
-  try {
-    if (typeof indexedDB === 'undefined') return fallback;
-    return await work();
-  } catch {
-    return fallback;
-  }
-}
-
-/**
  * The remembered folder, or null when there is none — including on browsers with no handle to
  * store.
  */
@@ -178,4 +164,18 @@ function asDescriptor(value: unknown): LibraryDescriptor | null {
 function isTitleMap(value: unknown): value is Record<string, string> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   return Object.values(value).every((title) => typeof title === 'string');
+}
+
+/**
+ * Every call here is best-effort: the library is a convenience, and a browser with IndexedDB
+ * disabled (or a private window that refuses it) must fall back to "no remembered folder" rather
+ * than take `Menu.init` down on the boot path.
+ */
+async function attempt<T>(work: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    if (typeof indexedDB === 'undefined') return fallback;
+    return await work();
+  } catch {
+    return fallback;
+  }
 }

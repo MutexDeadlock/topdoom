@@ -1361,21 +1361,17 @@ export class World {
   }
 
   /**
-   * True if a straight 3D line between two points is crossed by no
-   * sight-blocking line (`World.blocksSight`) **and** keeps an unbroken sight
-   * wedge through the floor/ceiling of every sector along the way.
-   *
-   * The wedge starts from a *fixed eye height* (`SIGHT_EYE_HEIGHT`, vanilla's `sightzstart`)
-   * rather than interpolating toward `z2`. That, the floor/ceiling half, and what keeps the
-   * engine's most performance-sensitive query affordable are docs/world.md § hasLineOfSight.
+   * True if a straight 3D line between two points is crossed by no sight-blocking line
+   * (`World.blocksSight`) **and** keeps an unbroken sight wedge through the floor/ceiling of every
+   * sector along the way, from a fixed eye height (`SIGHT_EYE_HEIGHT`) rather than interpolating
+   * toward `z2`. docs/world.md § hasLineOfSight.
    *
    * `PLAYER_HEIGHT` is read *inside* this body, like every other `player.ts` value in this file:
-   * the two modules import from each other, so hoisting one to module scope here hits the cycle's
-   * initialization order — "Cannot access 'PLAYER_HEIGHT' before initialization".
+   * the two modules import from each other, so hoisting one to module scope hits the cycle's
+   * initialization order.
    *
-   * The two subsector arguments are hints for `sightRejected`: a caller that already keeps its
-   * subsector (`PosedThing.subsector`) passes it rather than paying a BSP descent, and `-1` means
-   * "look it up".
+   * The two subsector arguments are hints for `sightRejected` — a caller already holding its own
+   * (`PosedThing.subsector`) passes it rather than paying a BSP descent, and `-1` means "look up".
    */
   hasLineOfSight(
     from: Pos3,
@@ -1749,23 +1745,12 @@ export class World {
   }
 
   /**
-   * Traces a shot fired from `origin` along `angleRad` and returns where it ends
-   * up, stopped at the nearest line that blocks it. Used both for a hitscan
-   * weapon's tracer endpoint and for how far a projectile may fly
-   * (game/weapons.ts, game.ts).
-   *
-   * `target` supplies the **slope** — the trace rises or falls from `origin.z` toward the
-   * target's height, and the origin stays the shooter's own so a rendered tracer never starts
-   * mid-air. With no target the shot is flat.
-   *
-   * `range` is how far it flies, deliberately **separate from the aim**: it defaults to stopping
-   * at the target, but a shot keeps going down the aimed slope whether or not the target is still
-   * there. docs/combat.md § Range and docs/monster-attacks.md § Hitscan vs. projectile.
-   *
-   * **A `lock` switches blocking** from `blocksShot`'s single fixed ray to a **slope wedge**,
-   * vanilla's `P_AimLineAttack` auto-aim leniency, and re-aims the shot at the wedge it cleared
-   * (`PTR_AimTraverse`'s `aimslope`). A monster's own fired shot passes none: it needs `target` to
-   * aim but has no "you clicked it" promise to honor. docs/combat.md § shotPath.
+   * Traces a shot fired from `origin` along `angleRad` and returns where it ends up, stopped at
+   * the nearest line that blocks it — a hitscan weapon's tracer endpoint, and how far a projectile
+   * may fly. `target` supplies the **slope** and `range` the distance, deliberately separate; a
+   * `lock` switches blocking to vanilla's `P_AimLineAttack` slope wedge and re-aims at the wedge it
+   * cleared, which a monster's own shot never passes.
+   * docs/combat.md § shotPath, § Range, docs/monster-attacks.md § Hitscan vs. projectile.
    */
   shotPath(
     origin: Pos3,

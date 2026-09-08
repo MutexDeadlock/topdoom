@@ -32,15 +32,6 @@ export {
 import type { Pos3 } from '../types.ts';
 
 /**
- * Builds and caches billboard geometry/materials for sprite lumps, one per
- * (lump, mirrored) pair.
- *
- * A thing is a flat plane fixed **upright** in the world, turning only around its vertical axis to
- * track the camera's yaw (`SpriteActor.setPose`'s `viewerAngleDeg`) — never a true camera-facing
- * billboard, which tips flat as this camera tilts toward straight down.
- * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
- */
-/**
  * A second bank, its material cache and the sprite name to resolve under: an actor's frames drawn
  * from another file's art. All three travel together because none is usable without the others —
  * the cache reads pictures out of the bank's own wad, and the name only exists in it. The player's
@@ -53,6 +44,15 @@ export interface SpriteSkin {
   spriteName: string;
 }
 
+/**
+ * Builds and caches billboard geometry/materials for sprite lumps, one per
+ * (lump, mirrored) pair.
+ *
+ * A thing is a flat plane fixed **upright** in the world, turning only around its vertical axis to
+ * track the camera's yaw (`SpriteActor.setPose`'s `viewerAngleDeg`) — never a true camera-facing
+ * billboard, which tips flat as this camera tilts toward straight down.
+ * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
+ */
 export class SpriteMaterialCache {
   private cache = new Map<string, LumpSprite | null>();
   private gfx: GraphicsBank;

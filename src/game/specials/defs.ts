@@ -651,20 +651,12 @@ export interface SpecialDef {
    */
   retriggerXor?: number;
   /**
-   * Whether a non-player body may fire this line, on either of the two paths
-   * that admit one — both vanilla allow-lists, carried per number:
-   *
-   * - `trigger: 'walk'` is `P_CrossSpecialLine`'s `!thing->player` list — the
-   *   seven numbers a monster may cross (teleports, one door, two lifts).
-   * - `trigger: 'use'` is `P_UseSpecialLine`'s, reached from `P_Move` when a
-   *   monster's step is refused: the four manual doors (1/32/33/34, the last
-   *   three then failing their key check) plus Boom's switch teleporters
-   *   (174/195/209/210). This is what opens a door for a chasing monster —
-   *   docs/monster-ai.md § Opening doors.
-   *
-   * Every other line ignores monsters. Boom's generalized lines carry the same
-   * permission as a trigger bit on both paths, which is why this is data on the
-   * def rather than a hardcoded number set.
+   * Whether a non-player body may fire this line, on either of the two vanilla allow-lists carried
+   * per number: `P_CrossSpecialLine`'s for a `walk` trigger, and `P_UseSpecialLine`'s for a `use`
+   * one, reached from `P_Move` when a step is refused — what opens a door for a chasing monster.
+   * Every other line ignores monsters. Boom's generalized lines carry the same permission as a
+   * trigger bit on both paths, which is why this is data on the def rather than a hardcoded number
+   * set. docs/monster-ai.md § Opening doors.
    */
   monsterActivate?: boolean;
   /**

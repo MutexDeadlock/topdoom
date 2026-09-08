@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs';
 import { filesUnder } from '../fixtures/files.ts';
 
 /**
- * Every top-level `describe` is named `Subject area · what it covers`, subject uppercase-first — the
- * shape that groups the run's output by subject. docs/testing.md § Layout and suite names.
+ * Every top-level `describe` is named `Subject area · what it covers`, subject uppercase-first —
+ * the shape that groups the run's output by subject. docs/testing.md § Layout and suite names.
  */
 
 /** A top-level `describe(` and its quoted name; nested blocks, indented, may name themselves freely. */
@@ -19,7 +19,9 @@ describe('Suite hygiene · describe names', () => {
         .split('\n')
         .forEach((line, i) => {
           const m = TOP_LEVEL.exec(line);
-          if (m && !/^[A-Z][^·]* · ./.test(m[2])) offenders.push(`${path}:${i + 1}  ${m[2]}`);
+          if (m && !/^[A-Z][^·]* · ./.test(m[2])) {
+            offenders.push(`${path}:${i + 1}  ${m[2]}`);
+          }
         });
     }
     assert.deepEqual(offenders, [], 'name it `Subject · what it covers`');

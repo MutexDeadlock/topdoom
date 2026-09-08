@@ -291,18 +291,15 @@ export class SpriteFxLayer {
 
   /**
    * Queues one already-advanced sprite into the batch at a DOOM-space point. A fullbright frame
-   * (every explosion, a fireball in flight) ignores `light`. `subsector` is the sprite's own leaf
-   * where the caller has one, so a dynamic light behind a wall can be told from one in the room;
-   * -1 leaves `DynamicLights` to resolve it, which it only does once some light is live.
+   * ignores `light`. `subsector` is the sprite's own leaf where the caller has one, so a dynamic
+   * light behind a wall can be told from one in the room; -1 leaves `DynamicLights` to resolve it.
    *
    * **Everything drawn here hangs from its patch's own offset** (`CachedSprite.bottomOffset`), the
-   * placement vanilla gives it: what this layer draws is in mid-air — a missile in flight, an
-   * explosion, blood, a puff — and belongs straddling its point rather than standing on it. Only
-   * the floor-resting art `ThingLayer` and the player's `SpriteActor` draw keeps this engine's own
-   * bottom anchor. docs/sprites.md § Why upright planes, not `THREE.Sprite`.
-   *
-   * The light below is offered at the *unshifted* point: where the thing is, not where its art
-   * hangs.
+   * placement vanilla gives it: what this layer draws is in mid-air and belongs straddling its
+   * point rather than standing on it. Only the floor-resting art `ThingLayer` and `SpriteActor`
+   * draw keeps this engine's own bottom anchor. The light below is offered at the *unshifted*
+   * point: where the thing is, not where its art hangs.
+   * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
    */
   batchSprite(anim: SpriteAnimator, at: Pos3, facingDeg: number, light: number, subsector = -1): void {
     const cached = anim.resolve(facingDeg, this.viewerAngleDeg);

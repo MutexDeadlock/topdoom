@@ -63,7 +63,10 @@ function tamperMeta(id: string, patch: Record<string, unknown>): void {
   store.metas.set(id, { ...(store.metas.get(id) as Record<string, unknown>), ...patch });
 }
 
-/** The savegame store: the meta/state split, version refusal, and what a damaged record costs. See docs/savegames.md § Storage. */
+/**
+ * The savegame store: the meta/state split, version refusal, and what a damaged record costs.
+ * See docs/savegames.md § Storage.
+ */
 describe('Savegames · the store', () => {
   test('write, list, read and delete round-trip', async () => {
     const meta = await writeSave(capture(), 'my save');

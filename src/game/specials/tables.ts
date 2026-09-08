@@ -3,20 +3,12 @@
  * the `defs.ts` shapes as flat data rather than per-type code; `game/specials.ts` drives off these
  * tables.
  *
- * **Every vanilla DOOM/DOOM2 special is covered**, audited number by number —
- * the scope and the audit behind it are in docs/specials.md § Scope, along
- * with how Boom's numbers join through `lookupSpecial` without touching the
- * vanilla table. Two mechanisms sit outside `LINE_SPECIALS` because neither
- * is a triggerable linedef effect: `SECTOR_DAMAGE_SPECIALS` (a sustained
- * per-tic hazard, dispatched straight from `game.ts`) and the
- * `PARAM_LINE_SPECIALS` family (always-on level-spawn parameters like 48's
- * scroll, no trigger of their own).
- *
- * Keyed door numbers (26-28, 32-34, 99, 133-137) carry a `lock` checked in
- * `game/specials.ts`. 26-34 are manual (D1) and open their own back sector;
- * 99 and 133-137 are switches targeting sectors by tag despite also being
- * use-triggered — see docs/items.md § Locked doors and use triggers, which has
- * the evidence and the shipped bug that came of getting it wrong.
+ * Every vanilla DOOM/DOOM2 special is covered, and Boom's numbers join through `lookupSpecial`
+ * without touching the vanilla table (docs/specials.md § Scope). Two mechanisms sit outside
+ * `LINE_SPECIALS` because neither is a triggerable linedef effect: `SECTOR_DAMAGE_SPECIALS`, a
+ * sustained per-tic hazard, and the always-on `PARAM_LINE_SPECIALS` family. Keyed door numbers
+ * (26-28, 32-34, 99, 133-137) carry a `lock` checked in `game/specials.ts` —
+ * docs/items.md § Locked doors and use triggers.
  */
 import { DOOM_TIC } from '../../constants.ts';
 import { keySlotColor } from '../inventory.ts';
@@ -714,18 +706,12 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
 };
 
 /**
- * Numbers this engine resolves by *doing nothing*, on purpose — the effect they
- * configure has no counterpart in a top-down renderer, so nothing is missing.
- * `lookupSpecial` returns null for them like any unknown number; the set exists
- * so the inspect-wad coverage report can call them "no-op" instead of
- * "UNKNOWN". A number whose mechanism simply hasn't been built stays `unknown`
- * and keeps failing the gate, which is the point of the gate.
- *
- * MBF's sky transfer (`p_spec.c`, killough 10/98: `case 271: // Regular sky`,
- * `case 272: // Same, only flipped`) points every tagged sector's sky at the
- * line's own sidedef texture. This engine draws no sky at all: an `F_SKY1`
- * ceiling is simply not built (`wad/map.ts`'s `SKY_FLAT`, docs/render.md), so
- * which texture a sector *would* have shown there can never be seen.
+ * Numbers this engine resolves by *doing nothing*, on purpose — the effect they configure has no
+ * counterpart in a top-down renderer, so nothing is missing. `lookupSpecial` returns null for them
+ * like any unknown number; the set exists so the inspect-wad coverage report can call them "no-op"
+ * instead of "UNKNOWN", while a number whose mechanism simply hasn't been built stays `unknown` and
+ * keeps failing the gate. The one mechanism here is MBF's sky transfer (`p_spec.c`, killough 10/98,
+ * 271 and 272), which this engine can never show: an `F_SKY1` ceiling is not built at all.
  * docs/specials.md § Scope.
  */
 export const NOOP_LINE_SPECIALS: Set<number> = new Set<number>([271, 272]);

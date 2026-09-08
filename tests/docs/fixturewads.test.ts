@@ -31,7 +31,9 @@ describe('Suite hygiene · WAD fixtures', () => {
       readFileSync(path, 'utf8')
         .split('\n')
         .forEach((line, i) => {
-          if (line.includes('public/game') && !COMMENT.test(line)) offenders.push(`${path}:${i + 1}`);
+          if (line.includes('public/game') && !COMMENT.test(line)) {
+            offenders.push(`${path}:${i + 1}`);
+          }
         });
     }
     assert.deepEqual(offenders, [], 'read WAD bytes from tests/fixtures/wads/ instead');

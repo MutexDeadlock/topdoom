@@ -1698,21 +1698,13 @@ export class Game {
   }
 
   /**
-   * Advancing into another level: the exit the player just took, or the DEVMODE
-   * `N`/`P` jump, which arrives at a level the same way. The checkpoint is
-   * written *after* the load, not before — `captureSave` refuses while the
-   * intermission is up, and what a death on the new level should return to is
-   * that level at tic 0, which is exactly the state now built.
-   *
-   * Advancing while dead is `G_DoLoadLevel`'s `PST_DEAD` → `PST_REBORN`, and is read off player
-   * state here for the same reason vanilla reads it at load rather than queueing it at the exit.
-   * `restart` does not come through here — it restores a checkpoint instead (docs/death.md §
-   * Player death).
-   *
-   * `reborn` forces the same fresh `Inventory` on a living player: crossing into a new episode is
-   * vanilla's `G_DeferedInitNew`, not a level transition, and starts on the pistol
-   * (docs/hud.md § End card). The pistol-start setting makes *every* transition do that
-   * (docs/items.md § Pistol start) — read here, so toggling it applies to the run in progress.
+   * Advancing into another level: the exit the player just took, or the DEVMODE `N`/`P` jump,
+   * which arrives the same way. The checkpoint is written *after* the load — what a death on the
+   * new level returns to is that level at tic 0. Advancing while dead is `G_DoLoadLevel`'s
+   * `PST_DEAD` → `PST_REBORN`, read off player state here rather than queued at the exit;
+   * `restart` restores a checkpoint instead (docs/death.md § Player death). `reborn` forces a fresh
+   * `Inventory` on a living player, as the pistol-start setting does for every transition
+   * (docs/hud.md § End card, docs/items.md § Pistol start).
    */
   private enterLevel(index: number, reborn = false): void {
     this.loadLevel(index, () => this.runEnterLevel(index, reborn));

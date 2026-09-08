@@ -88,7 +88,9 @@ export function parseTextmap(text: string): UdmfMap {
       p.expect('=');
       const v = p.value();
       p.expect(';');
-      if (key === 'namespace' && namespace === '' && typeof v === 'string') namespace = v.toLowerCase();
+      if (key === 'namespace' && namespace === '' && typeof v === 'string') {
+        namespace = v.toLowerCase();
+      }
     }
   }
 

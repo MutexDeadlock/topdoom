@@ -1,18 +1,10 @@
 /**
- * The render-side half of the specials system: the per-sector meshes that
- * moving geometry is drawn from, their occlusion faders, and rewriting vertex
- * colours when a sector's light changes.
- *
- * `SpecialsController` mutates `Sector.floorHeight`/`ceilHeight`/`light` on
- * the `DoomMap` directly and everything else in the engine picks that up on
- * its next query — this class exists for the one thing that doesn't just
- * work, which is that a sector's *drawn* geometry was baked at load time and
- * has to be rebuilt or recoloured. Nothing here knows what a door or a
- * crusher is; it takes sector indices.
- *
- * See docs/render.md § Mover meshes for what a rebuild costs and when it can be
- * done in place, and docs/specials-lights.md § Relighting mover geometry and § Light
- * changes for the colour half.
+ * The render-side half of the specials system: the per-sector meshes moving geometry is drawn
+ * from, their occlusion faders, and rewriting vertex colours when a sector's light changes.
+ * `SpecialsController` mutates the `DoomMap` directly and everything else picks that up on its
+ * next query; this class exists for the one thing that does not — a sector's *drawn* geometry was
+ * baked at load time. Nothing here knows what a door or a crusher is; it takes sector indices.
+ * See docs/render.md § Mover meshes and docs/specials-lights.md § Relighting mover geometry.
  */
 import * as THREE from 'three';
 import { NO_SIDE, type DoomMap } from '../../wad/map.ts';

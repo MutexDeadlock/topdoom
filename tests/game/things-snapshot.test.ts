@@ -212,7 +212,8 @@ describe('Savegames · things round-trip', () => {
     const { world } = arena();
     const saved = build(world).snapshot();
     // Past the spawn count, so the restore has to push it rather than find it on the map — which
-    // is the only way a save can name a type at all now that the map's own things come from the map.
+    // is the only way a save can name a type at all now that the map's own things come from the
+    // map.
     saved.changed.push([99, { type: 99999, x: 0, y: 0, z: 0, facingDeg: 0 }]);
     const fresh = arena();
     assert.throws(

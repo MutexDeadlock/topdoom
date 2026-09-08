@@ -53,20 +53,11 @@ const rowOf = (type: string) => MOBJ_INFO.findIndex((row) => row.type === type);
  * decision, never a shrug.
  */
 const EXCEPTIONS = new Map<string, string>([
-  // The shipped 35 tics include the two `A_FaceTarget` states ahead of the `A_CPosRefire` loop;
-  // the chaingunner's and the spiders' entries count only the loop, which is the walker's rule.
-  // The pose and windup follow the same span, so all three disagree together.
   ['MT_WOLFSS ranged.duration', 'includes the windup ahead of the refire loop'],
   ['MT_WOLFSS ranged pose', 'spans the whole chain, not just the refire loop'],
   ['MT_WOLFSS windup', 'measured from the whole chain, not the refire loop'],
-  // Two attacks that never reach the burst timer `startDelaySeconds` is read through — the lost
-  // soul's charge and the pain elemental's spawn both return straight out of `beginRangedAttack`,
-  // so their `MONSTER_STATS` entries deliberately carry no windup for the walker to match.
   ['MT_SKULL windup', 'a charge attack; the burst timer never runs'],
   ['MT_PAIN windup', 'a spawn attack; the burst timer never runs'],
-  // `MT_HEAD`'s `meleestate` is `S_NULL`: `A_HeadAttack` bites from inside the missile chain, and
-  // this engine models that bite as a melee block of the same length. The walker has no chain to
-  // read it from.
   ['MT_HEAD melee.duration', 'meleestate is S_NULL; the bite lives in the missile chain'],
   ['MT_HEAD melee windup', 'meleestate is S_NULL; the bite lives in the missile chain'],
 ]);

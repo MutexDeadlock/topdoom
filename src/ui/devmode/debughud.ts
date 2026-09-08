@@ -63,8 +63,7 @@ export class DebugHud {
   private fps = 0;
 
   constructor() {
-    // The menu's checkbox owns the setting and toggles the same class live, so
-    // this only has to seed it for the level starting now.
+    // Seeds the class for the level starting now; the menu's checkbox toggles it live.
     applyFpsVisible();
   }
 

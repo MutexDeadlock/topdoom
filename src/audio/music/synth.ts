@@ -173,7 +173,9 @@ export class OplSynth {
         state.sustain = down;
         if (!down) {
           for (let i = 0; i < this.voices.length; i++) {
-            if (this.voices[i]?.midiChannel === channel && this.voices[i]!.sustained) this.release(i);
+            if (this.voices[i]?.midiChannel === channel && this.voices[i]!.sustained) {
+              this.release(i);
+            }
           }
         }
         break;

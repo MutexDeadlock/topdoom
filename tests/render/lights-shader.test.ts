@@ -10,6 +10,12 @@ import { wallShadeUniform } from '../../src/render/wallshadow.ts';
 import { skyTintUniform } from '../../src/render/skytint.ts';
 import type { GraphicsBank } from '../../src/wad/graphics.ts';
 
+/**
+ * The GLSL the light pass patches into the map materials — that what it declares matches what
+ * `DynamicLights` fills, and that both agree on the bin constants.
+ * See docs/lights.md § What reaches the shader.
+ */
+
 /** Enough of a `GraphicsBank` for `MaterialBank.get` to build a material from. */
 const GFX = {
   texture: () => ({ width: 2, height: 2, data: new Uint8Array(16).fill(255) }),

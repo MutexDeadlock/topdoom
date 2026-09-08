@@ -380,24 +380,6 @@ interface MoverLerp {
   drawnCeil: number;
 }
 
-/**
- * The most a mover may move a plane in one second — the per-kind speed field, exhaustive so a
- * new `Mover` kind must decide its rate here. `trackPlaneMove` compares a tic's actual travel
- * against it to tell a continuous stroke from a discontinuous jump.
- */
-function moverSpeed(mover: Mover): number {
-  switch (mover.kind) {
-    case 'door':
-    case 'lift':
-      return mover.effect.speed;
-    case 'floor':
-    case 'ceiling':
-    case 'elevator':
-    case 'crusher':
-      return mover.speed;
-  }
-}
-
 /** What a `SpecialsController` needs beside the `World` it runs over. */
 export interface SpecialsOptions extends MoverGeometryOptions {
   onExit: (secret: boolean) => void;
@@ -553,8 +535,7 @@ export class SpecialsController {
       sfx = SILENT,
       switchPairs = defs.switchPairTexture,
     } = options;
-    // Taken off `World` rather than passed alongside it: the two must describe the same level, and
-    // a second parameter is a second chance to disagree.
+    // Taken off `World`, never passed beside it — docs/conventions.md § Named arguments.
     const map = world.map;
     this.map = map;
     this.world = world;
@@ -570,8 +551,12 @@ export class SpecialsController {
       const def = lookupSpecial(line.special);
       if (!def) continue;
       if (def.trigger === 'shoot') this.shootLines.push(i);
-      if (def.trigger === 'use' && def.monsterActivate && monsterCouldPush(line)) this.monsterUseLines.add(i);
-      if (def.trigger === 'walk' && def.monsterActivate) this.hasMonsterWalkLine = true;
+      if (def.trigger === 'use' && def.monsterActivate && monsterCouldPush(line)) {
+        this.monsterUseLines.add(i);
+      }
+      if (def.trigger === 'walk' && def.monsterActivate) {
+        this.hasMonsterWalkLine = true;
+      }
       const entries = findSwitchEntries(map, line, switchPairs);
       if (entries.length > 0) this.switchTextures.set(i, entries);
     }
@@ -1319,7 +1304,9 @@ export class SpecialsController {
       this.finishCeiling(mover);
     }
     if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
-    if (mover.crush && dir < 0) this.tickCrush(mover.sectorIndex);
+    if (mover.crush && dir < 0) {
+      this.tickCrush(mover.sectorIndex);
+    }
   }
 
   /** `T_MoveCeiling`'s `pastdest` branch — no clack, unlike `finishFloor`: see `tickCeiling`. */
@@ -1386,17 +1373,23 @@ export class SpecialsController {
         // The silent crusher's one sound, at each end of its travel — the exact
         // inverse of every other crusher, which grinds throughout and is quiet
         // at the turns (see CrusherEffect.silent).
-        if (mover.silent && !mover.noEndClack) this.playSector(mover.sectorIndex, 'pstop');
+        if (mover.silent && !mover.noEndClack) {
+          this.playSector(mover.sectorIndex, 'pstop');
+        }
       }
     } else {
       sector.ceilHeight = Math.min(mover.topHeight, sector.ceilHeight + speed * dt);
       if (sector.ceilHeight >= mover.topHeight) {
         sector.ceilHeight = mover.topHeight;
         mover.state = 'lowering';
-        if (mover.silent && !mover.noEndClack) this.playSector(mover.sectorIndex, 'pstop');
+        if (mover.silent && !mover.noEndClack) {
+          this.playSector(mover.sectorIndex, 'pstop');
+        }
       }
     }
-    if (!mover.silent && this.moveSoundDue) this.playSector(mover.sectorIndex, 'stnmov');
+    if (!mover.silent && this.moveSoundDue) {
+      this.playSector(mover.sectorIndex, 'stnmov');
+    }
     if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
     // `T_MovePlane`'s `crushed` result is per-tic and independent of the damage
     // clock, so this asks every tic and only the damage inside is rationed.
@@ -1407,7 +1400,9 @@ export class SpecialsController {
       // restores full speed and must not re-slow on the way out of the stroke.
       // (The damage above still lands: `P_ChangeSector` runs either way.)
       const reachedBottom = mover.state === 'raising';
-      if (caught && !reachedBottom && mover.slowsWhenCrushing !== false) mover.slowed = true;
+      if (caught && !reachedBottom && mover.slowsWhenCrushing !== false) {
+        mover.slowed = true;
+      }
     }
   }
 
@@ -1652,7 +1647,9 @@ export class SpecialsController {
     if (this.floorActive(sectorIndex)) return false;
     // `line` is only actually needed for `changeTexture` — the only caller without a real
     // linedef (`triggerTag`, for a boss-death `lowerFloorToLowest`) never sets that flag.
-    if (effect.changeTexture && line) this.applyFloorChange(sectorIndex, line);
+    if (effect.changeTexture && line) {
+      this.applyFloorChange(sectorIndex, line);
+    }
     const target = resolveFloorTarget(this.world, sectorIndex, effect.target, () =>
       this.shortestTextureAround(sectorIndex, 'lower'),
     );
@@ -1757,7 +1754,9 @@ export class SpecialsController {
         const name = side?.[slot];
         if (!side || !isTextured(name)) continue;
         const h = this.bank.textureHeight(name);
-        if (h !== null && h < minHeight) minHeight = h;
+        if (h !== null && h < minHeight) {
+          minHeight = h;
+        }
       }
     }
     return minHeight;
@@ -2298,7 +2297,9 @@ export class SpecialsController {
       // (`|| demo_compatibility`), so a blocked crossing still spends the
       // line; Boom's own numbers clear it only on success — see
       // `TeleportEffect.spendOnlyOnSuccess`.
-      if (!def.repeatable && (dest || !effect.spendOnlyOnSuccess)) this.usedOnce.add(lineIndex);
+      if (!def.repeatable && (dest || !effect.spendOnlyOnSuccess)) {
+        this.usedOnce.add(lineIndex);
+      }
       if (!dest) return null;
       // A switch teleport (174/195, and Boom's silent 209/210) flips here
       // rather than at the end of the method: this branch returns early, and
@@ -2812,5 +2813,23 @@ function resolveCeilingTarget(
       return map.sectors[sectorIndex].ceilHeight + shortestTexture();
     case 'shortestUpperTextureDown':
       return map.sectors[sectorIndex].ceilHeight - shortestTexture();
+  }
+}
+
+/**
+ * The most a mover may move a plane in one second — the per-kind speed field, exhaustive so a
+ * new `Mover` kind must decide its rate here. `trackPlaneMove` compares a tic's actual travel
+ * against it to tell a continuous stroke from a discontinuous jump.
+ */
+function moverSpeed(mover: Mover): number {
+  switch (mover.kind) {
+    case 'door':
+    case 'lift':
+      return mover.effect.speed;
+    case 'floor':
+    case 'ceiling':
+    case 'elevator':
+    case 'crusher':
+      return mover.speed;
   }
 }

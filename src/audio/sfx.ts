@@ -6,20 +6,14 @@ import type { Pos2 } from '../types.ts';
 import { mRandom, pRandom } from '../util/random.ts';
 
 /**
- * Vanilla's complete `S_sfx[]` table (`linuxdoom-1.10/sounds.c`), name → the
- * entry's own **priority**, which is the only field of it this engine reads:
- * it decides which playing sound a new one may cut off once every channel is
- * busy (`audio/audio.ts: allocate`, vanilla's `S_getChannel`).
- *
- * The table's other fields are deliberately absent rather than transcribed:
- * `singularity` is dead in `linuxdoom-1.10` (declared in `sounds.h`, read
- * nowhere), and `link`/`pitch`/`volume` are `0`/`-1`/`-1` for every DOOM entry,
- * so nothing ever takes `S_StartSoundAtVolume`'s link branch.
- *
- * Listed in full — including sounds nothing here plays yet (the boss brain's,
- * `chgun`) — because it *is* vanilla's table, and a partial copy would
- * silently drift the moment another hook is added. Each name is a `DS`-prefixed
- * lump in the WAD (`wad/sound.ts`).
+ * Vanilla's complete `S_sfx[]` table (`linuxdoom-1.10/sounds.c`), name → the entry's own
+ * **priority**, the only field of it this engine reads: it decides which playing sound a new one
+ * may cut off once every channel is busy (`audio/audio.ts: allocate`, vanilla's `S_getChannel`).
+ * The other fields are deliberately absent rather than transcribed — `singularity` is dead in
+ * `linuxdoom-1.10`, and `link`/`pitch`/`volume` are `0`/`-1`/`-1` for every DOOM entry. Listed in
+ * full, including sounds nothing here plays yet, because it *is* vanilla's table and a partial copy
+ * would silently drift. Each name is a `DS`-prefixed lump (`wad/sound.ts`).
+ * docs/audio.md § The mixer model.
  */
 export const SFX = {
   pistol: 64, shotgn: 64, sgcock: 64, dshtgn: 64, dbopn: 64, dbcls: 64, dbload: 64, plasma: 64,
@@ -120,12 +114,6 @@ const VARIANT_GROUPS: readonly SfxId[][] = [
   ['bgdth1', 'bgdth2'],
 ];
 
-/** The family `id` belongs to, or null where it plays exactly what it was given. */
-function variantGroup(id: SfxId): readonly SfxId[] | null {
-  for (const group of VARIANT_GROUPS) if (group.includes(id)) return group;
-  return null;
-}
-
 export function randomVariant(id: SfxId): SfxId {
   const group = variantGroup(id);
   // `pRandom`, not `mRandom`: vanilla picks these inside the play simulation
@@ -189,4 +177,10 @@ export function monsterOrigin(id: number): number {
 
 export function sectorOrigin(sectorIndex: number): number {
   return 0x200000 + sectorIndex;
+}
+
+/** The family `id` belongs to, or null where it plays exactly what it was given. */
+function variantGroup(id: SfxId): readonly SfxId[] | null {
+  for (const group of VARIANT_GROUPS) if (group.includes(id)) return group;
+  return null;
 }

@@ -7,6 +7,7 @@ import { DOOM_TIC } from '../../src/constants.ts';
  * The smoothing behind both the wall-occlusion fade and the fog reveal fade.
  * The snap is the part with teeth: a pure exponential lerp never arrives, and
  * the residue shows up as permanent speckle under dithered discard.
+ * See docs/render-occlusion.md and docs/fogofwar.md § How reveal reaches the geometry.
  */
 describe('Smoothing · damped approach', () => {
   test('dampen snaps exactly onto the target inside snapEps', () => {

@@ -36,8 +36,8 @@ export const PLAYER_WEAPON_SPRITES: Record<WeaponId, string> = {
  * of its own rather than a file appended to the loaded set: `wadSetId` turns every entry of
  * `wad.files` into a savegame's WAD-set identity, so a set this file joined would refuse every
  * existing save and stamp a phantom file onto every new one (docs/savegames.md § WAD-set identity).
- * It ships no PLAYPAL and borrows the set's, so a WAD with its own palette recolours the skins along
- * with everything else.
+ * It ships no PLAYPAL and borrows the set's, so a WAD with its own palette recolours the skins
+ * along with everything else.
  *
  * Built whether or not the setting currently asks for skins — the mode can change mid-session, and
  * nothing here decodes a lump until one is actually drawn.

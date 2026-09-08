@@ -101,20 +101,16 @@ export class ProjectileLayer {
 
   /**
    * Turns one fired `Shot` (game/weapons.ts) into a tracer line or a flying projectile sprite. It
-   * starts at the player's own fire height — never the target's, or a tracer would begin mid-air
-   * instead of at the player — and slopes toward the locked-on monster's mid-body; `shotPath`
-   * resolves both the slope it settles on and where it actually gets to. A missile leaves four
-   * units lower than a bullet: docs/combat.md § Where a missile starts.
+   * starts at the player's own fire height, never the target's, and slopes toward the locked-on
+   * monster's mid-body; `shotPath` resolves both the slope and where the shot gets to. A missile
+   * leaves four units lower than a bullet.
    *
-   * **Hit-or-miss is settled here only for a hitscan pellet.** A projectile leaves with no target
-   * at all and re-tests what it has run into every frame (`ProjectileLayer.update`); the lock gives
-   * it a slope and nothing else. See docs/combat.md § How a shot deals damage.
-   *
-   * `lineAim` is the other thing aim can lock onto: a point on a shoot-triggered
-   * wall (`SpecialsController.pickShootTarget`). It supplies the slope the same
-   * way a body does, but no `ShotLock` — there is no silhouette to open a wedge
-   * around, and the strict ray is what keeps the shot from clearing geometry it
-   * should have run into.
+   * **Hit-or-miss is settled here only for a hitscan pellet** — a projectile leaves with no target
+   * and re-tests what it has run into every frame (`ProjectileLayer.update`). `lineAim` is the
+   * other thing aim can lock onto, a point on a shoot-triggered wall
+   * (`SpecialsController.pickShootTarget`): it supplies the slope the way a body does but no
+   * `ShotLock`, there being no silhouette to open a wedge around.
+   * docs/combat.md § Where a missile starts, § How a shot deals damage.
    */
   spawnPlayerShot(shot: Shot, target: MonsterRef | null, lineAim: Pos3 | null): void {
     const { world, things } = this.ctx;
@@ -349,20 +345,15 @@ export class ProjectileLayer {
   }
 
   /**
-   * Advances every in-flight projectile — along the fixed straight line
-   * `shotPath` resolved for it, sloped from `startZ` to `endZ`, or along the
-   * revenant tracer's own curve — and resolves what it ran into on the way.
-   * On arrival it removes the shot and plays its `IMPACT_EFFECTS` explosion in
-   * place; the impact point applies `p.splash` whether or not a body was hit.
+   * Advances every in-flight projectile — along the fixed straight line `shotPath` resolved for it,
+   * sloped from `startZ` to `endZ`, or along the revenant tracer's own curve — and resolves what it
+   * ran into on the way. On arrival it removes the shot, plays its `IMPACT_EFFECTS` explosion in
+   * place and applies `p.splash` whether or not a body was hit. **Every projectile, the player's
+   * own included, re-tests live bodies each frame**, swept across the whole step rather than
+   * sampled at its end (docs/monster-attacks.md § Monster projectiles in flight).
    *
-   * **Every projectile, the player's own included, re-tests live bodies each
-   * frame** (`P_XYMovement` re-running `PIT_CheckThing` per move), and each
-   * test is swept across the frame's whole step rather than sampled at its end.
-   * See docs/monster-attacks.md § Monster projectiles in flight.
-   *
-   * Must run inside the caller's `SpriteFxLayer.beginFrame`/`endFrame` pair: it
-   * both draws through the batch and pushes this frame's new explosions and
-   * smoke puffs on for `SpriteFxLayer.draw` to draw.
+   * Must run inside the caller's `SpriteFxLayer.beginFrame`/`endFrame` pair: it both draws through
+   * the batch and pushes this frame's new explosions and smoke puffs on for `draw`.
    */
   update(dt: number): void {
     if (this.projectiles.length === 0) return;

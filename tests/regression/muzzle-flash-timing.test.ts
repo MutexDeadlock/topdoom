@@ -55,7 +55,9 @@ function fireOnce(type: number): { pose: string[]; shotTic: number; poseStart: n
       poseStart = tic;
     }
     if (poseStart >= 0) pose.push(letter);
-    if (fired && shotTic < 0) shotTic = tic;
+    if (fired && shotTic < 0) {
+      shotTic = tic;
+    }
     if (shotTic >= 0 && tic > shotTic) break;
   }
   assert.ok(shotTic >= 0, 'the monster never fired');

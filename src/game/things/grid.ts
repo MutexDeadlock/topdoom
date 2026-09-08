@@ -100,8 +100,7 @@ export interface ThingGrid {
  * monsters — is picked up with no extra bookkeeping.
  */
 export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
-  // Taken off `World` rather than passed alongside it: the two must describe the same level, and
-  // a second parameter is a second chance to disagree.
+  // Taken off `World`, never passed beside it — docs/conventions.md § Named arguments.
   const map = world.map;
   // Per grid, not per module: a DEHACKED patch may have rewritten the stat tables since import.
   const BLOCKER_MARGIN = blockerMargin();

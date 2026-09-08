@@ -87,62 +87,12 @@ export function emptyGldefs(): Gldefs {
   return { lights: new Map(), frames: new Map(), resolved: new Map() };
 }
 
-/**
- * Braces are tokens of their own; everything else splits on whitespace. A frame name may be any
- * run of non-space characters — vanilla frames past `Z` are spelled `[`, `\` and `]`, which the
- * arch-vile's resurrection frames use and which `String.fromCharCode(65 + frame)` produces here
- * too (`dehacked/states.ts`).
- */
-function tokenize(text: string): string[] {
-  const tokens: string[] = [];
-  let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    if (/\s/.test(ch)) {
-      i++;
-    } else if (ch === '{' || ch === '}') {
-      tokens.push(ch);
-      i++;
-    } else {
-      let end = i;
-      while (end < text.length && !/[\s{}]/.test(text[end])) end++;
-      tokens.push(text.slice(i, end));
-      i = end;
-    }
-  }
-  return tokens;
-}
-
-/** A light's declared radius, held to the 1..1024 map units GZDoom allows (`gldefs.cpp`). */
-function clampSize(value: number): number {
-  return Math.min(1024, Math.max(1, Math.round(value)));
-}
-
 const BLOCK_KIND: Record<string, LightKind> = {
   pointlight: 'point',
   pulselight: 'pulse',
   flickerlight: 'flicker',
   flickerlight2: 'flicker2',
 };
-
-/** A fresh definition with every field at its "not stated" value, before the block's keys land. */
-function blankLight(kind: LightKind): LightDef {
-  return {
-    kind,
-    r: 1,
-    g: 1,
-    b: 1,
-    size: 1,
-    secondarySize: 1,
-    interval: 0,
-    chance: 0,
-    offX: 0,
-    offY: 0,
-    offZ: 0,
-    dontLightSelf: false,
-    subtractive: false,
-  };
-}
 
 /**
  * A tolerant walk over one GLDEFS text. Anything it does not recognise — GZDoom's other top-level
@@ -372,4 +322,54 @@ let stockText: Promise<string> | null = null;
 export function stockGldefs(): Promise<string> {
   stockText ??= shippedLump(SHIPPED_GLDEFS).then((lump) => (lump ? decodeTextLump(lump) : ''));
   return stockText;
+}
+
+/**
+ * Braces are tokens of their own; everything else splits on whitespace. A frame name may be any
+ * run of non-space characters — vanilla frames past `Z` are spelled `[`, `\` and `]`, which the
+ * arch-vile's resurrection frames use and which `String.fromCharCode(65 + frame)` produces here
+ * too (`dehacked/states.ts`).
+ */
+function tokenize(text: string): string[] {
+  const tokens: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (/\s/.test(ch)) {
+      i++;
+    } else if (ch === '{' || ch === '}') {
+      tokens.push(ch);
+      i++;
+    } else {
+      let end = i;
+      while (end < text.length && !/[\s{}]/.test(text[end])) end++;
+      tokens.push(text.slice(i, end));
+      i = end;
+    }
+  }
+  return tokens;
+}
+
+/** A light's declared radius, held to the 1..1024 map units GZDoom allows (`gldefs.cpp`). */
+function clampSize(value: number): number {
+  return Math.min(1024, Math.max(1, Math.round(value)));
+}
+
+/** A fresh definition with every field at its "not stated" value, before the block's keys land. */
+function blankLight(kind: LightKind): LightDef {
+  return {
+    kind,
+    r: 1,
+    g: 1,
+    b: 1,
+    size: 1,
+    secondarySize: 1,
+    interval: 0,
+    chance: 0,
+    offX: 0,
+    offY: 0,
+    offZ: 0,
+    dontLightSelf: false,
+    subtractive: false,
+  };
 }

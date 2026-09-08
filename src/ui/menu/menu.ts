@@ -167,8 +167,8 @@ export class Menu {
    * Every popup that can sit over the menu, **topmost first** — the one statement of that order,
    * which `close`, `closeTopOverlay` and `hasOverlay` all derive from rather than each listing them
    * again. The reader leads because it opens from a row *inside* the WAD Library, the same relation
-   * its `z-index` rung states in CSS (docs/styles.md § Tokens). Filled in the constructor: `library`
-   * is not built until then.
+   * its `z-index` rung states in CSS (docs/styles.md § Tokens). Filled in the constructor:
+   * `library` is not built until then.
    */
   private overlays: MenuOverlay[] = [];
 
@@ -334,7 +334,9 @@ export class Menu {
     // the resume button. Whoever was *on* it when the game ended is moved off
     // rather than left staring at a hidden tab's panel.
     this.tabButtons.save.classList.toggle('hidden', !inGame);
-    if (!inGame && this.activeTab === 'save') this.setTab('newgame');
+    if (!inGame && this.activeTab === 'save') {
+      this.setTab('newgame');
+    }
     this.savegames.refresh(inGame);
     this.replays.refresh(inGame);
     this.refreshButtons();
@@ -356,7 +358,9 @@ export class Menu {
     // had it would go on taking keys the game wants (`isTyping`, game/input.ts)
     // — a level dropdown clicked on the way out would eat the arrow keys.
     const focused = document.activeElement;
-    if (focused instanceof HTMLElement && this.root.contains(focused)) focused.blur();
+    if (focused instanceof HTMLElement && this.root.contains(focused)) {
+      focused.blur();
+    }
     this.root.classList.add('hidden');
   }
 
@@ -1093,7 +1097,9 @@ export class Menu {
       this.levelSelect.append(option);
     }
 
-    if (previous && maps.some((m) => m.name === previous)) this.levelSelect.value = previous;
+    if (previous && maps.some((m) => m.name === previous)) {
+      this.levelSelect.value = previous;
+    }
     this.refreshButtons();
   }
 

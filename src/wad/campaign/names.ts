@@ -246,21 +246,13 @@ export function levelTitleFor(mapName: string, sources: LevelNameSources): strin
 }
 
 /**
- * The mnemonic-keyed half of a DEHACKED patch's strings, projected onto map lump names: `HUSTR_1`
- * is `MAP01` but only under DOOM II, `PHUSTR_*` only under Plutonia, `THUSTR_*` only under TNT,
- * `HUSTR_E1M1` only under DOOM. Titles arrive carrying id's own `level 1: ` / `E1M1: ` prefix, so
- * each is put through `stripTitlePrefix` to read like `LEVEL_NAMES`' own bare values.
- *
- * Keys that are already lump names pass straight through: that is how a vanilla `Text`
- * substitution arrives, having been resolved to its map by `titleLookupFor` at parse time.
- *
- * A null mission would otherwise drop every title, which is the case a PWAD lands in whenever the
- * IWAD's file name isn't one `missionOf` knows — so `HUSTR_*` is accepted there too rather than
- * throwing away the only titles the set has.
- *
- * `sources` says which file's patch set each key, so a title is tagged with the provenance of the
- * string it came from rather than of some other key that reached the same map; a key it doesn't
- * name counts as an add-on's, the permissive case.
+ * The mnemonic-keyed half of a DEHACKED patch's strings, projected onto map lump names and only
+ * under the mission they belong to; a null mission keeps the plain `HUSTR_*` set rather than
+ * dropping every title. Each is put through `stripTitlePrefix` to read like `LEVEL_NAMES`' own bare
+ * values. Keys that are already lump names pass straight through — that is how a vanilla `Text`
+ * substitution arrives, resolved to its map by `titleLookupFor` at parse time. `sources` says which
+ * file's patch set each key, so a title carries the provenance of the string it came from; a key it
+ * doesn't name counts as an add-on's, the permissive case. docs/dehacked.md § Strings.
  */
 export function dehTitlesFor(
   mission: LevelMission | null,

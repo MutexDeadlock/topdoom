@@ -431,22 +431,13 @@ export class Player implements Pos3 {
   }
 
   /**
-   * Movement is camera-relative: W always moves the player away from the
-   * camera on screen, independent of where the player is aiming. `forwardDeg`
-   * is the DOOM-space bearing the camera currently looks along (from
-   * `TopDownCamera.viewerAngleDeg`), so at the default yaw this reduces to the
-   * old fixed-axis mapping exactly. docs/camera.md § Camera orbit.
-   *
-   * `blockers` are the solid bodies the player walks around rather than
-   * through, and unlike a monster's own movement this slides along them
-   * (`slideMove`) — docs/movement.md § Collision.
-   *
-   * **Forward and sideways are separate, differently-sized thrusts that are never renormalized** —
-   * docs/movement.md § Movement speed and straferunning.
-   *
-   * `ground` is what the floor underfoot does to all of this — an icy or muddy Boom sector
-   * (`specials/forces.ts: frictionUnder`). Omitted, or on any floor with no friction line, it is
-   * the identity. docs/movement.md § Friction.
+   * Movement is camera-relative: W always moves the player away from the camera on screen,
+   * whatever they are aiming at. `forwardDeg` is the DOOM-space bearing the camera looks along
+   * (`TopDownCamera.viewerAngleDeg`, docs/camera.md § Camera orbit). `blockers` are the solid
+   * bodies the player slides along rather than walks through (`slideMove`). Forward and sideways
+   * are separate, differently-sized thrusts that are never renormalized, and `ground` is what an
+   * icy or muddy Boom floor does to all of it — omitted, the identity.
+   * docs/movement.md § Collision, § Movement speed and straferunning, § Friction.
    */
   update(
     dt: number,

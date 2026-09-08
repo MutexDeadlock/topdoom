@@ -38,6 +38,21 @@ export function isGeneralized(special: number): boolean {
 }
 
 /**
+ * The whole range, one pure function — memoized by `lookupSpecial`
+ * (`tables.ts`), so decode allocates once per distinct number per session.
+ */
+export function decodeGeneralized(special: number): SpecialDef | null {
+  if (!isGeneralized(special)) return null;
+  if (special >= GEN_FLOOR_BASE) return genFloor(special);
+  if (special >= GEN_CEILING_BASE) return genCeiling(special);
+  if (special >= GEN_DOOR_BASE) return genDoor(special);
+  if (special >= GEN_LOCKED_BASE) return genLockedDoor(special);
+  if (special >= GEN_LIFT_BASE) return genLift(special);
+  if (special >= GEN_STAIRS_BASE) return genStairs(special);
+  return genCrusher(special);
+}
+
+/**
  * `p_spec.h: triggertype_e` (bits 0-2): WalkOnce, WalkMany, SwitchOnce,
  * SwitchMany, GunOnce, GunMany, PushOnce, PushMany — Push is a use press that
  * acts on the line's own back sector, i.e. `manual`.
@@ -304,19 +319,4 @@ function genCrusher(special: number): SpecialDef {
       noEndClack: silent ? true : undefined,
     },
   };
-}
-
-/**
- * The whole range, one pure function — memoized by `lookupSpecial`
- * (`tables.ts`), so decode allocates once per distinct number per session.
- */
-export function decodeGeneralized(special: number): SpecialDef | null {
-  if (!isGeneralized(special)) return null;
-  if (special >= GEN_FLOOR_BASE) return genFloor(special);
-  if (special >= GEN_CEILING_BASE) return genCeiling(special);
-  if (special >= GEN_DOOR_BASE) return genDoor(special);
-  if (special >= GEN_LOCKED_BASE) return genLockedDoor(special);
-  if (special >= GEN_LIFT_BASE) return genLift(special);
-  if (special >= GEN_STAIRS_BASE) return genStairs(special);
-  return genCrusher(special);
 }

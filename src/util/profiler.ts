@@ -36,21 +36,13 @@ const OFF_FRAME_SPREAD = 0.12;
 const OFF_FRAME_PENDING_CAP = 32;
 
 /**
- * Per-frame wall-clock breakdown the profiler overlay reads from
- * (`ui/hud/profiler.ts`). A single frame's timing is noisy (GC pauses, OS
- * scheduling, browser compositing) — showing it raw would make the overlay's
- * bars flicker too fast to read anything useful out of them, so every label
- * is smoothed with a plain exponential moving average instead, the same
- * `dampen`-style approach used elsewhere in this codebase for visual
- * smoothing, just inlined here since this isn't a `dampen(prev, target, ...)`
- * per-value call site but an accumulate-then-smooth-many-labels loop.
- *
- * Usage is `beginFrame()` once, any number of `time()`/`add()` calls through
- * the frame (the same label can be used more than once per frame — e.g. two
- * non-contiguous blocks of "Player" work — and accumulates), then
- * `endFrame()` once. Labels are registered in first-seen order and that
- * order is preserved by `samples()`, so a caller that always instruments the
- * same sections in the same order gets a stable category list to render.
+ * Per-frame wall-clock breakdown the profiler overlay reads from (`ui/hud/profiler.ts`). A single
+ * frame's timing is noisy, so every label is smoothed with a plain exponential moving average
+ * rather than shown raw. Usage is `beginFrame()` once, any number of `time()`/`add()` calls through
+ * the frame — the same label may be used more than once and accumulates — then `endFrame()` once.
+ * Labels are registered in first-seen order and `samples()` preserves it, so a caller instrumenting
+ * the same sections in the same order gets a stable category list.
+ * docs/devmode.md § Profiling overlay.
  */
 export class FrameProfiler {
   private labels: string[] = [];
@@ -91,19 +83,12 @@ export class FrameProfiler {
   }
 
   /**
-   * Adds main-thread work that happened **between** frames, in the gap
-   * `beginFrame`/`endFrame` doesn't span — the music synth's chunk rendering,
-   * which a timer drives rather than the frame loop (docs/music.md § Getting it
-   * to the speakers). It counts towards the frame total as well as its own
-   * label, so the bars still sum to the total instead of quietly eating
-   * `Other`, and a zero costs nothing: a label is only registered once it has
-   * actually spent time, so a category that never runs never takes a row.
-   *
-   * The work arrives in bursts (a chunk every pump interval, a whole lookahead
-   * at track start), so it is pooled and charged into frames a fraction at a
-   * time (`OFF_FRAME_SPREAD`) rather than dumped on the frame that follows —
-   * dumping it spikes the total, and with it the "fps eq." readout that divides
-   * by it. A stall's oversized backlog is capped away entirely
+   * Adds main-thread work that happened **between** frames, in the gap `beginFrame`/`endFrame`
+   * doesn't span — the music synth's chunk rendering, which a timer drives rather than the frame
+   * loop (docs/music.md § Getting it to the speakers). It counts towards the frame total as well as
+   * its own label, and a label is registered only once it has actually spent time, so a category
+   * that never runs never takes a row. The work arrives in bursts, so it is pooled and charged into
+   * frames a fraction at a time (`OFF_FRAME_SPREAD`), with a stall's backlog capped away
    * (`OFF_FRAME_PENDING_CAP`). docs/devmode.md § Profiling overlay.
    */
   offFrame(label: string, ms: number): void {

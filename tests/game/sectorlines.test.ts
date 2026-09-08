@@ -18,7 +18,9 @@ function scanAll(map: DoomMap, sectorIndex: number): number[] {
     const line = map.linedefs[i];
     const front = line.right !== NO_SIDE ? map.sidedefs[line.right]?.sector : undefined;
     const back = line.left !== NO_SIDE ? map.sidedefs[line.left]?.sector : undefined;
-    if (front === sectorIndex || back === sectorIndex) out.push(i);
+    if (front === sectorIndex || back === sectorIndex) {
+      out.push(i);
+    }
   }
   return out;
 }

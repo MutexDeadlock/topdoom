@@ -388,7 +388,9 @@ export class Transfers {
         // interchangeable in every respect this reads them for.
         if (pool < 0) pool = other;
       }
-      if (enclosed && pool >= 0) this.islandSecs[s] = pool;
+      if (enclosed && pool >= 0) {
+        this.islandSecs[s] = pool;
+      }
     }
   }
 

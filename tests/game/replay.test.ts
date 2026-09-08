@@ -223,7 +223,8 @@ describe('Replays · recording and playing back', () => {
     const pose = quantizePose({ yaw: 91.3333, point: [64.51, 41, -128.02], distance: 500.4, tilt: 57.77 });
     recorder.beginTic(0, 0, captureSimSettings(), pose);
     recorder.endTic();
-    // A tic told nothing keeps the last camera, which is what a recording that starts mid-glide has.
+    // A tic told nothing keeps the last camera, which is what a recording that starts mid-glide
+    // has.
     recorder.endTic();
     const playback = new ReplayPlayback(replayOf(recorder));
     assert.deepEqual(playback.poseAt(0), pose, 'through JSON, exactly the pose the tic ran at');

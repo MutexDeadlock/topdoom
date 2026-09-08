@@ -16,6 +16,12 @@ import { lowestAlphaAt, openingsOf, targetAt } from '../fixtures/fade.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
 
 /**
+ * Fading over sectors that move: a mover mesh a frame never touched must keep damping back, and a
+ * hole must land in whichever mesh owns its quad now.
+ * See docs/render-occlusion.md § Mover meshes a frame cannot touch.
+ */
+
+/**
  * The alpha range across the mover meshes the controller hung on the scene —
  * every batch, or only those `named` accepts. Both ends matter: a fade shows up
  * as a *low* below 1 somewhere, while a mover fog of war has never revealed

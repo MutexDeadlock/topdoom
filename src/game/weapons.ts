@@ -197,23 +197,11 @@ export const WEAPON_CYCLE: WeaponId[] = WEAPON_SLOTS.flatMap((slot) => [...slot]
 
 /**
  * `P_CheckAmmo`'s fallback chain (`p_pspr.c`), first match wins: what the ready weapon is replaced
- * with once it can no longer fire. A third order, unrelated to `WEAPON_SLOTS` and `WEAPON_CYCLE`
- * above — vanilla's own preference for "still useful right now", which is why the BFG sits below
- * the fist's neighbours and the chainsaw outranks a rocket launcher.
- * docs/weapons.md § Automatic weapon switching.
- *
- * `minAmmo` is **strictly greater than**, and it is not `ammoPerShot`: the chain wants *three*
- * shells before it hands you a super shotgun that fires on two, and *41* cells before a BFG that
- * fires on 40. Vanilla's own off-by-one, transcribed rather than corrected.
- *
- * Two deviations from that C, both deliberate:
- * - vanilla's `gamemode` clauses (`!= shareware` on plasma/BFG, `== commercial` on the SSG) are
- *   dropped: this engine has no gamemode, and ownership already subsumes them — a WAD without the
- *   weapon has no pickup for it, and where a PWAD does place one, owning it is the honest answer.
- * - the pistol row tests ownership, which vanilla's bare `else if (player->ammo[am_clip])` does not
- *   (it cannot lose the pistol). `Inventory.weapons` is a real set this engine treats as
- *   authoritative for the wheel and the HUD strip, so landing on an unowned weapon would contradict
- *   both. `fist` needs no such test — nothing removes it, and it is the chain's terminator.
+ * with once it can no longer fire, terminating at the fist. A third order, unrelated to
+ * `WEAPON_SLOTS` and `WEAPON_CYCLE` above. `minAmmo` is **strictly greater than** and is not
+ * `ammoPerShot` — vanilla's own off-by-one, transcribed rather than corrected. Two deliberate
+ * deviations from that C: the `gamemode` clauses are dropped, and the pistol row tests ownership.
+ * docs/weapons.md § AMMO_FALLBACK_ORDER.
  */
 const AMMO_FALLBACK_ORDER: { weapon: WeaponId; ammo: AmmoType | null; minAmmo: number }[] = [
   { weapon: 'plasmaRifle', ammo: 'cells', minAmmo: 0 },
@@ -478,8 +466,8 @@ export const WEAPONS = WEAPON_SEED as Record<WeaponId, WeaponDef>;
  * Writes every weapon's fire rate from the walker's reading of vanilla's own `states[]`
  * (docs/weapons.md § Fire rates) — the summed tics of its `atkstate` chain, the `A_ReFire` state
  * excluded, over the number of shots one pass fires. The rest of each row is `p_pspr.c` data no
- * chain carries and stays written out above. `skinWeapon` starts as the identity here rather than as
- * nine hand-written rows: unpatched, every weapon is drawn as itself.
+ * chain carries and stays written out above. `skinWeapon` starts as the identity here rather than
+ * as nine hand-written rows: unpatched, every weapon is drawn as itself.
  *
  * Runs at import, before `dehacked/apply.ts` snapshots the table for `resetDehacked`.
  */
@@ -781,7 +769,9 @@ export class WeaponSystem {
     if (this.cooldownTics > 0) this.cooldownTics--;
     // A_ReFire's else branch: letting the trigger up — or having a weapon
     // switch pending — resets the burst, so the next shot counts as its first.
-    if (!firing || inv.currentWeapon !== this.refireWeapon) this.refire = 0;
+    if (!firing || inv.currentWeapon !== this.refireWeapon) {
+      this.refire = 0;
+    }
     // `P_CheckAmmo`'s two general callers, and the only two moments it can run: `P_FireWeapon`
     // opening a trigger pull, and `A_ReFire` closing a fire chain whether or not the trigger is
     // still down. Both sit on the ready state, never mid-chain — hence the cooldown gate, which is
@@ -905,7 +895,9 @@ export class WeaponSystem {
    */
   private updateSounds({ dt, firing, justSwitched, inv, audio, at }: SoundFrame): void {
     const weapon = inv.currentWeapon;
-    if (justSwitched && weapon === 'chainsaw') audio.play('sawup', at, PLAYER_ORIGIN);
+    if (justSwitched && weapon === 'chainsaw') {
+      audio.play('sawup', at, PLAYER_ORIGIN);
+    }
     if (weapon !== 'chainsaw' || firing) {
       this.sawIdleTimer = 0;
       return;

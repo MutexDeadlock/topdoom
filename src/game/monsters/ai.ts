@@ -475,7 +475,9 @@ function runChaseCall(c: Chase): MonsterAttack | null {
   body.moveBlocked = false;
   // `A_Chase`'s own tail: the idle grunt, on a 3-in-256 roll per chase call — which is why a
   // monster hunting you mutters every few seconds rather than on a timer.
-  if (stats.sounds.active && pRandom() < 3) sfx.play(stats.sounds.active, body, monsterOrigin(body.id));
+  if (stats.sounds.active && pRandom() < 3) {
+    sfx.play(stats.sounds.active, body, monsterOrigin(body.id));
+  }
   return null;
 }
 

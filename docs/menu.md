@@ -249,8 +249,7 @@ above uses.
 
 General ends with **`Debug / Dev`, the section holding the `FPS counter` and `Profiler overlay`
 checkboxes** (docs/devmode.md § FPS counter, docs/devmode.md § Profiling overlay). It is shown in
-every build — both are player-facing settings, only their *defaults* follow `DEVMODE` — so unlike
-`#controls-dev` nothing toggles it at runtime.
+every build — both are player-facing settings, only their *defaults* follow `DEVMODE`.
 
 **The `Shift` row's description is the word autorun currently makes true** — `walk` when it's on,
 `run` when it's off — so `installAutorun` writes `#shift-action` from the same `show` helper that
@@ -261,10 +260,10 @@ Two CSS notes for that: `#menu .keys select` undoes the full-width, roomy `#menu
 binding stays on one line, and `dd.inline` is the flex row that lets a description carry a control
 beside it.
 
-Camera, Game and the dev row share `.columns`, which is **flex, not fixed grid tracks** — the
-DEVMODE-only section becomes a third column when shown and leaves two when it isn't, with no empty
-cell to suppress. Columns are content-width so they pack left rather than being stretched apart,
-which is why those descriptions are kept to a word or two. Move and fight stays full width.
+Camera and Game share `.columns`, which is **flex, not fixed grid tracks** — a section can leave
+the row with no empty cell to suppress. Columns are content-width so they pack left rather than
+being stretched apart, which is why those descriptions are kept to a word or two. Move and fight
+stays full width.
 
 `.columns` is shared with the New Game tab, where its `even` modifier gives a section `flex: 1` plus
 `min-width: 0`, since a `width: 100%` select needs a share it can shrink inside rather than a
@@ -277,12 +276,10 @@ a select silently truncates its own text and a button wraps onto a second line, 
 height with it, so neither shows up as an overflow. The button is `white-space: nowrap` for the same
 reason.
 
-The rest is static markup with no `Menu` state — no field lookups, no listeners — except
-`#controls-dev`, the `N`/`P` map-jump row, which the constructor reveals when `DEVMODE` is set.
-`DEVMODE` can't change at runtime, so it is never re-checked. **It takes the global `.hidden`
-(`display: none`), not the tab panels' `.inactive`** — a panel has to keep reserving height, but a
-hidden section must drop out of the `.columns` flex line entirely (docs/styles.md § Hiding an
-element).
+The rest is static markup with no `Menu` state — no field lookups, no listeners. A section that
+has to disappear takes the global `.hidden` (`display: none`), not the tab panels' `.inactive` — a
+panel has to keep reserving height, but a hidden section must drop out of the `.columns` flex line
+entirely (docs/styles.md § Hiding an element).
 
 ## Right mouse button
 

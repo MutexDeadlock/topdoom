@@ -90,7 +90,7 @@ the same `Promise.all` and is not counted — 651 KB against a 14 MB IWAD would 
 lie in the other direction.
 
 **A level load shows nothing unless it is predicted to be slow.** `Game.loadLevel` is the one
-decision point — an exit, `R` after death, a checkpoint reload and the DEVMODE map jump all go
+decision point — an exit, `R` after death, a checkpoint reload and IDCLEV's warp all go
 through it — and it estimates the build from the map's `LINEDEFS` lump size (`mapLinedefBytes`, a
 directory lookup; a UDMF map's `TEXTMAP` size scaled to the same unit) times `buildMsPerKb`. Only
 above `SLOW_LOAD_MS` does the overlay go up. An ordinary level change is a few frames, and an

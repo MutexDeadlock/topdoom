@@ -1,14 +1,14 @@
 # Cheat codes
 
 `src/game/cheats.ts`, `src/game/input.ts: Input.typed`, `src/game.ts: applyCheats`,
-`src/game/player.ts: noclip`
+`src/game.ts: warpToLevel`, `src/game/player.ts: noclip`
 
-Three of vanilla's cheats are in: **IDDQD**, **IDKFA** and **IDCLIP**. Each does what
-`st_stuff.c`'s `ST_Responder` does with it, and prints `d_englsh.h`'s own response in the center
-message (docs/hud.md § Center messages) — a line a DEH/BEX patch can replace by mnemonic
-(docs/dehacked.md § Cheat responses).
+Four of vanilla's cheats are in: **IDDQD**, **IDKFA**, **IDCLIP** and **IDCLEV**. Each does what
+`st_stuff.c`'s `ST_Responder` does with it, and the first three print `d_englsh.h`'s own response in
+the center message (docs/hud.md § Center messages) — a line a DEH/BEX patch can replace by mnemonic
+(docs/dehacked.md § Cheat responses). IDCLEV prints nothing (§ IDCLEV).
 
-Vanilla's other codes — `IDFA`, `IDBEHOLD*`, `IDCLEV`, `IDMUS`, `IDMYPOS`, `IDCHOPPERS` — are not
+Vanilla's other codes — `IDFA`, `IDBEHOLD*`, `IDMUS`, `IDMYPOS`, `IDCHOPPERS` — are not
 implemented. Their `STSTR_*` strings stay classified as having no target here.
 
 ## Typing a code
@@ -25,15 +25,12 @@ per-cheat cursor resets to the start of its sequence on any mismatched key *and*
 character with it — vanilla misses `iiddqd`, this catches it. It can't recognise anything vanilla
 wouldn't.
 
-**A letter of a code doesn't also work its bound key.** `Cheats.typing` reports a buffer partway
-into a code — derived from the buffer on read, so no path through `Cheats.type` can leave it
-disagreeing with what was typed — and `game.ts` withholds `handleHotkeys`' map-jump callback for
-that tic: DEVMODE's previous-map jump `P` sits inside `idclip`, and without this, typing the code
-jumps level and eats the cheat. It covers the tic that *completes* a code too, not only the ones
-leading up to it. Only that callback is withheld, not the whole of `handleHotkeys` — the camera's
-zoom and tilt keys aren't letters and can't collide, so they stay live while a code is typed. The
-movement keys are deliberately not covered: `idkfa`'s `a` and `d` strafe, as vanilla's own cheat
-letters do.
+**No key is withheld while a code is typed.** `idkfa`'s `a` and `d` strafe, as vanilla's own cheat
+letters do, and no letter is bound to anything else — the camera's zoom and tilt keys aren't
+letters. `Cheats.typing` reports a buffer partway into a code — derived from the buffer on read, so
+no path through `Cheats.type` can leave it disagreeing with what was typed — and is what refuses a
+save, a recording and a replay keyframe over a half-typed code: no snapshot carries the buffer
+(docs/replays.md § Seeking). IDCLEV waiting for its two characters counts as typing too.
 
 Codes are read only while the player is alive: a corpse answers `R` and nothing else
 (docs/death.md § Player death). Both noclip spellings work whatever the IWAD is — `idclip` and
@@ -94,11 +91,40 @@ tic. From there it reaches three places:
 Walking out past the map's edge is as unmapped here as in vanilla: the BSP resolves a point in the
 void to whatever leaf it lands in, and the floor comes back from that sector.
 
+## IDCLEV
+
+`idclev` plus two characters, which name the map to warp to: `E1M2`'s spelling outside DOOM 2,
+`MAP12`'s in it — vanilla picks by `gamemode`, and here the **current map's own spelling** decides,
+with the other tried after it so a set naming its maps the other way round is still reachable
+(`cheats.ts: warpTargets`). The pair is not checked for being digits: characters spelling no map name
+find none, which is where vanilla's `epsd`/`map` range tests end up. The two characters are
+swallowed as parameters whatever they are — `cht_GetParam`'s own behavior — so nothing typed inside
+them can fire another code.
+
+**The map must be one the loaded set provides.** A pair naming none shows `No such level: <name>`
+and changes nothing: prboom-plus' `cheat_clev` prints "IDCLEV target not found", where vanilla
+returns silently — a warp that quietly does nothing looks like a cheat that doesn't work.
+
+**A warp is a fresh game, not an exit.** Vanilla defers to `G_DeferedInitNew`, which puts every
+player in `PST_REBORN`, so the level is entered with a fresh inventory whatever the pistol-start
+setting says (docs/items.md § Pistol start), and `G_PlayerReborn`'s memset clears `player_t.cheats`
+— **god mode and noclip go off with the warp**. `Cheats.used` does not: it is this engine's own
+record that the run cheated, and outlives the rebirth (§ Saves and best times).
+
+**No response line.** The level arriving says it. Vanilla's `STSTR_CLEV` is raised a tic before
+`G_DoLoadLevel` takes the message down with it, so it is barely seen there either; here it is not
+raised at all and stays `noTarget` for a DEH patch (docs/dehacked.md § Cheat responses).
+
+Level order is the load order of the WAD set, so a warp reaches any map in it — including one the
+campaign's progression never leads to.
+
 ## Saves and best times
 
 **A cheat costs the run its best time.** Any code firing sets `cheated`, the same flag a `?pos=`
 start sets, so that level's completion is not offered as a record (docs/hud.md § Best times).
-It travels in the savegame, so it can't be washed off by saving and loading.
+It travels in the savegame, so it can't be washed off by saving and loading. An IDCLEV whose map
+doesn't exist is the one code that fires nothing: it costs no best time, since `ST_Responder`
+returns before it changes anything either.
 
 **And it costs the levels after it too**, where a `?pos=` start or a taken-over replay costs only
 the level it happened on: the code also sets **`Cheats.used`**, and every level entered through an

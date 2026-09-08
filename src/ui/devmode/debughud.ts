@@ -1,8 +1,8 @@
 /**
- * The top-left status text, the fps counter behind it, and the debug hotkeys —
- * the text collapsing to "`N` fps" and the hotkeys to the camera framing keys
- * once DEVMODE is off. Whether the text shows at all is the player's own
- * setting. See docs/devmode.md § Dev mode and § FPS counter.
+ * The top-left status text, the fps counter behind it, and the camera framing
+ * keys — the text collapsing to "`N` fps" once DEVMODE is off. Whether the text
+ * shows at all is the player's own setting.
+ * See docs/devmode.md § Dev mode and § FPS counter.
  */
 import type { TicInput } from '../../game/input.ts';
 import type { TopDownCamera } from '../../render/camera.ts';
@@ -11,28 +11,14 @@ import { DEVMODE } from '../../constants.ts';
 import { readStorage, writeStorage } from '../../util/storage.ts';
 
 /**
- * Camera framing, then the level switching DEVMODE gates. Zoom and tilt are
- * player-facing controls (`TopDownCamera.applyFramingKeys`), so they sit ahead
- * of that gate — the camera distance/tilt they set are framing preferences, not
- * debug state. They act in manual camera mode only and are inert while the auto
- * camera drives the framing (the same inert-not-error shape N/P have outside
- * dev mode) — docs/camera.md § Auto camera.
+ * The camera framing keys. Zoom and tilt are player-facing controls
+ * (`TopDownCamera.applyFramingKeys`) and are not gated on `DEVMODE`: the camera
+ * distance/tilt they set are framing preferences, not debug state. They act in
+ * manual camera mode only and are inert while the auto camera drives the
+ * framing — docs/camera.md § Auto camera.
  */
-export function handleHotkeys(
-  input: TicInput,
-  camera: TopDownCamera,
-  /** Null while a cheat code is being typed, whose letters must not also jump level — game.ts. */
-  changeMap: ((delta: number) => void) | null,
-  /**
-   * Whether the map-jump keys exist: this build's `DEVMODE`, or the one a replay was recorded
-   * under, so its `N`/`P` presses jump on any build (docs/replays.md § What breaks determinism).
-   */
-  devmode = DEVMODE,
-): void {
+export function handleHotkeys(input: TicInput, camera: TopDownCamera): void {
   if (getCameraMode() === 'manual') camera.applyFramingKeys(input);
-  if (!devmode || !changeMap) return;
-  if (input.pressed('KeyN')) changeMap(1);
-  if (input.pressed('KeyP')) changeMap(-1);
 }
 
 const FPS_STORAGE_KEY = 'fps';

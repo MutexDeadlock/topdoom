@@ -10,8 +10,8 @@ checkboxes that show two of them are docs/menu.md § Settings tab.
 
 `DEVMODE` reads `import.meta.env.VITE_DEVMODE`, defaulting to `false`; set `VITE_DEVMODE=true` in a
 git-ignored `.env.local` at the repo root to turn it on (Vite loads `.env.local` itself, no plugin
-needed). It gates three things — `ui/devmode/debughud.ts`, `ui/hud/profiler.ts` and
-`ui/menu/menu.ts` — all because a player has no legitimate reason to reach for them:
+needed). It gates two things — `ui/devmode/debughud.ts` and `ui/hud/profiler.ts` — both because a
+player has no legitimate reason to reach for them:
 
 - **What `#hud` says** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, the
   element shows only the fps counter; on, the full
@@ -26,14 +26,12 @@ needed). It gates three things — `ui/devmode/debughud.ts`, `ui/hud/profiler.ts
   would be a readout of nothing (docs/replays.md § Playback). It used to end with two static hotkey
   hint lines as well, which were the game's only controls reference and so invisible to exactly the
   players who needed them; that list is now the menu's Settings tab (docs/menu.md § Settings tab).
-- **The Settings tab's `#controls-dev` section**, the only place `N`/`P` is listed in the UI —
-  revealed once in the `Menu` constructor, so a shipped build never advertises a key it ignores.
-- **`N`/`P` (jump to next/prev map)** in `handleHotkeys` — behind the early-return on `!DEVMODE`, so
-  they are simply inert outside dev mode. `+`/`-` (camera distance) and `[`/`]` (camera tilt)
-  deliberately sit *ahead* of that gate: they are player-facing framing controls, not debug state,
-  and gating them only meant a shipped player couldn't adjust how much of the level fits on screen.
-  Every key here is skipped for a tic whose characters belong to a cheat code being typed — `P`
-  sits inside `idclip` (docs/cheats.md § Typing a code).
+
+No key is dev-only. `handleHotkeys` holds `+`/`-` (camera distance) and `[`/`]` (camera tilt)
+alone, which are player-facing framing controls in every build — gating them only meant a shipped
+player couldn't adjust how much of the level fits on screen. Jumping to another map is
+**IDCLEV**, a cheat like any other and available everywhere (docs/cheats.md § IDCLEV); the `N`/`P`
+map jump it replaced was the one key pair `DEVMODE` used to gate.
 
 Neither the profiling overlay nor the status text's visibility is on that list: `DEVMODE` only picks
 the default of each, and a player can turn either on in any build (§ FPS counter, § Profiling

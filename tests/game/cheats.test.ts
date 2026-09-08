@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHEAT_MESSAGES, Cheats } from '../../src/game/cheats.ts';
+import { CHEAT_MESSAGES, Cheats, warpTargets } from '../../src/game/cheats.ts';
 import { AMMO_TYPES, KEY_SLOTS, ammoMax, applyDamage, createInventory } from '../../src/game/inventory.ts';
 import { WEAPON_ORDER, classifyDehackedString } from '../../src/game/dehacked/tables.ts';
 import { TELEFRAG_DAMAGE } from '../../src/game/things.ts';
@@ -14,7 +14,7 @@ import { DOOM_TIC } from '../../src/constants.ts';
 import { heldInput } from '../fixtures/input.ts';
 
 /**
- * IDDQD, IDKFA and IDCLIP, against `st_stuff.c`'s `ST_Responder`. See docs/cheats.md.
+ * IDDQD, IDKFA, IDCLIP and IDCLEV, against `st_stuff.c`'s `ST_Responder`. See docs/cheats.md.
  */
 describe('Cheats · recognising a code', () => {
   test('a code fires however much junk came before it', () => {
@@ -30,12 +30,11 @@ describe('Cheats · recognising a code', () => {
     assert.equal(cheats.type('d', createInventory()), CHEAT_MESSAGES.STSTR_DQDON);
   });
 
-  test('a code in progress is announced, so its letters can be kept off their bound keys', () => {
+  test('a code in progress is announced, so a save is not taken over half a buffer', () => {
     const cheats = new Cheats();
     const inv = createInventory();
     assert.equal(cheats.type('xx', inv), null);
     assert.equal(cheats.typing, false, 'junk is not a code being typed');
-    // `P` is DEVMODE's previous-map key and sits inside `idclip`.
     for (const char of 'idcli') {
       cheats.type(char, inv);
       assert.equal(cheats.typing, true, `after ${char}`);
@@ -184,6 +183,55 @@ describe('Cheats · IDCLIP', () => {
     assert.ok(player.y > edgeY + PLAYER_RADIUS, `walked through to ${player.y}`);
     // P_CheckPosition's MF_NOCLIP early-out: the floor under the centre, with no step limit.
     assert.equal(player.z, 64);
+  });
+});
+
+describe('Cheats · IDCLEV', () => {
+  test('the two characters after the code come back once, and nothing else does', () => {
+    const cheats = new Cheats();
+    const inv = createInventory();
+    assert.equal(cheats.type('idclev', inv), null, 'the code alone prints nothing');
+    assert.equal(cheats.takeWarp(), null, 'and asks for nothing until both characters are in');
+    assert.equal(cheats.typing, true, 'a code waiting for its parameters is still being typed');
+    cheats.type('0', inv);
+    assert.equal(cheats.takeWarp(), null);
+    cheats.type('5', inv);
+    assert.equal(cheats.typing, false);
+    assert.equal(cheats.takeWarp(), '05');
+    assert.equal(cheats.takeWarp(), null, 'the read clears it, so one code changes level once');
+  });
+
+  test('the parameters are swallowed, whatever they spell', () => {
+    const cheats = new Cheats();
+    const inv = createInventory();
+    // `cht_GetParam` takes the next two keys as parameters; the code inside them is not a code.
+    assert.equal(cheats.type('idclevidclip', inv), null);
+    assert.equal(cheats.noclip, false, 'the `id` went into the parameters, leaving a bare `clip`');
+    assert.equal(cheats.takeWarp(), 'id');
+  });
+
+  test('typing it is not yet cheating: the level it names may not exist', () => {
+    const cheats = new Cheats();
+    cheats.type('idclev99', createInventory());
+    assert.equal(cheats.used, false, 'ST_Responder returns before it changes anything');
+  });
+
+  test('a warp that happens counts as used and takes the toggles with it', () => {
+    const cheats = new Cheats();
+    cheats.type('iddqdidclipidclev01', createInventory());
+    assert.deepEqual([cheats.god, cheats.noclip], [true, true]);
+    // `G_DeferedInitNew` rebirths every player, and `G_PlayerReborn` memsets `player_t.cheats`.
+    cheats.warped();
+    assert.equal(cheats.active, false);
+    assert.equal(cheats.used, true, 'the run has still cheated');
+  });
+
+  test('the map spelling follows the level being played, with the other still reachable', () => {
+    assert.deepEqual(warpTargets('12', 'MAP07'), ['MAP12', 'E1M2']);
+    assert.deepEqual(warpTargets('12', 'E1M1'), ['E1M2', 'MAP12']);
+    // Vanilla's own two forms: `idclev31` is MAP31 in DOOM 2 and E3M1 in DOOM 1.
+    assert.equal(warpTargets('31', 'MAP01')[0], 'MAP31');
+    assert.equal(warpTargets('31', 'E2M4')[0], 'E3M1');
   });
 });
 

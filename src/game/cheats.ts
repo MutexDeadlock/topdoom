@@ -1,7 +1,7 @@
 /**
- * The three typed cheat codes — IDDQD, IDKFA, IDCLIP — the rolling buffer that spots one and the
- * two toggles they leave behind. `game.ts` feeds it whatever was typed this tic and acts on what
- * comes back. See docs/cheats.md.
+ * The four typed cheat codes — IDDQD, IDKFA, IDCLIP, IDCLEV — the rolling buffer that spots one,
+ * the two toggles they leave behind and the level IDCLEV asks for. `game.ts` feeds it whatever was
+ * typed this tic and acts on what comes back. See docs/cheats.md.
  */
 import { AMMO_TYPES, KEY_SLOTS, ammoMax, inventoryLimit, type Inventory } from './inventory.ts';
 import { WEAPON_ORDER } from './dehacked/tables.ts';
@@ -11,7 +11,8 @@ import type { CheatSnapshot } from './snapshot.ts';
  * `st_stuff.c`'s own responses, in `d_englsh.h`'s wording and keyed by its mnemonic so a DEH/BEX
  * patch can replace one by name — the shape `specials/tables.ts`'s `LOCKED_LINES` has, and for the
  * same reason (docs/dehacked.md § Cheat responses). Only the five this engine can raise: the other
- * `STSTR_*` strings belong to cheats it doesn't have.
+ * `STSTR_*` strings belong to cheats it doesn't have, and to IDCLEV, which prints nothing
+ * (docs/cheats.md § IDCLEV).
  */
 export const CHEAT_MESSAGES: Record<string, string> = {
   STSTR_DQDON: 'Degreelessness Mode On',
@@ -22,7 +23,7 @@ export const CHEAT_MESSAGES: Record<string, string> = {
 };
 
 /** Which cheat one code fires. */
-type CheatId = 'god' | 'ammoKeys' | 'noclip';
+type CheatId = 'god' | 'ammoKeys' | 'noclip' | 'levelWarp';
 
 /**
  * The codes, `st_stuff.c`'s `cheat_*_seq[]` tables descrambled. Both noclip spellings are live at
@@ -35,9 +36,16 @@ const CHEAT_CODES: readonly (readonly [string, CheatId])[] = [
   ['idkfa', 'ammoKeys'],
   ['idclip', 'noclip'],
   ['idspispopd', 'noclip'],
+  ['idclev', 'levelWarp'],
 ];
 
 const LONGEST_CODE = Math.max(...CHEAT_CODES.map(([code]) => code.length));
+
+/**
+ * The characters IDCLEV takes after its code — `cheat_clev_seq`'s two parameter slots, which
+ * `cht_GetParam` fills with whatever keys follow, digits or not.
+ */
+const WARP_PARAMS = 2;
 
 /**
  * What the player has typed lately, and the two cheats that stay switched on once typed. Owned by
@@ -60,6 +68,14 @@ export class Cheats {
    */
   used = false;
   private buffer = '';
+  /**
+   * The characters typed since IDCLEV matched, until there are `WARP_PARAMS` of them; null when no
+   * code is waiting for its parameters. They do not reach `buffer`, the way `cht_GetParam` consumes
+   * the keys it collects.
+   */
+  private params: string | null = null;
+  /** A completed IDCLEV's two characters, until `takeWarp` reads them. */
+  private warp: string | null = null;
 
   /** Whether any cheat is on at all. */
   get active(): boolean {
@@ -69,10 +85,12 @@ export class Cheats {
   /**
    * Whether what has been typed so far is the beginning of a code. Derived from the buffer rather
    * than latched alongside it, so no edit to `type` can leave the two disagreeing. `game.ts` reads
-   * it to keep a letter of one from also firing a bound key — the DEVMODE map jump `P` sits inside
-   * `idclip`. docs/cheats.md § Typing a code.
+   * it to refuse a save or a keyframe over a half-typed code, which no snapshot carries.
+   * IDCLEV waiting for its two characters counts: they are buffer state as much as the code is.
+   * docs/cheats.md § Typing a code.
    */
   get typing(): boolean {
+    if (this.params !== null) return true;
     return CHEAT_CODES.some(([code]) => startsPartway(code, this.buffer));
   }
 
@@ -84,20 +102,60 @@ export class Cheats {
    * of its sequence on any mismatched key and swallows the mismatched character with it — so
    * vanilla misses `iiddqd` where this catches it. Strictly more forgiving, and it can't recognise
    * anything vanilla wouldn't.
+   *
+   * IDCLEV completes no effect and no line of its own: the two characters after it are swallowed
+   * as parameters (`cht_GetParam`) and left for `takeWarp`, whatever they are.
    */
   type(typed: string, inv: Inventory): string | null {
     let message: string | null = null;
     for (const char of typed) {
+      if (this.params !== null) {
+        this.params += char;
+        if (this.params.length < WARP_PARAMS) continue;
+        this.warp = this.params;
+        this.params = null;
+        continue;
+      }
       this.buffer = (this.buffer + char).slice(-LONGEST_CODE);
       const fired = CHEAT_CODES.find(([code]) => this.buffer.endsWith(code));
       if (fired) {
         // Cleared so the tail of one code can't stand in for the head of the next.
         this.buffer = '';
+        const [, id] = fired;
+        // IDCLEV fires nothing yet, and is not `used` until the level it names turns out to exist:
+        // `ST_Responder` returns before it changes anything for a map that doesn't.
+        if (id === 'levelWarp') {
+          this.params = '';
+          continue;
+        }
         this.used = true;
-        message = this.fire(fired[1], inv);
+        message = this.fire(id, inv);
       }
     }
     return message;
+  }
+
+  /**
+   * The two characters IDCLEV took after its code, once both are typed — cleared by the read, so
+   * one code changes level once. Null on every other tic. Which levels exist is not this module's
+   * to know, so resolving them to a map is the caller's. docs/cheats.md § IDCLEV.
+   */
+  takeWarp(): string | null {
+    const warp = this.warp;
+    this.warp = null;
+    return warp;
+  }
+
+  /**
+   * The warp is happening: the code counts as used, and the toggles go — `G_DeferedInitNew` puts
+   * every player in `PST_REBORN`, and `G_PlayerReborn`'s memset takes `player_t.cheats` with it.
+   * `used` outlives that memset here, being this engine's own record that the run cheated
+   * (docs/cheats.md § Saves and best times).
+   */
+  warped(): void {
+    this.used = true;
+    this.god = false;
+    this.noclip = false;
   }
 
   snapshot(): CheatSnapshot {
@@ -115,8 +173,8 @@ export class Cheats {
     this.used = saved !== undefined;
   }
 
-  /** One cheat's effect, `ST_Responder`'s own block per code. */
-  private fire(id: CheatId, inv: Inventory): string {
+  /** One cheat's effect, `ST_Responder`'s own block per code — IDCLEV's is the caller's. */
+  private fire(id: Exclude<CheatId, 'levelWarp'>, inv: Inventory): string {
     switch (id) {
       case 'god':
         this.god = !this.god;
@@ -141,6 +199,20 @@ export class Cheats {
         return this.noclip ? CHEAT_MESSAGES.STSTR_NCON : CHEAT_MESSAGES.STSTR_NCOFF;
     }
   }
+}
+
+/**
+ * The map names IDCLEV's two characters could mean, best first. Vanilla picks the spelling from
+ * `gamemode` — `ExMy` outside DOOM 2, `MAPxx` in it — and the loaded set's own current map is what
+ * says which this is; the other spelling is still tried, so a set that names its maps the other way
+ * round is reachable at all. Neither is checked for being digits: a pair that spells no map name
+ * simply finds none, which is what vanilla's range tests come to.
+ * docs/cheats.md § IDCLEV.
+ */
+export function warpTargets(warp: string, current: string): [string, string] {
+  const episode = `E${warp[0]}M${warp[1]}`;
+  const commercial = `MAP${warp}`;
+  return /^MAP\d\d$/.test(current) ? [commercial, episode] : [episode, commercial];
 }
 
 /**

@@ -50,7 +50,7 @@ import {
 import { getProfilerVisible, setProfilerVisible } from '../hud/profiler.ts';
 import { getFpsVisible, setFpsVisible } from '../devmode/debughud.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
-import { DEVMODE, FIRST_RUN_WADS, VERSION } from '../../constants.ts';
+import { FIRST_RUN_WADS, VERSION } from '../../constants.ts';
 
 export interface Selection {
   iwad: WadSource;
@@ -280,8 +280,6 @@ export class Menu {
     this.installAbout();
     this.setTab('newgame');
     this.setSettingsTab('general');
-    // DEVMODE never changes at runtime, so the dev-only row is revealed once.
-    el<HTMLElement>('controls-dev').classList.toggle('hidden', !DEVMODE);
     el<HTMLSpanElement>('menu-version').textContent = `v${VERSION}`;
   }
 

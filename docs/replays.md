@@ -49,7 +49,7 @@ are left alone — differencing measured *worse* on those. The wheel is handed t
 live tic as its sign too, so the recording sees what the playback will.
 
 Around the tics: `snapshots` (`[0]` the start, the rest restore and seek targets), `keyframes`
-(§ Seeking), `settings`, `devmode`, `events`, `checks`. `ReplayMeta` carries the WAD set plus the build, the JS engine, the
+(§ Seeking), `settings`, `events`, `checks`. `ReplayMeta` carries the WAD set plus the build, the JS engine, the
 tic count and the level markers — nothing derivable from another field: the map recording began on
 is `levels[0].map` (`replayMap`), and `replayWadSet` is what hands the meta to the savegames' WAD
 gate (`wadSetRefusal` and friends) in the `SaveWadSet` shape they take.
@@ -163,9 +163,9 @@ Every `CHECK_INTERVAL` tics the recorder samples the player's position and the P
 ## Playback
 
 `GameOptions.playback`: the level is built from snapshot 0 as a restore, then the camera and the
-settings are applied. `handleHotkeys` takes the record's own `devmode`, so a recording that jumped
-levels with `N`/`P` jumps on any build — and one made without dev mode never jumps on a build that
-has it.
+settings are applied. A recording that changed level does it from its own typed input — IDCLEV is
+in the `typed` column like any other code (docs/cheats.md § IDCLEV), so no build flag decides
+whether the playback follows.
 
 **A replay claims no best time and accuses nobody.** `recordCompletion` returns null outright while
 one is playing, so nothing is written and no record line is drawn — the intermission shows the

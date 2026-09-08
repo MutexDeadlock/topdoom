@@ -87,7 +87,6 @@ console.log(
     `${data.typed.length} typing tic(s), ${data.checks.length} check sample(s)`,
 );
 console.log(`settings at tic 0: ${describeSettings(data.settings)}`);
-console.log(`recorded with dev mode ${data.devmode ? 'on' : 'off'} — the build's N/P level jumps`);
 const camera = poseAt(data.tics, 0);
 if (camera) {
   console.log(

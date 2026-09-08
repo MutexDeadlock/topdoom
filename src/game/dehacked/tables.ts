@@ -615,7 +615,7 @@ const LOCK_LINE_MNEMONICS: readonly string[] = [
 
 /**
  * The `STSTR_*` mnemonics this engine has a response for — `game/cheats.ts`'s `CHEAT_MESSAGES`,
- * the five `d_englsh.h` strings the three implemented cheats print. Spelled out here rather than
+ * the five `d_englsh.h` strings this engine's cheats print. Spelled out here rather than
  * imported for the same read-side reason `LOCK_LINE_MNEMONICS` is, and cross-checked by the same
  * test.
  */

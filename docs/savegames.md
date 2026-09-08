@@ -362,7 +362,7 @@ inventory (docs/death.md § Player death) — unless the level has a savegame of
 prefers: `Game.savedState` holds the snapshot the level was loaded from plus any manual save
 `saveVia` has since stored, and only a level with neither falls back to the checkpoint.
 Both ways of arriving at the next level go through
-`enterLevel` — the exit the player took, and the DEVMODE `N`/`P` jump, which would otherwise leave
+`enterLevel` — the exit the player took, and IDCLEV's warp, which would otherwise leave
 a level with no checkpoint to restart from. The session's *first* level is deliberately not one of
 them: nothing was advanced into, so `R` there restarts as it always did.
 

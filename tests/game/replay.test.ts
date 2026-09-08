@@ -85,7 +85,6 @@ function start(): RecordingStart {
     capture,
     pose: START_POSE,
     settings: captureSimSettings(),
-    devmode: false,
   };
 }
 

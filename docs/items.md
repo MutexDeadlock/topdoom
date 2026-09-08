@@ -92,9 +92,10 @@ next level on. The three ways a fresh inventory happens meet there and nowhere e
 player's reborn (docs/death.md § Player death), an episode crossing (docs/hud.md § End card), and
 this setting.
 
-The DEVMODE `N`/`P` map jump goes through `enterLevel` too, so it pistol-starts along with
-everything else while this is on. `R` after a death is unaffected on purpose: it restores the
-checkpoint written when the level was entered, which under this setting *is* a pistol start.
+IDCLEV's warp goes through `enterLevel` too, and pistol-starts whether or not this is on: a warp
+is `G_DeferedInitNew`, which rebirths the player (docs/cheats.md § IDCLEV). `R` after a death is
+unaffected on purpose: it restores the checkpoint written when the level was entered, which under
+this setting *is* a pistol start.
 
 ## Collecting things
 

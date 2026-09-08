@@ -30,8 +30,6 @@ export interface RecordingStart {
   /** The pose the first tic will be read at, already snapped — `Game.startRecording`. */
   pose: CameraPose;
   settings: SimSettings;
-  /** This build's `DEVMODE`, stored with the record — `ReplayData.devmode`. */
-  devmode: boolean;
 }
 
 export class ReplayRecorder implements TicInput {
@@ -56,7 +54,6 @@ export class ReplayRecorder implements TicInput {
     this.levels = [{ tic: 0, map: start.capture.map }];
     this.data = {
       snapshots: [start.capture.state],
-      devmode: start.devmode,
       keyframes: [{ tic: 0, map: start.capture.map, snapshot: 0 }],
       settings: start.settings,
       tics: {

@@ -368,7 +368,6 @@ function hasThingList(snapshot: unknown): boolean {
 function isPlayableData(data: unknown, ticCount: number): data is ReplayData {
   if (!isRecord(data) || !Array.isArray(data.snapshots) || !isLoadableState(data.snapshots[0])) return false;
   if (!data.snapshots.every(hasThingList)) return false;
-  if (typeof data.devmode !== 'boolean') return false;
   if (!isRecord(data.tics) || !isRecord(data.settings)) return false;
   // The seek anchors, `[0]` the start the level is built from — every playback needs that one.
   const keyframes = data.keyframes;

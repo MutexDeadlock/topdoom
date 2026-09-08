@@ -11,8 +11,8 @@ and docs/replays.md; the menu they sit in is docs/menu.md.
 `ui/menu/savegames.ts` (`SavegamesUi`) renders both panels over the `game/savegames.ts` store; the
 format, apply order and WAD-identity rules are docs/savegames.md's. What is the menu's own:
 
-- **The Save tab exists only mid-game** — `open(inGame)` hides its button with `display: none` (the
-  `#controls-dev` pattern; the button must leave the flex row, not hold a gap) and moves anyone
+- **The Save tab exists only mid-game** — `open(inGame)` hides its button with `display: none`
+  (the button must leave the flex row, not hold a gap) and moves anyone
   still on it to New Game. Same gate as the resume button: there is nothing to save otherwise. The
   Load tab is always available.
 - **A moment the capture would refuse greys Save and Overwrite out**, rather than letting the click

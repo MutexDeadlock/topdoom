@@ -30,6 +30,8 @@ export const BOUND_KEYS: readonly string[] = [
   'Digit5',
   'Digit6',
   'Digit7',
+  // No tic reads these two any more: they were DEVMODE's map jump, which IDCLEV replaced
+  // (docs/cheats.md § IDCLEV). Their bits stay where they are — the order is the format.
   'KeyN',
   'KeyP',
   'Equal',

@@ -84,20 +84,19 @@ does (autorun and the right mouse button), so both are there while you play — 
 | `Q` / `E` | orbit the camera around the player |
 | `+` / `-` | camera distance *(manual camera mode)* |
 | `[` / `]` | camera tilt *(manual camera mode)* |
-| `N` / `P` | next / previous map *(dev mode only)* |
 | `R` | reload the level from your save, or from the checkpoint it wrote on the way in (once dead) |
 | `F2` / `F3` / `F4` | menu on Save / Load / Settings |
 | `ESC` | menu / resume |
 
-Ceilings are never rendered — from directly above, one would hide everything underneath it. See
-[Dev mode](#dev-mode) below for the keys marked as needing it.
+Ceilings are never rendered — from directly above, one would hide everything underneath it.
 
 **The camera frames itself.** By default it opens up in wide rooms, pulls in when you are shut in
 and leans towards where you are heading; the distance and tilt keys above take over in manual mode.
 See [docs/camera.md](docs/camera.md).
 
-**The classic cheats work.** Type `IDDQD` (god mode), `IDKFA` (all weapons, ammo and keys) or
-`IDCLIP` (walk through walls) while playing — no console, no key to press first. A cheated session
+**The classic cheats work.** Type `IDDQD` (god mode), `IDKFA` (all weapons, ammo and keys),
+`IDCLIP` (walk through walls) or `IDCLEV12` (warp to `MAP12`, or `E1M2` outside DOOM II) while
+playing — no console, no key to press first. A cheated session
 sets no best times, and its end-of-level screen says `You cheated` instead of showing how the level
 went. See [docs/cheats.md](docs/cheats.md).
 
@@ -217,9 +216,8 @@ See [docs/dehacked.md](docs/dehacked.md).
 ## Dev mode
 
 Set `VITE_DEVMODE=true` in a `.env.local` file at the repo root (git-ignored, create it
-yourself) and restart `npm run dev` to turn on the debug overlay and the hotkeys marked
-*(dev mode only)* above. Without it those keys are simply inert.
-See [docs/devmode.md](docs/devmode.md).
+yourself) and restart `npm run dev` to turn on the debug overlay's full readout and the profiler's
+default. No key is dev-only. See [docs/devmode.md](docs/devmode.md).
 
 ## Working on it
 

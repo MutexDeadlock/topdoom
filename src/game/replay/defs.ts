@@ -173,12 +173,6 @@ export interface Keyframe {
 export interface ReplayData {
   /** `[0]` is the moment recording began; restore events index the rest. */
   snapshots: GameSnapshot[];
-  /**
-   * Whether the recording build's `DEVMODE` made `N`/`P` jump level. Recorded rather than read
-   * from this build, so the recorded presses jump exactly where they jumped and nowhere else.
-   * docs/replays.md § What breaks determinism.
-   */
-  devmode: boolean;
   /** Never empty and `[0].tic === 0`: the start, and every seek anchor after it. */
   keyframes: Keyframe[];
   /** The settings at tic 0; later changes are events. */

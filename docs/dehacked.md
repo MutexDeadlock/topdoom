@@ -740,14 +740,15 @@ out itself and a test cross-checks the two lists.
 ## Cheat responses
 
 `STSTR_*` replaces the line a cheat code prints. Five of them apply — `STSTR_DQDON`/`STSTR_DQDOFF`,
-`STSTR_KFAADDED`, `STSTR_NCON`/`STSTR_NCOFF` — the responses of the three cheats this engine has
-(docs/cheats.md). `game/cheats.ts`'s `CHEAT_MESSAGES` holds them keyed by mnemonic, verbatim from
+`STSTR_KFAADDED`, `STSTR_NCON`/`STSTR_NCOFF` — the responses of the three cheats this engine prints
+one for (docs/cheats.md). `game/cheats.ts`'s `CHEAT_MESSAGES` holds them keyed by mnemonic, verbatim from
 `d_englsh.h`, and `replaceByMnemonic` — the one applier § Locked-door lines also goes through —
 replaces one by name: no transform, because these too are finished lines.
 
-The rest of the family — `STSTR_FAADDED`, `STSTR_BEHOLD`, `STSTR_MUS`, `STSTR_CLEV`,
-`STSTR_CHOPPERS` and the others — stays `noTarget`: the cheats they answer aren't implemented, so
-there is nothing to write them onto. The `STSTR_` prefix row in `dehacked/tables.ts` covers those,
+The rest of the family — `STSTR_FAADDED`, `STSTR_BEHOLD`, `STSTR_MUS`, `STSTR_CHOPPERS` and the
+others — stays `noTarget`: the cheats they answer aren't implemented, so there is nothing to write
+them onto. `STSTR_CLEV` is `noTarget` for a different reason: IDCLEV is implemented but raises no
+line (docs/cheats.md § IDCLEV). The `STSTR_` prefix row in `dehacked/tables.ts` covers those,
 and the five above are whole keys ahead of it — the same prefix-plus-exceptions shape the `PD_*`
 mnemonics use, spelled out on the read side for the same reason and cross-checked by the same test.
 

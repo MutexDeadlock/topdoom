@@ -14,8 +14,9 @@ Features and improvements
       width, in the WAD Library and the add-on list alike
     - a first start now opens on a preselected WAD set,
       configurable in constants.ts
-  - jumping a replay to a level marker now lands there at once: a recording
-    lays down a seek anchor on every level it enters
+  - replays now store an additional keyframe after level change
+  - added IDCLEV cheat to warp to any map of the loaded set 
+    (replaces the dev-mode N/P map jump)
 
 Fixed bugs
   - running into a wall no longer collects an item sealed behind it

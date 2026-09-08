@@ -15,7 +15,6 @@ export function replayCapture(ticCount = 2): ReplayCapture {
     levels: [{ tic: 0, map: 'MAP01' }],
     data: {
       snapshots: [REPLAY_SNAPSHOT],
-      devmode: false,
       keyframes: [{ tic: 0, map: 'MAP01', snapshot: 0 }],
       settings: {
         autorun: true,

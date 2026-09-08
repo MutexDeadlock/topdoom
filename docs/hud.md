@@ -172,8 +172,8 @@ and it stays frozen for as long as the popup is up: those frames return early to
 
 `src/ui/hud/levelcard.ts` raises "Entering" over the level's name (`#level-card`, horizontally
 centered, 30% down so it clears `#hud-message`'s 40%) for 3.5 seconds after every map load that
-*enters* a level — a normal exit, a `restart()` after death with nothing to reload, and the DEVMODE
-`N`/`P` jump alike — fading out over the last second of that. **Loading a save is the one map load
+*enters* a level — a normal exit, a `restart()` after death with nothing to reload, and IDCLEV's
+warp alike — fading out over the last second of that. **Loading a save is the one map load
 that raises no card** (`loadMapByIndex`'s `restore` branch, docs/savegames.md § Apply order): it
 resumes a level rather than entering one. A `restart()` that *does* reload something — the level's
 savegame or its checkpoint — goes through that same branch, so it raises none either. The fade is
@@ -418,7 +418,8 @@ holds at dead center), for 3 seconds. Four callers so far:
   module's own, since it is display text) and plays the `secret` chime on the frame
   `SectorEffects.update` reports `secretFound`;
 - a cheat's response — `Game.applyCheats` shows whatever line the code that just fired returns
-  (docs/cheats.md), in the message's own yellow like the secret announcement;
+  (docs/cheats.md), in the message's own yellow like the secret announcement; IDCLEV raises one only
+  when it names a map the set hasn't got (docs/cheats.md § IDCLEV);
 - the locked door/switch line — `lockedLineMessage(lock, kind)` resolves the `LockedLine`
   `Game.frame` drained out of `specials` through `specials/tables.ts`'s `LOCKED_LINES`, where
   vanilla's and Boom's `PD_*` text lives and where a DEH patch will have replaced it (docs/items.md

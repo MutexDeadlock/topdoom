@@ -133,7 +133,7 @@ import {
   tickPowers,
   type Inventory,
 } from './game/inventory.ts';
-import { Cheats } from './game/cheats.ts';
+import { Cheats, warpTargets } from './game/cheats.ts';
 import { ThingType } from './game/things/doomednums.ts';
 import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
@@ -143,7 +143,7 @@ import { MusicBank } from './wad/music.ts';
 import { MapInfo } from './wad/campaign/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
 import type { Pos2 } from './types.ts';
-import { DEVMODE, DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
+import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 import { vecLength } from './util/geom.ts';
 import { readStorage, writeStorage } from './util/storage.ts';
 import { atan2, cos, sin } from './util/fdlibm.ts';
@@ -832,7 +832,6 @@ export class Game {
       capture,
       pose: quantizePose(this.simCamera.pose()),
       settings: captureSimSettings(),
-      devmode: DEVMODE,
     });
   }
 
@@ -1677,29 +1676,45 @@ export class Game {
   }
 
   /**
-   * Whatever was typed this tic, and the one response a completed code prints. Returns whether
-   * those characters belonged to a cheat — completed one or are partway into one — which is what
-   * keeps the same keypress from also firing a bound key.
+   * Whatever was typed this tic, the one response a completed code prints, and the level an
+   * IDCLEV asked for.
    *
    * A cheat also ends this run's claim on a best time, the same way a `?pos=` start does — it
    * travels in the save with `cheated`. docs/cheats.md § Saves and best times.
    */
-  private applyCheats(input: TicInput): boolean {
+  private applyCheats(input: TicInput): void {
     const typed = input.typed();
-    if (!typed) return false;
+    if (!typed) return;
     const response = this.cheats.type(typed, this.inventory);
     if (response) {
       this.message.show(response);
       this.cheated = true;
     }
-    // A code half typed counts too: the hotkey has to be swallowed on the way *into* the match,
-    // not only on the tic that completes it.
-    return response !== null || this.cheats.typing;
+    const warp = this.cheats.takeWarp();
+    if (warp !== null) this.warpToLevel(warp);
   }
 
   /**
-   * Advancing into another level: the exit the player just took, or the DEVMODE `N`/`P` jump,
-   * which arrives the same way. The checkpoint is written *after* the load — what a death on the
+   * IDCLEV's own block: the two characters name a map of the loaded set, which is entered as a
+   * fresh game — `G_DeferedInitNew`, so it pistol-starts whatever the setting says and the toggles
+   * go with the rebirth. The level arriving is the whole response; only a pair naming no map says
+   * anything, which is `cheat_clev`'s "IDCLEV target not found" in prboom-plus (vanilla's own
+   * `ST_Responder` returns silently). docs/cheats.md § IDCLEV.
+   */
+  private warpToLevel(warp: string): void {
+    const targets = warpTargets(warp, this.currentMap);
+    const index = targets.map((name) => this.mapNames.indexOf(name)).find((at) => at >= 0);
+    if (index === undefined) {
+      this.message.show(`No such level: ${targets[0]}`);
+      return;
+    }
+    this.cheats.warped();
+    this.enterLevel(index, true);
+  }
+
+  /**
+   * Advancing into another level: the exit the player just took, or IDCLEV's warp, which arrives
+   * the same way. The checkpoint is written *after* the load — what a death on the
    * new level returns to is that level at tic 0. Advancing while dead is `G_DoLoadLevel`'s
    * `PST_DEAD` → `PST_REBORN`, read off player state here rather than queued at the exit;
    * `restart` restores a checkpoint instead (docs/death.md § Player death). `reborn` forces a fresh
@@ -1733,7 +1748,7 @@ export class Game {
     this.loading?.hide();
   }
 
-  /** Indices wrap, so `N` past the last map lands on the first — `mapIndex` is always this. */
+  /** Indices wrap, so an exit past the last map lands on the first — `mapIndex` is always this. */
   private wrapIndex(index: number): number {
     return (index + this.mapNames.length) % this.mapNames.length;
   }
@@ -2111,20 +2126,12 @@ export class Game {
     }
     // Ahead of every system a cheat changes, and only while there is a live player to change:
     // a corpse answers `R` and nothing else. docs/cheats.md § Typing a code.
-    const cheating = !this.playerDead && this.applyCheats(input);
+    if (!this.playerDead) this.applyCheats(input);
     // Set here rather than at the toggle, since a `Player` is rebuilt by every level load and the
     // cheat outlives it — and here rather than in the player block below, so that every system
     // this tic reads one `noclip`, not last tic's. docs/cheats.md § IDCLIP.
     this.player.noclip = this.cheats.noclip;
-    // A letter of a code must not also work its bound key: DEVMODE's map jump `P` sits inside
-    // `idclip`, and jumping level mid-code would eat the cheat. Only that callback is withheld —
-    // the camera keys aren't letters and can't collide. docs/cheats.md § Typing a code.
-    handleHotkeys(
-      input,
-      camera,
-      cheating ? null : (delta) => this.enterLevel(this.mapIndex + delta),
-      this.playback?.replay.data.devmode ?? DEVMODE,
-    );
+    handleHotkeys(input, camera);
     // Set before any system runs, since specials/monsters/weapons all raise
     // sounds during the update below. The camera's yaw is last tic's (it
     // settles in `camera.tick`, at the end) — a tic of smoothing lag on the

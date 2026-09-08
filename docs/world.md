@@ -180,7 +180,7 @@ Three properties are load-bearing:
 - **Only floors block.** A wall face and a ceiling do not: the camera looks over walls on purpose,
   and a lock through one is a documented deviation.
 - **The stretch up to the aim point is not tested at all.** That is the occlusion faders' ground
-  (docs/render.md § Wall occlusion fading), so nothing there is hiding anything. Measured over
+  (docs/render-occlusion.md), so nothing there is hiding anything. Measured over
   DOOM2 MAP01/07/15/29, ~2,000 walkable spots × 81 pointer cells: tracing from the camera instead
   dropped 142 locks on MAP15 alone whose body stood within 64 units of the aim point — monsters in
   plain sight, beside a step. From the aim point outward, none. Neither variant ever swapped one
@@ -211,12 +211,12 @@ without that walk and still descend.
 `subsector->sector` is the seg -> linedef -> sidedef walk `sectorOfSubSector` does, and that is what
 the table holds for all but a handful of leaves: the exception is a leaf a node builder filed under
 its *neighbour's* sector, which only the polygon rebuild can recognise, since only it knows where
-the leaf's cell actually lies. `SubSectorPoly.physicalSector` carries that repair (docs/render.md §
-Segs on the wrong side of their leaf) and the table takes it, so the sector under the player's feet
-is the one whose flat is drawn there. This is the only reason `world.ts` reaches into `render/`, and
-it costs nothing per frame — the lookup is the same single `Int32Array` read either way. At load the
-rebuild is shared with the mesh and the fog grid (`buildSubSectorPolys` memoizes on the map), so
-adding this reader took a level's poly building from two builds to one.
+the leaf's cell actually lies. `SubSectorPoly.physicalSector` carries that repair
+(docs/render-bsp.md § Segs on the wrong side of their leaf) and the table takes it, so the sector
+under the player's feet is the one whose flat is drawn there. This is the only reason `world.ts`
+reaches into `render/`, and it costs nothing per frame — the lookup is the same single `Int32Array`
+read either way. At load the rebuild is shared with the mesh and the fog grid (`buildSubSectorPolys`
+memoizes on the map), so adding this reader took a level's poly building from two builds to one.
 
 **The table is built for every map, not only ones with a REJECT table.** It arrived for the REJECT
 probe, but the per-frame sector lookups — damage floors, the sector under the player, sprite

@@ -1,6 +1,7 @@
 /**
  * One JS number as a GLSL float literal — what every shader patch in `render/` splices its
- * constants through. See docs/render.md and docs/lights.md for the patches themselves.
+ * constants through. The patches themselves are docs/render-occlusion.md, docs/render-lighting.md
+ * and docs/lights.md.
  */
 
 /**

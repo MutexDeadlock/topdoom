@@ -102,7 +102,7 @@ describe('Geometry · convex polygons', () => {
 
   test('a caller may hand segmentMeetsConvexPolygon the winding it already knows', () => {
     // `FlatFader` memoises it per fan rather than paying a shoelace pass per
-    // call — docs/render.md § The target is the billboard. Same answers either
+    // call — docs/render-occlusion.md § The target is the billboard. Same answers either
     // way, for both windings and for a miss as well as a hit.
     const cw = [0, 0, 0, 10, 10, 10, 10, 0];
     const windOf = (poly: number[]) => (signedPolygonArea2(poly) < 0 ? -1 : 1);
@@ -150,7 +150,7 @@ describe('Geometry · convex polygons', () => {
 
     // Slack on the seg clip is what stops a partition that disagrees with its
     // own linedef by a rounding error from shaving a crack in the floor —
-    // docs/render.md § Cracks between subsectors.
+    // docs/render-bsp.md § Cracks between subsectors.
     assert.equal(polygonArea(clipConvexPolygon([...UNIT_SQUARE], 1.5, 0, 0, 1)), 85, 'the exact cut');
     const untouched = clipConvexPolygon([...UNIT_SQUARE], 1.5, 0, 0, 1, 2);
     assert.equal(polygonArea(untouched), 100, 'a cut shallower than the tolerance takes nothing');

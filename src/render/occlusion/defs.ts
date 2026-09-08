@@ -1,7 +1,7 @@
 /**
  * What the two faders both stand on: the hole a sightline opens and the dials that shape it, the
  * boxes a frame's sightlines live inside, and the bag of crossings one pass files for the other.
- * See docs/render.md § Wall occlusion fading.
+ * See docs/render-occlusion.md.
  */
 import type * as THREE from 'three';
 import { WALL_CHUNK_LEN } from '../mapmesh.ts';
@@ -23,8 +23,8 @@ export const FADE_ALPHA = 0.2;
  * it is one shape. **Tuned by feel**, but not freely: alpha exists only at
  * chunk corners, so a `FADE_CORE` under `WALL_CHUNK_LEN / 2` cannot open a hole
  * wider than one chunk however the ramp is shaped, and on a tall occluder seen
- * at a grazing angle that one chunk reads as a slit. Sized off the chunk for
- * that reason rather than set as a bare number. docs/render.md § The fade is a hole, not a wall.
+ * at a grazing angle that one chunk reads as a slit. Sized off the chunk for that reason rather
+ * than set as a bare number. docs/render-occlusion.md § The fade is a hole, not a wall.
  */
 export const FADE_RADIUS = WALL_CHUNK_LEN * 1.5;
 
@@ -42,7 +42,7 @@ export const FADE_CORE = FADE_RADIUS * FADE_CORE_FRACTION;
  * How far an awake monster can be and still count as a fade target.
  * **Tuned by feel** to roughly a room's length, not converted from vanilla.
  * Deliberately a plain distance cap rather than a `hasLineOfSight` gate, which
- * would make the fade a no-op for the case it exists for — docs/render.md §
+ * would make the fade a no-op for the case it exists for — docs/render-occlusion.md §
  * Wall occlusion fading.
  */
 export const MONSTER_FADE_RANGE = 768;
@@ -51,7 +51,7 @@ export const MONSTER_FADE_RANGE = 768;
  * How wide a hole an awake *monster* opens, against the player's `FADE_RADIUS` — **tuned by feel**,
  * and the smallest that still clears a whole chunk rather than a slit (alpha lives only at chunk
  * corners, so a core under `WALL_CHUNK_LEN / 2` cannot).
- * docs/render.md § The fade is a hole, not a wall.
+ * docs/render-occlusion.md § The fade is a hole, not a wall.
  */
 export const MONSTER_FADE_RADIUS = FADE_RADIUS / 2;
 
@@ -61,7 +61,7 @@ export const MONSTER_FADE_RADIUS = FADE_RADIUS / 2;
  * The core is always half the radius, so a target's hole is one shape scaled.
  * The one ramp both faders window with — a hole spanning a floor and the wall
  * behind it is one shape because this is one function.
- * docs/render.md § The fade is a hole, not a wall.
+ * docs/render-occlusion.md § The fade is a hole, not a wall.
  */
 export function holeAlpha(distanceSquared: number, floor: number, radius: number): number {
   if (distanceSquared >= radius * radius) return 1;
@@ -83,14 +83,14 @@ export const SNAP_EPS = 0.004;
  * middle of an **upright sprite** and `halfHeight` how far it reaches either side, so a sightline
  * is a wedge rather than a ray. `fadeFloor` is how far down this target pulls what hides it
  * (`FADE_ALPHA` is full strength) and `fadeRadius` how wide a hole it opens.
- * docs/render.md § The target is the billboard.
+ * docs/render-occlusion.md § The target is the billboard.
  */
 export type FadeTarget = Pos3 & { halfHeight: number; fadeFloor: number; fadeRadius: number };
 
 /**
  * Per target, for the frame: the **vertical** plane its sprite stands in.
  * Nothing behind that plane can be hiding the target, so nothing there fades —
- * see docs/render.md § The target is the billboard. Both faders keep one,
+ * see docs/render-occlusion.md § The target is the billboard. Both faders keep one,
  * refilled per `update`; the hole dials stay on the target itself, which every
  * read site already holds.
  */
@@ -99,7 +99,8 @@ export class TargetPlanes {
    * The camera→target offset in plan, and `dot(n, target)`: `dot(n, p) > d0` is past the target.
    * Deliberately **not** normalized — every test compares two dot products against this same `n`,
    * so scaling changes neither side, and the hypot-and-two-divides per target is measurable across
-   * the thousand-odd mover faders a frame refills. docs/render.md § The target is the billboard.
+   * the thousand-odd mover faders a frame refills.
+   * docs/render-occlusion.md § The target is the billboard.
    *
    * A camera standing exactly over a target in plan leaves `n` and `d0` both zero, and `0 > 0`
    * cuts nothing — the hole goes back to the whole ball. `MIN_TILT_DEG` keeps the player off that
@@ -178,7 +179,7 @@ const sightBoxOut = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
  * The box every sightline of one frame lives inside — the camera, stretched over every target. A
  * line side or a fan whose own bounds miss it cannot be crossed by any sightline, which is what
  * both faders reject on before any crossing work. Exact, not a heuristic.
- * docs/render.md § The fade is a hole, not a wall.
+ * docs/render-occlusion.md § The fade is a hole, not a wall.
  */
 export function sightBox(camX: number, camY: number, targets: FadeTarget[]): typeof sightBoxOut {
   let minX = camX;
@@ -211,7 +212,7 @@ export function maxFadeRadius(targets: readonly FadeTarget[]): number {
  * inside that box, and it folds nothing further than its own radius, so
  * geometry outside this box cannot change — which is what lets
  * `MoverGeometry.updateFading` skip a mesh outright once its faders are also
- * `idle`. See docs/render.md § Mover meshes a frame cannot touch.
+ * `idle`. See docs/render-occlusion.md § Mover meshes a frame cannot touch.
  */
 export function fadeReach(camX: number, camY: number, targets: FadeTarget[], out: FadeBox): void {
   grownBox(sightBox(camX, camY, targets), maxFadeRadius(targets), out);
@@ -265,7 +266,7 @@ export interface FadeFrame {
  * A growable bag of the points a pass-one sweep found — where a sightline was stopped, and the
  * index of the target it was stopped for (everything else about the hole belongs to that target).
  * One bag holds a whole frame's stops across **every** fader of its kind; walls and flats keep one
- * each. docs/render.md § One hole, whichever mesh it lands in.
+ * each. docs/render-occlusion.md § One hole, whichever mesh it lands in.
  */
 export class FadeCrossings {
   x: Float64Array = new Float64Array(64);

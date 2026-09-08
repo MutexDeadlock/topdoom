@@ -21,7 +21,8 @@ const INVISIBILITY_OPACITY = 0.35;
  * close as this gets to vanilla forcing the brightest colormap row without
  * rebuilding every surface's baked vertex lighting (docs/items.md § Powerups and the backpack).
  * The visor's other half is `setDistanceFlattened`, which removes the depth falloff the way
- * vanilla's `fixedcolormap` does (docs/render.md § The light-amplification visor flattens it).
+ * vanilla's `fixedcolormap` does (docs/render-lighting.md § The light-amplification visor flattens
+ * it).
  */
 const LIGHT_VISOR_EXPOSURE = 2.5;
 

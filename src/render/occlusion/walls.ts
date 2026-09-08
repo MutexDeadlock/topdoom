@@ -1,6 +1,6 @@
 /**
  * `WallFader`: the wall quads a camera→target sightline crosses, dissolved so the target behind
- * them stays visible. See docs/render.md § Wall occlusion fading.
+ * them stays visible. See docs/render-occlusion.md.
  */
 import * as THREE from 'three';
 import type { WallOccluder } from '../mapmesh.ts';
@@ -45,7 +45,7 @@ const scratchReach: FadeBox = emptyBox();
  * Fades the wall quads currently sitting on a camera→target sightline. `update` only computes
  * that factor; a wall's on-screen alpha is its *product* with fog of war's reveal — two systems
  * driving the same vertex-alpha channel — so `commit` writes the combined value once both are
- * known. See docs/render.md § Wall occlusion fading.
+ * known. See docs/render-occlusion.md.
  */
 export class WallFader {
   private occluders: WallOccluder[];
@@ -191,7 +191,7 @@ export class WallFader {
    * Only filled when `trackVisibility` is on, since maintaining it costs a map
    * lookup per quad per frame and the static batches have tens of thousands of
    * them with no use for the answer.
-   * See docs/render.md § Skipping invisible mover meshes.
+   * See docs/render-occlusion.md § Skipping invisible mover meshes.
    */
   readonly maxAlphaByKey = new Map<string, number>();
   private trackVisibility: boolean;
@@ -248,7 +248,7 @@ export class WallFader {
    * colour attribute, alpha channel included, and without this the
    * unchanged-alpha skip keeps a refreshed quad at whatever the *builder* put
    * there — a door in unrevealed space drawn solid while it moves.
-   * docs/render.md § Mover meshes a frame cannot touch.
+   * docs/render-occlusion.md § Mover meshes a frame cannot touch.
    */
   invalidateWritten(): void {
     this.lastCombined.fill(NaN);
@@ -264,7 +264,7 @@ export class WallFader {
    *
    * `FadeFrame.openingInto` tells a genuinely solid quad from one that only *renders* solid; the
    * lookup is per line but the test it feeds is per **quad**, which is load-bearing.
-   * docs/render.md § Wall occlusion fading.
+   * docs/render-occlusion.md.
    */
   update(frame: FadeFrame): void {
     const bag = (this.crossings ??= new FadeCrossings());
@@ -278,7 +278,7 @@ export class WallFader {
    * own walls stop each sightline. The caller resets the bag once for the frame
    * and hands the same one to every fader, so what one fader's wall stops the
    * next fader's geometry still has to make way for —
-   * docs/render.md § One hole, whichever mesh it lands in.
+   * docs/render-occlusion.md § One hole, whichever mesh it lands in.
    *
    * Pairs with `applyCrossings`, and runs first: it is where the frame's
    * `passable` memo is stamped.
@@ -487,7 +487,7 @@ export class WallFader {
    *
    * The base is the quad's own permanent translucency (a Boom 260 midtexture)
    * — a *third* input to this one channel, and the only one that never changes
-   * after the build. docs/render.md § Wall occlusion fading.
+   * after the build. docs/render-occlusion.md.
    */
   commit(fogAlphaOf: (occluderIndex: number) => number, fogChanged?: ChangedQuads | null): void {
     const dirty = this.dirtyBuffers;
@@ -682,8 +682,8 @@ export class WallFader {
    * Whether this quad's texture is the masked kind — the half of the passable-gap rule that has to
    * be **asked** rather than assumed, since a map can hang a solid texture inside an opening and
    * call it a wall (repro: EPIC.WAD MAP05 at (3231, -5243)). Read off the batch's own material,
-   * whose `alphaTest` survives an animation's frames. docs/render.md § The fade is a hole, not a
-   * wall.
+   * whose `alphaTest` survives an animation's frames.
+   * docs/render-occlusion.md § The fade is a hole, not a wall.
    */
   private masked(key: string): boolean {
     const cached = this.maskedByKey.get(key);

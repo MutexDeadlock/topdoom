@@ -47,7 +47,7 @@ import {
 /**
  * One movable sector's geometry plus the two faders that own its vertex alpha, exactly as `game.ts`
  * runs them over the static batches — every movable sector owns its own mesh and its own pair.
- * docs/render.md § One hole, whichever mesh it lands in.
+ * docs/render-occlusion.md § One hole, whichever mesh it lands in.
  */
 interface MoverEntry {
   mesh: MoverMesh;
@@ -165,13 +165,13 @@ export class MoverGeometry {
    * static batches. Separate from `SpecialsController.update` because it needs the camera position,
    * settled only after the player has moved; split in two so every mover's pass one lands in the
    * frame's shared bags before any fader dissolves anything.
-   * docs/render.md § One hole, whichever mesh it lands in.
+   * docs/render-occlusion.md § One hole, whichever mesh it lands in.
    */
   collectFadeHits(frame: FadeFrame, walls: FadeCrossings, flats: FadeCrossings): void {
     fadeReach(frame.camX, frame.camY, frame.targets, this.reach);
     for (const g of this.moverMeshes.values()) {
       // Skipped when nothing that reaches this mesh moved and nothing in it is still relaxing —
-      // docs/render.md § Mover meshes a frame cannot touch.
+      // docs/render-occlusion.md § Mover meshes a frame cannot touch.
       g.fading = !(g.walls.idle && g.flats.idle) || this.reachesMesh(g);
       if (!g.fading) continue;
       g.walls.collectCrossings(frame, walls);
@@ -203,7 +203,8 @@ export class MoverGeometry {
       });
       g.flats.commit((subsector) => this.fog.alphaOf(subsector));
       // A mesh every quad of which resolved to alpha 0 draws nothing. Both faders' verdicts count,
-      // since one mesh can hold walls and flats. docs/render.md § Skipping invisible mover meshes.
+      // since one mesh can hold walls and flats.
+      // docs/render-occlusion.md § Skipping invisible mover meshes.
       for (const [key, mesh] of g.mesh.meshes) {
         const wall = g.walls.maxAlphaByKey.get(key) ?? 0;
         const flat = g.flats.maxAlphaByKey.get(key) ?? 0;
@@ -404,7 +405,7 @@ export class MoverGeometry {
    * other, so a block rebuilds whole. Its cap is one decision over all of it (`blockCapHeight`) and
    * `rebuildAround` reaches one hop, so a light well two sectors in from the rim would otherwise
    * keep the lid the rim just dropped — `movableBlocks`, which `game.ts` made the whole block
-   * mover-owned for. docs/render.md § Blocks built out of a sector.
+   * mover-owned for. docs/render-solids.md § Blocks built out of a sector.
    */
   private indexBlockMates(): void {
     for (const block of movableBlocks(this.mover.map, this.movableSectors)) {

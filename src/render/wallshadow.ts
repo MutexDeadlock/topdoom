@@ -1,7 +1,7 @@
 /**
  * The contact shading a wall lays on the floor at its foot, baked per flat vertex at mesh build
  * time: from overhead a room otherwise reads as a flat-lit cutout, since nothing in vanilla's
- * lighting varies within a sector. See docs/render.md § Wall contact shading.
+ * lighting varies within a sector. See docs/render-lighting.md § Wall contact shading.
  */
 import { NO_SIDE, type DoomMap } from '../wad/map.ts';
 import { distSqToSegment } from '../util/geom.ts';
@@ -14,8 +14,8 @@ const STORAGE_KEY = 'wallShade';
 
 /**
  * How far the darkening reaches from a wall, in map units. Tuned by feel, and it may not drop under
- * `FLAT_GRID_LEN` — docs/render.md § Wall contact shading. Exported for the test, which sizes its
- * samples from it rather than mirroring the number.
+ * `FLAT_GRID_LEN` — docs/render-lighting.md § Wall contact shading. Exported for the test, which
+ * sizes its samples from it rather than mirroring the number.
  */
 export const RADIUS = 112;
 
@@ -28,7 +28,8 @@ export const STRENGTH = 0.35;
 /**
  * Whether the shading is drawn at all. On by default. Shaped like every persisted setting —
  * docs/menu.md § Persisted settings — and carried as a live uniform rather than baked into the
- * vertex colours, so the menu reaches a level already running (docs/render.md § Turning it off).
+ * vertex colours, so the menu reaches a level already running (docs/render-lighting.md § Turning
+ * it off).
  */
 let enabled = readStorage(STORAGE_KEY, true);
 

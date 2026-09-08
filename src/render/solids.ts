@@ -2,7 +2,7 @@
  * The solid structures a DOOM map draws as something other than a room: closed rings of one-sided
  * linedefs with no sector inside them, and the blocks a mapper builds out of a sector with no room
  * in it. Vanilla never has to draw their tops; a camera looking down does.
- * See docs/render.md § Solid structures.
+ * See docs/render-solids.md.
  */
 import { isTextured, NO_SIDE, SKY_FLAT, type DoomMap, type Sector } from '../wad/map.ts';
 import { polygonBounds, polygonCentroid, signedPolygonArea2, vecLength, type PolygonBounds } from '../util/geom.ts';
@@ -14,7 +14,7 @@ const STORAGE_KEY = 'solidCaps';
 /**
  * Whether the map's solid structures are capped at all. On by default, and read once per level
  * (`solidsOf`): the caps are baked into the static batches, so a toggle mid-level would leave a
- * mover rebuild disagreeing with them. docs/render.md § Solid structures.
+ * mover rebuild disagreeing with them. docs/render-solids.md.
  */
 let enabled = readStorage(STORAGE_KEY, true);
 
@@ -51,7 +51,7 @@ const SHADE_STEP = 32;
 /**
  * What `pocketsOf` asks of a structure's top, and all it asks: how high it stands, what lights it,
  * and which of its faces stop where a level beside them begins. A ring's cap answers it and so does
- * a block's. docs/render.md § Solid structures.
+ * a block's. docs/render-solids.md.
  */
 export interface SolidLid {
   /**
@@ -90,18 +90,18 @@ export interface SolidCap extends SolidLid {
   /**
    * Whether this cap is one of the levels *below* the lid: a ring with faces buried under a
    * neighbouring level gets a further cap at each such level (`lidLevels`), so the box is closed
-   * from that side too, seen only from the level it closes. docs/render.md § Solid structures.
+   * from that side too, seen only from the level it closes. docs/render-solids.md.
    */
   under: boolean;
   /**
    * Linedef whose front side lends the lid its texture — and, with it, the texture row that side
-   * shows at the wall top the lid meets. docs/render.md § Solid structures.
+   * shows at the wall top the lid meets. docs/render-solids.md.
    */
   line: number;
   /**
    * A point just outside *each* of the ring's edges, in the sector that edge borders, flattened
    * (x, y) in ring order — every side the structure can be seen from, which is what decides when
-   * its cap is revealed. Degenerate edges carry `NaN`. docs/render.md § Solid structures.
+   * its cap is revealed. Degenerate edges carry `NaN`. docs/render-solids.md.
    */
   probes: Float64Array;
 }
@@ -110,7 +110,7 @@ export interface SolidCap extends SolidLid {
  * Every closed ring of one-sided linedefs that has the map *outside* it — the pillars, crates and
  * lamp posts that need a lid. A ring with its sector inside is a room's outer wall, and one that
  * encloses any floor is a building; both are dropped.
- * docs/render.md § Solid structures has the three rules and why each holds.
+ * docs/render-solids.md has the rules and why each holds.
  */
 export function findSolidCaps(map: DoomMap, polys: readonly SectorPoly[]): SolidCap[] {
   const linesAt = new Map<number, number[]>();
@@ -144,7 +144,7 @@ export function findSolidCaps(map: DoomMap, polys: readonly SectorPoly[]): Solid
 /**
  * One solid block's cap: what every leaf of it draws, and what it takes to re-decide that at the
  * heights the level stands at now. No footprint of its own — the leaves are the footprint.
- * docs/render.md § Blocks built out of a sector.
+ * docs/render-solids.md § Blocks built out of a sector.
  */
 export interface SolidBlockCap extends SolidLid {
   /** Every sector the block fills: the roomless ones, and whatever is sealed inside them. */
@@ -178,7 +178,7 @@ export interface SolidBlockCap extends SolidLid {
  * here (`flatSpecsOf`): a leaf polygon is already convex, a light well cut into a crate would
  * otherwise leave the top a hole, and the flat path is where a mover re-decides what its sector
  * draws — a block a lift lowers stops being one.
- * docs/render.md § Blocks built out of a sector.
+ * docs/render-solids.md § Blocks built out of a sector.
  */
 export function findSolidBlocks(map: DoomMap): SolidBlockCap[] {
   const known = blocksBuilt.get(map);
@@ -226,7 +226,7 @@ const blocksBuilt = new WeakMap<DoomMap, SolidBlockCap[]>();
  * The blocks a mover can move, each as the full list of its sectors — what a caller has to make
  * mover-owned **whole**, a block's cap being one decision over all of it (`blockCapHeight`):
  * GoingDown.wad MAP08's crate at (-352, -272), an 8-unit rim on a lift around a sealed light well.
- * docs/render.md § Blocks built out of a sector.
+ * docs/render-solids.md § Blocks built out of a sector.
  */
 export function movableBlocks(map: DoomMap, movable: ReadonlySet<number>): number[][] {
   const groups: number[][] = [];
@@ -247,7 +247,7 @@ export function movableBlocks(map: DoomMap, movable: ReadonlySet<number>): numbe
  * field: one `40` per cluster beside the `38`/`219` that lower the floor).
  *
  * Any one part losing its material takes the whole cap: the structure is one object, and half a lid
- * is worse than none. docs/render.md § Blocks built out of a sector.
+ * is worse than none. docs/render-solids.md § Blocks built out of a sector.
  */
 export function blockCapHeight(map: DoomMap, cap: SolidBlockCap): number | null {
   let height = Infinity;
@@ -331,7 +331,7 @@ export interface SolidPockets {
  * lid's height**, so the structure's top face is unbroken, and that ceiling flat is **what the lid
  * wears** — the mapper drew the crate top there, on the one surface of the crate this camera can
  * never see.
- * docs/render.md § Solid structures.
+ * docs/render-solids.md.
  */
 export function pocketsOf(map: DoomMap, polys: readonly SectorPoly[], caps: readonly SolidLid[]): SolidPockets {
   const area = new Float64Array(map.sectors.length);
@@ -465,7 +465,7 @@ function traceRing(
  *
  * Deliberately a fallback, never a replacement: a ring wound inconsistently has no single void
  * side to follow, and the simple walk closes rings this declines.
- * docs/render.md § Solid structures.
+ * docs/render-solids.md.
  */
 function traceVoidFace(map: DoomMap, outgoing: Map<number, number[]>, start: number): { lines: number[]; vertexes: number[] } | null {
   const lines: number[] = [];
@@ -546,7 +546,7 @@ function capsFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: numb
   // `lidLevels` puts the lid first and the levels it closes off underneath after it.
   const levels = lidLevels(map, ring.lines, buriedFlags);
   // A lid at or under the ground the ring stands on closes nothing, and every cap below it is
-  // deeper still. docs/render.md § Solid structures.
+  // deeper still. docs/render-solids.md.
   if (levels.length === 0 || levels[0].height <= lowestFloor(map, ring.lines)) return [];
 
   const caps: SolidCap[] = [];
@@ -568,7 +568,7 @@ function capsFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: numb
  * the lid up on the platform level would leave a hollow band under it. A ring buried at *every*
  * face cannot arise: burying the highest ceiling of the lot takes a neighbouring floor at least
  * that high, and `buriedFaces` spares the closed sectors that alone could offer one.
- * docs/render.md § Solid structures.
+ * docs/render-solids.md.
  */
 function lidLevels(map: DoomMap, lines: readonly number[], buried: readonly boolean[]): { height: number; sector: number }[] {
   let height = Infinity;
@@ -631,7 +631,7 @@ function phaseLine(map: DoomMap, lines: readonly number[], texture: string, heig
  * the height, which is an artefact of the trace order. First the light most of that perimeter
  * carries; then the brightest face within `SHADE_STEP` of it, since a face dimmer than its fellows
  * around one structure is the shade that structure casts on the floor at its own foot.
- * docs/render.md § Solid structures.
+ * docs/render-solids.md.
  */
 function litFace(map: DoomMap, lines: readonly number[], height: number, fallback: number): number {
   const faces: LitFace[] = [];
@@ -718,7 +718,7 @@ function roomless(sector: Sector | undefined): boolean {
  * is blocks is sealed inside them and belongs to the same one.
  *
  * A block may **not** carry a one-sided wall of its own: that is the doorway a door sits in, and a
- * shut door is roomless in exactly the same way as a crate is. docs/render.md § Solid structures.
+ * shut door is roomless in exactly the same way as a crate is. docs/render-solids.md.
  */
 function blocksOf(map: DoomMap): SolidBlock[] {
   const count = map.sectors.length;
@@ -810,7 +810,7 @@ function blocksOf(map: DoomMap): SolidBlock[] {
  *
  * The **sky** carries no material, and the height a mapper gave an outdoor ceiling is arbitrary:
  * Sunder MAP19's courtyard is 10,240, and capping its wall stubs there hangs planes 9,216 units
- * over the level. docs/render.md § Blocks built out of a sector.
+ * over the level. docs/render-solids.md § Blocks built out of a sector.
  */
 function materialReach(map: DoomMap, index: number, neighbours: Iterable<number>): number | null {
   const sector = map.sectors[index];
@@ -849,7 +849,7 @@ function solidReach(map: DoomMap, index: number, neighbours: Iterable<number>): 
  * is not part of it — the level's own wall mass, drawn as one roomless sector, which wraps every
  * room on the map (GoingDown.wad MAP26's sector 257, 156 leaves over 2,976 x 2,560 units). Capping
  * that fills the map's walls in, which is not what a block is. The ring tracer answers the same
- * question with `enclosesFloor`. docs/render.md § Solid structures.
+ * question with `enclosesFloor`. docs/render-solids.md.
  */
 function oneLoop(map: DoomMap, faces: readonly { line: number }[]): boolean {
   if (faces.length === 0) return false;
@@ -870,7 +870,7 @@ function oneLoop(map: DoomMap, faces: readonly { line: number }[]): boolean {
  * `RROCK14`, the warehouse ceiling that would land as rock across a crate. Failing that its own
  * ceiling, which nothing in the level can look at and is right far more often than a wall texture
  * laid flat: MAP09's rock pedestals are `RROCK10` like everything around them, where the wall
- * texture is `WOOD5` planks stretched over an octagon. docs/render.md § Solid structures.
+ * texture is `WOOD5` planks stretched over an octagon. docs/render-solids.md.
  */
 function blockFlat(map: DoomMap, block: SolidBlock, under: ReadonlyMap<string, number> | undefined): string | undefined {
   const over = under && mostCounted(under);
@@ -925,7 +925,7 @@ function sealedRegions(
     // block is a wall around a room rather than a lid on one. Asked of the whole region and not
     // only of the sectors that touch a block, since one nested inside another inherits nothing:
     // Sunder MAP07's sector 13 rims a chamber whose ceilings step up to 176, well over the 128 the
-    // ring stands at. docs/render.md § Blocks built out of a sector.
+    // ring stands at. docs/render-solids.md § Blocks built out of a sector.
     if (region.some((i) => map.sectors[i].ceilHeight > underside)) {
       sealed = false;
     }
@@ -989,7 +989,7 @@ function blockTexture(map: DoomMap, block: SolidBlock): { name: string; line: nu
 /**
  * The sector a block's cap is lit by, on `litFace`'s rule and for its reasons: the light most of
  * the level around the block carries where it meets the block's top, lifted to a brighter one
- * beside it. docs/render.md § Solid structures.
+ * beside it. docs/render-solids.md.
  */
 function litOutside(map: DoomMap, block: SolidBlock): number {
   const faces: LitFace[] = [];
@@ -1022,7 +1022,7 @@ function mostCounted(counts: ReadonlyMap<string, number>): string | undefined {
  *
  * A face onto a sector with **nothing between floor and ceiling** is never one of them: a shut door
  * or the solid filler a mapper leaves between rooms is not a level anything stands on, and its
- * ceiling meets the test against any neighbour at all. docs/render.md § Solid structures.
+ * ceiling meets the test against any neighbour at all. docs/render-solids.md.
  */
 function buriedFaces(map: DoomMap, lines: readonly number[]): boolean[] {
   const fronts = lines.map((lineIndex) => {
@@ -1058,7 +1058,7 @@ function buriedFaces(map: DoomMap, lines: readonly number[]): boolean[] {
 /**
  * Whether any of the map's *floor* lies inside the ring, which makes it a building's outer wall
  * rather than a solid block. The question goes to the subsectors and not to the raw vertexes —
- * docs/render.md § Solid structures. A subsector is convex, so the mean of its points is inside it.
+ * docs/render-solids.md. A subsector is convex, so the mean of its points is inside it.
  */
 function enclosesFloor(polys: readonly SectorPoly[], points: Float64Array, bounds: PolygonBounds): boolean {
   const { minX, minY, maxX, maxY } = bounds;

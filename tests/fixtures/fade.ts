@@ -4,7 +4,7 @@
  * assertions are written against. Built once here so a dial added to
  * `FadeTarget`, or a change to how `commit` writes alpha, does not mean editing
  * every case in every fade test. The dials are still *read* from the source
- * rather than mirrored (docs/render.md § The fade is a hole, not a wall).
+ * rather than mirrored (docs/render-occlusion.md § The fade is a hole, not a wall).
  */
 import * as THREE from 'three';
 import { FADE_ALPHA, FADE_RADIUS, type FadeFrame, type FadeTarget } from '../../src/render/occlusion.ts';

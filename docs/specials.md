@@ -806,8 +806,9 @@ the one plane mover deliberately left auto-directioning**, because for it the tw
 Repro: `BOOMEDIT.WAD` MAP01 linedef 357, a WR 83 ("lower floor to highest floor") on
 self-referencing sector 78, whose only real neighbor is a dummy sector 128 units *above* it. Travel
 that gradually and the sector's lines — decoration around a cage in the middle of sector 84, drawn
-as the enclosing sector (docs/render.md § Self-referencing sectors), so nothing on screen moves —
-become an invisible rising platform that lifts the player into a 55-unit gap and wedges them there.
+as the enclosing sector (docs/render-bsp.md § Self-referencing sectors), so nothing on screen moves
+— become an invisible rising platform that lifts the player into a 55-unit gap and wedges them
+there.
 
 ## Perpetual lifts and the stop line
 
@@ -1313,10 +1314,10 @@ That average is the only visible effect **261** has here: ceilings are never dra
 Mesh building), so a transferred ceiling light can only move half the sprite light.
 
 A transferred light is *live* — the control sector may be a strobe. The plumbing for that is
-`FlatSurface.lightSector` (docs/render.md § Sector lighting): every fan records which sector its
-colour actually came from, and `MoverGeometry` indexes by that instead of by the sector the fan
-belongs to, so `recolorSector(control)` repaints its dependents with no extra bookkeeping
-(§ Relighting mover geometry).
+`FlatSurface.lightSector` (docs/render-lighting.md § Sector lighting): every fan records which
+sector its colour actually came from, and `MoverGeometry` indexes by that instead of by the sector
+the fan belongs to, so `recolorSector(control)` repaints its dependents with no extra bookkeeping (§
+Relighting mover geometry).
 
 ### Deep water
 
@@ -1333,7 +1334,7 @@ flat and light, and a translucent **surface** at the control sector's floor heig
 sector's own flat and light (`WATER_SURFACE_ALPHA`, a feel dial in `constants.ts` — vanilla has no
 opacity to copy). Sprites are never clipped, so you can see yourself walk under water. The surface
 is also exempt from occlusion fading, which would otherwise dissolve the fans right over a submerged
-player (docs/render.md § Wall occlusion fading).
+player (docs/render-occlusion.md).
 
 **A pool bottom a mover raises out of the water keeps drawing as a pool bottom.** Once its floor
 reaches the surface there is no water left over it, so `waterHeight` is null and one fan is drawn at
@@ -1474,7 +1475,7 @@ control sector at floor -768 carrying `ZRICK10` to 661 sectors whose own floors 
 
 A 260 line's masked middle texture draws at **66%** — `tran_filter_pct`'s default, the percentage
 Boom's own `TRANMAP` is generated at. The alpha rides the same per-vertex channel occlusion fading
-and fog-of-war already multiply into (docs/render.md § Wall occlusion fading), so no material
+and fog-of-war already multiply into (docs/render-occlusion.md), so no material
 becomes `transparent` and the batching rule holds.
 
 Two deliberate simplifications:

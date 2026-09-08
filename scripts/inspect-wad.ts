@@ -143,7 +143,7 @@ let maxVerts = 0;
 let flatArea = 0;
 for (const [ssIndex, p] of polys.entries()) {
   // Drawn as another sector than the BSP resolves: a self-referencing construct
-  // or a spared wrong-side seg (docs/render.md § Segs on the wrong side of their
+  // or a spared wrong-side seg (docs/render-bsp.md § Segs on the wrong side of their
   // leaf) — both worth seeing when a floor draws unexpectedly.
   const bspSector = sectorOfSubSector(map, ssIndex);
   if (p.sector !== bspSector) redirected++;

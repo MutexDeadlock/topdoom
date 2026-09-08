@@ -9,7 +9,7 @@ import { BANK } from '../fixtures/specialsrig.ts';
 
 /**
  * `maxAlphaByKey`: what lets `MoverGeometry.updateFading` skip drawing a mesh
- * whose every quad has faded to nothing. See docs/render.md § Skipping
+ * whose every quad has faded to nothing. See docs/render-occlusion.md § Skipping
  * invisible mover meshes — a Boom map's per-sector mover meshes are numerous
  * enough (973 on literalism.wad MAP18) that drawing the invisible ones was the
  * bulk of the frame's draw calls.

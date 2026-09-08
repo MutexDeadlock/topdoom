@@ -184,7 +184,7 @@ export function writeAttribute(geom: THREE.BufferGeometry, name: string, values:
 /**
  * Relights one run of vertices to `light` — one byte each, and the whole of a relight, since no
  * brightness is stored per vertex. `MoverGeometry.recolorSector` is the other caller.
- * docs/render.md § Distance lighting.
+ * docs/render-lighting.md § Distance lighting.
  */
 export function relightRange(
   geom: THREE.BufferGeometry,
@@ -214,8 +214,8 @@ interface Batch {
   colors: number[];
   /**
    * Per vertex, the light segment the shader samples the ramp at — the `aLightSeg` attribute, and
-   * the only record of how lit a surface is (docs/render.md § Distance lighting). Constant across
-   * a quad or a fan, and the one thing a relight rewrites.
+   * the only record of how lit a surface is (docs/render-lighting.md § Distance lighting). Constant
+   * across a quad or a fan, and the one thing a relight rewrites.
    */
   segs: number[];
   /**
@@ -225,13 +225,13 @@ interface Batch {
   cells: number[];
   /**
    * Per vertex, how occluded by a wall standing on it this point is — the `aWallShade` attribute
-   * (docs/render.md § Wall contact shading). Zero everywhere but a floor near a wall.
+   * (docs/render-lighting.md § Wall contact shading). Zero everywhere but a floor near a wall.
    */
   shade: number[];
   /**
    * Per vertex, 1 where the surface faces a sector roofed with sky — the `aSkyLit` attribute
-   * (docs/render.md § Outdoor sky tint). Constant across a quad or a fan; per vertex because that
-   * is where the shader can read it.
+   * (docs/render-lighting.md § Outdoor sky tint). Constant across a quad or a fan; per vertex
+   * because that is where the shader can read it.
    */
   sky: number[];
 }

@@ -6,7 +6,7 @@
  * where a point is, since the BSP is what is being rebuilt here. Over those polygons it also
  * answers which leaves border which, the adjacency vanilla SEGS carries no minisegs to state,
  * and which of them form one connected region.
- * See docs/render.md § BSP polygon reconstruction, § Walls that stop inside their cell,
+ * See docs/render-bsp.md, § Walls that stop inside their cell,
  * § Segs on the wrong side of their leaf, § Self-referencing sectors, § Leaf adjacency and
  * § Islands.
  */
@@ -24,7 +24,7 @@ export interface SectorPoly {
    * Sector this patch is *drawn* as — everything reading this field (flats,
    * mover meshes in `render/mapmesh.ts`) follows it. Usually the one its segs
    * resolve to, but a leaf bounded only by self-referencing lines takes the
-   * sector enclosing it instead. docs/render.md § Self-referencing sectors.
+   * sector enclosing it instead. docs/render-bsp.md § Self-referencing sectors.
    */
   sector: number;
   /** Convex polygon in DOOM coordinates, counter-clockwise. */
@@ -41,7 +41,7 @@ export interface SubSectorPoly extends SectorPoly {
    * because a top-down camera shows the disagreement between the floor drawn
    * and the floor stood on. It never follows the self-referencing redirect,
    * whose whole point is that gameplay keeps the hidden sector.
-   * docs/render.md § Segs on the wrong side of their leaf.
+   * docs/render-bsp.md § Segs on the wrong side of their leaf.
    */
   physicalSector: number;
 }
@@ -61,13 +61,13 @@ export interface LeafGraph {
  * overhang is cut away. Without it, a seg line that disagrees with the partition it
  * shares an edge with by a rounding error shaves a sliver off the cell that the
  * neighbouring subsector doesn't fill — a visible crack in the floor.
- * docs/render.md § Cracks between subsectors.
+ * docs/render-bsp.md § Cracks between subsectors.
  */
 const SEG_CLIP_TOLERANCE = 4;
 
 /**
  * Most slack `segClipTolerance` will hand one seg. Both bounds are measured, not tuned —
- * docs/render.md § Cracks between subsectors.
+ * docs/render-bsp.md § Cracks between subsectors.
  */
 const SEG_CLIP_MAX_TOLERANCE = 32;
 
@@ -76,7 +76,7 @@ const SEG_CLIP_MAX_TOLERANCE = 32;
  * same line, in map units. A node partition built from a linedef stores integer
  * `(x, y, dx, dy)`, so it can only be a rounding error off that linedef where the
  * two meet; two units is that with headroom.
- * docs/render.md § Cracks between subsectors.
+ * docs/render-bsp.md § Cracks between subsectors.
  */
 const PARTITION_MATCH = 2;
 
@@ -153,7 +153,7 @@ export function subsectorAtPoint(map: DoomMap, x: number, y: number): number {
  * Which leaves touch which. Vanilla SEGS carry no minisegs, so a leaf's splits into the rest of
  * its own sector have no edge to read the neighbour off; this recovers them geometrically instead,
  * probing a map unit's half past the midpoint of every polygon edge and descending the tree there.
- * docs/render.md § Leaf adjacency.
+ * docs/render-bsp.md § Leaf adjacency.
  */
 export function buildLeafGraph(map: DoomMap): LeafGraph {
   const cached = graphs.get(map);
@@ -168,7 +168,7 @@ export function buildLeafGraph(map: DoomMap): LeafGraph {
  * where a two-sided line or a BSP split joins them, so a map is usually a single island and a
  * second is space only a teleporter reaches. Both union rules below err toward joining, since a
  * link too many only fails to hide something while a link missing is a hole in the view.
- * docs/render.md § Islands, docs/fogofwar.md § Islands for what reads it.
+ * docs/render-bsp.md § Islands, docs/fogofwar.md § Islands for what reads it.
  */
 export function buildIslands(map: DoomMap): Int32Array {
   const cached = islands.get(map);
@@ -181,7 +181,7 @@ export function buildIslands(map: DoomMap): Int32Array {
 /**
  * How many connected regions the map came apart into, which `game.ts` reports at level load — one
  * on every stock map, more where a teleporter is the only way in. `rebuildIslands` hands out dense
- * ids, so the highest plus one is the count. docs/render.md § Islands.
+ * ids, so the highest plus one is the count. docs/render-bsp.md § Islands.
  */
 export function islandCount(map: DoomMap): number {
   const island = buildIslands(map);
@@ -200,7 +200,7 @@ interface Wall {
   /**
    * The wall's line — the seg's linedef, oriented the seg's way — which every side
    * question runs along: the clip, the wrong-side judgement, the sparing preview.
-   * docs/render.md § Cracks between subsectors.
+   * docs/render-bsp.md § Cracks between subsectors.
    */
   lineA: Vertex;
   lineB: Vertex;
@@ -261,7 +261,7 @@ function rebuildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
     // line are spared their clip entirely — with the drawn sector re-resolved,
     // since such a seg's front speaks for the neighbour — where the cell they
     // would wipe is all floor.
-    // docs/render.md § Segs on the wrong side of their leaf.
+    // docs/render-bsp.md § Segs on the wrong side of their leaf.
     let clipped = clipBy(probe, poly, walls, bspSector, anyWrongSide);
     if (anyWrongSide) {
       const enclosing = clipped.length >= 6 ? enclosingSectorOfCell(probe(), clipped) : -1;
@@ -287,13 +287,13 @@ function rebuildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
     // *is*. A leaf whose segs all lie on self-referencing lines is exempt from
     // even that — such a seg names one sector on both sides, so it cannot have
     // been filed under the wrong one, and the trick needs gameplay to keep the
-    // hidden sector. docs/render.md § Segs on the wrong side of their leaf.
+    // hidden sector. docs/render-bsp.md § Segs on the wrong side of their leaf.
     const physicalSector = allSelfRef ? bspSector : sector;
 
     // A leaf bounded only by self-referencing lines draws as the sector *enclosing*
     // it, the way vanilla shows it — and outranks the redirect above, whose "first
     // correctly filed seg" would name one of the very sectors being hidden.
-    // docs/render.md § Self-referencing sectors.
+    // docs/render-bsp.md § Self-referencing sectors.
     if (allSelfRef && walls.length > 0 && clipped.length >= 6) {
       const centre = polygonCentroid(clipped);
       const enclosing = probe().sectorIndexAt(centre.x, centre.y, true);
@@ -351,7 +351,7 @@ function rebuildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
  * The seg's linedef, oriented the seg's way — the wall's line, where a split seg's
  * own endpoints are rounded off it — or null where the linedef or a vertex of it is
  * missing. `Seg.direction` is the one record of which way the seg runs.
- * docs/render.md § Cracks between subsectors.
+ * docs/render-bsp.md § Cracks between subsectors.
  */
 function linedefLine(map: DoomMap, seg: Seg): [Vertex, Vertex] | null {
   const line = map.linedefs[seg.linedef];
@@ -367,7 +367,7 @@ function linedefLine(map: DoomMap, seg: Seg): [Vertex, Vertex] | null {
  * *wrong side* of its own line. A seg that really bounds its cell has the cell on
  * its keep side; clipping by a wrong-side one would wipe the cell down to the
  * tolerance band and leave the rest a hole. The caller double-checks against the
- * ground before sparing anything. docs/render.md § Segs on the wrong side of their leaf.
+ * ground before sparing anything. docs/render-bsp.md § Segs on the wrong side of their leaf.
  */
 function wallFacesAwayFromCell(cell: number[], a: Vertex, b: Vertex): boolean {
   const dx = b.x - a.x;
@@ -392,7 +392,7 @@ function wallFacesAwayFromCell(cell: number[], a: Vertex, b: Vertex): boolean {
  * The cell clipped against every seg of the leaf that really bounds it, in seg order.
  * `spare` skips the segs `wallFacesAwayFromCell` flagged; run with it false, the result
  * is bit-identical to never having detected one — which is what the reality check on the
- * sparing falls back to. docs/render.md § Segs on the wrong side of their leaf.
+ * sparing falls back to. docs/render-bsp.md § Segs on the wrong side of their leaf.
  */
 function clipBy(probe: () => SectorProbe, poly: number[], walls: Wall[], sector: number, spare: boolean): number[] {
   let cell = poly;
@@ -411,7 +411,7 @@ function clipBy(probe: () => SectorProbe, poly: number[], walls: Wall[], sector:
  * in map units. Measured, like the two tolerances above: the cracks this has to
  * tolerate are rounding-scale, and the overhangs it has to catch are the length
  * of a wall stub — tens of units — so anything in between works.
- * docs/render.md § Walls that stop inside their cell.
+ * docs/render-bsp.md § Walls that stop inside their cell.
  */
 const SEG_SPAN_SLACK = 4;
 
@@ -430,7 +430,7 @@ const WALL_END_PROBE = 4;
  * would cut away. Decided by probing the ground just past the end the leaf's
  * walls cover, on the side the clip would remove; the sparing is then bounded to
  * overhangs this sector could own at all.
- * docs/render.md § Walls that stop inside their cell.
+ * docs/render-bsp.md § Walls that stop inside their cell.
  */
 function wallBoundsCell(probe: () => SectorProbe, cell: number[], walls: Wall[], index: number, sector: number): boolean {
   const { a, b, lineA, lineB } = walls[index];
@@ -530,13 +530,13 @@ function lineCoverage(walls: Wall[], index: number): { min: number; max: number 
  * Slack for one seg's clip: how far past its own endpoints the seg's line has to be
  * extrapolated to reach `cell`, in multiples of the seg's own length, clamped between
  * the two tolerances above. That ratio is how far the line can have drifted by the
- * time it gets there — docs/render.md § Cracks between subsectors.
+ * time it gets there — docs/render-bsp.md § Cracks between subsectors.
  *
  * **Only a seg the cell is already cut along gets any slack.** Where the cell has no
  * boundary on the seg's line, the seg is the only thing bounding it there and the
  * drift the slack pays for cannot have happened, so the clip is exact; any slack
  * there is floor standing past the wall, which this camera sees over.
- * docs/render.md § Cracks between subsectors.
+ * docs/render-bsp.md § Cracks between subsectors.
  */
 function segClipTolerance(cell: number[], a: Vertex, b: Vertex): number {
   if (!cellCutAlong(cell, a, b)) return 0;
@@ -591,7 +591,7 @@ const CELL_SAMPLE_SHRINK = 0.75;
  * the centroid, then each corner pulled toward it — lands in the void. The
  * wrong-side sparing's reality check: a cell whose interior is not all floor
  * keeps its clips, however broken its segs, so it can never stand a slab of
- * floor out in the void. docs/render.md § Segs on the wrong side of their leaf.
+ * floor out in the void. docs/render-bsp.md § Segs on the wrong side of their leaf.
  */
 function enclosingSectorOfCell(probe: SectorProbe, cell: number[]): number {
   const centre = polygonCentroid(cell);

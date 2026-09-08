@@ -643,10 +643,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       const y = p.drawPrevY + (p.y - p.drawPrevY) * alpha;
       const z = p.drawPrevZ + (p.z - p.drawPrevZ) * alpha;
       doomToWorld(x, y, z, worldPos);
-      // Read live off the sector rather than cached on the thing — docs/render.md § Sector
+      // Read live off the sector rather than cached on the thing — docs/render-lighting.md § Sector
       // lighting on why every sprite must. A fullbright frame ignores the sector outright, and
       // its `startmap` is row 0, which no depth can move, so it skips the depth too
-      // (docs/render.md § Distance lighting).
+      // (docs/render-lighting.md § Distance lighting).
       const bright = FULLBRIGHT_FRAMES.has(p.anim.frameKey);
       const light = bright
         ? litColor(255)
@@ -656,7 +656,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
             viewDepthAt(worldPos.x, worldPos.y, worldPos.z),
           );
       // Standing under sky takes the level's outdoor tint, as the floor it stands on does.
-      // docs/render.md § Outdoor sky tint.
+      // docs/render-lighting.md § Outdoor sky tint.
       const sky = !bright && skyLitSector(p.sector);
       // A drawn sprite is both a possible emitter and a receiver. `p.visible` above already
       // gated on fog of war, so an unrevealed room lights nothing. docs/lights.md § What emits.

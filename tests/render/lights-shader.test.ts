@@ -167,8 +167,7 @@ describe('Dynamic lights · the geometry shader patch', () => {
   });
 
   test('the dither fade the patch shares its hook with is untouched', () => {
-    // Both tenants live in one `#include <color_fragment>` replacement — docs/render.md
-    // § Wall occlusion fading.
+    // Both tenants live in one `#include <color_fragment>` replacement — docs/render-occlusion.md.
     const { fragment } = patched(new DynamicLights(parseGldefs('')));
     assert.ok(fragment.includes('if (diffuseColor.a < dither) discard;'));
   });
@@ -199,7 +198,8 @@ describe('Dynamic lights · the geometry shader patch', () => {
   test('the live uniforms are the very objects their owners mutate, not copies', () => {
     // This is what makes a setting reach the level already running: three reads the same object
     // per draw, so writing `.value` is the whole of the change. A copy here would leave every
-    // toggle and the visor's flattening silently inert. docs/render.md § Distance lighting.
+    // toggle and the visor's flattening silently inert.
+    // docs/render-lighting.md § Distance lighting.
     const { uniforms } = patched();
     assert.equal(uniforms.uWallShade, wallShadeUniform);
     assert.equal(uniforms.uSkyTint, skyTintUniform);

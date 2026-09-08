@@ -3,7 +3,7 @@
  * and the distance term (`r_main.c`'s `scale/DISTMAP`) that darkens a surface as it recedes from
  * the eye — applied per fragment for map geometry, through the GLSL below, and per draw on the CPU
  * for a sprite. Map vertices carry only a light segment, never a brightness.
- * See docs/render.md § Sector lighting and § Distance lighting.
+ * See docs/render-lighting.md § Sector lighting and § Distance lighting.
  */
 import type * as THREE from 'three';
 import { BRIGHTNESS_LIFT } from '../constants.ts';
@@ -13,7 +13,7 @@ import { glslFloat } from '../util/glsl.ts';
  * One fixed sample of `r_main.c`'s `scale/DISTMAP` term (4 ≈ 320 map units), for the two places
  * that need a depth and have none: what the light-amplification visor flattens the whole level to,
  * and what `litColor` answers when called without one. Not a brightness knob — `BRIGHTNESS_LIFT`
- * (`constants.ts`) is that. docs/render.md § Sector lighting.
+ * (`constants.ts`) is that. docs/render-lighting.md § Sector lighting.
  */
 export const REFERENCE_STEPS = 4;
 
@@ -41,7 +41,7 @@ const COLORMAP_ROWS = 32;
  * How much of the distance term applies: 1 normally, 0 while the light-amplification visor is held
  * (vanilla's `fixedcolormap`, `r_main.c`). One object shared by every map material, the
  * `LightUniforms` pattern, and the only copy of the bit — `litColor` reads it back for the
- * sprites. docs/render.md § The light-amplification visor flattens it.
+ * sprites. docs/render-lighting.md § The light-amplification visor flattens it.
  */
 export const diminishUniform = { value: 1 };
 
@@ -53,7 +53,7 @@ export function setDistanceFlattened(on: boolean): void {
 /**
  * What each of `COLORMAP`'s 32 rows does to brightness, as a **linear-light** multiplier —
  * measured from the real lump, one baked table for DOOM, DOOM2 and Freedoom.
- * docs/render.md § Sector lighting.
+ * docs/render-lighting.md § Sector lighting.
  */
 const COLORMAP_GAIN = [
   1.0, 0.9662, 0.9055, 0.8253, 0.7552, 0.6956, 0.6437, 0.584,
@@ -74,8 +74,8 @@ export function lightSegment(light: number, contrast = 0): number {
  * How many rows nearer than `startmap` a surface at view depth `depth` (map units along the
  * camera's axis) is drawn — the term above, as the shader computes it, and **not floored**:
  * vanilla's is a table index, this one is read through `colormapGain`'s interpolation.
- * docs/render.md § The term is continuous, the ramp is not. Depth under one unit reads as one: the
- * term is a division, and the eye never stands on a surface.
+ * docs/render-lighting.md § The term is continuous, the ramp is not. Depth under one unit reads as
+ * one: the term is a division, and the eye never stands on a surface.
  */
 export function diminishRows(depth: number): number {
   return Math.min(MAX_DIMINISH_ROWS, DIMINISH_SCALE / Math.max(1, depth));
@@ -107,7 +107,7 @@ export function litColor(light: number, contrast = 0, depth?: number): number {
  * renderer's `outputColorSpace` encodes the fragment on the way out. `contrast` is the
  * fake-contrast offset in light units, of which ±16 is vanilla's ±1 segment; `rows` is the distance
  * term, `REFERENCE_STEPS` unless a depth decided otherwise, and may be fractional
- * (§ The term is continuous, the ramp is not). docs/render.md § Sector lighting.
+ * (§ The term is continuous, the ramp is not). docs/render-lighting.md § Sector lighting.
  */
 export function lightToColor(light: number, contrast = 0, rows = REFERENCE_STEPS): number {
   return colormapGain(colormapRow(lightSegment(light, contrast), rows));
@@ -126,7 +126,7 @@ let viewW = 0;
 /**
  * Opens a frame's depths. Takes the camera's `matrixWorldInverse` as it stands rather than
  * inverting: three's `Camera` refreshes it inside the `updateMatrixWorld` that
- * `TopDownCamera.applyToCamera` already ends with. docs/render.md § Distance lighting.
+ * `TopDownCamera.applyToCamera` already ends with. docs/render-lighting.md § Distance lighting.
  */
 export function beginViewDepth(camera: THREE.Camera): void {
   const e = camera.matrixWorldInverse.elements;
@@ -148,7 +148,8 @@ export function viewDepthAt(x: number, y: number, z: number): number {
 /**
  * The GLSL twin of `litColor`, spliced into every map material (`textures.ts`) as four pieces: two
  * declaration blocks, the vertex-stage capture, and the fragment-stage multiply. **The whole ramp
- * lives here** — a vertex carries only its light segment. docs/render.md § Distance lighting.
+ * lives here** — a vertex carries only its light segment.
+ * docs/render-lighting.md § Distance lighting.
  */
 export const DISTANCE_LIGHT_GLSL = {
   vertexDeclarations: `
@@ -193,7 +194,7 @@ function colormapRow(segment: number, rows: number): number {
  * `COLORMAP_GAIN` at a **fractional** row, linearly interpolated — the CPU twin of the shader's
  * `liftedGain`, and what keeps the distance term from drawing its row boundaries as lines across a
  * floor. An integer row is exactly the table's own entry.
- * docs/render.md § The term is continuous, the ramp is not.
+ * docs/render-lighting.md § The term is continuous, the ramp is not.
  */
 function colormapGain(row: number): number {
   const lo = Math.floor(row);
@@ -203,7 +204,7 @@ function colormapGain(row: number): number {
 /**
  * A "lift" toward full brightness: pushes `linear` up by a fraction `lift` of its remaining
  * headroom `(1 - linear)`, so the darker a surface already is the more it moves. `lift = 0` is a
- * no-op, `lift = 1` flattens everything to full bright. docs/render.md § Sector lighting.
+ * no-op, `lift = 1` flattens everything to full bright. docs/render-lighting.md § Sector lighting.
  */
 function applyBrightnessLift(linear: number, lift: number): number {
   const l = Math.max(0, Math.min(1, lift));

@@ -8,7 +8,7 @@ import { polygonArea } from '../fixtures/geometry.ts';
 /**
  * A leaf bounded only by self-referencing lines is drawn as the sector
  * enclosing it, while the BSP sector stays the hidden one for gameplay.
- * See docs/render.md § Self-referencing sectors.
+ * See docs/render-bsp.md § Self-referencing sectors.
  */
 
 /**

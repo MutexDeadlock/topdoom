@@ -5,7 +5,7 @@ import { gridMap } from '../fixtures/gridmap.ts';
 
 /**
  * Which leaves border which, recovered by probing past every polygon edge — the adjacency vanilla
- * SEGS cannot state, since it carries no minisegs. See docs/render.md § Leaf adjacency.
+ * SEGS cannot state, since it carries no minisegs. See docs/render-bsp.md § Leaf adjacency.
  */
 
 /** Leaf `i`'s neighbours as a set, so a test can compare without depending on edge order. */

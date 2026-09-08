@@ -19,8 +19,8 @@ const NEIGHBOR_LIGHT = 160; // gridMap's default, and so the strobe's dark level
 
 /**
  * How lit `group`'s flat batches are — the lift's own floor, nothing else. A vertex carries no
- * brightness (docs/render.md § Distance lighting); `aLightSeg` is the whole record of its light,
- * and so the whole of what a relight has to move.
+ * brightness (docs/render-lighting.md § Distance lighting); `aLightSeg` is the whole record of its
+ * light, and so the whole of what a relight has to move.
  */
 function flatSegments(group: THREE.Object3D): number[] {
   const out: number[] = [];

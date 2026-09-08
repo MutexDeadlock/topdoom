@@ -1,7 +1,7 @@
 /**
  * The flat half of the build: a subsector's floor and ceiling fans, the solid caps and closed-hole
  * fills a top-down camera needs and vanilla never draws, and the grid they are diced on.
- * See docs/render.md § Mesh building and § Solid structures.
+ * See docs/render.md § Mesh building and docs/render-solids.md.
  */
 import * as THREE from 'three';
 import { isTextured, LF, NO_LINE, NO_SIDE, segBackSide, segSide, SKY_FLAT, type DoomMap } from '../../wad/map.ts';
@@ -48,7 +48,7 @@ export function buildFlats(build: Build): void {
  * Lids over the map's solid structures — the rings of one-sided linedefs that enclose no sector
  * (`render/solids.ts`). One `FlatSurface` **per triangle**, not one per lid: a ring is often
  * concave, and `FlatFader` tests footprints with a convex-only helper.
- * docs/render.md § Solid structures.
+ * docs/render-solids.md.
  */
 export function buildSolidCaps(build: Build): void {
   const { map, transfers } = build;
@@ -193,7 +193,7 @@ export function flatSpecsOf(
   // The roof over a pocket in a solid structure: a nook carved out of a crate stack is roofed at
   // the height of the lid around it, in its own ceiling flat and under that lid's light, so the
   // structure's top face is unbroken (`pocketsOf`). An ordinary `FlatSurface` facing up, so
-  // `FlatFader` dissolves it for a body walking in underneath. docs/render.md § Solid structures.
+  // `FlatFader` dissolves it for a body walking in underneath. docs/render-solids.md.
   const solids = solidsOf(build);
   const roof = solids.pockets.roofs.get(poly.sector);
   if (roof) {
@@ -240,7 +240,7 @@ export function flatSpecsOf(
   // a mapper builds a crate out of ends at the ceiling of the level around it, and a camera looking
   // down needs a surface there. Emitted from the leaf rather than baked with the ring lids, so a
   // lift that lowers the block takes its cap with it.
-  // docs/render.md § Blocks built out of a sector.
+  // docs/render-solids.md § Blocks built out of a sector.
   const block = solids.blocks.get(poly.sector);
   const blockTop = block ? blockCapHeight(map, block.cap) : null;
   // A sector already reaching the top has its own surface there: its ceiling, or — where a mapper
@@ -314,7 +314,7 @@ const CAP_REVEAL_REACH = 128;
  * Which leaves reveal one triangle of a cap: the probes near it, since a structure seen from any
  * side has a top, and a lid must come up with the wall under it rather than waiting on the one leaf
  * behind the structure. Never empty while any probe resolved — the nearest always counts.
- * docs/render.md § Solid structures.
+ * docs/render-solids.md.
  */
 function revealSubsectors(
   build: Build,
@@ -358,7 +358,7 @@ function revealSubsectors(
 /**
  * The map's solid structures and the pockets under them, traced once per map and shared by the
  * static build and every mover rebuild — a mover redoing the ring walk per frame would be most of a
- * frame on a detailed map. Static by design, like the lids themselves (§ Solid structures): what
+ * frame on a detailed map. Static by design, like the lids themselves (docs/render-solids.md): what
  * counts as a pocket is decided at the heights the level loaded with.
  */
 interface Solids {
@@ -408,7 +408,7 @@ function solidsOf(build: Build): Solids {
  * drawing of its top (`pocketsOf` — `lidFlat`), or, for a cap *under* a lid, the flat of the level
  * it closes, which vanilla draws right there. Failing that, the cap wears the structure's own wall
  * texture, anchored to it (`capTextureOrigin`); a flat keeps the world grid vanilla aligns one to.
- * docs/render.md § Solid structures.
+ * docs/render-solids.md.
  */
 function capArt(
   build: Build,
@@ -444,7 +444,7 @@ function blockReveal(build: Build, solids: Solids, block: BlockDraw, poly: Secto
  * wall it caps shows at its own top — the wall's peg run on past its top edge. The world grid a
  * flat aligns to says nothing about where a structure stands, and a wall texture stacks whole faces
  * (CRATE3 is two), so anchoring one to the grid crops it mid-face.
- * docs/render.md § Solid structures.
+ * docs/render-solids.md.
  */
 function capTextureOrigin(build: Build, box: PolygonBounds, lineIndex: number, height: number, dim: Size): Pos2 {
   const { map, transfers } = build;
@@ -673,7 +673,7 @@ interface FlatSpec {
    * Whether the fan takes the shading a wall lays at its foot (`wallshadow.ts`). A floor does; the
    * top of a solid structure does not — a lid and a pocket's roof are not floors meeting walls but
    * the structure's own top, and the walls around them are its sides, which `risesAbove` counts as
-   * rising past every height because they are one-sided. docs/render.md § Solid structures.
+   * rising past every height because they are one-sided. docs/render-solids.md.
    */
   wallShaded: boolean;
   baseAlpha?: number;

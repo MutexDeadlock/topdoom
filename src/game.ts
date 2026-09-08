@@ -1338,8 +1338,9 @@ export class Game {
     });
     this.scene.add(this.built.group);
     // The colour this level's sky lends every surface under it, resolved once: the sky is fixed for
-    // the whole of a level (docs/render.md § Outdoor sky tint). What the set's MAPINFO names for
-    // this map wins, and only where the WAD actually carries it — docs/wad.md § The sky texture.
+    // the whole of a level (docs/render-lighting.md § Outdoor sky tint). What the set's MAPINFO
+    // names for this map wins, and only where the WAD actually carries it — docs/wad.md § The sky
+    // texture.
     setLevelSky(levelSkyArt(map.name, this.mapInfoSkies.get(map.name.toUpperCase()), (name) => this.skyArt(name)));
     this.voidFloor = new VoidFloor(map);
     this.scene.add(this.voidFloor.mesh);
@@ -2230,7 +2231,7 @@ export class Game {
   private draw(alpha: number, rawDt: number, still: boolean): void {
     const camera = this.view.camera;
     // Every sprite the CPU lights reads its depth from this, and the camera was posed on the line
-    // above. docs/render.md § Distance lighting.
+    // above. docs/render-lighting.md § Distance lighting.
     camera.applyToCamera(alpha);
     beginViewDepth(camera.camera);
     this.updateOverlays(rawDt, alpha);

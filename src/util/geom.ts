@@ -5,7 +5,7 @@
  * thousands of times a frame, so a point-object parameter here would allocate in exactly the wrong
  * place (docs/conventions.md § Named arguments).
  * Each is documented at its own declaration; the rules built on them live with their callers —
- * docs/movement.md § Collision, docs/render.md § Wall occlusion fading, docs/fogofwar.md and
+ * docs/movement.md § Collision, docs/render-occlusion.md, docs/fogofwar.md and
  * docs/monster-attacks.md § Monster projectiles in flight.
  */
 import type { Pos2 } from '../types.ts';
@@ -373,7 +373,7 @@ export function pointInConvexPolygon(px: number, py: number, poly: ArrayLike<num
  * segment twin of `pointInConvexPolygon`, and the one `FlatFader` actually
  * needs: a sightline meets a floor's height plane over a whole *span* rather
  * than at a point, because the thing it must reveal is an upright sprite with
- * height — docs/render.md § Flats.
+ * height — docs/render-occlusion.md § Flats.
  *
  * A Cyrus-Beck clip: each edge is a half-plane the segment's parameter range is
  * narrowed against, so the whole test is one pass over the edges and allocates

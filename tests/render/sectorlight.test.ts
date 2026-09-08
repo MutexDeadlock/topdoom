@@ -20,7 +20,7 @@ import { BRIGHTNESS_LIFT } from '../../src/constants.ts';
 /**
  * The distance term against vanilla's own table build, and the two consumers of it — the CPU
  * sample a sprite takes and the GLSL twin the geometry takes — against each other.
- * See docs/render.md § Distance lighting.
+ * See docs/render-lighting.md § Distance lighting.
  */
 
 /** `applyBrightnessLift`'s `BRIGHTNESS_LIFT` half, which the shader's `liftedGain` reproduces. */
@@ -41,7 +41,8 @@ function vanillaRows(depth: number): number {
 describe('Rendering · the distance term', () => {
   test('matches vanilla scalelight row for row across every depth the camera frames', () => {
     // Floored, since this engine's term is the same quotient left continuous — a fractional row is
-    // read between two `COLORMAP` rows. docs/render.md § The term is continuous, the ramp is not.
+    // read between two `COLORMAP` rows.
+    // docs/render-lighting.md § The term is continuous, the ramp is not.
     for (let depth = 1; depth <= 4000; depth++) {
       assert.equal(Math.floor(diminishRows(depth)), vanillaRows(depth), `depth ${depth}`);
     }
@@ -60,7 +61,8 @@ describe('Rendering · the distance term', () => {
 
   test('crosses a row boundary continuously, so no depth draws a visible edge', () => {
     // The bug this rules out: `floor`ing the term drew its row boundaries as lines across a floor,
-    // at the fixed depths where it stepped. docs/render.md § The term is continuous, the ramp is not.
+    // at the fixed depths where it stepped.
+    // docs/render-lighting.md § The term is continuous, the ramp is not.
     for (const boundary of [DIMINISH_SCALE / 4, DIMINISH_SCALE / 3, DIMINISH_SCALE / 2]) {
       const before = litColor(160, 0, boundary - 0.5);
       const after = litColor(160, 0, boundary + 0.5);
@@ -106,7 +108,8 @@ describe('Rendering · a sprite sampled at its depth', () => {
 
   test('the visor flattens it: every depth reads as the reference sample', () => {
     // Vanilla's `fixedcolormap` leaves depth selecting nothing (`r_main.c`), so both halves fall
-    // back to the one fixed sample. docs/render.md § The light-amplification visor flattens it.
+    // back to the one fixed sample.
+    // docs/render-lighting.md § The light-amplification visor flattens it.
     try {
       setDistanceFlattened(true);
       assert.equal(diminishUniform.value, 0);
@@ -125,7 +128,7 @@ describe('Rendering · a sprite sampled at its depth', () => {
   test('what the shader draws is the ramp at the fragment’s own depth, nothing rescaled', () => {
     // The vertex carries only its segment, so the fragment's multiply *is* the answer — there is
     // no baked brightness left to divide back out. This pins the GPU half against the CPU one that
-    // lights the sprites beside it. docs/render.md § Distance lighting.
+    // lights the sprites beside it. docs/render-lighting.md § Distance lighting.
     for (const light of [0, 64, 128, 160, 224, 255]) {
       for (const depth of [40, 285, 320, 480, 1280, 3000]) {
         const drawn = lift(lightToColor(light, 0, diminishRows(depth)));

@@ -12,7 +12,7 @@ import { fixtureWad } from '../fixtures/wadfile.ts';
  * the level only by a teleporter stayed lit beside it once visited: BOOMEDIT MAP01's pool room,
  * seen floating east of the map after a trip through the tag-50 silent teleport on line 244.
  * The fog draws only the island the player stands in — see docs/fogofwar.md § Islands and
- * docs/render.md § Islands.
+ * docs/render-bsp.md § Islands.
  */
 describe('Regressions · fog of war and detached regions', () => {
   const map = loadMap(new Wad(fixtureWad('boomedit.wad')), 'MAP01');
@@ -47,7 +47,7 @@ describe('Regressions · fog of war and detached regions', () => {
   test('the island count is how many regions the partition found', () => {
     // What `game.ts` puts on the level-load line; the ids are dense, so it is the highest plus one.
     assert.equal(islandCount(map), new Set(island).size);
-    assert.equal(islandCount(map), 27, 'BOOMEDIT MAP01, as docs/render.md § Islands records');
+    assert.equal(islandCount(map), 27, 'BOOMEDIT MAP01, as docs/render-bsp.md § Islands records');
   });
 
   test('a sight ray never reaches another island', () => {

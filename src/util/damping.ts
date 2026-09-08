@@ -2,7 +2,7 @@
  * The smoothing curves shared across layers: the framerate-independent damped approach the fades
  * run on, the per-tic decay the movement channels shed speed with, and the Hermite ease the render
  * layer shapes its falloffs with.
- * See docs/render.md § Wall occlusion fading and docs/fogofwar.md § How reveal reaches the geometry.
+ * See docs/render-occlusion.md and docs/fogofwar.md § How reveal reaches the geometry.
  */
 import { exp } from './fdlibm.ts';
 
@@ -13,7 +13,7 @@ import { exp } from './fdlibm.ts';
  * permanent asymptotic residue — load-bearing for anything gating a strict `<` test downstream
  * (e.g. dithered-discard alpha), where that residue would show up as a faint permanent speckle.
  * Shared by the two cameras' framing glide; a loop with one rate per pass takes `dampenWith`
- * instead. See docs/render.md § Wall occlusion fading and docs/fogofwar.md § How reveal reaches
+ * instead. See docs/render-occlusion.md and docs/fogofwar.md § How reveal reaches
  * the geometry. The exponential is `util/fdlibm.ts`'s, not the platform's, so that nothing in
  * `src/game/` can reach an approximated `Math` through this helper — the rule the tic is held to
  * either way (docs/replays.md § What breaks determinism).

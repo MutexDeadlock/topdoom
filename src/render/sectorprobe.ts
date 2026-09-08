@@ -2,7 +2,7 @@
  * Answers "which sector is this point in" and "could this piece be that sector's floor"
  * straight from the linedefs, the way a mapper would, without consulting the BSP — the
  * tree is what `bsp.ts` is rebuilding when it asks, so it cannot be the authority.
- * See docs/render.md § Walls that stop inside their cell.
+ * See docs/render-bsp.md § Walls that stop inside their cell.
  */
 import { NO_SIDE, type DoomMap } from '../wad/map.ts';
 import { distSqToSegment } from '../util/geom.ts';
@@ -10,7 +10,7 @@ import { distSqToSegment } from '../util/geom.ts';
 /**
  * Whether both sidedefs of this linedef face the same sector — the Boom-era
  * self-referencing-sector trick (hidden monster closets, invisible lifts).
- * docs/render.md § Self-referencing sectors.
+ * docs/render-bsp.md § Self-referencing sectors.
  */
 export function selfReferencing(map: DoomMap, lineIndex: number): boolean {
   const line = map.linedefs[lineIndex];

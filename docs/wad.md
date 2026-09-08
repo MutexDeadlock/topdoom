@@ -114,8 +114,8 @@ inverts to `MTF_NOTSINGLE` exactly as a Hexen thing's does. Unknown keys and blo
 and MBF special) and `ZDoomTranslated` (gzdoom's `udmf_zdoom.txt` § II.C: "uses Doom-type
 specials"), `special` and the tag (`id`, written as both `id` and `arg0` by every compliant
 converter — § III's Tag/ID note) feed the vanilla/Boom tables and the map plays in full. Every
-other namespace — `zdoom`, `hexen`, `dsda` (a *subset of zdoom*, not of doom — dsda-doom
-`docs/udmf.md`), `heretic`/`strife` (Doom-shaped fields, their own games' special numbers), or none
+other namespace — `zdoom`, `hexen`, `dsda` (a *subset of zdoom*, not of doom — dsda-doom's own
+`udmf.md`), `heretic`/`strife` (Doom-shaped fields, their own games' special numbers), or none
 — parks `special`+`args` in `LineDef.action` with `special`/`tag` zeroed, exactly the Hexen
 treatment above: the map draws, collides and fights; its doors and lifts do not move. Sector `id`
 stays the tag in every namespace, so tag-only rules (the 666/667 boss-death scan) still fire.

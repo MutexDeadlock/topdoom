@@ -1,6 +1,6 @@
 /**
  * `FlatFader`: the overhanging floors and ceilings a camera→target sightline pierces, dissolved so
- * the target under them stays visible. See docs/render.md § Wall occlusion fading.
+ * the target under them stays visible. See docs/render-occlusion.md.
  */
 import * as THREE from 'three';
 import type { FlatSurface } from '../mapmesh.ts';
@@ -21,7 +21,7 @@ import {
 /**
  * Fades a raised floor sitting between the camera and a fade target below it — `WallFader` for a
  * horizontal plane. Ceilings are left out (`renderCeilings` is a debug toggle, and a room's own
- * ceiling would flag itself). See docs/render.md § Wall occlusion fading.
+ * ceiling would flag itself). See docs/render-occlusion.md.
  */
 export class FlatFader {
   private surfaces: FlatSurface[];
@@ -105,7 +105,7 @@ export class FlatFader {
   /**
    * Pass one: the points where a sightline lands *on* a floor rather than merely crossing the
    * infinite plane it sits in — a crossing outside every fan at that height is open air, and the
-   * floor beside it must not fade. docs/render.md § Flats.
+   * floor beside it must not fade. docs/render-occlusion.md § Flats.
    *
    * A target's crossing point depends only on the height, so the first fan to claim one settles
    * that height for that target. `WallFader.collectCrossings`'s twin, appending to a bag the whole
@@ -167,7 +167,7 @@ export class FlatFader {
         const t = rise * perMiddle;
         if (t <= 0 || t >= 1) continue;
         // The sprite has height, so this plane is crossed over a *span* of the
-        // camera→target line rather than at `t` alone — docs/render.md § The
+        // camera→target line rather than at `t` alone — docs/render-occlusion.md § The
         // target is the billboard.
         const tNear = zTop >= s.height ? 1 : rise * perTop;
         const tFar = rise * perFeet;
@@ -197,7 +197,7 @@ export class FlatFader {
         if (!segmentMeetsConvexPolygon(farX, farY, nearX, nearY, s.points, this.windSign[i])) continue;
         // Filed at the middle of the sprite's own crossing, not at whichever end
         // of the span this fan caught — what keeps one platform's many fans to a
-        // single pierce (docs/render.md § The target is the billboard).
+        // single pierce (docs/render-occlusion.md § The target is the billboard).
         out.push(x, y, s.height, k);
       }
     }
@@ -248,7 +248,7 @@ export class FlatFader {
       // nothing to reveal — and a 242 water surface, the only flat with a base
       // alpha, would lose whichever fans the sightline crosses while the sheet
       // around them stayed, punching a hole over a submerged player.
-      // docs/render.md § Wall occlusion fading.
+      // docs/render-occlusion.md.
       if ((s.baseAlpha ?? 1) < 1) {
         if (this.faded[i] === 0) continue;
         for (let p = 0; p < count; p++) this.alpha[start + p] = 1;
@@ -470,7 +470,7 @@ export class FlatFader {
  * How much fog of war lets a fan through. An ordinary flat is one leaf's own floor and answers with
  * its own subsector; a solid structure's cap belongs to no leaf and is revealed by any side of the
  * structure being seen, so it takes the **most** revealed of the leaves its ring borders
- * (`FlatSurface.revealedBy`, docs/render.md § Solid structures).
+ * (`FlatSurface.revealedBy`, docs/render-solids.md).
  */
 function fogAlpha(surface: FlatSurface, fogAlphaOf: (subsector: number) => number): number {
   const also = surface.revealedBy;

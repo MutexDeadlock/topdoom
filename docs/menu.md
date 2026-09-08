@@ -818,7 +818,7 @@ the two a player picks *before* a run rather than sets once and forgets.
 **Visuals is Camera, Frame rate, Lighting, Top-down extras, Player sprites** — everything that
 changes what the running level *looks* like, in that order: the camera first, being the one a player
 actually goes looking for. *Top-down extras* holds the two this camera needs and vanilla never did:
-the void fog and the tops on crates and pillars (docs/render.md § Solid structures, § The void
+the void fog and the tops on crates and pillars (docs/render-solids.md, § The void
 floor). The second is the one setting on the tab that is **not** live — the caps are baked into the
 level's mesh — and its row says so.
 
@@ -835,7 +835,7 @@ The frame limit is `#fpscap-select`, and its `<option>` values *are* the capped 
 docs/frameloop.md § The FPS cap for how a cap is actually held. Lighting is the one
 `#dynlights-checkbox`, on by default and likewise read per frame, so it too takes effect without a
 reload (docs/lights.md § The toggle). Distance lighting has no row here on purpose —
-docs/render.md § It has no setting.
+docs/render-lighting.md § It has no setting.
 
 **Player sprites** is `#playersprites-select`, whose `<option>` values are the `PlayerSpriteMode`
 strings themselves (`auto` — the default — `always`, `never`); it is owned by `wad/playerskin.ts`
@@ -958,9 +958,9 @@ a setting touches one module.
 | `profiler` | `ui/hud/profiler.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
 | `dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
 | `voidFog` | `render/voidfloor.ts` (`getVoidFog`/`setVoidFog`) | docs/render.md § The toggle |
-| `solidCaps` | `render/solids.ts` (`getSolidCaps`/`setSolidCaps`) | docs/render.md § Solid structures |
-| `wallShade` | `render/wallshadow.ts` (`getWallShade`/`setWallShade`) | docs/render.md § Turning it off |
-| `skyTint` | `render/skytint.ts` (`getSkyTint`/`setSkyTint`) | docs/render.md § Turning the tint off |
+| `solidCaps` | `render/solids.ts` (`getSolidCaps`/`setSolidCaps`) | docs/render-solids.md |
+| `wallShade` | `render/wallshadow.ts` (`getWallShade`/`setWallShade`) | docs/render-lighting.md § Turning it off |
+| `skyTint` | `render/skytint.ts` (`getSkyTint`/`setSkyTint`) | docs/render-lighting.md § Turning the tint off |
 | `bloom` | `render/bloom.ts` (`getBloom`/`setBloom`) | docs/lights.md § Turning it on |
 | `playerSprites` | `wad/playerskin.ts` (`getPlayerSpriteMode`/`setPlayerSpriteMode`) | docs/sprites.md § When the skins apply |
 | `infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |

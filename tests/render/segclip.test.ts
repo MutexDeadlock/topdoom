@@ -10,7 +10,7 @@ import { polygonArea } from '../fixtures/geometry.ts';
  * The two rules that decide how hard a subsector's own segs cut its cell:
  * `segClipTolerance` — a seg only bounds the cell as tightly as its own length
  * pins its angle — and `wallBoundsCell`, which spares the cut where the wall
- * ends inside the cell. See docs/render.md § Cracks between subsectors.
+ * ends inside the cell. See docs/render-bsp.md § Cracks between subsectors.
  */
 
 /**

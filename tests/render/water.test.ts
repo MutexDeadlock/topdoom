@@ -116,8 +116,8 @@ function invisiblePlatform({ platformFloor = 32, neighbourFloor = 0, unpegged = 
 }
 
 /**
- * How lit a fan is. The vertex colour carries no brightness (docs/render.md § Distance lighting) —
- * `aLightSeg` is the whole record, and what the shader samples the ramp at.
+ * How lit a fan is. The vertex colour carries no brightness (docs/render-lighting.md § Distance
+ * lighting) — `aLightSeg` is the whole record, and what the shader samples the ramp at.
  */
 const lightOf = (built: ReturnType<typeof pool>['built'], f: FlatSurface) => {
   const attr = built.flatMeshes.get(f.key)!.geometry.getAttribute('aLightSeg');
@@ -126,7 +126,7 @@ const lightOf = (built: ReturnType<typeof pool>['built'], f: FlatSurface) => {
 
 /**
  * The lowest alpha anywhere on a fan. A fan is diced finer than its outline now
- * (docs/render.md § The fade is a hole, not a wall), so vertex 0 is a corner and
+ * (docs/render-occlusion.md § The fade is a hole, not a wall), so vertex 0 is a corner and
  * says nothing about the hole in the middle.
  */
 const lowestAlphaOf = (built: ReturnType<typeof pool>['built'], f: FlatSurface) => {
@@ -347,7 +347,7 @@ describe('Rendering · deep water planes', () => {
     // leaving a 32-unit hole between the two halves of the waterfall.
     const { quads } = fakeCeiling();
     // One unbroken run of wall rather than one quad: 224 units is tall enough
-    // that `addWall` bands it for the fade (docs/render.md § The fade is a hole,
+    // that `addWall` bands it for the fade (docs/render-occlusion.md § The fade is a hole,
     // not a wall), so what says "the upper alone" is that the pieces meet with
     // no gap — a midtexture would hang as a separate span inside the opening.
     const spans = quads.map((q) => [q.botH, q.topH]).sort((a, b) => a[0] - b[0]);

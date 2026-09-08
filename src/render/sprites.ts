@@ -464,7 +464,8 @@ export class SpriteActor {
     const bright = this.brightFrames.has(this.anim.frameKey);
     const at3 = this.mesh.position;
     const lit = bright ? litColor(255) : litColor(light, 0, viewDepthAt(at3.x, at3.y, at3.z));
-    // A fullbright frame lights itself, so it takes no tint (docs/render.md § Outdoor sky tint).
+    // A fullbright frame lights itself, so it takes no tint
+    // (docs/render-lighting.md § Outdoor sky tint).
     const outdoors = skyScale(pose.sky && !bright);
     const lr = lit * outdoors.r;
     const lg = lit * outdoors.g;

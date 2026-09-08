@@ -30,7 +30,7 @@ import { fadeFrame, lowestAlpha, openingsOf, targetAt } from '../fixtures/fade.t
  * The fade is a *ball* around where a sightline meets something solid, not the
  * crossed linedef and not a full-height slab of it: walls are cut into chunks
  * both ways at build time and every chunk corner carries its own alpha.
- * See docs/render.md § The fade is a hole, not a wall.
+ * See docs/render-occlusion.md § The fade is a hole, not a wall.
  */
 
 /**
@@ -168,7 +168,8 @@ describe('Rendering · a wall is cut into chunks the fade can window', () => {
  * Both faders reject on a box around the camera and its targets before doing any crossing work —
  * exactly, not approximately, since every sightline lives inside that box. A target whose
  * `fadeFloor` is 1 fades nothing but still stretches the box, which is what lets a test switch the
- * reject off without changing what should be drawn. docs/render.md § The fade is a hole, not a wall.
+ * reject off without changing what should be drawn.
+ * docs/render-occlusion.md § The fade is a hole, not a wall.
  */
 describe('Rendering · the sightline box rejects only what it must', () => {
   /** Both faders run over the same targets, then the alpha of every vertex they wrote. */
@@ -370,7 +371,7 @@ describe('Rendering · what the fade still refuses to touch', () => {
 
   test('a quad the whole sprite passes over or under stays put', () => {
     // Not the ray to the target's middle — the wedge to its *whole* sprite has
-    // to clear the quad. docs/render.md § The target is the billboard.
+    // to clear the quad. docs/render-occlusion.md § The target is the billboard.
     const { b, quads } = levelSightlineAt((botH) => botH - 2 * REACH_AT_HALFWAY);
     for (const q of quads) for (const c of cornerList(b.wallMeshes, q)) assert.equal(c.a, 1);
   });
@@ -426,7 +427,7 @@ describe('Rendering · what the fade still refuses to touch', () => {
 /**
  * A room one chunk deep, so the wall *behind* the target sits well inside
  * `FADE_RADIUS` of the crossing on the wall in front of it — the shape the
- * target's own cut plane exists for. docs/render.md § The fade is a hole, not a wall.
+ * target's own cut plane exists for. docs/render-occlusion.md § The fade is a hole, not a wall.
  */
 function narrowRoom() {
   const grid = gridMap(['###', '...', '###'], { cell: CHUNK });
@@ -473,7 +474,7 @@ describe('Rendering · the hole stops at the target', () => {
     // target then has its top corners on the camera's side of it. Repro:
     // BOOMEDIT.WAD MAP01 at (-1664, 713) looking south, where linedef 148 stood
     // 73 units *behind* the player and dithered away to show the void behind
-    // it. docs/render.md § The target is the billboard.
+    // it. docs/render-occlusion.md § The target is the billboard.
     const b = narrowRoom();
     const near = lineAtY(b.grid, 2 * CHUNK, CHUNK * 1.5);
     const far = lineAtY(b.grid, CHUNK, CHUNK * 1.5);
@@ -605,7 +606,7 @@ describe('Rendering · flats fade around the sightline too', () => {
     // What `FADE_CORE` buys, asserted as the relationship rather than as one
     // setting's number: at half a chunk or more, `addFlatFan`'s dicing bound
     // guarantees a drawn vertex inside the core, so the point over the target
-    // reaches the floor exactly (docs/render.md § Flats). Below that it only
+    // reaches the floor exactly (docs/render-occlusion.md § Flats). Below that it only
     // gets onto the ramp — softer, and the trade a smaller core makes.
     // Compared with a tolerance, not `includes`: the floor makes a round trip
     // through a float32 buffer and only some values survive that exactly.
@@ -721,8 +722,8 @@ describe('Rendering · flats fade around the sightline too', () => {
     // *middle* meets its height short of it — out over the low floor — while
     // the ray to the target's head lands on the plateau itself. A crossing
     // *point* finds nothing to fade here; the span the sprite's own height
-    // sweeps does. docs/render.md § The target is the billboard. The reported
-    // case is the lid on top of a solid block (§ Solid structures):
+    // sweeps does. docs/render-occlusion.md § The target is the billboard. The
+    // reported case is the lid on top of a solid block (docs/render-solids.md):
     // BOOMEDIT.WAD MAP01 at (-1664, 713) with the camera due north and roughly
     // 40 degrees off vertical, where that lid cut the player's head off while
     // the wall under it dissolved.
@@ -812,7 +813,7 @@ describe('Rendering · commit writes only what moved', () => {
 describe('Rendering · fade targets', () => {
   test('every target is centred in its own body, not in a shared one', () => {
     // A monster brings its `mobjinfo.height`, so its wedge spans exactly the
-    // body: feet to crown, centre halfway. docs/render.md § The target is the
+    // body: feet to crown, centre halfway. docs/render-occlusion.md § The target is the
     // billboard.
     const cyberdemon = 110;
     const targets = collectFadeTargets({ x: 0, y: 0, z: 16 }, [awake(64, 0, 48, cyberdemon)]);
@@ -868,7 +869,7 @@ describe('Rendering · fade targets', () => {
  * walks line sides, only unsettled quads are reset and damped, and `commit`
  * writes the union of what the fade touched and what fog of war moved. Every
  * case here is about that last one holding the same picture as a full pass.
- * See docs/render.md § Nothing per-frame is per-quad.
+ * See docs/render-occlusion.md § Nothing per-frame is per-quad.
  */
 describe('Rendering · a frame’s work follows the hole, not the map', () => {
   /** Camera north of the middle cell's north wall, target south of it — the rig every case here fades with. */

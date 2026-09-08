@@ -294,7 +294,7 @@ export interface PosedThing extends Pos3, MonsterBody {
  * `mobjinfo.height` (`PosedThing.bodyHeight`), the real per-species 56-110 unit
  * figure rather than one shared band. The least a caller can be handed and still
  * reason about the *whole* of a body rather than a point in it, which is what an
- * occlusion sightline needs (docs/render.md § The target is the billboard) and
+ * occlusion sightline needs (docs/render-occlusion.md § The target is the billboard) and
  * what `MonsterRef` builds its identity on top of.
  */
 export interface StandingBody extends Pos3 {
@@ -555,9 +555,9 @@ export interface ThingLayer {
    * Where the alerted monsters `awakeMonsterCount` counts are standing and how
    * tall each is, narrowed to those actually being rendered — each is an extra
    * occlusion-fade sightline target alongside the player, and the fade aims at
-   * the whole body, so its own height comes with it (docs/render.md § The target
+   * the whole body, so its own height comes with it (docs/render-occlusion.md § The target
    * is the billboard). Excluding the unalerted and the fog-hidden is
-   * load-bearing (docs/render.md § Wall occlusion fading). **Must be called
+   * load-bearing (docs/render-occlusion.md). **Must be called
    * after `update` has run**, so `visible` reflects this frame's fog.
    */
   awakeMonsters(): StandingBody[];

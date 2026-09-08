@@ -324,8 +324,8 @@ arithmetic:
   matching that exactly would mean rebuilding every surface's baked vertex lighting. The half of
   that vanilla behavior this engine *does* reproduce is the loss of the depth falloff: while the
   visor is up the distance term contributes nothing, as `fixedcolormap` makes it in vanilla —
-  docs/render.md § The light-amplification visor flattens it. Both halves are driven off one
-  `hasPower` answer in `ui/hud/screeneffects.ts` so they cannot disagree.
+  docs/render-lighting.md § The light-amplification visor flattens it. Both halves are driven off
+  one `hasPower` answer in `ui/hud/screeneffects.ts` so they cannot disagree.
 
 ## Skill
 

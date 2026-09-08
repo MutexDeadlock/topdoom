@@ -258,11 +258,12 @@ export class Menu {
     this.installInfiniteTall();
     this.installDynamicLights();
     // The presentation toggles, each read live by the module that owns it so a change reaches the
-    // level already running — docs/render.md, and docs/lights.md § Turning it on for the bloom,
-    // which is **off** by default alone among them because of what it costs.
+    // level already running — docs/render.md § The toggle, docs/render-lighting.md, and
+    // docs/lights.md § Turning it on for the bloom, which is **off** by default alone among them
+    // because of what it costs.
     this.installToggle(this.voidFogCheckbox, getVoidFog, setVoidFog);
     // The one that isn't live: the caps are baked into the level's mesh, so it takes the next load
-    // — which is what the row says. docs/render.md § Solid structures.
+    // — which is what the row says. docs/render-solids.md.
     this.installToggle(this.solidCapsCheckbox, getSolidCaps, setSolidCaps);
     this.installToggle(this.wallShadeCheckbox, getWallShade, setWallShade);
     this.installToggle(this.skyTintCheckbox, getSkyTint, setSkyTint);

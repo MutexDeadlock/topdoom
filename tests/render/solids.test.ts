@@ -23,7 +23,7 @@ import { BANK } from '../fixtures/specialsrig.ts';
 /**
  * The lids over a map's solid structures — the rings of one-sided linedefs
  * enclosing no sector, which a camera looking down would otherwise see straight
- * through. See docs/render.md § Solid structures.
+ * through. See docs/render-solids.md.
  */
 
 const WALL = 'STARTAN2';
@@ -106,7 +106,7 @@ describe('Rendering · solid structure lids', () => {
   test('the lid is lit by a brighter wall beside the light its own walls mostly carry', () => {
     // Three of the four faces stand in the shade at the structure's foot, the fourth in the lit
     // part of the same level. That shade is what the structure casts, and vanilla lays it on the
-    // floor, never on the block. docs/render.md § Solid structures.
+    // floor, never on the block. docs/render-solids.md.
     const map = mapWith([{ points: square(0, 0, 64) }], 2);
     map.sectors[1].light = 192;
     map.sidedefs[1].sector = 1;
@@ -131,7 +131,7 @@ describe('Rendering · solid structure lids', () => {
     // A crate beside a step: three of its walls face the platform (floor 64, ceiling 128), the
     // fourth the tunnel running under it (floor 0, ceiling 64). That tunnel ceiling is where the
     // platform begins, not where the crate stops — taking it would open the box from above.
-    // docs/render.md § Solid structures.
+    // docs/render-solids.md.
     const map = mapWith([{ points: square(0, 0, 64) }], 2);
     map.sectors[0].floorHeight = 64;
     map.sectors[1].ceilHeight = 64;
@@ -153,7 +153,7 @@ describe('Rendering · solid structure lids', () => {
     // Three faces stand in the nook the structure passes through, the fourth on the level above.
     // The middle of the three touches nothing but its own fellows, so the direct test misses it and
     // it sinks the lid to the nook's ceiling — GoingDown.wad MAP08's crate at (-397, 4), whose
-    // upper half is a wooden box reaching 128. docs/render.md § Solid structures.
+    // upper half is a wooden box reaching 128. docs/render-solids.md.
     const map = mapWith([{ points: square(0, 0, 64) }], 2);
     map.sectors[0].floorHeight = 64;
     map.sectors[1].ceilHeight = 64;
@@ -169,7 +169,7 @@ describe('Rendering · solid structure lids', () => {
     // A shut door, or the solid filler a mapper leaves between rooms, is not a level the structure
     // passes through. Counting one lifts the lid off the wall stubs welded into a level's own wall
     // network — DOOM1 E1M2's 97-line ring, roofed at 48 instead of the -16 it belongs at.
-    // docs/render.md § Solid structures.
+    // docs/render-solids.md.
     const map = mapWith([{ points: square(0, 0, 64) }], 3);
     // Two faces onto a ledge high enough to bury the closed sector between them...
     map.sectors[0].floorHeight = 128;
@@ -189,7 +189,7 @@ describe('Rendering · solid structure lids', () => {
   test('a structure whose lid would sit in the ground around it is left alone', () => {
     // One face onto a closed sector at ground level puts the lid at the floor, where it closes
     // nothing — and where a level's void shows it as a plate under the floors. DOOM1 E1M2's
-    // 97-line ring is the case, at -16. docs/render.md § Solid structures.
+    // 97-line ring is the case, at -16. docs/render-solids.md.
     const map = mapWith([{ points: square(0, 0, 64) }], 2);
     map.sectors[1].ceilHeight = 0;
     map.sidedefs[1].sector = 1;
@@ -207,7 +207,7 @@ describe('Rendering · solid structure lids', () => {
   test('a lid carries a probe for every side of its ring', () => {
     // Fog of war reveals a cap by the leaves its probes land in, so every face has to offer one:
     // with only the longest edge's, a crate stays topless until the player walks behind it.
-    // docs/render.md § Solid structures.
+    // docs/render-solids.md.
     const map = mapWith([{ points: square(0, 0, 64) }]);
     const [cap] = findSolidCaps(map, []);
     assert.equal(cap.probes.length / 2, 4, 'one per edge');
@@ -299,7 +299,7 @@ function pocketRig(): { map: DoomMap; opening: number; a: number; b: number } {
     // other faces stand on a platform Q (floor 64): the crates' faces toward P are buried, P's
     // fourth side opens onto the room R. From above P is not a hole showing its floor but part of
     // the stack's top face — roofed at the blocks' own lid height, 128, and `CRATOP1` is what the
-    // mapper says that top looks like, so the lids wear it too. docs/render.md § Solid structures.
+    // mapper says that top looks like, so the lids wear it too. docs/render-solids.md.
     const { map, opening, a, b } = pocketRig();
 
     const caps = findSolidCaps(map, []);
@@ -348,7 +348,7 @@ function pocketRig(): { map: DoomMap; opening: number; a: number; b: number } {
       assert.equal(fan.texName, 'CRATOP1', 'the crate top the nook’s ceiling names, not the wall texture');
     }
     // A cap under a lid is seen from nowhere but the level it closes, so it wears that level's own
-    // ceiling flat rather than the ring's wall texture (§ Solid structures).
+    // ceiling flat rather than the ring's wall texture (docs/render-solids.md).
     const underFans = built.flatSurfaces.filter((f) => f.height === 64 && f.revealedBy !== undefined);
     assert.ok(underFans.length > 0, 'the blocks are closed at the nook’s level too');
     for (const fan of underFans) {
@@ -365,7 +365,7 @@ function pocketRig(): { map: DoomMap; opening: number; a: number; b: number } {
     // A lid far above the nook's ceiling belongs to a tower it merely leans on, not to a stack it
     // is cut into (freedoom2 MAP17's sector 83, 336 under one), and a roof may never reach past
     // the ceiling the nook opens onto or it hides the room next door.
-    // docs/render.md § Solid structures.
+    // docs/render-solids.md.
     const tall = pocketRig();
     tall.map.sectors[0].ceilHeight = 300; // R, so the opening is not what refuses it
     tall.map.sectors[2].ceilHeight = 300; // Q, lifting the blocks' lid to 300 over a 64 ceiling
@@ -416,7 +416,7 @@ function pocketRig(): { map: DoomMap; opening: number; a: number; b: number } {
 
     // Anchored to the structure, not to the world grid: a lid starts at its own
     // footprint's west edge, at the texture row its wall shows where the lid
-    // sits (docs/render.md § Solid structures).
+    // sits (docs/render-solids.md).
     let anchored = 0;
     for (const lid of lids) {
       const midX = (lid.vertexXY[0] + lid.vertexXY[2] + lid.vertexXY[4]) / 3;
@@ -447,7 +447,7 @@ function pocketRig(): { map: DoomMap; opening: number; a: number; b: number } {
     assert.ok(anchored > 0, 'and that was checked against a real lid');
 
     // A cap belongs to no leaf of its own, so it is revealed by the leaves around its ring rather
-    // than by one subsector (§ Solid structures) — its own among them.
+    // than by one subsector (docs/render-solids.md) — its own among them.
     const lidsWithReveal = lids.filter((lid) => lid.revealedBy !== undefined);
     assert.equal(lidsWithReveal.length, lids.length, 'every lid says what reveals it');
     assert.ok(
@@ -474,7 +474,7 @@ describe('Rendering · blocks built out of a sector', () => {
   /**
    * A roomless sector — floor at or above ceiling — is solid material, and the level around it
    * carries it on up to its own ceiling in an upper texture. GoingDown.wad MAP08's sector 1 is the
-   * case. See docs/render.md § Blocks built out of a sector.
+   * case. See docs/render-solids.md § Blocks built out of a sector.
    */
   const RAISED = { B: { floor: 64, ceil: 64 }, F: { floor: 0, ceil: 0 }, p: { floor: 0, ceil: 64 } };
 
@@ -539,7 +539,7 @@ describe('Rendering · blocks built out of a sector', () => {
   test('a block with one sector on a lift is mover-owned whole', () => {
     // GoingDown.wad MAP08's crate at (-352, -272): an 8-unit rim on a lift around a light well
     // that carries no tag. Leaving the well in the static batches kept its lid over the pit the
-    // rim had just opened. docs/render.md § Blocks built out of a sector.
+    // rim had just opened. docs/render-solids.md § Blocks built out of a sector.
     const { map } = gridMap(['.....', '.BBB.', '.BpB.', '.BBB.', '.....'], { heights: RAISED });
     const rim = map.sectors.findIndex((s) => s.floorHeight === 64);
     const blocks = movableBlocks(map, new Set([rim]));

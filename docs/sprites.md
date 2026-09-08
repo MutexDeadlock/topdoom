@@ -3,8 +3,8 @@
 `src/wad/sprites.ts`, `src/render/sprites.ts` + `sprites/`, `src/game/things.ts`,
 `src/game/things/tables.ts`, `src/game/things/doomednums.ts`
 
-How a thing gets *lit* is docs/render.md § Sector lighting; how one gets hidden behind geometry
-is docs/fogofwar.md.
+How a thing gets *lit* is docs/render-lighting.md § Sector lighting; how one gets hidden behind
+geometry is docs/fogofwar.md.
 
 ## Thing types have names
 
@@ -299,7 +299,7 @@ no noise constant.
 The cost is that a fuzzed sprite leaves the opaque pass, which is what the discard bought. That is
 affordable here and not for geometry: the batch is a handful of small planes with `depthWrite` off,
 where the level's per-texture meshes span the whole map and would sort meaninglessly
-(docs/render.md § Wall occlusion fading).
+(docs/render-occlusion.md).
 
 Nothing else about a spectre differs from a demon — same stats, same batch membership rules, same
 `pickMonster` billboard, and no gameplay effect of `MF_SHADOW` is modelled.

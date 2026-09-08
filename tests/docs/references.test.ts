@@ -5,10 +5,11 @@ import { join } from 'node:path';
 import { filesUnder } from '../fixtures/files.ts';
 
 /**
- * Every `docs/<name>.md § Heading` pointer in the tree has to resolve. CLAUDE.md's comment rule
- * puts each invariant in exactly one doc and leaves a pointer in the code, so a pointer that misses
- * is a rule nobody can find — which is what splitting the Icon of Sin's own doc out of the monster
- * AI one did to five of them. See docs/testing.md § Doc references.
+ * Every `docs/<name>.md § Heading` pointer in the tree has to resolve — in `docs/` itself as much
+ * as in the code, one doc pointing at another's heading being the same pointer. CLAUDE.md's
+ * comment rule puts each invariant in exactly one doc and leaves a pointer at the code, so a
+ * pointer that misses is a rule nobody can find — which is what splitting the Icon of Sin's own
+ * doc out of the monster AI one did to five of them. See docs/testing.md § Doc references.
  */
 
 const ROOTS = ['src', 'tests', 'scripts', 'plugins'];
@@ -74,17 +75,43 @@ function continuationOf(line: string | undefined): string {
   return (line ?? '').match(/^\s*(?:\*(?!\/)|\/\/)\s?(.*)$/)?.[1] ?? '';
 }
 
+/**
+ * The same for a doc: the rest of the paragraph. A blank line, a heading and a table row each end
+ * one, and a table row is a cell rather than prose — the next row continues nothing.
+ */
+function paragraphOf(line: string | undefined): string {
+  const next = line ?? '';
+  return next.trim() === '' || next.startsWith('#') || next.startsWith('|') ? '' : next;
+}
+
+/**
+ * What a pointer names, from its `§` to wherever the reference ends. **A closing `)` ends it**:
+ * a pointer written inside parentheses stops there, and no pointer repeats the file list a heading
+ * carries (`headingCore` drops that), so nothing real is cut. Only a tail left open takes the next
+ * line, which is what lets a pointer wrap mid-heading — `docs/savegames.md`'s
+ * `§ Slot keys),` would otherwise read the sentence after it as more of the heading.
+ */
+function headingTail(rest: string, next: string | undefined, inDoc: boolean): string {
+  const continued = inDoc ? paragraphOf(next) : continuationOf(next);
+  const joined = rest.includes(')') ? rest : `${rest} ${continued}`;
+  const end = joined.indexOf(')');
+  return (end >= 0 ? joined.slice(0, end) : joined).trim();
+}
+
 function references(): Reference[] {
+  const scan = (root: string) => filesUnder(root, (path) => CODE.test(path) && path !== SELF);
+  const code = ROOTS.flatMap(scan);
   const found: Reference[] = [];
-  for (const file of [...ROOTS.flatMap((root) => filesUnder(root, (path) => CODE.test(path) && path !== SELF)), ...ROOT_DOCS]) {
+  for (const file of [...code, ...ROOT_DOCS, ...docHeadings.keys()]) {
+    const inDoc = docHeadings.has(file);
     const lines = readFileSync(file, 'utf8').split('\n');
     lines.forEach((text, i) => {
       for (const m of text.matchAll(REFERENCE)) {
         const doc = `docs/${m[1]}.md`;
         if (doc === PLACEHOLDER) continue;
-        // A pointer regularly wraps mid-heading, so the next line joins the tail — but only when
-        // there was a `§` to continue. A bare `docs/<name>.md` reference names no heading at all.
-        const tail = m[2] === undefined ? '' : `${m[2]} ${continuationOf(lines[i + 1])}`.trim();
+        // A bare `docs/<name>.md` reference names no heading at all; anything after a `§` runs to
+        // wherever `headingTail` decides the reference ends.
+        const tail = m[2] === undefined ? '' : headingTail(m[2], lines[i + 1], inDoc);
         found.push({ site: file, line: i + 1, doc, heading: tail });
       }
     });

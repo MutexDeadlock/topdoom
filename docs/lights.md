@@ -8,7 +8,7 @@ GZDoom's GLDEFS lights, bound to sprite frames: a rocket in flight, a torch, a s
 muzzle flash on a firing zombieman. **This follows GZDoom, not vanilla** — vanilla DOOM has no
 dynamic lights at all, and every rule below is cited to `gldefs.cpp` or `a_dynlight.cpp` rather
 than to `linuxdoom-1.10`. Sector light, which is vanilla's and is what lights everything by
-default, is docs/render.md § Sector lighting.
+default, is docs/render-lighting.md § Sector lighting.
 
 ## The frame key
 
@@ -70,8 +70,9 @@ here is 2 (`ADynamicLight::GetRadius`), which this engine found too broad under 
 a whole room at once.
 
 Being a dial, it is **exported so the tests size their fixtures from it** rather than mirroring the
-number, the same discipline `FADE_RADIUS`/`FADE_CORE` follow (docs/render.md § Wall occlusion
-fading). A test that reddens when this is retuned is pinning the dial, and is a bug in the test.
+number, the same discipline `FADE_RADIUS`/`FADE_CORE` follow (docs/render-occlusion.md § Wall
+occlusion fading). A test that reddens when this is retuned is pinning the dial, and is a bug in the
+test.
 
 ## Flicker without the vanilla random table
 
@@ -190,7 +191,7 @@ edge's own neighbours rather than a leaf that only touches the polygon at that o
 
 **Crossing from the centre, rather than asking which linedef the edge lies on, is the load-bearing
 part.** A leaf's outline comes out of the BSP clip, which deliberately spares the clip against a
-wall that stops inside the leaf (docs/render.md § Segs on the wrong side of their leaf) — so an
+wall that stops inside the leaf (docs/render-bsp.md § Segs on the wrong side of their leaf) — so an
 edge can sit well off the wall it was cut against, or run past that wall's end, and matching an
 edge to "its" linedef by distance and collinearity misidentifies a wall often enough to leak light
 through it. A crossing from the centre answers what the fill actually asks — is anything in the way
@@ -359,8 +360,8 @@ a world-position varying it adds to the vertex shader — three.js's `MeshBasicM
 Three things about that patch:
 
 - It **extends the existing `#include <color_fragment>` replacement** rather than adding a second
-  `onBeforeCompile`; the dither-discard fade lives in the same one (docs/render.md § Wall occlusion
-  fading).
+  `onBeforeCompile`; the dither-discard fade lives in the same one (docs/render-occlusion.md § Wall
+  occlusion fading).
 - **The light term has to land inside that replacement, not merely somewhere after it.** A few
   lines below `color_fragment`, three folds `diffuseColor.rgb` into `outgoingLight`, and
   `opaque_fragment` writes `gl_FragColor` from *that* — so a term added any later compiles, runs,
@@ -373,8 +374,8 @@ Three things about that patch:
   any other.
 - It adds to the *multiplier*, not the texel: `diffuseColor.rgb + sampledDiffuseColor.rgb *
   dynLight`, clamped at 1. That reproduces the fullbright ceiling instead of overbrightening the
-  texture past it. Vertex colours here are linear-light (docs/render.md § Sector lighting), and
-  GLDEFS colours are treated as linear multipliers to match.
+  texture past it. Vertex colours here are linear-light (docs/render-lighting.md § Sector lighting),
+  and GLDEFS colours are treated as linear multipliers to match.
 - `customProgramCacheKey` is **required**: three.js keys its program cache on material parameters,
   so without it a patched material can be served the program compiled for an unpatched one — the
   same hazard `SpriteBatch`'s fuzz materials guard against.
@@ -651,9 +652,9 @@ fails leaves the base empty and the game unlit rather than unplayable.
 
 ## Profiling
 
-`commit` reports under the `Lights` row of the profiler overlay (docs/menu.md § The profiler). Note
-that this is CPU only — the per-pixel cost of the fragment loop lands on the GPU, where it shows up
-in the frame total rather than in any row.
+`commit` reports under the `Lights` row of the profiler overlay (docs/menu.md § Profiling
+overlay). Note that this is CPU only — the per-pixel cost of the fragment loop lands on the GPU,
+where it shows up in the frame total rather than in any row.
 
 **The per-pixel half is measured in a browser, not reasoned about.**
 `EXT_disjoint_timer_query_webgl2` is available in chromium and gives real GPU milliseconds: begin a

@@ -199,10 +199,10 @@ heights and sidedefs as sector indexes rather than whole records.
 The grid fixture above cannot stand in for it: `gridMap` always emits a *correct* tree, one
 subsector per cell with every edge as a seg. The render rules that need this one are precisely
 about what a node builder left behind — a wall stub sitting inside a leaf that never got split
-along it, or a line whose two sides face the same sector (docs/render.md § Walls that stop inside
-their cell, § Self-referencing sectors). Both are stated by choosing the nodes and segs by hand,
-which is also why these fixtures are deliberately tiny: a wrong node here is a wrong test, and the
-partition convention (a node's right side is `cross <= 0`) is easy to get backwards.
+along it, or a line whose two sides face the same sector (docs/render-bsp.md § Walls that stop
+inside their cell, § Self-referencing sectors). Both are stated by choosing the nodes and segs by
+hand, which is also why these fixtures are deliberately tiny: a wrong node here is a wrong test, and
+the partition convention (a node's right side is `cross <= 0`) is easy to get backwards.
 
 ## The specials rig
 
@@ -251,9 +251,9 @@ narrows that to the quads standing at one `x`, walked through each occluder's ow
 what a case about **one** wall on a map that has others needs, where a minimum over everything
 would answer about the wrong wall.
 
-The dials are still *read* from the source rather than mirrored (docs/render.md § The fade is a
-hole, not a wall). The readbacks are the half worth sharing: they encode `addWall`'s vertex layout,
-and there were three copies of that walk before.
+The dials are still *read* from the source rather than mirrored (docs/render-occlusion.md § The fade
+is a hole, not a wall). The readbacks are the half worth sharing: they encode `addWall`'s vertex
+layout, and there were three copies of that walk before.
 
 ## Shared helpers
 
@@ -327,17 +327,25 @@ the platform through a helper as easily as directly — every approximated funct
 `src/game/` imports. `tests/util/fdlibm.test.ts` holds those five to a ULP of the platform and pins
 their results to the bit.
 
-`tests/docs/references.test.ts` asserts that every `docs/<name>.md § <Heading>` pointer in `src/`,
-`tests/`, `scripts/` and `plugins/` resolves — the file exists and some heading in it starts with
-the quoted words. It exists because splitting the Icon of Sin's own doc out of the monster AI one
-left five pointers naming a file that no longer held their section, and nothing noticed until a doc
-audit.
-Any future split will do the same unless this test runs first.
+`tests/docs/references.test.ts` asserts that every `docs/<name>.md § <Heading>` pointer resolves —
+the file exists and some heading in it starts with the quoted words. It exists because splitting the
+Icon of Sin's own doc out of the monster AI one left five pointers naming a file that no longer held
+their section, and nothing noticed until a doc audit. Any future split will do the same unless this
+test runs first.
 
-Two matching rules it deliberately encodes, because both shapes are all over the tree:
+**`docs/` is scanned as a site, not only as a target**: one doc pointing at another's heading is the
+same pointer, and splitting `render.md` in five found four such pointers already dead — one naming
+`§ Sight blocking` for "Sight testing", one the wrong file for the revenant's missile, one a
+`§ What a shot hits` that no longer existed, one `§ The profiler` for "Profiling overlay".
+
+Three matching rules it deliberately encodes, because all three shapes are all over the tree:
 - **Prefix, both directions.** A pointer may truncate a long heading (`§ The lost soul` for "The
   lost soul: a charge, not a projectile"), and a pointer written mid-sentence trails into prose. A
   heading's own leading words, up to the parenthetical file list most carry, must match.
+- **A closing `)` ends the reference** (`headingTail`), and only an unclosed pointer takes the next
+  line — a comment's continuation in code, the rest of the paragraph in a doc. Without the cut a
+  parenthesised pointer reads the sentence after it as more of the heading; without the join a
+  pointer that wraps mid-heading reads as truncated to nothing. 31 pointers in `docs/` wrap.
 - **It must be a heading**, not a bold lead-in paragraph. A bold paragraph isn't addressable, so a
   pointer at one is repaired by promoting the paragraph to a `###`.
 

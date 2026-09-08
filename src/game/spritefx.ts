@@ -311,7 +311,7 @@ export class SpriteFxLayer {
     const bright = FULLBRIGHT_FRAMES.has(anim.frameKey);
     const lit = bright ? 255 : light;
     // What flies over a courtyard takes the outdoor tint too, off the leaf it was offered at.
-    // docs/render.md § Outdoor sky tint.
+    // docs/render-lighting.md § Outdoor sky tint.
     const sky = !bright && subsector >= 0 && skyLitSector(this.world.sectorOfSubsector(subsector));
     // This is the single funnel for projectiles in flight, every one-shot effect and the Icon of
     // Sin's cubes — so one hook here covers every moving light the game has (docs/lights.md).

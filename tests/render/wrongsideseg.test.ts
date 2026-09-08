@@ -10,7 +10,7 @@ import { polygonArea } from '../fixtures/geometry.ts';
  * A seg the node builder filed into the child on the wrong side of its own line
  * would clip its leaf's whole cell down to the tolerance band, leaving the rest
  * a hole; its clip is spared, and the drawn sector re-resolved, where the cell
- * is real floor. See docs/render.md § Segs on the wrong side of their leaf.
+ * is real floor. See docs/render-bsp.md § Segs on the wrong side of their leaf.
  */
 
 /** The south leaf's whole cell, which the spared clip has to leave standing. */

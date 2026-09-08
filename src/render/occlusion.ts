@@ -1,6 +1,6 @@
 /**
  * Fades the walls (and overhanging flats) that sit between the camera and the player, as a
- * dithered discard rather than alpha blending. See docs/render.md § Wall occlusion fading.
+ * dithered discard rather than alpha blending. See docs/render-occlusion.md.
  */
 import { PLAYER_HEIGHT } from '../game/player.ts';
 import type { StandingBody } from '../game/things/defs.ts';
@@ -50,7 +50,7 @@ const MAX_FADE_TARGETS = 48;
  * The player plus the awake monsters near enough to fade walls for, nearest first and capped at
  * `MAX_FADE_TARGETS` — alerted ones only, since an unseen sleeping monster is supposed to stay
  * hidden. **Each target's wedge is its own body**, built from the same `height` field `shotPath`
- * locks onto. docs/render.md § The target is the billboard.
+ * locks onto. docs/render-occlusion.md § The target is the billboard.
  */
 export function collectFadeTargets(player: Pos3, awakeMonsters: readonly StandingBody[]): FadeTarget[] {
   const nearby = awakeMonsters
@@ -106,7 +106,7 @@ export interface FadeReveal {
 /**
  * The frame's whole fade, in the one order it is allowed to run: **every** fader on the map files
  * what stopped a sightline before **any** of them dissolves anything, so the bags are the frame's
- * rather than each fader's — docs/render.md § One hole, whichever mesh it lands in.
+ * rather than each fader's — docs/render-occlusion.md § One hole, whichever mesh it lands in.
  *
  * Owning the bags is why this is a class: they are scratch shared by faders none of which owns
  * them, and the reset that arms them belongs with the pass that fills them rather than with a

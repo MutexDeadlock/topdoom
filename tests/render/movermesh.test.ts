@@ -119,8 +119,7 @@ describe('Rendering · mover meshes', () => {
   test('a mover wall long enough to be chunked keeps every chunk across a refresh', () => {
     // Chunk count follows the wall's footprint, which a height change never
     // touches — so a lift mid-travel keeps the records (and with them the
-    // per-chunk fade the faders index into them). See docs/render.md
-    // § Wall occlusion fading.
+    // per-chunk fade the faders index into them). See docs/render-occlusion.md.
     const grid = gridMap(['.L.'], { cell: 512, heights: { L: { floor: 32, ceil: 128 } } });
     const map = grid.map;
     const sector = grid.index(1, 0);

@@ -129,8 +129,8 @@ and the same tic costs ~0.55 ms.
 
 What is *live* about a blocker is only whether it blocks: its endpoints are the linedef's own
 vertexes, which never move, so they come from `World.lineOverlapEnds` — the one table of
-overlap-extended endpoints every ray-vs-wall test in the engine shares (docs/combat.md § What a shot
-hits uses it too) — rather than being rebuilt per tic. `World.blocksSight` does read current sector
+overlap-extended endpoints every ray-vs-wall test in the engine shares (docs/combat.md § shotPath
+uses it too) — rather than being rebuilt per tic. `World.blocksSight` does read current sector
 heights, so an opening door stops blocking on the next tic, and it is **memoized per tic per line**
 (`blockStamp`): rays revisit the same lines constantly, and dropping the memo costs 0.70 → 1.15–1.37
 ms mean per tic across EPIC MAP02/04/05. A per-ray bounding-box reject used to sit in front of that
@@ -292,7 +292,7 @@ whole cap of a block at once, so lighting part of it is the same hole this secti
 **Only the region the player is standing in is drawn.** `explored` is ANDed with the island gate
 everywhere it is read — `isVisible` and `updateFade`'s target — so a place reachable only through a
 teleporter is hidden while the player is somewhere else. The partition is
-`bsp.ts: buildIslands`, docs/render.md § Islands.
+`bsp.ts: buildIslands`, docs/render-bsp.md § Islands.
 
 Reveal is sticky and the camera reaches `VIEW_DISTANCE` in every direction, so without this a
 detached region stays lit beside the level once visited. BOOMEDIT MAP01 is the reported case: the
@@ -343,15 +343,15 @@ some of them know it natively:
 - `FlatSurface` (the `WallOccluder` counterpart for floor/ceiling triangle fans) carries its
   subsector straight from the BSP polygon it was built from — except a solid structure's cap, which
   was built from no polygon at all and carries `revealedBy`, the leaves around its ring, of which the
-  most revealed wins (`FlatFader`'s `fogAlpha`, docs/render.md § Solid structures).
+  most revealed wins (`FlatFader`'s `fogAlpha`, docs/render-solids.md).
 - Things resolve theirs with `subsectorAt`.
 - **Wall quads can't**: they're built from a linedef's own geometry, so `FogOfWar` derives each one
   itself by nudging the quad's midpoint `WALL_PROBE_OFFSET` along its front normal (`mapmesh` builds
   every quad facing right of `a->b`) and asking the BSP what's there — which is why
   `WallFader.commit` takes a callback keyed by *occluder index* rather than by sector, and why
   `mapmesh.ts` carries no fog-specific field at all. A long wall is several occluders, one per chunk
-  (docs/render.md § The fade is a hole, not a wall), so each probes its own chunk's midpoint — the
-  keying is unchanged, just finer-grained.
+  (docs/render-occlusion.md § The fade is a hole, not a wall), so each probes its own chunk's
+  midpoint — the keying is unchanged, just finer-grained.
 
 ### Which walls a reveal moved
 
@@ -359,7 +359,7 @@ some of them know it natively:
 scales. Handing it the whole occluder list means a walk over every quad on the map every frame to
 find the handful a reveal actually touched — 408,705 of them on Sunder 2512 MAP20 — so `updateFade`
 files the quads it moved instead, and `changedWalls()` hands that list over
-(docs/render.md § Nothing per-frame is per-quad).
+(docs/render-occlusion.md § Nothing per-frame is per-quad).
 
 The index is `wallSubsector` inverted, built once beside it as a prefix-sum table: a changed
 subsector names its quads without a search. `changedWalls()` returns **`null` for "all of them"**,

@@ -177,7 +177,7 @@ right: the player really can see out over a drop.
 The camera does see over that pen wall, and that is not a contradiction: these two dials answer
 how much *room the player has*, not how much is on screen. The fog of war is the query that
 answers the latter, which is why it keeps the height-blind test (docs/fogofwar.md § Sight
-blocking).
+testing).
 
 **Two aggregates come out of that one fan, and each drives one dial**, because the two dials do
 different jobs:
@@ -274,14 +274,14 @@ distance a player would never dial by hand, asked for by geometry rather than by
 ### Framing past an occluder
 
 A wall standing between the camera and the player is not a failure — it is the ordinary case in a
-top-down view of a game built out of rooms, and docs/render.md § The fade is a hole, not a wall is
-what handles it. What the fade cannot do is make the player *big*: it opens a hole by discarding a
-fraction of the
-occluder's pixels, so what shows through is the player seen past a fifth of a wall, and at the wide
-end of the framing that is a thirty-pixel sprite behind a dither. So while something the camera
-cannot see over is drawn across the sightline the zoom comes **inside it** — `nearestObstruction`
-returns how far off it stands, and the framing takes that less `OCCLUDER_STANDOFF`, floored at
-`AUTO_OCCLUDED_DISTANCE` (250u), nearer than `AUTO_NARROW_DISTANCE` ever goes.
+top-down view of a game built out of rooms, and docs/render-occlusion.md § The fade is a hole, not a
+wall is what handles it. What the fade cannot do is make the player *big*: it opens a hole by
+discarding a fraction of the occluder's pixels, so what shows through is the player seen past a
+fifth of a wall, and at the wide end of the framing that is a thirty-pixel sprite behind a dither.
+So while something the camera cannot see over is drawn across the sightline the zoom comes **inside
+it** — `nearestObstruction` returns how far off it stands, and the framing takes that less
+`OCCLUDER_STANDOFF`, floored at `AUTO_OCCLUDED_DISTANCE` (250u), nearer than `AUTO_NARROW_DISTANCE`
+ever goes.
 
 **The floor is a floor, not the answer**, and the difference is the whole point. A wall at the
 player's shoulder can never be got in front of, so the framing stops at 250 and accepts being read
@@ -299,16 +299,15 @@ reason for.
 **Height is the other half of "can it hide the player", and the camera's own eye is what settles
 it.** A wall whose top the eye only just clears is seen along its face at a grazing angle: it
 stretches most of the way from the camera to the player, and the fade's fixed-size hole — a ball of
-`FADE_RADIUS` around the crossing, docs/render.md § The fade is a hole, not a wall — cannot dissolve
-enough of it. A wall the eye hangs well over is seen from above, covers little, and the fade has it
-comfortably.
-So `standsOver` counts a band only if its top reaches to within `OCCLUDER_HEADROOM` (64u) of where
-the eye would be at the framing under test. EPIC.WAD MAP02 at (-4380, -1837) is the case this came
-from: a 128-high wall 177 units out that the camera at 720u looks over by 115, dissolved by the fade
-without trouble, and pulling the framing to 250 there threw away most of the view for something
-nobody could point at. The same test keeps the two cases that do need it — EPIC MAP05's tower ring
-is cleared by 31 and EPIC MAP02's side room by 16 — and it is what takes the framing from moving on
-10–33% of poses to 0–17%.
+`FADE_RADIUS` around the crossing, docs/render-occlusion.md § The fade is a hole, not a wall —
+cannot dissolve enough of it. A wall the eye hangs well over is seen from above, covers little, and
+the fade has it comfortably. So `standsOver` counts a band only if its top reaches to within
+`OCCLUDER_HEADROOM` (64u) of where the eye would be at the framing under test. EPIC.WAD MAP02 at
+(-4380, -1837) is the case this came from: a 128-high wall 177 units out that the camera at 720u
+looks over by 115, dissolved by the fade without trouble, and pulling the framing to 250 there threw
+away most of the view for something nobody could point at. The same test keeps the two cases that do
+need it — EPIC MAP05's tower ring is cleared by 31 and EPIC MAP02's side room by 16 — and it is what
+takes the framing from moving on 10–33% of poses to 0–17%.
 
 **Facing is what makes the test usable, and is easy to leave out.** Wall materials are
 `THREE.FrontSide` (`render/textures.ts`) and `addWall` hangs each quad on one sidedef, so a wall is
@@ -335,9 +334,9 @@ level's transfers for this; a caller with none (tests, tools) gets `ownTransfers
 drawing itself, the same default the mesh builder takes.
 
 **Middle textures are left out on purpose**: a railing must not pull the camera in, and a solid one
-hung in an opening is now the fade's business (docs/render.md § The fade is a hole, not a wall),
-which needs no help from the framing. Heights are read live off `map.sectors`, so a door or a lift
-needs no case of its own.
+hung in an opening is now the fade's business (docs/render-occlusion.md § The fade is a hole, not a
+wall), which needs no help from the framing. Heights are read live off `map.sectors`, so a door or a
+lift needs no case of its own.
 
 **The zoom stays undirected; the cap does not, and cannot.** § Auto camera's rule — that `spread`
 drives the zoom because how much room surrounds the player is a property of the place rather than of
@@ -365,16 +364,15 @@ clear, writing the distance through `autoDistance` and its lower floor and the t
 
 **This is only about being buried, and deliberately not about being blocked.** A wall standing
 between the camera and the player is the *normal* case in a top-down view of a game built out of
-rooms — it is what docs/render.md § The fade is a hole, not a wall exists for, and a rescue that
-fired on it would fire constantly. Measured over every thing position at eight yaws: a "the
-sightline crosses drawn
-geometry" rescue fires on 35–56% of poses and pulls DOOM2 MAP01's start from 435u to the 64u floor
-in a spot whose view is perfect. The buried test fires on 0% of poses on DOOM2 MAP01/MAP02/MAP07 and
-E1M1, 0.1% on E1M3, and 5.8% on EPIC MAP05, a map built out of plateaus — which is the shape a last
-resort should have. Two intermediate criteria were tried and rejected on counter-examples from the
-same sweep: how far the sightline runs through solid (38u at the case that prompted this, less than
-an ordinary room wall) and how many drawn faces it crosses (MAP01's nukage secret at (528, 2624)
-crosses two and looks fine).
+rooms — it is what docs/render-occlusion.md § The fade is a hole, not a wall exists for, and a
+rescue that fired on it would fire constantly. Measured over every thing position at eight yaws: a
+"the sightline crosses drawn geometry" rescue fires on 35–56% of poses and pulls DOOM2 MAP01's start
+from 435u to the 64u floor in a spot whose view is perfect. The buried test fires on 0% of poses on
+DOOM2 MAP01/MAP02/MAP07 and E1M1, 0.1% on E1M3, and 5.8% on EPIC MAP05, a map built out of plateaus
+— which is the shape a last resort should have. Two intermediate criteria were tried and rejected on
+counter-examples from the same sweep: how far the sightline runs through solid (38u at the case that
+prompted this, less than an ordinary room wall) and how many drawn faces it crosses (MAP01's nukage
+secret at (528, 2624) crosses two and looks fine).
 
 **Ceilings are what make the asymmetry right.** `mapmesh.ts` never emits them (`renderCeilings`),
 so an eye above a room's ceiling sees straight down into it and only a floor can bury it.

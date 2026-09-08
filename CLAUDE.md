@@ -58,30 +58,25 @@ is still right for a one-off investigation — those go in the scratchpad, never
 ```
 src/wad/       WAD files, merged lump directory, content IDs (checksum), map lumps (map), graphics
                + sprite + sound + music decoding, Boom's ANIMATED/SWITCHES/colormap lumps, GZDoom's
-               dynamic-light definitions (gldefs), what the text lumps share before each grammar
-               takes over (textlump), whether this engine can run a file at all (support), what a
-               file holds without loading it (describe), the one WAD the engine ships itself
-               (shipped) and writing one (write), the shipped player art and when it stands in
-               (playerskin), the menu's WAD library, and the campaign lumps — MAPINFO, level
-               names, par times, the sky, the level progression (campaign/)
-src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it can't ask the tree
-               for (sectorprobe), the solids a map draws as void (solids), mesh building (mapmesh/),
-               what a sector's light does to a surface and how it falls off with depth
-               (sectorlight), materials + texture animation, occlusion fading (occlusion/), Boom's
-               scrolling surfaces (scroller), sprite billboards + their batching (sprites/), the
-               weapon-matching player skins in drawable form (playerskin), the blob shadow under
-               them (playershadow), the shading a wall lays on the floor at its foot (wallshadow),
-               the colour a sky ceiling lends what stands under it (skytint), the drifting fog the
-               level stands in (voidfloor), the glow bright light leaves on the frame (bloom),
-               GLDEFS dynamic lights and what they reach (lights/), shot tracers, camera,
-               viewport, the GPU's own frame time (gputimer)
+               dynamic-light definitions (gldefs), the text lumps' shared grammar (textlump),
+               whether this engine can run a file (support), what a file holds unloaded (describe),
+               the engine's own WAD (shipped) and writing one (write), the shipped player art and
+               when it stands in (playerskin), the menu's WAD library, and the campaign lumps —
+               MAPINFO, level names, par times, the sky, the level progression (campaign/)
+src/render/    BSP polygon reconstruction (bsp, sectorprobe), the solids a map draws as void
+               (solids), mesh building (mapmesh/), sector light + depth falloff (sectorlight),
+               materials + texture animation, occlusion fading (occlusion/), Boom's scrolling
+               surfaces (scroller), sprite billboards + batching (sprites/), drawable player skins
+               (playerskin), the blob shadow (playershadow), wall contact shading (wallshadow), the
+               sky tint (skytint), the void fog (voidfloor), bloom, GLDEFS dynamic lights (lights/),
+               shot tracers, camera, viewport, the GPU's own frame time (gputimer)
 src/game/      spatial queries + collision, player controller, input, the auto camera, what each
                skill level changes (skill), thing world state, monsters (AI, attacks, the
                arch-vile), fog of war, inventory/pickups, weapons and firing, shots in flight +
                splash, damage/death, transient effects (spritefx), voodoo dolls, DEHACKED/BEX
-               patches read and applied (dehacked), the typed cheat codes (cheats), best times,
-               savegames (the snapshot shape, the IndexedDB store), replays (the record, the
-               recorder and playback behind the tic's input, their own store)
+               patches (dehacked), the typed cheat codes (cheats), best times, savegames (the
+               snapshot shape, the IndexedDB store), replays (the record, the recorder and playback
+               behind the tic's input, their own store)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through, WebAudio
                playback (channels, attenuation, pan, volume), the level's music
 src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens);
@@ -91,12 +86,11 @@ src/ui/        the page's own chrome (base styles + tokens, the loading and fata
                status text and debug hotkeys
 src/util/      helpers shared across layers: 2D geometry plus the aim ray's box test (geom), the
                smoothing curves (damping: the damped-lerp approach and the Hermite ease), GLSL
-               float literals (glsl), per-frame profiling, IndexedDB request plumbing (idb,
-               shared by the save store and the WAD
-               library), the one localStorage object every setting is a field of (storage), raw
-               DEFLATE (inflate, for compressed nodes), the five approximated Math functions in
-               software so a tic runs the same on every engine (fdlibm), vanilla's random table —
-               the engine's only entropy source
+               float literals (glsl), per-frame profiling, IndexedDB request plumbing (idb, shared
+               by the save store and the WAD library), the one localStorage object every setting
+               is a field of (storage), raw DEFLATE (inflate, for compressed nodes), the five
+               approximated Math functions in software so a tic runs the same on every engine
+               (fdlibm), vanilla's random table — the engine's only entropy source
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
                    BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE +
                    FOG_START_FRACTION, WATER_SURFACE_ALPHA)
@@ -123,7 +117,11 @@ relevant one before changing that subsystem** — several rules there look like 
 | [dehacked.md](docs/dehacked.md) | DEHACKED/BEX patches: the record grammar, the index bridges, units, `Bits`, the unsupported corners |
 | [menu.md](docs/menu.md) | The menu as launcher and pause screen, the WAD Library, difficulty, persisted settings, URL parameters, `main.ts`'s session lifecycle, `DEVMODE` |
 | [frameloop.md](docs/frameloop.md) | `game.ts`'s frame: the delta, the FPS cap, pausing |
-| [render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, view distance, what a frame costs, texture animation |
+| [render.md](docs/render.md) | Mesh building, mover meshes, closed holes, deep water, what a frame costs, view distance, texture animation |
+| [render-bsp.md](docs/render-bsp.md) | Subsector polygons from the nodes, the leaf repairs, islands |
+| [render-solids.md](docs/render-solids.md) | Lids on crates and pillars: the ring rules, pockets, blocks built out of a sector |
+| [render-lighting.md](docs/render-lighting.md) | The `COLORMAP` ramp, distance lighting, wall contact shading, the outdoor sky tint |
+| [render-occlusion.md](docs/render-occlusion.md) | The fade that keeps the player visible through walls and raised floors |
 | [camera.md](docs/camera.md) | Camera orbit and camera-relative movement, the camera as simulation state, aim lead, the auto camera and its framing |
 | [lights.md](docs/lights.md) | GLDEFS dynamic lights: the grammar, what emits, the two lighting paths, the GZDoom deviations |
 | [sprites.md](docs/sprites.md) | The named doomednums (`ThingType`) every type-keyed table keys through; billboards, instanced batching, which things spawn |

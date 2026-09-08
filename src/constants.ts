@@ -3,7 +3,7 @@
  * here — nothing identity-coupled to one module, however often it's imported.
  *
  * Cross-cutting, so there is no `docs/` page of its own: each dial is documented where it takes
- * effect — docs/render.md § View distance, docs/render.md § Sector lighting,
+ * effect — docs/render.md § View distance, docs/render-lighting.md § Sector lighting,
  * docs/sprites.md § Pickup scale, docs/menu.md § Dev mode, docs/frameloop.md.
  */
 import { ThingType } from './game/things/doomednums.ts';
@@ -27,7 +27,7 @@ export const DOOM_TIC = 1 / 35;
  * How much `render/sectorlight.ts` brightens dark sectors above vanilla's own ramp
  * (`lightToColor`), which is accurate to vanilla but reads too dark for this game's top-down
  * camera. Applied by `litColor` for the sprites and by `liftedGain` in the map shader, so it is
- * the one dial for how bright the game reads. docs/render.md § Sector lighting.
+ * the one dial for how bright the game reads. docs/render-lighting.md § Sector lighting.
  */
 export const BRIGHTNESS_LIFT = 0.06;
 

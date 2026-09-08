@@ -1,7 +1,7 @@
 /**
  * The colour a sky ceiling lends what stands under it: every surface facing a sector roofed with
  * `F_SKY1` is tinted toward the level's own sky, so a courtyard reads as outdoors from a camera
- * that never shows the sky itself. See docs/render.md § Outdoor sky tint.
+ * that never shows the sky itself. See docs/render-lighting.md § Outdoor sky tint.
  */
 import * as THREE from 'three';
 import { SKY_FLAT } from '../wad/map.ts';
@@ -19,13 +19,13 @@ export const STRENGTH = 0.45;
 
 /**
  * The furthest any channel may travel from neutral, whatever the sky. Tuned by feel, and it binds —
- * docs/render.md § Outdoor sky tint.
+ * docs/render-lighting.md § Outdoor sky tint.
  */
 const LIMIT = 0.3;
 
 /**
  * What a sky with no colour of its own lends instead — a cool daylight, at luminance 1. **Tuned by
- * feel, and the one invented value here** — docs/render.md § Outdoor sky tint.
+ * feel, and the one invented value here** — docs/render-lighting.md § Outdoor sky tint.
  */
 const COLOURLESS_SKY: readonly [number, number, number] = [0.9, 0.99, 1.3];
 
@@ -40,7 +40,7 @@ const LUMA: readonly [number, number, number] = [0.2126, 0.7152, 0.0722];
 
 /**
  * Whether the tint is applied at all. On by default. Shaped like every persisted setting —
- * docs/menu.md § Persisted settings (docs/render.md § Turning the tint off).
+ * docs/menu.md § Persisted settings (docs/render-lighting.md § Turning the tint off).
  */
 let enabled = readStorage(STORAGE_KEY, true);
 
@@ -88,7 +88,7 @@ export function skyLitSector(sector: Sector | undefined): boolean {
 /**
  * What a sprite's own sector light is multiplied by, the shader's `uSkyTint` in the form the
  * unbatched and instanced sprite paths both take. A dynamic light's contribution is its own colour
- * and stays out of this, as it does on a surface. docs/render.md § Outdoor sky tint.
+ * and stays out of this, as it does on a surface. docs/render-lighting.md § Outdoor sky tint.
  */
 export function skyScale(sky: boolean): THREE.Color {
   return sky ? skyTintUniform.value : NEUTRAL;

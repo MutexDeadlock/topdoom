@@ -11,7 +11,7 @@ import type * as THREE from 'three';
 /**
  * What a sky lends the ground under it. The tint only ever shifts colour — a level's outdoor half
  * must not come out brighter or darker than its indoor one — and no sky may wash the level in its
- * own. See docs/render.md § Outdoor sky tint.
+ * own. See docs/render-lighting.md § Outdoor sky tint.
  */
 
 const LUMA = [0.2126, 0.7152, 0.0722];

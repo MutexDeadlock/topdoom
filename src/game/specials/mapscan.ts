@@ -355,7 +355,7 @@ function addWaterDependents(map: DoomMap, out: Set<number>): void {
  * A solid block's cap is one decision over the whole of it (`blockCapHeight`), so a block with one
  * mover-owned sector is mover-owned whole: the half left in the static batches keeps its lid over
  * the hole the other half opens. Never `moving` — nothing about the rest of the block moves.
- * docs/render.md § Blocks built out of a sector.
+ * docs/render-solids.md § Blocks built out of a sector.
  */
 export function addBlockMates(map: DoomMap, out: Set<number>): void {
   for (const block of movableBlocks(map, out)) {

@@ -17,7 +17,7 @@ import { vecLength } from '../../util/geom.ts';
  *
  * Declared structurally here, like `ScrollOffsets` in render/scroller.ts, so
  * the renderer keeps no import edge into `game/` — `game/specials/transfers.ts`
- * implements it. See docs/render.md § Sector lighting and § Deep water.
+ * implements it. See docs/render-lighting.md § Sector lighting and docs/render.md § Deep water.
  */
 export interface SectorTransfers {
   floorLight(sectorIndex: number): number;
@@ -160,7 +160,7 @@ export interface WallOccluder {
  * The longest quad `addWall` emits before cutting a wall into several, so the occlusion fade has
  * vertices to put a gradient on. **Tuned by feel** against vertex count, which grows with
  * `1 / this`, and carrying an unenforced relationship to `occlusion.ts`'s `FADE_CORE` —
- * docs/render.md § The fade is a hole, not a wall.
+ * docs/render-occlusion.md § The fade is a hole, not a wall.
  *
  * The *vertical* cut is the one a mover cannot always have, since the band count follows the
  * height: docs/render.md § A mover dices vertically only where nothing moves, and

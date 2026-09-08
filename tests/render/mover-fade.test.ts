@@ -63,7 +63,7 @@ const FULLY_REVEALED: FadeReveal = {
 
 /**
  * The frame's fade, driven exactly as `game.ts` drives it — `FadePass` owns the
- * order (docs/render.md § One hole, whichever mesh it lands in), so no case
+ * order (docs/render-occlusion.md § One hole, whichever mesh it lands in), so no case
  * here restates it. `statics` is the map's own wall batches, for a case whose
  * subject is a mover and a static wall sharing one hole; a case about movers
  * alone passes faders holding nothing, so the only crossings in the bag are the
@@ -85,7 +85,7 @@ function fadePass(
  * of thousand movers a frame and walking the handful near the player. What the
  * cases here hold onto is that "cannot reach" really means it: a mover the
  * sightline crosses still fades, and one that has been faded still relaxes
- * after the player walks off. See docs/render.md § Mover meshes a frame cannot
+ * after the player walks off. See docs/render-occlusion.md § Mover meshes a frame cannot
  * touch.
  */
 describe('Rendering · mover meshes a frame cannot touch', () => {
@@ -197,7 +197,7 @@ describe('Rendering · mover meshes a frame cannot touch', () => {
  * one can only cross a fader's *own* walls, so the crossings have to be the
  * frame's rather than each fader's — otherwise a door standing in a wall the
  * player is behind is the one slab the hole opens around.
- * See docs/render.md § One hole, whichever mesh it lands in.
+ * See docs/render-occlusion.md § One hole, whichever mesh it lands in.
  */
 describe('Rendering · one hole, whichever mesh it lands in', () => {
   /** Cells one chunk wide, so a crossing in one is well inside `FADE_CORE` of the next. */

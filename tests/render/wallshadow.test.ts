@@ -10,7 +10,7 @@ import { BANK } from '../fixtures/specialsrig.ts';
 /**
  * What a floor darkens against, and what it does not: the shading exists to say where a wall
  * stands, so a ledge dropping away or a step the player walks over must leave the floor alone.
- * See docs/render.md § Wall contact shading.
+ * See docs/render-lighting.md § Wall contact shading.
  */
 
 /** One cell wide enough that a sample can be out of reach of every wall but the one under test. */

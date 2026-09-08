@@ -1,7 +1,7 @@
 /**
  * `MaterialBank`: WAD bitmaps turned into cached three.js materials — every wall texture and flat
  * exists exactly once on the GPU, including the dither-fade variants occlusion asks for.
- * See docs/render.md § Wall occlusion fading.
+ * See docs/render-occlusion.md.
  */
 import * as THREE from 'three';
 import type { Bitmap, GraphicsBank } from '../wad/graphics.ts';
@@ -164,16 +164,17 @@ export class MaterialBank {
       // fading (render/occlusion.ts) and both for fog-of-war reveal
       // (game/fogofwar.ts). It is spent on a dithered discard rather than real
       // alpha blending (`material.transparent`), which keeps geometry in the
-      // ordinary opaque, depth-tested pass — docs/render.md § Wall occlusion
-      // fading has why blending cannot work for a map-wide batch.
+      // ordinary opaque, depth-tested pass — docs/render-occlusion.md has why blending
+      // cannot work for a map-wide batch.
       const lights = this.lights;
       mat.onBeforeCompile = (shader) => {
         // Three per-vertex amounts written at build time, each with a live uniform beside it so a
         // change reaches the level already running: the shading a wall lays on the floor at its
-        // foot (docs/render.md § Wall contact shading), whether the surface stands under sky
-        // (§ Outdoor sky tint), and the sector's light itself as `aLightSeg` — the vertex carries
-        // no brightness, so the ramp below is the only thing lighting map geometry (§ Distance
-        // lighting). `batchMesh` builds every geometry these materials draw, so all three are
+        // foot (docs/render-lighting.md § Wall contact shading), whether the surface stands under
+        // sky (§ Outdoor sky tint), and the sector's light itself as `aLightSeg` — the vertex
+        // carries no brightness, so the ramp below is the only thing lighting map geometry
+        // (§ Distance lighting). `batchMesh` builds every geometry these materials draw, so all
+        // three are
         // always present.
         shader.uniforms.uWallShade = wallShadeUniform;
         shader.uniforms.uSkyTint = skyTintUniform;

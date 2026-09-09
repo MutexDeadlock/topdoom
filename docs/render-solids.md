@@ -85,6 +85,24 @@ raw vertexes — a WAD's `VERTEXES` lump carries plenty that belong to no linede
 neighbour's corner can sit inside a diagonal block's bounding box with nothing standing there. A
 subsector is convex, so the mean of its points is inside it.
 
+A ring larger than **`MAX_CAP_AREA` = 16384 units²** — a 128×128 crate — is dropped as well **unless
+every one of its walls ends at the lid** (`flushAtTop`): past that size a ring is the level's own
+wall mass, not an object, and its walls end at as many heights as the rooms around it have ceilings,
+so the lid at the lowest of them is a plate through the mass and reads as ground the player cannot
+reach. DOOM1 E1M1's L-shaped mass beside the hexagon courtyard covers 87,296 units² and roofed a
+quarter of the view at 176; E1M2's 33-face network west of (-27, 298) covers 48,000 and took its lid
+from one face carrying 11% of its outline, 24 under the corridor walls in front of it. A mass with
+no lip at all is a different thing: nothing stands above the lid, so it is the surface that closes
+the structure however large it is — E1M6's two computer banks at (-224, -128) and (96, -128), 40,960
+units² each with every face at 248. A face onto **sky** counts here like any other: a one-sided wall
+is drawn floor to ceiling whatever its flat, so an outdoor ceiling's arbitrary height stands over
+the lid as a lip like any other. Being flush is not a threshold on the lip but its absence: only
+a fifth of rings end at one height all round, E1M1's four start-room columns measure lips of 48,
+128, 48 and 128, and the courtyard mass misses being flush by 8. Counted over top lids
+(`under: false`), the rule drops 34% of DOOM1.WAD's, 18% of DOOM2.WAD's, 17% of freedoom2.wad's and
+2% of GoingDown.wad's, and no block cap — a block's footprint is its leaves, and none comes near
+this.
+
 A ring whose every vertex joins exactly two one-sided lines is walked directly. A structure welded
 onto a wall, or onto another structure, shares a vertex with a third line, and there the walk has a
 real choice to make, so it falls back to tracing the **void face**: a one-sided line has its sector

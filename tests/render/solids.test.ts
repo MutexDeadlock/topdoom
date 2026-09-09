@@ -226,13 +226,32 @@ describe('Rendering · solid structure lids', () => {
   });
 
   test('a ring enclosing floor is a building, and is left alone', () => {
-    const map = mapWith([{ points: square(0, 0, 256) }]);
+    const map = mapWith([{ points: square(0, 0, 64) }]);
     // One subsector's worth of room inside the ring — a courtyard or a hall.
-    const polys = [{ sector: 0, points: new Float64Array([-64, -64, -64, 64, 64, 64, 64, -64]) }];
+    const polys = [{ sector: 0, points: new Float64Array([-32, -32, -32, 32, 32, 32, 32, -32]) }];
     assert.deepEqual(findSolidCaps(map, polys), [], 'roofing this would bury the rooms inside it');
     // The same ring with the floor outside it is still a structure.
     const outside = [{ sector: 0, points: new Float64Array([512, 512, 512, 576, 576, 576, 576, 512]) }];
     assert.equal(findSolidCaps(map, outside).length, 1);
+  });
+
+  test('a footprint too large to be an object is left alone unless it ends at one height', () => {
+    // 512 units square with one wall running higher: `MAX_CAP_AREA` over, so it is the level's own
+    // wall mass, whose walls end at as many heights as the rooms around it have ceilings, and the
+    // lid at the lowest of them is a plate through it. docs/render-solids.md.
+    const mass = mapWith([{ points: square(0, 0, 256) }], 2);
+    mass.sectors[1].ceilHeight = 200;
+    mass.sidedefs[2].sector = 1;
+    assert.deepEqual(findSolidCaps(mass, []), []);
+    // The same mass with every wall ending at 128 is closed all round, and its size costs it
+    // nothing: DOOM1 E1M6's two computer banks at (-224, -128) and (96, -128), 40,960 units² each.
+    assert.equal(findSolidCaps(mapWith([{ points: square(0, 0, 256) }]), []).length, 1);
+    // A crate's footprint is under the limit lip or no lip: 128 square is exactly `MAX_CAP_AREA`,
+    // and the cut is exclusive.
+    const crate = mapWith([{ points: square(0, 0, 64) }], 2);
+    crate.sectors[1].ceilHeight = 200;
+    crate.sidedefs[2].sector = 1;
+    assert.equal(findSolidCaps(crate, []).length, 1);
   });
 
   test('a structure welded to other geometry is lidded from its own void face', () => {

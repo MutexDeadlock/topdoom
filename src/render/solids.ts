@@ -35,9 +35,20 @@ const PROBE_DISTANCE = 1;
 
 /**
  * Rings smaller than this are mapping debris (a slit, a zero-width leftover), not something with a
- * visible top.
+ * visible top. **Tuned by feel.**
  */
 const MIN_AREA = 4;
+
+/**
+ * How large a structure's footprint may be and still be lidded, in map units² — a 128×128 crate.
+ * **Tuned by feel**: past it a ring is the level's own wall mass rather than an object standing in
+ * a room, and its lid is a plate through the mass (DOOM1 E1M1's L-shaped mass beside the hexagon
+ * courtyard, 87,296 units² roofed at 176). It limits only a ring with a **lip**: one whose every
+ * wall ends at the lid (`flushAtTop`) is closed all round at any size — E1M6's two computer banks
+ * at (-224, -128) and (96, -128), 40,960 units² each with every face at 248.
+ * docs/render-solids.md.
+ */
+const MAX_CAP_AREA = 16384;
 
 /**
  * How far above the light most of a cap's own walls carry that cap may still be lit — two of DOOM's
@@ -508,10 +519,11 @@ function capsFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: numb
     points[i * 2] = vertex.x;
     points[i * 2 + 1] = vertex.y;
   }
-  // Halved back to a true area, which is what `MIN_AREA` is in; the sign is what the winding
-  // normalisation below reads.
+  // Halved back to a true area, the unit `MIN_AREA` and `MAX_CAP_AREA` are in; the sign is what the
+  // winding normalisation below reads.
   const area = signedPolygonArea2(points) / 2;
-  if (Math.abs(area) < MIN_AREA) return [];
+  const size = Math.abs(area);
+  if (size < MIN_AREA) return [];
   // The trace starts in an arbitrary direction, so normalise the winding: a lid is triangulated
   // like a floor, and a floor faces up only where its footprint is counter-clockwise in map space.
   if (area < 0) reversePoints(points);
@@ -541,6 +553,9 @@ function capsFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: numb
   // A lid at or under the ground the ring stands on closes nothing, and every cap below it is
   // deeper still. docs/render-solids.md.
   if (levels.length === 0 || levels[0].height <= lowestFloor(map, ring.lines)) return [];
+  // Past `MAX_CAP_AREA` a ring is the level's wall mass, and only one whose every wall ends at the
+  // lid is capped. docs/render-solids.md.
+  if (size > MAX_CAP_AREA && !flushAtTop(map, ring.lines, buriedFlags, levels[0].height)) return [];
 
   const caps: SolidCap[] = [];
   for (const [i, { height, sector }] of levels.entries()) {
@@ -550,6 +565,16 @@ function capsFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: numb
     caps.push({ points, bounds, height, texture, sector, lightSector, under: i > 0, buried: i > 0 ? [] : buried, line, probes });
   }
   return caps;
+}
+
+/** Whether every face that is the structure's top ends at the lid — `MAX_CAP_AREA`. */
+function flushAtTop(map: DoomMap, lines: readonly number[], buried: readonly boolean[], height: number): boolean {
+  for (const [i, lineIndex] of lines.entries()) {
+    const side = map.sidedefs[map.linedefs[lineIndex].right];
+    const own = side ? map.sectors[side.sector] : undefined;
+    if (own && !buried[i] && own.ceilHeight !== height) return false;
+  }
+  return true;
 }
 
 /**

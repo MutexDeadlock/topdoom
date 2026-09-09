@@ -1,11 +1,12 @@
 v0.18.2 (2026-09-0?)
 
 Features and improvements
-  - crates and pillars now have tops, so from overhead you no longer look
-    straight down into one
+  - reworked tops on crates and pillars
+    - the level's own wall masses only get one where they end at a single
+      height all round
     - can be switched off under Settings -> Visuals -> Top-down extras
       (requires level reload)
-  - Menues & WAD Library:
+  - menues & WAD Library:
     - hiding thin ceiling steps can now be switched off under
       Settings -> Visuals -> Top-down extras (also requires level reload)
     - the WAD Library no longer prints "game WAD" against every row of the
@@ -16,7 +17,7 @@ Features and improvements
       configurable in constants.ts
   - replays now store an additional keyframe after level change
   - added IDCLEV cheat to warp to any map of the loaded set 
-    (replaces the dev-mode N/P map jump)
+    (replaces the dev-mode's N/P map jump)
   - the status text's debug lines are now a setting of their own
 
 Fixed bugs

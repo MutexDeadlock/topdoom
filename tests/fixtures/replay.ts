@@ -1,5 +1,5 @@
 import type { GameSnapshot } from '../../src/game/snapshot.ts';
-import type { ReplayCapture } from '../../src/game/replay.ts';
+import { CHECK_INTERVAL, type ReplayCapture } from '../../src/game/replay.ts';
 
 /**
  * One recording as `Game` hands it to the store — the smallest capture that survives every
@@ -7,6 +7,8 @@ import type { ReplayCapture } from '../../src/game/replay.ts';
  * docs/replays.md § The record.
  */
 export function replayCapture(ticCount = 2): ReplayCapture {
+  // One desync sample per `CHECK_INTERVAL` tics from tic 0 — what `isPlayableData` counts.
+  const samples = Array(Math.ceil(ticCount / CHECK_INTERVAL)).fill(0);
   return {
     skill: 3,
     wads: [{ name: 'DOOM2.WAD', id: 'iwad' }],
@@ -40,14 +42,14 @@ export function replayCapture(ticCount = 2): ReplayCapture {
       },
       typed: [],
       events: [],
-      checks: [[0, 1.000000123456789, 2, 0]],
+      checks: { x: samples.map(() => 1), y: samples.map(() => 2), cursor: samples.map(() => 0) },
     },
   };
 }
 
 /**
  * `things` is here because a read validates every snapshot's list; the float is what the store's
- * own test is about — a record round-trips exactly rather than through a lossy encoding.
+ * own test is about — a snapshot round-trips exactly rather than through a lossy encoding.
  */
 const REPLAY_SNAPSHOT = {
   player: { x: 1.000000123456789 },

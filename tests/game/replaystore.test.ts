@@ -43,8 +43,11 @@ describe('Replays · the store', () => {
     assert.equal(entry.refusal, null);
 
     const replay = await readReplay(meta.id);
-    assert.equal((replay.data.snapshots[0] as unknown as { player: { x: number } }).player.x, 1.000000123456789);
-    assert.equal(replay.data.checks[0][1], 1.000000123456789, 'no float rounding on the way through');
+    assert.equal(
+      (replay.data.snapshots[0] as unknown as { player: { x: number } }).player.x,
+      1.000000123456789,
+      'no float rounding on the way through',
+    );
 
     await describeReplay(meta.id, { name: '  Speedrun  ', player: 'me', description: 'first exit' });
     const [{ meta: edited }] = await listReplays();

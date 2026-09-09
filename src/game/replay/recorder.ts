@@ -15,6 +15,7 @@ import {
   CHECK_INTERVAL,
   KEYFRAME_INTERVAL,
   POSE_QUANTUM,
+  checkCoord,
   type LevelMarker,
   type ReplayCapture,
   type ReplayData,
@@ -72,7 +73,7 @@ export class ReplayRecorder implements TicInput {
       },
       typed: [],
       events: [],
-      checks: [],
+      checks: { x: [], y: [], cursor: [] },
     };
     this.snapshotIndex.set(start.capture.state, 0);
   }
@@ -129,7 +130,12 @@ export class ReplayRecorder implements TicInput {
       this.data.events.push({ tic: this.ticCount, kind: 'settings', settings });
       this.lastSettings = settings;
     }
-    if (this.ticCount % CHECK_INTERVAL === 0) this.data.checks.push([this.ticCount, x, y, getRandomCursors().p]);
+    if (this.ticCount % CHECK_INTERVAL === 0) {
+      const { checks } = this.data;
+      checks.x.push(checkCoord(x));
+      checks.y.push(checkCoord(y));
+      checks.cursor.push(getRandomCursors().p);
+    }
   }
 
   /** Closes the tic: the row is what the reads above saw, or hold nothing if never asked. */

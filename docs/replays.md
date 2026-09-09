@@ -42,10 +42,11 @@ right-button edge), `wheel` (the sign — `handleSwitching` reads nothing else),
 the savegame's, and docs/savegames.md § The format and its version owns the rule. On MAP15 that is
 nothing at all in the opening snapshot and 10 pairs of 333 things after a minute of play.
 
-**The smooth columns are stored as differences** (`packTics`/`unpackTics`, applied at the store
-boundary so everything above it reads plain values): the aim point and the pose crawl by a unit or
-two a tic, and the differences gzip to about half what the absolute values do. The mask columns
-are left alone — differencing measured *worse* on those. The wheel is handed to the
+**The smooth columns are stored as second differences** (`packTics`/`unpackTics`, applied at the
+store boundary so everything above it reads plain values): the aim point and the pose glide, so
+each value is stored against the linear prediction `2 * p1 - p2` from the two before it, and a
+column moving at a constant rate stores zeros. The mask columns are left alone — differencing
+measured *worse* on those. A null leaves the prediction where it was. The wheel is handed to the
 live tic as its sign too, so the recording sees what the playback will.
 
 Around the tics: `snapshots` (`[0]` the start, the rest restore and seek targets), `keyframes`
@@ -59,7 +60,8 @@ format change is a replay format change; no second version field records it, and
 `tests/game/replaystore.test.ts` fails on a bump of either literal alone.
 
 **Floats are not rounded.** The savegames' six-decimal replacer would make snapshot 0 restore a
-state the recording never ran; a shortest-roundtrip double reads back bit-identical.
+state the recording never ran; a shortest-roundtrip double reads back bit-identical. The one
+exception is the desync samples, which are not simulation state (§ Desync samples).
 
 ## Camera state
 
@@ -158,7 +160,18 @@ Two, because the menu covers the HUD: opening it must not hide the one fact the 
 the tab carries it from every tab rather than only from the Replays panel. Both pulse on the same
 cadence and neither shows during a playback.
 
-Every `CHECK_INTERVAL` tics the recorder samples the player's position and the P_Random cursor.
+### Desync samples
+
+Every `CHECK_INTERVAL` tics the recorder samples the player's position and the P_Random cursor,
+into `checks` as three columns (`CheckColumns`). **No tic is stored**: sample `i` is tic
+`checkTic(i)`, which is what lets the playback index them instead of walking a cursor, and what
+`isPlayableData` counts against the stream's length.
+
+**The position is rounded to whole map units** (`checkCoord`, the one rule both sides call), the
+cursor beside it exact. A drift hides only where it is below half a unit *and* has not yet drawn
+from the table — the cursor moves on every diverging draw. Rounded rather than hashed: a 32-bit
+hash measured the same size and says only yes/no, where these still say where the run was and by
+how much it drifted.
 
 ## Playback
 

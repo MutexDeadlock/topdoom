@@ -1,4 +1,9 @@
-v0.18.2 (2026-09-0?)
+v0.19.0 (2026-09-0?)
+
+This was supposed to become v0.18.2, but the amount of changes, together with 
+the breaking of existing replays, justify a v0.19.
+
+Roadmap: more polish, better camera, MULTIPLAYER (v0.20), then 1.0!
 
 Features and improvements
   - reworked tops on crates and pillars
@@ -18,6 +23,9 @@ Features and improvements
     - a first start now opens on a preselected WAD set,
       configurable in constants.ts
   - replays now store an additional keyframe after level change
+  - replay files are about a quarter smaller: the camera and aim columns are
+    stored against a linear prediction, the desync samples as rounded columns
+    (15 min of DOOM 1: 430 kB -> 326 kB)
   - added IDCLEV cheat to warp to any map of the loaded set 
     (replaces the dev-mode's N/P map jump)
   - the status text's debug lines are now a setting of their own

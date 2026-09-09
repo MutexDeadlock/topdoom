@@ -31,6 +31,7 @@ import {
   type StoredState,
 } from './savestore.ts';
 import {
+  CHECK_INTERVAL,
   COMPAT,
   REPLAY_VERSION,
   describeEngine,
@@ -71,6 +72,7 @@ export {
   POSE_QUANTUM,
   REPLAY_VERSION,
   SPEED_STEPS,
+  checkTic,
   compatDrift,
   describeEngine,
   poseAt,
@@ -384,7 +386,13 @@ function isPlayableData(data: unknown, ticCount: number): data is ReplayData {
   for (const column of columns) {
     if (!Array.isArray(tics[column]) || tics[column].length !== ticCount) return false;
   }
-  return Array.isArray(data.typed) && Array.isArray(data.events) && Array.isArray(data.checks);
+  if (!Array.isArray(data.typed) || !Array.isArray(data.events)) return false;
+  // The desync samples carry no tic of their own — one per `CHECK_INTERVAL` from tic 0 — so the
+  // count is what says the columns line up with the stream they are read against.
+  const checks = data.checks;
+  if (!isRecord(checks)) return false;
+  const samples = Math.ceil(ticCount / CHECK_INTERVAL);
+  return ['x', 'y', 'cursor'].every((column) => Array.isArray(checks[column]) && checks[column].length === samples);
 }
 
 /** The tail of the serialized meta writes; a rejection must not poison the ones behind it. */

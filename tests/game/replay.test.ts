@@ -8,6 +8,7 @@ import {
   KEYFRAME_INTERVAL,
   REPLAY_VERSION,
   SPEED_STEPS,
+  checkTic,
   describeEngine,
   packTics,
   positionFraction,
@@ -316,7 +317,7 @@ describe('Replays · recording and playing back', () => {
       recorder.endTic();
     }
     const replay = replayOf(recorder);
-    assert.equal(replay.data.checks.length, 3);
+    assert.equal(replay.data.checks.x.length, 3);
 
     clearRandom();
     const playback = new ReplayPlayback(replay);
@@ -335,6 +336,37 @@ describe('Replays · recording and playing back', () => {
       diverged.endTic();
     }
     assert.equal(diverged.desyncedAt, CHECK_INTERVAL);
+  });
+
+  test('a check sample is indexed by its tic, and the position compares rounded', () => {
+    clearRandom();
+    const rows: Row[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));
+    const recorder = new ReplayRecorder(scripted(rows), start());
+    // `beginTic` is handed the tic number as the x coordinate, so a sample's x is the tic it
+    // was taken at — which is what says no tic column is needed to find it again.
+    for (let i = 0; i < rows.length; i++) {
+      recorder.beginTic(i, 0, captureSimSettings());
+      recorder.endTic();
+    }
+    const replay = replayOf(recorder);
+    assert.deepEqual(replay.data.checks.x, [checkTic(0), checkTic(1), checkTic(2)]);
+
+    // Under half a unit rounds onto the sample and passes; over it does not.
+    clearRandom();
+    const near = new ReplayPlayback(replay);
+    for (let i = 0; i < rows.length; i++) {
+      near.check(i + 0.4, -0.4);
+      near.endTic();
+    }
+    assert.equal(near.desyncedAt, null, 'a drift below half a unit is not a desync');
+
+    clearRandom();
+    const far = new ReplayPlayback(replay);
+    for (let i = 0; i < rows.length; i++) {
+      far.check(i + 0.6, 0);
+      far.endTic();
+    }
+    assert.equal(far.desyncedAt, 0, 'a drift over half a unit is caught at the first sample');
   });
 
   test('the settings pins take effect without storage and come off again', () => {
@@ -356,7 +388,7 @@ describe('Replays · recording and playing back', () => {
 });
 
 describe('Replays · the pure helpers', () => {
-  test('the stored columns are differences, and come back the values they were', () => {
+  test('the stored columns are second differences, and come back the values they were', () => {
     const tics = {
       held: [1, 2, 3],
       pressed: [0, 0, 0],
@@ -372,10 +404,17 @@ describe('Replays · the pure helpers', () => {
       poseTilt: [3680, 3681, 3682],
     };
     const packed = packTics(tics);
-    assert.deepEqual(packed.poseYaw, [5760, 6, 5], 'the first value, then the steps');
-    assert.deepEqual(packed.aimX, [6400, 10, null], 'a tic with no aim point carries no difference');
+    assert.deepEqual(packed.poseTilt, [3680, -3679, 0], 'a column climbing at a constant rate stores a zero');
+    assert.deepEqual(packed.poseYaw, [5760, -5754, -1], 'each value against the two before it');
+    assert.deepEqual(packed.aimX, [6400, -6390, null], 'a tic with no aim point carries no value');
     assert.deepEqual(packed.held, tics.held, 'the mask columns are left alone');
     assert.deepEqual(unpackTics(packed), tics);
+
+    // A gap mid-column leaves the prediction where it was, so the value after it is predicted from
+    // the two present values before — not from the gap.
+    const gapped = { ...tics, aimX: [6400, null, 6410], aimY: [-100, null, -90] };
+    assert.deepEqual(packTics(gapped).aimX, [6400, null, -6390]);
+    assert.deepEqual(unpackTics(packTics(gapped)), gapped);
   });
 
   test('speedAt clamps into the table and positionFraction into 0..1', () => {

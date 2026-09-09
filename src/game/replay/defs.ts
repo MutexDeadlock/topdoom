@@ -127,13 +127,14 @@ export interface TicColumns {
 
 /**
  * The columns whose values crawl rather than jump — the aim point and the camera pose, both
- * quantized coordinates. On disk they are stored as differences, which gzip packs to about half
- * what the absolute values take; the mask columns are left alone, where differences measured
- * *worse*. docs/replays.md § The record.
+ * quantized coordinates. On disk they are stored as **second** differences: the camera and the aim
+ * point glide, so their acceleration is smaller than their velocity, and what gzip sees is a
+ * column of near-zeros. The mask columns are left alone, where differencing measured *worse*.
+ * docs/replays.md § The record.
  */
 const DELTA_COLUMNS = ['aimX', 'aimY', 'poseYaw', 'poseX', 'poseY', 'poseZ', 'poseDistance', 'poseTilt'] as const;
 
-/** The stored form of `tics`: the smooth columns as differences. */
+/** The stored form of `tics`: the smooth columns as second differences. */
 export function packTics(tics: TicColumns): TicColumns {
   return walkColumns(tics, true);
 }
@@ -153,6 +154,34 @@ export function poseAt(tics: TicColumns, tic: number): CameraPose | null {
     distance: tics.poseDistance[tic] * POSE_QUANTUM,
     tilt: tics.poseTilt[tic] * POSE_QUANTUM,
   };
+}
+
+/**
+ * The desync samples as columns, one entry per `CHECK_INTERVAL` tics from tic 0 — `checkTic` is
+ * the tic an index stands for, so no tic column is stored. The player position is **rounded to
+ * whole map units**: the cursor beside it is exact, and it is the cursor that moves on every
+ * diverging random draw, so what rounding can hide is a drift below half a unit that has not yet
+ * drawn — which the next sample a second later no longer hides. Rounded rather than hashed because
+ * a hash costs the same bytes and answers only yes/no, where these still say where the run was and
+ * by how much it drifted. docs/replays.md § The record.
+ */
+export interface CheckColumns {
+  /** `player.x`, rounded. */
+  x: number[];
+  /** `player.y`, rounded. */
+  y: number[];
+  /** The `P_Random` cursor, exact. */
+  cursor: number[];
+}
+
+/** The tic check sample `index` was taken at. */
+export function checkTic(index: number): number {
+  return index * CHECK_INTERVAL;
+}
+
+/** A sampled position as it is stored and compared — the one rounding rule, used by both sides. */
+export function checkCoord(v: number): number {
+  return Math.round(v);
 }
 
 /**
@@ -181,8 +210,8 @@ export interface ReplayData {
   /** The characters typed in a tic, for the tics that typed any — cheat codes. */
   typed: [tic: number, text: string][];
   events: ReplayEvent[];
-  /** `[tic, player.x, player.y, P_Random cursor]` every `CHECK_INTERVAL` tics. */
-  checks: [tic: number, x: number, y: number, cursor: number][];
+  /** The desync samples, one per `CHECK_INTERVAL` tics — § `CheckColumns`. */
+  checks: CheckColumns;
 }
 
 /** The listed half: everything about a replay that a row shows without decoding the data. */
@@ -307,28 +336,30 @@ function snapToLattice(v: number): number {
 }
 
 /**
- * `DELTA_COLUMNS` differenced (`pack`) or added back up. A null — the tics the pointer missed the
- * aim plane — carries no value and leaves the running total where it was.
+ * `DELTA_COLUMNS` against a linear prediction from the two values before (`pack`), or that undone.
+ * The prediction is `2 * p1 - p2`, so a column moving at a constant rate stores zeros; both
+ * directions carry the same two-value state, which is what makes the round trip exact in integers.
+ * A null — the tics the pointer missed the aim plane — carries no value and leaves the prediction
+ * where it was.
  */
 function walkColumns(tics: TicColumns, pack: boolean): TicColumns {
   const out: TicColumns = { ...tics };
   for (const name of DELTA_COLUMNS) {
     const values = tics[name] as (number | null)[];
     const walked: (number | null)[] = new Array(values.length);
-    let last = 0;
+    let p1 = 0;
+    let p2 = 0;
     for (let i = 0; i < values.length; i++) {
       const value = values[i];
       if (value === null || value === undefined) {
         walked[i] = null;
         continue;
       }
-      if (pack) {
-        walked[i] = value - last;
-        last = value;
-      } else {
-        last += value;
-        walked[i] = last;
-      }
+      const prediction = 2 * p1 - p2;
+      const absolute = pack ? value : value + prediction;
+      walked[i] = pack ? absolute - prediction : absolute;
+      p2 = p1;
+      p1 = absolute;
     }
     out[name] = walked as number[] & (number | null)[];
   }

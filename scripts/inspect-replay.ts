@@ -19,6 +19,7 @@ import {
   BUTTON_RIGHT_EDGE,
   COMPAT,
   REPLAY_VERSION,
+  checkTic,
   compatDrift,
   maskHas,
   poseAt,
@@ -84,7 +85,7 @@ if (keyframes.length === 0) console.log('\nWARNING: no seek anchors — this rep
 
 console.log(
   `record: ${data.snapshots.length} snapshot(s), ${keyframes.length} keyframe(s), ${data.events.length} event(s), ` +
-    `${data.typed.length} typing tic(s), ${data.checks.length} check sample(s)`,
+    `${data.typed.length} typing tic(s), ${data.checks.x.length} check sample(s)`,
 );
 console.log(`settings at tic 0: ${describeSettings(data.settings)}`);
 const camera = poseAt(data.tics, 0);
@@ -124,11 +125,12 @@ if (data.events.length > 0) {
   for (const event of data.events) console.log(`  tic ${event.tic}  ${describeEvent(event)}`);
 }
 
-if (data.checks.length > 0) {
-  const sample = ([tic, x, y, cursor]: [number, number, number, number]): string =>
-    `tic ${tic}: ${x.toFixed(1)}, ${y.toFixed(1)}  P_Random cursor ${cursor}`;
-  console.log(`\nchecks: ${sample(data.checks[0])}`);
-  if (data.checks.length > 1) console.log(`        ${sample(data.checks[data.checks.length - 1])}`);
+const checks = data.checks;
+if (checks.x.length > 0) {
+  const sample = (i: number): string =>
+    `tic ${checkTic(i)}: ${checks.x[i]}, ${checks.y[i]}  P_Random cursor ${checks.cursor[i]}`;
+  console.log(`\nchecks: ${sample(0)}`);
+  if (checks.x.length > 1) console.log(`        ${sample(checks.x.length - 1)}`);
 }
 
 const range = flag('--tics');

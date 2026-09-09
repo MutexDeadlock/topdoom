@@ -9,7 +9,9 @@ import { getRandomCursors } from '../../util/random.ts';
 import {
   BUTTON_FIRE,
   BUTTON_RIGHT_EDGE,
+  CHECK_INTERVAL,
   NORMAL_SPEED_INDEX,
+  checkCoord,
   poseAt,
   speedAt,
   type Keyframe,
@@ -57,7 +59,6 @@ export class ReplayPlayback implements TicInput {
 
   private typedAt: Map<number, string>;
   private eventIndex = 0;
-  private checkIndex = 0;
   /** The tic before `lastAim`'s — the point `aimAt` draws the reticle from. */
   private prevAim: Pos3 | null = null;
 
@@ -166,9 +167,9 @@ export class ReplayPlayback implements TicInput {
 
   /**
    * Puts the stream at `tic`, re-seating what only ever walked forwards: the event cursor and the
-   * settings, which are whatever the last event before `tic` left them (the check cursor re-seats
-   * itself in `check`). Events stamped *for* `tic` stay pending, since `Game` applies those before
-   * running it. docs/replays.md § Seeking.
+   * settings, which are whatever the last event before `tic` left them (the check samples are
+   * indexed by the tic, so they need nothing re-seated). Events stamped *for* `tic` stay pending,
+   * since `Game` applies those before running it. docs/replays.md § Seeking.
    */
   seek(tic: number): void {
     const { events } = this.replay.data;
@@ -181,7 +182,6 @@ export class ReplayPlayback implements TicInput {
       const event = events[this.eventIndex++];
       if (event.kind === 'settings') this.settings = event.settings;
     }
-    this.checkIndex = 0;
   }
 
   /** The events stamped for the tic about to run, in the order they were recorded. */
@@ -198,16 +198,15 @@ export class ReplayPlayback implements TicInput {
 
   /**
    * Compares the recording's sample for the tic about to run, if it took one, against the live
-   * state; the first disagreement is kept and later ones ignored.
+   * state; the first disagreement is kept and later ones ignored. The samples sit one per
+   * `CHECK_INTERVAL` from tic 0, so the tic indexes them and a seek needs no cursor of its own.
    */
   check(x: number, y: number): void {
+    if (this.desyncedAt !== null || this.cursor % CHECK_INTERVAL !== 0) return;
     const { checks } = this.replay.data;
-    while (this.checkIndex < checks.length && checks[this.checkIndex][0] < this.cursor) this.checkIndex++;
-    const sample = checks[this.checkIndex];
-    if (!sample || sample[0] !== this.cursor) return;
-    this.checkIndex++;
-    if (this.desyncedAt !== null) return;
-    if (sample[1] !== x || sample[2] !== y || sample[3] !== getRandomCursors().p) {
+    const i = this.cursor / CHECK_INTERVAL;
+    if (i >= checks.x.length) return;
+    if (checks.x[i] !== checkCoord(x) || checks.y[i] !== checkCoord(y) || checks.cursor[i] !== getRandomCursors().p) {
       this.desyncedAt = this.cursor;
     }
   }

@@ -30,6 +30,7 @@ Features and improvements
       width, in the WAD Library and the add-on list alike
     - a first start now opens on a preselected WAD set,
       configurable in constants.ts
+  - F5 does not immediately reload the app during gameplay
   - a collected item now leaves a small translucent puff where it stood,
     switchable under Settings -> Visuals -> Top-down extras
   - added IDCLEV cheat to warp to any map of the loaded set 

@@ -265,6 +265,17 @@ async function boot(): Promise<void> {
   window.addEventListener('pointerdown', unlockAudio, { once: true });
   window.addEventListener('keydown', unlockAudio, { once: true });
 
+  // A reload takes the run with it: the level-entry checkpoint is session-local and never offered
+  // at boot, and a recording lives in its recorder until a teardown stores it. The browser's own
+  // dialog is the whole guard available — F5 can't be swallowed, and the text is the browser's,
+  // not ours. Only over a run of the player's own: a playback reproduces from the store, and the
+  // menu alone holds nothing. docs/session.md § Session lifecycle.
+  window.addEventListener('beforeunload', (e) => {
+    if (session() !== 'game') return;
+    e.preventDefault();
+    e.returnValue = true; // what browsers before Chrome 119 read instead
+  });
+
   // ESC toggles between playing and the menu; the level survives the trip.
   window.addEventListener('keydown', (e) => {
     if (e.code !== 'Escape') return;

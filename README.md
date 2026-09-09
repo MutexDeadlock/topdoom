@@ -1,19 +1,31 @@
-# TopDoom
+# TopDOOM
 
-A top-down DOOM built on the original IWADs. The camera hangs above the player and is tilted
-slightly off vertical, so walls show some of their height and levels read as spaces rather than
-floor plans. Level geometry, textures and flats come straight out of the loaded WAD — `DOOM.WAD`,
-`DOOM2.WAD`, Freedoom or any PWAD. The code is new — no vanilla C is ported — but the behavior is
-vanilla's wherever a WAD can tell the difference: monster stats, weapon rates, the specials, even
-the random table are reproduced from the original source. Movement, collision and the camera are
-the deliberate exceptions, rebuilt for the view.
+An experimental implementation of the DOOM engine, presenting the original game and the content the
+community built on it in a **top-down view, as a twin-stick shooter**. All TypeScript, running in
+your browser.
 
-## Hop right in
+**Play it right here: [topdoom.vercel.app](https://topdoom.vercel.app)** — Freedoom and the
+shareware `DOOM1.WAD` ship with it, so there is a game to play before you add a WAD of your own.
 
-I provide an current, running build right here:
-https://topdoom.vercel.app
+It behaves as close to vanilla as it can, and deviates where the top-down view demands it. 
+I started this project to get into working with Claude Code. While the engines grew I then found it was actually fun, and both enjoyable and educational, so I kept going and tried to refine it into a properly polished thing.
 
-## Running it on our machine
+## What is working
+
+- Vanilla DOOM/DOOM2 and compatible levels
+- BOOM and MBF compatible levels
+- DEHACKED patches (most of them)
+- Sound and music
+- Savegames and replays (own format)
+
+## What is not working (yet)
+
+- UDMF and Hexen levels load, but most of them will not play properly
+- no .pk3 / .zip containers
+- no ZScript, DECORATE or ACS
+- no ZDoom or MBF21
+
+## Running it on your machine
 
 After cloning this repo:
 
@@ -30,7 +42,6 @@ npm run dev
 npm run build
 ```
 
-**Freedoom** and the shareware `DOOM1.WAD` ship with the repo, so it plays as soon as it starts.
 The copies above are one of three ways to add your own: the **WAD Library** on the start menu reads
 a folder anywhere on your disk, and a WAD dropped on the window plays straight away. Nothing is
 moved or uploaded either way.
@@ -39,23 +50,22 @@ moved or uploaded either way.
 
 The **New Game** tab is what a run is made of:
 
-- **Game WAD** — the files under `public/game/iwad/`. Normally an IWAD, but a PWAD carrying maps
-  works too if you put it there.
+- **Game WAD** — the files under `public/game/iwad/`.
 - **Add-ons** — the ones you have picked, any number, merged in the order you picked them. An
   add-on whose maps clash with the selected game WAD's naming scheme is greyed out rather than
-  dropped, so switching game WAD and back leaves your set intact; ones with no maps of their own
-  (textures, sounds, ...) always fit. The checkbox switches one off for a run without losing its
-  place in the order.
-- **Level** — every map in the resulting set, grouped by episode for DOOM 1.
+  dropped, so switching game WAD and back leaves your set intact.
+  Ones with no maps of their own (textures, sounds, ...) always fit. The checkbox switches one off 
+  for a run without losing its place in the order.
+- **Level** — every map in the resulting set.
 - **Difficulty** — the five vanilla skills, changing everything they change in the original: which
   monsters are placed at all, the damage and ammo multipliers at either end, and *Nightmare!*'s
   fast, respawning demons.
 
 **WAD Library** is where those come from: a browser over `public/game/iwad/`, `public/game/pwad/`,
-a folder on your own disk that you nominate once, and anything dropped on the window. Each row says
-what the file is — size, how many maps, whether it ships a DEHACKED patch or a text file to read,
-and whether this engine can run it — and ticking one picks it into the lists above. Chrome and
-Edge remember your folder between visits; Firefox and Safari have no way to, so it has to be
+a folder on your own disk that you nominate once, and anything dropped on the window.
+Each row says what the file is, how many maps it contains, whether it ships a DEHACKED patch or a text 
+file to read, and whether this engine can run it. Ticking one picks it into the lists above.
+Chrome and Edge remember your folder between visits; Firefox and Safari have no way to, so it has to be
 picked again after a reload.
 
 Your game WAD, add-ons, level and difficulty are remembered for the next visit.
@@ -172,47 +182,6 @@ outside the WAD is needed. A music PWAD shipping Ogg/FLAC/MP3/WAV plays that dir
 Both volumes live on the start menu and are remembered between sessions.
 See [docs/audio.md](docs/audio.md) and [docs/music.md](docs/music.md).
 
-## State
-
-A level is walkable, fightable and finishable, start to end of the campaign:
-
-- **Levels** — geometry, textures, flats, sector lighting, animated textures and switches, off the
-  WAD's own nodes. Map switching and PWAD merging work; fog of war hides a room until you have
-  seen it, and doubles as the automap.
-- **Movement** — vanilla's wall-sliding, straferunning and falling over this engine's own
-  collision ([docs/movement.md](docs/movement.md)), under an orbitable camera that fades the walls
-  between you and it.
-- **Fighting and items** — every weapon, monster and pickup, on vanilla's own tables
-  (see [Gameplay](#gameplay) above).
-- **Specials** — doors, lifts, floor movers, crushers, switches, teleporters, locked doors,
-  damage floors and secrets.
-- **Around the level** — sound and music out of the loaded WAD, savegames and best times, replays,
-  and three of vanilla's cheat codes typed in as they always were.
-
-**BOOM-format maps load and play**: extended BSP nodes, generalized linedefs and sector types, the
-extended linedef numbers, six-slot keys and generalized locks, elevators, silent and line-to-line
-teleporters, a WAD's own `ANIMATED` and `SWITCHES` tables, scrolling surfaces,
-conveyors, friction, wind and pushers, voodoo dolls, deep water, transfer lighting, translucent
-midtextures and custom colormaps. The one number deliberately left out is MBF's sky transfer —
-nothing draws sky in a top-down view. `inspect-wad` classifies every special a map uses, so what a
-particular WAD would lose is answerable before you play it.
-See [docs/specials.md](docs/specials.md).
-
-**UDMF maps load** (experimental): a `TEXTMAP` map parses into the same records a binary map
-yields, with its BSP read from the `ZNODES` lump — there is no node builder, so a map saved without
-nodes won't load. A map in the `doom` or `ZDoomTranslated` namespace plays in full, Boom specials
-included; other namespaces draw, collide and fight, but their ZDoom-style action specials don't run
-— the library flags such a WAD red and still lets you pick it, for walking a map whose doors won't
-open.
-See [docs/wad.md](docs/wad.md#udmf).
-
-**`DEHACKED`/BEX patches are read** from a WAD that ships one: level titles, par times, monster,
-weapon and ammo stats, `Frame` records, repointed frames and `[SPRITES]` renames — and **action
-pointers (`Pointer`, `[CODEPTR]`), MBF's included**, so a repointed chain fires the attack that
-pointer belongs to at the timing the chain implies. A patch asking for something out of scope
-still loads and plays, and what was skipped is reported rather than dropped silently.
-See [docs/dehacked.md](docs/dehacked.md).
-
 ## Dev mode
 
 Set `VITE_DEVMODE=true` in a `.env.local` file at the repo root (git-ignored, create it
@@ -257,7 +226,7 @@ The GPL applies to this engine's own source. **Game content is not ours to licen
 is covered:**
 
 - **Your IWADs.** `DOOM.WAD` and `DOOM2.WAD` are id Software's commercial data. They are not in
-  this repo and never will be — you supply them, as [Running it](#running-it) describes.
+  this repo and never will be - you supply them, as [Running it](#running-it-on-your-machine) describes.
 - **[Freedoom](https://freedoom.github.io/)**, which is what ships as playable content, is under
   its own BSD 3-clause terms: redistributable, but the copyright notice travels with it.
   `public/og.jpg`, the link-preview card, is a Freedoom screenshot and carries the same.

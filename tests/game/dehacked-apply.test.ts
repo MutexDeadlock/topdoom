@@ -219,7 +219,7 @@ describe('DEHACKED · applying', () => {
     apply('Misc 0\nInitial Health = 5\nGod Mode Health = 300\nIDKFA Armor = 50\nIDKFA Armor Class = 1\n');
     const cheats = new Cheats();
     const inv = createInventory();
-    cheats.type('iddqdidkfa', inv);
+    cheats.type('iddqdidkfa', inv, 'commercial');
     assert.equal(inv.health, 300);
     assert.equal(inv.armor, 50);
     assert.equal(inv.armorType, 1);

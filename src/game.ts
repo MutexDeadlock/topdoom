@@ -134,6 +134,7 @@ import {
   type Inventory,
 } from './game/inventory.ts';
 import { Cheats, warpTargets } from './game/cheats.ts';
+import { gameModeOf, type GameMode } from './wad/campaign/gamemode.ts';
 import { ThingType } from './game/things/doomednums.ts';
 import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
@@ -296,6 +297,11 @@ export class Game {
   /** Whether the loaded set draws the player its own way — resolved once, per `setDrawsOwnPlayer`. */
   private setDrawsPlayer = false;
   private mapNames: string[];
+  /**
+   * Vanilla's `gamemode`, which the set's own map list stands in for — read once, and only by
+   * IDKFA so far (docs/cheats.md § IDKFA).
+   */
+  private gameMode: GameMode;
   private mapIndex = 0;
 
   private map!: DoomMap;
@@ -695,6 +701,7 @@ export class Game {
     });
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
+    this.gameMode = gameModeOf(this.mapNames);
     // After `mapNames`: a progression may only name a level the loaded set actually provides.
     this.progression = new LevelProgression(mapInfo, this.mapNames);
 
@@ -1698,7 +1705,7 @@ export class Game {
   private applyCheats(input: TicInput): void {
     const typed = input.typed();
     if (!typed) return;
-    const response = this.cheats.type(typed, this.inventory);
+    const response = this.cheats.type(typed, this.inventory, this.gameMode);
     if (response) {
       this.message.show(response);
       this.cheated = true;

@@ -35,6 +35,8 @@ Features and improvements
   - the status text's debug lines are now a setting of their own
 
 Fixed bugs
+  - IDKFA no longer hands over weapons the loaded set could never select:
+    the super shotgun in DOOM 1, and the plasma rifle and BFG in shareware
   - running into a wall no longer collects an item sealed behind it
   - a lift or door narrower than a monster no longer moves straight through
     one standing at its edge, pinning it in mid-air

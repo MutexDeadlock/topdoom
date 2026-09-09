@@ -60,9 +60,24 @@ read — and all six keys. The armor is `Misc`'s `IDKFA Armor`/`IDKFA Armor Clas
 from the classes a real armor pickup follows (docs/items.md § Collecting things): moving
 `Blue Armor Class` does not move what this hands over.
 
-Every weapon means the whole roster, DOOM 1 included: vanilla's loop runs to `NUMWEAPONS` whatever
-the IWAD is, so the super shotgun is handed over there too. It has no icon, sprite or sound in
-`DOOM.WAD` and is quietly artless when fired, which is what vanilla does with it as well.
+Every weapon means `NUMWEAPONS` **less what the loaded set could never select**, which is
+prboom-plus' `WeaponSelectable`:
+
+| Game mode | Withheld |
+|---|---|
+| `commercial` | nothing |
+| `registered` | the super shotgun ("Can't select the super shotgun in Doom 1") |
+| `shareware` | the super shotgun, the plasma rifle and the BFG |
+
+Vanilla's loop does hand all nine over whatever the IWAD is; it is the *selection* side that
+refuses them, so the player never holds one. Here ownership is the only gate every selection path
+reads — `WEAPON_SLOTS`, `WEAPON_CYCLE`, `AMMO_FALLBACK_ORDER`, the HUD strip — so they are left out
+of the set instead. Same observable behavior, one deviation from vanilla's own record of it.
+
+The mode comes off the set's map list (docs/wad.md § What game mode a set is), vanilla's own
+file-name identification being untrustworthy here. Nothing else in IDKFA is gated: the ammo still
+fills to `maxammo`, cells included, and a map that *places* one of these weapons still gives it —
+the pickup path is unchanged.
 
 The selected weapon is left alone — vanilla's cheat doesn't switch to anything, unlike a pickup
 (docs/items.md § Inventory).

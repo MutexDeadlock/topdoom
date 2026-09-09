@@ -464,6 +464,31 @@ hasn't downloaded anything yet — so it resolves off the manifest instead, whic
 `ManifestEntry` carries each file's own MAPINFO titles (§ The `public/game/` manifest) and
 `mergedMaps` (`library.ts`) merges them the same way, later files winning.
 
+## What game mode a set is
+
+`campaign/gamemode.ts` answers vanilla's `gamemode`: `shareware`, `registered` or `commercial`.
+Vanilla reads it off the IWAD's file name (`d_main.c: IdentifyVersion` — `doom1.wad`, `doom.wad`,
+`doomu.wad`), which nothing here can trust: a set is whatever files the player picked, under
+whatever names. The set's **map list** decides instead.
+
+| The set provides | Mode |
+|---|---|
+| any `MAPxx` | `commercial` |
+| any `ExMy` past episode 1 | `registered` |
+| `E1Mx` only | `shareware` |
+| neither scheme (a total conversion's own names), or an empty list | `registered` |
+
+Episode 2 as the registered marker is vanilla's own test: `D_DoomMain` checks `e2m1`-`e3m9` before
+believing a WAD is the registered version. Its four companion sprite lumps
+(`dphoof`/`bfgga0`/`heada1`/`cybra1`) are deliberately not read — a WAD's art never decides what a
+tic does. `retail` is folded into `registered`: nothing here reads Ultimate DOOM's fourth episode
+apart from the first three.
+
+An unidentifiable set reads as `registered` on purpose: the mode withholds nothing a DOOM 1 set can
+have, so a total conversion is never quietly taken a weapon away from. The only reader so far is
+IDKFA's weapon roster (docs/cheats.md § IDKFA); IDCLEV's two spellings are ordered by the *current
+map's* name instead, which is a different question (§ Level names).
+
 ## Par times
 
 `campaign/pars.ts` answers "how fast was this level meant to be finished", for the intermission's

@@ -19,39 +19,39 @@ import { heldInput } from '../fixtures/input.ts';
 describe('Cheats · recognising a code', () => {
   test('a code fires however much junk came before it', () => {
     const cheats = new Cheats();
-    assert.equal(cheats.type('walking', createInventory()), null);
-    assert.equal(cheats.type('iddqd', createInventory()), CHEAT_MESSAGES.STSTR_DQDON);
+    assert.equal(cheats.type('walking', createInventory(), 'commercial'), null);
+    assert.equal(cheats.type('iddqd', createInventory(), 'commercial'), CHEAT_MESSAGES.STSTR_DQDON);
   });
 
   test('the buffer spans tics, so a code typed slowly still lands', () => {
     const cheats = new Cheats();
     // One character per tic is what typing actually looks like at 35 Hz.
-    for (const char of 'iddq') assert.equal(cheats.type(char, createInventory()), null);
-    assert.equal(cheats.type('d', createInventory()), CHEAT_MESSAGES.STSTR_DQDON);
+    for (const char of 'iddq') assert.equal(cheats.type(char, createInventory(), 'commercial'), null);
+    assert.equal(cheats.type('d', createInventory(), 'commercial'), CHEAT_MESSAGES.STSTR_DQDON);
   });
 
   test('a code in progress is announced, so a save is not taken over half a buffer', () => {
     const cheats = new Cheats();
     const inv = createInventory();
-    assert.equal(cheats.type('xx', inv), null);
+    assert.equal(cheats.type('xx', inv, 'commercial'), null);
     assert.equal(cheats.typing, false, 'junk is not a code being typed');
     for (const char of 'idcli') {
-      cheats.type(char, inv);
+      cheats.type(char, inv, 'commercial');
       assert.equal(cheats.typing, true, `after ${char}`);
     }
-    assert.equal(cheats.type('p', inv), CHEAT_MESSAGES.STSTR_NCON);
+    assert.equal(cheats.type('p', inv, 'commercial'), CHEAT_MESSAGES.STSTR_NCON);
     assert.equal(cheats.typing, false, 'the match cleared the buffer');
   });
 
   test('junk before a code does not hide that the code has started', () => {
     const cheats = new Cheats();
-    cheats.type('walkingid', createInventory());
+    cheats.type('walkingid', createInventory(), 'commercial');
     assert.equal(cheats.typing, true, 'the buffer keeps the junk; its *tail* is what counts');
   });
 
   test('every code in one burst fires in order, the last response winning', () => {
     const cheats = new Cheats();
-    assert.equal(cheats.type('iddqdiddqd', createInventory()), CHEAT_MESSAGES.STSTR_DQDOFF);
+    assert.equal(cheats.type('iddqdiddqd', createInventory(), 'commercial'), CHEAT_MESSAGES.STSTR_DQDOFF);
     assert.equal(cheats.god, false, 'toggled twice, not once');
   });
 });
@@ -61,12 +61,12 @@ describe('Cheats · IDDQD', () => {
     const cheats = new Cheats();
     const inv = createInventory();
     inv.health = 7;
-    assert.equal(cheats.type('iddqd', inv), CHEAT_MESSAGES.STSTR_DQDON);
+    assert.equal(cheats.type('iddqd', inv, 'commercial'), CHEAT_MESSAGES.STSTR_DQDON);
     assert.equal(cheats.god, true);
     assert.equal(inv.health, 100, "st_stuff.c's own literal, not the start health");
     // Off again heals nothing.
     inv.health = 7;
-    assert.equal(cheats.type('iddqd', inv), CHEAT_MESSAGES.STSTR_DQDOFF);
+    assert.equal(cheats.type('iddqd', inv, 'commercial'), CHEAT_MESSAGES.STSTR_DQDOFF);
     assert.equal(cheats.god, false);
     assert.equal(inv.health, 7);
   });
@@ -85,25 +85,49 @@ describe('Cheats · IDKFA', () => {
   test('armor, every weapon, full ammo and all six keys', () => {
     const cheats = new Cheats();
     const inv = createInventory();
-    assert.equal(cheats.type('idkfa', inv), CHEAT_MESSAGES.STSTR_KFAADDED);
+    assert.equal(cheats.type('idkfa', inv, 'commercial'), CHEAT_MESSAGES.STSTR_KFAADDED);
     assert.equal(inv.armor, 200);
     assert.equal(inv.armorType, 2);
-    assert.deepEqual([...inv.weapons].sort(), [...WEAPON_ORDER].sort(), 'NUMWEAPONS, super shotgun included');
+    assert.deepEqual([...inv.weapons].sort(), [...WEAPON_ORDER].sort(), 'NUMWEAPONS, on a DOOM 2 map');
     for (const type of AMMO_TYPES) assert.equal(inv.ammo[type], ammoMax(inv, type));
     assert.equal(inv.keys.size, KEY_SLOTS.length);
     assert.equal(inv.currentWeapon, 'pistol', 'vanilla arms nothing; only a pickup switches weapons');
   });
 
+  test('a DOOM 1 set is handed everything but the super shotgun', () => {
+    const inv = createInventory();
+    new Cheats().type('idkfa', inv, 'registered');
+    assert.equal(inv.weapons.has('supershotgun'), false, 'vanilla can never select it in DOOM 1');
+    assert.deepEqual(
+      [...inv.weapons].sort(),
+      WEAPON_ORDER.filter((w) => w !== 'supershotgun').sort(),
+      'the rest of NUMWEAPONS is untouched',
+    );
+  });
+
+  test('shareware loses the plasma rifle and the BFG with it', () => {
+    const inv = createInventory();
+    new Cheats().type('idkfa', inv, 'shareware');
+    assert.deepEqual(
+      [...inv.weapons].sort(),
+      WEAPON_ORDER.filter((w) => !['supershotgun', 'plasmaRifle', 'bfg'].includes(w)).sort(),
+      "`WeaponSelectable`'s shareware pair, on top of DOOM 1's super shotgun",
+    );
+    // The ammo is filled all the same: `maxammo` is not gated on the mode, and a shareware set
+    // has cells to pick up for a plasma rifle a PWAD places.
+    assert.equal(inv.ammo.cells, ammoMax(inv, 'cells'));
+  });
+
   test('a backpack already collected raises what "full" means', () => {
     const inv = createInventory();
     inv.backpack = true;
-    new Cheats().type('idkfa', inv);
+    new Cheats().type('idkfa', inv, 'commercial');
     assert.equal(inv.ammo.bullets, 400);
   });
 
   test('it leaves nothing switched on to record', () => {
     const cheats = new Cheats();
-    cheats.type('idkfa', createInventory());
+    cheats.type('idkfa', createInventory(), 'commercial');
     assert.equal(cheats.active, false);
   });
 });
@@ -112,10 +136,10 @@ describe('Cheats · IDCLIP', () => {
   test('either spelling toggles the same flag', () => {
     const cheats = new Cheats();
     const inv = createInventory();
-    assert.equal(cheats.type('idclip', inv), CHEAT_MESSAGES.STSTR_NCON);
+    assert.equal(cheats.type('idclip', inv, 'commercial'), CHEAT_MESSAGES.STSTR_NCON);
     assert.equal(cheats.noclip, true);
     // Vanilla tests both sequences in one condition, whatever the IWAD is.
-    assert.equal(cheats.type('idspispopd', inv), CHEAT_MESSAGES.STSTR_NCOFF);
+    assert.equal(cheats.type('idspispopd', inv, 'commercial'), CHEAT_MESSAGES.STSTR_NCOFF);
     assert.equal(cheats.noclip, false);
   });
 
@@ -190,12 +214,12 @@ describe('Cheats · IDCLEV', () => {
   test('the two characters after the code come back once, and nothing else does', () => {
     const cheats = new Cheats();
     const inv = createInventory();
-    assert.equal(cheats.type('idclev', inv), null, 'the code alone prints nothing');
+    assert.equal(cheats.type('idclev', inv, 'commercial'), null, 'the code alone prints nothing');
     assert.equal(cheats.takeWarp(), null, 'and asks for nothing until both characters are in');
     assert.equal(cheats.typing, true, 'a code waiting for its parameters is still being typed');
-    cheats.type('0', inv);
+    cheats.type('0', inv, 'commercial');
     assert.equal(cheats.takeWarp(), null);
-    cheats.type('5', inv);
+    cheats.type('5', inv, 'commercial');
     assert.equal(cheats.typing, false);
     assert.equal(cheats.takeWarp(), '05');
     assert.equal(cheats.takeWarp(), null, 'the read clears it, so one code changes level once');
@@ -205,20 +229,20 @@ describe('Cheats · IDCLEV', () => {
     const cheats = new Cheats();
     const inv = createInventory();
     // `cht_GetParam` takes the next two keys as parameters; the code inside them is not a code.
-    assert.equal(cheats.type('idclevidclip', inv), null);
+    assert.equal(cheats.type('idclevidclip', inv, 'commercial'), null);
     assert.equal(cheats.noclip, false, 'the `id` went into the parameters, leaving a bare `clip`');
     assert.equal(cheats.takeWarp(), 'id');
   });
 
   test('typing it is not yet cheating: the level it names may not exist', () => {
     const cheats = new Cheats();
-    cheats.type('idclev99', createInventory());
+    cheats.type('idclev99', createInventory(), 'commercial');
     assert.equal(cheats.used, false, 'ST_Responder returns before it changes anything');
   });
 
   test('a warp that happens counts as used and takes the toggles with it', () => {
     const cheats = new Cheats();
-    cheats.type('iddqdidclipidclev01', createInventory());
+    cheats.type('iddqdidclipidclev01', createInventory(), 'commercial');
     assert.deepEqual([cheats.god, cheats.noclip], [true, true]);
     // `G_DeferedInitNew` rebirths every player, and `G_PlayerReborn` memsets `player_t.cheats`.
     cheats.warped();
@@ -238,7 +262,7 @@ describe('Cheats · IDCLEV', () => {
 describe('Cheats · what a save and a patch see', () => {
   test('the toggles round-trip, and a save from before them means neither', () => {
     const cheats = new Cheats();
-    cheats.type('iddqdidclip', createInventory());
+    cheats.type('iddqdidclip', createInventory(), 'commercial');
     assert.equal(cheats.active, true);
     const restored = new Cheats();
     restored.restore(cheats.snapshot());
@@ -250,7 +274,7 @@ describe('Cheats · what a save and a patch see', () => {
   test('a session that typed one is marked, IDKFA included, and the mark travels in the block', () => {
     const cheats = new Cheats();
     assert.equal(cheats.used, false);
-    cheats.type('idkfa', createInventory());
+    cheats.type('idkfa', createInventory(), 'commercial');
     assert.equal(cheats.used, true, 'a code that leaves no toggle still cheated');
     // The block is written for a session that used one, so its presence alone is what says so —
     // which is why an IDKFA session records `{god: false, noclip: false}` rather than nothing.

@@ -3,8 +3,9 @@
  * the two toggles they leave behind and the level IDCLEV asks for. `game.ts` feeds it whatever was
  * typed this tic and acts on what comes back. See docs/cheats.md.
  */
-import { AMMO_TYPES, KEY_SLOTS, ammoMax, inventoryLimit, type Inventory } from './inventory.ts';
+import { AMMO_TYPES, KEY_SLOTS, ammoMax, inventoryLimit, type Inventory, type WeaponId } from './inventory.ts';
 import { WEAPON_ORDER } from './dehacked/tables.ts';
+import type { GameMode } from '../wad/campaign/gamemode.ts';
 import type { CheatSnapshot } from './snapshot.ts';
 
 /**
@@ -46,6 +47,21 @@ const LONGEST_CODE = Math.max(...CHEAT_CODES.map(([code]) => code.length));
  * `cht_GetParam` fills with whatever keys follow, digits or not.
  */
 const WARP_PARAMS = 2;
+
+/** Which of the two spellings IDCLEV tries first — vanilla's `gamemode == commercial`. */
+const COMMERCIAL_MAP = /^MAP\d\d$/;
+
+/**
+ * The weapons IDKFA withholds per game mode: the ones vanilla owns but can never select there.
+ * prboom-plus' `WeaponSelectable` is the list — "Can't select the super shotgun in Doom 1"
+ * (`gamemission == doom`), and no plasma rifle or BFG under `gamemode == shareware`.
+ * docs/cheats.md § IDKFA.
+ */
+const WITHHELD_WEAPONS: Record<GameMode, readonly WeaponId[]> = {
+  shareware: ['supershotgun', 'plasmaRifle', 'bfg'],
+  registered: ['supershotgun'],
+  commercial: [],
+};
 
 /**
  * What the player has typed lately, and the two cheats that stay switched on once typed. Owned by
@@ -96,7 +112,8 @@ export class Cheats {
 
   /**
    * Takes the characters typed since the last tic and fires whatever code they completed, returning
-   * the response line to show (or null for a tic that completed none).
+   * the response line to show (or null for a tic that completed none). `mode` is the loaded set's
+   * own (`wad/campaign/gamemode.ts`): IDKFA's weapon roster reads it.
    *
    * The match is a rolling suffix rather than vanilla's per-cheat cursor, which resets to the start
    * of its sequence on any mismatched key and swallows the mismatched character with it — so
@@ -106,7 +123,7 @@ export class Cheats {
    * IDCLEV completes no effect and no line of its own: the two characters after it are swallowed
    * as parameters (`cht_GetParam`) and left for `takeWarp`, whatever they are.
    */
-  type(typed: string, inv: Inventory): string | null {
+  type(typed: string, inv: Inventory, mode: GameMode): string | null {
     let message: string | null = null;
     for (const char of typed) {
       if (this.params !== null) {
@@ -129,7 +146,7 @@ export class Cheats {
           continue;
         }
         this.used = true;
-        message = this.fire(id, inv);
+        message = this.fire(id, inv, mode);
       }
     }
     return message;
@@ -174,7 +191,7 @@ export class Cheats {
   }
 
   /** One cheat's effect, `ST_Responder`'s own block per code — IDCLEV's is the caller's. */
-  private fire(id: Exclude<CheatId, 'levelWarp'>, inv: Inventory): string {
+  private fire(id: Exclude<CheatId, 'levelWarp'>, inv: Inventory, mode: GameMode): string {
     switch (id) {
       case 'god':
         this.god = !this.god;
@@ -188,9 +205,12 @@ export class Cheats {
         // `IDKFA Armor Class`) and both independent of what a real armor pickup is worth.
         inv.armor = inventoryLimit('idkfaArmor');
         inv.armorType = inventoryLimit('idkfaArmorClass') as 0 | 1 | 2;
-        // Every weapon and every key, exactly as vanilla's own loops run them: `NUMWEAPONS` and
-        // `NUMCARDS` are the whole rosters, so DOOM 1 hands over the super shotgun too.
-        for (const weapon of WEAPON_ORDER) inv.weapons.add(weapon);
+        // Every weapon and every key, as vanilla's own loops run them — `NUMWEAPONS` and
+        // `NUMCARDS` are the whole rosters — less what this mode could never select
+        // (docs/cheats.md § IDKFA).
+        for (const weapon of WEAPON_ORDER) {
+          if (!WITHHELD_WEAPONS[mode].includes(weapon)) inv.weapons.add(weapon);
+        }
         for (const type of AMMO_TYPES) inv.ammo[type] = ammoMax(inv, type);
         for (const slot of KEY_SLOTS) inv.keys.add(slot);
         return CHEAT_MESSAGES.STSTR_KFAADDED;
@@ -212,7 +232,7 @@ export class Cheats {
 export function warpTargets(warp: string, current: string): [string, string] {
   const episode = `E${warp[0]}M${warp[1]}`;
   const commercial = `MAP${warp}`;
-  return /^MAP\d\d$/.test(current) ? [commercial, episode] : [episode, commercial];
+  return COMMERCIAL_MAP.test(current) ? [commercial, episode] : [episode, commercial];
 }
 
 /**

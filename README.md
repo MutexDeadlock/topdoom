@@ -8,7 +8,9 @@ your browser.
 shareware `DOOM1.WAD` ship with it, so there is a game to play before you add a WAD of your own.
 
 It behaves as close to vanilla as it can, and deviates where the top-down view demands it. 
-I started this project to get into working with Claude Code. While the engines grew I then found it was actually fun, and both enjoyable and educational, so I kept going and tried to refine it into a properly polished thing.
+I started this project to get into working with Claude Code. While the engine grew I found it 
+is actually fun pretty fun to play, and both enjoyable and educational making it, so I kept going 
+and tried to refine it into a properly polished thing.
 
 ## What is working
 

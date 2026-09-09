@@ -41,6 +41,17 @@ line-to-line pair with matching alignment, as in BOOMEDIT.WAD — is exactly the
 `turnYaw` shifts `yawDeg`, `targetYawDeg` and both interpolation ends together, so the pending step
 lands on the lattice measured from the new bearing. `tests/render/camera-yaw.test.ts` pins it.
 
+**A yaw taken from outside the orbit is snapped onto the lattice** (`latticeYaw`, the nearest
+multiple of `KEY_YAW_STEP`), because only whole `stepYaw`s move it afterwards: an angle inherited
+mid-glide stays that far off the lattice for the rest of the session. Two seams inherit one — a
+savegame's restore (`game.ts: loadMapByIndex`) and a playback taken over (`Game.takeOver`, which
+glides there with a partial `stepYaw` rather than jumping, so the view turns the last few degrees
+instead of cutting). A save stores `targetYawDeg`, not `yawDeg`, so saving mid-step needs no snap at
+all — and the take-over's save, written after the step is queued, is lattice-true on the way out.
+The lattice is *absolute* multiples of 45°: the phase a map's own player start or a silent
+teleporter's `turnYaw` sets is not tracked, so an off-45° one is shifted by up to half a step
+where a snap lands on it. `tests/render/camera-yaw.test.ts` pins all of it.
+
 **`yawDeg` stays in (-180°, 180°]** (`normaliseYaw`, run at the end of every `tick` and by both
 instant routes), so crossing a silent teleporter back and forth doesn't climb the readout by a turn
 a time. Its rule is the same one `turnYaw` follows and is what makes wrapping safe at all: it shifts

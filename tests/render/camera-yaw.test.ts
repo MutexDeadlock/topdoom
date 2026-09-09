@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TopDownCamera } from '../../src/render/camera.ts';
+import { latticeYaw, TopDownCamera } from '../../src/render/camera.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 
 /**
@@ -97,6 +97,37 @@ describe('Rendering · camera orbit', () => {
       previous = camera.yawDeg;
     }
     assert.ok(Math.abs(camera.yawDeg - -145) < 1e-6, 'and it arrives at the wrapped target');
+  });
+
+  test('a save mid-step stores where the orbit is heading, not what it is passing through', () => {
+    const camera = new TopDownCamera(16 / 9);
+    camera.snapTo(AT);
+    camera.stepYaw(45);
+    camera.tick(DOOM_TIC, AT, null);
+
+    assert.ok(camera.yawDeg > 0 && camera.yawDeg < 45, 'the orbit is between two lattice angles');
+    assert.equal(camera.targetYawDeg, 45, 'and the target is the one it would have restored on');
+  });
+
+  test('an inherited yaw snaps to the nearest lattice angle', () => {
+    assert.equal(latticeYaw(170.375), 180, 'the take-over case: a step 9.625° from arriving');
+    assert.equal(latticeYaw(0), 0);
+    assert.equal(latticeYaw(-100), -90);
+    assert.equal(latticeYaw(-157.5), -135, 'a half-step lands on the higher of the two');
+  });
+
+  test('a playback taken over mid-step glides the orbit back onto the lattice', () => {
+    const camera = new TopDownCamera(16 / 9);
+    camera.snapTo(AT);
+    // What a playback leaves behind: the pose of a tic the recording's own Q/E step passed through,
+    // with no target of its own to finish on (`roundPose` writes none).
+    camera.snapPose({ yaw: 170.375, point: [0, 41, 0], distance: 480, tilt: 60 });
+    assert.equal(camera.yawDeg, 170.375);
+
+    camera.stepYaw(latticeYaw(camera.yawDeg) - camera.yawDeg); // `Game.takeOver`
+    assert.equal(camera.targetYawDeg, 180, 'the save written on the way in is already lattice-true');
+    for (let i = 0; i < 200; i++) camera.tick(DOOM_TIC, AT, null);
+    assert.ok(Math.abs(camera.yawDeg - 180) < 1e-6, 'and the view arrives there');
   });
 
   test('turnYaw leaves no interpolation window for the next frame to animate out of', () => {

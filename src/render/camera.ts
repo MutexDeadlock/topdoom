@@ -111,6 +111,19 @@ const KEY_YAW_STEP = 45;
 const KEY_YAW_REPEAT_INTERVAL = 0.26;
 
 /**
+ * The nearest orbit angle a Q/E step can rest on — what the two seams that inherit a yaw from
+ * somewhere else snap onto (a save's restore, a playback taken over), since only a whole `stepYaw`
+ * ever moves the orbit afterwards and an angle picked up mid-glide would survive every one of them.
+ * The lattice is absolute multiples of `KEY_YAW_STEP` rather than the phase the level actually
+ * started on: nothing tracks that phase, so where a map's player start or a silent teleporter's
+ * `turnYaw` left an off-45° one this shifts the orbit by up to half a step, which is cosmetic.
+ * docs/camera.md § Camera orbit.
+ */
+export function latticeYaw(yawDeg: number): number {
+  return Math.round(yawDeg / KEY_YAW_STEP) * KEY_YAW_STEP;
+}
+
+/**
  * A camera hanging above the player, tilted slightly off vertical so walls show a bit of their
  * height and the level reads as a space rather than a plan. `yawDeg` orbits it around the followed
  * point (Q/E, `applyYawInput`). Its follow point, yaw and framing are **simulation state**,
@@ -135,7 +148,7 @@ export class TopDownCamera {
   /**
    * Where `yawDeg` is animating towards — see `stepYaw`. Equal to `_yawDeg` outside of a Q/E snap.
    */
-  private targetYawDeg: number;
+  private _targetYawDeg: number;
 
   private target = new THREE.Vector3();
   private smoothed = new THREE.Vector3();
@@ -172,7 +185,7 @@ export class TopDownCamera {
     this.prevDistance = this._distance;
     this.aimLead = options.aimLead ?? 0.18;
     this._yawDeg = options.yawDeg ?? 0;
-    this.targetYawDeg = this._yawDeg;
+    this._targetYawDeg = this._yawDeg;
     this.prevYawDeg = this._yawDeg;
     this.viewYawDeg = this._yawDeg;
 
@@ -194,7 +207,7 @@ export class TopDownCamera {
 
   set yawDeg(value: number) {
     this._yawDeg = value;
-    this.targetYawDeg = value;
+    this._targetYawDeg = value;
     // An instant reorient must not leave a stale previous yaw for the next
     // frame to interpolate out of, or the spawn/teleport snap animates instead.
     this.prevYawDeg = value;
@@ -203,12 +216,21 @@ export class TopDownCamera {
   }
 
   /**
+   * Where the orbit is heading — `yawDeg` itself outside of a Q/E step. What a savegame stores, so
+   * a save taken mid-step comes back on the lattice instead of stranding the orbit between two
+   * (docs/camera.md § Camera orbit). Read-only: `stepYaw` glides, the `yawDeg` setter jumps.
+   */
+  get targetYawDeg(): number {
+    return this._targetYawDeg;
+  }
+
+  /**
    * Queues a relative yaw change (the Q/E 45° snap) to animate smoothly
    * towards over the next few frames, rather than jumping instantly the way
    * a plain `yawDeg` assignment does.
    */
   stepYaw(deltaDeg: number): void {
-    this.targetYawDeg += deltaDeg;
+    this._targetYawDeg += deltaDeg;
   }
 
   /**
@@ -219,7 +241,7 @@ export class TopDownCamera {
    */
   turnYaw(deltaDeg: number): void {
     this._yawDeg += deltaDeg;
-    this.targetYawDeg += deltaDeg;
+    this._targetYawDeg += deltaDeg;
     this.prevYawDeg += deltaDeg;
     this.viewYawDeg += deltaDeg;
     this.normaliseYaw();
@@ -318,7 +340,7 @@ export class TopDownCamera {
     this.prevDistance = this._distance;
     this.prevTiltDeg = this._tiltDeg;
     this.roundPose(pose);
-    this.targetYawDeg = pose.yaw;
+    this._targetYawDeg = pose.yaw;
     this._targetDistance = pose.distance;
     this._targetTiltDeg = pose.tilt;
   }
@@ -356,7 +378,7 @@ export class TopDownCamera {
   snapshot(): CameraSnapshot {
     return {
       yaw: this._yawDeg,
-      targetYaw: this.targetYawDeg,
+      targetYaw: this._targetYawDeg,
       prevYaw: this.prevYawDeg,
       smoothed: this.smoothed.toArray() as [number, number, number],
       prevSmoothed: this.prevSmoothed.toArray() as [number, number, number],
@@ -378,7 +400,7 @@ export class TopDownCamera {
    */
   restore(state: CameraSnapshot): void {
     this._yawDeg = state.yaw;
-    this.targetYawDeg = state.targetYaw;
+    this._targetYawDeg = state.targetYaw;
     this.prevYawDeg = state.prevYaw;
     this.viewYawDeg = state.yaw;
     this.smoothed.fromArray(state.smoothed);
@@ -401,7 +423,7 @@ export class TopDownCamera {
    */
   copyFrom(other: TopDownCamera): void {
     this._yawDeg = other._yawDeg;
-    this.targetYawDeg = other.targetYawDeg;
+    this._targetYawDeg = other._targetYawDeg;
     this.prevYawDeg = other.prevYawDeg;
     this.viewYawDeg = other._yawDeg;
     this.smoothed.copy(other.smoothed);
@@ -533,7 +555,7 @@ export class TopDownCamera {
       this.smoothed.lerp(this.target, 1 - Math.exp(-FOLLOW_SMOOTH_RATE * dt));
     }
 
-    this._yawDeg += (this.targetYawDeg - this._yawDeg) * (1 - Math.exp(-YAW_STEP_SMOOTH_RATE * dt));
+    this._yawDeg += (this._targetYawDeg - this._yawDeg) * (1 - Math.exp(-YAW_STEP_SMOOTH_RATE * dt));
     this.normaliseYaw();
   }
 
@@ -616,7 +638,7 @@ export class TopDownCamera {
     if (turns === 0) return;
     const shift = turns * 360;
     this._yawDeg -= shift;
-    this.targetYawDeg -= shift;
+    this._targetYawDeg -= shift;
     this.prevYawDeg -= shift;
     this.viewYawDeg -= shift;
   }

@@ -131,7 +131,8 @@ sectors, every thing, the Icon of Sin, projectiles in flight, the optional `vood
 each of the level's dolls has been carried to and the momentum it is carrying, absent in any save
 from before dolls existed, which leaves them standing on their own player starts exactly as a fresh
 load does (docs/specials-forces.md § Voodoo dolls) — the optional `scrollers` block (the
-accelerative scrollers' built-up speed, below), level time, camera yaw,
+accelerative scrollers' built-up speed, below), level time, camera yaw (the orbit's *target*,
+docs/camera.md § Camera orbit),
 `cheated` (so a `?pos=` run, a cheat or a taken-over replay can't launder its level's eligibility
 through a save), and the RNG cursors.
 
@@ -280,8 +281,10 @@ load gets a fresh object per read either way and does not depend on it.
    difference as one tic of movement. Only the accelerative integrators need the explicit restore on
    top.
 7. `new Player(world)` → `player.restore(...)`; camera yaw from the snapshot rather than the spawn
-   angle, and `camera.snapTo` on the restored position so the view doesn't fly in from the outgoing
-   level (docs/camera.md § The camera is simulation state).
+   angle — snapped onto the 45° lattice (`latticeYaw`), which is what an older save written
+   mid-step needs (docs/camera.md § Camera orbit) — and `camera.snapTo` on the restored position so
+   the view doesn't fly in from the outgoing level (docs/camera.md § The camera is simulation
+   state).
 8. `new FogOfWar(...)` → `restoreExplored(...)` (the constructor's spawn-seeded reveal is
    overwritten wholesale, not ORed in).
 9. `new SpecialsController(...)` → `specials.restore(...)`. Switch on-textures are flipped *here*,

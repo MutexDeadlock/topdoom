@@ -27,7 +27,7 @@ import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import { PlayerSkins } from './render/playerskin.ts';
 import type { LoadingScreen } from './ui/loading.ts';
 import type { Viewport } from './render/viewport.ts';
-import { TopDownCamera } from './render/camera.ts';
+import { latticeYaw, TopDownCamera } from './render/camera.ts';
 import type { TicInput } from './game/input.ts';
 import {
   bodiesOverlap,
@@ -875,6 +875,10 @@ export class Game {
     // The viewport's camera takes the simulation back over, at the pose it is being drawn at, so
     // taking over in the manual view keeps the view the player is looking at.
     this.simCamera = this.view.camera;
+    // The pose came from the record, so the orbit can be anywhere a Q/E step passed through; from
+    // here on only whole steps move it, so it is glided back onto the lattice first — before the
+    // save below, which reads the target. docs/camera.md § Camera orbit.
+    this.simCamera.stepYaw(latticeYaw(this.simCamera.yawDeg) - this.simCamera.yawDeg);
     // The auto camera stood still through the playback (the pose came from the record), so it is
     // seeded here rather than left to glide in from wherever the last level load left it.
     this.autoCamera.seed(this.player, this.simCamera);
@@ -1202,7 +1206,10 @@ export class Game {
       thumb: thumbnail ? this.captureThumbnail() : '',
       state: {
         levelTime: this.levelTime,
-        cameraYawDeg: this.simCamera.yawDeg,
+        // Where the orbit is heading, not the angle a Q/E step happens to be passing through: only
+        // whole steps move it afterwards, so a mid-glide yaw would strand the restored camera
+        // between two lattice angles for good. docs/camera.md § Camera orbit.
+        cameraYawDeg: this.simCamera.targetYawDeg,
         cheated: this.cheated,
         player: this.player.snapshot(),
         inventory: serializeInventory(this.inventory),
@@ -1385,7 +1392,10 @@ export class Game {
       // The saved position and camera replace both the map's own start and any
       // `?pos=` override, which stays queued for the next fresh level.
       this.player.restore(restore.player);
-      this.forEachCamera((camera) => (camera.yawDeg = restore.cameraYawDeg));
+      // `latticeYaw`: a save written before the orbit's target was what got stored — or by a build
+      // that took a playback over mid-glide — carries an off-lattice yaw, and nothing downstream
+      // would ever bring it back. docs/camera.md § Camera orbit.
+      this.forEachCamera((camera) => (camera.yawDeg = latticeYaw(restore.cameraYawDeg)));
     } else {
       // Applied before fog of war is seeded, so an explicit start position reveals
       // exactly what is visible from there and nothing from the map's real spawn.

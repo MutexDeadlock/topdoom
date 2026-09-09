@@ -237,7 +237,9 @@ seek to tic 0): there is nothing left to pause, and the run is right there to wa
 
 The bar (`#replay-bar`, `--z-replaybar`): a track with one marker per level advanced into; on
 hover the pause, the speed steps (`SPEED_STEPS`, 0.25×–5×), the crosshair and camera toggles, and **Take
-over** (`Game.takeOver`): live input from the next tic, the settings released, `cheated`
+over** (`Game.takeOver`): live input from the next tic, the orbit glided back onto the 45° lattice
+(the pose it inherits is wherever the recording's own Q/E step had got to —
+docs/camera.md § Camera orbit), the settings released, `cheated`
 set **for that level** — the run up to that point was not this player's, but the next level
 entered through an exit is (docs/hud.md § Best times) — and **a savegame written on the way
 in** (`GameOptions.autoSave`, named after the replay and the level clock). That save is the reason there

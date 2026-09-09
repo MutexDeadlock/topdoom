@@ -334,7 +334,8 @@
   line-clamp: 2;
   overflow: hidden;
   line-height: 1.35;
-  color: var(--fg-dim);
+  /* `#menu-status`'s amber, and for its reason: the same message reaches whichever line is up. */
+  color: var(--caution);
 }
 
 #wadlibrary-status.error {

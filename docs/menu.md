@@ -27,6 +27,12 @@ Only the WAD lists, the level list and the difficulty options are built in JS.
   `required`, docs/menu-saves.md § Save and Load tabs): it throws that level away, and it sits in
   the same footer as `Return to game`. Asked per press, not wired once — from the launcher the
   button is an ordinary one and a click starts.
+- **`Start new game` is shown only while the New Game tab is up** (`setTab`): it acts on what that
+  tab holds. The footer carries a `min-height` of that button's own box, so the row it leaves keeps
+  its height and the panel's bottom edge doesn't move on a tab switch — `visibility` on the button
+  instead would hold the height but keep reserving its width, stranding the status line mid-row
+  (docs/styles.md § Hiding an element). The tab itself is accent-coloured in every state: the
+  launcher's one action tab, and the only way to the button.
 - **The status line is the footer's only elastic item.** Both buttons are `flex: none` and
   `#menu-status` takes the space left over; letting them shrink instead wraps their labels over
   three lines and grows the footer inside the panel. What the two clamped lines then cut is in the

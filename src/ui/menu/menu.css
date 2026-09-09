@@ -129,6 +129,17 @@
   border-bottom-color: var(--accent);
 }
 
+/* The launcher's one action tab: Start new game is only on screen while it is up (menu.ts
+   `setTab`), so the tab carries the accent rather than sitting grey among the rest. Two ids, so it
+   outranks the hover and active rules above and holds the colour in every state. */
+#menu .tabs #tab-button-newgame {
+  color: var(--accent-text-hover);
+}
+
+#menu .tabs #tab-button-newgame:hover {
+  color: #fff;
+}
+
 /* The Settings tab's own row of sub-tabs: same markup, one step quieter, and no
    rule under the row so it doesn't read as a second tab bar of equal rank. */
 #menu .subtabs {
@@ -674,10 +685,19 @@
   background: var(--accent-hover);
 }
 
+/*
+ * The row keeps the height of `button.primary` whether or not Start new game is in it — that button
+ * leaves the footer on every tab but New Game (menu.ts `setTab`), and a row that shrank with it
+ * would move the panel's whole bottom edge on a tab switch. Its own box, spelled out: the 1.5 line
+ * box `body` sets, its 10px padding, its 1px border. Not `visibility: hidden` on the button, which
+ * holds the height but goes on reserving its width — the status line would start where the button
+ * ended, hanging in mid-row.
+ */
 #menu footer {
   display: flex;
   align-items: center;
   gap: 14px;
+  min-height: calc(1.5em + 20px + 2px);
   border-top: 1px solid var(--border);
   padding-top: 16px;
 }
@@ -706,7 +726,10 @@
   line-clamp: 2;
   overflow: hidden;
   line-height: 1.35;
-  color: var(--fg-dim);
+  /* Amber, not the dim grey the rest of the footer is: what lands here just happened, and is read
+     once or not at all. `--caution` is the status family's text-weight notice (docs/styles.md §
+     Tokens); red stays what actually failed. */
+  color: var(--caution);
 }
 
 #menu-status.error {

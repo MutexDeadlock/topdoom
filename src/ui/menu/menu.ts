@@ -266,7 +266,8 @@ export class Menu {
     // because of what it costs.
     this.installToggle(this.voidFogCheckbox, getVoidFog, setVoidFog);
     // The two that aren't live: caps and trims are baked into the level's mesh, so each takes the
-    // next load — which is what the rows say. docs/render-solids.md, docs/render.md § Ceiling trims.
+    // next load — which is what the rows say. docs/render-solids.md, docs/render.md § Ceiling
+    // trims.
     this.installToggle(this.solidCapsCheckbox, getSolidCaps, setSolidCaps);
     this.installToggle(this.ceilingTrimsCheckbox, getCeilingTrims, setCeilingTrims);
     this.installToggle(this.wallShadeCheckbox, getWallShade, setWallShade);
@@ -537,6 +538,9 @@ export class Menu {
       this.tabButtons[key].classList.toggle('active', key === tab);
       this.tabPanels[key].classList.toggle('inactive', key !== tab);
     }
+    // Start new game acts on what the New Game tab holds, so it is only on screen with it — the
+    // footer holds its height either way (menu.css). docs/menu.md § One screen, two jobs.
+    this.startButton.classList.toggle('hidden', tab !== 'newgame');
     // A save list is only built while it's the tab on screen — see `SavegamesUi.setVisible`.
     this.savegames.setVisible(tab === 'save' || tab === 'load' ? tab : null);
     this.replays.setVisible(tab === 'replays');

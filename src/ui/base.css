@@ -38,7 +38,7 @@
 
   /* Caution, at text weight. Deliberately *not* a rung of the accent family: a warning colour must
      not move when the accent is retuned (docs/styles.md § Tokens). Read by the save row's missing
-     add-on and the WAD Library's support column. */
+     add-on, the WAD Library's support column and the two status lines. */
   --caution: #cfa23c;
 }
 

@@ -153,7 +153,8 @@ nearest token would be a visual change wearing a cleanup's clothes.
 
 **Status colours are their own family**, and never rungs of the accent: a warning must not move when
 the menu accent is retuned. `--caution` (the text-weight amber) is a token because two stylesheets
-read it — the save row's missing-add-on note and the WAD Library's support column. Its neighbours in
+read it — the save row's missing-add-on note and the WAD Library's support column — and it is what
+the menu's and the Library's status lines are, red being kept for what actually failed. Its neighbours in
 that scale are not, and each says why at the site: the support column's green has one site, and the
 profiler's green/gold/red bar fills are at fill weight rather than text weight (its red happens to
 be the accent's hex and stays literal anyway, precisely so the two can't be retuned together). Where
@@ -204,6 +205,11 @@ state must not be `display: none` needs a different class**, not a scoped `.hidd
 share one grid cell and an inactive one has to keep reserving it or the menu's height jumps on a tab
 switch — docs/menu.md § One screen, two jobs. `menu.ts` toggles `inactive` on both the tab panels
 and the Settings sub-panels; every other element in the tree toggles `hidden`.
+
+An element that leaves a *row* is the other case, and `visibility` is the wrong tool for it: it
+holds the height but goes on reserving the width, leaving what follows stranded mid-row. The row
+states the height instead — `#menu footer`'s `min-height` is `button.primary`'s box, so Start new
+game leaving it moves nothing (docs/menu.md § One screen, two jobs).
 
 Note the HTML `hidden` *attribute* on the file inputs is unrelated — the UA stylesheet's own rule,
 on elements that never become visible.

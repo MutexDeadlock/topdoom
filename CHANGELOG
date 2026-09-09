@@ -7,6 +7,8 @@ Features and improvements
     - can be switched off under Settings -> Visuals -> Top-down extras
       (requires level reload)
   - menues & WAD Library:
+    - "Start new game" only shows on the New Game tab, which is now accented
+    - status messages now read amber, errors still red
     - hiding thin ceiling steps can now be switched off under
       Settings -> Visuals -> Top-down extras (also requires level reload)
     - the WAD Library no longer prints "game WAD" against every row of the

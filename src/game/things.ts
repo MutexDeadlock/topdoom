@@ -659,7 +659,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     from: Pos3,
     to: Pos2,
     blockdist: number,
-    consume: (type: number, dropped: boolean) => boolean,
+    consume: (type: number, dropped: boolean, at: Pos3) => boolean,
   ): void {
     for (const p of posed) {
       if (p.picked) continue;
@@ -674,7 +674,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       // vanilla's own stepping it can land deep inside sealed geometry. Only that end is gated —
       // the settled box is vanilla's, walls and all. docs/items.md § Collecting things.
       if (!settled && world.sealedBetween(from, p)) continue;
-      if (consume(p.type, p.dropped)) {
+      if (consume(p.type, p.dropped, p)) {
         p.picked = true;
         p.hidden = true;
         p.visible = false;

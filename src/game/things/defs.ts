@@ -472,15 +472,16 @@ export interface ThingLayer {
    * `from`, where the collector stands, and `to`, where it was headed — that is within vertical
    * reach of `from.z` and that `consume` accepts, hiding it permanently. Pass the same point twice
    * for a collector that attempted no move. This layer owns only which world instance disappears;
-   * `consume` (inventory.ts's `applyPickup`) owns what picking it up means, and its second argument
-   * is the instance's `dropped` flag. Why both ends and why a box — docs/items.md § Collecting
-   * things.
+   * `consume` (inventory.ts's `applyPickup`) owns what picking it up means; its second argument
+   * is the instance's `dropped` flag and its third is where it stood, for whatever the caller marks
+   * that spot with (docs/items.md § The pickup puff). Why both ends and why a box — docs/items.md §
+   * Collecting things.
    */
   tryPickup(
     from: Pos3,
     to: Pos2,
     blockdist: number,
-    consume: (type: number, dropped: boolean) => boolean,
+    consume: (type: number, dropped: boolean, at: Pos3) => boolean,
   ): void;
   /**
    * The monster whose body this ray crosses nearest the camera, or null — auto-aim's lock-on, over

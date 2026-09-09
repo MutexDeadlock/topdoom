@@ -143,7 +143,7 @@ import { SoundBank } from './wad/sound.ts';
 import { MusicBank } from './wad/music.ts';
 import { MapInfo } from './wad/campaign/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
-import type { Pos2 } from './types.ts';
+import type { Pos2, Pos3 } from './types.ts';
 import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 import { vecLength } from './util/geom.ts';
 import { readStorage, writeStorage } from './util/storage.ts';
@@ -2418,7 +2418,7 @@ export class Game {
    * voodoo doll collecting on their behalf (docs/items.md § Collecting things). An arrow field
    * rather than a method because both `tryPickup` call sites hand it straight over.
    */
-  private consumePickup = (type: number, dropped: boolean): boolean => {
+  private consumePickup = (type: number, dropped: boolean, at: Pos3): boolean => {
     const taken = applyPickup(this.inventory, type, dropped, this.skill);
     // The computer area map is the one pickup whose whole effect lives outside the `Inventory`
     // struct: it reveals the level's own geometry. Watched for here rather than handled in
@@ -2428,7 +2428,10 @@ export class Game {
       this.fogOfWar.revealAll();
     }
     // Unattenuated, as vanilla plays every pickup: you're standing on it.
-    if (taken) this.audio.play(pickupSound(type));
+    if (taken) {
+      this.audio.play(pickupSound(type));
+      this.effects.spawnPickupFog(at);
+    }
     return taken;
   };
 
@@ -2595,6 +2598,7 @@ export class Game {
   private updateEffects(dt: number): void {
     this.profiler.time('Effects', () => {
       this.effects.updateTeleportFogs(dt);
+      this.effects.updatePickupFogs(dt);
       this.effects.updateTracers(dt);
       this.projectiles.update(dt);
       this.icon?.update(dt);

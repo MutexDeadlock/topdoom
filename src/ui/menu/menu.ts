@@ -28,6 +28,7 @@ import { getCeilingTrims, setCeilingTrims } from '../../render/mapmesh/walls.ts'
 import { getBloom, setBloom } from '../../render/bloom.ts';
 import { getWallShade, setWallShade } from '../../render/wallshadow.ts';
 import { getSkyTint, setSkyTint } from '../../render/skytint.ts';
+import { getPickupPuff, setPickupPuff } from '../../game/spritefx.ts';
 import {
   getPlayerSpriteMode,
   setPlayerSpriteMode,
@@ -132,6 +133,7 @@ export class Menu {
   private bloomCheckbox = el<HTMLInputElement>('bloom-checkbox');
   private wallShadeCheckbox = el<HTMLInputElement>('wallshade-checkbox');
   private skyTintCheckbox = el<HTMLInputElement>('skytint-checkbox');
+  private pickupPuffCheckbox = el<HTMLInputElement>('pickuppuff-checkbox');
   private pistolStartCheckbox = el<HTMLInputElement>('pistolstart-checkbox');
   private autoSwitchCheckbox = el<HTMLInputElement>('autoswitch-checkbox');
   private fpsCheckbox = el<HTMLInputElement>('fps-checkbox');
@@ -279,6 +281,7 @@ export class Menu {
     this.installToggle(this.ceilingTrimsCheckbox, getCeilingTrims, setCeilingTrims);
     this.installToggle(this.wallShadeCheckbox, getWallShade, setWallShade);
     this.installToggle(this.skyTintCheckbox, getSkyTint, setSkyTint);
+    this.installToggle(this.pickupPuffCheckbox, getPickupPuff, setPickupPuff);
     this.installToggle(this.bloomCheckbox, getBloom, setBloom);
     this.installPlayerSprites();
     this.installPistolStart();

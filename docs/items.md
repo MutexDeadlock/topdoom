@@ -173,6 +173,39 @@ fresh every call. Without this, an item on a lift would hang frozen in its origi
 the floor moved past it, and stay permanently out of reach even after the pillar carrying it
 lowered.
 
+## The pickup puff
+
+An item vanishes the frame it is collected, which on its own reads as a dropped frame.
+`SpriteFxLayer.spawnPickupFog` leaves a puff where it stood: the teleport fog's `TFOG` art, frames
+`B`-`E` (`PICKUP_FOG_FRAMES`) at 3 tics each — half the teleport fog's own frame time — with
+`PICKUP_FOG_SCALE`, `PICKUP_FOG_OPACITY`, and `PICKUP_FOG_LIGHT` dimming the GLDEFS light those
+frames carry (docs/lights.md § Dimming one offer): `DTFOG*` is a green pool sized for a full
+teleport fog, and at this scale it read as a lamp switching on under the player. Deliberate
+deviation: vanilla removes a pickup with no visual at all. All five values are tuned by feel, and it
+is silent — the pickup's own sound already plays (docs/audio.md).
+
+**`B`-`E` because those are the frames that shrink.** `TFOG`'s lumps are 41x56 (`A`), 42x45 (`B`),
+40x37 (`C`), 30x34 (`D`), 17x16 (`E`), then 9x8, 3x3 and 7x7 — so `B`-`E` collapse inward, which is
+what the puff has to say, and anything past `E` is a few pixels that `PICKUP_FOG_SCALE` shrinks to
+nothing.
+
+**Settings -> Visuals -> Top-down extras -> "Puff where an item is collected"** switches it off
+(`getPickupPuff`/`setPickupPuff` in `game/spritefx.ts`, on by default). Read at the spawn, so it
+applies to the level already running and a puff already in flight plays out.
+
+Spawned from `Game.consumePickup` — `tryPickup`'s own `consume` callback, which is why that takes
+the collected thing's position as its third argument: it already fires exactly when a pickup is
+consumed, and already owns the caller-side effects (the sound, the computer map's reveal), so the
+puff needs no second seam of its own. A voodoo doll's collection shows it too, both call sites
+handing over the same callback.
+
+Translucency is batch-wide, so these draw through `SpriteFxLayer`'s own `pickupBatch`
+(`translucent: true`) — the same reason drops have their own batch, below. The batch, the draw scale
+and the light dimming travel together as the list's `DrawStyle` rather than as fields on each
+effect: every puff in the list carries the same three. Not saved and not restored, like every
+transient but the teleport fog (docs/savegames.md § What is saved and what is deliberately not);
+nothing in a tic reads it.
+
 ## Making monster drops readable
 
 A monster's death drop (`MONSTER_DROPS`) was nearly invisible, because it spawns at *exactly* the

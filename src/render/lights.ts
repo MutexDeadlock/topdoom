@@ -167,6 +167,8 @@ interface Emitter {
   y: number;
   z: number;
   radius: number;
+  /** What the caller dimmed this light to, 1 = the GLDEFS colour as written — see `offer`. */
+  intensity: number;
   /**
    * The emitter's own BSP leaf, where the reach fill starts. -1 = the caller had none to hand;
    * resolved at commit.
@@ -363,8 +365,19 @@ export class DynamicLights {
    * against docs/conventions.md § Named arguments' usual bar: two of the three callers compute the
    * coordinates inline, and one record per drawn sprite measured ~5% on this path — see
    * docs/lights.md § What reaches the shader.
+   *
+   * `intensity` dims the GLDEFS colour for this one offer, and leaves the radius alone —
+   * docs/lights.md § Dimming one offer.
    */
-  offer(frameKey: string, x: number, y: number, z: number, emitterId: number, subsector = -1): void {
+  offer(
+    frameKey: string,
+    x: number,
+    y: number,
+    z: number,
+    emitterId: number,
+    subsector = -1,
+    intensity = 1,
+  ): void {
     if (!this.active) return;
     const def = lightForFrame(this.defs, frameKey);
     if (!def) return;
@@ -384,7 +397,7 @@ export class DynamicLights {
     }
     let slot = this.offered[this.offerCount];
     if (slot === undefined) {
-      slot = { def, id: emitterId, x: 0, y: 0, z: 0, radius: 0, subsector: -1, sortKey: 0 };
+      slot = { def, id: emitterId, x: 0, y: 0, z: 0, radius: 0, intensity: 1, subsector: -1, sortKey: 0 };
       this.offered.push(slot);
     }
     slot.def = def;
@@ -394,6 +407,7 @@ export class DynamicLights {
     slot.y = ly;
     slot.z = lz;
     slot.radius = radius;
+    slot.intensity = intensity;
     this.offerCount++;
   }
 
@@ -444,9 +458,11 @@ export class DynamicLights {
       pos[i * 4 + 1] = this.scratch.y;
       pos[i * 4 + 2] = this.scratch.z;
       pos[i * 4 + 3] = e.radius;
-      col[i * 3] = e.def.r;
-      col[i * 3 + 1] = e.def.g;
-      col[i * 3 + 2] = e.def.b;
+      // The one place a light's colour is published, so `sampleLight`'s sprite tint and the
+      // geometry shader cannot disagree about how bright a dimmed offer is.
+      col[i * 3] = e.def.r * e.intensity;
+      col[i * 3 + 1] = e.def.g * e.intensity;
+      col[i * 3 + 2] = e.def.b * e.intensity;
       c.x[i] = e.x;
       c.y[i] = e.y;
       c.z[i] = e.z;
@@ -501,8 +517,16 @@ export class DynamicLights {
    * The returned `Tint` is **one reused scratch**, valid until the next call: read it before
    * drawing the next sprite, which every caller does. docs/lights.md § Two lighting paths.
    */
-  offerAndTint(frameKey: string, x: number, y: number, z: number, emitterId: number, subsector = -1): Tint {
-    this.offer(frameKey, x, y, z, emitterId, subsector);
+  offerAndTint(
+    frameKey: string,
+    x: number,
+    y: number,
+    z: number,
+    emitterId: number,
+    subsector = -1,
+    intensity = 1,
+  ): Tint {
+    this.offer(frameKey, x, y, z, emitterId, subsector, intensity);
     this.tintAt(x, y, z, emitterId, this.sampled, subsector);
     return this.sampled;
   }

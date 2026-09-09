@@ -6,6 +6,14 @@ the breaking of existing replays, justify a v0.19.
 Roadmap: more polish, better camera, MULTIPLAYER (v0.20), then v1.0!
 
 Features and improvements
+  - replays
+    - replay files are about a quarter smaller: the camera and aim columns are
+      stored against a linear prediction, the desync samples as rounded columns
+    - replays now store an additional keyframe after level change
+    - the replay track's hover label names the level a jump would land in,
+      when the recording spans more than one
+    - "Play" on a replay is hold-to-confirm while a game is running; over a
+      playing replay, Play, Load and Start new game are plain clicks again
   - reworked tops on crates and pillars
     - the level's own wall masses only get one where they end at a single
       height all round
@@ -22,14 +30,8 @@ Features and improvements
       width, in the WAD Library and the add-on list alike
     - a first start now opens on a preselected WAD set,
       configurable in constants.ts
-  - replays
-    - replay files are about a quarter smaller: the camera and aim columns are
-      stored against a linear prediction, the desync samples as rounded columns
-    - replays now store an additional keyframe after level change
-    - the replay track's hover label names the level a jump would land in,
-      when the recording spans more than one
-    - Play on a replay is held to confirm while a game is running; over a
-      playing replay, Play, Load and Start new game are plain clicks again
+  - a collected item now leaves a small translucent puff where it stood,
+    switchable under Settings -> Visuals -> Top-down extras
   - added IDCLEV cheat to warp to any map of the loaded set 
     (replaces the dev-mode's N/P map jump)
   - the status text's debug lines are now a setting of their own

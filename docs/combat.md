@@ -369,6 +369,9 @@ frames B–D for the rocket's blast, while the plasma bolt and BFG ball explode 
 `PLSE`/`BFE1` sprites. Hitscan `Tracer` lines live there too: not sprites, but the same
 spawn-animate-drop lifecycle and the same wholesale clear on a level change (`beginLevel`).
 
+The **pickup puff** is one more of these, and the one that draws through a batch of its own — it is
+translucent, which a `SpriteBatch` can only be batch-wide. docs/items.md § The pickup puff.
+
 Every one-shot effect carries the subsector it was spawned in and is **drawn only where the player
 has already seen**, the same fog-of-war gate thing sprites use — a teleport fog or a blood splash in
 an unexplored monster closet would otherwise hang lit in the black. Tracers and projectiles are

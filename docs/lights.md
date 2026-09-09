@@ -115,6 +115,18 @@ down forever, so no session is long enough to walk an effect onto the player's I
 would be silent (a barrel that stops lighting itself, two emitters sharing a flicker phase), which
 is why it is closed by construction rather than by the range being large.
 
+## Dimming one offer
+
+`DynamicLights.offer`/`offerAndTint` take an `intensity` (default 1) that scales the GLDEFS colour
+for that one offer, applied where `commit` publishes the colour into `uLightColor` — so the geometry
+shader and `sampleLight`'s sprite tint cannot disagree about it. The **radius is deliberately left
+alone**: it is how far the light carries, and a definition's reach is what its `size` says.
+
+For a caller drawing a frame at something other than the size GZDoom's definition was written for.
+The pickup puff is the only one (`PICKUP_FOG_LIGHT`, docs/items.md § The pickup puff): it reuses
+`TFOG`'s art at a fraction of its size, and `DTFOG*`'s green pool is scaled for the whole teleport
+fog.
+
 ## Light stops at walls
 
 A GLDEFS light is a point and a radius, and nothing in that says a wall is in the way. Left at

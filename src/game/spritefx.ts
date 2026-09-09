@@ -18,10 +18,25 @@ import { transfersOf, type Transfers } from './specials/transfers.ts';
 import { triangularDraw } from '../util/random.ts';
 import { type OneShotEffect } from './spritefx/defs.ts';
 import { FULLBRIGHT_FRAMES } from './things/tables.ts';
-import { BLOOD_FRAME_SECONDS, BLOOD_FRAMES, bloodFrames, CRUSH_BLOOD_SPEED, HIT_Z_JITTER, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
+import { BLOOD_FRAME_SECONDS, BLOOD_FRAMES, bloodFrames, CRUSH_BLOOD_SPEED, HIT_Z_JITTER, PICKUP_FOG_FRAME_SECONDS, PICKUP_FOG_FRAMES, PICKUP_FOG_LIGHT, PICKUP_FOG_OPACITY, PICKUP_FOG_SCALE, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
 import type { TeleportFogState } from './snapshot.ts';
 import type { Placement, Pos3 } from '../types.ts';
 import { cos, sin } from '../util/fdlibm.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
+
+const STORAGE_KEY = 'pickupPuff';
+
+/** Whether a collected item leaves its puff. On by default; docs/items.md § The pickup puff. */
+let pickupPuffEnabled = readStorage(STORAGE_KEY, true);
+
+export function getPickupPuff(): boolean {
+  return pickupPuffEnabled;
+}
+
+export function setPickupPuff(on: boolean): void {
+  pickupPuffEnabled = on;
+  writeStorage(STORAGE_KEY, on);
+}
 
 /**
  * Where the arch-vile's warning flame should sit this frame, or null to leave it where it is. The
@@ -35,6 +50,17 @@ export type VileFlameResolver = (vileId: number, targetId: number | null) => Pos
  * know the fog exists.
  */
 export type FogVisibility = (subsector: number) => boolean;
+
+/**
+ * How one list is drawn: which batch it lands in, at what draw scale, and how far the frames' own
+ * GLDEFS lights are dimmed with it. Per **list**, not per effect — every puff in a list carries the
+ * same three. docs/items.md § The pickup puff.
+ */
+interface DrawStyle {
+  batch: SpriteBatch;
+  scale: number;
+  lightScale: number;
+}
 
 /** What the layer is built with: the banks it draws through, and the two questions above. */
 export interface SpriteFxLayerOptions {
@@ -70,6 +96,19 @@ export class SpriteFxLayer {
 
   private batch = new SpriteBatch();
   /**
+   * The pickup puffs' own batch, for the one thing a `SpriteBatch` can only do batch-wide: draw
+   * translucent (`setOpacity`, see there). Same arrangement as `ThingLayer`'s drop batch.
+   * docs/items.md § The pickup puff.
+   */
+  private pickupBatch = new SpriteBatch({ translucent: true });
+  /** The two styles this layer draws in, built once rather than per list per frame. */
+  private plain: DrawStyle = { batch: this.batch, scale: 1, lightScale: 1 };
+  private pickupStyle: DrawStyle = {
+    batch: this.pickupBatch,
+    scale: PICKUP_FOG_SCALE,
+    lightScale: PICKUP_FOG_LIGHT,
+  };
+  /**
    * Scratch for `doomToWorld`, reused across every batched sprite — same reason `game/things.ts`
    * keeps one.
    */
@@ -77,6 +116,7 @@ export class SpriteFxLayer {
   /** `drawList`'s interpolated position, reused per effect so drawing allocates nothing. */
   private drawAt: Pos3 = { x: 0, y: 0, z: 0 };
   private teleportFogs: OneShotEffect[] = [];
+  private pickupFogs: OneShotEffect[] = [];
   private impacts: OneShotEffect[] = [];
   private tracers: Tracer[] = [];
   /** Fixed by `beginFrame` so the per-sprite calls in between don't each have to be handed it. */
@@ -103,6 +143,9 @@ export class SpriteFxLayer {
     this.fogVisible = options.fogVisible;
     this.lights = options.lights ?? null;
     scene.add(this.batch.group);
+    // Set once: a material built later takes the batch's current opacity too (`applyBatchLook`).
+    this.pickupBatch.setOpacity(PICKUP_FOG_OPACITY);
+    scene.add(this.pickupBatch.group);
   }
 
   /**
@@ -116,6 +159,7 @@ export class SpriteFxLayer {
     // Dropping the lists is the whole of it for the batched sprites: nothing
     // is added to the batch for an effect that isn't in one of them.
     this.teleportFogs = [];
+    this.pickupFogs = [];
     this.impacts = [];
     for (const t of this.tracers) {
       this.scene.remove(t.line);
@@ -127,8 +171,9 @@ export class SpriteFxLayer {
   dispose(): void {
     // A tracer owns its geometry; its material is shared and outlives it.
     for (const t of this.tracers) t.dispose();
-    // The batch owns its instance buffers and cloned materials, not the textures behind them.
+    // A batch owns its instance buffers and cloned materials, not the textures behind them.
     this.batch.dispose();
+    this.pickupBatch.dispose();
   }
 
   /**
@@ -266,6 +311,16 @@ export class SpriteFxLayer {
   }
 
   /**
+   * The puff left where a collected item stood. Silent — the caller has just played the pickup's
+   * own sound. See docs/items.md § The pickup puff.
+   */
+  spawnPickupFog(at: Pos3): void {
+    if (!pickupPuffEnabled) return;
+    const effect = this.spawn('TFOG', PICKUP_FOG_FRAMES, PICKUP_FOG_FRAME_SECONDS, at);
+    if (effect) this.pickupFogs.push(effect);
+  }
+
+  /**
    * `shooterRadius` only sets how far short of the shooter the line starts — see `MUZZLE_GAP`
    * (render/tracer.ts).
    */
@@ -283,10 +338,12 @@ export class SpriteFxLayer {
   beginFrame(viewerAngleDeg: number): void {
     this.viewerAngleDeg = viewerAngleDeg;
     this.batch.begin(viewerAngleDeg);
+    this.pickupBatch.begin(viewerAngleDeg);
   }
 
   endFrame(): void {
     this.batch.end();
+    this.pickupBatch.end();
   }
 
   /**
@@ -302,31 +359,15 @@ export class SpriteFxLayer {
    * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
    */
   batchSprite(anim: SpriteAnimator, at: Pos3, facingDeg: number, light: number, subsector = -1): void {
-    const cached = anim.resolve(facingDeg, this.viewerAngleDeg);
-    if (!cached) return;
-    doomToWorld(at.x, at.y, at.z + cached.bottomOffset, this.batchPos);
-    const bright = FULLBRIGHT_FRAMES.has(anim.frameKey);
-    const lit = bright ? 255 : light;
-    // What flies over a courtyard takes the outdoor tint too, off the leaf it was offered at.
-    // docs/render-lighting.md § Outdoor sky tint.
-    const sky = !bright && subsector >= 0 && skyLitSector(this.world.sectorOfSubsector(subsector));
-    // This is the single funnel for projectiles in flight, every one-shot effect and the Icon of
-    // Sin's cubes — so one hook here covers every moving light the game has (docs/lights.md).
-    let tint: Tint | undefined;
-    if (this.lights) {
-      let id = this.emitterIds.get(anim);
-      if (id === undefined) {
-        id = effectEmitterId(this.nextEmitterId++);
-        this.emitterIds.set(anim, id);
-      }
-      tint = this.lights.offerAndTint(anim.frameKey, at.x, at.y, at.z, id, subsector);
-    }
-    const p = this.batchPos;
-    this.batch.add(cached, p.x, p.y, p.z, 1, litColor(lit, 0, viewDepthAt(p.x, p.y, p.z)), tint, sky);
+    this.queue(this.plain, anim, at, facingDeg, light, subsector);
   }
 
   updateTeleportFogs(dt: number): void {
     this.teleportFogs = this.advance(this.teleportFogs, dt);
+  }
+
+  updatePickupFogs(dt: number): void {
+    this.pickupFogs = this.advance(this.pickupFogs, dt);
   }
 
   /**
@@ -353,14 +394,48 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Draws both one-shot lists, interpolated `alpha` of the way through the last
+   * Draws every one-shot list, interpolated `alpha` of the way through the last
    * tic. Runs inside the caller's `beginFrame`/`endFrame` pair alongside
    * `ProjectileLayer.draw`. docs/frameloop.md § Interpolation.
    */
   draw(alpha: number): void {
-    this.drawList(this.teleportFogs, alpha);
+    this.drawList(this.teleportFogs, alpha, this.plain);
+    this.drawList(this.pickupFogs, alpha, this.pickupStyle);
     // Last, so an explosion spawned by an arrival this tic is drawn on it rather than a frame late.
-    this.drawList(this.impacts, alpha);
+    this.drawList(this.impacts, alpha, this.plain);
+  }
+
+  /** `batchSprite` in a given `DrawStyle` — see there for everything else this does. */
+  private queue(
+    style: DrawStyle,
+    anim: SpriteAnimator,
+    at: Pos3,
+    facingDeg: number,
+    light: number,
+    subsector: number,
+  ): void {
+    const cached = anim.resolve(facingDeg, this.viewerAngleDeg);
+    if (!cached) return;
+    doomToWorld(at.x, at.y, at.z + cached.bottomOffset, this.batchPos);
+    const bright = FULLBRIGHT_FRAMES.has(anim.frameKey);
+    const lit = bright ? 255 : light;
+    // What flies over a courtyard takes the outdoor tint too, off the leaf it was offered at.
+    // docs/render-lighting.md § Outdoor sky tint.
+    const sky = !bright && subsector >= 0 && skyLitSector(this.world.sectorOfSubsector(subsector));
+    // This is the single funnel for projectiles in flight, every one-shot effect and the Icon of
+    // Sin's cubes — so one hook here covers every moving light the game has (docs/lights.md).
+    let tint: Tint | undefined;
+    if (this.lights) {
+      let id = this.emitterIds.get(anim);
+      if (id === undefined) {
+        id = effectEmitterId(this.nextEmitterId++);
+        this.emitterIds.set(anim, id);
+      }
+      tint = this.lights.offerAndTint(anim.frameKey, at.x, at.y, at.z, id, subsector, style.lightScale);
+    }
+    const p = this.batchPos;
+    const c = litColor(lit, 0, viewDepthAt(p.x, p.y, p.z));
+    style.batch.add(cached, p.x, p.y, p.z, style.scale, c, tint, sky);
   }
 
   /**
@@ -435,7 +510,7 @@ export class SpriteFxLayer {
     return remaining;
   }
 
-  private drawList(list: OneShotEffect[], alpha: number): void {
+  private drawList(list: OneShotEffect[], alpha: number, style: DrawStyle): void {
     for (const e of list) {
       // Skipped, not dropped: a room revealed mid-animation still shows the rest of it —
       // docs/fogofwar.md § How reveal reaches the geometry.
@@ -443,7 +518,7 @@ export class SpriteFxLayer {
       this.drawAt.x = e.drawPrevX + (e.x - e.drawPrevX) * alpha;
       this.drawAt.y = e.drawPrevY + (e.y - e.drawPrevY) * alpha;
       this.drawAt.z = e.drawPrevZ + (e.z - e.drawPrevZ) * alpha;
-      this.batchSprite(e.anim, this.drawAt, 0, e.light, e.subsector);
+      this.queue(style, e.anim, this.drawAt, 0, e.light, e.subsector);
     }
   }
 }

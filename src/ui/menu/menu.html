@@ -152,23 +152,25 @@
           </div>
 
           <div class="tab-panel" id="settings-tab-visuals">
-            <section>
-              <h2>Camera</h2>
-              <select id="cameramode-select">
-                <option value="auto">Automatic zoom + tilt</option>
-                <option value="manual">Manual</option>
-              </select>
-            </section>
+            <div class="columns even">
+              <section>
+                <h2>Camera</h2>
+                <select id="cameramode-select">
+                  <option value="auto">Automatic zoom + tilt</option>
+                  <option value="manual">Manual</option>
+                </select>
+              </section>
 
-            <section>
-              <h2>Frame rate</h2>
-              <select id="fpscap-select">
-                <option value="0">Unlimited</option>
-                <option value="30">30 fps</option>
-                <option value="60">60 fps</option>
-                <option value="120">120 fps</option>
-              </select>
-            </section>
+              <section>
+                <h2>Frame rate</h2>
+                <select id="fpscap-select">
+                  <option value="0">Unlimited</option>
+                  <option value="30">30 fps</option>
+                  <option value="60">60 fps</option>
+                  <option value="120">120 fps</option>
+                </select>
+              </section>
+            </div>
 
             <div class="columns">
               <section>
@@ -204,6 +206,10 @@
                 <label class="checkbox-row">
                   <input type="checkbox" id="ceilingtrims-checkbox" />
                   <span>Hide thin ceiling steps <span class="hint">requires level reload</span></span>
+                </label>
+                <label class="checkbox-row">
+                  <input type="checkbox" id="pickuppuff-checkbox" />
+                  <span>Puff where an item is collected</span>
                 </label>
               </section>
             </div>

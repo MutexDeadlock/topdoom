@@ -221,3 +221,16 @@ export const TRACER_HOMING_Z_OFFSET = 40;
 export const SMOKE_TRAIL_FRAMES = ['B', 'C', 'B', 'C', 'D'];
 export const SMOKE_TRAIL_FRAME_SECONDS = 4 * DOOM_TIC;
 export const SMOKE_TRAIL_INTERVAL = 4 * DOOM_TIC;
+
+/**
+ * The puff left where a collected item stood — the teleport fog's own `TFOG` art reused, and this
+ * engine's own effect rather than a vanilla one. `B`-`E` are the frames that shrink (42x45, 40x37,
+ * 30x34, 17x16 in `DOOM.WAD`, against 9x8 and smaller past them). Why those, and what each of the
+ * five is for: docs/items.md § The pickup puff. All five tuned by feel.
+ */
+export const PICKUP_FOG_FRAMES = ['B', 'C', 'D', 'E'];
+export const PICKUP_FOG_FRAME_SECONDS = 3 * DOOM_TIC;
+export const PICKUP_FOG_SCALE = 0.4;
+export const PICKUP_FOG_OPACITY = 0.3;
+/** How far the GLDEFS light these frames carry is dimmed — docs/lights.md § Dimming one offer. */
+export const PICKUP_FOG_LIGHT = 0.4;

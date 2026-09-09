@@ -216,11 +216,14 @@ the two a player picks *before* a run rather than sets once and forgets.
 
 **Visuals is Camera, Frame rate, Lighting, Top-down extras, Player sprites** — everything that
 changes what the running level *looks* like, in that order: the camera first, being the one a player
-actually goes looking for. *Top-down extras* holds the three this camera needs and vanilla never
-did: the void fog, the tops on crates and pillars, and the hidden thin ceiling steps
-(docs/render-solids.md, docs/render.md § The void floor and § Ceiling trims). The last two are the
-settings on the tab that are **not** live — caps and trims are baked into the level's mesh — and
-their rows say so.
+actually goes looking for. Camera and Frame rate **share one `.columns even` row**: both are a
+heading over a single select, and stacked they cost two rows of the tab's height for one line of
+control each. *Top-down extras* holds the four this camera needs and vanilla never did: the void
+fog, the tops on crates and pillars, the hidden thin ceiling steps (docs/render-solids.md,
+docs/render.md § The void floor and § Ceiling trims), and the puff a collected item leaves
+(docs/items.md § The pickup puff) — from above, an item simply blinking out is easy to miss. Caps
+and trims are the settings on the tab that are **not** live — both are baked into the level's mesh
+— and their rows say so.
 
 **Camera** is `#cameramode-select`, whose `<option>` values are the `CameraMode` strings themselves
 (`auto`, the default, vs `manual`); it is owned by `game/autocamera.ts`
@@ -364,6 +367,7 @@ a setting touches one module.
 | `wallShade` | `render/wallshadow.ts` (`getWallShade`/`setWallShade`) | docs/render-lighting.md § Turning it off |
 | `skyTint` | `render/skytint.ts` (`getSkyTint`/`setSkyTint`) | docs/render-lighting.md § Turning the tint off |
 | `bloom` | `render/bloom.ts` (`getBloom`/`setBloom`) | docs/lights.md § Turning it on |
+| `pickupPuff` | `game/spritefx.ts` (`getPickupPuff`/`setPickupPuff`) | docs/items.md § The pickup puff |
 | `playerSprites` | `wad/playerskin.ts` (`getPlayerSpriteMode`/`setPlayerSpriteMode`) | docs/sprites.md § When the skins apply |
 | `infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
 | `pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |

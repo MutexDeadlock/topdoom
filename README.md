@@ -3,13 +3,15 @@
 An experimental implementation of the DOOM engine, presenting the original game and the content the
 community built on it in a **top-down view, as a twin-stick shooter**. All TypeScript, running in
 your browser.
+It behaves as close to vanilla as it can, and deviates where the top-down view demands it. 
 
-**Play it right here: [topdoom.vercel.app](https://topdoom.vercel.app)** — Freedoom and the
+**Play it right here: [topdoom.vercel.app](https://topdoom.vercel.app)**
+
+Freedoom and the
 shareware `DOOM1.WAD` ship with it, so there is a game to play before you add a WAD of your own.
 
-It behaves as close to vanilla as it can, and deviates where the top-down view demands it. 
 I started this project to get into working with Claude Code. While the engine grew I found it 
-is actually fun pretty fun to play, and both enjoyable and educational making it, so I kept going 
+is actually pretty fun to play, and both enjoyable and educational making it, so I kept going 
 and tried to refine it into a properly polished thing.
 
 ## What is working
@@ -37,6 +39,10 @@ npm install
 # optional: copy your favorite WADs
 cp /path/to/DOOM.WAD public/game/iwad/
 cp /path/to/SomeMod.wad public/game/pwad/
+
+# optional: enable DEVMODE 
+# (just a settings preset; enables debug and profiler overlays by default)
+cp .env.local.example .env.loal
 
 # run development server (http://localhost:5173)
 npm run dev
@@ -117,19 +123,18 @@ went. See [docs/cheats.md](docs/cheats.md).
 
 It plays like DOOM because the rules are DOOM's: monster stats, weapon rates, damage rolls, powerup
 timers and the random table all come out of the original source. All nine weapons are in, on the
-number keys or the mouse wheel. Every stock monster is in — DOOM II's Commander Keen and Icon of
-Sin included — and they wake, hunt, shoot back and fight each other on vanilla's own eight-direction
-pathing. Health, armor, ammo, keys, weapons, the backpack and all six powerups are collected by
+number keys or the mouse wheel. Every stock monster is in, and they wake, hunt, shoot back and fight 
+each other on vanilla's own eight-direction pathing. 
+Health, armor, ammo, keys, weapons, the backpack and all six powerups are collected by
 walking into them, and the bar along the bottom tracks what you are carrying.
 
 **Aiming is by mouse, and putting the cursor on a monster locks onto it.** The shot is then aimed
 at that monster's actual position and height instead of at wherever the cursor's projection onto
 the floor plane lands — so shooting an enemy up on a ledge angles the shot to reach it. It's the
-pointer-driven equivalent of DOOM's own auto-aim, which had no cursor to work from. Real walls
-and closed doors still stop a shot short and explode it there.
+pointer-driven equivalent of DOOM's own auto-aim, which had no cursor to work from.
 
-**The player sprite shows the weapon you are holding** — the art shipped with the engine is the
-ZDoom community's weapon-matching marine — so what you have out reads off the level and not only
+**The player sprite shows the weapon you are holding** - the art shipped with the engine is the
+ZDoom community's weapon-matching marine - so what you have out reads off the level and not only
 off the bar. A WAD that draws the player its own way is left alone, and the skins have an off
 switch under Settings -> Visuals.
 
@@ -151,9 +156,9 @@ both set none. See [docs/savegames.md](docs/savegames.md) and [docs/hud.md](docs
 
 ## Replays
 
-The **Replays** tab records a run and plays it back. Flip the New Game tab's **Replay** toggle to
-*● Recording* to record from the start, or press *Record from here* on the pause menu's Replays tab
-to record from where you are; *Stop and save recording* keeps the run, *Cancel recording* (held
+Flip the New Game tab's **Replay** toggle to *● Recording* to record from the start, or 
+press *Record from here* on the pause menu's Replays tab to record from where you are.
+*Stop and save recording* keeps the run, *Cancel recording* (held
 down) throws it away and plays on. A stored replay carries a name, a player and a description you
 can edit, and downloads as a `.topdoomreplay.json` file you can share and import back. Replays
 copied into `public/game/replay/` are offered on that tab too, marked *included*: they play and
@@ -173,28 +178,23 @@ where one actually diverged. See [docs/replays.md](docs/replays.md).
 
 ## Sound and music
 
-Sound comes out of the loaded WAD, so it matches whichever set is in use — an add-on replacing
-individual sounds replaces those, modern Ogg/WAV/FLAC ones included. Shareware `DOOM1.WAD` only
-carries 49 of the 108 sounds, so parts of it are quiet.
+Sound comes out of the loaded WAD, so it matches whichever set is in use - an add-on replacing
+individual sounds replaces those, modern Ogg/WAV/FLAC ones included.
 
 Each level plays its own music, and **the OPL2/OPL3 chip is emulated** to play it: the score is
 synthesized from the WAD's own instrument bank the way a DOS Sound Blaster did it, so nothing
 outside the WAD is needed. A music PWAD shipping Ogg/FLAC/MP3/WAV plays that directly instead.
 
-Both volumes live on the start menu and are remembered between sessions.
+Volumes live on the start menu and are remembered between sessions.
 See [docs/audio.md](docs/audio.md) and [docs/music.md](docs/music.md).
-
-## Dev mode
-
-Set `VITE_DEVMODE=true` in a `.env.local` file at the repo root (git-ignored, create it
-yourself) and restart `npm run dev` to turn on the debug overlay's full readout and the profiler's
-default. No key is dev-only. See [docs/devmode.md](docs/devmode.md).
 
 ## Working on it
 
-[CLAUDE.md](CLAUDE.md) has the source tree, the project-wide conventions and the index of `docs/`,
-where every subsystem — WAD parsing, rendering, movement, combat, the monsters, specials, saves —
-is documented in depth.
+There is a [CLAUDE.md](CLAUDE.md) which is written and maintained by Claude, but at least 
+I brang some structure in it so humans --may-- get along with it too. 
+It has the source tree, the project-wide conventions and the index of `docs/`, where every 
+subsystem is documented in great depth.
+Reading the code itself (entry point: `src/main.ts`) might also be a good starting point.
 
 ```bash
 npm test          # Node's own runner: no extra dependencies, no browser
@@ -218,7 +218,10 @@ vanilla C is ported, but the data tables are transcribed from
 stats, the linedef and sector specials, `rndtable`, `S_music[]` — and a transcription is still a
 derivative work. id relicensed that source under the GPL in 1999. Its per-file headers were never
 rewritten and still name the older DOOM Source Code License; the repository's own `LICENSE.TXT` is
-the GPL, and is what governs.
+the GPL, and is what governs. That `LICENSE.TXT` is the bare GPL v2 text with no *or later* clause
+attached to DOOM, so this is **GPL-2.0-only**. The code files name no GPL version at all, which is
+the § 9 gap the ports that relicensed to GPL-3.0 (GZDoom, Eternity, Doomsday) read the other way;
+this engine does not.
 
 `three` (MIT) is the only dependency bundled into a build.
 
@@ -227,8 +230,6 @@ the GPL, and is what governs.
 The GPL applies to this engine's own source. **Game content is not ours to license, and none of it
 is covered:**
 
-- **Your IWADs.** `DOOM.WAD` and `DOOM2.WAD` are id Software's commercial data. They are not in
-  this repo and never will be - you supply them, as [Running it](#running-it-on-your-machine) describes.
 - **[Freedoom](https://freedoom.github.io/)**, which is what ships as playable content, is under
   its own BSD 3-clause terms: redistributable, but the copyright notice travels with it.
   `public/og.jpg`, the link-preview card, is a Freedoom screenshot and carries the same.
@@ -237,3 +238,6 @@ is covered:**
   *WeaponMatchingPlayerSkin* pack converted to WAD lumps — edits of id's own marine art by Mark
   Quinn, Xenaero, Grimm, Xim, Anthony Cole, CaptainToenail, TokeGameInfo and the Skulltag team,
   credited on the About screen. Same footing as the shareware data above.
+- **`assets/gldefs.txt`**, the dynamic-light definitions, is GZDoom's stock DOOM `GLDEFS`
+  (`wadsrc_lights/static/filter/doom.id/gldefs.txt`), GPL-3.0 like the rest of GZDoom, credited on
+  the About screen.

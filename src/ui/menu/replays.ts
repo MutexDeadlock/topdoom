@@ -38,6 +38,7 @@ import {
   type StatusLine,
 } from './actions.ts';
 import { confirmOnHold } from './hold.ts';
+import type { MenuSession } from './menu.ts';
 import type { SaveSetInfo } from './savegames.ts';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -95,7 +96,7 @@ export class ReplaysUi {
   private hooks: ReplayHooks;
   private setStatus: StatusLine;
   private describe: (meta: SaveWadSet) => SaveSetInfo;
-  private inGame = false;
+  private session: MenuSession = 'none';
   private visible = false;
   private stale = true;
   /** Monotonic ticket for `renderVisible` — the `SavegamesUi` rule. */
@@ -140,8 +141,8 @@ export class ReplaysUi {
   }
 
   /** Marks the list stale and rebuilds it if on screen; called on every menu open and mutation. */
-  refresh(inGame = this.inGame): void {
-    this.inGame = inGame;
+  refresh(session = this.session): void {
+    this.session = session;
     this.refreshRecordButton();
     this.stale = true;
     void this.renderVisible();
@@ -178,15 +179,16 @@ export class ReplaysUi {
    */
   private refreshRecordButton(): void {
     const recording = this.hooks.isRecording();
-    const refusal = recording || !this.inGame ? null : this.hooks.recordingRefusal();
+    const inGame = this.session !== 'none';
+    const refusal = recording || !inGame ? null : this.hooks.recordingRefusal();
     this.recordButton.textContent = recording ? 'Stop and save recording' : 'Record from here';
     this.recordButton.className = recording ? 'primary' : 'ghost';
-    this.recordButton.disabled = !this.inGame || refusal !== null;
+    this.recordButton.disabled = !inGame || refusal !== null;
     // Only while one runs: there is nothing to throw away otherwise, and a greyed second button
     // beside a greyed first says nothing the first hasn't.
     this.cancelButton.classList.toggle('hidden', !recording);
     this.recordHint.textContent = recording ? 'recording…' : (refusal ?? '');
-    this.recordSection.title = this.inGame ? '' : NO_LEVEL_TOOLTIP;
+    this.recordSection.title = inGame ? '' : NO_LEVEL_TOOLTIP;
     // The tab's own light, so a recording is visible from every tab rather than only from this
     // one — the HUD's is behind the menu meanwhile. docs/replays.md § Recording.
     this.tabButton.classList.toggle('recording', recording);
@@ -410,7 +412,16 @@ export class ReplaysUi {
     play.className = 'primary';
     play.textContent = 'Play';
     play.disabled = this.blockedReason(entry) !== null;
-    play.addEventListener('click', () => this.play(meta.id));
+    // Held to confirm over a run of the player's own, which playing this one throws away — Load's
+    // rule and Start new game's (docs/menu-saves.md § Save and Load tabs). Not over a replay: the
+    // one being watched can be watched again.
+    play.title = this.session === 'game' ? 'Hold to abandon the game you are running' : '';
+    confirmOnHold(play, {
+      hint: 'Hold Play to abandon the game you are running.',
+      setStatus: (t) => this.setStatus(t),
+      action: () => this.play(meta.id),
+      required: () => this.session === 'game',
+    });
     actions.append(play, this.makeDownloadButton(meta));
     // No trash on a stock row: the file is on the server, and deleting it is a matter for whoever
     // put it there. The mark beside the name is what says so (`STOCK_HINT`).

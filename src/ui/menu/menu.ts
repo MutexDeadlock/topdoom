@@ -73,6 +73,13 @@ const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as
 /** The menu's top-level tabs; exported for the F2/F3/F4 hotkeys in `main.ts`. */
 export type MenuTab = 'newgame' | 'save' | 'load' | 'replays' | 'settings';
 
+/**
+ * What is running behind the menu, as `main.ts` tells `open` and the tabs it. `'replay'` is a level
+ * like `'game'` in every way but one: a replay can be watched again, so nothing that replaces it is
+ * held to confirm. docs/menu.md § One screen, two jobs.
+ */
+export type MenuSession = 'none' | 'game' | 'replay';
+
 /** The Settings tab's own sub-tabs, in the order they are shown. */
 type SettingsTab = 'general' | 'controls' | 'visuals' | 'audio';
 
@@ -240,9 +247,9 @@ export class Menu {
       hint: 'Hold Start new game to abandon the game you are running.',
       setStatus: (text) => this.setStatus(text),
       action: () => void this.startWithSkill(this.currentSkill()),
-      // Only a start that throws a running level away is worth confirming; from the launcher it
-      // stays an ordinary button.
-      required: () => this.inGame,
+      // Only a start that throws a running level away is worth confirming; from the launcher —
+      // and over a replay, which costs nothing to leave — it stays an ordinary button.
+      required: () => this.session === 'game',
     });
     this.resumeButton.addEventListener('click', () => this.onResume());
     for (const tab of Object.keys(this.tabButtons) as MenuTab[]) {
@@ -345,14 +352,18 @@ export class Menu {
   }
 
   /**
-   * `inGame` says a level is loaded and paused behind the menu: the backdrop
+   * Anything but `'none'` says a level is loaded and paused behind the menu: the backdrop
    * turns translucent and "Return to game" appears. The active tab is whatever
    * the player last picked — reopening mid-level must not throw away the tab
    * they were on.
    */
-  open(inGame = false): void {
+  open(session: MenuSession = 'none'): void {
+    const inGame = session !== 'none';
     this.root.classList.remove('hidden');
     this.root.classList.toggle('ingame', inGame);
+    // The second half of the state, kept where the first is: what is behind the menu is a replay,
+    // not a run of the player's own. Nothing styles it — it is read back by `session`.
+    this.root.classList.toggle('watching', session === 'replay');
     this.resumeButton.classList.toggle('hidden', !inGame);
     // The Save tab only exists while there is a game to save — same gate as
     // the resume button. Whoever was *on* it when the game ended is moved off
@@ -361,8 +372,8 @@ export class Menu {
     if (!inGame && this.activeTab === 'save') {
       this.setTab('newgame');
     }
-    this.savegames.refresh(inGame);
-    this.replays.refresh(inGame);
+    this.savegames.refresh(session);
+    this.replays.refresh(session);
     this.refreshButtons();
   }
 
@@ -394,13 +405,13 @@ export class Menu {
 
   /**
    * Brings one tab to the front, opening the menu first if it is closed — what the
-   * F2/F3/F4 hotkeys do (docs/menu.md § Hotkeys). `inGame` is `open`'s and gates Save
+   * F2/F3/F4 hotkeys do (docs/menu.md § Hotkeys). `session` is `open`'s and gates Save
    * the same way: with no level loaded there is nothing to save, so the key does
    * nothing rather than opening the menu on a hidden tab. Reports whether the tab is up.
    */
-  showTab(tab: MenuTab, inGame: boolean): boolean {
-    if (tab === 'save' && !inGame) return false;
-    if (!this.isOpen) this.open(inGame);
+  showTab(tab: MenuTab, session: MenuSession): boolean {
+    if (tab === 'save' && session === 'none') return false;
+    if (!this.isOpen) this.open(session);
     this.setTab(tab);
     return true;
   }
@@ -522,12 +533,13 @@ export class Menu {
   }
 
   /**
-   * Whether a level is loaded and paused behind the menu. `open`'s own flag, read back off the
-   * class it sets rather than mirrored in a field — one owner for the state, so the two can't
-   * disagree about what the backdrop is showing.
+   * What is running behind the menu. `open`'s own argument, read back off the classes it sets
+   * rather than mirrored in a field — one owner for the state, so the two can't disagree about
+   * what the backdrop is showing.
    */
-  private get inGame(): boolean {
-    return this.root.classList.contains('ingame');
+  private get session(): MenuSession {
+    if (!this.root.classList.contains('ingame')) return 'none';
+    return this.root.classList.contains('watching') ? 'replay' : 'game';
   }
 
   private setTab(tab: MenuTab): void {
@@ -1211,8 +1223,9 @@ export class Menu {
 
   private refreshButtons(): void {
     this.startButton.disabled = !this.isReady;
-    // The hold is only asked for in game (`confirmOnHold`'s `required`), so the tooltip is too.
-    this.startButton.title = this.inGame ? 'Hold to abandon the game you are running' : '';
+    // The hold is only asked for over a run of the player's own (`confirmOnHold`'s `required`), so
+    // the tooltip is too.
+    this.startButton.title = this.session === 'game' ? 'Hold to abandon the game you are running' : '';
     // Only ever disabled for the duration of a start (see `startWithSkill`);
     // whether it's *shown* is `open`'s call.
     this.resumeButton.disabled = false;

@@ -379,9 +379,11 @@ replay replayed in CI, which needs a headless simulation harness this engine doe
 
 The track is the control: click or drag it, and the jump lands on release (seeking on every
 pointer move would reload and re-run the level under the pointer). Hovering it marks where a jump
-would land and names that moment's clock (`#replay-scrub`, `#replay-hover`, over the panel rather
-than above the bar, which would move the HUD for a hover); a drag keeps the mark while the pointer
-wanders off the track's few pixels.
+would land and names that moment's clock — plus the level it falls in, where the recording spans
+more than one (`#replay-scrub`, `#replay-hover`, over the panel rather than above the bar, which
+would move the HUD for a hover; the label is held clear of both screen edges); a drag keeps the mark
+while the pointer wanders off the track's few pixels. The level's name is the level card's
+(`LevelNames.nameFor`), which is what the track markers carry too.
 
 A recording lays down a **keyframe** every `KEYFRAME_INTERVAL` tics — the world as a savegame holds
 it, and the map it belongs to. No camera: the pose of the tic being landed on is already in the tic

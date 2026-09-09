@@ -688,7 +688,11 @@ export class Game {
     this.levelNames = new LevelNames(wad, mapInfo, this.dehacked);
     this.crosshair = new Crosshair(view.renderer.domElement);
     this.autoSave = autoSave;
-    this.replayBar = new ReplayBar({ takeOver: () => this.takeOver(), seek: (tic) => this.seekTo(tic) });
+    this.replayBar = new ReplayBar({
+      takeOver: () => this.takeOver(),
+      seek: (tic) => this.seekTo(tic),
+      levelName: (map) => this.levelNames.nameFor(map),
+    });
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
     // After `mapNames`: a progression may only name a level the loaded set actually provides.
@@ -792,6 +796,15 @@ export class Game {
 
   get recording(): boolean {
     return this.recorder !== null;
+  }
+
+  /**
+   * Whether what is running is a replay rather than a run of the player's own — what the menu asks
+   * to know whether starting something else would throw anything away (docs/menu.md § One screen,
+   * two jobs).
+   */
+  get watchingReplay(): boolean {
+    return this.playback !== null;
   }
 
   /**

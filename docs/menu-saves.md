@@ -110,9 +110,11 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   disagree; the label moves into a `.label` span so the `.fill` can paint behind it, and Space/Enter
   held on a focused button works the same way. **`required` makes the hold conditional** — a button
   that only destroys something some of the time (Start new game, docs/menu.md § One screen, two
-  jobs, and **Load**, which throws the running level away exactly as a start does) wears the same
+  jobs, **Load**, which throws the running level away exactly as a start does, and a replay's
+  **Play**, § Replays tab) wears the same
   confirm and acts on a plain click while the predicate says no; the tooltip follows the hold, so
-  from the launcher Load carries none. Both are per row; Overwrite refills that save from
+  from the launcher — and over a replay, which costs nothing to leave — Load carries none. The
+  predicate is the same one for all three: `MenuSession` is `'game'`. Both are per row; Overwrite refills that save from
   the current moment, keeping its ID and its name (renaming has its own affordance). Delete and
   download are icon-only buttons (`⤓`, `🗑︎` with a text-presentation selector) with their meaning in
   the tooltip; Load and Overwrite are `.primary`.
@@ -178,6 +180,9 @@ Play for a set the library can't supply. What is this tab's own:
   have thrown, printed in the panel beside the Play it greys, with the missing-file lines under it
   (docs/replays.md § Storage). Its list row is dimmed by colour and carries the same sentence on its
   tooltip — a row is not a button, so a tooltip is readable there.
+- **Play is held to confirm over a run of the player's own** (`required`, § Save and Load tabs):
+  starting a replay tears the session down exactly as Load does. Over a replay it is a plain click —
+  the one being watched is still in the store.
 - **The tab is always available**, unlike Save: a replay can be played from the launcher. Only its
   record button needs a running game, and is disabled with the reason beside it otherwise —
   `Game.recordingRefusal`, which adds "a replay is playing", "already recording" and a cheat code

@@ -16,17 +16,26 @@ Only the WAD lists, the level list and the difficulty options are built in JS.
 
 ## One screen, two jobs
 
-`Menu` is both the launcher and the pause screen. `open(inGame)` is what distinguishes them:
+`Menu` is both the launcher and the pause screen. `open(session)` is what distinguishes them, over
+a `MenuSession` of `'none'`, `'game'` or `'replay'` — `main.ts` reads it off the `Game`
+(`watchingReplay`) at every open:
 
-- `inGame` puts the `ingame` class on `#menu`, swapping the opaque radial gradient for a translucent
+- Anything but `'none'` puts the `ingame` class on `#menu`, swapping the opaque radial gradient for a
+  translucent
   dim so the frozen level shows through (`Game` keeps drawing it — docs/frameloop.md § Pausing), and
   reveals **Return to game**. Both are off before any level is loaded: there is nothing behind the
   menu then but the static HUD markup with placeholder values, which the opaque gradient exists to
-  hide. The class *is* that state: `Menu.inGame` reads it back rather than mirroring it in a field.
-- **`Start new game` is a press-and-hold while a level is running** (`hold.ts: confirmOnHold`'s
+  hide. `'replay'` adds the `watching` class, which nothing styles. The classes *are* that state:
+  `Menu.session` reads them back rather than mirroring it in a field.
+- **`Start new game` is a press-and-hold while a run of the player's own is going**
+  (`hold.ts: confirmOnHold`'s
   `required`, docs/menu-saves.md § Save and Load tabs): it throws that level away, and it sits in
   the same footer as `Return to game`. Asked per press, not wired once — from the launcher the
   button is an ordinary one and a click starts.
+- **A replay behind the menu is held to nothing.** Over `'replay'` the three buttons that replace
+  the session — Start new game, Load, a replay's Play — are ordinary buttons: a watched replay is
+  still in the store and can be watched again, so there is nothing to confirm losing. The Save tab,
+  Return to game and Record from here go by the level being loaded, so they behave as in a game.
 - **`Start new game` is shown only while the New Game tab is up** (`setTab`): it acts on what that
   tab holds. The footer carries a `min-height` of that button's own box, so the row it leaves keeps
   its height and the panel's bottom edge doesn't move on a tab switch — `visibility` on the button

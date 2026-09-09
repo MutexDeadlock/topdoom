@@ -5,7 +5,7 @@
 import { Wad } from './wad/wad.ts';
 import { mapProvider, wadSetId } from './wad/checksum.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
-import { Menu, type MenuTab, type Selection } from './ui/menu/menu.ts';
+import { Menu, type MenuSession, type MenuTab, type Selection } from './ui/menu/menu.ts';
 import {
   blockingWad,
   missingWadText,
@@ -53,6 +53,13 @@ async function boot(): Promise<void> {
    */
   const loading = new LoadingScreen();
   let game: Game | null = null;
+
+  /**
+   * What the menu is opened over: nothing, a run of the player's own, or a replay. The difference
+   * between the last two is what a start, a load or a Play would cost — docs/menu.md § One screen,
+   * two jobs.
+   */
+  const session = (): MenuSession => (game === null ? 'none' : game.watchingReplay ? 'replay' : 'game');
 
   /**
    * The one session lifecycle, for both a fresh start and a load: assemble the
@@ -120,7 +127,7 @@ async function boot(): Promise<void> {
             storeRecording(finished);
             finished.dispose();
           }
-          menu.open(false);
+          menu.open('none');
         },
         gldefsText,
         playerSkins,
@@ -143,7 +150,7 @@ async function boot(): Promise<void> {
       menu.setStatus((err as Error).message, true);
       // The previous level is gone by now, so re-sync the menu: with nothing
       // left to return to, it must stop offering it.
-      menu.open(game !== null);
+      menu.open(session());
       console.error(err);
     }
   };
@@ -227,7 +234,7 @@ async function boot(): Promise<void> {
       onSave: (name) => withCapture((capture) => writeSave(capture, name)),
       onOverwrite: (id) => withCapture((capture) => overwriteSave(id, capture)),
       onLoad: (save) => loadSave(save),
-      // No game is the menu's own `inGame` gate, so there is nothing to say here.
+      // No game is the menu's own `session` gate, so there is nothing to say here.
       saveRefusal: () => game?.saveRefusal() ?? null,
     },
     {
@@ -267,7 +274,7 @@ async function boot(): Promise<void> {
     if (menu.closeTopOverlay()) return;
     if (!menu.isOpen) {
       game?.pause();
-      menu.open(game !== null);
+      menu.open(session());
       return;
     }
     resumeGame();
@@ -285,7 +292,7 @@ async function boot(): Promise<void> {
     const wasOpen = menu.isOpen;
     // Refused when the tab isn't available (Save, with no level loaded): the browser's own
     // binding for the key is left alone rather than swallowed for nothing.
-    if (!menu.showTab(tab, game !== null)) return;
+    if (!menu.showTab(tab, session())) return;
     e.preventDefault();
     if (!wasOpen) game?.pause();
   });

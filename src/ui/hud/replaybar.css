@@ -55,8 +55,10 @@
 }
 
 /*
- * The clock a click on the track would jump to, right above the pointer — over the panel it
- * expands into rather than above the whole bar, which would push the HUD up for a hover.
+ * The clock a click on the track would jump to — and, across a multi-level recording, that
+ * moment's level — right above the pointer, over the panel it expands into rather than above the
+ * whole bar, which would push the HUD up for a hover. `left` is set in pixels, clear of both
+ * edges (replaybar.ts § showAt).
  */
 #replay-hover {
   position: absolute;

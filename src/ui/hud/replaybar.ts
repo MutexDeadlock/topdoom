@@ -28,6 +28,8 @@ export interface ReplayBarHooks {
   takeOver(): void;
   /** Jumps the playback to a tic — the track's click and drag. */
   seek(tic: number): void;
+  /** The level card's name for a map, for the track's markers and the hover label. */
+  levelName(map: string): string;
 }
 
 /** The `body` class the HUD bar reads to lift itself clear of the expanded panel. */
@@ -66,6 +68,8 @@ export class ReplayBar {
   private hooks: ReplayBarHooks;
   /** The playback the markers and notes were built for, so they are rebuilt once per replay. */
   private shown: ReplayPlayback | null = null;
+  /** The replay's level markers with their names resolved, in tic order — built once per replay. */
+  private levels: { tic: number; name: string }[] = [];
   private notes: string[] = [];
   private reticleHealth: number | null = null;
   /** Whether the reticle is drawn at all — the panel's own toggle, on for as long as the session. */
@@ -227,12 +231,13 @@ export class ReplayBar {
     this.alertUntil = 0;
     this.root.classList.remove('hidden', 'ended', 'alerting');
     document.body.classList.remove(EXPANDED_CLASS);
+    this.levels = playback.replay.levels.map((level) => ({ tic: level.tic, name: this.hooks.levelName(level.map) }));
     this.markers.replaceChildren();
-    for (const level of playback.replay.levels) {
+    for (const level of this.levels) {
       if (level.tic === 0) continue;
       const tick = document.createElement('div');
       tick.style.left = `${positionFraction(level.tic, playback.ticCount) * 100}%`;
-      tick.title = level.map;
+      tick.title = level.name;
       this.markers.append(tick);
     }
     // The one standing note, about *this* playback being at risk rather than about which release
@@ -292,14 +297,34 @@ export class ReplayBar {
     return rect.width > 0 ? Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) : 0;
   }
 
-  /** The line and the clock label where a jump would land — under the pointer, hovering or dragging. */
+  /** The line and the label where a jump would land — under the pointer, hovering or dragging. */
   private showAt(fraction: number): void {
     this.scrub.classList.remove('hidden');
     this.scrub.style.left = `${fraction * 100}%`;
     if (!this.shown) return;
     this.hover.classList.remove('hidden');
-    this.hover.style.left = `${fraction * 100}%`;
-    this.hover.textContent = formatClock(replaySeconds(ticAtFraction(fraction, this.shown.ticCount)));
+    setText(this.hover, this.hoverLabel(ticAtFraction(fraction, this.shown.ticCount)));
+    // Placed in pixels and kept clear of both edges: the track spans the whole width, so a label
+    // centred on either end would hang half off the screen — which a level name makes the common
+    // case rather than a few clipped digits.
+    const width = this.track.clientWidth;
+    const half = this.hover.offsetWidth / 2;
+    this.hover.style.left = `${Math.max(half, Math.min(width - half, fraction * width))}px`;
+  }
+
+  /**
+   * What the hover marks: the clock a jump would land on, and — only where the recording spans
+   * levels — which level that is. docs/replays.md § Seeking.
+   */
+  private hoverLabel(tic: number): string {
+    const clock = formatClock(replaySeconds(tic));
+    if (this.levels.length < 2) return clock;
+    let name = this.levels[0].name;
+    for (const level of this.levels) {
+      if (level.tic > tic) break;
+      name = level.name;
+    }
+    return `${clock} · ${name}`;
   }
 
   /**

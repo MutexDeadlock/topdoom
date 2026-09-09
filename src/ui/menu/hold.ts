@@ -1,7 +1,8 @@
 /**
  * Press-and-hold confirm: a destructive button that fills over `HOLD_MS` and only acts when the
- * fill lands. Shared by the save list's Delete and Overwrite, the WAD Library's Forget folder and
- * Start new game while a level is running. See docs/menu-saves.md § Save and Load tabs.
+ * fill lands. Shared by the save list's Delete and Overwrite, the WAD Library's Forget folder, and
+ * Start new game, Load and a replay's Play while a run of the player's own is going.
+ * See docs/menu-saves.md § Save and Load tabs.
  */
 
 /**
@@ -20,8 +21,8 @@ export interface HoldConfirm {
   action: () => void;
   /**
    * Whether the hold is required at all, asked at each press — for a button that only destroys
-   * something some of the time (Start new game, which is an ordinary button until there is a level
-   * to give up). Omitted, the hold is always required.
+   * something some of the time (Start new game, which is an ordinary button until there is a run to
+   * give up). Omitted, the hold is always required.
    */
   required?: () => boolean;
 }

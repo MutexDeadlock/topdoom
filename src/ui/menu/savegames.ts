@@ -22,6 +22,7 @@ import { SKILL_NAMES } from '../../game/skill.ts';
 import { formatClock } from '../hud/hud.ts';
 import { attempt, downloadJson, emptyLine, iconButton, installFilter, matchesFilter, noteLine } from './actions.ts';
 import { confirmOnHold } from './hold.ts';
+import type { MenuSession } from './menu.ts';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -41,7 +42,7 @@ export interface SaveHooks {
    * Why the current moment can't be saved, or null when it can — the same
    * sentence `onSave`/`onOverwrite` would throw, asked ahead of the click so
    * the buttons can be disabled rather than failing when pressed. Null with no
-   * game running too: `inGame` is the gate for that, not this.
+   * game running too: `session` is the gate for that, not this.
    */
   saveRefusal(): string | null;
 }
@@ -78,7 +79,7 @@ export class SavegamesUi {
   private hooks: SaveHooks;
   private setStatus: (text: string, isError?: boolean) => void;
   private describe: (meta: SaveMeta) => SaveSetInfo;
-  private inGame = false;
+  private session: MenuSession = 'none';
   /**
    * Which of the two lists is on screen, and whether each still matches the
    * store. Only the visible one is ever built: listing itself is a cheap meta
@@ -136,12 +137,12 @@ export class SavegamesUi {
 
   /**
    * Marks both lists stale and rebuilds whichever is on screen; called on every
-   * menu open and after each store mutation. `inGame` defaults to the last
+   * menu open and after each store mutation. `session` defaults to the last
    * value `Menu.open` gave, so a refresh from elsewhere (an upload) doesn't
    * have to carry it.
    */
-  refresh(inGame = this.inGame): void {
-    this.inGame = inGame;
+  refresh(session = this.session): void {
+    this.session = session;
     this.saveButton.disabled = !this.canSave;
     // A disabled button shows no tooltip, so the reason has to be on screen.
     this.refusalHint.textContent = this.hooks.saveRefusal() ?? '';
@@ -179,7 +180,7 @@ export class SavegamesUi {
    * rows are built.
    */
   private get canSave(): boolean {
-    return this.inGame && this.hooks.saveRefusal() === null;
+    return this.session !== 'none' && this.hooks.saveRefusal() === null;
   }
 
   /**
@@ -296,15 +297,16 @@ export class SavegamesUi {
       // Overwrite get: the row's red line beside it already names the file, and a
       // disabled button shows no tooltip of its own. `loadSave` stays the gate.
       load.disabled = entry.refusal !== null || blockingWad(set.missing) !== undefined;
-      // Only asked for in game, where a load throws the running level away — Start new game's own
-      // conditional hold (docs/menu-saves.md § Save and Load tabs). The tooltip follows the hold:
-      // from the launcher this is an ordinary button and has nothing to warn about.
-      load.title = this.inGame ? 'Hold to abandon the game you are running' : '';
+      // Only asked for over a run of the player's own, which a load throws away — Start new game's
+      // own conditional hold (docs/menu-saves.md § Save and Load tabs). The tooltip follows the
+      // hold: from the launcher, and over a replay, this is an ordinary button with nothing to warn
+      // about.
+      load.title = this.session === 'game' ? 'Hold to abandon the game you are running' : '';
       confirmOnHold(load, {
         hint: 'Hold Load to abandon the game you are running.',
         setStatus: (t) => this.setStatus(t),
         action: () => this.load(meta.id),
-        required: () => this.inGame,
+        required: () => this.session === 'game',
       });
       actions.append(load);
     } else {

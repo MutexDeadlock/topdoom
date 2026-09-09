@@ -165,6 +165,46 @@ describe('Rendering · solid structure lids', () => {
     assert.equal(caps[1].under, true);
   });
 
+/**
+ * A pillar with a niche cut into its east face: sector 0 is the room (ceiling 128), sector 1 the
+ * niche, `deep` units into the pillar and open to the room on its other three sides, so the
+ * pillar's own material stands over it.
+ */
+function recessRig(deep = 32, niche = 80): DoomMap {
+  const map = mapWith([{ points: square(0, 0, 64) }], 2);
+  map.sectors[1].ceilHeight = niche;
+  map.sidedefs[1].sector = 1;
+  const a = map.vertexes.push({ x: 64 + deep, y: -64 }) - 1;
+  const b = map.vertexes.push({ x: 64 + deep, y: 64 }) - 1;
+  const side = (sector: number): number =>
+    map.sidedefs.push({ xOffset: 0, yOffset: 0, upper: '-', lower: '-', middle: '-', sector }) - 1;
+  // Ring corner 1 is (64, -64) and corner 2 is (64, 64), so the niche hangs off the face between
+  // them, wound with the room on each line's right.
+  for (const [v1, v2] of [[1, a], [a, b], [b, 2]] as const) {
+    map.linedefs.push({ v1, v2, flags: LF.TWO_SIDED, special: 0, tag: 0, right: side(0), left: side(1) });
+  }
+  return map;
+}
+
+  test('a niche cut into a structure does not set its lid', () => {
+    // The wall facing into a switch alcove stops at the alcove's ceiling because the alcove is cut
+    // into the structure, not because the structure ends there — DOOM1 E1M2's tower at
+    // (-640…-592, 1056…1120), lidded at 80 inside itself and left an open box.
+    // docs/render-solids.md.
+    const caps = findSolidCaps(recessRig(), []);
+    assert.equal(caps.length, 2, 'the lid, and a cap at the level the niche closes');
+    assert.equal(caps[0].height, 128, 'the top its other three walls reach, not the niche\u2019s 80');
+    assert.equal(caps[1].height, 80);
+    assert.equal(caps[1].under, true, 'closing the box from inside the niche');
+  });
+
+  test('a level the structure merely leans over sets it as before', () => {
+    // Too much material over it to be a niche: `POCKET_RISE`, the reach `pocketsOf` roofs one at.
+    assert.equal(findSolidCaps(recessRig(32, 56), [])[0].height, 56);
+    // And too little of its wall the structure's own: `POCKET_SHARE`, asked of the same shape.
+    assert.equal(findSolidCaps(recessRig(512), [])[0].height, 80);
+  });
+
   test('a face onto a sector with no height between floor and ceiling still sets the lid', () => {
     // A shut door, or the solid filler a mapper leaves between rooms, is not a level the structure
     // passes through. Counting one lifts the lid off the wall stubs welded into a level's own wall

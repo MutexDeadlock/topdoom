@@ -42,6 +42,19 @@ Seven rules decide what a lid looks like, and each has a reason:
   tunnel ceiling, and the lid up on the platform level would leave a hollow band under it. From
   above the lid hides them; from the side the wall does; only from the level they close are they
   seen. It is a rule for crates and next to nothing else.
+  **A face onto a niche cut into the structure does not count either** (`recessedSectors`): a switch
+  alcove's ceiling is where the wall stops because the alcove is cut *into* the structure, and the
+  structure carries on over it — DOOM1 E1M2's tower at (-640…-592, 1056…1120) took its lid from the
+  alcove at (-592, 1056) and came out roofed at 80 inside a box whose other three walls reach 136.
+  A niche is a sector whose ceiling is under the ceiling of **every** room it opens onto (a corridor
+  between two halls is lower than both and is none: taking it for one lifts the lid of everything
+  standing along it, DOOM2 MAP15's pillars at (336, -3344), 176 up to a hall's 600), no bigger than
+  `POCKET_AREA`, with no more than `POCKET_RISE` of material over it, and at least `POCKET_SHARE` of
+  its perimeter walled by **this ring** — the same three the pocket roof asks from the other end, so
+  every niche that lifts a lid is one `pocketsOf` then roofs flush with it. The lid it would lift to
+  is weighed too: further than `POCKET_RISE` over the niche and the structure is leaning over a
+  level rather than carrying over a nook. Over the committed WADs it moves 2 lids in DOOM1.WAD, 11
+  in DOOM2.WAD, 18 in freedoom2.wad and 35 in GoingDown.wad, none by more than 64.
 - **The lid wears the ring's own wall texture**, not a flat. The bordering sector's ceiling flat is
   never drawn by this camera and so is free for the taking — but on the *lid* it is the wrong
   material: it is the room's ceiling, and GoingDown.wad MAP08's crate tops come out `RROCK14` rock,

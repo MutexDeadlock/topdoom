@@ -142,12 +142,13 @@ export function findSolidCaps(map: DoomMap, polys: readonly SectorPoly[]): Solid
 
   const caps: SolidCap[] = [];
   const visited = new Set<number>();
+  const recesses = recessedSectors(map, polys);
   for (const start of solid) {
     if (visited.has(start)) continue;
     const ring = traceRing(map, linesAt, visited, start) ?? traceVoidFace(map, outgoing, start);
     if (!ring) continue;
     for (const line of ring.lines) visited.add(line);
-    caps.push(...capsFor(map, polys, ring));
+    caps.push(...capsFor(map, polys, recesses, ring));
   }
   return caps;
 }
@@ -511,7 +512,12 @@ function traceVoidFace(map: DoomMap, outgoing: Map<number, number[]>, start: num
 }
 
 /** The caps one ring gets — its lid, plus one at each level a buried face stops at (`lidLevels`). */
-function capsFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: number[]; vertexes: number[] }): SolidCap[] {
+function capsFor(
+  map: DoomMap,
+  polys: readonly SectorPoly[],
+  recesses: Recesses,
+  ring: { lines: number[]; vertexes: number[] },
+): SolidCap[] {
   const points = new Float64Array(ring.vertexes.length * 2);
   for (const [i, v] of ring.vertexes.entries()) {
     const vertex = map.vertexes[v];
@@ -546,7 +552,7 @@ function capsFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: numb
   polygonBounds(points, bounds);
   if (enclosesFloor(polys, points, bounds)) return [];
 
-  const buriedFlags = buriedFaces(map, ring.lines);
+  const buriedFlags = buriedFaces(map, ring.lines, recesses);
   const buried = ring.lines.filter((_, i) => buriedFlags[i]);
   // `lidLevels` puts the lid first and the levels it closes off underneath after it.
   const levels = lidLevels(map, ring.lines, buriedFlags);
@@ -1032,6 +1038,68 @@ function mostCounted(counts: ReadonlyMap<string, number>): string | undefined {
   return best;
 }
 
+/** The niches a structure runs over, and how much wall each has for `buriedFaces` to weigh. */
+interface Recesses {
+  /** Sector → whether it is one at all (`recessedSectors`). */
+  is: Uint8Array;
+  /** Sector → its whole perimeter, what `POCKET_SHARE` of the ring's own faces is measured against. */
+  perimeter: Float64Array;
+}
+
+/**
+ * The sectors a structure runs **over**: a niche whose ceiling is under the ceiling of every room
+ * it opens onto, so material stands above it on every side, and small enough (`POCKET_AREA`) to be
+ * one. A wall facing into one stops at the niche's ceiling because the niche is cut into the
+ * structure, not because the structure ends there — DOOM1 E1M2's switch alcove at
+ * (-592…-576, 1056…1120), 56 units of tower over it, which took the tower's lid down from 136 to 80
+ * and left it an open box.
+ *
+ * Every room it opens onto, rather than one: a corridor between two halls is lower than both and
+ * is no niche, and taking it for one lifts the lid of anything standing along it — DOOM2 MAP15's
+ * pillars at (336, -3344), 176 up to the 600 of the hall beside them.
+ */
+function recessedSectors(map: DoomMap, polys: readonly SectorPoly[]): Recesses {
+  const area = new Float64Array(map.sectors.length);
+  for (const poly of polys) {
+    if (poly.points.length >= 6) area[poly.sector] += Math.abs(signedPolygonArea2(poly.points) / 2);
+  }
+
+  const opens = new Uint8Array(map.sectors.length);
+  const covered = new Uint8Array(map.sectors.length).fill(1);
+  const perimeter = new Float64Array(map.sectors.length);
+  /** The lowest ceiling standing over each — how thick the material above the niche is. */
+  const over = new Float64Array(map.sectors.length).fill(Infinity);
+  for (const line of map.linedefs) {
+    const a = map.vertexes[line.v1];
+    const b = map.vertexes[line.v2];
+    if (!a || !b) continue;
+    const length = vecLength(b.x - a.x, b.y - a.y);
+    const right = line.right === NO_SIDE ? -1 : map.sidedefs[line.right].sector;
+    const left = line.left === NO_SIDE ? -1 : map.sidedefs[line.left].sector;
+    for (const [own, other] of [[right, left], [left, right]] as const) {
+      const mine = map.sectors[own];
+      if (!mine || own === other) continue;
+      perimeter[own] += length;
+      const theirs = map.sectors[other];
+      if (!theirs) continue;
+      opens[own] = 1;
+      if (theirs.ceilHeight <= mine.ceilHeight) covered[own] = 0;
+      else over[own] = Math.min(over[own], theirs.ceilHeight);
+    }
+  }
+
+  const is = new Uint8Array(map.sectors.length);
+  for (const [i, sector] of map.sectors.entries()) {
+    if (!opens[i] || !covered[i] || roomless(sector) || area[i] > POCKET_AREA) continue;
+    // And no more material over it than a crate's worth, the same `POCKET_RISE` that decides
+    // whether a nook is roofed: past that the structure only leans over the level below it.
+    if (over[i] - sector.ceilHeight <= POCKET_RISE) {
+      is[i] = 1;
+    }
+  }
+  return { is, perimeter };
+}
+
 /**
  * Which of a ring's faces are **not** its top: a wall whose ceiling is at or under the floor its
  * neighbour along the ring stands on is a level the structure passes through — a crate beside a
@@ -1042,17 +1110,47 @@ function mostCounted(counts: ReadonlyMap<string, number>): string | undefined {
  * or the solid filler a mapper leaves between rooms is not a level anything stands on, and its
  * ceiling meets the test against any neighbour at all. docs/render-solids.md.
  */
-function buriedFaces(map: DoomMap, lines: readonly number[]): boolean[] {
+function buriedFaces(map: DoomMap, lines: readonly number[], recesses: Recesses): boolean[] {
   const fronts = lines.map((lineIndex) => {
     const side = map.sidedefs[map.linedefs[lineIndex].right];
     return side ? map.sectors[side.sector] : undefined;
   });
+  const sectorOf = lines.map((lineIndex) => map.sidedefs[map.linedefs[lineIndex].right]?.sector ?? -1);
   const n = lines.length;
-  const meets = fronts.map((own, i) => {
+  // How much of each niche this ring itself walls: a niche is cut **into** the structure, where a
+  // low sector the structure merely stands beside is one of the level's own — `POCKET_SHARE`, the
+  // share `pocketsOf` asks of the same shape from the other end.
+  const walls = new Map<number, number>();
+  for (const [i, lineIndex] of lines.entries()) {
+    if (sectorOf[i] < 0 || !recesses.is[sectorOf[i]]) continue;
+    const line = map.linedefs[lineIndex];
+    const a = map.vertexes[line.v1];
+    const b = map.vertexes[line.v2];
+    if (a && b) {
+      walls.set(sectorOf[i], (walls.get(sectorOf[i]) ?? 0) + vecLength(b.x - a.x, b.y - a.y));
+    }
+  }
+  const recessed = (sector: number): boolean => {
+    return recesses.is[sector] === 1 && (walls.get(sector) ?? 0) >= POCKET_SHARE * recesses.perimeter[sector];
+  };
+  // The level beside the wall begins where the wall stops: a crate beside a step.
+  const stands = fronts.map((own, i) => {
     if (!own || roomless(own)) return false;
     const before = fronts[(i + n - 1) % n]?.floorHeight ?? -Infinity;
     const after = fronts[(i + 1) % n]?.floorHeight ?? -Infinity;
     return own.ceilHeight <= Math.max(before, after);
+  });
+  // What the lid would be with the recesses left out, which is what a recess is weighed against:
+  // one that would leave the lid further over it than `pocketsOf` will roof is a level the
+  // structure leans over, not a niche cut into it.
+  let top = Infinity;
+  for (const [i, own] of fronts.entries()) {
+    if (!own || stands[i] || recessed(sectorOf[i])) continue;
+    top = Math.min(top, own.ceilHeight);
+  }
+  const meets = fronts.map((own, i) => {
+    if (!own || roomless(own)) return false;
+    return stands[i] || (recessed(sectorOf[i]) && top - own.ceilHeight <= POCKET_RISE);
   });
 
   // A run of faces sharing a front sector is one wall the mapper split, and it stands in one level;
@@ -1060,7 +1158,6 @@ function buriedFaces(map: DoomMap, lines: readonly number[]): boolean[] {
   // segment the run's ends shield sets the lid and sinks it — GoingDown.wad MAP08's crate at
   // (-397, 4), three faces onto the nook it stands in, lidded at 64 rather than at the 128 its
   // wooden upper half reaches, and the crate at (-28, -148), whose nook then stayed a hole.
-  const sectorOf = lines.map((lineIndex) => map.sidedefs[map.linedefs[lineIndex].right]?.sector ?? -1);
   const buried = meets.slice();
   for (let i = 0; i < n; i++) {
     if (!meets[i] || sectorOf[i] < 0) continue;
@@ -1070,7 +1167,9 @@ function buriedFaces(map: DoomMap, lines: readonly number[]): boolean[] {
       }
     }
   }
-  return buried;
+  // Where every face came out buried there is nothing left to ask, and the plain lowest ceiling
+  // stands: a ring with no top at all would be dropped for having no lid.
+  return buried.every((face) => face) ? buried.map(() => false) : buried;
 }
 
 /**

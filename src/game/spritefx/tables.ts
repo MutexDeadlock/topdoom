@@ -233,4 +233,4 @@ export const PICKUP_FOG_FRAME_SECONDS = 3 * DOOM_TIC;
 export const PICKUP_FOG_SCALE = 0.4;
 export const PICKUP_FOG_OPACITY = 0.3;
 /** How far the GLDEFS light these frames carry is dimmed — docs/lights.md § Dimming one offer. */
-export const PICKUP_FOG_LIGHT = 0.4;
+export const PICKUP_FOG_LIGHT = 0.6;

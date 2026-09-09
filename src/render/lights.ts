@@ -167,7 +167,7 @@ interface Emitter {
   y: number;
   z: number;
   radius: number;
-  /** What the caller dimmed this light to, 1 = the GLDEFS colour as written — see `offer`. */
+  /** What the caller scaled this light to, 1 = the GLDEFS definition as written — see `offer`. */
   intensity: number;
   /**
    * The emitter's own BSP leaf, where the reach fill starts. -1 = the caller had none to hand;
@@ -366,8 +366,9 @@ export class DynamicLights {
    * coordinates inline, and one record per drawn sprite measured ~5% on this path — see
    * docs/lights.md § What reaches the shader.
    *
-   * `intensity` dims the GLDEFS colour for this one offer, and leaves the radius alone —
-   * docs/lights.md § Dimming one offer.
+   * `intensity` scales this one offer down from what its GLDEFS definition says — both the colour
+   * and the radius, so a frame drawn at a fraction of the size the definition assumes lights a
+   * proportionally smaller patch. docs/lights.md § Dimming one offer.
    */
   offer(
     frameKey: string,
@@ -384,7 +385,7 @@ export class DynamicLights {
     const lx = x + def.offX;
     const ly = y + def.offY;
     const lz = z + def.offZ;
-    const radius = animatedSize(def, emitterId, this.clock) * RADIUS_SCALE;
+    const radius = animatedSize(def, emitterId, this.clock) * RADIUS_SCALE * intensity;
     // Dropped before it ever becomes a light: a sprite is offered wherever fog of war has revealed
     // it, which on a map like E1M1 is most of the level and dozens of emitters at once, while the
     // camera holds a few hundred units of it. The falloff bounds a light to its own sphere, so one
@@ -602,7 +603,7 @@ export class DynamicLights {
       // Both halves are stale together: everything above is an input to each.
       memo.reachRadius = -1;
       recast = true;
-      vis.castShadows(e.x, e.y, widestSize(e.def) * RADIUS_SCALE, memo.shadows, 0);
+      vis.castShadows(e.x, e.y, widestSize(e.def) * RADIUS_SCALE * e.intensity, memo.shadows, 0);
     }
     if (memo.reachRadius !== e.radius) {
       memo.reachRadius = e.radius;

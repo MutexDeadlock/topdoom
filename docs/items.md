@@ -178,11 +178,12 @@ lowered.
 An item vanishes the frame it is collected, which on its own reads as a dropped frame.
 `SpriteFxLayer.spawnPickupFog` leaves a puff where it stood: the teleport fog's `TFOG` art, frames
 `B`-`E` (`PICKUP_FOG_FRAMES`) at 3 tics each — half the teleport fog's own frame time — with
-`PICKUP_FOG_SCALE`, `PICKUP_FOG_OPACITY`, and `PICKUP_FOG_LIGHT` dimming the GLDEFS light those
-frames carry (docs/lights.md § Dimming one offer): `DTFOG*` is a green pool sized for a full
-teleport fog, and at this scale it read as a lamp switching on under the player. Deliberate
-deviation: vanilla removes a pickup with no visual at all. All five values are tuned by feel, and it
-is silent — the pickup's own sound already plays (docs/audio.md).
+`PICKUP_FOG_SCALE`, `PICKUP_FOG_OPACITY`, and `PICKUP_FOG_LIGHT` scaling the GLDEFS light those
+frames carry — colour *and* radius (docs/lights.md § Dimming one offer). `DTFOG*` is a pool written
+for a full teleport fog: at this size it read as a lamp switching on under the player, and it left
+the puff paying a full-size light's reach flood and shadow cast for a sprite a fraction of that.
+Deliberate deviation: vanilla removes a pickup with no visual at all. All five values are tuned by
+feel, and it is silent — the pickup's own sound already plays (docs/audio.md).
 
 **`B`-`E` because those are the frames that shrink.** `TFOG`'s lumps are 41x56 (`A`), 42x45 (`B`),
 40x37 (`C`), 30x34 (`D`), 17x16 (`E`), then 9x8, 3x3 and 7x7 — so `B`-`E` collapse inward, which is

@@ -117,15 +117,21 @@ is why it is closed by construction rather than by the range being large.
 
 ## Dimming one offer
 
-`DynamicLights.offer`/`offerAndTint` take an `intensity` (default 1) that scales the GLDEFS colour
-for that one offer, applied where `commit` publishes the colour into `uLightColor` — so the geometry
-shader and `sampleLight`'s sprite tint cannot disagree about it. The **radius is deliberately left
-alone**: it is how far the light carries, and a definition's reach is what its `size` says.
+`DynamicLights.offer`/`offerAndTint` take an `intensity` (default 1) that scales one offer down from
+its GLDEFS definition — **colour and radius together**, since the thing being said is "this emitter
+is a fraction of what the definition assumes", not "dim it". The colour is scaled where `commit`
+publishes it into `uLightColor`, so the geometry shader and `sampleLight`'s sprite tint cannot
+disagree; the radius is scaled in `offer` itself, and `recall`'s shadow cast with it, so the frustum
+cull, the reach flood and the cast all shrink with the light rather than staying sized for an
+emitter that isn't there.
 
 For a caller drawing a frame at something other than the size GZDoom's definition was written for.
 The pickup puff is the only one (`PICKUP_FOG_LIGHT`, docs/items.md § The pickup puff): it reuses
-`TFOG`'s art at a fraction of its size, and `DTFOG*`'s green pool is scaled for the whole teleport
-fog.
+`TFOG`'s art at a fraction of its size, and `DTFOG*`'s pool is written for the whole teleport fog.
+
+**One dial, not two.** Splitting colour and radius would let a puff be small and bright or wide and
+faint; neither is a thing a shrunk emitter should be able to say, and the second dial would have to
+be retuned in step with the first anyway.
 
 ## Light stops at walls
 

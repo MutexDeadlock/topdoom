@@ -10,8 +10,8 @@ const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as
 /**
  * The contact address, ROT13'd — the one thing on this page a harvester wants. Neither the markup
  * nor a plain text scrape of the bundle turns up anything mailable; only a scraper that runs the
- * page gets the address, which is the cheap 90% of the problem. Decoded into the link at
- * construction, so a reader sees it as ordinary text.
+ * page gets the address, which is the cheap 90% of the problem. Decoded into the link's `href` at
+ * construction — the link reads "E-Mail", so the address is never on the page as text either.
  */
 const MAIL = 'zngmr-g-aej@jro.qr';
 
@@ -38,9 +38,7 @@ export class AboutUi implements MenuOverlay {
     for (const tab of Object.keys(this.tabButtons) as AboutTab[]) {
       this.tabButtons[tab].addEventListener('click', () => this.setTab(tab));
     }
-    const mail = el<HTMLAnchorElement>('about-mail');
-    mail.textContent = rot13(MAIL);
-    mail.href = `mailto:${rot13(MAIL)}`;
+    el<HTMLAnchorElement>('about-mail').href = `mailto:${rot13(MAIL)}`;
     this.setTab('about');
   }
 

@@ -18,17 +18,29 @@
           <h2>Credits</h2>
           <dl class="facts">
             <dt>A project by</dt>
-            <!-- The address itself is never in the markup — `about.ts` writes it into the link. -->
-            <dd>Fauler - <a id="about-mail"></a></dd>
-            <dt>Additional playtest</dt>
-            <dd>Wombat</dd>
+            <!-- The address itself is never in the markup — `about.ts` writes it into the href. -->
+            <dd>
+              Fauler
+              <span class="contact"
+                >(Contact: <a id="about-mail" href="">E-Mail</a>,
+                <a href="https://discord.com/users/257553183285444618" target="_blank" rel="noreferrer"
+                  >Discord</a
+                >)</span
+              >
+            </dd>
             <dt>Additional assets</dt>
             <!-- The weapon-matching player sprites (docs/sprites.md); credits from the pack's own
-                 Credit.txt, kept in one line rather than per weapon. -->
+                 Credit.txt, kept in one line rather than per weapon. Both entries share the one
+                 `dd`: `.facts` is a two-column grid, so a second one would land under the labels. -->
             <dd>
               Weapon-matching player sprites: Mark Quinn, Xenaero, Grimm, Xim, Anthony Cole,
-              CaptainToenail, TokeGameInfo, the Skulltag team
+              CaptainToenail, TokeGameInfo, the Skulltag team<br />
+              Dynamic lights:
+              <a href="https://github.com/ZDoom/gzdoom" target="_blank" rel="noreferrer">GZDoom</a>'s stock
+              DOOM light definitions
             </dd>
+            <dt>Additional playtest</dt>
+            <dd>Wombat</dd>
             <dt>Source</dt>
             <dd>
               <!-- The tags hug the text: a newline inside the anchor is a space, and it underlines. -->
@@ -66,16 +78,13 @@
 
         <section>
           <h2>More quality content from Fauler</h2>
-          <dl class="facts">
-            <dt>X</dt>
-            <dd>
-              <a href="https://x.com/fauler420" target="_blank" rel="noreferrer">@fauler420</a>
-            </dd>
-            <dt>YouTube</dt>
-            <dd>
-              <a href="https://www.youtube.com/@Fauler420" target="_blank" rel="noreferrer">@Fauler420</a>
-            </dd>
-          </dl>
+          <!-- One line of platform names, like the contact links above: the handles differ per
+               platform and said nothing the link doesn't. -->
+          <p>
+            <a href="https://x.com/fauler420" target="_blank" rel="noreferrer">X</a>,
+            <a href="https://www.youtube.com/@Fauler420" target="_blank" rel="noreferrer">YouTube</a>,
+            <a href="https://www.twitch.tv/faultierderherzen" target="_blank" rel="noreferrer">Twitch</a>
+          </p>
         </section>
 
         <p class="fineprint">

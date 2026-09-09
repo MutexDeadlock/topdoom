@@ -96,6 +96,12 @@
   color: var(--fg-button);
 }
 
+/* The contact note beside the author: quieter than the name it hangs off, while the two links
+   inside it keep the accent every other link on the page has. */
+#about .contact {
+  color: var(--fg-muted);
+}
+
 #about a {
   color: var(--accent-text-hover);
 }

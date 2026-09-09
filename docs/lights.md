@@ -660,7 +660,9 @@ immediately with no reload. Turned off, `commit` uploads a count of zero and `ti
 
 ## Where the definitions come from
 
-`assets/gldefs.txt` (GZDoom's stock Doom lights) is the `GLDEFS` lump of the WAD the engine ships
+`assets/gldefs.txt` is GZDoom's stock Doom lights — `wadsrc_lights/static/filter/doom.id/gldefs.txt`
+from its `lights.pk3`, verbatim bar the trailing ID24 block, credited on the About screen and in
+README.md § What it does not cover. It is the `GLDEFS` lump of the WAD the engine ships
 (docs/wad.md § The WAD the engine ships), fetched once per session by `main.ts` and parsed as the
 base. Every `GLDEFS` and `DOOMDEFS` lump in the loaded WAD set then layers over it in
 lump order, a later definition of the same light name or frame binding replacing the earlier —

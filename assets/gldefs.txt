@@ -1,3 +1,6 @@
+// GZDoom's stock DOOM light definitions: wadsrc_lights/static/filter/doom.id/gldefs.txt
+// from github.com/ZDoom/gzdoom (GPL-3.0), verbatim bar the trailing ID24 block.
+
 // ------------------------------------------------------
 // ------------------ DOOM GAME LIGHTS ------------------
 // ------------------------------------------------------

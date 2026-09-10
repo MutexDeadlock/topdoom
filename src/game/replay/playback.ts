@@ -1,14 +1,13 @@
 /**
- * `ReplayPlayback`: a replay's record served as the tic's input, one row per `endTic`, with the
- * playback controls (speed, pause) and the desync check the bar reads. docs/replays.md § Playback.
+ * `ReplayPlayback`: a replay's record served as the tic's input, one row per `endTic` through the
+ * codec in `replay/row.ts`, with the playback controls (speed, pause) and the desync check the bar
+ * reads. docs/replays.md § Playback.
  */
-import { AIM_QUANTUM, getRightMouseAction, type RightMouseAction, type TicInput } from '../input.ts';
+import type { RightMouseAction, TicInput } from '../input.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 import type { CameraPose, TopDownCamera } from '../../render/camera.ts';
 import { getRandomCursors } from '../../util/random.ts';
 import {
-  BUTTON_FIRE,
-  BUTTON_RIGHT_EDGE,
   CHECK_INTERVAL,
   NORMAL_SPEED_INDEX,
   checkCoord,
@@ -19,7 +18,7 @@ import {
   type ReplayEvent,
   type SimSettings,
 } from './defs.ts';
-import { maskHas } from './keys.ts';
+import { RowInput, readRow } from './row.ts';
 
 /** What the viewer is watching a replay through — see `ReplayPlayback.cameraView`. */
 export type ReplayCameraView = 'recording' | 'manual';
@@ -38,7 +37,10 @@ export class ReplayPlayback implements TicInput {
    * what the run does. docs/replays.md § Playback.
    */
   cameraView: ReplayCameraView = 'recording';
-  /** The settings in force, re-asserted by `Game` before every tic; events move it. */
+  /**
+   * The settings in force, re-asserted by `Game` before every tic; events move it. Its
+   * `rightMouse` is also what the right-button edge is served under.
+   */
   settings: SimSettings;
   /**
    * The aim point of the tic just run, with its plane height — the manual view's camera lead, which
@@ -61,11 +63,15 @@ export class ReplayPlayback implements TicInput {
   private eventIndex = 0;
   /** The tic before `lastAim`'s — the point `aimAt` draws the reticle from. */
   private prevAim: Pos3 | null = null;
+  /** Tic `cursor`'s row, the reads are answered from — re-read wherever the cursor moves. */
+  private input: RowInput;
 
   constructor(replay: Replay) {
     this.replay = replay;
     this.settings = replay.data.settings;
     this.typedAt = new Map(replay.data.typed);
+    this.input = new RowInput({ rightMouse: this.settings.rightMouse });
+    this.readCursorRow();
   }
 
   get ticCount(): number {
@@ -86,44 +92,36 @@ export class ReplayPlayback implements TicInput {
   }
 
   held(...codes: string[]): boolean {
-    const mask = this.replay.data.tics.held[this.cursor] ?? 0;
-    for (const code of codes) {
-      if (maskHas(mask, code)) return true;
-    }
-    return false;
+    return this.input.held(...codes);
   }
 
   pressed(code: string): boolean {
-    return maskHas(this.replay.data.tics.pressed[this.cursor] ?? 0, code);
+    return this.input.pressed(code);
   }
 
   typed(): string {
-    return this.typedAt.get(this.cursor) ?? '';
+    return this.input.typed();
   }
 
   get mouseDown(): boolean {
-    return ((this.replay.data.tics.buttons[this.cursor] ?? 0) & BUTTON_FIRE) !== 0;
+    return this.input.mouseDown;
   }
 
   rightMousePressed(action: RightMouseAction): boolean {
-    const edge = ((this.replay.data.tics.buttons[this.cursor] ?? 0) & BUTTON_RIGHT_EDGE) !== 0;
-    return edge && getRightMouseAction() === action;
+    // Under the binding in force, never the stored one, so the edge means what it meant to the
+    // recording — events move `settings`.
+    this.input.rightMouse = this.settings.rightMouse;
+    return this.input.rightMousePressed(action);
   }
 
   consumeWheel(): number {
-    return this.replay.data.tics.wheel[this.cursor] ?? 0;
+    return this.input.consumeWheel();
   }
 
-  aim(_camera: TopDownCamera, planeZ: number): Pos2 | null {
-    const x = this.replay.data.tics.aimX[this.cursor] ?? null;
-    const y = this.replay.data.tics.aimY[this.cursor] ?? null;
+  aim(camera: TopDownCamera, planeZ: number): Pos2 | null {
+    const point = this.input.aim(camera, planeZ);
     this.prevAim = this.lastAim;
-    if (x === null || y === null) {
-      this.lastAim = null;
-      return null;
-    }
-    const point = { x: x * AIM_QUANTUM, y: y * AIM_QUANTUM };
-    this.lastAim = { x: point.x, y: point.y, z: planeZ };
+    this.lastAim = point ? { x: point.x, y: point.y, z: planeZ } : null;
     return point;
   }
 
@@ -147,6 +145,7 @@ export class ReplayPlayback implements TicInput {
 
   endTic(): void {
     this.cursor++;
+    this.readCursorRow();
   }
 
   /** The camera tic `tic` was recorded at, null past the end of the stream. */
@@ -174,6 +173,7 @@ export class ReplayPlayback implements TicInput {
   seek(tic: number): void {
     const { events } = this.replay.data;
     this.cursor = Math.max(0, Math.min(this.ticCount, Math.round(tic)));
+    this.readCursorRow();
     this.lastAim = null;
     this.prevAim = null;
     this.settings = this.replay.data.settings;
@@ -209,6 +209,10 @@ export class ReplayPlayback implements TicInput {
     if (checks.x[i] !== checkCoord(x) || checks.y[i] !== checkCoord(y) || checks.cursor[i] !== getRandomCursors().p) {
       this.desyncedAt = this.cursor;
     }
+  }
+
+  private readCursorRow(): void {
+    readRow(this.replay.data.tics, this.typedAt, this.cursor, this.input.row);
   }
 }
 

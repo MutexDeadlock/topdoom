@@ -382,7 +382,11 @@ interface MoverLerp {
 
 /** What a `SpecialsController` needs beside the `World` it runs over. */
 export interface SpecialsOptions extends MoverGeometryOptions {
-  onExit: (secret: boolean) => void;
+  /**
+   * A level exit fired: `slot` is the player whose use, crossing or shot it was (a voodoo doll's is
+   * slot 0's), null for one a boss death fired.
+   */
+  onExit: (secret: boolean, slot: number | null) => void;
   /** A player teleported by a line they used or crossed — which slot, and where it lands. */
   onTeleport: (dest: TeleportDest, slot: number) => void;
   /**
@@ -417,7 +421,7 @@ export class SpecialsController {
    * specials/movergeometry.ts.
    */
   private geometry: MoverGeometry;
-  private onExit: (secret: boolean) => void;
+  private onExit: (secret: boolean, slot: number | null) => void;
   private onTeleport: (dest: TeleportDest, slot: number) => void;
   /** Who is standing in a mover — see `specials/moverblocking.ts`. */
   private occupancy: Occupancy;
@@ -856,7 +860,7 @@ export class SpecialsController {
   notifyBossDeath(type: number, playerAlive: boolean): void {
     for (const t of this.bossDeathTriggers) {
       if (t.type !== type || (t.needsLivingPlayer && !playerAlive)) continue;
-      if (t.action.kind === 'exit') this.onExit(false);
+      if (t.action.kind === 'exit') this.onExit(false, null);
       else this.triggerTag(t.action.tag, t.action.kind);
     }
   }
@@ -2325,7 +2329,7 @@ export class SpecialsController {
 
     if (def.effect.kind === 'exit') {
       this.usedOnce.add(lineIndex);
-      this.onExit(def.effect.secret);
+      this.onExit(def.effect.secret, slot);
       return null;
     }
 

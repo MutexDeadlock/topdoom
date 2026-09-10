@@ -238,8 +238,10 @@ const AUTO_SWITCH_STORAGE_KEY = 'autoSwitchWeapon';
 /**
  * Whether the game picks a *better* weapon for you: on ammo collected from empty (`AMMO_UPGRADE`)
  * and on the ready weapon running dry (`AMMO_FALLBACK_ORDER`, game/weapons.ts). **On by default** —
- * vanilla does both unconditionally, so the setting exists to opt out. Read per call, so it applies
- * to the level already running. docs/weapons.md § Automatic weapon switching.
+ * vanilla does both unconditionally, so the setting exists to opt out. The local slot reads it live
+ * (`GLOBAL_PLAYER_SETTINGS`), so it applies to the level already running; the rules themselves take
+ * the collecting slot's own (`PickupOptions.autoSwitch`, `WeaponSystem.autoSwitch`).
+ * docs/weapons.md § Automatic weapon switching.
  *
  * Two switches are deliberately **outside** it, both because neither is a guess at which weapon is
  * better: a newly picked-up weapon selecting itself (`P_GiveWeapon`, in `applyPickup` below), and
@@ -261,13 +263,27 @@ export function setAutoSwitchWeapon(enabled: boolean): void {
 export function overrideAutoSwitchWeapon(enabled: boolean | null): void {
   autoSwitchWeapon = enabled ?? readStorage(AUTO_SWITCH_STORAGE_KEY, true);
 }
+
+/** How one pickup lands, beside the item itself. */
+export interface PickupOptions {
+  /** A monster's drop: granted ammo halves (`P_GiveAmmo`'s monster-drop rule). Default false. */
+  dropped?: boolean;
+  /** Skills 1 and 5 double granted ammo. Default `DEFAULT_SKILL`. */
+  skill?: Skill;
+  /**
+   * The collecting player's automatic weapon switching, which `AMMO_UPGRADE` is gated on — the
+   * slot's `PlayerSettings.autoSwitchWeapon`. Default on, the setting's own default.
+   */
+  autoSwitch?: boolean;
+}
+
 /**
  * Applies a picked-up thing's effect, vanilla's `P_TouchSpecialThing` rules. Returns false for an
  * item that shouldn't be collected right now (Stimpack at full health), so the caller leaves it on
- * the ground. `dropped` halves granted ammo (`P_GiveAmmo`'s monster-drop rule); `skill` doubles it
- * on skills 1 and 5. See docs/items.md § Collecting things.
+ * the ground. See docs/items.md § Collecting things.
  */
-export function applyPickup(inv: Inventory, type: number, dropped = false, skill: Skill = DEFAULT_SKILL): boolean {
+export function applyPickup(inv: Inventory, type: number, options: PickupOptions = {}): boolean {
+  const { dropped = false, skill = DEFAULT_SKILL, autoSwitch = true } = options;
   // DOOM II only: full health *and* blue armor at once, both past what any single pickup gives.
   if (type === ThingType.megasphere) {
     inv.health = LIMITS.megasphereHealth;
@@ -319,7 +335,7 @@ export function applyPickup(inv: Inventory, type: number, dropped = false, skill
     for (const { ammo: t } of AMMO_UPGRADE) {
       const had = inv.ammo[t];
       inv.ammo[t] = Math.min(had + ammoAtSkill(CLIP_AMMO[t], skill), ammoMax(inv, t));
-      upgradeOnAmmo(inv, t, had, ready);
+      if (autoSwitch) upgradeOnAmmo(inv, t, had, ready);
     }
     return true;
   }
@@ -335,7 +351,7 @@ export function applyPickup(inv: Inventory, type: number, dropped = false, skill
     const amount = ammoAtSkill(dropped ? Math.floor(full / 2) : full, skill);
     const had = inv.ammo[ammo.type];
     inv.ammo[ammo.type] = Math.min(had + amount, cap);
-    upgradeOnAmmo(inv, ammo.type, had, inv.currentWeapon);
+    if (autoSwitch) upgradeOnAmmo(inv, ammo.type, had, inv.currentWeapon);
     return true;
   }
 
@@ -359,13 +375,13 @@ export function applyPickup(inv: Inventory, type: number, dropped = false, skill
         gaveAmmo = true;
         // Before the weapon's own switch below, as `P_GiveWeapon` runs `P_GiveAmmo` first and then
         // lets its own `pendingweapon` overwrite whatever that chose. Do not reorder.
-        upgradeOnAmmo(inv, weapon.ammoType, had, inv.currentWeapon);
+        if (autoSwitch) upgradeOnAmmo(inv, weapon.ammoType, had, inv.currentWeapon);
       }
     }
     inv.weapons.add(weapon.weapon);
     // Matches vanilla's P_GiveWeapon, which switches the player to a weapon
     // the instant it's newly picked up (not on every re-pickup of one already owned).
-    // Ungated by `getAutoSwitchWeapon`, unlike the two rules it does govern: vanilla has no
+    // Ungated by `autoSwitch`, unlike the two rules it does govern: vanilla has no
     // preference list here, just "the thing you just picked up is what you are now holding".
     if (!hadWeapon) inv.currentWeapon = weapon.weapon;
     return !hadWeapon || gaveAmmo;
@@ -445,10 +461,10 @@ export function applyDamage(inv: Inventory, amount: number, god: boolean): boole
  * The `bullets` row's `pistol` fallback is unconditional in vanilla (`weaponowned[wp_pistol]` is
  * never false there); here it takes the same ownership test as every other entry, since
  * `Inventory.weapons` is authoritative — the deviation `AMMO_FALLBACK_ORDER` also carries
- * (game/weapons.ts).
+ * (game/weapons.ts). Only called where the collecting player's `autoSwitch` is on.
  */
 function upgradeOnAmmo(inv: Inventory, type: AmmoType, oldAmount: number, ready: WeaponId): void {
-  if (oldAmount > 0 || !getAutoSwitchWeapon()) return;
+  if (oldAmount > 0) return;
   const rule = AMMO_UPGRADE.find((r) => r.ammo === type);
   if (!rule || !rule.from.includes(ready)) return;
   const pick = rule.to.find((w) => inv.weapons.has(w));

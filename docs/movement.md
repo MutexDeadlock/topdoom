@@ -291,9 +291,10 @@ speed, which makes every direction equally fast and takes SR40 away with it.
 
 **Autorun** (`getAutorun`/`setAutorun`, the Settings tab's checkbox) flips which state Shift
 produces: off, Shift runs exactly as above (vanilla's own sense); on — the default — the player runs
-and Shift walks instead. It's module-level state in `player.ts` rather than a `Player` field,
-because `Player` is recreated every map load (`game.ts: loadMapByIndex`) and the setting must take
-effect immediately for a level already in progress, not just the next one. Persisted as
+and Shift walks instead. The stored value is module-level state in `player.ts`; `Player.update`
+reads its own `autorun` field, pushed from the slot's settings every tic — `Player` is recreated
+every map load (`game.ts: loadMapByIndex`), a menu change must reach a level already in progress,
+and each slot runs under its own (docs/multiplayer.md § Player settings). Persisted as
 `autorun` — docs/menu.md § Persisted settings.
 
 `Player.update` runs once per simulation tic, and `Player` carries `prevX`/`prevY`/`prevZ`/

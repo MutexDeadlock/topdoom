@@ -1,8 +1,8 @@
 # Replays
 
 `src/game/replay.ts` (store, player name) over `src/game/replay/` — `defs.ts` (format), `keys.ts`,
-`settings.ts`, `recorder.ts`, `playback.ts`, `stock.ts` (the ones the engine ships,
-§ Stock replays); the seam in `game.ts`; the bar in
+`row.ts` (the per-tic codec), `settings.ts`, `recorder.ts`, `playback.ts`, `stock.ts` (the ones the
+engine ships, § Stock replays); the seam in `game.ts`; the bar in
 `ui/hud/replaybar.ts`; the tab in `ui/menu/replays.ts` (docs/menu-saves.md § Replays tab).
 
 A replay is **the level's state at one moment plus one input record per tic**, played back through
@@ -37,6 +37,11 @@ reorder; `tests/game/replay-keys.test.ts` pins the table against the tree), `but
 right-button edge), `wheel` (the sign — `handleSwitching` reads nothing else), `aimX`/`aimY` in
 `AIM_QUANTUM` units or null, and the camera pose the tic was read at in `POSE_QUANTUM` units
 (§ Camera state). Typed characters ride sparsely in `typed`.
+
+**`replay/row.ts` is the one codec over those columns.** A `TicRow` is one tic of them plus what it
+typed: the recorder fills one as the tic reads it and appends it (`sampleInput`, `writeRowPose`,
+`appendRow`), a playback reads one back (`readRow`) and serves it through a `RowInput`. The network
+will ship the same rows. `tests/game/replay-row.test.ts` pins the recorder's output byte for byte.
 
 **A snapshot's thing list keeps only what changed**, savegames and keyframes alike — the format is
 the savegame's, and docs/savegames.md § The format and its version owns the rule. On MAP15 that is
@@ -103,6 +108,10 @@ and a toggle made during a paused playback would otherwise stand. A recording di
 start and writes a change as a `settings` event, so a change made in the menu is stamped "apply
 before tic k". `releaseSimSettings` puts the stored values back when a playback ends.
 
+Four of the six are a player's (`PlayerSettings`) and reach the tic through the slot —
+docs/multiplayer.md § Player settings. A playback answers its right-button edge under its own
+`settings.rightMouse`, which the pin makes the same value for the local slot.
+
 ## Restore events
 
 `R` while dead reloads the level from a snapshot the replay does not otherwise hold, and one of
@@ -111,7 +120,7 @@ its three routes lands asynchronously (docs/death.md § Player death). Every rou
 fresh reload with a fresh inventory) at the tic count it lands on: **an event at tic k is applied
 before tic k**. All three routes land between tics, a parked load included.
 
-In a playback `restart` is a no-op and `replayBeginTic` performs the event's reload synchronously,
+In a playback `restart` is a no-op and `beginTic` performs the event's reload synchronously,
 through `loadMapByIndex` directly — never `loadLevel`, which may park a load. Level exits are not
 events: they follow from the input deterministically.
 
@@ -192,7 +201,7 @@ spent; both draw at alpha 1 like a popup. The bar's pause is not the menu's — 
 running so the bar stays live; ESC still pauses the game as always. `MAX_TICS_PER_FRAME` caps
 the speed a slow frame can reach (about 4.3× under a 30 fps cap) — not raised.
 
-Before each tic `replayBeginTic` applies the due events, pins the settings and compares the
+Before each tic `beginTic` applies the due events, pins the settings and compares the
 recording's check sample; the first disagreement is `desyncedAt`, shown by the bar, and playback
 continues. The stream's end freezes the level at its last tic.
 

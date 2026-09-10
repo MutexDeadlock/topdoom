@@ -1,7 +1,8 @@
 /**
  * The six persisted settings the simulation reads, as one record a replay freezes: captured when
  * a recording starts, re-asserted before every tic of a playback through each owner's
- * `override*` hook. docs/replays.md § Settings are frozen per tic.
+ * `override*` hook — and the player half of them as the local slot reads it.
+ * docs/replays.md § Settings are frozen per tic.
  */
 import { getCameraMode, overrideCameraMode } from '../autocamera.ts';
 import { getRightMouseAction, overrideRightMouseAction } from '../input.ts';
@@ -13,18 +14,31 @@ import {
 } from '../inventory.ts';
 import { getAutorun, overrideAutorun } from '../player.ts';
 import { getInfiniteTallActors, overrideInfiniteTallActors } from '../world.ts';
-import type { SimSettings } from './defs.ts';
+import type { PlayerSettings, SimSettings } from './defs.ts';
 
+/**
+ * The player half as the owners hold it this moment — stored, or pinned by a playback — read
+ * through getters, so the local slot follows the menu with no copy per tic.
+ * docs/multiplayer.md § Player settings.
+ */
+export const GLOBAL_PLAYER_SETTINGS: PlayerSettings = {
+  get autorun() {
+    return getAutorun();
+  },
+  get autoSwitchWeapon() {
+    return getAutoSwitchWeapon();
+  },
+  get rightMouse() {
+    return getRightMouseAction();
+  },
+  get cameraMode() {
+    return getCameraMode();
+  },
+};
 
 export function captureSimSettings(): SimSettings {
-  return {
-    autorun: getAutorun(),
-    autoSwitchWeapon: getAutoSwitchWeapon(),
-    rightMouse: getRightMouseAction(),
-    cameraMode: getCameraMode(),
-    infiniteTallActors: getInfiniteTallActors(),
-    pistolStart: getPistolStart(),
-  };
+  // The spread runs the getters: a copy of this moment's values, in the stored field order.
+  return { ...GLOBAL_PLAYER_SETTINGS, infiniteTallActors: getInfiniteTallActors(), pistolStart: getPistolStart() };
 }
 
 /** Pins every owner to `settings` without writing storage. */

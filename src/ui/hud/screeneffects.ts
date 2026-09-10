@@ -1,7 +1,7 @@
 /**
  * Every powerup or damage effect whose whole result is a *view* change: the
- * two full-screen tints, Boom's 242 colormap cast, the red damage flash, the
- * light visor's exposure lift and the player sprite's translucency.
+ * two full-screen tints, Boom's 242 colormap cast, the red damage flash and the
+ * light visor's exposure lift — plus how translucent invisibility draws a player.
  * See docs/hud.md § Screen effects.
  */
 import type * as THREE from 'three';
@@ -45,23 +45,24 @@ const PAIN_FLASH_MAX_ALPHA = 0.5;
 const POWER_BLINK_WARNING_SECONDS = 3;
 const POWER_BLINK_HZ = 4;
 
+/**
+ * How solid a player carrying `inv` draws: `INVISIBILITY_OPACITY` under partial invisibility,
+ * blinking back as it runs out, else 1 — every slot's, written by `game.ts` as it poses them.
+ */
+export function invisibilityOpacity(inv: Inventory): number {
+  return powerBlinkVisible(inv.powers.invisibility) ? INVISIBILITY_OPACITY : 1;
+}
+
 export class ScreenEffects {
   private renderer: THREE.WebGLRenderer;
-  private setPlayerOpacity: (opacity: number) => void;
   private tintEl = document.getElementById('screen-tint')!;
   private colormapEl = document.getElementById('colormap-tint')!;
   private painEl = document.getElementById('pain-flash')!;
   /** Current intensity of the damage flash, 0-1 — bumped by `addPain`, decayed by `update`. */
   private painFlash = 0;
 
-  /**
-   * `setPlayerOpacity` writes partial invisibility to what the player is drawn as — their own
-   * `SpriteActor` and the disc under it — passed as a callback so this stays out of the render
-   * layer; it's the one effect here that isn't a DOM overlay or a renderer uniform.
-   */
-  constructor(renderer: THREE.WebGLRenderer, setPlayerOpacity: (opacity: number) => void) {
+  constructor(renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
-    this.setPlayerOpacity = setPlayerOpacity;
   }
 
   /**
@@ -76,7 +77,6 @@ export class ScreenEffects {
     const visor = hasPower(inv, 'lightVisor');
     this.renderer.toneMappingExposure = visor ? LIGHT_VISOR_EXPOSURE : 1;
     setDistanceFlattened(visor);
-    this.setPlayerOpacity(powerBlinkVisible(inv.powers.invisibility) ? INVISIBILITY_OPACITY : 1);
     this.painFlash = Math.max(0, this.painFlash - dt / PAIN_FLASH_FADE_SECONDS);
     this.painEl.style.opacity = String(this.painFlash * PAIN_FLASH_MAX_ALPHA);
   }

@@ -227,6 +227,12 @@ export class Player implements Pos3 {
    * docs/cheats.md § IDCLIP.
    */
   noclip = false;
+  /**
+   * Whether Shift walks rather than runs — the slot's `PlayerSettings.autorun`, pushed here every
+   * tic like `noclip`, so every slot moves under its own.
+   * docs/multiplayer.md § Player settings.
+   */
+  autorun = true;
 
   private world: World;
 
@@ -453,7 +459,7 @@ export class Player implements Pos3 {
     this.prevZ = this.z;
     this.prevAngle = this.angle;
     const shiftHeld = input.held('ShiftLeft', 'ShiftRight');
-    const run = (getAutorun() ? !shiftHeld : shiftHeld) ? 1 : 0;
+    const run = (this.autorun ? !shiftHeld : shiftHeld) ? 1 : 0;
     const forwardMove = FORWARD_MOVE[run];
     const sideMove = SIDE_MOVE[run];
 

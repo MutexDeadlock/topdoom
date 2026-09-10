@@ -51,7 +51,16 @@ import { MonsterAttacks } from './game/monsters/attacks.ts';
 import { collectFadeTargets, FadePass, FlatFader, WallFader } from './render/occlusion.ts';
 import { SurfaceScroller } from './render/scroller.ts';
 import { makeTouchCache, World, type Opening } from './game/world.ts';
-import { AIM_HEIGHT_OFFSET, EYE_HEIGHT, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
+import {
+  AIM_HEIGHT_OFFSET,
+  EYE_HEIGHT,
+  HARD_LANDING_SPEED,
+  Player,
+  PLAYER_HEIGHT,
+  PLAYER_MASS,
+  PLAYER_RADIUS,
+} from './game/player.ts';
+import type { StandingBody } from './game/things/defs.ts';
 import {
   anyPlayerAlive,
   applyBarrelExplosion,
@@ -93,7 +102,7 @@ import {
 } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
 import { getProfilerVisible, ProfilerHud } from './ui/hud/profiler.ts';
-import { ScreenEffects } from './ui/hud/screeneffects.ts';
+import { invisibilityOpacity, ScreenEffects } from './ui/hud/screeneffects.ts';
 import { DeathOverlay, type DeathHint } from './ui/hud/deathoverlay.ts';
 import { FrameProfiler } from './util/profiler.ts';
 import { clearRandom, getRandomCursors, setRandomCursors } from './util/random.ts';
@@ -113,6 +122,7 @@ import {
   type SaveGame,
 } from './game/savegames.ts';
 import {
+  GLOBAL_PLAYER_SETTINGS,
   ReplayPlayback,
   ReplayRecorder,
   applySimSettings,
@@ -722,12 +732,8 @@ export class Game {
       hasPower(this.slots[slot].inventory, 'invisibility'),
     );
 
-    // The local player's own eyes: the tint is theirs, and the invisibility it reports is drawn
-    // onto their billboard and the disc under it.
-    this.screenEffects = new ScreenEffects(view.renderer, (opacity) => {
-      this.local.actor.setOpacity(opacity);
-      this.local.shadow.setOpacityScale(opacity);
-    });
+    // The local player's own eyes: the tints are theirs.
+    this.screenEffects = new ScreenEffects(view.renderer);
 
     const wanted = this.mapNames.indexOf(startMap.toUpperCase());
     // The first-map fallback is fine for a fresh start, but a restore's things
@@ -811,6 +817,7 @@ export class Game {
       inventory: createInventory(),
       simCamera: this.view.camera,
       input: this.view.input,
+      settings: GLOBAL_PLAYER_SETTINGS,
       actor,
       consumePickup: (type, dropped, at) => this.consumePickup(slot, type, dropped, at),
     });
@@ -998,7 +1005,7 @@ export class Game {
     this.audio.setSilent(true);
     try {
       while (!swapped && playback.cursor < target && playback.hasTic) {
-        this.replayBeginTic();
+        this.beginTic();
         swapped = this.tic();
         // The timed overlays' clocks run on frames, and a catch-up draws none: without this a
         // secret found at 0:10 is still announced on a landing at 0:30. Ticked in sim time, so
@@ -2045,7 +2052,7 @@ export class Game {
    * playback's due events (a reload lands here, synchronously — never parked), its settings pinned
    * again, and its sample compared. docs/replays.md § Restore events.
    */
-  private replayBeginTic(): void {
+  private beginTic(): void {
     const recorder = this.recorder;
     if (recorder) {
       // Before the tic the anchor is stamped for, and only where the moment allows a capture at
@@ -2151,7 +2158,7 @@ export class Game {
       }
       this.accumulator -= DOOM_TIC;
       ran++;
-      this.replayBeginTic();
+      this.beginTic();
       // A tic that swapped the level (an exit, a restart) invalidates
       // everything the rest of this frame would touch — stop and let the next
       // frame start clean on the new map.
@@ -2222,6 +2229,10 @@ export class Game {
       // cheat outlives it — and here rather than in the player block below, so that every system
       // this tic reads one `noclip`, not last tic's. docs/cheats.md § IDCLIP.
       slot.player.noclip = slot.cheats.noclip;
+      // The slot's settings, pushed the same way for the same reason — the menu's for the local
+      // slot (docs/multiplayer.md § Player settings).
+      slot.player.autorun = slot.settings.autorun;
+      slot.weapons.autoSwitch = slot.settings.autoSwitchWeapon;
     }
     handleHotkeys(input, local.simCamera);
     // Set before any system runs, since specials/monsters/weapons all raise
@@ -2230,7 +2241,7 @@ export class Game {
     // pan axis, which is inaudible.
     this.audio.setListener(local.player, local.simCamera.viewerAngleDeg + 180);
     // A live slot's camera turns on its own keys; a replay's is posed from the record
-    // (`replayBeginTic`) and left alone here.
+    // (`beginTic`) and left alone here.
     for (const slot of this.slots) {
       if (slot.source === 'live') slot.simCamera.applyYawInput(slot.input, DOOM_TIC);
     }
@@ -2513,7 +2524,11 @@ export class Game {
    * once (`PlayerSlot.consumePickup`), since both `tryPickup` call sites hand it straight over.
    */
   private consumePickup(slot: PlayerSlot, type: number, dropped: boolean, at: Pos3): boolean {
-    const taken = applyPickup(slot.inventory, type, dropped, this.skill);
+    const taken = applyPickup(slot.inventory, type, {
+      dropped,
+      skill: this.skill,
+      autoSwitch: slot.settings.autoSwitchWeapon,
+    });
     // The computer area map is the one pickup whose whole effect lives outside the `Inventory`
     // struct: it reveals the level's own geometry. Watched for here rather than handled in
     // `applyPickup` — the same "state there, world effect at the caller" split `tryPickup`
@@ -2740,7 +2755,7 @@ export class Game {
           camX: camPos.x,
           camY: -camPos.z,
           camZ: camPos.y,
-          targets: collectFadeTargets(this.local.player, this.things?.awakeMonsters() ?? []),
+          targets: collectFadeTargets(this.local.player, this.fadeBodies()),
           openingInto: this.openingInto,
         },
         this.fogOfWar,
@@ -2763,6 +2778,17 @@ export class Game {
     });
   }
 
+  /** What walls fade for besides the local player: the awake monsters and every other living slot. */
+  private fadeBodies(): StandingBody[] {
+    const bodies = this.things?.awakeMonsters() ?? [];
+    for (const slot of this.slots) {
+      if (slot === this.local || slot.dead) continue;
+      const { x, y, z } = slot.player;
+      bodies.push({ x, y, z, height: PLAYER_HEIGHT });
+    }
+    return bodies;
+  }
+
   /**
    * Places the player's own billboard: position, facing, sector light and which
    * animation is due. Positions are interpolated `alpha` through the last tic;
@@ -2775,6 +2801,7 @@ export class Game {
     // Chosen before the pose that reads it. The setting is read per frame rather than captured, so
     // the menu applies it to the level already running.
     slot.actor.setSkin(this.playerSkins?.skinFor(slot.inventory.currentWeapon, this.setDrawsPlayer) ?? null);
+    slot.setOpacity(invisibilityOpacity(slot.inventory));
     const p = slot.player;
     const x = p.prevX + (p.x - p.prevX) * alpha;
     const y = p.prevY + (p.y - p.prevY) * alpha;

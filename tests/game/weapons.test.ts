@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WeaponSystem, WEAPONS } from '../../src/game/weapons.ts';
-import { createInventory, setAutoSwitchWeapon, type Inventory, type WeaponId } from '../../src/game/inventory.ts';
+import { createInventory, type Inventory, type WeaponId } from '../../src/game/inventory.ts';
 import type { Input } from '../../src/game/input.ts';
 import { SILENT, type SfxId, type SoundEmitter } from '../../src/audio/sfx.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
@@ -367,20 +367,21 @@ describe('Game rules · super shotgun reload sounds', () => {
 describe('Game rules · running dry', () => {
   /**
    * A player holding `weapon` with `ammo` in stock and `owned` in the bag, fired once and then
-   * left alone for `tics` with the trigger up. Returns what they end up holding.
+   * left alone for `tics` with the trigger up (`hold`: down), switching under `autoSwitch`. Returns
+   * what they end up holding.
    */
   function afterFiring(
     weapon: WeaponId,
     ammo: Partial<Inventory['ammo']>,
     owned: WeaponId[],
-    tics = 80,
-    hold = false,
+    { tics = 80, hold = false, autoSwitch = true } = {},
   ): WeaponId {
     const inv = createInventory();
     inv.ammo = { bullets: 0, shells: 0, rockets: 0, cells: 0, ...ammo };
     inv.weapons = new Set([weapon, ...owned]);
     inv.currentWeapon = weapon;
     const ws = started(inv);
+    ws.autoSwitch = autoSwitch;
     for (let i = 0; i < tics; i++) ws.fire(hold || i === 0, inv, 0);
     return inv.currentWeapon;
   }
@@ -425,7 +426,7 @@ describe('Game rules · running dry', () => {
     // One trigger pull, then 80 tics with it up — the shot's own chain still ends.
     assert.equal(afterFiring('pistol', { bullets: 1, shells: 10 }, ['shotgun']), 'shotgun');
     // And holding it down reaches the same place, through P_FireWeapon's own check.
-    assert.equal(afterFiring('pistol', { bullets: 1, shells: 10 }, ['shotgun'], 80, true), 'shotgun');
+    assert.equal(afterFiring('pistol', { bullets: 1, shells: 10 }, ['shotgun'], { hold: true }), 'shotgun');
   });
 
   /**
@@ -450,10 +451,13 @@ describe('Game rules · running dry', () => {
   test('nothing switches mid-chain, only once the cooldown has run out', () => {
     const cooldown = Math.round(WEAPONS.rocketLauncher.cooldown / DOOM_TIC);
     for (let t = 1; t <= cooldown; t++) {
-      const held = afterFiring('rocketLauncher', { rockets: 1, shells: 10 }, ['shotgun'], t);
+      const held = afterFiring('rocketLauncher', { rockets: 1, shells: 10 }, ['shotgun'], { tics: t });
       assert.equal(held, 'rocketLauncher', `still the launcher ${t} tics in, chain ends at ${cooldown}`);
     }
-    assert.equal(afterFiring('rocketLauncher', { rockets: 1, shells: 10 }, ['shotgun'], cooldown + 1), 'shotgun');
+    assert.equal(
+      afterFiring('rocketLauncher', { rockets: 1, shells: 10 }, ['shotgun'], { tics: cooldown + 1 }),
+      'shotgun',
+    );
   });
 
   test('an empty weapon merely selected while idle does not bounce off it', () => {
@@ -469,15 +473,12 @@ describe('Game rules · running dry', () => {
   });
 
   test('with the setting off, an empty weapon stays selected and fires nothing', () => {
-    setAutoSwitchWeapon(false);
-    try {
-      assert.equal(afterFiring('rocketLauncher', { rockets: 1, shells: 10 }, ['shotgun']), 'rocketLauncher');
-      const inv = createInventory();
-      inv.ammo.bullets = 0;
-      const ws = started(inv);
-      assert.deepEqual(ws.fire(true, inv, 0), []);
-    } finally {
-      setAutoSwitchWeapon(true);
-    }
+    const off = { autoSwitch: false };
+    assert.equal(afterFiring('rocketLauncher', { rockets: 1, shells: 10 }, ['shotgun'], off), 'rocketLauncher');
+    const inv = createInventory();
+    inv.ammo.bullets = 0;
+    const ws = started(inv);
+    ws.autoSwitch = false;
+    assert.deepEqual(ws.fire(true, inv, 0), []);
   });
 });

@@ -77,7 +77,7 @@ src/game/      spatial queries + collision, player controller, player slots (pla
                splash, damage/death, transient effects (spritefx), voodoo dolls, DEHACKED/BEX
                patches (dehacked), the typed cheat codes (cheats), best times, savegames (the
                snapshot shape, the IndexedDB store), replays (the record, the recorder and playback
-               behind the tic's input, their own store)
+               behind the tic's input, their per-tic row codec, their own store)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through, WebAudio
                playback (channels, attenuation, pan, volume), the level's music
 src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens);
@@ -140,7 +140,7 @@ and aren't. A row naming a family links its lead doc, which names the siblings.
 | [replays.md](docs/replays.md) | Recording and playing back a run: the `TicInput` seam, the record, restore events, the store, the playback bar |
 | [specials.md](docs/specials.md) → docs/specials-movers.md, -crushers, -teleporters, -lights, -forces, -transfers | Which number means what and who may trigger it, damage floors, secrets; then the movers, the crusher, teleporters, light patterns, scrollers/friction/pushers/dolls, Boom's deep water |
 | [fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
-| [multiplayer.md](docs/multiplayer.md) | Player slots, what is per slot and what is level-global, slot addressing in the thing layer, what a slot's tic does |
+| [multiplayer.md](docs/multiplayer.md) | Player slots, what is per slot and what is level-global, slot addressing in the thing layer, player vs. session settings, what a slot's tic does |
 | [audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
 | [music.md](docs/music.md) | The OPL chip and `GENMIDI`, MUS/MIDI decoding, which track a level plays, music volume |
 | [testing.md](docs/testing.md) | The runner, the ASCII-grid map fixture, the fixture WADs, the tree-wide guards |

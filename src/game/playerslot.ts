@@ -15,6 +15,7 @@ import type { TopDownCamera } from '../render/camera.ts';
 import type { SpriteActor } from '../render/sprites.ts';
 import { PlayerShadow } from '../render/playershadow.ts';
 import { playerOrigin } from '../audio/sfx.ts';
+import type { PlayerSettings } from './replay/defs.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
@@ -33,6 +34,7 @@ export interface PlayerSlotOptions {
   inventory: Inventory;
   simCamera: TopDownCamera;
   input: TicInput;
+  settings: PlayerSettings;
   actor: SpriteActor;
   consumePickup: PickupConsumer;
 }
@@ -71,6 +73,12 @@ export class PlayerSlot {
   /** What this slot's tic reads its input through — see `source`. */
   input: TicInput;
   source: SlotSource = 'live';
+  /**
+   * The settings this player runs under: `GLOBAL_PLAYER_SETTINGS` for the local slot, a record of
+   * its own for any other. Pushed onto the body and the weapons every tic, like `cheats.noclip`.
+   * docs/multiplayer.md § Player settings.
+   */
+  settings: PlayerSettings;
   /** The billboard this player is drawn as, and the disc under its feet. Session-scoped. */
   readonly actor: SpriteActor;
   readonly shadow = new PlayerShadow();
@@ -83,7 +91,14 @@ export class PlayerSlot {
     this.inventory = options.inventory;
     this.simCamera = options.simCamera;
     this.input = options.input;
+    this.settings = options.settings;
     this.actor = options.actor;
     this.consumePickup = options.consumePickup;
+  }
+
+  /** How solid this player draws — the billboard and the disc under it fade together. */
+  setOpacity(opacity: number): void {
+    this.actor.setOpacity(opacity);
+    this.shadow.setOpacityScale(opacity);
   }
 }

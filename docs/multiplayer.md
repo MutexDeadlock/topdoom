@@ -1,19 +1,19 @@
 # Multiplayer
 
 `src/game/playerslot.ts`, the slot loops in `src/game.ts`, `targetOfSlot`/`slotOfTarget` in
-`src/game/things/defs.ts`, `CombatSlot` in `src/game/combat.ts`
+`src/game/things/defs.ts`, `CombatSlot` in `src/game/combat.ts`, the row codec
+`src/game/replay/row.ts`
 
-The engine runs every player as a **slot**. One exists today; the shape is what a ghost race, local
-coop and the network build on, in that order, and each of those documents itself here when it
-lands.
+The engine runs every player as a **slot**. One exists today; local coop and the network build on
+the same shape, and each documents itself here when it lands.
 
 ## Player slots
 
 `PlayerSlot` is one player's whole share of a level: `player`, `inventory`, `weapons`, `cheats`,
-`dead`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `actor`, `shadow`, `consumePickup`.
-`Game.slots` holds them by index. `localSlot` is the one this browser plays: the HUD, crosshair,
-screen effects, death overlay, center messages, audio listener, `viewColormap`, the fade anchor
-and the view camera read `local`, and nothing else does.
+`dead`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `actor`, `shadow`,
+`consumePickup`. `Game.slots` holds them by index. `localSlot` is the one this browser plays: the
+HUD, crosshair, screen effects, death overlay, center messages, audio listener, `viewColormap`, the
+fade anchor and the view camera read `local`, and nothing else does.
 
 Level-global, on `Game`: `fogOfWar` (one shared reveal), `levelTime` (runs while any slot is
 alive), `cheated` (any slot's cheat taints the run), `sectorEffects` (per-slot damage-floor timers,
@@ -63,14 +63,33 @@ aimed at is gone: the named slot, else player 1.
 Sound origins and light emitters are per slot: `playerOrigin(slot)` (`audio/sfx.ts`),
 `playerEmitterId(slot)` (`render/lights.ts`).
 
+## Player settings
+
+`SimSettings` is one stored record with two owners. **`PlayerSettings`** — autorun, automatic
+weapon switching, the right button's binding, the camera mode — belong to a slot
+(`PlayerSlot.settings`). **`SessionSettings`** — infinite tall actors, pistol start — belong to the
+game, and every slot reads the one module value.
+
+- The local slot's `settings` is `GLOBAL_PLAYER_SETTINGS` (`replay/settings.ts`): getters over the
+  owners' module values, so a menu change and a playback's pin (docs/replays.md § Settings are
+  frozen per tic) reach it without a copy. Any other slot carries its own record.
+- `Game.tic` pushes `autorun` onto `Player.autorun` and `autoSwitchWeapon` onto
+  `WeaponSystem.autoSwitch` beside `noclip`, every tic; `consumePickup` passes `autoSwitchWeapon` to
+  `applyPickup` (`PickupOptions.autoSwitch`). No tic reads `getAutorun` or `getAutoSwitchWeapon`.
+- The right button's binding is the input's to apply: `RowInput.rightMouse` answers a row's edge,
+  and a `ReplayPlayback` sets it from its own `settings` — the pinned value under a local playback.
+  The live `Input` and the recorder ask the module value.
+- The camera mode reaches a tic only through the camera pose, which a replay slot takes from its
+  record, so only a live slot's camera ever reads it.
+
 ## What a slot's tic does
 
 `Game.tic` keeps the single-player order (docs/frameloop.md § What runs in a tic) and loops the
-slots where a step was per player:
+slots where a step was per player.
 
 1. `local.input` is read — `setReplay` points it at `replay ?? view.input` and sets `source` with
    it; the popup branch reads it alone.
-2. Per slot: the cheat buffer, `player.noclip`.
+2. Per slot: the cheat buffer, `player.noclip`, `player.autorun`, `weapons.autoSwitch`.
 3. Hotkeys and the audio listener — local only.
 4. Per live slot: `simCamera.applyYawInput`.
 5. `specials.beginTic` (the clocks, the movers, the corpses they crunched); `specials.activate`

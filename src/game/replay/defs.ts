@@ -74,12 +74,22 @@ export function quantizePose(pose: CameraPose): CameraPose {
 export const BUTTON_FIRE = 1;
 export const BUTTON_RIGHT_EDGE = 2;
 
-/** The six persisted settings a tic can observe — `replay/settings.ts` captures and pins them. */
-export interface SimSettings {
+/**
+ * The six persisted settings a tic can observe — `replay/settings.ts` captures and pins them. One
+ * record on disk; the engine splits it by owner (docs/multiplayer.md § Player settings).
+ */
+export interface SimSettings extends PlayerSettings, SessionSettings {}
+
+/** The four a player carries per slot, so another player runs under their own. */
+export interface PlayerSettings {
   autorun: boolean;
   autoSwitchWeapon: boolean;
   rightMouse: RightMouseAction;
   cameraMode: CameraMode;
+}
+
+/** The two the whole session runs under, whichever slot reads them. */
+export interface SessionSettings {
   infiniteTallActors: boolean;
   pistolStart: boolean;
 }

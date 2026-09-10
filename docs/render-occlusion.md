@@ -297,8 +297,9 @@ frame would re-derive it over rings that only a mover rebuild reshapes.
 ## Which sightlines a wall fades for
 
 `WallFader.update`/`FlatFader.update` take a *list* of sightline targets (`FadeTarget[]`), not just
-the player — `collectFadeTargets` (same file, called from `game.ts` with `ThingLayer.awakeMonsters`)
-returns the player plus every currently-**awake** monster
+the player — `collectFadeTargets` (same file, called from `game.ts` with `Game.fadeBodies`:
+`ThingLayer.awakeMonsters` and every other living player slot) returns the player plus every
+currently-**awake** monster or other player
 within `MONSTER_FADE_RANGE` (a plain 2D distance cap, tuned by feel to
 roughly a room/corridor's length), nearest first and truncated to `MAX_FADE_TARGETS` (48) — the
 per-frame cost is quads times targets, so the cap is what stops a crowded room from being the

@@ -77,9 +77,10 @@ the next switch.
 
 ## Automatic weapon switching
 
-Three rules select a weapon for you. One is ungated; the other two are the
-The `autoSwitchWeapon` setting, on by default (`getAutoSwitchWeapon`, `game/inventory.ts`,
-docs/menu.md § Persisted settings).
+Four rules select a weapon for you. Two are ungated; the other two follow the `autoSwitchWeapon`
+setting, on by default (`getAutoSwitchWeapon`, `game/inventory.ts`, docs/menu.md § Persisted
+settings) — as the collecting or firing player's own (`PickupOptions.autoSwitch`,
+`WeaponSystem.autoSwitch`; docs/multiplayer.md § Player settings).
 
 | Rule | Vanilla | Where | Gated |
 |---|---|---|---|

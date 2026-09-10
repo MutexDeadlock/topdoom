@@ -411,11 +411,12 @@ MAP07's Arachnotron platform (sector 1, tag 667).
   can happen from any of `game.ts`'s many `things.damage()` call sites, not just inside `update()`.
 - `game/specials.ts`'s `SpecialsController.notifyBossDeath` owns the actual per-map table
   (`bossDeathTriggers`, resolved once from `map.name` in the constructor) and dispatches to either
-  `onExit(false)` or a new `triggerTag(tag, kind)`. `triggerTag` reuses the existing
-  `triggerFloor`/`triggerRaiseToTexture`/`triggerDoor` movers exactly as a linedef special would,
-  scanning `map.sectors` for the tag directly since there's no triggering linedef to run
-  `resolveTargets` on. `triggerFloor`'s `line` parameter is optional for exactly this caller — it's
-  only ever dereferenced for `changeTexture`, which a boss-death `lowerFloorToLowest` never sets.
+  `onExit(false, null)` (no player fired it) or a new `triggerTag(tag, kind)`. `triggerTag` reuses
+  the existing `triggerFloor`/`triggerRaiseToTexture`/`triggerDoor` movers exactly as a linedef
+  special would, scanning `map.sectors` for the tag directly since there's no triggering linedef to
+  run `resolveTargets` on. `triggerFloor`'s `line` parameter is optional for exactly this caller —
+  it's only ever dereferenced for `changeTexture`, which a boss-death `lowerFloorToLowest` never
+  sets.
 - `game.ts` fans the doomednum out to **both** owners from the callback passed into
   `buildThingSprites` — `this.specials.notifyBossDeath(type, anyPlayerAlive(this.slots))` and
   `this.icon.notifyBossDeath(type)`. Each ignores the types it doesn't handle, so neither needs to

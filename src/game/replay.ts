@@ -53,12 +53,14 @@ export { isStockReplay } from './replay/stock.ts';
 export type {
   Keyframe,
   LevelMarker,
+  PlayerSettings,
   Replay,
   ReplayCapture,
   ReplayData,
   ReplayEvent,
   ReplayListEntry,
   ReplayMeta,
+  SessionSettings,
   SimSettings,
   TicColumns,
 } from './replay/defs.ts';
@@ -87,7 +89,12 @@ export {
 export { BOUND_KEYS, maskHas } from './replay/keys.ts';
 export { ReplayPlayback } from './replay/playback.ts';
 export { ReplayRecorder, type RecordingStart } from './replay/recorder.ts';
-export { applySimSettings, captureSimSettings, releaseSimSettings } from './replay/settings.ts';
+export {
+  GLOBAL_PLAYER_SETTINGS,
+  applySimSettings,
+  captureSimSettings,
+  releaseSimSettings,
+} from './replay/settings.ts';
 
 /** The fields a row lets the player edit in place. */
 export type ReplayDescription = Partial<Pick<ReplayMeta, 'name' | 'description' | 'player'>>;

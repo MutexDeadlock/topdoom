@@ -1,5 +1,66 @@
 import type { GameSnapshot } from '../../src/game/snapshot.ts';
-import { CHECK_INTERVAL, type ReplayCapture } from '../../src/game/replay.ts';
+import type { SaveCapture } from '../../src/game/savegames.ts';
+import { getRightMouseAction, quantizeAim, type TicInput } from '../../src/game/input.ts';
+import {
+  CHECK_INTERVAL,
+  captureSimSettings,
+  type RecordingStart,
+  type ReplayCapture,
+} from '../../src/game/replay.ts';
+import type { CameraPose, TopDownCamera } from '../../src/render/camera.ts';
+import type { Pos2 } from '../../src/types.ts';
+
+/** One tic's worth of live input, as `scriptedInput` answers it. */
+export interface ScriptedRow {
+  held?: string[];
+  pressed?: string[];
+  typed?: string;
+  fire?: boolean;
+  right?: boolean;
+  wheel?: number;
+  aim?: Pos2 | null;
+}
+
+/** A live `TicInput` answering `rows[tic]`, advanced by `endTic` — what a recorder wraps. */
+export function scriptedInput(rows: ScriptedRow[]): TicInput & { tic: number } {
+  const input = {
+    tic: 0,
+    held: (...codes: string[]) => codes.some((c) => rows[input.tic]?.held?.includes(c) ?? false),
+    pressed: (code: string) => rows[input.tic]?.pressed?.includes(code) ?? false,
+    typed: () => rows[input.tic]?.typed ?? '',
+    get mouseDown() {
+      return rows[input.tic]?.fire ?? false;
+    },
+    rightMousePressed: (action: string) => (rows[input.tic]?.right ?? false) && getRightMouseAction() === action,
+    consumeWheel: () => rows[input.tic]?.wheel ?? 0,
+    aim: () => quantizeAim(rows[input.tic]?.aim ?? null),
+    endTic: () => {
+      input.tic++;
+    },
+  };
+  return input;
+}
+
+/** The camera a scripted `aim` is handed; nothing reads it. */
+export const NO_CAMERA = {} as TopDownCamera;
+
+/** The camera a recording starts at, as `startRecording` hands one over — already snapped. */
+export const START_POSE: CameraPose = { yaw: 90, point: [64, 41, -128], distance: 480, tilt: 57.5 };
+export const START_SNAPSHOT = { player: {}, rng: { p: 0, m: 0 } } as unknown as GameSnapshot;
+
+/** A recording's start on E1M1 at `START_POSE`, under the settings in force. */
+export function recordingStart(): RecordingStart {
+  const capture = {
+    map: 'E1M1',
+    skill: 3,
+    wads: [{ name: 'DOOM.WAD', id: 'abc' }],
+    mapWad: 'abc',
+    levelTime: 0,
+    thumb: '',
+    state: START_SNAPSHOT,
+  } as SaveCapture;
+  return { capture, pose: START_POSE, settings: captureSimSettings() };
+}
 
 /**
  * One recording as `Game` hands it to the store — the smallest capture that survives every

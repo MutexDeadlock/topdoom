@@ -2,7 +2,7 @@
  * `WeaponSystem`: the nine weapons — selection and slot toggling, vanilla fire rates, spread and
  * damage rolls, ammo spend — raising fire events for `game.ts` to realize. See docs/weapons.md.
  */
-import { getAutoSwitchWeapon, hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
+import { hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
 import type { WeaponsSnapshot } from './snapshot.ts';
 import type { TicInput } from './input.ts';
 import { PLAYER_ORIGIN, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
@@ -571,6 +571,12 @@ interface SoundFrame {
  */
 export class WeaponSystem {
   /**
+   * Whether a weapon running dry switches to the best one left — the slot's
+   * `PlayerSettings.autoSwitchWeapon`, pushed here every tic (`game.ts`).
+   * docs/weapons.md § Automatic weapon switching.
+   */
+  autoSwitch = true;
+  /**
    * Tics until the trigger may fire again, counted as a **whole number** rather
    * than as seconds remaining. The simulation steps one tic at a time and every
    * `WeaponDef.cooldown` is a whole number of tics, so an integer countdown is
@@ -931,9 +937,9 @@ export class WeaponSystem {
    * switch to the best owned weapon that can — `AMMO_FALLBACK_ORDER`, ending at the fist. Returns
    * what vanilla does, **true when the shot may go ahead**, so a caller reads it as its own guard.
    *
-   * The switch is what `getAutoSwitchWeapon` governs; the *answer* is not. With the setting off an
-   * empty weapon stays selected and simply fires nothing, which is what this engine did before the
-   * rule existed. docs/weapons.md § Automatic weapon switching.
+   * The switch is what `autoSwitch` governs; the *answer* is not. With the setting off an empty
+   * weapon stays selected and simply fires nothing, which is what this engine did before the rule
+   * existed. docs/weapons.md § Automatic weapon switching.
    *
    * Ownership of the *ready* weapon is deliberately not tested — vanilla doesn't, and the fire-rate
    * tests drive weapons they never add to `inv.weapons`.
@@ -941,7 +947,7 @@ export class WeaponSystem {
   private checkAmmo(inv: Inventory): boolean {
     const def = WEAPONS[inv.currentWeapon];
     if (!def.ammoType || inv.ammo[def.ammoType] >= def.ammoPerShot) return true;
-    if (!getAutoSwitchWeapon()) return false;
+    if (!this.autoSwitch) return false;
     const pick = AMMO_FALLBACK_ORDER.find(
       (r) => inv.weapons.has(r.weapon) && (r.ammo === null || inv.ammo[r.ammo] > r.minAmmo),
     );

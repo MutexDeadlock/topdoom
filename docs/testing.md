@@ -273,6 +273,10 @@ thing is still exactly as the map spawned it — usually the assertion itself, s
 what most of these tests are checking for — and `changedThing` throws there instead, for a test that
 has already established the change.
 
+`tests/fixtures/replay.ts` holds a recording at both ends: `replayCapture(ticCount)` as the store
+receives one, and the recorder's rig — `scriptedInput(rows)` (a live `TicInput` over `ScriptedRow`s)
+and `recordingStart()`.
+
 `tests/fixtures/files.ts`'s `filesUnder(dir, keep?)` is the recursive file walker the tree-wide
 guards in `tests/docs/` and `markup.test.ts` share.
 

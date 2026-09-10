@@ -1,7 +1,8 @@
 /**
  * `ReplayRecorder`: the live `Input` wrapped so that everything a tic reads through it is written
- * down — the per-tic record, the typed characters, the settings changes and the death restarts
- * `Game` reports. What it hands over at the end is a `ReplayCapture`. docs/replays.md § Recording.
+ * down — the per-tic rows (the codec in `replay/row.ts`), the settings changes and the death
+ * restarts `Game` reports. What it hands over at the end is a `ReplayCapture`.
+ * docs/replays.md § Recording.
  */
 import { AIM_QUANTUM, getRightMouseAction, type RightMouseAction, type TicInput } from '../input.ts';
 import type { SaveCapture } from '../savegames.ts';
@@ -10,11 +11,8 @@ import type { Pos2 } from '../../types.ts';
 import type { CameraPose, TopDownCamera } from '../../render/camera.ts';
 import { getRandomCursors } from '../../util/random.ts';
 import {
-  BUTTON_FIRE,
-  BUTTON_RIGHT_EDGE,
   CHECK_INTERVAL,
   KEYFRAME_INTERVAL,
-  POSE_QUANTUM,
   checkCoord,
   type LevelMarker,
   type ReplayCapture,
@@ -22,7 +20,7 @@ import {
   type ReplayEvent,
   type SimSettings,
 } from './defs.ts';
-import { heldMask, pressedMask } from './keys.ts';
+import { appendRow, emptyColumns, emptyRow, sampleInput, writeRowPose } from './row.ts';
 import { sameSettings } from './settings.ts';
 
 /** What a recording starts from: the level as a save would capture it, and the camera it stands at. */
@@ -41,36 +39,23 @@ export class ReplayRecorder implements TicInput {
   /** Restore events reference a snapshot by index; the same object restored twice is stored once. */
   private snapshotIndex = new Map<GameSnapshot, number>();
   private lastSettings: SimSettings;
-  private wheelSign = 0;
-  private aimX: number | null = null;
-  private aimY: number | null = null;
-  /** The camera this tic is being read at, handed over by `beginTic` already snapped. */
-  private pose: CameraPose;
+  /**
+   * The tic being recorded: the wheel and the aim point as the tic read them, the pose `beginTic`
+   * handed over. The keys are sampled into it and the whole row appended by `endTic`.
+   */
+  private row = emptyRow();
 
   constructor(live: TicInput, start: RecordingStart) {
     this.live = live;
     this.start = start;
     this.lastSettings = start.settings;
-    this.pose = start.pose;
+    writeRowPose(this.row, start.pose);
     this.levels = [{ tic: 0, map: start.capture.map }];
     this.data = {
       snapshots: [start.capture.state],
       keyframes: [{ tic: 0, map: start.capture.map, snapshot: 0 }],
       settings: start.settings,
-      tics: {
-        held: [],
-        pressed: [],
-        buttons: [],
-        wheel: [],
-        aimX: [],
-        aimY: [],
-        poseYaw: [],
-        poseX: [],
-        poseY: [],
-        poseZ: [],
-        poseDistance: [],
-        poseTilt: [],
-      },
+      tics: emptyColumns(),
       typed: [],
       events: [],
       checks: { x: [], y: [], cursor: [] },
@@ -108,24 +93,24 @@ export class ReplayRecorder implements TicInput {
    */
   consumeWheel(): number {
     const delta = this.live.consumeWheel();
-    this.wheelSign = delta > 0 ? 1 : delta < 0 ? -1 : 0;
-    return this.wheelSign;
+    this.row.wheel = delta > 0 ? 1 : delta < 0 ? -1 : 0;
+    return this.row.wheel;
   }
 
   aim(camera: TopDownCamera, planeZ: number): Pos2 | null {
     const point = this.live.aim(camera, planeZ);
-    this.aimX = point ? Math.round(point.x / AIM_QUANTUM) : null;
-    this.aimY = point ? Math.round(point.y / AIM_QUANTUM) : null;
+    this.row.aimX = point ? Math.round(point.x / AIM_QUANTUM) : null;
+    this.row.aimY = point ? Math.round(point.y / AIM_QUANTUM) : null;
     return point;
   }
 
   /**
    * Called by `Game` ahead of every tic with the player's position and the camera the tic will be
-   * read at: stamps a settings change made since the last tic as an event for this one, and takes
-   * the desync sample when one is due.
+   * read at (omitted: the last one's): stamps a settings change made since the last tic as an event
+   * for this one, and takes the desync sample when one is due.
    */
-  beginTic(x: number, y: number, settings: SimSettings, pose: CameraPose = this.pose): void {
-    this.pose = pose;
+  beginTic(x: number, y: number, settings: SimSettings, pose?: CameraPose): void {
+    if (pose) writeRowPose(this.row, pose);
     if (!sameSettings(settings, this.lastSettings)) {
       this.data.events.push({ tic: this.ticCount, kind: 'settings', settings });
       this.lastSettings = settings;
@@ -138,28 +123,14 @@ export class ReplayRecorder implements TicInput {
     }
   }
 
-  /** Closes the tic: the row is what the reads above saw, or hold nothing if never asked. */
+  /** Closes the tic: the row is what the reads above saw, or holds nothing if never asked. */
   endTic(): void {
-    const buttons =
-      (this.live.mouseDown ? BUTTON_FIRE : 0) | (this.live.rightMousePressed(getRightMouseAction()) ? BUTTON_RIGHT_EDGE : 0);
-    const text = this.live.typed();
-    if (text !== '') this.data.typed.push([this.ticCount, text]);
-    const { tics } = this.data;
-    tics.held.push(heldMask(this.live));
-    tics.pressed.push(pressedMask(this.live));
-    tics.buttons.push(buttons);
-    tics.wheel.push(this.wheelSign);
-    tics.aimX.push(this.aimX);
-    tics.aimY.push(this.aimY);
-    tics.poseYaw.push(poseUnits(this.pose.yaw));
-    tics.poseX.push(poseUnits(this.pose.point[0]));
-    tics.poseY.push(poseUnits(this.pose.point[1]));
-    tics.poseZ.push(poseUnits(this.pose.point[2]));
-    tics.poseDistance.push(poseUnits(this.pose.distance));
-    tics.poseTilt.push(poseUnits(this.pose.tilt));
-    this.wheelSign = 0;
-    this.aimX = null;
-    this.aimY = null;
+    const { row } = this;
+    sampleInput(this.live, getRightMouseAction(), row);
+    appendRow(this.data.tics, this.data.typed, row);
+    row.wheel = 0;
+    row.aimX = null;
+    row.aimY = null;
     this.live.endTic();
   }
 
@@ -221,9 +192,4 @@ export class ReplayRecorder implements TicInput {
     this.data.snapshots.push(state);
     return index;
   }
-}
-
-/** A pose component on the record's lattice. */
-function poseUnits(v: number): number {
-  return Math.round(v / POSE_QUANTUM);
 }

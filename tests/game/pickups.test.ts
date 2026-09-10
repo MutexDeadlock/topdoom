@@ -1,12 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  applyPickup,
-  createInventory,
-  setAutoSwitchWeapon,
-  type Inventory,
-  type WeaponId,
-} from '../../src/game/inventory.ts';
+import { applyPickup, createInventory, type Inventory, type WeaponId } from '../../src/game/inventory.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 
 /**
@@ -18,7 +12,7 @@ describe('Game rules · ammo pickups by skill', () => {
   const bulletsAfter = (type: number, dropped: boolean, skill: 1 | 3 | 5) => {
     const inv = createInventory();
     const before = inv.ammo.bullets;
-    applyPickup(inv, type, dropped, skill);
+    applyPickup(inv, type, { dropped, skill });
     return inv.ammo.bullets - before;
   };
 
@@ -38,7 +32,7 @@ describe('Game rules · ammo pickups by skill', () => {
   test("a weapon's own ammo doubles too", () => {
     const inv = createInventory();
     inv.ammo.bullets = 0;
-    applyPickup(inv, ThingType.chaingun, false, 5);
+    applyPickup(inv, ThingType.chaingun, { skill: 5 });
     assert.equal(inv.ammo.bullets, 40, 'a map-placed chaingun carries 20');
   });
 
@@ -46,7 +40,7 @@ describe('Game rules · ammo pickups by skill', () => {
     const inv = createInventory();
     inv.ammo.bullets = 0;
     inv.ammo.shells = 0;
-    applyPickup(inv, ThingType.backpack, false, 1);
+    applyPickup(inv, ThingType.backpack, { skill: 1 });
     assert.equal(inv.ammo.bullets, 20, 'one clip of 10, doubled');
     assert.equal(inv.ammo.shells, 8, 'one clip of 4, doubled');
     assert.equal(inv.backpack, true);
@@ -55,14 +49,14 @@ describe('Game rules · ammo pickups by skill', () => {
   test('the cap still wins over the doubling', () => {
     const inv = createInventory();
     inv.ammo.bullets = 195;
-    applyPickup(inv, ThingType.clip, false, 1);
+    applyPickup(inv, ThingType.clip, { skill: 1 });
     assert.equal(inv.ammo.bullets, 200, 'vanilla applies the doubling to `num`, then clamps');
   });
 
   test('skill reaches nothing but ammo', () => {
     const inv = createInventory();
     inv.health = 50;
-    applyPickup(inv, ThingType.stimpack, false, 1);
+    applyPickup(inv, ThingType.stimpack, { skill: 1 });
     assert.equal(inv.health, 60, 'a stimpack is 10 on every skill');
   });
 });
@@ -72,18 +66,22 @@ describe('Game rules · ammo pickups by skill', () => {
  * See docs/items.md § Ammo raises the weapon.
  */
 describe('Game rules · ammo raises the weapon', () => {
-  /** A player holding `weapon`, owning `owned`, at zero of everything unless `ammo` says otherwise. */
+  /**
+   * A player holding `weapon`, owning `owned`, at zero of everything unless `ammo` says otherwise,
+   * collecting under `autoSwitch`.
+   */
   function pickingUp(
     type: number,
     weapon: WeaponId,
     owned: WeaponId[],
     ammo: Partial<Inventory['ammo']> = {},
+    autoSwitch = true,
   ): WeaponId {
     const inv = createInventory();
     inv.ammo = { bullets: 0, shells: 0, rockets: 0, cells: 0, ...ammo };
     inv.weapons = new Set([weapon, ...owned]);
     inv.currentWeapon = weapon;
-    applyPickup(inv, type, false, 3);
+    applyPickup(inv, type, { skill: 3, autoSwitch });
     return inv.currentWeapon;
   }
 
@@ -132,14 +130,9 @@ describe('Game rules · ammo raises the weapon', () => {
   });
 
   test('with the setting off nothing is raised, but a new weapon still selects itself', () => {
-    setAutoSwitchWeapon(false);
-    try {
-      assert.equal(pickingUp(ThingType.shells, 'fist', ['shotgun']), 'fist');
-      assert.equal(pickingUp(ThingType.backpack, 'fist', ['rocketLauncher']), 'fist');
-      // Ungated, being vanilla's own "what you picked up is what you hold".
-      assert.equal(pickingUp(ThingType.shotgun, 'fist', []), 'shotgun');
-    } finally {
-      setAutoSwitchWeapon(true);
-    }
+    assert.equal(pickingUp(ThingType.shells, 'fist', ['shotgun'], {}, false), 'fist');
+    assert.equal(pickingUp(ThingType.backpack, 'fist', ['rocketLauncher'], {}, false), 'fist');
+    // Ungated, being vanilla's own "what you picked up is what you hold".
+    assert.equal(pickingUp(ThingType.shotgun, 'fist', [], {}, false), 'shotgun');
   });
 });

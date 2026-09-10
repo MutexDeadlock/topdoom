@@ -29,6 +29,13 @@ import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
 import type { Pos2 } from './types.ts';
 
+/** What a level start begins from beside the selection — at most one of the two. */
+interface LevelSource {
+  save?: SaveGame;
+  /** A replay to watch — docs/replays.md § Playback. */
+  replay?: Replay;
+}
+
 async function boot(): Promise<void> {
   let view: Viewport;
   try {
@@ -63,16 +70,13 @@ async function boot(): Promise<void> {
 
   /**
    * The one session lifecycle, for both a fresh start and a load: assemble the
-   * WAD set, tear the old level down, build the new one. With `save` given it
-   * additionally verifies the set against what the save was made with and
-   * threads the snapshot through `Game`'s restore path — the two are the same
+   * WAD set, tear the old level down, build the new one. Starting `from` a save
+   * or a recording it additionally verifies the set against what that was made
+   * with and threads the snapshot through `Game`'s restore path — the same
    * sequence, so they stay one function rather than drifting apart.
    */
-  const startLevel = async (
-    selection: Selection,
-    save: SaveGame | null = null,
-    replay: Replay | null = null,
-  ): Promise<void> => {
+  const startLevel = async (selection: Selection, from: LevelSource = {}): Promise<void> => {
+    const { save = null, replay = null } = from;
     // Synchronously, before the first `await`: this call is still inside the
     // Start button's own click handler, which is the safest moment a browser
     // will let an AudioContext start.
@@ -183,11 +187,11 @@ async function boot(): Promise<void> {
   };
 
   const loadSave = (save: SaveGame): Promise<void> =>
-    startFromSet(save, 'save', (iwad, pwads) => startLevel({ iwad, pwads, map: save.map, skill: save.skill }, save));
+    startFromSet(save, 'save', (iwad, pwads) => startLevel({ iwad, pwads, map: save.map, skill: save.skill }, { save }));
 
   const playReplay = (replay: Replay): Promise<void> =>
     startFromSet(replayWadSet(replay), 'replay', (iwad, pwads) =>
-      startLevel({ iwad, pwads, map: replayMap(replay), skill: replay.skill }, null, replay),
+      startLevel({ iwad, pwads, map: replayMap(replay), skill: replay.skill }, { replay }),
     );
 
   /**

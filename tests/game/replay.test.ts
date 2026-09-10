@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIM_QUANTUM, quantizeAim, type TicInput } from '../../src/game/input.ts';
-import { ReplayRecorder, type RecordingStart } from '../../src/game/replay/recorder.ts';
+import { ReplayRecorder } from '../../src/game/replay/recorder.ts';
 import { ReplayPlayback } from '../../src/game/replay/playback.ts';
 import {
   CHECK_INTERVAL,
@@ -27,67 +27,12 @@ import { getInfiniteTallActors } from '../../src/game/world.ts';
 import { getRightMouseAction } from '../../src/game/input.ts';
 import { clearRandom, pRandom } from '../../src/util/random.ts';
 import type { GameSnapshot } from '../../src/game/snapshot.ts';
-import type { SaveCapture } from '../../src/game/savegames.ts';
-import type { CameraPose, TopDownCamera } from '../../src/render/camera.ts';
-import type { Pos2 } from '../../src/types.ts';
+import { NO_CAMERA, recordingStart, scriptedInput, type ScriptedRow } from '../fixtures/replay.ts';
 
 /**
  * A recording is what the tic read, tic for tic, and a playback serves exactly that back — the
  * property the whole feature rests on. See docs/replays.md § The record.
  */
-
-/** One tic's worth of live input, as a scripted `TicInput` would answer it. */
-interface Row {
-  held?: string[];
-  pressed?: string[];
-  typed?: string;
-  fire?: boolean;
-  right?: boolean;
-  wheel?: number;
-  aim?: Pos2 | null;
-}
-
-function scripted(rows: Row[]): TicInput & { tic: number } {
-  const input = {
-    tic: 0,
-    held: (...codes: string[]) => codes.some((c) => rows[input.tic]?.held?.includes(c) ?? false),
-    pressed: (code: string) => rows[input.tic]?.pressed?.includes(code) ?? false,
-    typed: () => rows[input.tic]?.typed ?? '',
-    get mouseDown() {
-      return rows[input.tic]?.fire ?? false;
-    },
-    rightMousePressed: (action: string) => (rows[input.tic]?.right ?? false) && getRightMouseAction() === action,
-    consumeWheel: () => rows[input.tic]?.wheel ?? 0,
-    aim: () => quantizeAim(rows[input.tic]?.aim ?? null),
-    endTic: () => {
-      input.tic++;
-    },
-  };
-  return input;
-}
-
-const CAMERA = {} as TopDownCamera;
-
-/** The camera a recording starts at, as `startRecording` hands one over — already snapped. */
-const START_POSE: CameraPose = { yaw: 90, point: [64, 41, -128], distance: 480, tilt: 57.5 };
-const SNAPSHOT = { player: {}, rng: { p: 0, m: 0 } } as unknown as GameSnapshot;
-
-function start(): RecordingStart {
-  const capture = {
-    map: 'E1M1',
-    skill: 3,
-    wads: [{ name: 'DOOM.WAD', id: 'abc' }],
-    mapWad: 'abc',
-    levelTime: 0,
-    thumb: '',
-    state: SNAPSHOT,
-  } as SaveCapture;
-  return {
-    capture,
-    pose: START_POSE,
-    settings: captureSimSettings(),
-  };
-}
 
 /** Every read a tic makes, in one record, from whichever input is in charge. */
 function readTic(input: TicInput): Record<string, unknown> {
@@ -101,7 +46,7 @@ function readTic(input: TicInput): Record<string, unknown> {
     fire: input.mouseDown,
     right: input.rightMousePressed(getRightMouseAction()),
     wheel: input.consumeWheel(),
-    aim: input.aim(CAMERA, 10),
+    aim: input.aim(NO_CAMERA, 10),
   };
 }
 
@@ -125,15 +70,15 @@ function replayOf(recorder: ReplayRecorder): Replay {
 
 describe('Replays · recording and playing back', () => {
   test('a playback answers every read exactly as the live input did', () => {
-    const rows: Row[] = [
+    const rows: ScriptedRow[] = [
       { held: ['KeyW'], aim: { x: 100.123, y: -50.5 } },
       { held: ['KeyW', 'KeyD', 'ShiftLeft'], pressed: ['Space'], fire: true, aim: { x: 101, y: -51 } },
       { typed: 'id', wheel: 37.5, right: true, aim: null },
       { pressed: ['KeyR'], wheel: -3, aim: { x: 0, y: 0 } },
       {},
     ];
-    const live = scripted(rows);
-    const recorder = new ReplayRecorder(live, start());
+    const live = scriptedInput(rows);
+    const recorder = new ReplayRecorder(live, recordingStart());
     const seen: Record<string, unknown>[] = [];
     for (let i = 0; i < rows.length; i++) {
       recorder.beginTic(0, 0, captureSimSettings());
@@ -154,18 +99,18 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('the live tic sees the wheel as its sign and the aim quantized, which is what is stored', () => {
-    const live = scripted([{ wheel: 37.5, aim: { x: 100.123, y: -50.5 } }]);
-    const recorder = new ReplayRecorder(live, start());
+    const live = scriptedInput([{ wheel: 37.5, aim: { x: 100.123, y: -50.5 } }]);
+    const recorder = new ReplayRecorder(live, recordingStart());
     assert.equal(recorder.consumeWheel(), 1);
-    const aim = recorder.aim(CAMERA, 0);
+    const aim = recorder.aim(NO_CAMERA, 0);
     assert.deepEqual(aim, { x: Math.round(100.123 * 64) / 64, y: -50.5 });
     assert.equal(quantizeAim(null), null);
     assert.equal(AIM_QUANTUM, 1 / 64);
   });
 
   test('a settings change is an event on the tic it is first in force for', () => {
-    const live = scripted([{}, {}, {}]);
-    const recorder = new ReplayRecorder(live, start());
+    const live = scriptedInput([{}, {}, {}]);
+    const recorder = new ReplayRecorder(live, recordingStart());
     const changed: SimSettings = { ...captureSimSettings(), autorun: !getAutorun() };
     recorder.beginTic(0, 0, captureSimSettings());
     recorder.endTic();
@@ -185,8 +130,8 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('a restore is stamped for the tic that follows it, and a snapshot is stored once', () => {
-    const live = scripted([{}, {}, {}]);
-    const recorder = new ReplayRecorder(live, start());
+    const live = scriptedInput([{}, {}, {}]);
+    const recorder = new ReplayRecorder(live, recordingStart());
     const other = { player: {}, rng: { p: 5, m: 0 } } as unknown as GameSnapshot;
     recorder.beginTic(0, 0, captureSimSettings());
     recorder.endTic();
@@ -207,7 +152,7 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('a level marker is added once per new map', () => {
-    const recorder = new ReplayRecorder(scripted([{}]), start());
+    const recorder = new ReplayRecorder(scriptedInput([{}]), recordingStart());
     recorder.levelLoaded('E1M1');
     recorder.endTic();
     recorder.levelLoaded('E1M2');
@@ -219,7 +164,7 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('the camera the tic ran at is recorded and served back, snapped to the lattice', () => {
-    const recorder = new ReplayRecorder(scripted([{}, {}]), start());
+    const recorder = new ReplayRecorder(scriptedInput([{}, {}]), recordingStart());
     const pose = quantizePose({ yaw: 91.3333, point: [64.51, 41, -128.02], distance: 500.4, tilt: 57.77 });
     recorder.beginTic(0, 0, captureSimSettings(), pose);
     recorder.endTic();
@@ -233,7 +178,7 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('a keyframe is due once an interval has passed, and only then', () => {
-    const recorder = new ReplayRecorder(scripted([]), start());
+    const recorder = new ReplayRecorder(scriptedInput([]), recordingStart());
     assert.equal(recorder.keyframeDue, false, 'the start is keyframe 0 already');
     for (let i = 0; i < KEYFRAME_INTERVAL - 1; i++) recorder.endTic();
     assert.equal(recorder.keyframeDue, false);
@@ -256,8 +201,8 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('a seek re-seats the settings and the check cursor, forwards and back', () => {
-    const rows: Row[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));
-    const recorder = new ReplayRecorder(scripted(rows), start());
+    const rows: ScriptedRow[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));
+    const recorder = new ReplayRecorder(scriptedInput(rows), recordingStart());
     const changed: SimSettings = { ...captureSimSettings(), autorun: !captureSimSettings().autorun };
     for (let tic = 0; tic < rows.length; tic++) {
       recorder.beginTic(tic, 0, tic < CHECK_INTERVAL ? captureSimSettings() : changed);
@@ -278,7 +223,7 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('a jump lands on the last keyframe at or before it', () => {
-    const recorder = new ReplayRecorder(scripted([]), start());
+    const recorder = new ReplayRecorder(scriptedInput([]), recordingStart());
     const state = { player: {}, rng: { p: 1, m: 0 } } as unknown as GameSnapshot;
     for (let i = 0; i < KEYFRAME_INTERVAL; i++) recorder.endTic();
     recorder.keyframe('E1M1', state);
@@ -290,7 +235,7 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('a level entered anchors a jump at its own first tic', () => {
-    const recorder = new ReplayRecorder(scripted([]), start());
+    const recorder = new ReplayRecorder(scriptedInput([]), recordingStart());
     const state = { player: {}, rng: { p: 1, m: 0 } } as unknown as GameSnapshot;
     for (let i = 0; i < 100; i++) recorder.endTic();
     // `Game.runEnterLevel`'s order: the track marker, then the anchor at the same tic.
@@ -310,8 +255,8 @@ describe('Replays · recording and playing back', () => {
 
   test('the check samples catch a divergence at the first sample that disagrees', () => {
     clearRandom();
-    const rows: Row[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));
-    const recorder = new ReplayRecorder(scripted(rows), start());
+    const rows: ScriptedRow[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));
+    const recorder = new ReplayRecorder(scriptedInput(rows), recordingStart());
     for (let i = 0; i < rows.length; i++) {
       recorder.beginTic(i, 0, captureSimSettings());
       recorder.endTic();
@@ -340,8 +285,8 @@ describe('Replays · recording and playing back', () => {
 
   test('a check sample is indexed by its tic, and the position compares rounded', () => {
     clearRandom();
-    const rows: Row[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));
-    const recorder = new ReplayRecorder(scripted(rows), start());
+    const rows: ScriptedRow[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));
+    const recorder = new ReplayRecorder(scriptedInput(rows), recordingStart());
     // `beginTic` is handed the tic number as the x coordinate, so a sample's x is the tic it
     // was taken at — which is what says no tic column is needed to find it again.
     for (let i = 0; i < rows.length; i++) {

@@ -39,7 +39,7 @@ export {
 } from './occlusion/defs.ts';
 
 /**
- * Most awake monsters that can be fade targets at once, nearest first. Purely
+ * Most bodies besides the player that can be fade targets at once, nearest first. Purely
  * a cost bound (`WallFader` cost is quads × targets): past a couple of dozen
  * nearby monsters, every wall any of them stands behind is already faded by a
  * nearer one. See docs/monster-ai.md § Spatial indexing.
@@ -47,13 +47,14 @@ export {
 const MAX_FADE_TARGETS = 48;
 
 /**
- * The player plus the awake monsters near enough to fade walls for, nearest first and capped at
- * `MAX_FADE_TARGETS` — alerted ones only, since an unseen sleeping monster is supposed to stay
- * hidden. **Each target's wedge is its own body**, built from the same `height` field `shotPath`
- * locks onto. docs/render-occlusion.md § The target is the billboard.
+ * The player plus the bodies near enough to fade walls for — the awake monsters (alerted ones only,
+ * since an unseen sleeping monster is supposed to stay hidden) and the other living players —
+ * nearest first and capped at `MAX_FADE_TARGETS`. **Each target's wedge is its own body**, built
+ * from the same `height` field `shotPath` locks onto. docs/render-occlusion.md § The target is the
+ * billboard.
  */
-export function collectFadeTargets(player: Pos3, awakeMonsters: readonly StandingBody[]): FadeTarget[] {
-  const nearby = awakeMonsters
+export function collectFadeTargets(player: Pos3, bodies: readonly StandingBody[]): FadeTarget[] {
+  const nearby = bodies
     .map((m) => ({ m, d: vecLength(m.x - player.x, m.y - player.y) }))
     .filter((e) => e.d <= MONSTER_FADE_RANGE);
   nearby.sort((a, b) => a.d - b.d);

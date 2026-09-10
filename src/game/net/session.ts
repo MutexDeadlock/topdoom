@@ -21,6 +21,7 @@ import {
   isPeerMessage,
   isRelayMessage,
   type JoinRequest,
+  type KickRequest,
   type LobbyPeer,
   type NetGame,
   type NetRestore,
@@ -79,6 +80,8 @@ export interface NetCapture {
 /** One slot as the roster shows it during a game. */
 export interface RosterEntry {
   slot: number;
+  /** The relay member playing it, null once its player is gone. */
+  member: number | null;
   name: string;
   /** False for a slot whose player is gone — it stands idle in the level. */
   present: boolean;
@@ -198,7 +201,13 @@ export class NetSession {
 
   /** The slots of the running game, for the tab's list. */
   roster(): RosterEntry[] {
-    return this.assignments.map((a) => ({ slot: a.slot, name: a.name, present: a.member !== null, local: a.slot === this.mySlot }));
+    return this.assignments.map((a) => ({
+      slot: a.slot,
+      member: a.member,
+      name: a.name,
+      present: a.member !== null,
+      local: a.slot === this.mySlot,
+    }));
   }
 
   /**
@@ -261,6 +270,12 @@ export class NetSession {
     this.phase = 'ended';
     this.endReason = null;
     this.transport.close();
+  }
+
+  /** The host puts `member` out of the room; the relay's `left` for it does the rest (§ Leaving). */
+  kick(member: number): void {
+    if (!this.host || this.phase === 'ended' || member === this.member) return;
+    this.transport.send({ type: 'kick', member } satisfies KickRequest);
   }
 
   // The game's side, per tic. docs/multiplayer-net.md § What a tic does.
@@ -422,7 +437,10 @@ export class NetSession {
         this.memberLeft(m.member);
         return;
       case 'closed':
-        this.end('the host left the game');
+        this.end('the host closed the room');
+        return;
+      case 'kicked':
+        this.end('the host kicked you from the room');
         return;
       case 'refused':
         this.end(m.reason);

@@ -14,7 +14,7 @@ import type { GameSnapshot } from '../snapshot.ts';
 import { asSkill, asWad, isLoadableState, isRecord } from '../savegames.ts';
 import { isWireRow, type WireRow } from '../replay/row.ts';
 
-export type { JoinRequest, RelayMessage } from '../../../server/rooms.ts';
+export type { JoinRequest, KickRequest, RelayMessage } from '../../../server/rooms.ts';
 
 /**
  * Tics between a key going down and the tic it drives, so every peer's row for a tic has arrived
@@ -115,6 +115,7 @@ export function isRelayMessage(v: unknown): v is RelayMessage {
     case 'left':
       return isIndex(v.member);
     case 'closed':
+    case 'kicked':
       return true;
     case 'refused':
       return typeof v.reason === 'string';

@@ -110,6 +110,28 @@ describe('Relay · rooms', () => {
     assert.deepEqual(r.join(b, null), { code: 'BBBBB', member: 0, host: true });
   });
 
+  test('the host kicks a member: it hears why and is closed, the rest hear it leave; nobody else can', () => {
+    const r = rooms();
+    const host = member();
+    const a = member();
+    const b = member();
+    r.join(host, null);
+    r.join(a, 'AAAAA');
+    r.join(b, 'AAAAA');
+    const heard = host.got.length;
+    assert.equal(r.receive(a, { type: 'kick', member: 2 }), true);
+    assert.equal(r.receive(host, { type: 'kick', member: 0 }), true);
+    assert.ok(!b.closed && !host.closed, 'only the host kicks, and never itself');
+    assert.equal(host.got.length, heard, 'a kick is never forwarded');
+    assert.equal(r.receive(host, { type: 'kick', member: 2 }), true);
+    assert.deepEqual(b.got.at(-1), { type: 'kicked' });
+    assert.ok(b.closed);
+    assert.deepEqual(host.got.at(-1), { type: 'left', member: 2 });
+    assert.deepEqual(a.got.at(-1), { type: 'left', member: 2 });
+    // The seat is free, and nothing keeps the kicked connection from asking for another.
+    assert.deepEqual(r.join(b, 'AAAAA'), { code: 'AAAAA', member: 3, host: false });
+  });
+
   test('a fresh room never reuses a code still in use', () => {
     const r = rooms(['AAAAA', 'AAAAA', 'BBBBB']);
     r.join(member(), null);

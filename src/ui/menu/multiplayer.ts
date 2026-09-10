@@ -36,6 +36,8 @@ export interface MultiplayerHooks {
   updateGame(): Promise<void>;
   /** The host starts the game. */
   start(): void;
+  /** The host puts relay member `member` out of the room. */
+  kick(member: number): void;
   /** Leaves the room; a level already running plays on alone. */
   leave(): void;
 }
@@ -100,7 +102,10 @@ export class MultiplayerUi {
     });
     this.startButton.addEventListener('click', () => this.hooks.start());
     this.leaveButton.addEventListener('click', () => {
+      // The host leaving takes the room with it (docs/multiplayer-net.md § Leaving).
+      const hosting = this.hooks.session()?.isHost ?? false;
       this.hooks.leave();
+      this.setStatus(hosting ? 'Room closed.' : 'Room left.');
       this.refresh();
     });
   }
@@ -211,7 +216,10 @@ export class MultiplayerUi {
               ? stateLine('checking…')
               : stateLine(noteLine('warning', peer.refusal ?? 'cannot play this set'));
         state.classList.toggle('ready', peer.ready === true);
-        this.peers.append(peerRow(peer.name || `player ${index + 1}`, marks, state));
+        const name = peer.name || `player ${index + 1}`;
+        // The host is the list's first row; everyone after it can be kicked.
+        const kick = session.isHost && index > 0 ? this.kickButton(peer.member, name) : null;
+        this.peers.append(peerRow(name, marks, state, kick));
       }
       return;
     }
@@ -219,10 +227,24 @@ export class MultiplayerUi {
       const marks: HTMLSpanElement[] = [];
       if (entry.slot === 0) marks.push(markChip('host'));
       if (entry.local) marks.push(markChip('you'));
-      const row = peerRow(entry.name, marks, stateLine(entry.present ? `player ${entry.slot + 1}` : 'left — standing idle'));
+      const state = stateLine(entry.present ? `player ${entry.slot + 1}` : 'left — standing idle');
+      const kick = session.isHost && !entry.local && entry.member !== null ? this.kickButton(entry.member, entry.name) : null;
+      const row = peerRow(entry.name, marks, state, kick);
       row.classList.toggle('disabled', !entry.present);
       this.peers.append(row);
     }
+  }
+
+  /** The host's Kick beside a player's row — savegames.css's `.row-actions` shape. */
+  private kickButton(member: number, name: string): HTMLDivElement {
+    const actions = document.createElement('div');
+    actions.className = 'row-actions';
+    const button = document.createElement('button');
+    button.textContent = 'Kick';
+    button.title = `Put ${name} out of the room`;
+    button.addEventListener('click', () => this.hooks.kick(member));
+    actions.append(button);
+    return actions;
   }
 }
 
@@ -254,14 +276,15 @@ function ticsLabel(tics: number): string {
   return `${tics} tic${tics === 1 ? '' : 's'}`;
 }
 
-/** One line of the room's list: the name, the chips beside it, and where that player stands. */
-function peerRow(name: string, marks: readonly HTMLElement[], state: HTMLSpanElement): HTMLDivElement {
+/** One line of the room's list: the name, the chips beside it, where that player stands, the host's Kick. */
+function peerRow(name: string, marks: readonly HTMLElement[], state: HTMLSpanElement, kick: HTMLElement | null): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'row';
   const label = document.createElement('span');
   label.className = 'name truncate';
   label.textContent = name;
   row.append(label, ...marks, state);
+  if (kick) row.append(kick);
   return row;
 }
 

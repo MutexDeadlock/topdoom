@@ -183,6 +183,39 @@ describe('Network · session', () => {
     assert.deepEqual(seen.get(host.session)![9], [7 * 10 + 1, 0], 'the dropped slot reads idle');
   });
 
+  test('a kicked player hears why; the lobby loses them, a running game drops their slot', () => {
+    const hub = new Hub();
+    const host = hostSession(hub, 'host', 2);
+    const guest = joinSession(hub, 'ROOM1');
+    const other = joinSession(hub, 'ROOM1', { name: 'other' });
+    guest.session.kick(2);
+    assert.ok(!guest.transport.sent.some((m) => (m as { type: string }).type === 'kick'), 'only the host kicks');
+    host.session.kick(2);
+    hub.flush();
+    assert.equal(other.session.phase, 'ended');
+    assert.deepEqual(other.log.ended, ['the host kicked you from the room']);
+    assert.deepEqual(host.session.peers.map((p) => p.name), ['host', 'guest']);
+    assert.deepEqual(guest.session.peers.map((p) => p.name), ['host', 'guest'], 'mirrored to the guest');
+
+    host.session.start();
+    hub.flush();
+    attached(host.session, guest.session);
+    const seen = new Map([
+      [host.session, [] as number[][]],
+      [guest.session, [] as number[][]],
+    ]);
+    for (let tic = 0; tic < 4; tic++) runTic(hub, [host.session, guest.session], seen);
+    host.session.kick(1);
+    hub.flush();
+    assert.deepEqual(guest.log.ended, ['the host kicked you from the room']);
+    assert.deepEqual(host.session.roster().map((r) => [r.present, r.member]), [
+      [true, 0],
+      [false, null],
+    ]);
+    assert.equal((host.transport.sent.at(-2) as { type: string }).type, 'drop');
+    for (let tic = 4; tic < 8; tic++) runTic(hub, [host.session], seen);
+  });
+
   test('a desync is reported to the host, which lands a snapshot everyone restores', () => {
     const hub = new Hub();
     const host = hostSession(hub, 'host', 2);

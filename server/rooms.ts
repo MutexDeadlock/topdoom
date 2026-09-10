@@ -16,12 +16,19 @@ export interface JoinRequest {
   code: string | null;
 }
 
+/** The host putting `member` out of its room — the one later message the relay reads rather than forwards. */
+export interface KickRequest {
+  type: 'kick';
+  member: number;
+}
+
 /** What the relay itself says to a member. The client's guard is `isRelayMessage` (`src/game/net/defs.ts`). */
 export type RelayMessage =
   | { type: 'room'; code: string; member: number; host: boolean; members: number[] }
   | { type: 'joined'; member: number }
   | { type: 'left'; member: number }
   | { type: 'closed' }
+  | { type: 'kicked' }
   | { type: 'refused'; reason: string };
 
 export interface RoomsOptions {
@@ -36,14 +43,20 @@ export type JoinResult = { code: string; member: number; host: boolean } | { ref
 
 export interface Rooms {
   /**
-   * Whatever `member` sent: its join while it has no seat, forwarded once it has one. False where
-   * the connection is to be closed — a refused join, or a first message that was not one.
+   * Whatever `member` sent: its join while it has no seat, forwarded once it has one — a kick
+   * excepted. False where the connection is to be closed — a refused join, or a first message that
+   * was not one.
    */
   receive(member: RoomMember, message: Record<string, unknown>): boolean;
   /** `member` opens a room (`code` null) or joins one; what it is told is also returned. */
   join(member: RoomMember, code: string | null): JoinResult;
   /** `message` from `member`, sent to every other member of its room with `from` stamped on it. */
   relay(member: RoomMember, message: Record<string, unknown>): void;
+  /**
+   * The host `member` puts member `target` out: `target` hears `kicked` and is closed, the rest hear
+   * it leave. From anyone but the host, or at the host itself, nothing happens.
+   */
+  kick(member: RoomMember, target: number): void;
   /** `member` is gone: the room hears `left`, and a host leaving closes the whole room. */
   leave(member: RoomMember): void;
   readonly roomCount: number;
@@ -71,7 +84,8 @@ export function createRooms(options: RoomsOptions): Rooms {
 
   function receive(member: RoomMember, message: Record<string, unknown>): boolean {
     if (seats.has(member)) {
-      relay(member, message);
+      if (message.type !== 'kick') relay(member, message);
+      else if (typeof message.member === 'number') kick(member, message.member);
       return true;
     }
     if (message.type !== 'join') {
@@ -117,6 +131,16 @@ export function createRooms(options: RoomsOptions): Rooms {
     }
   }
 
+  function kick(member: RoomMember, target: number): void {
+    const seat = seats.get(member);
+    if (seat?.id !== 0 || target === 0) return;
+    const conn = seat.room.members.get(target);
+    if (!conn) return;
+    say(conn, { type: 'kicked' });
+    leave(conn);
+    conn.close();
+  }
+
   function leave(member: RoomMember): void {
     const seat = seats.get(member);
     if (!seat) return;
@@ -152,6 +176,7 @@ export function createRooms(options: RoomsOptions): Rooms {
     receive,
     join,
     relay,
+    kick,
     leave,
     get roomCount() {
       return rooms.size;

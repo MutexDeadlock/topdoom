@@ -73,7 +73,7 @@ export interface MenuDefaults {
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /** The menu's top-level tabs; exported for the F2/F3/F4 hotkeys in `main.ts`. */
-export type MenuTab = 'newgame' | 'save' | 'load' | 'replays' | 'multiplayer' | 'settings';
+export type MenuTab = 'newgame' | 'save' | 'load' | 'multiplayer' | 'replays' | 'settings';
 
 /**
  * What is running behind the menu, as `main.ts` tells `open` and the tabs it. `'replay'` is a level
@@ -144,16 +144,16 @@ export class Menu {
     newgame: el<HTMLButtonElement>('tab-button-newgame'),
     save: el<HTMLButtonElement>('tab-button-save'),
     load: el<HTMLButtonElement>('tab-button-load'),
-    replays: el<HTMLButtonElement>('tab-button-replays'),
     multiplayer: el<HTMLButtonElement>('tab-button-multiplayer'),
+    replays: el<HTMLButtonElement>('tab-button-replays'),
     settings: el<HTMLButtonElement>('tab-button-settings'),
   };
   private tabPanels = {
     newgame: el<HTMLDivElement>('tab-newgame'),
     save: el<HTMLDivElement>('tab-save'),
     load: el<HTMLDivElement>('tab-load'),
-    replays: el<HTMLDivElement>('tab-replays'),
     multiplayer: el<HTMLDivElement>('tab-multiplayer'),
+    replays: el<HTMLDivElement>('tab-replays'),
     settings: el<HTMLDivElement>('tab-settings'),
   };
   private activeTab: MenuTab = 'newgame';

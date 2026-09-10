@@ -20,6 +20,9 @@ dependency-free so `tests/server/rooms.test.ts` and the client's loopback fixtur
 - Every later message is forwarded to every other member with `from` (the sender's member id)
   stamped on, serialized once for the whole room — a snapshot is megabytes. The relay never reads
   them.
+- **`kick {member}` is the one exception**: from the host, the relay tells that member `kicked`,
+  closes it, and the rest hear `left {member}`; from anyone else, or at the host itself, it is
+  dropped. The relay enforces it, so a peer ignoring the host cannot stay seated.
 - A member leaving is `left {member}` to the rest; **the host leaving is `closed`** to everyone,
   and the room is gone. A socket answering no ping for `2 × PING_MS` is dropped.
 - Codes are five of `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` — no `I`/`O`/`0`/`1`.
@@ -28,7 +31,7 @@ dependency-free so `tests/server/rooms.test.ts` and the client's loopback fixtur
 runs `relay.ts` directly, so it needs a Node that strips types unflagged (`engines`: 22.18+ or 23.6+);
 `server/rooms.ts` is typechecked by the root too, through the test that imports it. `npm run relay`
 starts it; `MAX_PLAYERS` is stated there as `4` and the test pins it to the engine's. The relay's own
-messages and the join are typed in `rooms.ts` (`RelayMessage`, `JoinRequest`); `net/defs.ts` takes
+messages, the join and the kick are typed in `rooms.ts` (`RelayMessage`, `JoinRequest`, `KickRequest`); `net/defs.ts` takes
 them by `import type`, so nothing of `server/` reaches the bundle.
 
 ## Protocol
@@ -158,6 +161,9 @@ no room for one.
   from there and nobody waits for it. The player stands idle in the level, as under `?coop=` —
   monsters may go after it, and it can die. A dropped browser that is still there hears its own
   drop and ends.
+- **A kicked peer** (`NetSession.kick`, the host's) is a peer leaving: the relay's `left` takes the
+  same path — out of the lobby, or dropped from the game — and the peer's own session ends on
+  `kicked`. Nothing keeps it from joining again with the code.
 - **The host leaving** closes the room (`closed`): every peer's session ends.
 - **A session ending under a running level** — the room closed, the connection lost, the menu's
   Leave — leaves the level running alone: `Game.unbindNet` puts the local slot back on the
@@ -184,7 +190,7 @@ no room for one.
 ## The Multiplayer tab
 
 `ui/menu/multiplayer.ts` (`MultiplayerUi`), `MultiplayerHooks` in `main.ts`
-(docs/session.md § Session lifecycle):
+(docs/session.md § Session lifecycle); the tab sits between Load and Replays:
 
 - **Relay** and **Your name** fields; the relay URL is the `relayUrl` setting (docs/menu.md
   § Persisted settings), the name is `playerName`, the replays' (`setPlayerName`).
@@ -192,8 +198,10 @@ no room for one.
   (`netGameOf`: `wadSetOf`, as `captureSave` reads it), then the room. **Room code** + **Join**.
 - The room: its code, `phaseText`, the facts (level, skill, WADs, rules, delay), the peer list —
   in the lobby each peer's `ready`/`checking…`/refusal in red; in a game the roster, a slot whose
-  player left dimmed — the host's input delay select, **Announce the New Game tab's level**
-  (`setGame` + `setSession`: every peer checks again), **Start** (`canStart`), **Leave**.
+  player left dimmed; the host sees **Kick** on every other player's row — the host's input delay
+  select, **Announce the New Game tab's level** (`setGame` + `setSession`: every peer checks
+  again), **Start** (`canStart`), **Leave** (status line: "Room closed." for the host, "Room left."
+  for a peer).
 - The hint line: who Start waits on, or a desync being resynced.
 
 ## Deviations

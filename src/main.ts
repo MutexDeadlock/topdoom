@@ -376,6 +376,7 @@ async function boot(): Promise<void> {
         net.setGame(await netGameOf(selection));
       },
       start: () => net?.start(),
+      kick: (member) => net?.kick(member),
       leave: leaveNet,
     },
   );

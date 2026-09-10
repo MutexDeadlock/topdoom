@@ -119,6 +119,11 @@
   color: var(--fg-muted);
 }
 
+/* The host's Kick: the save rows' small button, trimmed so a row with one stands no taller than the host's own. */
+#menu .net-peers .row-actions button {
+  padding: 1px 8px;
+}
+
 /* A refusal wraps rather than ellipsizing: it says what to do about it. */
 #menu .net-peers .row .state .warning {
   font-size: 12px;

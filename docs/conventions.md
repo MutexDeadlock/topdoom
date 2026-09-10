@@ -187,6 +187,11 @@ A doc-owned comment holding something the doc lacks moves it into the doc.
 - **State what is true, not what changed.** No "now", "used to", "was tried" — they date the
   comment. Bug history goes in the commit message. A decision worth protecting from a revert says
   it is deliberate and points at the doc that argues it.
+- **A number that lives in code is named, not copied.** Prose points at the declaration
+  (`#menu > .panel`'s `max-width`) and states the rule it serves; the value, and anything derived
+  from it (a character count at a font size), stays in the one place it can drift out of sync from.
+  A number that *is* the rule — a vanilla constant, a format's field width — is cited with its
+  source instead.
 - **Parallel fields may repeat a comment; arguments may not.** Sibling fields in the same words
   are fine (`WallQuad.baseAlpha`/`FlatSurface.baseAlpha`); an argument at two sites is the tier-1
   violation.

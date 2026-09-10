@@ -24,7 +24,7 @@
  */
 #menu > .panel {
   width: 100%;
-  max-width: 682px;
+  max-width: 740px;
   max-height: calc(100dvh - 48px);
   padding: 26px 30px 22px;
 }
@@ -372,8 +372,9 @@
 /*
  * The add-on rows carry the same three detail columns the WAD Library lists (docs/menu-wads.md §
  * WAD Library), fixed-width and right-aligned so they line up down the list. Narrower than the
- * overlay's, because this panel is 682px against its 60%-of-viewport. Scoped to `#pwad-list` so
- * the save rows, which share `.row` but lay themselves out entirely differently, are left alone.
+ * overlay's, because this panel is capped at a fixed width against its 60%-of-viewport. Scoped to
+ * `#pwad-list` so the save rows, which share `.row` but lay themselves out entirely differently,
+ * are left alone.
  */
 #pwad-list .row .meta {
   flex: none;

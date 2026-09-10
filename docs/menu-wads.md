@@ -196,8 +196,8 @@ the filter, choosing a folder, and the one status line.
   counts under map counts rather than each trailing whatever length its file name happened to be.
   `labels.ts: sourceColumns` returns the three detail values separately and `sourceColumnSpans`
   renders them plus the support glyph, and **both lists use both** — the add-on rows on the New Game
-  tab carry the same columns, just narrower, since that panel is 682px against the overlay's 60% of
-  the viewport. The markup is shared too, not just the strings: the
+  tab carry the same columns, just narrower, since that panel is capped at a fixed width against
+  the overlay's 60% of the viewport. The markup is shared too, not just the strings: the
   `meta size`/`meta content`/`meta deh`/`meta info`/`meta support` class names the two stylesheets
   target have one definition, and `#wadlibrary` nests inside `#menu` so its rows inherit
   `#menu .row` outright — `library.css` carries only the deltas. So the two cannot disagree about

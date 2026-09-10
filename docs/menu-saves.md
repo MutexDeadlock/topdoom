@@ -45,8 +45,8 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   the load proceeds on it (docs/savegames.md § A stand-in game WAD); only where no stand-in is found
   does it go red. **The line is `missingWadLabel`, not the full sentence**: every line
   in the label column is `white-space: nowrap` with an ellipsis, so the rows keep one height beside
-  the thumbnails, and the column is only ~60 characters wide at 12px (682px menu, less the thumbnail
-  and the row's three buttons). The sentence saying what to *do* — `missingWadText` — goes on that
+  the thumbnails, and the column is short — the panel's width, less the thumbnail and the row's
+  three buttons. The sentence saying what to *do* — `missingWadText` — goes on that
   line's `title` and is what a failed Load throws into the status line, both of which have the width
   for it (docs/savegames.md § WAD-set identity). **A row missing a *required* file greys its Load
   button out**, the same courtesy Save and Overwrite get for a refused moment — the red line beside

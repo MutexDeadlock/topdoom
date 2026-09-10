@@ -41,8 +41,9 @@ right-button edge), `wheel` (the sign — `handleSwitching` reads nothing else),
 
 **`replay/row.ts` is the one codec over those columns.** A `TicRow` is one tic of them plus what it
 typed: the recorder fills one as the tic reads it and appends it (`sampleInput`, `writeRowPose`,
-`appendRow`), a playback reads one back (`readRow`) and serves it through a `RowInput`. The network
-will ship the same rows. `tests/game/replay-row.test.ts` pins the recorder's output byte for byte.
+`appendRow`), a playback reads one back (`readRow`) and serves it through a `RowInput`. The network ships the
+same rows (docs/multiplayer-net.md § Protocol). `tests/game/replay-row.test.ts` pins the recorder's
+output byte for byte.
 
 **A snapshot's thing list keeps only what changed**, savegames and keyframes alike — the format is
 the savegame's, and docs/savegames.md § The format and its version owns the rule. On MAP15 that is
@@ -164,8 +165,8 @@ wrong level — docs/savegames.md § A stand-in game WAD.
 
 A stored replay is credited to `playerName` (`game/replay.ts`), which is **whatever a replay row's
 Player field was last filled in with** — entered once on a recording, inherited by every later one.
-Blank is not remembered: clearing one row's credit drops that row's, not the persisted name. No
-setting writes it — the Settings tab has no player-name field.
+Blank is not remembered: clearing one row's credit drops that row's, not the persisted name. The
+Multiplayer tab's name field writes the same name (`setPlayerName`); the Settings tab has none.
 
 **A running recording shows a red light in two places**: beside the level clock in the HUD
 (`#hud-recording`, docs/hud.md § The HUD) and on the menu's Replays tab

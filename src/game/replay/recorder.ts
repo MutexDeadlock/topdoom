@@ -4,7 +4,7 @@
  * the death restarts `Game` reports. What it hands over at the end is a `ReplayCapture`.
  * docs/replays.md § Recording.
  */
-import { AIM_QUANTUM, type RightMouseAction, type TicInput } from '../input.ts';
+import type { RightMouseAction, TicInput } from '../input.ts';
 import type { SaveCapture } from '../savegames.ts';
 import type { GameSnapshot } from '../snapshot.ts';
 import type { Pos2 } from '../../types.ts';
@@ -22,7 +22,7 @@ import {
   type SessionSettings,
   type SlotRecord,
 } from './defs.ts';
-import { appendRow, emptyColumns, emptyRow, sampleInput, writeRowPose } from './row.ts';
+import { appendRow, emptyColumns, emptyRow, sampleInput, writeRowAim, writeRowPose, writeRowWheel } from './row.ts';
 import { samePlayerSettings, sameSessionSettings } from './settings.ts';
 
 /** What a recording starts from: the level as a save would capture it, and where every slot stands. */
@@ -213,15 +213,13 @@ class SlotTap implements TicInput {
    * is what the record keeps — so the live tic sees exactly what the playback will.
    */
   consumeWheel(): number {
-    const delta = this.live.consumeWheel();
-    this.row.wheel = delta > 0 ? 1 : delta < 0 ? -1 : 0;
+    writeRowWheel(this.row, this.live.consumeWheel());
     return this.row.wheel;
   }
 
   aim(camera: TopDownCamera, planeZ: number): Pos2 | null {
     const point = this.live.aim(camera, planeZ);
-    this.row.aimX = point ? Math.round(point.x / AIM_QUANTUM) : null;
-    this.row.aimY = point ? Math.round(point.y / AIM_QUANTUM) : null;
+    writeRowAim(this.row, point);
     return point;
   }
 

@@ -7,10 +7,10 @@ import { mapProvider, wadSetId } from './wad/checksum.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { Menu, type MenuSession, type MenuTab, type Selection } from './ui/menu/menu.ts';
 import {
-  blockingWad,
-  missingWadText,
+  blockingWadText,
   overwriteSave,
   readAutosave,
+  wadSetOf,
   wadSetRefusal,
   writeAutosave,
   writeSave,
@@ -18,7 +18,24 @@ import {
   type SaveGame,
   type SaveWadSet,
 } from './game/savegames.ts';
-import { replayMap, replayWadSet, writeReplay, type Replay } from './game/replay.ts';
+import {
+  COMPAT,
+  GLOBAL_PLAYER_SETTINGS,
+  captureSessionSettings,
+  replayMap,
+  replayWadSet,
+  writeReplay,
+  type Replay,
+} from './game/replay.ts';
+import {
+  NetSession,
+  WebSocketTransport,
+  type NetGame,
+  type NetHooks,
+  type NetIdentity,
+  type NetRestore,
+} from './game/net.ts';
+import { dehackedSources } from './game/dehacked.ts';
 import { formatClock } from './ui/hud/hud.ts';
 import { Game } from './game.ts';
 import { loadBestTimes } from './game/besttimes.ts';
@@ -29,12 +46,16 @@ import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
 import type { Pos2 } from './types.ts';
 import { MAX_PLAYERS } from './game/playerstarts.ts';
+import { VERSION } from './constants.ts';
 
-/** What a level start begins from beside the selection — at most one of the two. */
+/** What a level start begins from beside the selection — at most one of the three. */
 interface LevelSource {
   save?: SaveGame;
   /** A replay to watch — docs/replays.md § Playback. */
   replay?: Replay;
+  /** A network game's level, from its start or (`restore`) the host's snapshot — docs/multiplayer-net.md. */
+  net?: NetSession;
+  restore?: NetRestore | null;
 }
 
 async function boot(): Promise<void> {
@@ -64,6 +85,8 @@ async function boot(): Promise<void> {
    */
   const loading = new LoadingScreen();
   let game: Game | null = null;
+  /** The network session this browser sits in, or null — docs/multiplayer-net.md § The session. */
+  let net: NetSession | null = null;
 
   /**
    * What the menu is opened over: nothing, a run of the player's own, or a replay. The difference
@@ -80,7 +103,13 @@ async function boot(): Promise<void> {
    * sequence, so they stay one function rather than drifting apart.
    */
   const startLevel = async (selection: Selection, from: LevelSource = {}): Promise<void> => {
-    const { save = null, replay = null } = from;
+    const { save = null, replay = null, restore: netRestore = null } = from;
+    const netGame = from.net ?? null;
+    // A start of the player's own leaves a network game behind; the session's own starts are the
+    // one exception (docs/multiplayer-net.md § Leaving).
+    if (net && netGame !== net) {
+      leaveNet();
+    }
     // Synchronously, before the first `await`: this call is still inside the
     // Start button's own click handler, which is the safest moment a browser
     // will let an AudioContext start.
@@ -98,7 +127,7 @@ async function boot(): Promise<void> {
         shippedWad(),
       ]);
       const wad = new Wad(files);
-      const set = save ?? (replay ? replayWadSet(replay) : null);
+      const set = save ?? (replay ? replayWadSet(replay) : (netGame?.game?.set ?? null));
       if (set) verifySaveWads(wad, set);
       // Awaited: on a big map this line is what the player reads for as long as the build takes,
       // and `painted` is what gets it there first.
@@ -120,12 +149,14 @@ async function boot(): Promise<void> {
         title: titleOf(selection.iwad, selection.pwads),
         skill: selection.skill,
         // A load carries its own position and players; `?pos=` and `?coop=` are for a fresh start
-        // only.
-        startPos: save || replay ? null : startPos,
-        coop: save || replay ? null : coop,
-        // A replay starts from its own first snapshot — docs/replays.md § Playback.
-        restore: replay ? replay.data.snapshots[0] : (save?.state ?? null),
+        // only, and a network game's slots are its own.
+        startPos: save || replay || netGame ? null : startPos,
+        coop: save || replay || netGame ? null : coop,
+        // A replay starts from its own first snapshot — docs/replays.md § Playback — and a joiner
+        // from the host's (docs/multiplayer-net.md § Joining a game).
+        restore: replay ? replay.data.snapshots[0] : (save?.state ?? netRestore?.state ?? null),
         playback: replay,
+        net: netGame,
         autoSave: () => withCapture((capture) => writeSave(capture, takeOverSaveName(replay, capture))),
         checkpoint: { write: writeAutosave, read: readAutosave },
         // Nulled before `dispose()` — the call arrives from inside this very `Game`'s tic — and
@@ -137,6 +168,9 @@ async function boot(): Promise<void> {
             storeRecording(finished);
             finished.dispose();
           }
+          // Every browser in the game reaches this tic together; the host takes the room back to
+          // its lobby (docs/multiplayer-net.md § Leaving).
+          net?.endGame();
           menu.open('none');
         },
         gldefsText,
@@ -173,7 +207,7 @@ async function boot(): Promise<void> {
    */
   const startFromSet = async (
     set: SaveWadSet,
-    noun: 'save' | 'replay',
+    noun: 'save' | 'replay' | 'game',
     start: (iwad: WadSource, pwads: WadSource[]) => Promise<void>,
   ): Promise<void> => {
     try {
@@ -182,8 +216,8 @@ async function boot(): Promise<void> {
       // Only a *required* file stops the load; the rest are a note on the row and are simply left
       // out of the set.
       const { iwad, pwads, missing } = menu.resolveSaveWads(set);
-      const blocker = blockingWad(missing);
-      if (blocker) throw new Error(missingWadText(blocker));
+      const blocker = blockingWadText(missing);
+      if (blocker) throw new Error(blocker);
       if (!iwad) throw new Error(`this ${noun} does not name a game WAD`);
       await start(iwad, pwads);
     } catch (err) {
@@ -199,6 +233,55 @@ async function boot(): Promise<void> {
     startFromSet(replayWadSet(replay), 'replay', (iwad, pwads) =>
       startLevel({ iwad, pwads, map: replayMap(replay), skill: replay.skill }, { replay }),
     );
+
+  /**
+   * A network game's level, as the session asks for it: the host's set resolved like a save's,
+   * the level the game starts on or the one the host's snapshot is of.
+   * docs/multiplayer-net.md § The session.
+   */
+  const startNetGame = (session: NetSession, netGame: NetGame, restore: NetRestore | null): Promise<void> =>
+    startFromSet(netGame.set, 'game', (iwad, pwads) =>
+      startLevel({ iwad, pwads, map: restore?.map ?? netGame.set.map, skill: netGame.skill }, { net: session, restore }),
+    );
+
+  /** Leaves the room; a level already running plays on alone (`Game` sees the session end). */
+  const leaveNet = (): void => {
+    net?.leave();
+    net = null;
+    menu.refreshMultiplayer();
+  };
+
+  /** This browser's player, as a lobby introduces them: the name, the menu's player settings, the build. */
+  const identity = (name: string): NetIdentity => ({
+    name,
+    settings: { ...GLOBAL_PLAYER_SETTINGS },
+    build: VERSION,
+    compat: COMPAT,
+  });
+
+  /**
+   * The New Game tab's selection as the room must match it: the set as a save records it
+   * (`wadSetOf`, as `Game.captureSave` reads it), which costs the host its WAD download up front
+   * and the level start nothing more.
+   */
+  const netGameOf = async (selection: Selection): Promise<NetGame> => {
+    const wad = new Wad(await loadWadFiles(selection.iwad, selection.pwads));
+    return { set: wadSetOf(wad, selection.map, dehackedSources(wad)), skill: selection.skill };
+  };
+
+  /** What the session needs from the page — docs/multiplayer-net.md § The session. */
+  const netHooks: NetHooks = {
+    setRefusal: (netGame) => blockingWadText(menu.resolveSaveWads(netGame.set).missing),
+    startGame: (netGame, restore) => {
+      if (!net) return;
+      void startNetGame(net, netGame, restore);
+    },
+    changed: () => menu.refreshMultiplayer(),
+    ended: (reason) => {
+      leaveNet();
+      menu.setStatus(reason, true);
+    },
+  };
 
   /**
    * Whatever `finished` was still recording goes to the store before it is torn down — a new
@@ -265,6 +348,35 @@ async function boot(): Promise<void> {
       },
       recordingRefusal: () => game?.recordingRefusal() ?? null,
       isRecording: () => game?.recording ?? false,
+    },
+    {
+      session: () => net,
+      host: async (url, name) => {
+        const selection = menu.currentSelection();
+        if (!selection) throw new Error('pick a game WAD and a level on the New Game tab first');
+        const netGame = await netGameOf(selection);
+        const transport = await WebSocketTransport.connect(url);
+        leaveNet();
+        net = NetSession.host(transport, netHooks, {
+          ...identity(name),
+          game: netGame,
+          session: captureSessionSettings(),
+        });
+      },
+      join: async (url, code, name) => {
+        const transport = await WebSocketTransport.connect(url);
+        leaveNet();
+        net = NetSession.join(transport, netHooks, { ...identity(name), code });
+      },
+      updateGame: async () => {
+        if (!net?.isHost) throw new Error('only the host picks the level');
+        const selection = menu.currentSelection();
+        if (!selection) throw new Error('pick a game WAD and a level on the New Game tab first');
+        net.setSession(captureSessionSettings());
+        net.setGame(await netGameOf(selection));
+      },
+      start: () => net?.start(),
+      leave: leaveNet,
     },
   );
 

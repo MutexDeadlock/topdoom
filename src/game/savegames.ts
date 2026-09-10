@@ -5,6 +5,8 @@
 import { roundFloat, type GameSnapshot } from './snapshot.ts';
 import { type Skill } from './skill.ts';
 import { MAX_PLAYERS } from './playerstarts.ts';
+import { mapProvider, wadId, wadSetId } from '../wad/checksum.ts';
+import type { Wad, WadFile } from '../wad/wad.ts';
 import {
   STATE_ENCODING,
   base64ToBytes,
@@ -329,6 +331,30 @@ export function missingWadText(file: MissingWad): string {
  */
 export function blockingWad(missing: MissingWad[]): MissingWad | undefined {
   return missing.find((file) => file.required);
+}
+
+/** `blockingWad`'s file in `missingWadText`'s words, or null when nothing stops the start. */
+export function blockingWadText(missing: MissingWad[]): string | null {
+  const blocker = blockingWad(missing);
+  return blocker ? missingWadText(blocker) : null;
+}
+
+/**
+ * `wad` as a set records itself, playing `map`: every file by content ID, the map's provider, and
+ * the files a DEHACKED patch came from (`patchSources`, null for none) — what a save stores and a
+ * network game's peers must match. docs/savegames.md § WAD-set identity.
+ */
+export function wadSetOf(wad: Wad, map: string, patchSources: readonly WadFile[] | null): SaveWadSet {
+  return {
+    map,
+    wads: wadSetId(wad),
+    // A level is running, so the map has a provider; `''` would only mean the
+    // save asks for its whole set back, which is the safe way to be wrong.
+    mapWad: mapProvider(wad, map)?.id ?? '',
+    // Only when a patch was actually applied: an empty list would read the same as absent, and
+    // absent is what an unpatched save means. docs/dehacked.md § Savegames and patched tables.
+    ...(patchSources ? { patchWads: patchSources.map((f) => wadId(f)) } : {}),
+  };
 }
 
 export interface SaveMeta {

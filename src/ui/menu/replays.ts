@@ -24,15 +24,17 @@ import {
   type ReplayListEntry,
   type ReplayMeta,
 } from '../../game/replay.ts';
-import { blockingWad, missingWadText, wadLabel, type SaveWadSet } from '../../game/savegames.ts';
+import { blockingWadText, missingWadText, wadLabel, type SaveWadSet } from '../../game/savegames.ts';
 import { SKILL_NAMES } from '../../game/skill.ts';
 import { formatClock } from '../hud/hud.ts';
 import {
   attempt,
   downloadJson,
   emptyLine,
+  fillFacts,
   iconButton,
   installFilter,
+  markChip,
   matchesFilter,
   noteLine,
   type StatusLine,
@@ -390,17 +392,8 @@ export class ReplaysUi {
     // only difference between the two panels beyond the fields above.
     if (isStockReplay(meta.id)) facts.unshift(['Player', meta.player || '—']);
     const block = document.createElement('div');
-    block.className = 'facts';
-    for (const [label, value] of facts) {
-      const term = document.createElement('span');
-      term.className = 'label';
-      term.textContent = label;
-      const text = document.createElement('span');
-      text.className = 'value';
-      text.textContent = value;
-      text.title = value;
-      block.append(term, text);
-    }
+    block.className = 'fact-grid';
+    fillFacts(block, facts);
     return block;
   }
 
@@ -517,8 +510,7 @@ export class ReplaysUi {
   /** Why this replay can't be played, or null — the format's own refusal, then a missing WAD. */
   private blockedReason(entry: ReplayListEntry): string | null {
     if (entry.refusal !== null) return entry.refusal;
-    const missing = blockingWad(this.describe(replayWadSet(entry.meta)).missing);
-    return missing ? missingWadText(missing) : null;
+    return blockingWadText(this.describe(replayWadSet(entry.meta)).missing);
   }
 
   private play(id: string): void {
@@ -536,11 +528,7 @@ export class ReplaysUi {
  * reads the same way, and the row has the width for it.
  */
 function stockMark(): HTMLSpanElement {
-  const mark = document.createElement('span');
-  mark.className = 'stock';
-  mark.textContent = 'included';
-  mark.title = STOCK_HINT;
-  return mark;
+  return markChip('included', STOCK_HINT);
 }
 
 /** A panel line that only reads: `makeField`'s shape with the input replaced by its value. */

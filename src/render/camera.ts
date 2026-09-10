@@ -123,6 +123,11 @@ export function latticeYaw(yawDeg: number): number {
   return Math.round(yawDeg / KEY_YAW_STEP) * KEY_YAW_STEP;
 }
 
+/** The orbit that sits behind a DOOM heading of `angle` radians — what `faceHeading` assigns. */
+export function headingYawDeg(angle: number): number {
+  return (angle * 180) / Math.PI - 90;
+}
+
 /**
  * A camera hanging above the player, tilted slightly off vertical so walls show a bit of their
  * height and the level reads as a space rather than a plan. `yawDeg` orbits it around the followed
@@ -220,7 +225,7 @@ export class TopDownCamera {
    * a teleport's and a respawn's reorient. `viewerAngleDeg` reads back `angle` turned 180°.
    */
   faceHeading(angle: number): void {
-    this.yawDeg = (angle * 180) / Math.PI - 90;
+    this.yawDeg = headingYawDeg(angle);
   }
 
   /**

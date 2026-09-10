@@ -92,11 +92,14 @@ export { ReplayPlayback } from './replay/playback.ts';
 export { ReplayRecorder, type RecordingStart } from './replay/recorder.ts';
 export {
   GLOBAL_PLAYER_SETTINGS,
+  applySessionSettings,
   applySimSettings,
   captureSessionSettings,
   captureSimSettings,
+  releaseSessionSettings,
   releaseSimSettings,
 } from './replay/settings.ts';
+export { emptyRow, sampleInput, writeRowAim, writeRowPose, writeRowWheel, type TicRow } from './replay/row.ts';
 
 /** The fields a row lets the player edit in place. */
 export type ReplayDescription = Partial<Pick<ReplayMeta, 'name' | 'description' | 'player'>>;
@@ -109,6 +112,16 @@ const PLAYER_NAME_STORAGE_KEY = 'playerName';
  * persisted setting — docs/menu.md § Persisted settings.
  */
 let playerName = readStorage(PLAYER_NAME_STORAGE_KEY, '');
+
+/** The name a recording is credited to, and the one a network game's lobby shows for this player. */
+export function getPlayerName(): string {
+  return playerName;
+}
+
+/** The multiplayer tab's name field: the same name, entered there instead. */
+export function setPlayerName(name: string): void {
+  rememberPlayerName(name.trim());
+}
 
 /** Replays keep their own database beside the saves' — docs/replays.md § Storage. */
 let backend: SaveStoreBackend | null = null;

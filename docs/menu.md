@@ -3,11 +3,11 @@
 `src/ui/menu/menu.ts`, `src/ui/menu/labels.ts`, `src/ui/menu/about.ts`, `src/ui/menu/welcome.ts`,
 `src/ui/menu/overlay.ts`, `src/ui/menu/hold.ts`, plus the `.html` and `.css` beside each
 
-The menu as launcher and pause screen, its overlays, and every persisted setting. Three docs carry
+The menu as launcher and pause screen, its overlays, and every persisted setting. Four docs carry
 the rest: the WAD Library and what a WAD set is composed of are docs/menu-wads.md, the Save, Load
-and Replays tabs docs/menu-saves.md, and what `main.ts` does around the whole thing — boot, level
-starts, the loading screen — docs/session.md. The two overlays the Settings tab switches on are
-docs/devmode.md.
+and Replays tabs docs/menu-saves.md, the Multiplayer tab docs/multiplayer-net.md § The Multiplayer
+tab, and what `main.ts` does around the whole thing — boot, level starts, the loading screen —
+docs/session.md. The two overlays the Settings tab switches on are docs/devmode.md.
 
 The menu is plain DOM: every element is static markup in `src/ui/menu/menu.html` (pulled into the
 page by `index.html`'s `@include` list — docs/styles.md § Assembling the page), looked up by ID in
@@ -372,7 +372,8 @@ a setting touches one module.
 | `infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
 | `pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
 | `autoSwitchWeapon` | `game/inventory.ts` (`getAutoSwitchWeapon`/`setAutoSwitchWeapon`) | docs/weapons.md § Automatic weapon switching |
-| `playerName` | `game/replay.ts` (written by `describeReplay`, no setter) | docs/replays.md § Recording |
+| `playerName` | `game/replay.ts` (written by `describeReplay` and the Multiplayer tab's `setPlayerName`) | docs/replays.md § Recording |
+| `relayUrl` | `ui/menu/multiplayer.ts` | docs/multiplayer-net.md § The Multiplayer tab |
 | `skill` | `ui/menu/menu.ts` | § Difficulty above |
 | `showWelcome` | `ui/menu/welcome.ts` | § Welcome popup above |
 | `selection` | `ui/menu/menu.ts` | § Remembered selection below |

@@ -31,6 +31,7 @@ Node runs **one process per test file**, which is what contains `player.ts`'s mo
 ```
 tests/
   util/  wad/  game/  ui/  render/  audio/   one file per subject: a src/ module, or one behavior of it
+  server/                the relay's room logic (server/rooms.ts), the one thing outside src/
   regression/            one file per fixed bug, named after the bug
   fixtures/              builders and test data, never tests
   docs/                  the tree-wide guards: doc pointers, WAD fixtures, layer splits
@@ -283,6 +284,19 @@ and `recordingStart()`.
 
 `tests/fixtures/files.ts`'s `filesUnder(dir, keep?)` is the recursive file walker the tree-wide
 guards in `tests/docs/` and `markup.test.ts` share.
+
+## The network fixture
+
+`tests/fixtures/net.ts` is the network with no sockets: a `Hub` over the relay's own `createRooms`
+(`server/rooms.ts`), `LoopbackTransport`s whose sends go through its `receive` — the dispatch
+`relay.ts` runs — with every delivery queued on the hub, and `hub.flush()` delivering
+everything queued — and everything that delivering it queues — so a test states where the messages
+stand between two steps. `hostSession`/`joinSession` build a `NetSession` each over hooks that
+record what they were asked (`HookLog`), on a clock the test moves by hand (`clock.now`), so a
+stall notice and a drop timeout are stated rather than waited for. `tests/game/net-session.test.ts`
+runs two and three sessions through it tic by tic the way `Game.frame` does — readiness, the local
+row, the tic, the cursor, then delivery. It is a rig: the room logic and the session are the
+production ones. docs/multiplayer-net.md.
 
 `tests/fixtures/storage.ts` holds `fakeStorage()` (a `Storage` over a `Map`, exposed as `.map`) and
 `installStorage(value)`, which puts one over the global — `null` for a browser with none. Node has

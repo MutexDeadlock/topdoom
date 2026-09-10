@@ -5,8 +5,8 @@
 `src/game/replay/row.ts`
 
 The engine runs every player as a **slot**, 1 to `MAX_PLAYERS` of them. What a netgame changes —
-starts, target choice, respawn, the item rules, the shared fog — is docs/multiplayer-coop.md; the
-network builds on the same shape, and documents itself here when it lands.
+starts, target choice, respawn, the item rules, the shared fog — is docs/multiplayer-coop.md; how
+browsers run one together — the relay, lockstep, snapshots — is docs/multiplayer-net.md.
 
 ## Player slots
 
@@ -24,7 +24,8 @@ and keys), `replay` (every slot's recorder or playback).
 **`source` says what drives a slot's input.** `'live'`: the keyboard — its camera turns on its own
 keys and its auto camera ticks. `'replay'`: posed from the record each tic, the camera left alone.
 `'idle'`: `IDLE_TIC_INPUT`, a slot nobody drives — every slot but the local one under `?coop=`.
-`'row'` is named for the network; nothing produces it yet.
+`'row'`: a network game's row for the tic, the local slot's included — its camera is posed from the
+row like a replay's, and the drawn one is driven apart (docs/multiplayer-net.md § What a tic does).
 
 **Saves and replays hold every slot.** `captureSave` writes `GameSnapshot.players`, one
 `PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`);
@@ -87,9 +88,9 @@ game, and every slot reads the one module value.
 `Game.tic` keeps the single-player order (docs/frameloop.md § What runs in a tic) and loops the
 slots where a step was per player.
 
-1. `local.input` is read — `setReplay` points every slot's `input` at `replay.input(slot)`, or at the
-   keyboard for the local slot and `IDLE_TIC_INPUT` for the rest, and sets `source` with it; the
-   popup branch reads the local one alone.
+1. `local.input` is read — `setReplay` points every slot's `input` at `replay.input(slot)`, or at
+   the network's rows, or at the keyboard for the local slot and `IDLE_TIC_INPUT` for the rest, and
+   sets `source` with it; the popup's continue key is any slot's.
 2. Per slot: a living slot's cheat buffer, `player.noclip`, `player.autorun`, `weapons.autoSwitch`.
 3. Hotkeys and the audio listener — local only.
 4. Per live slot: `simCamera.applyYawInput`.

@@ -39,6 +39,8 @@ src/ui/menu/
     savegames.css     the save/load lists inside #menu's tab panels, and what the Replays tab
                       shares with them: .row-actions, .warning/.caution
     replays.css       #menu's Replays panel: the record button, the list and the detail panel
+    multiplayer.*     #tab-multiplayer, the Multiplayer tab panel inside #menu's tab stack
+                      (docs/multiplayer-net.md § The Multiplayer tab)
     library.css       #wadlibrary, the WAD Library overlay inside #menu
     wadinfo.*         #wadinfo, the popup reading the .txt beside a WAD, over both WAD lists
                       (docs/menu-wads.md § The text file popup)
@@ -62,7 +64,7 @@ rules it sits alongside; the two set disjoint properties, so the order is for re
 
 `hold.ts` also wraps a held button's content in a `.label` span, so **a panel-wide rule on a generic
 class name reaches inside every button in that panel**. Name the owners instead:
-`#menu .replay-detail .field .label, #menu .replay-detail .facts .label` and not
+`#menu .replay-detail .field .label` and `#menu .fact-grid .label`, not
 `#menu .replay-detail .label`, which shrank the delete button's glyph to the caption size and its
 box with it.
 

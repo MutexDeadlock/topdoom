@@ -1,0 +1,163 @@
+/*
+ * The Multiplayer tab panel (ui/menu/multiplayer.ts): the relay/name form and the host/join row,
+ * then the room — code, facts, the peer list and the controls. The list is the save lists' `.row`
+ * shape, the facts block and the name chips menu.css's shared `.fact-grid` and `.mark`.
+ */
+
+/* A form row: fields and buttons side by side, each field labelled above its input. */
+#menu .net-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+#menu .net-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* The code is five letters; the field stays that wide and the buttons take the rest. */
+#menu .net-field.code {
+  flex: none;
+  width: 9ch;
+}
+
+#menu .net-field .label,
+#menu .net-controls .label {
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#menu .net-field input {
+  font: inherit;
+  color: var(--fg);
+  background: var(--inset-bg);
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  min-width: 0;
+}
+
+#menu .net-field.code input {
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+#menu .net-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* The form's buttons keep their own width beside the fields — not `.ghost`'s full-width kind. */
+#menu .net-form button {
+  flex: none;
+  margin: 0;
+  padding: 8px 16px;
+  white-space: nowrap;
+}
+
+#menu .net-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+#menu .net-head h2 {
+  margin: 0;
+}
+
+/* The code is what a host reads out: large, spaced, in the panel's own colour. */
+#menu #net-room-code {
+  color: var(--fg);
+  font-size: 18px;
+  letter-spacing: 5px;
+  margin-left: 8px;
+  text-transform: none;
+}
+
+#menu #net-facts {
+  margin-bottom: 10px;
+}
+
+/* The list asks for a few rows and no more: the tab pays the menu's shared height like every other. */
+#menu .net-peers {
+  max-height: 150px;
+  margin-bottom: 10px;
+}
+
+#menu .net-peers .row {
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: default;
+}
+
+#menu .net-peers .row:hover {
+  background: transparent;
+}
+
+#menu .net-peers .row .name {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg);
+}
+
+#menu .net-peers .row .state {
+  flex: none;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+#menu .net-peers .row .state.ready {
+  color: var(--fg-muted);
+}
+
+/* A refusal wraps rather than ellipsizing: it says what to do about it. */
+#menu .net-peers .row .state .warning {
+  font-size: 12px;
+  white-space: normal;
+}
+
+#menu .net-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#menu #net-delay-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#menu #net-delay-row select {
+  width: auto;
+  padding: 6px 8px;
+}
+
+#menu .net-controls button {
+  width: auto;
+  margin: 0;
+  padding: 8px 16px;
+  white-space: nowrap;
+}
+
+/* Leave sits apart from Start, on the far side of the row. */
+#menu #net-leave {
+  margin-left: auto;
+}
+
+#menu #net-room-hint,
+#menu #net-connect-hint {
+  display: block;
+  margin-top: 8px;
+  min-height: 1.2em;
+}

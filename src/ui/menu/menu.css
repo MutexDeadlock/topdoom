@@ -370,6 +370,48 @@
 }
 
 /*
+ * A quiet chip beside a name (`markChip`, actions.ts) — a stock replay's `included`, a room's
+ * `host` and `you`. Not the accent `.badge` above: it says where something came from or who it is,
+ * which is worth noticing and never worth interrupting for.
+ */
+#menu .mark {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+  padding: 0 4px;
+}
+
+/*
+ * A panel's read-only label/value block (`fillFacts`, actions.ts): a two-column grid so every value
+ * starts at the same x, the label column sized by its widest word rather than by a guess. Not
+ * `.facts`: the About popup's `dl.facts` (about.css) is another shape, inside `#menu` too.
+ */
+#menu .fact-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+#menu .fact-grid .label {
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#menu .fact-grid .value {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
  * The add-on rows carry the same three detail columns the WAD Library lists (docs/menu-wads.md §
  * WAD Library), fixed-width and right-aligned so they line up down the list. Narrower than the
  * overlay's, because this panel is capped at a fixed width against its 60%-of-viewport. Scoped to

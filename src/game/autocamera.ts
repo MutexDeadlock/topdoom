@@ -30,7 +30,7 @@ export interface AutoCameraSnapshot {
 }
 
 const CAMERA_MODE_STORAGE_KEY = 'cameraMode';
-const CAMERA_MODES: readonly CameraMode[] = ['auto', 'manual'];
+export const CAMERA_MODES: readonly CameraMode[] = ['auto', 'manual'];
 
 /** The camera mode, shaped like every persisted setting — docs/menu.md § Persisted settings. */
 let cameraMode: CameraMode = readStoredCameraMode();

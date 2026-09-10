@@ -34,6 +34,12 @@ export interface LoadedDehacked extends DehPatch {
   stringSources: ReadonlyMap<string, WadFile>;
 }
 
+/** The files `readDehacked` merges a lump from, in load order, or null if none has one. */
+export function dehackedSources(wad: Wad): WadFile[] | null {
+  const lumps = wad.findAll(DEHACKED_LUMP);
+  return lumps.length === 0 ? null : lumps.map((lump) => lump.source);
+}
+
 /**
  * Every `DEHACKED` lump in the set, parsed in load order and merged, or null if the set has none.
  *

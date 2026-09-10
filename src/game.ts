@@ -26,7 +26,7 @@ import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import { PlayerSkins } from './render/playerskin.ts';
 import type { LoadingScreen } from './ui/loading.ts';
 import type { Viewport } from './render/viewport.ts';
-import { latticeYaw, TopDownCamera } from './render/camera.ts';
+import { headingYawDeg, latticeYaw, TopDownCamera } from './render/camera.ts';
 import {
   bodiesOverlap,
   buildThingSprites,
@@ -117,25 +117,29 @@ import {
   type PlayerSlotSnapshot,
   type SectorSnapshot,
 } from './game/snapshot.ts';
-import {
-  wadSetRefusal,
-  type CheckpointStore,
-  type SaveCapture,
-  type SaveGame,
-} from './game/savegames.ts';
+import { wadSetOf, wadSetRefusal, type CheckpointStore, type SaveCapture, type SaveGame } from './game/savegames.ts';
 import {
   GLOBAL_PLAYER_SETTINGS,
   ReplayPlayback,
   ReplayRecorder,
+  applySessionSettings,
   applySimSettings,
   captureSessionSettings,
+  emptyRow,
   quantizePose,
+  releaseSessionSettings,
   releaseSimSettings,
+  sampleInput,
+  writeRowAim,
+  writeRowPose,
+  writeRowWheel,
   // Ours, not the DOM's animation type of the same name — game.ts sees both.
   type Keyframe,
   type Replay,
   type ReplayCapture,
+  type TicRow,
 } from './game/replay.ts';
+import type { NetCapture, NetRestore, NetSession, SlotAssignment } from './game/net.ts';
 import { playerDamageAtSkill, type Skill } from './game/skill.ts';
 import {
   applyDamage,
@@ -153,7 +157,7 @@ import {
 import { warpTargets } from './game/cheats.ts';
 import { gameModeOf, type GameMode } from './wad/campaign/gamemode.ts';
 import { ThingType } from './game/things/doomednums.ts';
-import { WEAPONS } from './game/weapons.ts';
+import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
 import { playerOrigin } from './audio/sfx.ts';
 import { PlayerSlot } from './game/playerslot.ts';
@@ -301,6 +305,12 @@ export interface GameOptions {
    * win over it. docs/multiplayer-coop.md.
    */
   coop?: number | null;
+  /**
+   * The network game this level is one seat of: every slot's input comes from its rows, the local
+   * slot's is sampled and sent ahead, and the session says which slot this browser plays. A
+   * joiner's `restore` is the host's snapshot. docs/multiplayer-net.md § What a tic does.
+   */
+  net?: NetSession | null;
 }
 
 /** One loaded WAD set, playing one level at a time. */
@@ -350,7 +360,26 @@ export class Game {
    */
   private slots: PlayerSlot[] = [];
   /** Which slot this browser plays and draws for: the HUD, the audio listener, the view camera. */
-  private readonly localSlot = 0;
+  private readonly localSlot: number;
+  /**
+   * The network game this level runs in, or null. While set, every slot reads its rows and the
+   * local slot's simulation camera is separate from the drawn one, as under a playback. Null again
+   * once the session ends — the level plays on alone. docs/multiplayer-net.md § What a tic does.
+   */
+  private net: NetSession | null;
+  /** The local slot's row being sampled for `net`, reused per tic. */
+  private netRow: TicRow = emptyRow();
+  /** Where the live pointer aimed this tic, for the drawn camera's lead under `net`. */
+  private liveAim: Pos2 | null = null;
+  /**
+   * The menu is up over a network game, which runs on: the local rows are idle ones meanwhile.
+   * docs/multiplayer-net.md § What a tic does.
+   */
+  private menuUp = false;
+  /** When the stall notice was last drawn, so a held frame redraws it about once a second. */
+  private stallNoticeAt = 0;
+  /** `captureState` as `NetSession.pendingRestore` asks for it — bound once, asked every frame. */
+  private readonly captureNet = (joining: SlotAssignment | null): NetCapture | null => this.captureState(joining);
   /** `slots` as the thing layer reads them, `null` where dead — refilled per tic, never reallocated. */
   private players: (Pos3 | null)[] = [];
   /** Every slot's body, the dead included, as the fog sweeps from them — refilled like `players`. */
@@ -613,8 +642,11 @@ export class Game {
       playback = null,
       autoSave = null,
       coop = null,
+      net = null,
     } = options;
     this.view = view;
+    this.net = net;
+    this.localSlot = net ? net.slot : 0;
     this.audio = audio;
     this.wad = wad;
     this.title = title;
@@ -631,7 +663,7 @@ export class Game {
     // `recordCompletion`'s separate question.
     this.cheated = restore ? restore.cheated : startPos !== null;
     // The snapshot's own when restoring, for the same reason: its thing ids were counted under it.
-    this.netgame = restore ? restore.netgame : coop !== null;
+    this.netgame = restore ? restore.netgame : coop !== null || net !== null;
     // Primed here, where a one-off scan of each file's bytes disappears into a load that is about
     // to build every mesh in the level, so the exit frame only ever hits the memo.
     for (const file of wad.files) wadId(file);
@@ -713,8 +745,8 @@ export class Game {
     // `Initial Health`/`Initial Bullets` off `LIMITS` (docs/dehacked.md § Applying: reset, then
     // patch), and after the sprite banks, which its billboard is built on.
     // A restore brings its own slots, however the session was asked to start.
-    const slotCount = restore ? restore.players.length : Math.min(Math.max(coop ?? 1, 1), MAX_PLAYERS);
-    for (let index = 0; index < slotCount; index++) this.slots.push(this.buildSlot(index));
+    const wanted = net ? net.slotCount : Math.min(Math.max(coop ?? 1, 1), MAX_PLAYERS);
+    this.growSlots(restore ? restore.players.length : wanted);
     this.setReplay(null);
     // The vile-flame resolver is `monsterAttacks`', not the batch's — where the
     // flame belongs depends on live monster/player state. Both callbacks are
@@ -761,11 +793,12 @@ export class Game {
     // The local player's own eyes: the tints are theirs.
     this.screenEffects = new ScreenEffects(view.renderer);
 
-    const wanted = this.mapNames.indexOf(startMap.toUpperCase());
+    const start = this.mapNames.indexOf(startMap.toUpperCase());
     // The first-map fallback is fine for a fresh start, but a restore's things
     // and sectors only make sense on the exact map they were saved on.
-    if (restore && wanted < 0) throw new Error(`the selected WADs have no map ${startMap.toUpperCase()}`);
-    this.loadMapByIndex(wanted >= 0 ? wanted : 0, restore);
+    if (restore && start < 0) throw new Error(`the selected WADs have no map ${startMap.toUpperCase()}`);
+    this.loadMapByIndex(start >= 0 ? start : 0, restore);
+    if (net) this.bindNet(net);
     // After the load, which snapped the camera the way a save restore does: the recording's camera
     // was mid-glide, and its settings are the run's. docs/replays.md § Camera state.
     if (playback) {
@@ -806,11 +839,56 @@ export class Game {
    */
   private setReplay(replay: ReplayRecorder | ReplayPlayback | null): void {
     this.replay = replay;
+    const net = this.net;
     for (const slot of this.slots) {
       const local = slot === this.local;
-      slot.input = replay ? replay.input(slot.index) : local ? this.view.input : IDLE_TIC_INPUT;
-      slot.source = replay instanceof ReplayPlayback ? 'replay' : local ? 'live' : 'idle';
+      // A recorder wraps whatever the slot read before it — the network's rows included.
+      const own = net ? net.input(slot.index) : local ? this.view.input : IDLE_TIC_INPUT;
+      slot.input = replay ? replay.input(slot.index) : own;
+      slot.source = replay instanceof ReplayPlayback ? 'replay' : net ? 'row' : local ? 'live' : 'idle';
     }
+  }
+
+  /**
+   * Puts the session in charge of every slot: its rows as their input, its settings as theirs, and
+   * the local slot's simulation camera cut loose from the drawn one, which the live keys keep
+   * driving. A level load and a snapshot restore both come back through here.
+   * docs/multiplayer-net.md § What a tic does.
+   */
+  private bindNet(net: NetSession): void {
+    const local = this.local;
+    if (local.simCamera === this.view.camera) {
+      local.simCamera = new TopDownCamera(this.view.camera.camera.aspect);
+      local.simCamera.copyFrom(this.view.camera);
+    }
+    for (const slot of this.slots) slot.settings = net.settingsOf(slot.index) ?? slot.settings;
+    applySessionSettings(net.session);
+    this.setReplay(this.replay);
+    net.attach();
+  }
+
+  /**
+   * The session is over: the level plays on alone, the local slot back on the keyboard and the
+   * viewport's camera, every other slot standing idle. docs/multiplayer-net.md § Leaving.
+   */
+  private unbindNet(reason: string | null): void {
+    const local = this.local;
+    this.net = null;
+    this.menuUp = false;
+    releaseSessionSettings();
+    local.simCamera = this.view.camera;
+    local.autoCamera.seed(local.player, local.simCamera);
+    local.settings = GLOBAL_PLAYER_SETTINGS;
+    this.setReplay(this.replay);
+    if (reason) this.message.show(reason);
+  }
+
+  /**
+   * As many slots as `count`, built in order — the constructor's, and a snapshot's that holds a
+   * player this level did not: a joiner. A slot is never removed.
+   */
+  private growSlots(count: number): void {
+    while (this.slots.length < count) this.slots.push(this.buildSlot(this.slots.length));
   }
 
   /**
@@ -840,8 +918,8 @@ export class Game {
   /**
    * One player slot, its billboard in the scene. The local one runs on the viewport's own camera
    * under the menu's settings; any other on a camera of its own, under a copy of them. What drives
-   * its input is `setReplay`'s to say. Only the constructor calls it, once per player; a level
-   * load rebuilds what is per-level inside.
+   * its input is `setReplay`'s to say. Only `growSlots` calls it, once per player; a level load
+   * rebuilds what is per-level inside.
    */
   private buildSlot(index: number): PlayerSlot {
     // PLAY's own walk cycle: DOOM has no separate idle art, it just holds
@@ -1133,6 +1211,13 @@ export class Game {
   }
 
   resume(): void {
+    // A network game never stopped: the menu was up over it (`pause`), and closes again here.
+    if (this.net && this.menuUp) {
+      this.menuUp = false;
+      this.view.input.reset();
+      this.replayBar.setKeysActive(true);
+      return;
+    }
     if (this.running) return;
     // The bar's `Space` is the viewer's again, now that the menu is not reading keys.
     this.replayBar.setKeysActive(true);
@@ -1151,6 +1236,14 @@ export class Game {
   }
 
   pause(): void {
+    // The other players are not waiting: the level runs on behind the menu, this slot's rows idle
+    // meanwhile. docs/multiplayer-net.md § What a tic does.
+    if (this.net && this.running) {
+      this.menuUp = true;
+      this.view.input.reset();
+      this.replayBar.setKeysActive(false);
+      return;
+    }
     if (this.paused) return; // a second call would leave two `stillFrame` loops running
     this.replayBar.setKeysActive(false);
     this.stop();
@@ -1255,16 +1348,45 @@ export class Game {
     const { thumbnail = true } = options;
     const refusal = this.saveRefusal();
     if (refusal) throw new Error(refusal);
+    return this.captureMoment(thumbnail);
+  }
+
+  /**
+   * The level for a network sync — the host's snapshot everyone restores, with a fresh body for
+   * `joining` where one is joining — or null on a moment no snapshot can carry: the popups and a
+   * pending exit, which `blockedMoment` refuses a save over too. A corpse is not one of them: a
+   * dead slot restores as one. docs/multiplayer-net.md § Snapshots.
+   */
+  private captureState(joining: SlotAssignment | null): NetCapture | null {
+    if (this.popup !== null || this.pendingExit !== null) return null;
+    const { state } = this.captureMoment(false);
+    if (joining) state.players[joining.slot] = this.freshSlotSnapshot(joining.slot);
+    return { map: this.currentMap, state };
+  }
+
+  /**
+   * A player entering a running level, as a snapshot holds one: a fresh body at `G_DoReborn`'s spot
+   * with a fresh inventory, facing the spot's way. docs/multiplayer-net.md § Joining a game.
+   */
+  private freshSlotSnapshot(index: number): PlayerSlotSnapshot {
+    const spot = this.rebornSpotFor(index);
+    const inventory = createInventory();
+    const weapons = new WeaponSystem(playerOrigin(index));
+    weapons.beginLevel(inventory);
     return {
-      map: this.currentMap,
+      player: new Player(this.world, spot).snapshot(),
+      inventory: serializeInventory(inventory),
+      weapons: weapons.snapshot(),
+      cameraYawDeg: latticeYaw(headingYawDeg(spot.angle)),
+      dead: false,
+    };
+  }
+
+  /** `captureSave`'s body, refusing nothing: what every capture is made of. */
+  private captureMoment(thumbnail: boolean): SaveCapture {
+    return {
+      ...wadSetOf(this.wad, this.currentMap, this.dehacked?.sources ?? null),
       skill: this.skill,
-      wads: wadSetId(this.wad),
-      // A level is running, so the map has a provider; `''` would only mean the
-      // save asks for its whole set back, which is the safe way to be wrong.
-      mapWad: mapProvider(this.wad, this.currentMap)?.id ?? '',
-      // Only when a patch was actually applied: an empty list would read the same as absent, and
-      // absent is what an unpatched save means. docs/dehacked.md § Savegames and patched tables.
-      ...(this.dehacked ? { patchWads: this.dehacked.sources.map((f) => wadId(f)) } : {}),
       levelTime: this.levelTime,
       // The checkpoint passes `false`: it is never listed, so nothing would ever
       // draw its thumbnail, and taking one costs a full extra render.
@@ -1349,6 +1471,8 @@ export class Game {
     clearRandom();
     // A slow load is not simulation time, same as a pause — see `resume`.
     this.accumulator = 0;
+    // A snapshot holding a player this level has no slot for yet: a joiner's, over the network.
+    if (restore) this.growSlots(restore.players.length);
     for (const slot of this.slots) finishLevel(slot.inventory);
     // Whatever was still ringing belongs to the level being torn down — a door
     // closing, a monster's death cry — and its origins are about to be reused.
@@ -1811,8 +1935,7 @@ export class Game {
    * the body stood back up there. The level runs on untouched. docs/multiplayer-coop.md § Respawn.
    */
   private respawnSlot(slot: PlayerSlot): void {
-    const own = levelStartFor(this.starts, slot.index, []);
-    const spot = rebornSpot(this.starts, own, (at) => this.spotBlocked(at));
+    const spot = this.rebornSpotFor(slot.index);
     slot.inventory = createInventory();
     slot.cheats.reborn();
     slot.player.respawnAt(spot);
@@ -1830,6 +1953,11 @@ export class Game {
       this.deathOverlay.clear();
       this.screenEffects.clearPain();
     }
+  }
+
+  /** Where slot `index` is reborn: `G_DoReborn`'s pick, its own start first. */
+  private rebornSpotFor(index: number): Placement {
+    return rebornSpot(this.starts, levelStartFor(this.starts, index, []), (at) => this.spotBlocked(at));
   }
 
   /**
@@ -2134,6 +2262,30 @@ export class Game {
   }
 
   /**
+   * The host's snapshot, in place of whatever this browser had run to: a resync, or a joiner's
+   * arrival — which adds a slot, and ends a recording, whose record has no room for one.
+   * docs/multiplayer-net.md § Snapshots.
+   */
+  private applyNetRestore(net: NetSession, restore: NetRestore): void {
+    const index = this.mapNames.indexOf(restore.map);
+    if (index < 0) {
+      this.unbindNet(`the host is on ${restore.map}, which these WADs do not have`);
+      net.leave();
+      return;
+    }
+    if (this.recorder && restore.state.players.length > this.slots.length) {
+      this.finishRecording();
+      this.message.show('recording ended: a player joined');
+    }
+    this.audio.stopAll();
+    this.recorder?.restore(restore.map, restore.state);
+    this.loadMapByIndex(index, restore.state);
+    this.cheated = restore.state.cheated;
+    net.restoreApplied();
+    this.bindNet(net);
+  }
+
+  /**
    * Applies `apply` to every camera there is: each slot's own, and the viewport's where a
    * playback has separated it from the local slot's. For the discontinuities all must take — a
    * level load — since none may be left gliding in from where the last one was.
@@ -2180,6 +2332,18 @@ export class Game {
    * again, and its sample compared. docs/replays.md § Restore events.
    */
   private beginTic(): void {
+    const net = this.net;
+    if (net) {
+      this.sampleNetRow(net);
+      // The camera is an input here as under a playback: every slot's tic runs at the pose its row
+      // was read at. An idle row poses nothing, and the camera stays where it was.
+      for (const slot of this.slots) {
+        const pose = net.poseAt(slot.index);
+        if (pose) slot.simCamera.setPose(pose);
+      }
+      // Before every tic, as a playback pins its own: the menu's setter writes the same variable.
+      applySessionSettings(net.session);
+    }
     const recorder = this.recorder;
     if (recorder) {
       // Before the tic the anchor is stamped for, and only where the moment allows a capture at
@@ -2224,6 +2388,48 @@ export class Game {
     // After the events, whose reload stands every body up anew.
     this.refillBodies();
     playback.check(this.fogPoints);
+  }
+
+  /**
+   * The local slot's row for `delay` tics ahead, read off the live keyboard and pointer through the
+   * drawn camera — the pose the player is looking through and the point they aim at on it — and
+   * handed to the session with the menu's player settings. An idle row while the menu is up.
+   * Nothing typed travels: cheats stay out of a network game (`ST_Responder`'s `!netgame`).
+   * docs/multiplayer-net.md § What a tic does.
+   */
+  private sampleNetRow(net: NetSession): void {
+    const row = this.netRow;
+    const view = this.view.camera;
+    const live = this.menuUp ? IDLE_TIC_INPUT : this.view.input;
+    sampleInput(live, GLOBAL_PLAYER_SETTINGS.rightMouse, row);
+    writeRowWheel(row, live.consumeWheel());
+    // The aim plane `updateLivingPlayer` will use, off the drawn camera's own follow height.
+    const aim = live.aim(view, view.followHeight - EYE_HEIGHT + AIM_HEIGHT_OFFSET);
+    writeRowAim(row, aim);
+    writeRowPose(row, quantizePose(view.pose()));
+    this.refillBodies();
+    net.beginTic(row, GLOBAL_PLAYER_SETTINGS, this.fogPoints);
+    // A dead player aims nowhere, and the camera has nothing to lead toward.
+    this.liveAim = this.local.dead ? null : aim;
+  }
+
+  /**
+   * The drawn camera's own tic under `net`: the live orbit and framing keys, the auto camera and
+   * the glide toward where the pointer aims — presentation the next row's pose is read from, and
+   * nothing the simulation sees before that row runs. The live edges are spent here, once the
+   * pose and the row have both read them.
+   */
+  private tickViewCamera(): void {
+    const live = this.view.input;
+    const view = this.view.camera;
+    const local = this.local;
+    if (!this.menuUp) {
+      view.applyYawInput(live, DOOM_TIC);
+      handleHotkeys(live, view);
+    }
+    local.autoCamera.tick(local.player, view);
+    view.tick(DOOM_TIC, { x: local.player.x, y: local.player.y, z: local.player.eyeZ }, this.liveAim);
+    live.endTic();
   }
 
   /**
@@ -2281,10 +2487,15 @@ export class Game {
       requestAnimationFrame(this.frame);
       return;
     }
+    // A network game whose session ended plays on alone from here.
+    if (this.net?.phase === 'ended') this.unbindNet(this.net.endReason);
     // A playback banks time at its own speed, and none while paused or spent — the bar's pause
-    // is not the menu's, the frame keeps running (docs/replays.md § Playback).
+    // is not the menu's, the frame keeps running (docs/replays.md § Playback). A network game
+    // banks none while a peer's rows are missing: the wait is not simulation time, so the frame
+    // holds rather than owing tics (docs/multiplayer-net.md § Lockstep).
     const playback = this.playback;
-    const held = playback !== null && (playback.paused || playback.ended);
+    const stalled = this.net !== null && !this.netReady(this.net, now);
+    const held = stalled || (playback !== null && (playback.paused || playback.ended));
     this.accumulator += held ? 0 : rawDt * (playback?.speed ?? 1);
     // A stall (backgrounded tab, a slow map load) must not be paid back as a
     // burst of catch-up tics — drop the debt instead: never take a giant step.
@@ -2294,6 +2505,11 @@ export class Game {
     let ran = 0;
     while (this.accumulator >= DOOM_TIC && ran < MAX_TICS_PER_FRAME) {
       if (playback && !playback.hasTic) {
+        this.accumulator = 0;
+        break;
+      }
+      // The second and later tics of a frame ask again: each spends a row.
+      if (this.net && ran > 0 && !this.netReady(this.net, now)) {
         this.accumulator = 0;
         break;
       }
@@ -2311,6 +2527,14 @@ export class Game {
     }
     // A playback that ran no tic — paused, or spent — still lets the viewer look around.
     if (held) this.syncViewCamera(DOOM_TIC);
+    // A held network frame keeps saying who it is waiting for.
+    if (stalled && this.net && now - this.stallNoticeAt > 1000) {
+      const notice = this.net.stallNotice();
+      if (notice) {
+        this.message.show(notice);
+        this.stallNoticeAt = now;
+      }
+    }
 
     // A frozen simulation is drawn at the tic-exact pose, not at the leftover
     // accumulator: with no further tic coming, the last two tics stay apart
@@ -2320,6 +2544,24 @@ export class Game {
     this.draw(still ? 1 : this.accumulator / DOOM_TIC, rawDt, still);
     requestAnimationFrame(this.frame);
   };
+
+  /**
+   * Whether the network game may run the tic about to run: every row in, and no snapshot due on
+   * it still on its way. A sync landing here is carried out first — the host captures and sends,
+   * everyone restores — and then the tic runs from the restored level.
+   * docs/multiplayer-net.md § Snapshots.
+   */
+  private netReady(net: NetSession, now: number): boolean {
+    const restore = net.pendingRestore(this.captureNet);
+    if (restore === 'wait') return false;
+    if (restore !== null) {
+      this.applyNetRestore(net, restore);
+      // The load was real time, not simulation time.
+      this.lastTime = now;
+      if (this.net === null) return true;
+    }
+    return net.readyForTic();
+  }
 
   /**
    * One fixed `DOOM_TIC` step of the whole simulation, and the only place
@@ -2341,7 +2583,8 @@ export class Game {
     // the popup in the same press.
     if (this.popup) {
       this.intermissionTime += DOOM_TIC;
-      const go = input.pressed('Space') || input.pressed('Enter');
+      // Any slot's press: over the network every browser sees every row, so this is one answer.
+      const go = this.slots.some((slot) => slot.input.pressed('Space') || slot.input.pressed('Enter'));
       this.endTicInputs();
       if (this.intermissionTime < INTERMISSION_INPUT_DELAY || !go) return false;
       // The campaign's last exit shows the card *after* the level's own stats, so the intermission
@@ -2375,12 +2618,13 @@ export class Game {
       slot.player.autorun = slot.settings.autorun;
       slot.weapons.autoSwitch = slot.settings.autoSwitchWeapon;
     }
-    handleHotkeys(input, local.simCamera);
+    // Under `net` the framing keys act on the drawn camera, in `tickViewCamera`.
+    if (!this.net) handleHotkeys(input, local.simCamera);
     // Set before any system runs, since specials/monsters/weapons all raise
     // sounds during the update below. The camera's yaw is last tic's (it
     // settles in `camera.tick`, at the end) — a tic of smoothing lag on the
-    // pan axis, which is inaudible.
-    this.audio.setListener(local.player, local.simCamera.viewerAngleDeg + 180);
+    // pan axis, which is inaudible. The drawn camera's: the one the player is looking through.
+    this.audio.setListener(local.player, this.view.camera.viewerAngleDeg + 180);
     // A live slot's camera turns on its own keys; a replay's is posed from the record
     // (`beginTic`) and left alone here.
     for (const slot of this.slots) {
@@ -2496,6 +2740,7 @@ export class Game {
       }
     }
     if (anyPlayerAlive(this.slots)) this.levelTime += DOOM_TIC;
+    if (this.net) this.tickViewCamera();
 
     this.refillBodies();
     this.profiler.time('Fog of War', () => this.fogOfWar.tick(this.fogPoints));
@@ -2524,6 +2769,7 @@ export class Game {
   private endTicInputs(): void {
     for (const slot of this.slots) slot.input.endTic();
     this.playback?.endTic();
+    this.net?.endTic();
   }
 
   /**

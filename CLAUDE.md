@@ -26,16 +26,15 @@ node scripts/inspect-wad.ts public/game/iwad/DOOM.WAD E1M1
 node scripts/inspect-wad.ts public/game/iwad/DOOM2.WAD MAP05 public/game/pwad/SCYTHE.WAD
 ```
 
-Runs under Node's native TS support, no browser: lump/map counts and provenance, each file's
-support verdict, the map and node formats, missing textures, degenerate subsector polygons, whether
-the player start is walkable, and the two coverage reports — every linedef/sector special classified
-known/no-op/unknown (the Boom-compat acceptance gate), every DEHACKED record
-applied/no-target/unsupported. Run it after any WAD-parsing, texture-merging or BSP change, and to
-reproduce a bug against a specific real-world WAD.
+Headless: lump/map counts and provenance, each file's support verdict, the map and node formats,
+missing textures, degenerate subsector polygons, whether the player start is walkable, and the two
+coverage reports — every linedef/sector special known/no-op/unknown (the Boom-compat acceptance
+gate), every DEHACKED record applied/no-target/unsupported. Run it after any WAD-parsing,
+texture-merging or BSP change.
 
-For collision/movement bugs prefer synthetic geometry, where nearby geometry can't muddy the
-result: `tests/fixtures/gridmap.ts` builds a real `DoomMap` from ASCII art. A throwaway script
-is still right for a one-off investigation — those go in the scratchpad, never in `src/`.
+For collision/movement bugs prefer synthetic geometry: `tests/fixtures/gridmap.ts` builds a real
+`DoomMap` from ASCII art. A throwaway script for a one-off investigation goes in the scratchpad,
+never in `src/`.
 
 ## Toolchain constraints
 
@@ -77,7 +76,7 @@ src/game/      spatial queries + collision, player controller, player slots (pla
                splash, damage/death, transient effects (spritefx), voodoo dolls, DEHACKED/BEX
                patches (dehacked), the typed cheat codes (cheats), best times, savegames (the
                snapshot shape, the IndexedDB store), replays (the record, the recorder and playback
-               behind the tic's input, their per-tic row codec, their own store)
+               behind the tic's input, their per-tic row codec, their own store), the network (net)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through, WebAudio
                playback (channels, attenuation, pan, volume), the level's music
 src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens);
@@ -105,6 +104,7 @@ assets/        the sources that WAD is built from: gldefs.txt, secret.ogg, playe
 scripts/       headless inspection of a WAD (inspect-wad.ts), of a savegame file
                (inspect-save.ts) and of a replay (inspect-replay.ts); building assets/
                playerskins.wad (build-playerskins.ts)
+server/        the WebSocket relay a network game runs through — its own package (`npm run relay`)
 ```
 
 ## Subsystem documentation
@@ -140,7 +140,7 @@ and aren't. A row naming a family links its lead doc, which names the siblings.
 | [replays.md](docs/replays.md) | Recording and playing back a run: the `TicInput` seam, the record, restore events, the store, the playback bar |
 | [specials.md](docs/specials.md) → docs/specials-movers.md, -crushers, -teleporters, -lights, -forces, -transfers | Which number means what and who may trigger it, damage floors, secrets; then the movers, the crusher, teleporters, light patterns, scrollers/friction/pushers/dolls, Boom's deep water |
 | [fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
-| [multiplayer.md](docs/multiplayer.md) → docs/multiplayer-coop.md | Player slots, what is per slot and what is level-global, slot addressing in the thing layer, player vs. session settings, what a slot's tic does; coop's netgame rules |
+| [multiplayer.md](docs/multiplayer.md) → docs/multiplayer-coop.md, docs/multiplayer-net.md | Player slots, what is per slot and what is level-global, slot addressing in the thing layer, player vs. session settings, what a slot's tic does; coop's netgame rules; the relay, lockstep, snapshots, the Multiplayer tab |
 | [audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
 | [music.md](docs/music.md) | The OPL chip and `GENMIDI`, MUS/MIDI decoding, which track a level plays, music volume |
 | [testing.md](docs/testing.md) | The runner, the ASCII-grid map fixture, the fixture WADs, the tree-wide guards |

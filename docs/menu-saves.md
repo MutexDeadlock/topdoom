@@ -79,9 +79,10 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 - **What the rows share with the Replays tab lives in `actions.ts`**: the refusal contract every
   store call runs under (`attempt`: anything thrown becomes the status line), the red/amber line
   beside a row (`noteLine`), the heading's filter field (`installFilter`, `matchesFilter`,
-  `emptyLine`), the download and delete icon buttons (`iconButton`) and handing an export file to
-  the browser (`downloadJson`). Each tab keeps only the store call, the noun and which fields its
-  filter looks through.
+  `emptyLine`), a panel's read-only facts (`fillFacts`) and the chip beside a name (`markChip`) —
+  both shared with the Multiplayer tab — the download and delete icon buttons (`iconButton`) and
+  handing an export file to the browser (`downloadJson`). Each tab keeps only the store call, the
+  noun and which fields its filter looks through.
 - **Each list has a filter beside its heading** (`.list-head` is the flex row, the `<h2>` giving up
   its margin to sit in it — the WAD Library header's shape). A save is matched on its name and its
   level, a replay on name, player, notes and level (§ Replays tab); the comparison is a plain

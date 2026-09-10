@@ -1,8 +1,8 @@
 /**
  * `PlayerSlot`: one player's whole share of a level — body, inventory, weapons, cheats, the camera
  * the simulation reads for them, the input that drives them, and the billboard and shadow they are
- * drawn as. `game.ts` holds one per player, and slot 0 is the local player until the network
- * arrives. docs/multiplayer.md § Player slots.
+ * drawn as. `game.ts` holds one per player; which one is the local player is `Game.localSlot`.
+ * docs/multiplayer.md § Player slots.
  */
 import type { Player } from './player.ts';
 import type { Inventory } from './inventory.ts';
@@ -19,9 +19,8 @@ import type { PlayerSettings } from './replay/defs.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
- * What drives a slot's input: the live `Input`, a replay's record, a network row, or nothing at
- * all (`IDLE_TIC_INPUT`). A network row is named so the rest of the engine can already ask; nothing
- * produces one yet. docs/multiplayer.md § Player slots.
+ * What drives a slot's input: the live `Input`, a replay's record, a network game's row, or
+ * nothing at all (`IDLE_TIC_INPUT`). docs/multiplayer.md § Player slots.
  */
 export type SlotSource = 'live' | 'replay' | 'row' | 'idle';
 

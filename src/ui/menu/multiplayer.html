@@ -1,0 +1,42 @@
+<div class="tab-panel" id="tab-multiplayer">
+  <section id="net-connect">
+    <h2>Play together <span class="hint">through a relay — <code>npm run relay</code> starts one</span></h2>
+    <div class="net-form">
+      <label class="net-field">
+        <span class="label">Relay</span>
+        <input type="text" id="net-relay" autocomplete="off" spellcheck="false" />
+      </label>
+      <label class="net-field">
+        <span class="label">Your name</span>
+        <input type="text" id="net-name" maxlength="24" placeholder="player" autocomplete="off" spellcheck="false" />
+      </label>
+    </div>
+    <div class="net-form">
+      <button class="primary" id="net-host">Host the New Game tab's level</button>
+      <label class="net-field code">
+        <span class="label">Room code</span>
+        <input type="text" id="net-code" maxlength="5" placeholder="ABCDE" autocomplete="off" spellcheck="false" />
+      </label>
+      <button id="net-join">Join</button>
+    </div>
+    <span class="hint warning" id="net-connect-hint"></span>
+  </section>
+  <section id="net-room" class="hidden">
+    <div class="net-head">
+      <h2>Room <span class="code" id="net-room-code"></span></h2>
+      <span class="hint" id="net-phase"></span>
+    </div>
+    <div class="fact-grid" id="net-facts"></div>
+    <div class="list net-peers" id="net-peers"></div>
+    <div class="net-controls">
+      <label id="net-delay-row">
+        <span class="label">Input delay</span>
+        <select id="net-delay"></select>
+      </label>
+      <button class="ghost" id="net-update">Announce the New Game tab's level</button>
+      <button class="primary" id="net-start">Start</button>
+      <button id="net-leave">Leave</button>
+    </div>
+    <span class="hint warning" id="net-room-hint"></span>
+  </section>
+</div>

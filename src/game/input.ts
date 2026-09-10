@@ -61,7 +61,7 @@ export function usePressed(input: TicInput): boolean {
 export const AIM_QUANTUM = 1 / 64;
 
 const RIGHT_MOUSE_STORAGE_KEY = 'rightMouse';
-const RIGHT_MOUSE_ACTIONS: readonly RightMouseAction[] = ['none', 'previousweapon', 'use'];
+export const RIGHT_MOUSE_ACTIONS: readonly RightMouseAction[] = ['none', 'previousweapon', 'use'];
 
 /**
  * The right button's binding, read by `WeaponSystem` and `SpecialsController`.

@@ -1,0 +1,16 @@
+{
+  "name": "topdoom-relay",
+  "private": true,
+  "description": "The WebSocket relay TopDoom's multiplayer runs through — see docs/multiplayer-net.md",
+  "type": "module",
+  "scripts": {
+    "start": "node relay.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.0"
+  }
+}

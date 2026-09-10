@@ -1,17 +1,12 @@
 v0.19.0 (2026-09-10)
 
+This was supposed to become v0.18.2, but a lot more changes came together 
+plus a replay format break.
+Then I checked what would be required for multiplayer... which would have lead 
+to more replay/save breaks, so... I followed through with it!
+
 Features and improvements
-  - internal: the player is a `PlayerSlot` (docs/multiplayer.md)
-  - local coop simulation, 2–4 players under `?coop=N`, every player but the
-    first standing idle for now: coop starts, multiplayer-only things,
-    respawn on use, shared fog of war, vanilla netgame item and kill rules
-    (docs/multiplayer-coop.md)
-  - monsters pick their target with vanilla's player rotation: a quarter of
-    them miss their first look, and one whose target died must see the
-    player to go after them
-  - a dead player no longer presses switches
-  - savegames and replays from earlier builds no longer load; the shipped
-    GoingDown replay is converted, the NUTS one needs re-recording
+  - initial MULTIPLAYER: Co-op only, so far!
   - replays
     - replay files are about a quarter smaller: the camera and aim columns are
       stored against a linear prediction, the desync samples as rounded columns

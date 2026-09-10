@@ -1,7 +1,8 @@
 /**
- * What the Save, Load and Replays tabs' rows share: the refusal contract every store call runs
- * under, the warning line beside a row, the heading's filter field and the line a list shows in
- * place of rows, the download and delete icon buttons, and handing an export file to the browser.
+ * What the Save, Load, Replays and Multiplayer tabs share: the refusal contract every store call
+ * runs under, the warning line beside a row, the heading's filter field and the line a list shows
+ * in place of rows, a panel's read-only facts and the chip beside a name, the download and delete
+ * icon buttons, and handing an export file to the browser.
  * Pure DOM; each tab keeps what differs — the store call, the noun and which fields the filter
  * looks through.
  * docs/menu-saves.md § Save and Load tabs.
@@ -70,6 +71,33 @@ export function emptyLine(text: string): HTMLDivElement {
   line.className = 'empty';
   line.textContent = text;
   return line;
+}
+
+/**
+ * `facts` as read-only label/value lines in `block`, replacing what it held — menu.css's
+ * `.fact-grid`. A value too long for its line ellipsizes and says itself whole in its tooltip.
+ */
+export function fillFacts(block: HTMLElement, facts: readonly [label: string, value: string][]): void {
+  block.replaceChildren();
+  for (const [label, value] of facts) {
+    const term = document.createElement('span');
+    term.className = 'label';
+    term.textContent = label;
+    const text = document.createElement('span');
+    text.className = 'value';
+    text.textContent = value;
+    text.title = value;
+    block.append(term, text);
+  }
+}
+
+/** A quiet chip beside a name — menu.css's `.mark`: a stock replay's `included`, a room's `host`. */
+export function markChip(text: string, title = ''): HTMLSpanElement {
+  const chip = document.createElement('span');
+  chip.className = 'mark';
+  chip.textContent = text;
+  chip.title = title;
+  return chip;
 }
 
 /**

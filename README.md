@@ -176,6 +176,22 @@ instead of asking the JavaScript engine, which is free to round it differently. 
 differ is the build — a run recorded under older game rules is flagged as such, and the bar reports
 where one actually diverged. See [docs/replays.md](docs/replays.md).
 
+## Multiplayer
+
+Coop for up to four, each in their own browser, through a small relay you run yourself:
+
+```bash
+npm run relay        # ws://localhost:8765; PORT= picks another
+```
+
+On the menu's **Multiplayer** tab the host enters the relay's address and a name, and hosts the
+level picked on the New Game tab; the others enter the five-letter room code and join. Everyone
+needs the same WADs — a row that can't play the set says so in red. The host picks the input delay
+and presses Start. Someone can join a game already running, and a player who leaves stands idle in
+the level. Every browser runs the whole game in lockstep, so a slow or lost connection holds the
+others rather than desyncing them; cheats are off, and no best time is set. See
+[docs/multiplayer-net.md](docs/multiplayer-net.md).
+
 ## Sound and music
 
 Sound comes out of the loaded WAD, so it matches whichever set is in use - an add-on replacing

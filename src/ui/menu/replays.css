@@ -60,25 +60,9 @@
   max-width: 40%;
 }
 
-/*
- * The mark on a replay the engine ships (ui/menu/replays.ts: `stockMark`), in the row and at the
- * head of its panel. A quiet chip rather than the accent `#menu .badge` carries: it says where the
- * file came from, which is worth noticing and never worth interrupting for — the panel's own greyed
- * Play is what shouts, and only when something is wrong.
- */
-#menu .replays .row .stock,
-#menu .replay-detail .stock {
-  flex: none;
-  font-size: 10px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--fg-dim);
-  border: 1px solid var(--border);
-  padding: 0 4px;
-}
-
-/* Beside the field's caption, which is itself uppercase and 11px — hence the gap and nothing else. */
-#menu .replay-detail .field .label .stock {
+/* A stock replay's chip (`stockMark`, menu.css's `.mark`) beside the field's caption, which is itself
+   uppercase and 11px — hence the gap and nothing else. */
+#menu .replay-detail .field .label .mark {
   margin-left: 7px;
 }
 
@@ -157,11 +141,10 @@
   gap: 10px;
 }
 
-/* The two `.label`s this panel owns — a field's caption and a fact's term — named rather than
-   matched panel-wide: `confirmOnHold` wraps a held button's content in a `.label` of its own
-   (hold.css), and shrinking that one takes the delete button's glyph and its box down with it. */
-#menu .replay-detail .field .label,
-#menu .replay-detail .facts .label {
+/* A field's caption, named rather than matched panel-wide: `confirmOnHold` wraps a held button's
+   content in a `.label` of its own (hold.css), and shrinking that one takes the delete button's
+   glyph and its box down with it. A fact's term is menu.css's `.fact-grid .label`. */
+#menu .replay-detail .field .label {
   color: var(--fg-dim);
   font-size: 11px;
   text-transform: uppercase;
@@ -195,25 +178,6 @@
 #menu .replay-detail textarea:focus {
   outline: none;
   border-color: var(--accent);
-}
-
-/*
- * The read-only half: a two-column grid so every value starts at the same x, with the label column
- * sized by its widest word rather than by a guess.
- */
-#menu .replay-detail .facts {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 2px 12px;
-  align-items: baseline;
-  font-size: 12px;
-}
-
-#menu .replay-detail .facts .value {
-  color: var(--fg-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /*

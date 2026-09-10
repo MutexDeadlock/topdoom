@@ -37,6 +37,7 @@ import {
 import { getAutoSwitchWeapon, getPistolStart, setAutoSwitchWeapon, setPistolStart } from '../../game/inventory.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { ReplaysUi, type ReplayHooks } from './replays.ts';
+import { MultiplayerUi, type MultiplayerHooks } from './multiplayer.ts';
 import { isReplayFileName } from '../../game/replay.ts';
 import { readStorage, readStorageObject, writeStorage } from '../../util/storage.ts';
 import {
@@ -72,7 +73,7 @@ export interface MenuDefaults {
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /** The menu's top-level tabs; exported for the F2/F3/F4 hotkeys in `main.ts`. */
-export type MenuTab = 'newgame' | 'save' | 'load' | 'replays' | 'settings';
+export type MenuTab = 'newgame' | 'save' | 'load' | 'replays' | 'multiplayer' | 'settings';
 
 /**
  * What is running behind the menu, as `main.ts` tells `open` and the tabs it. `'replay'` is a level
@@ -144,6 +145,7 @@ export class Menu {
     save: el<HTMLButtonElement>('tab-button-save'),
     load: el<HTMLButtonElement>('tab-button-load'),
     replays: el<HTMLButtonElement>('tab-button-replays'),
+    multiplayer: el<HTMLButtonElement>('tab-button-multiplayer'),
     settings: el<HTMLButtonElement>('tab-button-settings'),
   };
   private tabPanels = {
@@ -151,6 +153,7 @@ export class Menu {
     save: el<HTMLDivElement>('tab-save'),
     load: el<HTMLDivElement>('tab-load'),
     replays: el<HTMLDivElement>('tab-replays'),
+    multiplayer: el<HTMLDivElement>('tab-multiplayer'),
     settings: el<HTMLDivElement>('tab-settings'),
   };
   private activeTab: MenuTab = 'newgame';
@@ -168,6 +171,7 @@ export class Menu {
   };
   private savegames: SavegamesUi;
   private replays: ReplaysUi;
+  private multiplayer: MultiplayerUi;
   private recordToggle = el<HTMLButtonElement>('record-toggle');
   /** Whether the next game starts recording; session-only, so it can't outlive the tab it was set in. */
   private recordArmed = false;
@@ -213,6 +217,7 @@ export class Menu {
     audio: AudioEngine,
     saves: SaveHooks,
     replays: ReplayHooks,
+    multiplayer: MultiplayerHooks,
   ) {
     this.onStart = onStart;
     this.onResume = onResume;
@@ -224,6 +229,11 @@ export class Menu {
     );
     this.replays = new ReplaysUi(
       replays,
+      (text, isError) => this.setStatus(text, isError),
+      (meta) => this.describeSave(meta),
+    );
+    this.multiplayer = new MultiplayerUi(
+      multiplayer,
       (text, isError) => this.setStatus(text, isError),
       (meta) => this.describeSave(meta),
     );
@@ -377,7 +387,29 @@ export class Menu {
     }
     this.savegames.refresh(session);
     this.replays.refresh(session);
+    this.multiplayer.refresh();
     this.refreshButtons();
+  }
+
+  /** The Multiplayer tab redrawn from its session — what the session reports every change through. */
+  refreshMultiplayer(): void {
+    this.multiplayer.refresh();
+  }
+
+  /**
+   * What the New Game tab would start right now, or null while it can't: the set, the level and
+   * the skill — a network game's host announces this to the room (docs/multiplayer-net.md § The
+   * Multiplayer tab). `record` is the tab's toggle, as a start reads it.
+   */
+  currentSelection(): Selection | null {
+    if (!this.selectedIwad || !this.isReady) return null;
+    return {
+      iwad: this.selectedIwad,
+      pwads: this.activePwads(),
+      map: this.levelSelect.value,
+      skill: this.currentSkill(),
+      record: this.recordArmed,
+    };
   }
 
   /**
@@ -559,6 +591,7 @@ export class Menu {
     // A save list is only built while it's the tab on screen — see `SavegamesUi.setVisible`.
     this.savegames.setVisible(tab === 'save' || tab === 'load' ? tab : null);
     this.replays.setVisible(tab === 'replays');
+    this.multiplayer.setVisible(tab === 'multiplayer');
   }
 
   /**
@@ -1337,7 +1370,8 @@ export class Menu {
   }
 
   private startWithSkill(skill: Skill): Promise<void> {
-    if (!this.selectedIwad || !this.isReady) return Promise.resolve();
+    const selection = this.currentSelection();
+    if (!selection) return Promise.resolve();
     // Reached synchronously, before the first `await`, while the click's transient activation is
     // still live: a browser refuses a file-permission prompt raised any later, and the set may
     // include a library file whose folder needs re-granting. The same trick `main.ts` uses for
@@ -1347,16 +1381,12 @@ export class Menu {
     // The level being replaced is disposed part-way through this, so there is
     // nothing to return to until it either resolves or fails.
     this.resumeButton.disabled = true;
-    const iwad = this.selectedIwad;
-    const pwads = this.activePwads();
-    const map = this.levelSelect.value;
-    const record = this.recordArmed;
     return access
       .then((granted) => {
         if (!granted) {
           throw new Error('Permission to read your WAD folder was refused — reopen the WAD Library.');
         }
-        return this.onStart({ iwad, pwads, map, skill, record });
+        return this.onStart({ ...selection, skill });
       })
       .catch((err: Error) => this.setStatus(err.message, true))
       .finally(() => this.refreshButtons());

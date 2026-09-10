@@ -4,8 +4,8 @@
 branches in `src/game/things.ts`, `src/game/inventory.ts` and `src/game.ts`
 
 Coop runs 2–4 slots through one simulation as a **netgame**. Under `?coop=N` (docs/menu.md § URL
-parameters) every slot but the local one stands idle on `IDLE_TIC_INPUT`; the network is what will
-drive them. The slot machinery itself is docs/multiplayer.md.
+parameters) every slot but the local one stands idle on `IDLE_TIC_INPUT`; over the network each is
+another browser's (docs/multiplayer-net.md). The slot machinery itself is docs/multiplayer.md.
 
 ## Netgame
 

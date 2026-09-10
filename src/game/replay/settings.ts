@@ -52,8 +52,22 @@ export function applySimSettings(settings: SimSettings): void {
   overrideAutoSwitchWeapon(settings.autoSwitchWeapon);
   overrideRightMouseAction(settings.rightMouse);
   overrideCameraMode(settings.cameraMode);
+  applySessionSettings(settings);
+}
+
+/**
+ * Pins the session half alone — a network game runs under the host's
+ * (docs/multiplayer-net.md § Settings).
+ */
+export function applySessionSettings(settings: SessionSettings): void {
   overrideInfiniteTallActors(settings.infiniteTallActors);
   overridePistolStart(settings.pistolStart);
+}
+
+/** The session half back on its stored values. */
+export function releaseSessionSettings(): void {
+  overrideInfiniteTallActors(null);
+  overridePistolStart(null);
 }
 
 /** Every owner back on its stored value. */
@@ -62,8 +76,7 @@ export function releaseSimSettings(): void {
   overrideAutoSwitchWeapon(null);
   overrideRightMouseAction(null);
   overrideCameraMode(null);
-  overrideInfiniteTallActors(null);
-  overridePistolStart(null);
+  releaseSessionSettings();
 }
 
 export function samePlayerSettings(a: PlayerSettings, b: PlayerSettings): boolean {

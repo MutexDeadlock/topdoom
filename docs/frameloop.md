@@ -158,6 +158,11 @@ is **not** the menu's — the frame loop keeps running so the bar stays live, an
 the game as it always did. `MAX_TICS_PER_FRAME` bounds what a speed can actually reach on a slow
 frame, so 5× under a 30 fps cap runs at about 4.3×. docs/replays.md § Playback.
 
+A **network game holds the frame** the same way while a peer's row for the next tic is missing, or
+a snapshot it is to restore is still on its way: nothing is banked, so no catch-up burst follows the
+wait (docs/multiplayer-net.md § Lockstep). Its menu does not pause at all — `pause` only marks the
+menu up, and the local rows go out idle meanwhile.
+
 A **seek owns the frame**: `runSeek` banks no time, runs its own tics for up to `SEEK_BUDGET_MS`
 and **draws nothing at all** until the target lands — the frame before the jump stays on screen,
 with only the bar and its marker updated over it. Landing draws at alpha 1, except on a tic that

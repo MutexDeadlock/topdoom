@@ -60,6 +60,11 @@ horizontal momentum — `CRUSH_BLOOD_SPEED`, 15.9 units a tic at the extreme of 
 (`OneShotEffect.motion`, integrated under the same `GRAVITY` a corpse falls at). Without that the
 spray hangs in mid-air at chest height for its whole 24 tics, which is what it looked like before.
 
+**Both draws run even where the set has no `BLUD` sprite to spawn.** Vanilla's `P_SpawnMobj` cannot
+fail, so the four table entries come off whether or not `SpriteFxLayer.spawn` resolved anything —
+drawing them behind the null bail made the loaded WAD's art an input to the simulation and desynced
+a replay played against a set missing the lump. `tests/game/crush-blood.test.ts` pins it.
+
 It **sticks where it lands**, where vanilla goes on sliding it under `FRICTION`: nothing in this
 layer collides with anything, so a sliding splash would slide through the wall it was sprayed
 against. Landing also clears `motion`, so a splash costs its BSP descent only while it is in the

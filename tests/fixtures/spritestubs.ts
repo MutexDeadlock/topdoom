@@ -114,6 +114,8 @@ export function fxLayer(options: {
   fogVisible: FogVisibility;
   lights?: DynamicLights;
   spriteMaterials?: SpriteMaterialCache;
+  /** Overrides `ROT0_BANK` — what a test varies to stand for a set missing a lump. */
+  spriteBank?: SpriteBank;
 }): SpriteFxLayer {
   return new SpriteFxLayer(new THREE.Scene(), {
     spriteBank: ROT0_BANK,

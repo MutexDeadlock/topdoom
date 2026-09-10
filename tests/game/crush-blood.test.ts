@@ -7,11 +7,12 @@ import { BLOOD_FRAMES, CRUSH_BLOOD_SPEED } from '../../src/game/spritefx/tables.
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
-import { clearRandom } from '../../src/util/random.ts';
+import { clearRandom, getRandomCursors } from '../../src/util/random.ts';
 import type { Pos3 } from '../../src/types.ts';
+import type { SpriteBank } from '../../src/wad/sprites.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { BANK, MATERIALS, drawnLumps, drawnSprites, fxLayer } from '../fixtures/spritestubs.ts';
+import { BANK, MATERIALS, ROT0_BANK, drawnLumps, drawnSprites, fxLayer } from '../fixtures/spritestubs.ts';
 import { AWAY, crushSources } from '../fixtures/specialsrig.ts';
 import { stepFor } from '../fixtures/tics.ts';
 
@@ -116,6 +117,24 @@ describe('Death · the crusher’s splash itself', () => {
     // Nothing here approaches the extreme of the draw, but nothing may pass it either.
     const reach = CRUSH_BLOOD_SPEED * 2 * DOOM_TIC;
     assert.ok(Math.abs(airborne.x - spawn.x) <= reach, `within two tics of travel (${airborne.x})`);
+  });
+
+  test('draws its two pairs even where the set has no BLUD to spawn', () => {
+    // `P_SpawnMobj` cannot fail, so vanilla draws either way and a set missing the sprite must
+    // still move the cursor — docs/specials-crushers.md § Crushers.
+    const after = (bank: SpriteBank) => {
+      clearRandom();
+      const grid = gridMap(['####', '#..#', '####'], { cell: 128 });
+      const layer = fxLayer({ fogVisible: () => true, spriteBank: bank });
+      layer.beginLevel(new World(grid.map));
+      layer.spawnCrushBlood({ x: 100, y: 100, z: 20 });
+      return getRandomCursors().p;
+    };
+    const noBlood = { lookup: (sprite: string, frame: string) =>
+      sprite === 'BLUD' ? null : ROT0_BANK.lookup(sprite, frame, 0) } as unknown as SpriteBank;
+
+    assert.equal(after(ROT0_BANK), 4, 'two triangular draws, four entries off the table');
+    assert.equal(after(noBlood), 4, 'and the same four with nothing to draw them onto');
   });
 
   test('and sticks where it lands rather than sliding on for the rest of its animation', () => {

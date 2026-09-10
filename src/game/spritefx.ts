@@ -234,8 +234,13 @@ export class SpriteFxLayer {
    */
   spawnCrushBlood(at: Pos3): void {
     const effect = this.spawn('BLUD', BLOOD_FRAMES, BLOOD_FRAME_SECONDS, at);
+    // Drawn before the bail, not after: vanilla's `P_SpawnMobj` cannot fail, so both pairs move
+    // the cursor whether or not this set can resolve `BLUD` — a WAD's art never decides what a
+    // tic does (CLAUDE.md).
+    const velX = triangularDraw(CRUSH_BLOOD_SPEED);
+    const velY = triangularDraw(CRUSH_BLOOD_SPEED);
     if (!effect) return;
-    effect.motion = { velX: triangularDraw(CRUSH_BLOOD_SPEED), velY: triangularDraw(CRUSH_BLOOD_SPEED), velZ: 0 };
+    effect.motion = { velX, velY, velZ: 0 };
     this.addImpact(effect);
   }
 

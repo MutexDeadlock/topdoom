@@ -16,7 +16,8 @@ import {
   type RaiseCandidate,
 } from './defs.ts';
 import { MONSTER_STATS } from './tables.ts';
-import { applyRadiusDamage, type CombatContext } from '../combat.ts';
+import { applyRadiusDamage, fallbackPlayer, targetBody, targetMonster, type CombatContext } from '../combat.ts';
+import { slotOfTarget } from '../things/defs.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
 import { IMPACT_FRAME_SECONDS, VILE_FIRE_FRAMES, VILE_FIRE_OFFSET } from '../spritefx/tables.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
@@ -87,13 +88,15 @@ export function resolveVileBlast(
   atk: MonsterAttackEvent,
 ): void {
   if (!atk.blast) return;
-  const player = ctx.player;
-  const victim = atk.targetId === null ? null : ctx.things?.monsterById(atk.targetId);
+  const player = fallbackPlayer(ctx, atk.targetId);
+  const victim = targetMonster(ctx, atk.targetId);
   const at = victim ? { x: victim.x, y: victim.y, z: victim.z } : { x: player.x, y: player.y, z: player.z };
-  if (atk.targetId === null) {
+  if (atk.targetId < 0) {
     // A no-op hit (already dead, or invulnerable) reports false — see
-    // `CombatContext.damagePlayer` — and skips the knockup along with it.
-    if (ctx.damagePlayer(atk.damage, atk.x, atk.y, atk.sourceType)) player.launchUpward(atk.blast.knockUpSpeed);
+    // `CombatContext.damageSlot` — and skips the knockup along with it.
+    if (ctx.damageSlot(slotOfTarget(atk.targetId), atk.damage, atk.x, atk.y, atk.sourceType)) {
+      player.launchUpward(atk.blast.knockUpSpeed);
+    }
   } else {
     ctx.things?.damage(atk.targetId, atk.damage, {
       source: { id: atk.sourceId, type: atk.sourceType },
@@ -128,7 +131,7 @@ export function spawnWindupFire(
   audio: AudioEngine,
   atk: MonsterAttackEvent,
 ): void {
-  const target = atk.targetId === null ? ctx.player : ctx.things?.monsterById(atk.targetId);
+  const target = targetBody(ctx, atk.targetId);
   if (!target) return;
   const front = fireFrontOf(target);
   // A_StartFire, on the flame itself (`vilatk` comes from the vile at the same
@@ -148,9 +151,9 @@ export function spawnWindupFire(
  * because the answer depends on live monster/player state (and on `A_Fire`'s
  * sightline rule) that the batch has no reason to know.
  */
-export function vileFlameFor(ctx: CombatContext, vileId: number, targetId: number | null): Pos3 | null {
+export function vileFlameFor(ctx: CombatContext, vileId: number, targetId: number): Pos3 | null {
   const vile = ctx.things?.monsterById(vileId);
-  const target = targetId === null ? ctx.player : ctx.things?.monsterById(targetId);
+  const target = targetBody(ctx, targetId);
   if (!vile || !target || !ctx.world.hasLineOfSight(vile, target)) return null;
   return fireFrontOf(target);
 }

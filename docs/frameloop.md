@@ -60,8 +60,10 @@ stale, so `tic` reports it and `frame` returns immediately.
 
 The whole simulation, in the order it has always run — several orderings are load-bearing:
 
-- `specials.update` runs **before** `player.update`, so a lift or door underfoot has already moved
-  by the time `groundFloor` samples it.
+- `specials.beginTic` runs **before** `player.update`, so a lift or door underfoot has already
+  moved by the time `groundFloor` samples it; each slot's `specials.activate` follows, and
+  `specials.endTic` (switch flashes, light patterns) runs once every slot has acted —
+  docs/multiplayer.md § What a slot's tic does.
 - the aim ray runs **before** `player.update`, so `player.angle` is this tic's.
 - `projectiles.update` runs **before** `effects.updateImpacts`, so an explosion spawned by an
   arrival this tic is drawn on the very next frame rather than one late.
@@ -205,7 +207,7 @@ Five rules:
   accumulator — keeps changing every frame, so the still subject jitters between them at frame
   cadence. Two cases exist and each closes it at its own scope: the **intermission** freezes the
   whole simulation, so `frame` draws it at `alpha` 1 outright (the tic-exact pose); a **dead
-  player** freezes only `player.update`, which is what writes `prev*`, so `damagePlayer` collapses
+  player** freezes only `player.update`, which is what writes `prev*`, so `damageSlot` collapses
   that one window with `syncInterpolation` on the killing hit. Both shipped as a visible shake.
 
 **Movers interpolate through the map itself.** Doors, lifts, floors and crushers write

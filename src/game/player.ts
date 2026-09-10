@@ -8,7 +8,7 @@ import type { PlayerSnapshot } from './snapshot.ts';
 // Type-only, so the specials <-> player edge stays compile-time and no runtime cycle forms.
 import type { TeleportDest } from './specials.ts';
 import { NO_FRICTION, type FrictionEffect } from './specials/defs.ts';
-import type { Pos2, Pos3 } from '../types.ts';
+import type { Placement, Pos2, Pos3 } from '../types.ts';
 import { vecLength } from '../util/geom.ts';
 import { decayOverTics } from '../util/damping.ts';
 import { readStorage, writeStorage } from '../util/storage.ts';
@@ -230,9 +230,9 @@ export class Player implements Pos3 {
 
   private world: World;
 
-  constructor(world: World) {
+  /** `start` is where this body spawns: the map's own player start unless a coop start is given. */
+  constructor(world: World, start: Placement = world.playerStart()) {
     this.world = world;
-    const start = world.playerStart();
     this.x = start.x;
     this.y = start.y;
     this.angle = start.angle;

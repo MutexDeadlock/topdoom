@@ -794,7 +794,9 @@ it hits something.
 **Monsters fight each other**, by exactly vanilla's mechanism: nothing about being hurt is
 player-specific. `ThingLayer.damage` takes an optional `source`, and a monster hit by another
 re-points its `targetId` at the attacker (`shouldRetarget`/`commitTarget`); `stepMonsterAI` takes a
-plain `target` position and never learns whether it's chasing the player or a baron.
+plain `target` position and never learns whether it's chasing the player or a baron. A player is
+named in that field as `targetOfSlot(slot)`, below every thing id — docs/multiplayer.md § Slot
+addressing.
 `MonsterAttacks` is where a shot finds out who it hit — `resolveHitscan` damages the first body
 along the bolt
 (`PTR_ShootTraverse` has no notion of an intended target and no species check, which is why one

@@ -801,8 +801,8 @@ things make it genuinely different from a radius blast:
 - **It's traced from the player's own live position at the moment the ball dies, not from the impact
   point.** `A_BFGSpray` reads `mo->target` — the shooter, still a live pointer — at that instant;
   after ~1.5s of the ball's slow flight the player can be well behind where it detonated.
-  `resolveBfgSpray` takes only the ball's travel *angle* and rebuilds the fan from
-  `this.player.x/y/z`.
+  `resolveBfgSpray` takes only the ball's travel *angle* and rebuilds the fan from the shooting
+  slot's live `player.x/y/z` — the slot rides the ball as its `sourceId`.
 - **Nothing stops two, or all 40, rays landing on the same target.** A monster directly in front of
   the player can eat several rays at once, each its own full roll — this, not a bigger radius, is
   the source of the BFG's reputation against one big target.

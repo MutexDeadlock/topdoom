@@ -5,7 +5,7 @@
  */
 import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
-import { PLAYER_ORIGIN, type SoundEmitter } from '../audio/sfx.ts';
+import { playerOrigin, type SoundEmitter } from '../audio/sfx.ts';
 import { playerShotRange, type ShotPath } from './world.ts';
 import { transfersOf } from './specials/transfers.ts';
 import { AIM_HEIGHT_OFFSET, MISSILE_HEIGHT_OFFSET, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
@@ -18,13 +18,13 @@ import {
 import { PLAYER_MELEE_RANGE, type Shot } from './weapons.ts';
 import { DOOM_TIC } from '../constants.ts';
 import { rollDamage } from '../util/random.ts';
-import { applyRadiusDamage, type CombatContext } from './combat.ts';
+import { applyRadiusDamage, fallbackPlayer, livingPlayer, targetMonster, type CombatContext } from './combat.ts';
 import type { ProjectileSnapshot } from './snapshot.ts';
 import type { SpriteFxLayer } from './spritefx.ts';
 import { stepTouchesBody, turnToward, type Projectile } from './spritefx/defs.ts';
 import { BFG_SPRAY_HIT_FRAMES, IMPACT_EFFECTS, IMPACT_FRAME_SECONDS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_RADIUS_DEFAULT, PROJECTILE_SOUNDS, REVENANT_TRACER_TURN_RATE_RAD, SMOKE_TRAIL_FRAME_SECONDS, SMOKE_TRAIL_FRAMES, SMOKE_TRAIL_INTERVAL, TRACER_COLOR, TRACER_HOMING_Z_OFFSET } from './spritefx/tables.ts';
 import type { Pos3 } from '../types.ts';
-import type { MonsterRef } from './things/defs.ts';
+import { slotOfTarget, targetOfSlot, type MonsterRef } from './things/defs.ts';
 import { vecLength } from '../util/geom.ts';
 import { atan2, cos, sin } from '../util/fdlibm.ts';
 
@@ -81,7 +81,13 @@ export class ProjectileLayer {
    * savegame.
    */
   snapshot(): ProjectileSnapshot[] {
-    return this.projectiles.map(({ anim: _anim, ...rest }) => structuredClone(rest));
+    return this.projectiles.map(({ anim: _anim, ...rest }) => {
+      const s: ProjectileSnapshot = structuredClone(rest);
+      // Player 1 as `null`, the encoding on the wire — see `ProjectileSnapshot`.
+      if (s.sourceId === targetOfSlot(0)) s.sourceId = null;
+      if (s.homing?.targetId === targetOfSlot(0)) s.homing.targetId = null;
+      return s;
+    });
   }
 
   /**
@@ -95,7 +101,13 @@ export class ProjectileLayer {
     for (const s of saved) {
       const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, s.sprite, PROJECTILE_FRAMES[s.sprite]);
       if (!anim.resolve(0, VIEWER_ANGLE_DEG)) continue;
-      this.projectiles.push({ ...structuredClone(s), anim });
+      const { sourceId, homing, ...rest } = structuredClone(s);
+      this.projectiles.push({
+        ...rest,
+        anim,
+        sourceId: sourceId ?? targetOfSlot(0),
+        homing: homing ? { ...homing, targetId: homing.targetId ?? targetOfSlot(0) } : undefined,
+      });
     }
   }
 
@@ -112,9 +124,9 @@ export class ProjectileLayer {
    * `ShotLock`, there being no silhouette to open a wedge around.
    * docs/combat.md § Where a missile starts, § How a shot deals damage.
    */
-  spawnPlayerShot(shot: Shot, target: MonsterRef | null, lineAim: Pos3 | null): void {
+  spawnPlayerShot(shot: Shot, target: MonsterRef | null, lineAim: Pos3 | null, shooter: number): void {
     const { world, things } = this.ctx;
-    const player = this.ctx.player;
+    const player = this.ctx.slots[shooter].player;
     const fireHeight = shot.kind === 'projectile' ? MISSILE_HEIGHT_OFFSET : AIM_HEIGHT_OFFSET;
     const origin: Pos3 = { x: player.x, y: player.y, z: player.z + fireHeight };
 
@@ -135,7 +147,7 @@ export class ProjectileLayer {
       // A_Punch/A_Saw both key their sound off whether they found a target: the
       // chainsaw revs on air and bites on contact, the fist is silent on a miss.
       const sound = swung ? shot.hitSound : shot.missSound;
-      if (sound) this.audio.play(sound, origin, PLAYER_ORIGIN);
+      if (sound) this.audio.play(sound, origin, playerOrigin(shooter));
       return;
     }
 
@@ -196,7 +208,7 @@ export class ProjectileLayer {
       // spare the lines in front of that body. A hitscan pellet resolves this
       // frame so it fires here; a projectile's is deferred to arrival (see
       // `Projectile.lineIndex`).
-      this.ctx.triggerShotPath(origin, { x: endX, y: endY }, hitMonsterId === null ? path.lineIndex : null);
+      this.ctx.triggerShotPath(origin, { x: endX, y: endY }, hitMonsterId === null ? path.lineIndex : null, shooter);
       if (hitMonsterId !== null) {
         // Where the tracer stops is where the bolt met the body, so the same
         // point is the splash's — `PTR_ShootTraverse` spawns blood on the
@@ -238,7 +250,7 @@ export class ProjectileLayer {
       damage: shot.damage,
       splash: shot.splash,
       spray: shot.spray,
-      sourceId: null,
+      sourceId: targetOfSlot(shooter),
       sourceType: 0,
       lineIndex: path.lineIndex,
       // The first drawn frame sits at the launch point rather than interpolating in from the
@@ -264,13 +276,13 @@ export class ProjectileLayer {
    */
   spawnMonsterShot(atk: MonsterAttackEvent): void {
     if (!atk.projectiles) return;
-    const { world, things, player } = this.ctx;
-    const victim = atk.targetId === null ? null : things?.monsterById(atk.targetId);
+    const { world } = this.ctx;
+    const victim = targetMonster(this.ctx, atk.targetId);
     // The aim point rides `MISSILE_HEIGHT_OFFSET` above the target's feet, which is
     // the launch's own height above the shooter's — so the flight is parallel to
     // `P_SpawnMissile`'s feet-to-feet slope and passes the target that same height
     // up. docs/monster-attacks.md § Monster projectiles in flight.
-    const body = victim ?? player;
+    const body = victim ?? fallbackPlayer(this.ctx, atk.targetId);
     const target = { x: body.x, y: body.y, z: body.z + MISSILE_HEIGHT_OFFSET };
     // Almost always one entry; the mancubus fires two per volley (see `MonsterAttack.projectiles`),
     // each spawned independently. `target` is loop-invariant, so the pair shares one slope and only
@@ -378,7 +390,7 @@ export class ProjectileLayer {
         at = pointAlong(p, Math.min(p.traveled, p.maxDist), dirX, dirY, { x: 0, y: 0, z: 0 });
       }
 
-      const fromMonster = p.sourceId !== null;
+      const fromMonster = p.sourceId >= 0;
       // One lookup, shared with the sprite light below — `floorAt`/`ceilingAt`
       // are two wrappers around the same BSP walk, and this runs per missile
       // per frame with a crowded map holding thousands in the air.
@@ -393,24 +405,25 @@ export class ProjectileLayer {
       // docs/combat.md § Where an impact sits, docs/monster-attacks.md § Monster projectiles in
       // flight.
       const hitGround = !hitWall && !!sector && (at.z <= sector.floorHeight || at.z >= sector.ceilHeight);
-      const reachedPlayer = fromMonster && !this.ctx.playerDead && this.playerStruckBy(p, from, at);
+      const struckSlot = fromMonster ? this.playerStruckBy(p, from, at) : -1;
+      const reachedPlayer = struckSlot >= 0;
       const struck = reachedPlayer ? null : this.bodyStruckBy(p, from, at);
 
       if (reachedPlayer || struck || hitGround || arrived) {
         if (reachedPlayer) {
-          this.ctx.damagePlayer(p.damage, at.x, at.y, p.sourceType);
+          this.ctx.damageSlot(struckSlot, p.damage, at.x, at.y, p.sourceType);
         } else if (struck) {
           // `struck.id === null` is the same-species fizzle: the body stopped
           // the missile but takes no damage from it (see bodyStruckBy).
           if (struck.id !== null) {
-            const source = fromMonster ? { id: p.sourceId!, type: p.sourceType } : undefined;
+            const source = fromMonster ? { id: p.sourceId, type: p.sourceType } : undefined;
             things?.damage(struck.id, p.damage, { source, from: at });
           }
         }
         // A clean miss arrived at the wall `shotPath` found at launch, so its shoot special fires
         // now rather than back then; one stopped by the floor never got there.
         // docs/combat.md § Shoot-triggered specials.
-        else if (!hitGround) this.ctx.triggerShot(p.lineIndex, fromMonster);
+        else if (!hitGround) this.ctx.triggerShot(p.lineIndex, fromMonster ? null : slotOfTarget(p.sourceId));
         if (p.splash) {
           // Attributed to the firing monster (if any), the same as a direct
           // hit already is — a cyberdemon's own rocket splash should start
@@ -419,7 +432,7 @@ export class ProjectileLayer {
             radius: p.splash.radius,
             maxDamage: p.splash.damage,
             hitsPlayer: p.splash.hitsPlayer,
-            source: fromMonster ? { id: p.sourceId!, type: p.sourceType } : undefined,
+            source: fromMonster ? { id: p.sourceId, type: p.sourceType } : undefined,
             // No `source` means the shot is the player's own, which is the one
             // splash that can kill them without anyone else being involved.
             cause: fromMonster ? p.sourceType : 'self',
@@ -427,7 +440,7 @@ export class ProjectileLayer {
         }
         // Only ever set for the player's own BFG ball (spawnMonsterShot
         // always passes spray: null) — see resolveBfgSpray's doc.
-        if (p.spray) this.resolveBfgSpray(p.angleRad, p.spray);
+        if (p.spray) this.resolveBfgSpray(p.angleRad, p.spray, slotOfTarget(p.sourceId));
         // P_ExplodeMissile's own deathsound, wherever the flight actually ended.
         const explode = PROJECTILE_SOUNDS[p.sprite]?.explode;
         if (explode) this.audio.play(explode, at);
@@ -477,13 +490,17 @@ export class ProjectileLayer {
    * the missile's `mobjinfo.radius`, and the height band is `PIT_CheckThing`'s
    * asymmetric over/under pair, not a tolerance either side of the feet.
    */
-  private playerStruckBy(p: Projectile, from: Pos3, at: Pos3): boolean {
-    const { world, player } = this.ctx;
-    if (stepTouchesBody(from, at, player, PLAYER_RADIUS, PLAYER_HEIGHT, p.radius) === null) return false;
-    // Proximity alone isn't arrival, and the trace runs player→projectile, not
-    // the other way round — docs/monster-attacks.md § Monster projectiles in
-    // flight. Last in the chain so it only runs once the cheap tests passed.
-    return world.hasLineOfSight(player, at);
+  private playerStruckBy(p: Projectile, from: Pos3, at: Pos3): number {
+    const { world, slots } = this.ctx;
+    for (let slot = 0; slot < slots.length; slot++) {
+      const { player, dead } = slots[slot];
+      if (dead || stepTouchesBody(from, at, player, PLAYER_RADIUS, PLAYER_HEIGHT, p.radius) === null) continue;
+      // Proximity alone isn't arrival, and the trace runs player→projectile, not
+      // the other way round — docs/monster-attacks.md § Monster projectiles in
+      // flight. Last in the chain so it only runs once the cheap tests passed.
+      if (world.hasLineOfSight(player, at)) return slot;
+    }
+    return -1;
   }
 
   /**
@@ -509,7 +526,7 @@ export class ProjectileLayer {
       // reason, and last so it only runs on an already-close candidate.
       if (!this.ctx.world.hasLineOfSight(m, at)) continue;
       nearestT = t;
-      nearest = { id: p.sourceId !== null && sameSpecies(p.sourceType, m.type) ? null : m.id };
+      nearest = { id: p.sourceId >= 0 && sameSpecies(p.sourceType, m.type) ? null : m.id };
     }
     return nearest;
   }
@@ -524,15 +541,11 @@ export class ProjectileLayer {
    * docs/monster-attacks.md § The revenant's homing missile.
    */
   private advanceHoming(p: Projectile, dt: number): Pos3 {
-    const { world, things } = this.ctx;
+    const { world, slots } = this.ctx;
     const homing = p.homing!;
     const step = p.speed * dt;
     const target: Pos3 | null =
-      homing.targetId === null
-        ? this.ctx.playerDead
-          ? null
-          : this.ctx.player
-        : things?.monsterById(homing.targetId) ?? null;
+      homing.targetId < 0 ? livingPlayer(slots[slotOfTarget(homing.targetId)]) : targetMonster(this.ctx, homing.targetId);
     if (target) {
       const bearing = atan2(target.y - homing.y, target.x - homing.x);
       homing.headingRad = turnToward(homing.headingRad, bearing, REVENANT_TRACER_TURN_RATE_RAD * dt);
@@ -589,9 +602,11 @@ export class ProjectileLayer {
   private resolveBfgSpray(
     travelAngleRad: number,
     spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number },
+    shooter: number,
   ): void {
-    if (this.ctx.playerDead) return;
-    const { things, player } = this.ctx;
+    const player = livingPlayer(this.ctx.slots[shooter]);
+    if (!player) return;
+    const { things } = this.ctx;
     const origin: Pos3 = { x: player.x, y: player.y, z: player.z + AIM_HEIGHT_OFFSET };
     const arcRad = (spray.arcDeg * Math.PI) / 180;
     const startRad = travelAngleRad - arcRad / 2;

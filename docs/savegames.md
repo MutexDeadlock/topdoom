@@ -103,6 +103,10 @@ the snapshot inside is unchanged.
 
 ## What is saved and what is deliberately not
 
+**The save holds player slot 0 and nothing of any other slot** — `player`, `inventory`, `weapons`,
+`cheats`, `cameraYawDeg`, `SpecialsController`'s `prev`, `SectorEffects`' timer are all slot 0's,
+and a restore reads them back into slot 0. docs/multiplayer.md § Player slots.
+
 Saved: the cheats currently switched on (`cheats`, **optional** for the same no-bump reason
 `teleportFogs` is, and written only while one is on: absent means neither, which is what a save
 from before cheats existed also means — docs/cheats.md § Saves and best times), the player
@@ -258,7 +262,7 @@ keeps a live reference into the snapshot for the running level to mutate. That i
 replay the same in-memory snapshot after each death (docs/death.md § Player death); a store-backed
 load gets a fresh object per read either way and does not depend on it.
 
-1. Normal preamble: `clearRandom`, `finishLevel`, `weaponSystem.beginLevel`, overlay clears,
+1. Normal preamble: `clearRandom`, `finishLevel`, `WeaponSystem.beginLevel`, overlay clears,
    `loadMap`, then `sectorBaseline(map)` — taken here, off the untouched map, because that is
    precisely the state step 3 writes into and therefore the one a capture may omit.
 2. `new SectorEffects(map)` — *before* the sector snapshot, so `totalSecrets` counts the map's
@@ -297,7 +301,7 @@ load gets a fresh object per read either way and does not depend on it.
 13. `projectiles.restore(...)` — into the layer step 4's `beginLevel` already cleared — then
     `cheats.restore(...)`, order-free: nothing else reads the toggles during a load
     (docs/cheats.md § Saves and best times).
-14. Inventory deserialized, then `weaponSystem.restore(..., inventory)` — **in that order, and it
+14. Slot 0's inventory deserialized, then `WeaponSystem.restore(..., inventory)` — **in that order, and it
     takes the restored inventory**. `WeaponSystem.beginLevel` ran back at the top of the load
     against the *outgoing* inventory, so `weaponLastFrame` is left pointing at whatever weapon was
     in hand before, which is why it is derived from `inventory.currentWeapon` here rather than

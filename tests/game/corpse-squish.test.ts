@@ -51,7 +51,7 @@ function room(restore?: ThingsSnapshot) {
 /** Kills the demon outright, leaving an ordinary settled corpse. */
 function kill(things: ThingLayer): void {
   things.damage(0, MONSTER_HEALTH[ThingType.demon]);
-  things.update(DOOM_TIC, null);
+  things.update(DOOM_TIC, [null]);
 }
 
 /** Whether the save says this corpse has been crunched. */

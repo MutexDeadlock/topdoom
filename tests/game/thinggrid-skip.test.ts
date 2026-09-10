@@ -87,7 +87,7 @@ describe('Thing grid · the per-cell skip answers exactly as the unskipped sweep
     let landing: Pos3 | null = null;
     for (let tic = 1; tic <= TICS; tic++) {
       landing = null;
-      things.update(DOOM_TIC, player, undefined, (_prev, mover) => {
+      things.update(DOOM_TIC, [player], undefined, (_prev, mover) => {
         if (!TELEPORT_TICS.has(tic) || mover.id !== teleported) return null;
         landing = { x: mover.x + HOP, y: mover.y, z: 0 };
         return { x: landing.x, y: landing.y, angle: 0 };

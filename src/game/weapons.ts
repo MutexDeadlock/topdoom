@@ -631,6 +631,15 @@ export class WeaponSystem {
    * docs/weapons.md § Automatic weapon switching, docs/replays.md § Seeking.
    */
   private chainEnding = false;
+  /**
+   * The sound origin the reload and chainsaw noises cut each other off on — the owning slot's
+   * `playerOrigin`, as every other sound that player makes is.
+   */
+  private readonly origin: number;
+
+  constructor(origin = PLAYER_ORIGIN) {
+    this.origin = origin;
+  }
 
   /**
    * Resyncs the switch tracking to whatever is selected as a level starts, so
@@ -882,7 +891,7 @@ export class WeaponSystem {
       return;
     }
     const due = SSG_RELOAD_SOUNDS.find((s) => s.tic === this.reloadTic);
-    if (due) audio.play(due.sfx, at, PLAYER_ORIGIN);
+    if (due) audio.play(due.sfx, at, this.origin);
     this.reloadTic = this.reloadTic < SSG_RELOAD_TICS ? this.reloadTic + 1 : -1;
   }
 
@@ -896,7 +905,7 @@ export class WeaponSystem {
   private updateSounds({ dt, firing, justSwitched, inv, audio, at }: SoundFrame): void {
     const weapon = inv.currentWeapon;
     if (justSwitched && weapon === 'chainsaw') {
-      audio.play('sawup', at, PLAYER_ORIGIN);
+      audio.play('sawup', at, this.origin);
     }
     if (weapon !== 'chainsaw' || firing) {
       this.sawIdleTimer = 0;
@@ -914,7 +923,7 @@ export class WeaponSystem {
     this.sawIdleTimer -= dt;
     if (this.sawIdleTimer > 0) return;
     this.sawIdleTimer = SAW_IDLE_INTERVAL;
-    audio.play('sawidl', at, PLAYER_ORIGIN);
+    audio.play('sawidl', at, this.origin);
   }
 
   /**

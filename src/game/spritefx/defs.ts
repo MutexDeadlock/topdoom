@@ -50,7 +50,7 @@ export interface OneShotEffect extends Pos3 {
    * facing rather than staying fixed. `null` means the player; absent (the
    * common case) skips this. See docs/monster-archvile.md.
    */
-  followTargetId?: number | null;
+  followTargetId?: number;
   /**
    * The arch-vile that spawned this flame — sight from it is re-checked before repositioning
    * (`A_Fire`'s `P_CheckSight` gate). Always set alongside `followTargetId`.
@@ -120,13 +120,13 @@ export interface Projectile {
    */
   spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
   /**
-   * The monster that fired this, or `null` for one of the player's own shots.
-   * Only the *player*'s own missiles are told apart by this — every
+   * The monster that fired this, or the shooting player's slot as `targetOfSlot` encodes one
+   * (`< 0`). Only a *player*'s own missiles are told apart by this — every
    * projectile, whoever fired it, re-tests what it has run into every frame
    * against live positions rather than resolving hit-or-miss up front. See
    * docs/monster-attacks.md § Monster projectiles in flight.
    */
-  sourceId: number | null;
+  sourceId: number;
   /**
    * The firing monster's doomednum, for `sameSpecies` — vanilla's "don't hit same species as
    * originator" rule on projectiles.
@@ -143,11 +143,11 @@ export interface Projectile {
   /**
    * Present only for the revenant's missile (`MT_TRACER`/`A_Tracer`), whose
    * path isn't the fixed origin+angle+distance line every other projectile
-   * flies, so it carries its own live position/heading. `targetId` is `null`
-   * for the player. A `homing` object existing at all means this shot won its
+   * flies, so it carries its own live position/heading. `targetId` is what it chases, as
+   * `PosedThing.targetId` encodes one. A `homing` object existing at all means this shot won its
    * `homingBias` roll. See docs/monster-attacks.md § The revenant's homing missile.
    */
-  homing?: { targetId: number | null; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
+  homing?: { targetId: number; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
   /**
    * Where this missile is now and where it was one tic ago, written by
    * `ProjectileLayer.update` so `draw` can interpolate between them. Held as

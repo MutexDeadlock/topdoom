@@ -49,7 +49,7 @@ function arena(): { layer: ThingLayer; player: Pos3 } {
 
 /** Runs up to `seconds` of simulation at the fixed tic, stopping early once `done` holds. */
 function run(layer: ThingLayer, player: Pos3, seconds: number, done?: () => boolean): void {
-  stepFor(seconds, () => layer.update(DOOM_TIC, player), done);
+  stepFor(seconds, () => layer.update(DOOM_TIC, [player]), done);
 }
 
 /** The imp's live health, read off the snapshot's sparse block — an absent `health` is the spawn default. */

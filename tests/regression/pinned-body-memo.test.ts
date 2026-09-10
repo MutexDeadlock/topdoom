@@ -66,7 +66,7 @@ describe('Regressions · pinned-body memo invalidation', () => {
     const run = (tics: number) => {
       for (let i = 0; i < tics; i++) {
         forces.tick();
-        layer.update(TIC, null, undefined, undefined, undefined, (pos, radius, cache) => forces.carryForBody(pos, radius, cache));
+        layer.update(TIC, [null], undefined, undefined, undefined, (pos, radius, cache) => forces.carryForBody(pos, radius, cache));
       }
     };
     run(150);

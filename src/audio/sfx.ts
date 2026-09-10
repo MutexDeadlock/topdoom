@@ -171,6 +171,11 @@ export const SILENT: SoundEmitter = { play: () => {} };
  */
 export const PLAYER_ORIGIN = 1;
 
+/** Player slot `slot`'s origin key — `PLAYER_ORIGIN` and the three above it. docs/multiplayer.md § Player slots. */
+export function playerOrigin(slot: number): number {
+  return PLAYER_ORIGIN + slot;
+}
+
 export function monsterOrigin(id: number): number {
   return 0x100000 + id;
 }

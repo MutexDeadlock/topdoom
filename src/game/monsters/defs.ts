@@ -478,8 +478,8 @@ export interface MonsterAttackEvent extends MonsterAttack, Pos3 {
    * clear of it a hitscan tracer starts (docs/combat.md § Effects and their batching).
    */
   sourceRadius: number;
-  /** What it was aimed at: `null` for the player, otherwise another monster's ID. */
-  targetId: number | null;
+  /** What it was aimed at — a monster's ID, or a player slot as `targetOfSlot` encodes one. */
+  targetId: number;
 }
 
 /**

@@ -547,7 +547,7 @@ rolls past the monster's `painChance` (a failed roll still alerts and retargets,
 stagger). The player's own letters (`things/tables.ts`'s
 `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived and WAD-checked the same way) trigger
 analogously: attack whenever `WeaponSystem.fire` returns a nonempty `Shot[]`, pain inside
-`damagePlayer` whenever the player survives a hit.
+`damageSlot` whenever the player survives a hit.
 
 ## Weapon-matching player sprites
 

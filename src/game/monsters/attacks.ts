@@ -10,7 +10,8 @@ import { WEAPON_RANGE } from '../world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
 import { traceHitsBox, vecLength } from '../../util/geom.ts';
 import { triangularSpread } from '../../util/random.ts';
-import type { CombatContext } from '../combat.ts';
+import { fallbackPlayer, targetMonster, type CombatContext } from '../combat.ts';
+import { slotOfTarget } from '../things/defs.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
 import type { ProjectileLayer } from '../projectiles.ts';
 import { MONSTER_TRACER_COLOR } from '../spritefx/tables.ts';
@@ -51,11 +52,11 @@ export class MonsterAttacks {
   private effects: SpriteFxLayer;
   private projectiles: ProjectileLayer;
   private audio: AudioEngine;
-  private isPlayerShadowed: () => boolean;
+  private isSlotShadowed: (slot: number) => boolean;
 
   /**
-   * `isPlayerShadowed` is a callback rather than an `Inventory` reference:
-   * whether the player currently holds partial invisibility is inventory
+   * `isSlotShadowed` is a callback rather than an `Inventory` reference:
+   * whether a player currently holds partial invisibility is inventory
    * state, and nothing else in this file has any reason to reach that far.
    */
   constructor(
@@ -63,13 +64,13 @@ export class MonsterAttacks {
     effects: SpriteFxLayer,
     projectiles: ProjectileLayer,
     audio: AudioEngine,
-    isPlayerShadowed: () => boolean,
+    isSlotShadowed: (slot: number) => boolean,
   ) {
     this.ctx = ctx;
     this.effects = effects;
     this.projectiles = projectiles;
     this.audio = audio;
-    this.isPlayerShadowed = isPlayerShadowed;
+    this.isSlotShadowed = isSlotShadowed;
   }
 
   /** Applies every attack fired this frame, in the order they were reported. */
@@ -100,19 +101,19 @@ export class MonsterAttacks {
   }
 
   /** `SpriteFxLayer`'s `VileFlameResolver` — see `monsters/vile.ts: vileFlameFor`. */
-  vileFlameFor(vileId: number, targetId: number | null): Pos3 | null {
+  vileFlameFor(vileId: number, targetId: number): Pos3 | null {
     return vileFlameFor(this.ctx, vileId, targetId);
   }
 
   /**
-   * Applies a monster's damage to whatever it landed on — the player when `atk.targetId` is null,
-   * otherwise another monster, tagged with who did it so `ThingLayer.damage` can run vanilla's
-   * retaliation rule and start an infight. The knockback thrust both sides derive comes off the
-   * attacking monster's own position, which is what `atk` carries.
+   * Applies a monster's damage to whatever it landed on — a player when `atk.targetId` names a
+   * slot, otherwise another monster, tagged with who did it so `ThingLayer.damage` can run
+   * vanilla's retaliation rule and start an infight. The knockback thrust both sides derive comes
+   * off the attacking monster's own position, which is what `atk` carries.
    */
   private applyDirectDamage(atk: MonsterAttackEvent): void {
     const { targetId, damage, sourceId, sourceType } = atk;
-    if (targetId === null) this.ctx.damagePlayer(damage, atk.x, atk.y, sourceType);
+    if (targetId < 0) this.ctx.damageSlot(slotOfTarget(targetId), damage, atk.x, atk.y, sourceType);
     else this.ctx.things?.damage(targetId, damage, { source: { id: sourceId, type: sourceType }, from: atk });
   }
 
@@ -127,7 +128,7 @@ export class MonsterAttacks {
    * fuzzed angle. See docs/items.md § Powerups and the backpack.
    */
   private applyShadowAim(atk: MonsterAttackEvent): void {
-    if (atk.kind !== 'ranged' || atk.targetId !== null || !this.isPlayerShadowed()) return;
+    if (atk.kind !== 'ranged' || atk.targetId >= 0 || !this.isSlotShadowed(slotOfTarget(atk.targetId))) return;
     const off = triangularSpread(SHADOW_AIM_SPREAD_DEG);
     atk.angleRad += off;
     if (atk.projectiles) for (const proj of atk.projectiles) proj.angleRad += off;
@@ -143,10 +144,10 @@ export class MonsterAttacks {
    * § Hitscan vs. projectile.
    */
   private resolveHitscan(atk: MonsterAttackEvent): void {
-    const { world, things, player } = this.ctx;
-    const victim = atk.targetId === null ? null : things?.monsterById(atk.targetId);
+    const { world } = this.ctx;
+    const victim = targetMonster(this.ctx, atk.targetId);
     const halfHeight = (victim ? victim.height : PLAYER_HEIGHT) / 2;
-    const body = victim ?? player;
+    const body = victim ?? fallbackPlayer(this.ctx, atk.targetId);
     const aim = { x: body.x, y: body.y, z: body.z + halfHeight };
     const aimed = world.shotPath(atk, atk.angleRad, aim, undefined, { halfHeight, slopeOffset: 0 });
     const slope = aimed.dist > 0 ? (aimed.z - atk.z) / aimed.dist : 0;
@@ -160,13 +161,13 @@ export class MonsterAttacks {
 
   /**
    * One bullet of that volley: it damages the first thing it reaches — nearest
-   * of a wall, another monster in the line of fire, or the player wins.
+   * of a wall, another monster in the line of fire, or a player wins.
    * `P_LineAttack` has no notion of an intended target and no species check,
    * which is why one zombieman firing past another starts a fight. The tracer
    * is drawn to where the bolt stopped, not to the target.
    */
   private resolveBullet(atk: MonsterAttackEvent, angleRad: number, damage: number, aim: Pos3): void {
-    const { world, things, player } = this.ctx;
+    const { world, things, slots } = this.ctx;
     // `WEAPON_RANGE` rather than the distance to `aim`: a bullet the spread
     // threw wide keeps flying, and can still find a wall or another monster
     // behind whoever it was fired at. `P_LineAttack(..., MISSILERANGE, ...)`.
@@ -184,11 +185,20 @@ export class MonsterAttacks {
     });
     const dirX = cos(angleRad);
     const dirY = sin(angleRad);
-    // The player's own box, on `PIT_AddThingIntercepts`' diagonal test — the
-    // same rule `ThingLayer.raycastMonster` puts every monster on.
-    const playerHit = traceHitsBox(atk.x, atk.y, dirX, dirY, player.x, player.y, PLAYER_RADIUS);
-    const playerAlong = playerHit ?? 0;
-    const playerInPath = !this.ctx.playerDead && playerHit !== null && playerHit <= path.dist;
+    // Each living player's own box, on `PIT_AddThingIntercepts`' diagonal test — the same rule
+    // `ThingLayer.raycastMonster` puts every monster on — and the nearest along the bolt wins.
+    let playerSlot = -1;
+    let playerAlong = Infinity;
+    for (let slot = 0; slot < slots.length; slot++) {
+      if (slots[slot].dead) continue;
+      const { x, y } = slots[slot].player;
+      const along = traceHitsBox(atk.x, atk.y, dirX, dirY, x, y, PLAYER_RADIUS);
+      if (along !== null && along < playerAlong) {
+        playerAlong = along;
+        playerSlot = slot;
+      }
+    }
+    const playerInPath = playerSlot >= 0 && playerAlong <= path.dist;
 
     let endX = atk.x + dirX * path.dist;
     let endY = atk.y + dirY * path.dist;
@@ -207,7 +217,8 @@ export class MonsterAttacks {
       if (things?.bleeds(blocker.id)) this.effects.spawnBlood(hitAt, damage);
       else this.effects.spawnPuff(hitAt);
     } else if (playerInPath) {
-      this.ctx.damagePlayer(damage, atk.x, atk.y, atk.sourceType);
+      this.ctx.damageSlot(playerSlot, damage, atk.x, atk.y, atk.sourceType);
+      const player = slots[playerSlot].player;
       endX = player.x;
       endY = player.y;
       endZ = atk.z + slope * playerAlong;
@@ -223,9 +234,9 @@ export class MonsterAttacks {
       stopped = path.lineIndex;
     }
     // Every shoot line the bolt crossed, and the wall it ended on if it reached
-    // one. `byMonster` reproduces vanilla's own hardcoded exception: this can
-    // only actually do anything for a 46 line, never 24/47.
-    this.ctx.triggerShotPath(atk, { x: endX, y: endY }, stopped, true);
+    // one. The `null` shooter reproduces vanilla's own hardcoded exception: this
+    // can only actually do anything for a 46 line, never 24/47.
+    this.ctx.triggerShotPath(atk, { x: endX, y: endY }, stopped, null);
     this.effects.addTracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR, atk.sourceRadius);
   }
 }

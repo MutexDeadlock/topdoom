@@ -89,7 +89,7 @@ export interface ThingGrid {
    * caller will probe with the list. A body further than `p`'s radius plus its own plus that
    * cannot touch any probe, so it is left out without changing a verdict.
    */
-  blockersFor(p: PosedThing, player: Pos3 | null, probeReach: number): readonly ThingBlocker[];
+  blockersFor(p: PosedThing, players: readonly (Pos3 | null)[], probeReach: number): readonly ThingBlocker[];
   findRaisableCorpse(x: number, y: number, vileRadius: number): RaiseCandidate | null;
   solidBodies(pos: Pos2): ThingBlocker[];
 }
@@ -347,16 +347,17 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
    * though bodies have heights (docs/movement.md § Collision). Each blocker's `z` is read live off
    * the `PosedThing`, so a flier's current float height is what the caller compares against.
    */
-  function blockersFor(p: PosedThing, player: Pos3 | null, probeReach: number): readonly ThingBlocker[] {
+  function blockersFor(p: PosedThing, players: readonly (Pos3 | null)[], probeReach: number): readonly ThingBlocker[] {
     blockerScratch.length = 0;
     const ownRadius = p.blockRadius;
     // `blockedByThings` only ever reports an overlap inside `r1 + r2`, so nothing further than
     // the widest summed radii plus the margin can matter, and searching further is pure waste.
     const reach = ownRadius + maxBlockerRadius + BLOCKER_MARGIN;
-    // `null` once the player is dead: `P_KillMobj` clears `MF_SOLID` alongside `MF_SHOOTABLE`,
-    // so a corpse is no more an obstacle than it is a target.
-    if (player) {
-      const playerReach = ownRadius + PLAYER_RADIUS + probeReach;
+    // A slot is `null` once its player is dead: `P_KillMobj` clears `MF_SOLID` alongside
+    // `MF_SHOOTABLE`, so a corpse is no more an obstacle than it is a target.
+    const playerReach = ownRadius + PLAYER_RADIUS + probeReach;
+    for (const player of players) {
+      if (!player) continue;
       if (Math.abs(player.x - p.x) <= playerReach && Math.abs(player.y - p.y) <= playerReach) {
         pushBlocker(player.x, player.y, player.z, PLAYER_RADIUS, PLAYER_HEIGHT);
       }

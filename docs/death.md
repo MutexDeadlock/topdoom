@@ -123,7 +123,7 @@ to die. A dead player is neither stomped nor in the way: `P_KillMobj` strips the
 
 ## Player death
 
-**Reuses the exact same mechanism** on `game.ts`'s single persistent `playerActor`:
+**Reuses the exact same mechanism** on the slot's session-scoped `PlayerSlot.actor`:
 `PLAYER_DEATH_FRAMES` (`H`-`N`) is `PLAY`'s own confirmed DIE half, derived the same way as the
 monster tables — and living beside them in `game/things/tables.ts`, not in `game/player.ts`, which
 owns no sprite.
@@ -132,16 +132,16 @@ owns no sprite.
 the damage, blue half, spending armor points 1-for-1 with whatever it absorbed and falling back to
 bare once it runs out mid-hit — reused for the player specifically since monsters have no armor. It
 returns whether the hit actually landed, `false` while invulnerability blocked it outright
-(`INVULNERABLE_DAMAGE_LIMIT`); `damagePlayer` uses that to skip the pain flash and flinch animation
+(`INVULNERABLE_DAMAGE_LIMIT`); `damageSlot` uses that to skip the pain flash and flinch animation
 for a hit that did nothing, which a first version didn't check, so an invulnerable player flashed
 red on every hit that was landing on nothing.
 
-Health hitting 0 sets `Game.playerDead`, which freezes only the input-driven half of `frame` —
+Health hitting 0 sets `PlayerSlot.dead`, which freezes only the input-driven half of `frame` —
 movement/aim/firing/pickups. Everything else keeps running: fog of war, effects, faders and
 rendering, and monster AI — but AI follows vanilla's own rule for it, not a blanket freeze.
 `P_KillMobj` strips the player's `MF_SHOOTABLE`/`MF_SOLID` on death, so `Game.updateThings` passes
-`ThingLayer.update` `null` for the player once `playerDead` (`game/things.ts`'s `resolveTarget` and
-`blockersFor` both take the `Pos3 | null` this produces). A monster already mid-infight with another
+`ThingLayer.update` `null` in that slot's place once `PlayerSlot.dead` (`game/things.ts`'s
+`resolveTarget` and `blockersFor` both take the `(Pos3 | null)[]` this produces). A monster already mid-infight with another
 monster is unaffected and keeps fighting; one whose only target *was* the player finds
 `resolveTarget` reporting no target the very next frame and reverts to idle right there —
 `p.alerted = false`, `movedir`/`movecount` cleared — the same as `A_Chase`'s own "no shootable
@@ -149,8 +149,8 @@ target" branch falling through to `P_SetMobjState(spawnstate)`. It only wakes ag
 unconditional re-alert (getting caught in someone else's infight), same path any other dormant
 monster uses. A rocket or vile blast already in flight still lands and can still deal splash (or,
 for the vile's knockup, do nothing beyond the first killing blow — `resolveVileBlast` gates its
-knockup on `damagePlayer`'s return, and `resolveBullet`'s `!playerDead` guard for the hitscan
-equivalent) — a dead player can still be "hit" for nothing to happen, matching `damagePlayer`'s own
+knockup on `damageSlot`'s return, and `resolveBullet` skipping a dead slot for the hitscan
+equivalent) — a dead player can still be "hit" for nothing to happen, matching `damageSlot`'s own
 early return.
 
 The death itself shows `#death-overlay` (`ui/hud/deathoverlay.ts`) — three `WadFont` canvases in the
@@ -160,7 +160,7 @@ so the "nothing attributed the blow" case that used to be a `:empty` selector is
 the drawing code sets. It does not go up immediately: `DeathOverlay.show` only *arms* it, and
 `DeathOverlay.update` raises it `DEATH_OVERLAY_DELAY` later — `PLAY`'s DIE sequence end to end, so
 the text arrives as the corpse settles instead of on the killing frame. Nothing is gated behind the
-delay (`R` answers throughout, since `tic` reads `playerDead`, not the overlay), and a
+delay (`R` answers throughout, since `tic` reads `PlayerSlot.dead`, not the overlay), and a
 `DeathOverlay.clear` inside the window means the overlay is never seen at all, which is what § Dying
 on the way out needs. Vanilla has no overlay here, so none of this is a fidelity claim.
 
@@ -192,14 +192,14 @@ All three end in `Game.reloadLevel`, which is also what a recording writes the r
 
 None of the three is a special case, just the ordinary map-load path, which already resets
 player/world/specials/fog for a normal transition and, via its own top-of-function reset,
-`playerDead`/the overlay/`playerActor`'s animation state too. The one wrinkle is the checkpoint's:
+`PlayerSlot.dead`/the overlay/`PlayerSlot.actor`'s animation state too. The one wrinkle is the checkpoint's:
 reading it is async while `tic` is not, so `restart` dispatches and returns, `restarting` swallows a
-second press, and `disposed`/`playerDead` are re-checked after the read because the menu can have
+second press, and `disposed`/`PlayerSlot.dead` are re-checked after the read because the menu can have
 started another level meanwhile.
 
 **The overlay's hint names which of the two the press will do** — "press R to reload last savegame"
 against "press R to restart" — because reloading a save and restarting the level are different
-promises to make to a player standing over their own corpse. `damagePlayer` passes
+promises to make to a player standing over their own corpse. `damageSlot` passes
 `DeathOverlay.show` a `DeathHint` (`Game.deathHint`) and `DeathOverlay` owns the wording, the same
 split the killer line uses. Only the savegame can be answered for at death time: whether a
 *checkpoint* is readable is a store read away, so both level-reload outcomes share the one hint,
@@ -214,7 +214,7 @@ and does not redraw itself. The intermission and the end card do the same with t
 
 ### Who killed the player
 
-The overlay's middle line names the killer — "You were killed by an Arch-Vile". `damagePlayer`
+The overlay's middle line names the killer — "You were killed by an Arch-Vile". `damageSlot`
 takes a `DamageCause` (`game/combat.ts`) alongside the hit and only the killing one reads it;
 `things/tables.ts`'s `obituary` looks the line up and `DeathOverlay.show` draws it, so the view
 layer composes nothing. An unattributed cause renders as `''` and the overlay looks exactly as it
@@ -257,7 +257,7 @@ is now notified over a corpse and the exit fires either way.
 **The overlay must not appear in front of the exit.** `Game.levelEnding` — a queued `pendingExit`,
 or `IconOfSin.exiting` while the `BRAIN_DEATH_TO_EXIT` death cascade runs — is the window in which
 the level is over but hasn't finished saying so, and it is several seconds wide for the icon.
-`damagePlayer` arms no overlay inside it, and a death that got in first is taken back down by
+`damageSlot` arms no overlay inside it, and a death that got in first is taken back down by
 `endingOverCorpse`, which every site that can open the window calls unconditionally. `R` is refused
 there too, which is the real hazard: an overlay offering "press R" over a level the player has just
 *finished* would restart it. `saveRefusal` is deliberately **not** widened to `levelEnding` — a save
@@ -267,7 +267,7 @@ E1M8's sector 66 is the other site of the same shape, and the vanilla one: its s
 exits at 10 HP or below, which for a full-health player is the 20-HP pulse that takes them from 20
 to 0 (docs/specials.md § Damage floors). The queued exit and the death land on the same frame there
 — and, by the deviation that section records, they do so for *any* death in that sector, which is
-why `damagePlayer` queues the exit itself before arming the overlay.
+why `damageSlot` queues the exit itself before arming the overlay.
 
 **The two deaths are usually a few tics apart, not simultaneous**, so cancelling the overlay is not
 enough on its own — MAP10's chain kills the player one blast before the brain, and an overlay raised
@@ -281,7 +281,7 @@ the exit, exactly as vanilla does it: `G_ExitLevel` has no player-state check at
 `G_DoLoadLevel` that turns a `PST_DEAD` player into `PST_REBORN` for the next map. So `enterLevel`
 simply asks whether the player is dead and, if so, installs a fresh `createInventory()` before the
 map load — before, because `loadMapByIndex` hands the inventory object it finds to
-`weaponSystem.beginLevel`. That fresh inventory is what vanilla's `memset(p, 0, …)` plus its
+`WeaponSystem.beginLevel`. That fresh inventory is what vanilla's `memset(p, 0, …)` plus its
 explicit re-fills come to: 100 health, no armor, fist + pistol with 50 bullets, no backpack. Without
 it the player would walk into the next level alive on 0 health, dying to the first scratch.
 `restart` is untouched by this — it never goes through `enterLevel`, and restores its checkpoint
@@ -290,7 +290,7 @@ it the player would walk into the next level alive on 0 health, dying to the fir
 One other caller asks for the same fresh inventory with the player alive: crossing from an episode's
 `E<x>M8` into the next episode's `E<x+1>M1`, which is `G_DeferedInitNew` rather than a level change
 and so pistol-starts. `enterLevel`'s `reborn` parameter is that request — the same code path, said
-out loud instead of inferred from `playerDead` (docs/hud.md § End card).
+out loud instead of inferred from `PlayerSlot.dead` (docs/hud.md § End card).
 
 ## Exploding barrels
 
@@ -417,10 +417,10 @@ MAP07's Arachnotron platform (sector 1, tag 667).
   `resolveTargets` on. `triggerFloor`'s `line` parameter is optional for exactly this caller — it's
   only ever dereferenced for `changeTexture`, which a boss-death `lowerFloorToLowest` never sets.
 - `game.ts` fans the doomednum out to **both** owners from the callback passed into
-  `buildThingSprites` — `this.specials.notifyBossDeath(type, !this.playerDead)` and
+  `buildThingSprites` — `this.specials.notifyBossDeath(type, anyPlayerAlive(this.slots))` and
   `this.icon.notifyBossDeath(type)`. Each ignores the types it doesn't handle, so neither needs to
-  know the other's table. `playerDead` is `Game`'s own state, hence the gate being passed in rather
-  than read where it is used.
+  know the other's table. Whether any slot is alive is `Game`'s own state, hence the gate being
+  passed in rather than read where it is used.
 
 **The player-alive gate is `A_BossDeath`'s alone.** Vanilla's "make sure there is a player alive for
 victory" loop is in that one function; `A_KeenDie` and `A_BrainDie` are separate action functions

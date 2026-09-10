@@ -149,13 +149,13 @@ describe('Specials · shoot triggers', () => {
 
   test("a monster's shot works on 46 but not on other shoot specials", () => {
     const monster = shotRig(46);
-    monster.rig.specials.triggerShot(monster.line, new Set(), true);
+    monster.rig.specials.triggerShot(monster.line, new Set(), null);
     for (let i = 0; i < 5; i++) monster.rig.tick();
     assert.ok(monster.map.sectors[2].ceilHeight > 0);
 
     // 24 is G1 raiseFloor — shoot-triggered, but player-only (no `monsterCanTrigger`).
     const blocked = shotRig(24);
-    blocked.rig.specials.triggerShot(blocked.line, new Set(), true);
+    blocked.rig.specials.triggerShot(blocked.line, new Set(), null);
     for (let i = 0; i < 5; i++) blocked.rig.tick();
     assert.equal(blocked.map.sectors[2].floorHeight, 0);
   });

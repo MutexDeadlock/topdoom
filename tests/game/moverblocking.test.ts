@@ -60,7 +60,7 @@ describe('Specials · the bodies a mover reaches', () => {
     let dealt = 0;
     const occupancy = new MoverOccupancy(
       world,
-      crushSources({ player: { ...stands, z: 0 }, dolls: dolls.dolls, damagePlayer: (amount) => (dealt += amount) }),
+      crushSources({ players: [{ ...stands, z: 0 }], dolls: dolls.dolls, damageSlot: (_slot, amount) => (dealt += amount) }),
     );
     assert.equal(occupancy.crush(sector, true), true);
     assert.ok(dealt > 0, 'the doll’s crushing should have reached the real player');
@@ -72,7 +72,7 @@ describe('Specials · the bodies a mover reaches', () => {
     grid.map.sectors[sector].ceilHeight = 64;
     const world = new World(grid.map);
     const player: Pos3 = { ...AWAY };
-    const occupancy = new MoverOccupancy(world, crushSources({ player }));
+    const occupancy = new MoverOccupancy(world, crushSources({ players: [player] }));
     // A floor this high leaves a standing player less than `PLAYER_HEIGHT` under the ceiling.
     const tooHigh = 64 - PLAYER_HEIGHT + 1;
     assert.equal(occupancy.blocksFloorRise(sector, tooHigh), false, 'nobody is standing there yet');

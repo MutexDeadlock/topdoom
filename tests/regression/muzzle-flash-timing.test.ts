@@ -48,7 +48,7 @@ function fireOnce(type: number): { pose: string[]; shotTic: number; poseStart: n
   let shotTic = -1;
   let poseStart = -1;
   for (let tic = 0; tic < 400; tic++) {
-    const fired = layer.update(DOOM_TIC, player).attacks.length > 0;
+    const fired = layer.update(DOOM_TIC, [player]).attacks.length > 0;
     layer.draw(1, 0);
     const letter = layer.drawnFrameKey(0).slice(4);
     if (poseStart < 0 && !walk.has(letter)) {

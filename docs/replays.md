@@ -213,7 +213,7 @@ that moment, and a popup already on screen does not redraw itself. DEVMODE's sta
 the same reason — the auto camera is not driving, so its dials would be a frozen readout
 (docs/devmode.md § Dev mode).
 
-**The simulation keeps a camera of its own** (`Game.simCamera`, the viewport's outside a replay).
+**The simulation keeps a camera of its own** (`PlayerSlot.simCamera`, the viewport's outside a replay).
 The camera is simulation state — `viewerAngleDeg` is the movement basis and the camera's position
 is the pick ray's origin — so a viewer moving the camera would change what auto-aim locks onto.
 A playback therefore evolves a private `TopDownCamera` from the record and `syncViewCamera` brings

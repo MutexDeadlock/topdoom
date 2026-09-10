@@ -40,7 +40,7 @@ function scene(pitDepth: number, col: number): { layer: ThingLayer; origin: Pos3
   const player: Pos3 = { ...grid.centre(FROM, 1), z: 0 };
   // One tic so the layer settles the body onto its floor and marks it seen —
   // `raycastMonster` filters on fog visibility.
-  layer.update(DOOM_TIC, player);
+  layer.update(DOOM_TIC, [player]);
   return {
     layer,
     origin: { x: player.x, y: player.y, z: player.z + AIM_HEIGHT_OFFSET },

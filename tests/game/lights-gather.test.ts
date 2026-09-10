@@ -69,7 +69,7 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
       lights,
     });
     // `update` is what settles `visible`; the draw loop skips anything it has not.
-    layer.update(DOOM_TIC, { x: at0.x, y: at0.y, z: 0 });
+    layer.update(DOOM_TIC, [{ x: at0.x, y: at0.y, z: 0 }]);
     lights.beginFrame(0, 0, 0);
     layer.draw(1, 0);
     lights.commit();

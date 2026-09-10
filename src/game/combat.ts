@@ -13,6 +13,7 @@ import { PLAYER_RADIUS, type Player } from './player.ts';
 import type { BarrelExplosion, ThingLayer } from './things.ts';
 import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './things/tables.ts';
 import { ThingType } from './things/doomednums.ts';
+import { slotOfTarget, type MonsterRef } from './things/defs.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { blastDistanceToBox } from '../util/geom.ts';
 
@@ -37,22 +38,21 @@ export type DamageCause = number | 'self' | 'crush' | 'slime';
 export interface CombatContext {
   readonly world: World;
   readonly things: ThingLayer | null;
-  readonly player: Player;
-  /** True once the player's health has hit 0 — see docs/death.md § Player death. */
-  readonly playerDead: boolean;
+  /** Every player slot by index — what a `targetOfSlot` id names. docs/multiplayer.md § Player slots. */
+  readonly slots: readonly CombatSlot[];
   /**
-   * Armor-mitigated damage to the player, returning whether the hit actually
+   * Armor-mitigated damage to one player, returning whether the hit actually
    * landed (`false` covers both a corpse hit and invulnerability). `fromX`/
    * `fromY` are where it physically came from, and drive knockback; `cause`
    * is who to name if this is the hit that kills.
    */
-  damagePlayer(amount: number, fromX?: number, fromY?: number, cause?: DamageCause): boolean;
+  damageSlot(slot: number, amount: number, fromX?: number, fromY?: number, cause?: DamageCause): boolean;
   /**
-   * Fires a shoot-triggered line special, with whatever keys the player is
-   * currently carrying. `byMonster` reproduces vanilla's own hardcoded
-   * exception for a monster's stray shot — docs/combat.md § Shoot-triggered specials.
+   * Fires a shoot-triggered line special, with whatever keys the shooting player is carrying.
+   * `null` is a monster's stray shot, which reproduces vanilla's own hardcoded exception —
+   * docs/combat.md § Shoot-triggered specials.
    */
-  triggerShot(lineIndex: number | null, byMonster?: boolean): void;
+  triggerShot(lineIndex: number | null, shooter: number | null): void;
   /**
    * The same, for a hitscan shot that has just resolved: fires every shoot line
    * the trace `from`→`to` crossed, and `blocker` — whichever line stopped it, or
@@ -60,7 +60,51 @@ export interface CombatContext {
    * the way past, not only on the line it stops at; docs/combat.md
    * § Shoot-triggered specials.
    */
-  triggerShotPath(from: Pos2, to: Pos2, blocker: number | null, byMonster?: boolean): void;
+  triggerShotPath(from: Pos2, to: Pos2, blocker: number | null, shooter: number | null): void;
+}
+
+/**
+ * What combat reads of a player slot: the body, and whether it still is one. `PlayerSlot`
+ * (`game/playerslot.ts`) satisfies it; a test stubs the two fields.
+ */
+export interface CombatSlot {
+  readonly player: Player;
+  /** True once this player's health has hit 0 — see docs/death.md § Player death. */
+  readonly dead: boolean;
+}
+
+/**
+ * The player a monster's attack falls back on when what it aimed at is not a monster it can still
+ * find: the named slot's for a `targetOfSlot` id, and player 1's otherwise — the monster it chose
+ * can have died to an earlier attack of the same tic, and its shot has always gone at the player
+ * then.
+ */
+export function fallbackPlayer(ctx: CombatContext, targetId: number): Player {
+  return ctx.slots[targetId < 0 ? slotOfTarget(targetId) : 0].player;
+}
+
+/** The monster `targetId` names, or null: a slot's ID, or a monster that can no longer be found. */
+export function targetMonster(ctx: CombatContext, targetId: number): MonsterRef | null {
+  return targetId < 0 ? null : (ctx.things?.monsterById(targetId) ?? null);
+}
+
+/**
+ * The body `targetId` names: the slot's player, dead or alive, or the monster while it can still be
+ * found.
+ */
+export function targetBody(ctx: CombatContext, targetId: number): Player | MonsterRef | null {
+  return targetId < 0 ? ctx.slots[slotOfTarget(targetId)].player : targetMonster(ctx, targetId);
+}
+
+/** The slot's player while alive, or null — what a homing shot chases and a BFG spray fires from. */
+export function livingPlayer(slot: CombatSlot): Player | null {
+  return slot.dead ? null : slot.player;
+}
+
+/** Whether any slot's player is still alive — `A_BossDeath`'s gate, the level clock's, the Icon's. */
+export function anyPlayerAlive(slots: readonly CombatSlot[]): boolean {
+  for (const slot of slots) if (!slot.dead) return true;
+  return false;
 }
 
 /**
@@ -105,9 +149,13 @@ export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBla
   }
 
   if (!hitsPlayer) return;
-  const pdist = blastDistanceToBox(at.x, at.y, ctx.player.x, ctx.player.y, PLAYER_RADIUS);
-  if (pdist < radius && ctx.world.hasLineOfSight(at, ctx.player)) {
-    ctx.damagePlayer(maxDamage * (1 - pdist / radius), at.x, at.y, cause);
+  for (let slot = 0; slot < ctx.slots.length; slot++) {
+    const { player, dead } = ctx.slots[slot];
+    if (dead) continue;
+    const pdist = blastDistanceToBox(at.x, at.y, player.x, player.y, PLAYER_RADIUS);
+    if (pdist < radius && ctx.world.hasLineOfSight(at, player)) {
+      ctx.damageSlot(slot, maxDamage * (1 - pdist / radius), at.x, at.y, cause);
+    }
   }
 }
 

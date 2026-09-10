@@ -162,7 +162,7 @@ REC because everything else in this bar is the WAD's own sprite glyphs. docs/rep
 side, flush against `#game-hud`'s right edge via `justify-self: start`), shows time spent in the
 level as `hh:mm:ss`, drawn with the same `WadFont` used for the strip's labels (native STCFN red,
 no recolor). `Game.levelTime` accumulates `dt` in `frame`, gated the same way `tickPowers` is —
-frozen once `playerDead` — and reset to 0 in `loadMapByIndex`. It also never advances on the frame
+frozen once `PlayerSlot.dead` — and reset to 0 in `loadMapByIndex`. It also never advances on the frame
 an exit trigger fires: that frame already returns early once `pendingExit` is set (see that field's
 own doc in `game.ts`), before reaching the increment, so no separate "level complete" check is
 needed on top of the death check. That frozen instant is exactly what the intermission below shows,
@@ -258,7 +258,7 @@ columns already makes them the same width.
 The control flow is the part worth knowing:
 
 - `Game.pendingExit` no longer loads the next map. On the frame it is consumed (still right after
-  `specials.update()` has returned — see that field's own doc for why the teardown can't happen
+  the specials block has returned — see that field's own doc for why the teardown can't happen
   inside the callback) it shows the popup and sets `popup` to `'intermission'`.
 - While `popup` is set, a branch at the **top** of `frame` advances nothing at all — no clock, no
   specials, no monsters — and only re-renders the still scene under the popup. `Space`/`Enter`
@@ -568,15 +568,15 @@ change.
 
 **A red damage flash (`#pain-flash`, its own element rather than a third `#screen-tint` class)**
 echoes vanilla's palette-shift pain flash (`ST_doPaletteStuff`'s `damagecount`), raised from
-`Game.damagePlayer` via `ScreenEffects.addPain`. Vanilla adds the raw damage to a counter clamped to
+`Game.damageSlot` via `ScreenEffects.addPain`. Vanilla adds the raw damage to a counter clamped to
 100 and ticks it down by 1 per tic; this mirrors that as a normalized `painFlash` (0-1,
 `+= amount / PAIN_FLASH_MAX_DAMAGE`, clamped) decayed every frame by `dt / PAIN_FLASH_FADE_SECONDS`
 (100 tics over 35, vanilla's own full-to-zero time) and written to the element's `opacity` (scaled
 by `PAIN_FLASH_MAX_ALPHA`, tuned by feel since vanilla swaps palettes outright rather than blending
 an overlay). **It's a separate element because its red has to blend with, not replace, the suit's
 persistent green wash** — two `background`s on one element can't coexist, but two stacked elements
-can. `damagePlayer` bumps it on every hit, lethal or not, and `loadMapByIndex`/`dispose` reset it
-alongside `playerDead`/the tint classes. So does a replay's seek, on the frame it lands
+can. `damageSlot` bumps it on every hit, lethal or not, and `loadMapByIndex`/`dispose` reset it
+alongside `PlayerSlot.dead`/the tint classes. So does a replay's seek, on the frame it lands
 (docs/replays.md § Seeking): the catch-up bumps it per hit while no frame draws to decay it.
 
 `SpriteActor.setOpacity` draws through a per-actor **clone** of the shared cached material rather

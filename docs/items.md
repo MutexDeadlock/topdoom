@@ -253,14 +253,14 @@ lock — resolved per-special against `P_UseSpecialLine` rather than guessed, si
 manual-door groups don't share an ordering (26/27/28 are Blue/Yellow/Red, 32/33/34 are
 Blue/Red/Yellow). `trigger` checks `satisfiesLock` before doing anything else — no flashing switch
 texture, no `usedOnce` mark — so a player without the key can walk off, find it, and press the
-same line later, matching vanilla. `ownedKeys` is threaded from `Game.frame` as
-`this.inventory.keys` on every `SpecialsController.update` call, same as `playerAt`.
+same line later, matching vanilla. `ownedKeys` is threaded from `Game.tic` as the slot's own
+`inventory.keys` on every `SpecialsController.activate` call, same as `playersAt`.
 
 **A refused line reports what it wants** — vanilla's `oof` plus its message, both. `trigger`
 records the refusal as a `LockedLine` (the `LockRule`, plus `'door'` vs `'switch'`) rather than
 showing anything itself: it has no HUD, the same reason `onExit`/`onTeleport` are callbacks.
-`Game.frame`
-drains it with `consumeLockedLine()` right after `specials.update` — every keyed special is a `use`
+`Game.tic`
+drains it with `consumeLockedLine(slot)` right after `specials.endTic` — every keyed special is a `use`
 trigger, so that one call site catches all of them — and shows the text (docs/hud.md § Center
 messages). The
 text is `d_englsh.h`'s verbatim, and **whole lines keyed by their own `PD_*` mnemonic**
@@ -362,7 +362,8 @@ arithmetic:
   `SHADOW_AIM_SPREAD_DEG`). That fuzz is the entire vanilla mechanic — `MF_SHADOW` never touches
   `P_CheckSight`, waking, or a monster's willingness to attack, so none of those are gated on it
   here either. Applied per shot (each bullet of a burst goes its own way) and only to a shot aimed
-  at the player (`targetId === null`): nothing else carries `MF_SHADOW`, and an infight shouldn't go
+  at a player (`targetId < 0`, docs/multiplayer.md § Slot addressing): nothing else carries
+  `MF_SHADOW`, and an infight shouldn't go
   wide because the player drank something. Melee is deliberately unaffected, matching vanilla, whose
   melee lands on `P_CheckMeleeRange` rather than the fuzzed angle.
 - **Light amplification visor** rides `WebGLRenderer.toneMappingExposure` (`LIGHT_VISOR_EXPOSURE`).
@@ -391,7 +392,7 @@ next to the spawn filter, since the skill is the only thing they depend on:
   worth exactly a full one — and the `ammoMax` cap still applies last.
 - **`playerDamageAtSkill`** halves damage on skill 1 only: `P_DamageMobj`'s
   `if (player && gameskill == sk_baby) damage >>= 1`. It is applied at the top of
-  `game.ts: damagePlayer`, before anything else reads the number, which is where vanilla applies it
+  `game.ts: damageSlot`, before anything else reads the number, which is where vanilla applies it
   too — so knockback, the pain flash and the death cry's overkill test all see the reduced figure,
   and armor absorbs its share of that rather than of the original. Only the player gets it; a
   monster on skill 1 takes exactly what it always took.

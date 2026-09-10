@@ -1,13 +1,8 @@
 v0.19.0 (2026-09-10)
 
-This was supposed to become v0.18.2, but the amount of changes, together with 
-the breaking of existing replays, justifies a v0.19.
-
-Roadmap: more polish, better camera, MULTIPLAYER!
-MULTIPLAYER will also mean: Savegames AND replays break again :(
-But then: v1.0!
-
 Features and improvements
+  - internal: the player is a `PlayerSlot` — one slot, on the way to coop;
+    saves and replays are unchanged (docs/multiplayer.md)
   - replays
     - replay files are about a quarter smaller: the camera and aim columns are
       stored against a linear prediction, the desync samples as rounded columns

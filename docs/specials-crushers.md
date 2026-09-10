@@ -187,7 +187,7 @@ Three deliberate departures from `PIT_ChangeSector`:
   (`p_enemy.c`, "fix Ghost bug"). `crushed` is cleared by both `reviveCorpse` and `respawnCorpse`.
 - **Barrel debris is not squashed**, though vanilla's `health <= 0` branch catches it: it is a
   transient that removes itself a few tics later (docs/death.md § Exploding barrels).
-- **The player's corpse is not squashed either.** It is `game.ts`'s `playerActor`, not one of
+- **The player's corpse is not squashed either.** It is the slot's `PlayerSlot.actor`, not one of
   `ThingLayer`'s bodies, and the player is looking at the death overlay by then
   (docs/death.md § Player death).
 

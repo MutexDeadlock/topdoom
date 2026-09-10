@@ -238,7 +238,7 @@ takes at launch, a monster's own included.
 **What `sourceId` still decides is only what a hit *means***, not whether it happens: who the damage
 is attributed to for infighting, whether `sameSpecies` can fizzle the shot, and whether the player
 is a candidate at all. Two other rules stay monster-only for their own reasons — `hitGround` below,
-and `triggerShot`'s `byMonster` flag.
+and `triggerShot`'s `null` shooter.
 
 **The player's hit box is vanilla's, not a generous stand-in.** Contact is the player's own 16-unit
 box plus the missile's radius (22 units for the imp/cacodemon/baron/mancubus fireballs, 27 for a

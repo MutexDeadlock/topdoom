@@ -383,7 +383,8 @@ interface MoverLerp {
 /** What a `SpecialsController` needs beside the `World` it runs over. */
 export interface SpecialsOptions extends MoverGeometryOptions {
   onExit: (secret: boolean) => void;
-  onTeleport: (dest: TeleportDest) => void;
+  /** A player teleported by a line they used or crossed — which slot, and where it lands. */
+  onTeleport: (dest: TeleportDest, slot: number) => void;
   /**
    * Who a mover could catch — the bodies, not the tests over them, which are this layer's own
    * (`specials/moverblocking.ts`). Absent, nothing is ever in the way.
@@ -394,8 +395,8 @@ export interface SpecialsOptions extends MoverGeometryOptions {
    * `tests/fixtures/specialsrig.ts` drives a mover into an obstruction with, no bodies needed.
    */
   occupancy?: Occupancy;
-  /** Where the player stands as the level opens, seeding the first `update`'s crossing test. */
-  playerAt: Pos2;
+  /** Where each slot's player stands as the level opens, seeding the first crossing test. */
+  playersAt: readonly Pos2[];
   sfx?: SoundEmitter;
   /**
    * How a switch texture resolves to its opposite state — **the same lookup
@@ -417,7 +418,7 @@ export class SpecialsController {
    */
   private geometry: MoverGeometry;
   private onExit: (secret: boolean) => void;
-  private onTeleport: (dest: TeleportDest) => void;
+  private onTeleport: (dest: TeleportDest, slot: number) => void;
   /** Who is standing in a mover — see `specials/moverblocking.ts`. */
   private occupancy: Occupancy;
   private sfx: SoundEmitter;
@@ -506,23 +507,22 @@ export class SpecialsController {
 
   private lightStates = new Map<number, LightState>();
 
-  /** Where the player stood at the end of the previous tic — what `crossLines` scans from. */
-  private prev: Pos2;
+  /** Where each slot's player stood at the end of the previous tic — what `crossLines` scans from. */
+  private prev: Pos2[];
   /**
-   * Set by `trigger` for the one frame a teleport fires, and consumed at the
-   * end of `update` to seed `prev` from the destination instead of
-   * the pre-teleport position `update` was called with. Without this, the
-   * next frame's walk-trigger scan would test a segment from the old spot all
-   * the way to the teleport pad — an arbitrarily long jump that could cross
-   * (and wrongly re-trigger) unrelated lines along the way.
+   * Per slot, set by `trigger` for the one tic a teleport fires, and consumed at the end of that
+   * slot's `activate` to seed its `prev` from the destination instead of the pre-teleport
+   * position `activate` was called with. Without this, the next tic's walk-trigger scan would
+   * test a segment from the old spot all the way to the teleport pad — an arbitrarily long jump
+   * that could cross (and wrongly re-trigger) unrelated lines along the way.
    */
-  private lastTeleport: Pos2 | null = null;
+  private lastTeleports: (Pos2 | null)[];
   /**
-   * Set by `trigger` when the player uses a keyed line without its key, and read (and cleared) by
-   * `consumeLockedLine` — this controller knows which key a line wants, but nothing about the HUD
-   * that has to say so, the same reason `onExit`/`onTeleport` are callbacks.
+   * Per slot, set by `trigger` when that player uses a keyed line without its key, and read (and
+   * cleared) by `consumeLockedLine` — this controller knows which key a line wants, but nothing
+   * about the HUD that has to say so, the same reason `onExit`/`onTeleport` are callbacks.
    */
-  private lockedLine: LockedLine | null = null;
+  private lockedLines: (LockedLine | null)[];
 
   constructor(world: World, options: SpecialsOptions) {
     const {
@@ -531,7 +531,7 @@ export class SpecialsController {
       onTeleport,
       occupants,
       occupancy,
-      playerAt,
+      playersAt,
       sfx = SILENT,
       switchPairs = defs.switchPairTexture,
     } = options;
@@ -545,7 +545,9 @@ export class SpecialsController {
     this.occupancy = occupancy ?? (occupants ? new MoverOccupancy(world, occupants) : NOBODY);
     this.sfx = sfx;
     this.bossDeathTriggers = bossDeathTriggersFor(map.name);
-    this.prev = { x: playerAt.x, y: playerAt.y };
+    this.prev = playersAt.map((at) => ({ x: at.x, y: at.y }));
+    this.lastTeleports = playersAt.map(() => null);
+    this.lockedLines = playersAt.map(() => null);
 
     for (const [i, line] of map.linedefs.entries()) {
       const def = lookupSpecial(line.special);
@@ -582,7 +584,7 @@ export class SpecialsController {
 
   /**
    * The controller's mutable state for a savegame, deep-copied since the live
-   * movers keep mutating. The one-frame flags (`lastTeleport`, `lockedLine`)
+   * movers keep mutating. The one-frame flags (`lastTeleports`, `lockedLines`)
    * and the due-this-frame booleans are deliberately dropped —
    * docs/savegames.md § What is saved and what is deliberately not.
    */
@@ -595,8 +597,8 @@ export class SpecialsController {
       lightStates: [...this.lightStates.entries()],
       moveSoundTimer: this.moveSoundTimer,
       crushDamageTimer: this.crushDamageTimer,
-      prevX: this.prev.x,
-      prevY: this.prev.y,
+      prevX: this.prev[0].x,
+      prevY: this.prev[0].y,
       stairFlips: [...this.retriggerFlips],
     });
   }
@@ -626,8 +628,8 @@ export class SpecialsController {
     this.lightStates = new Map(structuredClone(s.lightStates));
     this.moveSoundTimer = s.moveSoundTimer;
     this.crushDamageTimer = s.crushDamageTimer;
-    this.prev.x = s.prevX;
-    this.prev.y = s.prevY;
+    this.prev[0].x = s.prevX;
+    this.prev[0].y = s.prevY;
     const dirty = new Set<number>();
     // Two sources, since a switch shows its on-texture for two different
     // reasons: a repeatable one mid-BUTTONTIME (`switchFlashes`), and a
@@ -697,28 +699,33 @@ export class SpecialsController {
   }
 
   /**
-   * The keyed line the player was refused this frame, if any — one read per attempt, so holding
-   * `use` against a locked door re-announces it on every press and not in between. Call after
-   * `update`, which is where every keyed line is reached from (all of them are `use` triggers).
+   * The keyed line slot `slot`'s player was refused this tic, if any — one read per attempt, so
+   * holding `use` against a locked door re-announces it on every press and not in between. Call
+   * after `activate`, which is where every keyed line is reached from (all of them are `use`
+   * triggers).
    */
-  consumeLockedLine(): LockedLine | null {
-    const locked = this.lockedLine;
-    this.lockedLine = null;
+  consumeLockedLine(slot: number): LockedLine | null {
+    const locked = this.lockedLines[slot];
+    this.lockedLines[slot] = null;
     return locked;
   }
 
-  update(
-    dt: number,
-    player: Placement,
-    input: TicInput,
-    ownedKeys: ReadonlySet<KeySlot>,
-    /**
-     * IDCLIP: walk triggers stop firing, exactly as `MF_NOCLIP` keeps `P_TryMove` from running
-     * its `spechit` list at all. Use triggers are untouched — `P_UseLines` never looks at the
-     * flag. docs/cheats.md § IDCLIP.
-     */
-    noclip = false,
-  ): void {
+  /**
+   * One whole tic for a level with one player: `beginTic`, that slot's `activate`, `endTic` — the
+   * three `game.ts` runs itself, once per slot in the middle. What every test drives.
+   */
+  update(dt: number, player: Placement, input: TicInput, ownedKeys: ReadonlySet<KeySlot>, noclip = false): void {
+    this.beginTic(dt);
+    this.activate(0, player, input, ownedKeys, noclip);
+    this.endTic(dt);
+  }
+
+  /**
+   * The movers' share of a tic: their two shared clocks, every plane's step, and the corpses it
+   * crunched. Ahead of every `activate`, so a lift underfoot has already moved when a player's
+   * ground is sampled — docs/frameloop.md § What runs in a tic.
+   */
+  beginTic(dt: number): void {
     const dirty = new Set<number>();
     // One shared clock for every mover's grind — see MOVE_SOUND_INTERVAL.
     this.moveSoundTimer -= dt;
@@ -734,23 +741,49 @@ export class SpecialsController {
     // corpses are crunched by an ordinary door or floor, not only by a crusher, and on no clock.
     // docs/specials-crushers.md § Crushed corpses.
     for (const sectorIndex of dirty) this.occupancy.squash(sectorIndex);
-    this.lastTeleport = null;
+  }
+
+  /**
+   * One player slot's use press, and the walk triggers it crossed since its last tic. Between
+   * `beginTic` and `endTic`, once per slot. docs/multiplayer.md § What a slot's tic does.
+   */
+  activate(
+    slot: number,
+    player: Placement,
+    input: TicInput,
+    ownedKeys: ReadonlySet<KeySlot>,
+    /**
+     * IDCLIP: walk triggers stop firing, exactly as `MF_NOCLIP` keeps `P_TryMove` from running
+     * its `spechit` list at all. Use triggers are untouched — `P_UseLines` never looks at the
+     * flag. docs/cheats.md § IDCLIP.
+     */
+    noclip = false,
+  ): void {
+    this.lastTeleports[slot] = null;
     // Read once, up front: `player` is the live `Player`, and a use-triggered teleport moves it
     // inside `handleUseTrigger`. Both the walk pass and the reseed below mean where the player
     // stood when the tic began, not where a switch just sent them.
     const at: Placement = { x: player.x, y: player.y, angle: player.angle };
-    this.handleUseTrigger(at, input, ownedKeys);
-    if (!noclip) this.handleWalkTriggers(at, ownedKeys);
-    // No mesh rebuild here: `tickMover` opened a window for every moved plane, and `drawMovers` —
-    // which the frame runs at the draw's interpolation alpha before anything renders — brings the
-    // geometry up to date from those.
+    this.handleUseTrigger(slot, at, input, ownedKeys);
+    if (!noclip) this.handleWalkTriggers(slot, at, ownedKeys);
+    // See `lastTeleports`' doc: a teleport this tic reseeds `prev` from the destination,
+    // not from where the player stood before it.
+    const teleport = this.consumeLastTeleport(slot);
+    const prev = this.prev[slot];
+    prev.x = teleport ? teleport.x : at.x;
+    prev.y = teleport ? teleport.y : at.y;
+  }
+
+  /**
+   * After every slot's `activate`: the switch flashes and the light patterns, which read what the
+   * triggers just started — a light a switch lit this tic draws from the table this tic, as it
+   * always has. No mesh rebuild here: `tickMover` opened a window for every moved plane, and
+   * `drawMovers` — which the frame runs at the draw's interpolation alpha before anything renders
+   * — brings the geometry up to date from those.
+   */
+  endTic(dt: number): void {
     this.updateSwitchFlashes(dt);
     this.updateLights(dt);
-    // See `lastTeleport`'s doc: a teleport this frame reseeds `prev` from the destination,
-    // not from where the player stood before it.
-    const teleport = this.consumeLastTeleport();
-    this.prev.x = teleport ? teleport.x : at.x;
-    this.prev.y = teleport ? teleport.y : at.y;
   }
 
   /**
@@ -834,17 +867,17 @@ export class SpecialsController {
    * it hits (`game/projectiles.ts`), while a hitscan shot goes through
    * `triggerShotPath` below, which fires each line it crossed through here.
    * Either way the caller already knows the line rather than searching for it
-   * (`linesNear`), so this is a plain lookup. `byMonster` reproduces vanilla's own
-   * per-number gate (`SpecialDef.monsterCanTrigger` — true only for 46): a
-   * monster's shot that happens to stop against a 24 or 47 line does nothing,
-   * same as vanilla.
+   * (`linesNear`), so this is a plain lookup. `shooter` is the firing player's slot, or `null`
+   * for a monster's shot, which reproduces vanilla's own per-number gate
+   * (`SpecialDef.monsterCanTrigger` — true only for 46): a monster's shot that happens to stop
+   * against a 24 or 47 line does nothing, same as vanilla.
    */
-  triggerShot(lineIndex: number | null, ownedKeys: ReadonlySet<KeySlot>, byMonster = false): void {
+  triggerShot(lineIndex: number | null, ownedKeys: ReadonlySet<KeySlot>, shooter: number | null = 0): void {
     if (lineIndex === null) return;
     const def = lookupSpecial(this.lineSpecial(lineIndex));
     if (!def || def.trigger !== 'shoot') return;
-    if (byMonster && !def.monsterCanTrigger) return;
-    this.trigger(lineIndex, ownedKeys, byMonster ? 'monster' : 'player');
+    if (shooter === null && !def.monsterCanTrigger) return;
+    this.trigger(lineIndex, ownedKeys, shooter === null ? 'monster' : 'player', false, NO_SOURCE, shooter ?? 0);
   }
 
   /**
@@ -858,7 +891,13 @@ export class SpecialsController {
    * extension would fire switches a bullet passed the end of. `handleUseTrigger` reads raw vertexes
    * for the same reason.
    */
-  triggerShotPath(from: Pos2, to: Pos2, blocker: number | null, ownedKeys: ReadonlySet<KeySlot>, byMonster = false): void {
+  triggerShotPath(
+    from: Pos2,
+    to: Pos2,
+    blocker: number | null,
+    ownedKeys: ReadonlySet<KeySlot>,
+    shooter: number | null = 0,
+  ): void {
     const hits: { t: number; line: number }[] = [];
     for (const i of this.shootLines) {
       if (i === blocker) continue;
@@ -874,8 +913,8 @@ export class SpecialsController {
     // every real map, and each `triggerShot` below dispatches arbitrary specials,
     // which a shared scratch buffer would let re-enter and clobber mid-loop.
     hits.sort((p, q) => p.t - q.t);
-    for (const h of hits) this.triggerShot(h.line, ownedKeys, byMonster);
-    this.triggerShot(blocker, ownedKeys, byMonster);
+    for (const h of hits) this.triggerShot(h.line, ownedKeys, shooter);
+    this.triggerShot(blocker, ownedKeys, shooter);
   }
 
   /**
@@ -938,14 +977,14 @@ export class SpecialsController {
 
   /**
    * Routing this field read through a method (rather than reading
-   * `this.lastTeleport` directly at the end of `update`) works around a type
+   * `this.lastTeleports[slot]` directly at the end of `activate`) works around a type
    * narrowing quirk in this project's pinned tsc: reading the field inline
-   * after the several method calls in `update` — any of which may reach
+   * after the several method calls in `activate` — any of which may reach
    * `trigger` and reassign it — left it typed as `null` regardless, when it
    * can genuinely be non-null there.
    */
-  private consumeLastTeleport(): Pos2 | null {
-    return this.lastTeleport;
+  private consumeLastTeleport(slot: number): Pos2 | null {
+    return this.lastTeleports[slot];
   }
 
   /**
@@ -2241,6 +2280,9 @@ export class SpecialsController {
    * facing where a vanilla teleport overwrites it, and interpolate a
    * line-to-line exit from the crossing point — so every other caller can leave
    * it at the default.
+   *
+   * `slot` is which player a `'player'` activation is: the one its refused key and its teleport
+   * are filed under. Every other activator leaves it at the default.
    */
   private trigger(
     lineIndex: number,
@@ -2248,6 +2290,7 @@ export class SpecialsController {
     activator: defs.Activator = 'player',
     fromBackSide = false,
     at: Placement = NO_SOURCE,
+    slot = 0,
   ): TeleportDest | null {
     const line = this.map.linedefs[lineIndex];
     const def = lookupSpecial(this.lineSpecial(lineIndex));
@@ -2263,7 +2306,9 @@ export class SpecialsController {
       // `if (!player)` *before* the key test that speaks, so 32/33/34 refuse it in silence
       // (`useMonster`).
       if (activator === 'monster') return null;
-      if (activator === 'player') this.lockedLine = { lock: def.lock, kind: def.manual ? 'door' : 'switch' };
+      if (activator === 'player') {
+        this.lockedLines[slot] = { lock: def.lock, kind: def.manual ? 'door' : 'switch' };
+      }
       this.sfx.play('oof');
       return null;
     }
@@ -2306,12 +2351,12 @@ export class SpecialsController {
       // `P_UseSpecialLine` flips inside `if (EV_…)`, i.e. only on success.
       if (gated) this.flashSwitch(lineIndex, def.repeatable);
       // A monster's or voodoo doll's teleport is the caller's to perform, and
-      // must *not* touch `lastTeleport` — that exists solely to reseed the
+      // must *not* touch `lastTeleports` — that exists solely to reseed a
       // player's own walk-trigger tracking (see its doc); where another body
       // jumped to says nothing about where the player just walked.
       if (activator !== 'player') return dest;
-      this.lastTeleport = dest;
-      this.onTeleport(dest);
+      this.lastTeleports[slot] = dest;
+      this.onTeleport(dest, slot);
       return null;
     }
 
@@ -2403,6 +2448,7 @@ export class SpecialsController {
     to: Placement,
     activator: defs.Activator,
     ownedKeys: ReadonlySet<KeySlot>,
+    slot = 0,
   ): TeleportDest | null {
     const { x: prevX, y: prevY } = from;
     const { x, y } = to;
@@ -2430,7 +2476,7 @@ export class SpecialsController {
         angle: to.angle,
       };
       // `oldside`: the side the activator was on before this move — see `trigger`.
-      const dest = this.trigger(i, ownedKeys, activator, !isFrontSide(a.x, a.y, b.x, b.y, prevX, prevY), source);
+      const dest = this.trigger(i, ownedKeys, activator, !isFrontSide(a.x, a.y, b.x, b.y, prevX, prevY), source, slot);
       if (dest) return dest;
     }
     return null;
@@ -2467,7 +2513,7 @@ export class SpecialsController {
     }
   }
 
-  private handleUseTrigger(at: Placement, input: TicInput, ownedKeys: ReadonlySet<KeySlot>): void {
+  private handleUseTrigger(slot: number, at: Placement, input: TicInput, ownedKeys: ReadonlySet<KeySlot>): void {
     if (!input.pressed('Space') && !input.rightMousePressed('use')) return;
     const tx = at.x + cos(at.angle) * USE_RANGE;
     const ty = at.y + sin(at.angle) * USE_RANGE;
@@ -2505,7 +2551,7 @@ export class SpecialsController {
       // shadow what is behind them the same way a switch that worked does.
       if (def?.trigger === 'use' && isFrontSide(a.x, a.y, b.x, b.y, at.x, at.y)) {
         // The player's own stance, for a silent switch teleport (209/210).
-        this.trigger(h.line, ownedKeys, 'player', false, at);
+        this.trigger(h.line, ownedKeys, 'player', false, at, slot);
       }
       // Boom's PASSUSE: the trace keeps going past a special line only while
       // that line carries the flag, so several stacked specials can fire from
@@ -2514,8 +2560,8 @@ export class SpecialsController {
     }
   }
 
-  private handleWalkTriggers(at: Placement, ownedKeys: ReadonlySet<KeySlot>): void {
-    this.crossLines(this.prev, at, 'player', ownedKeys);
+  private handleWalkTriggers(slot: number, at: Placement, ownedKeys: ReadonlySet<KeySlot>): void {
+    this.crossLines(this.prev[slot], at, 'player', ownedKeys, slot);
   }
 
   /**

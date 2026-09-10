@@ -281,12 +281,26 @@ export interface PosedThing extends Pos3, MonsterBody {
   drawPrevY: number;
   drawPrevZ: number;
   /**
-   * Who this monster is currently hunting: `null` for the player, otherwise
-   * another `PosedThing`'s ID. Set by `damage` when something hurts it (see
-   * `shouldRetarget`) — the mechanism behind infighting — and reset to the
-   * player once that target dies.
+   * Who this monster is currently hunting: another `PosedThing`'s ID, or a player slot as
+   * `targetOfSlot` encodes one. Set by `damage` when something hurts it (see `shouldRetarget`) —
+   * the mechanism behind infighting — and reset to player 1 once that target dies.
+   * docs/multiplayer.md § Slot addressing.
    */
-  targetId: number | null;
+  targetId: number;
+}
+
+/**
+ * A player slot as a `targetId`: `-1` for slot 0, `-2` for slot 1, and so on — below every
+ * `PosedThing.id`, so one integer compare tells a player from a monster and the field stays a
+ * small integer. `slotOfTarget` reads it back; only meaningful where `targetId < 0`.
+ * docs/multiplayer.md § Slot addressing.
+ */
+export function targetOfSlot(slot: number): number {
+  return -1 - slot;
+}
+
+export function slotOfTarget(targetId: number): number {
+  return -1 - targetId;
 }
 
 /**
@@ -424,18 +438,19 @@ export interface ThingLayer {
    * (docs/monster-ai.md § Movement). Also ticks barrel death clocks, and returns every attack and
    * `A_Explode` due this frame for the caller to apply.
    *
-   * `player` is `null` while the player is dead, freezing every monster in place; otherwise `z`
-   * refreshes from the sector's live height, the "ride a mover" trick (docs/movement.md § Solid
-   * decorations). `fogVisible` hides things in an unrevealed subsector; `crossLines` gets each
-   * alerted monster and where it stepped from, so the caller can fire the walk triggers in between
-   * and resolve a teleport landing's telefrag (docs/specials-teleporters.md § Teleporters).
+   * `players` is every player slot's body by index, `null` where that player is dead — with none
+   * alive every monster freezes in place; otherwise `z` refreshes from the sector's live height,
+   * the "ride a mover" trick (docs/movement.md § Solid decorations). `fogVisible` hides things in
+   * an unrevealed subsector; `crossLines` gets each alerted monster and where it stepped from, so
+   * the caller can fire the walk triggers in between and resolve a teleport landing's telefrag
+   * (docs/specials-teleporters.md § Teleporters).
    *
    * **Advances the world only — it draws nothing.** `draw` is the other half, and runs on the
    * render clock. docs/frameloop.md § What runs in a tic.
    */
   update(
     dt: number,
-    player: Pos3 | null,
+    players: readonly (Pos3 | null)[],
     fogVisible?: (subsector: number) => boolean,
     crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
     /**

@@ -51,7 +51,7 @@ function pedestal(): { things: ThingLayer; at: { x: number; y: number }; east: n
 /** One shove from the west, then two seconds of it playing out. */
 function shove(things: ThingLayer, at: { x: number; y: number }, damage: number): { x: number; z: number } {
   things.damage(0, damage, { from: { x: at.x - 60, y: at.y } });
-  stepFor(2, () => things.update(DOOM_TIC, null));
+  stepFor(2, () => things.update(DOOM_TIC, [null]));
   return changedThing(things.snapshot(), 0);
 }
 

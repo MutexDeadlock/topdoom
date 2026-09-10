@@ -322,7 +322,7 @@ and `Game.endingOverCorpse` takes the death overlay back down (docs/death.md § 
 out).
 
 **A death from anything else in that sector ends the level too** — `SectorEffects.exitsOnDeath`,
-asked by `damagePlayer` on the killing hit. This one is a deliberate deviation: vanilla only ever
+asked by `damageSlot` on the killing hit. This one is a deliberate deviation: vanilla only ever
 runs the check from `P_PlayerInSpecialSector`, and `P_PlayerThink` returns at `PST_DEAD` before
 reaching it, so a monster finishing the player off in E1M8's pit leaves them dead in it with the
 episode unwon. The sector exists to end the episode over the player's body; *what* killed them there

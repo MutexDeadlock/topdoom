@@ -164,9 +164,9 @@ describe('Specials · voodoo dolls', () => {
       world,
       crushSources({
         // The player is somewhere else entirely.
-        player: { ...grid.centre(2, 0), z: 0 },
+        players: [{ ...grid.centre(2, 0), z: 0 }],
         dolls: dolls.dolls,
-        damagePlayer: (amount) => (dealt += amount),
+        damageSlot: (_slot, amount) => (dealt += amount),
         sprayBlood: () => assert.fail('a doll is drawn as nothing and sprays nothing'),
       }),
       middle,

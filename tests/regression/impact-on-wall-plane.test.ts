@@ -12,6 +12,7 @@ import type { CombatContext } from '../../src/game/combat.ts';
 import type { Player } from '../../src/game/player.ts';
 import type { ProjectileShot } from '../../src/game/weapons.ts';
 import type { MonsterAttackEvent } from '../../src/game/monsters/defs.ts';
+import { targetOfSlot } from '../../src/game/things/defs.ts';
 
 /**
  * `shotPath` ends a missile *on* the wall plane, and a one-shot effect spawned there resolves its
@@ -60,9 +61,8 @@ function rig(): { effects: SpriteFxLayer; projectiles: ProjectileLayer; world: W
   const ctx = {
     world,
     things: null,
-    player,
-    playerDead: false,
-    damagePlayer: () => false,
+    slots: [{ player, dead: false }],
+    damageSlot: () => false,
     triggerShot: () => {},
     triggerShotPath: () => {},
   } as unknown as CombatContext;
@@ -78,7 +78,7 @@ function rig(): { effects: SpriteFxLayer; projectiles: ProjectileLayer; world: W
 
 /** Fires one rocket north and advances until it has arrived. */
 function fireIntoTheWall(rigged: ReturnType<typeof rig>): void {
-  rigged.projectiles.spawnPlayerShot(ROCKET, null, null);
+  rigged.projectiles.spawnPlayerShot(ROCKET, null, null, 0);
   for (let i = 0; i < 60; i++) rigged.projectiles.update(DOOM_TIC);
   rigged.effects.updateImpacts(0);
 }
@@ -97,9 +97,8 @@ function fireTracerIntoTheWall(): { x: number; y: number } {
   const ctx = {
     world,
     things: null,
-    player,
-    playerDead: false,
-    damagePlayer: () => false,
+    slots: [{ player, dead: false }],
+    damageSlot: () => false,
     triggerShot: () => {},
     triggerShotPath: () => {},
   } as unknown as CombatContext;
@@ -121,7 +120,7 @@ function fireTracerIntoTheWall(): { x: number; y: number } {
     sourceId: 0,
     sourceType: 0,
     sourceRadius: 20,
-    targetId: null,
+    targetId: targetOfSlot(0),
     projectiles: [{ sprite: 'FATB', speed: 700, angleRad: NORTH, homing: true }],
   };
   projectiles.spawnMonsterShot(atk);

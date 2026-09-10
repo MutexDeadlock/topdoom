@@ -50,10 +50,10 @@ describe('Savegames · things round-trip', () => {
     // mid-death-animation and a picked item all at once.
     layer.damage(0, 20, { from: player });
     layer.damage(1, 1000);
-    layer.update(DOOM_TIC, player);
+    layer.update(DOOM_TIC, [player]);
     const at = { ...grid.centre(4, 1), z: 0 };
     layer.tryPickup(at, at, 24, (type) => type === ThingType.stimpack);
-    for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, player);
+    for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, [player]);
 
     const saved = JSON.parse(JSON.stringify(layer.snapshot()));
     const cursors = getRandomCursors();
@@ -70,7 +70,7 @@ describe('Savegames · things round-trip', () => {
     // cursors and step the restored copy — every monster must land on exactly
     // the same spot, which is what the RNG-cursors-restored-last rule buys.
     const walk = (l: typeof layer) => {
-      for (let i = 0; i < 35; i++) l.update(DOOM_TIC, player);
+      for (let i = 0; i < 35; i++) l.update(DOOM_TIC, [player]);
       return [0, 2, 3].map((id) => l.monsterById(id)).map((m) => (m ? [m.x, m.y, m.z, m.angle] : null));
     };
     setRandomCursors(cursors);
@@ -91,7 +91,7 @@ describe('Savegames · things round-trip', () => {
     layer.damage(0, 20, { from: player });
     const at = { ...grid.centre(4, 1), z: 0 };
     layer.tryPickup(at, at, 24, (type) => type === ThingType.stimpack);
-    for (let i = 0; i < 5; i++) layer.update(DOOM_TIC, player);
+    for (let i = 0; i < 5; i++) layer.update(DOOM_TIC, [player]);
 
     const saved = JSON.parse(JSON.stringify(layer.snapshot()));
     assert.deepEqual(
@@ -146,7 +146,7 @@ describe('Savegames · things round-trip', () => {
     const player = { ...grid.centre(1, 1), z: 0 };
     layer.damage(0, 20, { from: player });
     layer.damage(1, 1000);
-    layer.update(DOOM_TIC, player);
+    layer.update(DOOM_TIC, [player]);
     const saved = JSON.parse(JSON.stringify(layer.snapshot()));
     const cursors = getRandomCursors();
 
@@ -185,7 +185,7 @@ describe('Savegames · things round-trip', () => {
     const player: Pos3 = { ...grid.centre(1, 1), z: 0 };
     layer.damage(0, 20, { from: player });
     layer.damage(1, 1000);
-    for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, player);
+    for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, [player]);
 
     // Deliberately *not* JSON round-tripped: this is the live object, the way
     // a savegame held in memory is handed back to `loadMapByIndex`.
@@ -198,7 +198,7 @@ describe('Savegames · things round-trip', () => {
     const afterFirst = once.snapshot();
     // Run the restored level on, which is what would corrupt a snapshot the
     // restore had kept a reference into.
-    for (let i = 0; i < 35; i++) once.update(DOOM_TIC, player);
+    for (let i = 0; i < 35; i++) once.update(DOOM_TIC, [player]);
     once.damage(2, 30, { from: player });
 
     const second = arena();
@@ -239,7 +239,7 @@ describe('Savegames · a restored thing stands in the sector under it', () => {
     const layer = build(new World(grid.map));
     const player: Pos3 = { ...grid.centre(1, 1), z: 88 };
     layer.damage(0, 1000);
-    for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, player);
+    for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, [player]);
 
     const saved = JSON.parse(JSON.stringify(layer.snapshot()));
     const low = grid.centre(2, 1);
@@ -249,7 +249,7 @@ describe('Savegames · a restored thing stands in the sector under it', () => {
     const fresh = gridMap(['####', '#hl#', '####'], { cell: 128, heights });
     fresh.map.things.push(thingAt(fresh, 1, 1, 1), thingAt(fresh, 1, 1, ThingType.imp));
     const restored = buildThingSprites(new World(fresh.map), { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
-    restored.update(DOOM_TIC, player);
+    restored.update(DOOM_TIC, [player]);
     const after = restored.snapshot().changed.find((entry) => entry[0] === 0)![1];
     assert.equal(after.z, 24, 'the corpse rides the floor it lies on, not the one it spawned on');
   });
@@ -271,7 +271,7 @@ describe('Savegames · a restored level looks around on the recording’s own ca
   /** Updates until the imp wakes, with a ceiling so a monster that never does fails loudly. */
   function ticsUntilAwake(layer: ReturnType<typeof build>, player: Pos3): number {
     for (let i = 1; i <= 40; i++) {
-      layer.update(DOOM_TIC, player);
+      layer.update(DOOM_TIC, [player]);
       if (layer.awakeMonsterCount() > 0) return i;
     }
     return -1;
@@ -286,7 +286,7 @@ describe('Savegames · a restored level looks around on the recording’s own ca
     // The player stands behind the imp for those, outside the cone `canSpotPlayer` allows, so the
     // level looks around without anything waking (docs/monster-ai.md § Waking up).
     const behind: Pos3 = { ...grid.centre(6, 1), z: 0 };
-    for (let i = 0; i < 17; i++) layer.update(DOOM_TIC, behind);
+    for (let i = 0; i < 17; i++) layer.update(DOOM_TIC, [behind]);
     const saved = JSON.parse(JSON.stringify(layer.snapshot()));
 
     const fresh = corridor();
@@ -317,7 +317,7 @@ describe('Savegames · a restored monster crosses lines from where the save left
     const player: Pos3 = { ...grid.centre(1, 1), z: 0 };
     // Awake and hunting, which is the only state that tests the lines it walked over.
     layer.damage(0, 20, { from: player });
-    layer.update(DOOM_TIC, player);
+    layer.update(DOOM_TIC, [player]);
 
     const saved = JSON.parse(JSON.stringify(layer.snapshot()));
     const moved = grid.centre(3, 1);
@@ -335,7 +335,7 @@ describe('Savegames · a restored monster crosses lines from where the save left
       restore: saved,
     });
     const from: { x: number; y: number }[] = [];
-    restored.update(DOOM_TIC, player, undefined, (prev) => {
+    restored.update(DOOM_TIC, [player], undefined, (prev) => {
       from.push({ x: prev.x, y: prev.y });
       return null;
     });

@@ -58,7 +58,7 @@ function arena(restore?: ThingsSnapshot): Fixture {
       layer.draw(1, 0);
       return layer.drawnFrameKey(0).slice(4);
     },
-    tic: () => layer.update(DOOM_TIC, player).attacks.some((a) => a.kind === 'ranged' && a.blast),
+    tic: () => layer.update(DOOM_TIC, [player]).attacks.some((a) => a.kind === 'ranged' && a.blast),
   };
 }
 
@@ -77,7 +77,7 @@ const CAST_TICS = Math.round(RANGED.duration / DOOM_TIC);
 /** Steps until the vile commits to a cast, leaving the fixture on that tic. */
 function startCast(fx: Fixture): void {
   for (let tic = 0; tic < 400; tic++) {
-    if (fx.layer.update(DOOM_TIC, fx.player).attacks.some((a) => a.kind === 'vileWindup')) return;
+    if (fx.layer.update(DOOM_TIC, [fx.player]).attacks.some((a) => a.kind === 'vileWindup')) return;
   }
   assert.fail('the vile never started a cast');
 }

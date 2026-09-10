@@ -43,7 +43,7 @@ export function setPickupPuff(on: boolean): void {
  * caller resolves it, holding the live monster and player state — docs/monster-archvile.md § The
  * windup flame.
  */
-export type VileFlameResolver = (vileId: number, targetId: number | null) => Pos3 | null;
+export type VileFlameResolver = (vileId: number, targetId: number) => Pos3 | null;
 
 /**
  * Whether a subsector has been revealed — `FogOfWar.isVisible`, handed in so this layer needn't

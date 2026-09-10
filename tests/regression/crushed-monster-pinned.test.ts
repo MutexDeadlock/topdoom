@@ -4,6 +4,7 @@ import { World } from '../../src/game/world.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
+import { targetOfSlot } from '../../src/game/things/defs.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 
@@ -43,7 +44,7 @@ function scene(ceil: number) {
     movedir: 4,
     movecount: 0,
     threshold: 0,
-    targetId: null,
+    targetId: targetOfSlot(0),
     homingBias: false,
     chargeAngle: 0,
     // eslint-disable-next-line

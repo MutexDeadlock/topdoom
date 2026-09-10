@@ -849,7 +849,7 @@ describe('Rendering · fade targets', () => {
     const layer = buildThingSprites(new World(map), { bank: SPRITE_BANK, materials: SPRITE_MATERIALS, skill: 3 });
     const player = { ...grid.centre(1, 1), z: 0 };
     // Long enough for `A_Look` to wake both and for the fog to mark them drawn.
-    for (let i = 0; i < 60; i++) layer.update(DOOM_TIC, player);
+    for (let i = 0; i < 60; i++) layer.update(DOOM_TIC, [player]);
 
     const awakened = layer.awakeMonsters();
     assert.ok(awakened.length >= 2, `both monsters awake and drawn, got ${awakened.length}`);

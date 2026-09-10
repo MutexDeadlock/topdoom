@@ -41,6 +41,8 @@ import {
   type StandingBody,
   type ThingLayer,
   type ThingUpdateResult,
+  slotOfTarget,
+  targetOfSlot,
 } from './things/defs.ts';
 export {
   // Re-exported so this file stays the thing layer's one public entry point — nothing outside
@@ -353,7 +355,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
   function update(
     dt: number,
-    player: Pos3 | null,
+    players: readonly (Pos3 | null)[],
     fogVisible?: (subsector: number) => boolean,
     crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
     useLines?: (mover: CrossingBody, tryX: number, tryY: number) => TeleportDest | null,
@@ -372,7 +374,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       : undefined;
     // Same shape, for the bodies a step can bump into — resolved inside the step, on first probe.
     const blockersNear = (body: MonsterBody, probeReach: number) =>
-      grid.blockersFor(body as PosedThing, player, probeReach);
+      grid.blockersFor(body as PosedThing, players, probeReach);
     // Once per tic, ahead of any `blockersFor` call below — docs/monster-ai.md § Spatial indexing
     // on why a tic-granular grid is accurate enough for contact.
     // `carry` is absent on a level with no conveyor — see `Forces.carriesAnything`.
@@ -387,8 +389,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // The idle look-around, on the same clock and for the same reason: one cadence for the level,
     // which a restore gets back with `clock` itself. docs/monster-ai.md § Waking up.
     const lookTic = tic % LOOK_INTERVAL_TICS === 0;
-    // One BSP descent for the whole sweep: the wake check wants the player's subsector, and the
-    // player moves once a frame rather than once per monster.
+    // The wake check's player: the first slot still alive, until the vanilla rotation over every
+    // slot arrives with coop (docs/multiplayer.md § Player slots). One BSP descent for the whole
+    // sweep — a player moves once a tic rather than once per monster.
+    const player = firstLiving(players);
     const playerSubsector = player ? world.subsectorAt(player.x, player.y) : -1;
     for (const p of posed) {
       // Every thing, every tic, before anything below can move it: `prev` is no substitute (see
@@ -443,7 +447,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         if (respawnTic && p.deadTime >= NIGHTMARE_RESPAWN_DELAY && tables.COUNTKILL_TYPES.has(p.type) && pRandom() <= 4) {
           // No `continue` on success: the monster is alive as of this line and falls through to
           // the live path below, looking around in the same tic.
-          respawnCorpse(p, player);
+          respawnCorpse(p, players);
         }
       }
 
@@ -480,7 +484,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
           }
         }
         if (p.alerted) {
-          const target = resolveTarget(p, player);
+          const target = resolveTarget(p, players);
           if (!target) {
             // Nobody left to want, so the monster gives up and idles exactly like one that never
             // woke — `A_Chase` sends a target-less actor to its spawnstate. Only `damage`'s
@@ -495,10 +499,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
           } else {
             const beforeX = p.x;
             const beforeY = p.y;
-            // The melee gate's `pl->info->radius`/height. The target is the player exactly when
-            // `resolveTarget` fell back to it; anything else is another `PosedThing`, already
-            // carrying its own resolved figures. docs/monster-ai.md § Melee reach.
-            const victim = target === player ? null : (posed[p.targetId!] ?? null);
+            // The melee gate's `pl->info->radius`/height. A player target takes the player's;
+            // anything else is another `PosedThing`, already carrying its own resolved figures.
+            // docs/monster-ai.md § Melee reach.
+            const victim = p.targetId < 0 ? null : (posed[p.targetId] ?? null);
             const targetRadius = victim ? victim.blockRadius : PLAYER_RADIUS;
             const targetHeight = victim ? victim.bodyHeight : PLAYER_HEIGHT;
             const result = stepMonsterAI(p, stats, world, {
@@ -923,7 +927,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     type: number,
     at: Pos3,
     facingDeg: number,
-    opts?: { ambush?: boolean; dropped?: boolean; alerted?: boolean; targetId?: number | null },
+    opts?: { ambush?: boolean; dropped?: boolean; alerted?: boolean; targetId?: number },
   ): PosedThing | null {
     const spriteName = tables.THING_SPRITES[type];
     if (!spriteName) return null;
@@ -1012,7 +1016,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       angle: (facingDeg * Math.PI) / 180,
       homingBias: (pRandom() & 1) !== 0,
       prev: { x, y },
-      targetId: opts?.targetId ?? null,
+      targetId: opts?.targetId ?? targetOfSlot(0),
     };
     posed.push(thing);
     return thing;
@@ -1472,19 +1476,18 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
   /**
    * Where a monster should currently be heading, or `null` if it has nobody left to want.
-   * `targetId` is non-null only after something other than the player hurt it
+   * `targetId` names a monster only after something other than a player hurt it
    * (`damageThing` → `shouldRetarget`), and a target that dies hands attention straight back to
-   * the player, as `A_Chase` does via `P_LookForPlayers`. A dead player arrives here as a null
-   * `player`, so a monster with no *other* target finds nobody.
-   * docs/monster-ai.md § Infighting.
+   * player 1, as `A_Chase` does via `P_LookForPlayers`. A dead player is a null slot, so a monster
+   * with no *other* target finds nobody. docs/monster-ai.md § Infighting.
    */
-  function resolveTarget(p: PosedThing, player: Pos3 | null): Pos3 | null {
-    if (p.targetId === null) return player;
+  function resolveTarget(p: PosedThing, players: readonly (Pos3 | null)[]): Pos3 | null {
+    if (p.targetId < 0) return players[slotOfTarget(p.targetId)] ?? null;
     const other = posed[p.targetId];
     if (!other || other.dead) {
-      p.targetId = null;
+      p.targetId = targetOfSlot(0);
       p.threshold = 0;
-      return player;
+      return players[0] ?? null;
     }
     return other;
   }
@@ -1515,7 +1518,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     p.velY = 0;
     p.velZ = 0;
     p.alerted = true; // the raisestate falls straight through to RUN1 — chasing, not dormant
-    p.targetId = null; // vanilla's `corpsehit->target = NULL`; `resolveTarget` falls back
+    p.targetId = targetOfSlot(0); // vanilla's `corpsehit->target = NULL`; `resolveTarget` falls back
     p.movedir = DI_NODIR;
     p.movecount = 0;
     p.chaseTimer = 0;
@@ -1546,17 +1549,19 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * replaced, so its `id` — and every saved `targetId` pointing at it — survives.
    * docs/monster-ai.md § Respawning monsters.
    */
-  function respawnCorpse(p: PosedThing, player: Pos3 | null): boolean {
+  function respawnCorpse(p: PosedThing, players: readonly (Pos3 | null)[]): boolean {
     const sector = world.sectorAt(p.spawnX, p.spawnY);
     // The same ceiling-hung measurement the spawn loop makes, and for the same reason; vanilla
     // splits it as `ONCEILINGZ`/`ONFLOORZ` right here in `P_NightmareRespawn`.
     const hangHeight = p.hangHeight;
     const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
 
-    // `solidBodies` skips the dead, so the corpse itself never blocks its own return; the player
-    // isn't in `posed` at all and has to be added by hand.
+    // `solidBodies` skips the dead, so the corpse itself never blocks its own return; the players
+    // aren't in `posed` at all and have to be added by hand.
     const blockers = grid.solidBodies({ x: p.spawnX, y: p.spawnY });
-    if (player) blockers.push({ x: player.x, y: player.y, z: player.z, radius: PLAYER_RADIUS, height: PLAYER_HEIGHT });
+    for (const player of players) {
+      if (player) blockers.push({ x: player.x, y: player.y, z: player.z, radius: PLAYER_RADIUS, height: PLAYER_HEIGHT });
+    }
     const at = makeCollider({ radius: p.blockRadius, z, height: p.bodyHeight, forMonster: true, blockers });
     if (world.positionBlocked(p.spawnX, p.spawnY, at)) return false;
 
@@ -1586,7 +1591,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // Dormant again, unlike an arch-vile's raise: the monster respawns into its *spawnstate* and
     // has to catch sight of the player all over again, `isAmbush` included.
     p.alerted = false;
-    p.targetId = null;
+    p.targetId = targetOfSlot(0);
     p.movedir = DI_NODIR;
     p.movecount = 0;
     p.chaseTimer = 0;
@@ -1622,7 +1627,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       !p.dead &&
       !p.alerted &&
       p.health === spawnHealthFor(p.type, p.dropped) &&
-      p.targetId === null &&
+      p.targetId === targetOfSlot(0) &&
       p.velX === 0 &&
       p.velY === 0 &&
       p.velZ === 0
@@ -1774,4 +1779,10 @@ function monsterRef(p: PosedThing): MonsterRef {
     radius: p.blockRadius,
     height: p.bodyHeight,
   };
+}
+
+/** The first slot whose player is still alive, or null with none — `update`'s wake-check player. */
+function firstLiving(players: readonly (Pos3 | null)[]): Pos3 | null {
+  for (const player of players) if (player) return player;
+  return null;
 }

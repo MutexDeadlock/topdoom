@@ -50,9 +50,9 @@ export const AWAY = { x: -1000, y: -1000, z: 0 };
 export function crushSources(over: Partial<OccupancySources> = {}): OccupancySources {
   return {
     things: () => null,
-    player: AWAY,
+    players: [AWAY],
     dolls: [],
-    damagePlayer: () => assert.fail('nothing in this test should damage the player'),
+    damageSlot: () => assert.fail('nothing in this test should damage the player'),
     sprayBlood: () => {},
     ...over,
   };
@@ -182,7 +182,7 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
       // The rig has no bodies of its own, so it has no corpses to crunch either.
       squash: () => {},
     },
-    playerAt: at,
+    playersAt: [at],
     movableSectors,
     sfx: options.sfx,
   });

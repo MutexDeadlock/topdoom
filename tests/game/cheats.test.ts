@@ -154,7 +154,8 @@ describe('Cheats · IDCLIP', () => {
       heights: { H: { floor: 64, ceil: 192 } },
     });
     const floor = grid.centre(1, 2);
-    const player = new Player(new World(grid.map));
+    const world = new World(grid.map);
+    const player = new Player(world);
     player.moveTo(floor);
     return { player, edgeY: floor.y + CELL / 2 };
   }

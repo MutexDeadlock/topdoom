@@ -35,7 +35,7 @@ function crushingRoom(type?: number) {
   const pulse = (dealDamage = true, player = AWAY) =>
     applyCrushDamage(
       world,
-      crushSources({ things: () => things, player, damagePlayer: () => {}, sprayBlood: (at) => void sprayed.push(at) }),
+      crushSources({ things: () => things, players: [player], damageSlot: () => {}, sprayBlood: (at) => void sprayed.push(at) }),
       sectorIndex,
       dealDamage,
     );

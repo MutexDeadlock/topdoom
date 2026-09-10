@@ -43,9 +43,8 @@ function rig(row: number) {
   const ctx = {
     world,
     things: null,
-    player,
-    playerDead: false,
-    damagePlayer: () => false,
+    slots: [{ player, dead: false }],
+    damageSlot: () => false,
     triggerShot: () => {},
     triggerShotPath: () => {},
   } as unknown as CombatContext;
@@ -62,7 +61,7 @@ function rig(row: number) {
 describe('Regressions · where a missile is born', () => {
   test('half a tic of its own momentum ahead of the shooter, at the missile fire height', () => {
     const { projectiles, player, at } = rig(3);
-    projectiles.spawnPlayerShot(PLASMA, null, null);
+    projectiles.spawnPlayerShot(PLASMA, null, null, 0);
 
     const [shot] = projectiles.snapshot();
     assert.ok(shot, 'the plasma bolt is in flight');
@@ -85,7 +84,7 @@ describe('Regressions · where a missile is born', () => {
     // Six units off the wall, well inside the 12.5 the bolt would otherwise be moved: this is what
     // stands in for vanilla's `P_TryMove` failing at the nudged point.
     player.y = GRID.centre(0, 0).y - 64 - 6;
-    projectiles.spawnPlayerShot(PLASMA, null, null);
+    projectiles.spawnPlayerShot(PLASMA, null, null, 0);
 
     const [shot] = projectiles.snapshot();
     const nudge = (PLASMA_SPEED * DOOM_TIC) / 2;

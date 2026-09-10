@@ -46,14 +46,14 @@ export interface OccupancySources {
    */
   things: () => ThingLayer | null;
   /**
-   * The live player position — read every tic, so it must be the player object itself. `z` is the
-   * feet height the crusher's spray is measured up from.
+   * The live player bodies by slot — read every tic, so they must be the player objects
+   * themselves. `z` is the feet height the crusher's spray is measured up from.
    */
-  player: Pos3;
-  /** The level's voodoo dolls (`game/voodoo.ts`): a crusher catching one hurts the real player. */
+  players: readonly Pos3[];
+  /** The level's voodoo dolls (`game/voodoo.ts`): a crusher catching one hurts player 1. */
   dolls: readonly Pos2[];
-  /** Crush damage to the player. The cause is fixed per wiring site, so the caller binds it. */
-  damagePlayer: (amount: number) => void;
+  /** Crush damage to one player. The cause is fixed per wiring site, so the caller binds it. */
+  damageSlot: (slot: number, amount: number) => void;
   /**
    * `PIT_ChangeSector`'s blood spray, at the caught body's middle —
    * `SpriteFxLayer.spawnCrushBlood`, which lives in `game.ts` like every other effect.
@@ -85,7 +85,7 @@ export function applyCrushDamage(
   sectorIndex: number,
   dealDamage: boolean,
 ): boolean {
-  const { player, dolls, damagePlayer, sprayBlood } = sources;
+  const { players, dolls, damageSlot, sprayBlood } = sources;
   const things = sources.things();
   const map = world.map;
   const sector = map.sectors[sectorIndex];
@@ -108,12 +108,14 @@ export function applyCrushDamage(
     for (const body of dolls) {
       if (!crushed(world, body.x, body.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) continue;
       caught = true;
-      if (dealDamage) damagePlayer(CRUSH_DAMAGE);
+      if (dealDamage) damageSlot(0, CRUSH_DAMAGE);
     }
-    if (crushed(world, player.x, player.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) {
+    for (let slot = 0; slot < players.length; slot++) {
+      const player = players[slot];
+      if (!crushed(world, player.x, player.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) continue;
       caught = true;
       if (dealDamage) {
-        damagePlayer(CRUSH_DAMAGE);
+        damageSlot(slot, CRUSH_DAMAGE);
         sprayBlood({ x: player.x, y: player.y, z: player.z + PLAYER_HEIGHT / 2 });
       }
     }
@@ -167,13 +169,13 @@ export class MoverOccupancy implements Occupancy {
   }
 
   blocksCeilingLower(sectorIndex: number, ceilingHeight: number): boolean {
-    const { things, player } = this.sources;
-    return blocksCeilingLower(this.world, things(), player, sectorIndex, ceilingHeight);
+    const { things, players } = this.sources;
+    return blocksCeilingLower(this.world, things(), players, sectorIndex, ceilingHeight);
   }
 
   blocksFloorRise(sectorIndex: number, floorHeight: number): boolean {
-    const { things, player } = this.sources;
-    return blocksFloorRise(this.world, things(), player, sectorIndex, floorHeight);
+    const { things, players } = this.sources;
+    return blocksFloorRise(this.world, things(), players, sectorIndex, floorHeight);
   }
 
   crush(sectorIndex: number, dealDamage: boolean): boolean {
@@ -192,12 +194,12 @@ export class MoverOccupancy implements Occupancy {
 function blocksCeilingLower(
   world: World,
   things: ThingLayer | null,
-  player: Pos2,
+  players: readonly Pos2[],
   sectorIndex: number,
   ceilingHeight: number,
 ): boolean {
   const floorHeight = world.map.sectors[sectorIndex].floorHeight;
-  return headroomBlocked(world, things, player, { sectorIndex, floorHeight, ceilingHeight });
+  return headroomBlocked(world, things, players, { sectorIndex, floorHeight, ceilingHeight });
 }
 
 /**
@@ -212,7 +214,7 @@ function blocksCeilingLower(
 function blocksFloorRise(
   world: World,
   things: ThingLayer | null,
-  player: Pos2,
+  players: readonly Pos2[],
   sectorIndex: number,
   floorHeight: number,
 ): boolean {
@@ -222,11 +224,9 @@ function blocksFloorRise(
   // crushed there — having it silently jam the level's own machinery is the
   // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
   const map = world.map;
-  if (
-    boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex) &&
-    floorHeight + PLAYER_HEIGHT > world.groundCeiling(player.x, player.y, PLAYER_RADIUS)
-  ) {
-    return true;
+  for (const player of players) {
+    if (!boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) continue;
+    if (floorHeight + PLAYER_HEIGHT > world.groundCeiling(player.x, player.y, PLAYER_RADIUS)) return true;
   }
   // `headroomBlocked`'s early-out, widened to the sectors a box walk can actually reach: this
   // sector's own gap clearing the tallest body says nothing about a neighbor's.
@@ -284,14 +284,13 @@ interface SectorSlot {
  * height (`MonsterRef.height`), so a door closes on a cyberdemon well before it
  * would on an imp. docs/specials-movers.md § Every other mover stops instead.
  */
-function headroomBlocked(world: World, things: ThingLayer | null, player: Pos2, slot: SectorSlot): boolean {
+function headroomBlocked(world: World, things: ThingLayer | null, players: readonly Pos2[], slot: SectorSlot): boolean {
   const { sectorIndex, floorHeight, ceilingHeight } = slot;
   const map = world.map;
-  if (
-    boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex) &&
-    floorHeight + PLAYER_HEIGHT > ceilingHeight
-  ) {
-    return true;
+  if (floorHeight + PLAYER_HEIGHT > ceilingHeight) {
+    for (const player of players) {
+      if (boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) return true;
+    }
   }
   // Nothing in the game is taller than this, so a gap that clears it clears
   // everyone — worth the early-out because it skips the sector query entirely,

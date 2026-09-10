@@ -247,7 +247,7 @@ export const MONSTER_FIELD_DEFAULTS: {
   velY: 0,
   velZ: 0,
   alerted: false,
-  targetId: null,
+  targetId: -1,
   attackPause: 0,
   burstLeft: 0,
   burstTimer: 0,
@@ -353,8 +353,16 @@ export interface IconSnapshot {
   cubes: CubeState[];
 }
 
-/** A `Projectile` minus its animator, which restore rebuilds from `sprite`. */
-export type ProjectileSnapshot = Omit<Projectile, 'anim'>;
+/**
+ * A `Projectile` minus its animator, which restore rebuilds from `sprite`. Player 1 as its
+ * `sourceId` or its homing `targetId` is written as `null`, the encoding saves have always carried
+ * — `ProjectileLayer` maps `targetOfSlot(0)` across at the boundary, until the coop format break
+ * (docs/multiplayer.md § Slot addressing). docs/savegames.md § The format and its version.
+ */
+export type ProjectileSnapshot = Omit<Projectile, 'anim' | 'sourceId' | 'homing'> & {
+  sourceId: number | null;
+  homing?: Omit<NonNullable<Projectile['homing']>, 'targetId'> & { targetId: number | null };
+};
 
 /**
  * A teleport-fog puff mid-animation: where it is and how far into its ~1.7 s it

@@ -43,14 +43,14 @@ describe('Knockback · momentum clamp', () => {
     const { things, at } = room(ThingType.imp);
     // A BFG ball's top contact roll, from the west: 100 units/tic unclamped.
     things.damage(0, 800, { from: { x: at.x - 60, y: at.y } });
-    things.update(DOOM_TIC, null);
+    things.update(DOOM_TIC, [null]);
     assert.equal(x(things) - at.x, MAX_STEP, 'one tic moves it MAXMOVE, no more');
   });
 
   test('a thing hit that hard stays inside the room', () => {
     const { things, at } = room(ThingType.imp);
     things.damage(0, 800, { from: { x: at.x - 60, y: at.y } });
-    for (let tic = 0; tic < 35; tic++) things.update(DOOM_TIC, null);
+    for (let tic = 0; tic < 35; tic++) things.update(DOOM_TIC, [null]);
     assert.ok(x(things) + IMP_RADIUS <= 2 * CELL, `east wall at ${2 * CELL} holds it (x ${x(things)})`);
     assert.ok(x(things) > at.x, 'and it did get shoved');
   });
@@ -61,7 +61,7 @@ describe('Knockback · momentum clamp', () => {
     // half-step lands on the wall. 240 damage is exactly MAXMOVE for mass 100.
     const { things, at } = room(ThingType.barrel, 2 * CELL - 15);
     things.damage(0, 240, { from: { x: at.x - 60, y: at.y } });
-    things.update(DOOM_TIC, null);
+    things.update(DOOM_TIC, [null]);
     assert.ok(x(things) + BARREL_RADIUS <= 2 * CELL, `still inside the room (x ${x(things)})`);
   });
 

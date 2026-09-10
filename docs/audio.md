@@ -78,7 +78,7 @@ and one stereo panner per voice, both computed the way `S_AdjustSoundParams` com
   burst rule turned away, printed as the DEVMODE status text's sound-channel line
   (docs/devmode.md § Dev mode).
 - **Origins** are vanilla's `origin` mobj pointer as a numeric key (`monsterOrigin`,
-  `sectorOrigin`, `PLAYER_ORIGIN`, in disjoint ranges). One sound per origin at a time is
+  `sectorOrigin`, `playerOrigin`, in disjoint ranges). One sound per origin at a time is
   what makes a held chaingun trigger sound like a chaingun instead of a dozen layered shots
   — and what turns the chainsaw's 4-tic idle retrigger into one continuous engine note.
 

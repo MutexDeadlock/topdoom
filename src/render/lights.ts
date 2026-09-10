@@ -110,6 +110,11 @@ export const SHADOW_TAPS = Math.ceil(2 * SHADOW_SOFT_BINS) + 1;
  */
 export const PLAYER_EMITTER_ID = -1_000_000;
 
+/** Player slot `slot`'s emitter ID — `PLAYER_EMITTER_ID` and downward, past where the effects wrap. */
+export function playerEmitterId(slot: number): number {
+  return PLAYER_EMITTER_ID - slot;
+}
+
 /** Sprite tints are sampled into this rather than allocating per drawn sprite. */
 export interface Tint {
   r: number;

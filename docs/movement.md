@@ -392,7 +392,7 @@ deliberately keeps its own pre-existing flat-100-mass approximation (`VILE_KNOCK
 than switching to this table — shipped, working behavior for one rare attack.
 
 **Where the impulse gets computed is centralized to the two places all damage already flows
-through** — `ThingLayer.damage` (monsters and barrels) and `game.ts`'s `damagePlayer` — rather than
+through** — `ThingLayer.damage` (monsters and barrels) and `game.ts`'s `damageSlot` — rather than
 at each of the dozen-plus call sites that deal damage. Both take optional trailing `fromX`/`fromY`;
 when given, they compute the away-from-source unit vector (falling back to the victim's own facing
 in the degenerate case where attacker and victim occupy essentially the same point, e.g. point-blank

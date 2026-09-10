@@ -104,7 +104,8 @@ room lights nothing — the gather sits inside those gates rather than beside th
 
 Emitter IDs come from three disjoint ranges, because the ID is what `dontlightself` and the flicker
 phase key off: `PosedThing.id` is a plain array index (0 and up), `SpriteFxLayer` hands out negative
-IDs from a `WeakMap` on the animator, and the player has `PLAYER_EMITTER_ID` below both. The effect
+IDs from a `WeakMap` on the animator, and each player slot has `playerEmitterId(slot)` below both,
+counting down from `PLAYER_EMITTER_ID`. The effect
 IDs live on a `WeakMap` rather than a field precisely so no record shape — and so no snapshot —
 changes.
 

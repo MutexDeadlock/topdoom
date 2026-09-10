@@ -16,7 +16,7 @@ import { PLAYER_RADIUS, SIGHT_EYE_HEIGHT } from '../player.ts';
 import { SPAWN_CUBE_MONSTERS } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
 import { bodiesOverlap, TELEFRAG_DAMAGE } from '../things.ts';
-import type { CombatContext } from '../combat.ts';
+import { anyPlayerAlive, type CombatContext } from '../combat.ts';
 import type { IconSnapshot } from '../snapshot.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
 import { SILENT, type SoundEmitter } from '../../audio/sfx.ts';
@@ -271,7 +271,7 @@ export class IconOfSin {
     }
     if (!this.shooter) return;
     if (!this.awake) {
-      if (this.ctx.playerDead || !this.eyeNotices()) return;
+      if (!anyPlayerAlive(this.ctx.slots) || !this.eyeNotices()) return;
       this.brainAwake();
       return;
     }
@@ -334,7 +334,8 @@ export class IconOfSin {
     if (sector && world.isSoundAlerted(sector)) return true;
     const floor = world.floorAt(this.shooter.x, this.shooter.y);
     const at = { x: this.shooter.x, y: this.shooter.y, z: floor + SHOOTER_SIGHT_Z - SIGHT_EYE_HEIGHT };
-    return world.hasLineOfSight(at, this.ctx.player);
+    for (const slot of this.ctx.slots) if (!slot.dead && world.hasLineOfSight(at, slot.player)) return true;
+    return false;
   }
 
   /** `A_BrainAwake`: collect every `MT_BOSSTARGET` on the level, reset the cursor, shout once. */
@@ -418,14 +419,17 @@ export class IconOfSin {
     const roll = pRandom();
     const last = SPAWN_CUBE_MONSTERS[SPAWN_CUBE_MONSTERS.length - 1];
     const entry = SPAWN_CUBE_MONSTERS.find((e) => roll < e.below) ?? last;
-    // Facing the player: vanilla's newly spawned monster goes straight to its seestate with the
+    // Facing player 1: vanilla's newly spawned monster goes straight to its seestate with a
     // player acquired, so there is no idle facing for it to keep.
-    const angleRad = atan2(this.ctx.player.y - at.y, this.ctx.player.x - at.x);
+    const player = this.ctx.slots[0].player;
+    const angleRad = atan2(player.y - at.y, player.x - at.x);
     const spawned = this.ctx.things?.spawnMonster(entry.type, at, angleRad);
-    if (!spawned || this.ctx.playerDead) return;
+    if (!spawned) return;
     // The player half of the telefrag — `ThingLayer.spawnMonster` already did every other body.
-    if (bodiesOverlap(spawned, this.ctx.player, PLAYER_RADIUS + PLAYER_TELEFRAG_RADIUS)) {
-      this.ctx.damagePlayer(TELEFRAG_DAMAGE, spawned.x, spawned.y, spawned.type);
+    for (let slot = 0; slot < this.ctx.slots.length; slot++) {
+      const { player, dead } = this.ctx.slots[slot];
+      if (dead || !bodiesOverlap(spawned, player, PLAYER_RADIUS + PLAYER_TELEFRAG_RADIUS)) continue;
+      this.ctx.damageSlot(slot, TELEFRAG_DAMAGE, spawned.x, spawned.y, spawned.type);
     }
   }
 

@@ -31,9 +31,9 @@ export interface SectorEffectResult {
 
 /**
  * The sector specials that need no mover at all, just `sector.special` and
- * where the player is standing: damage floors and the secret counter
- * (vanilla's `P_PlayerInSpecialSector`). Runs for the **console player only**,
- * so a voodoo doll parked on a damage floor costs nothing. See
+ * where a player is standing: damage floors and the secret counter
+ * (vanilla's `P_PlayerInSpecialSector`). Runs for **each player slot, never a
+ * voodoo doll**, so a doll parked on a damage floor costs nothing. See
  * docs/specials.md § Damage floors, § Secret sectors and § Voodoo dolls.
  */
 export class SectorEffects {
@@ -45,17 +45,19 @@ export class SectorEffects {
    */
   secretsFound = 0;
   /**
-   * Counts down to the next damage-floor tick while the player stands on one.
+   * Per slot, counts down to the next damage-floor tick while that player stands on one.
    * Reset (not merely paused) whenever they aren't, so re-entering a hazard
    * always gives the same brief grace period rather than resuming mid-countdown
-   * from a stale visit.
+   * from a stale visit. Sized per slot at construction; the save carries slot 0's
+   * (docs/savegames.md § What is saved and what is deliberately not).
    */
-  private timer = DAMAGE_FLOOR_INTERVAL;
+  private timers: number[];
 
-  constructor(map: DoomMap) {
+  constructor(map: DoomMap, slotCount = 1) {
     let secrets = 0;
     for (const sector of map.sectors) if (decodeSectorType(sector.special).secret) secrets++;
     this.totalSecrets = secrets;
+    this.timers = new Array<number>(slotCount).fill(DAMAGE_FLOOR_INTERVAL);
   }
 
   /**
@@ -66,12 +68,13 @@ export class SectorEffects {
    */
   restore(s: SectorEffectsSnapshot): void {
     this.secretsFound = s.secretsFound;
-    this.timer = s.timer;
+    this.timers.fill(DAMAGE_FLOOR_INTERVAL);
+    this.timers[0] = s.timer;
   }
 
   /** The counterpart snapshot — docs/savegames.md § What is saved and what is deliberately not. */
   snapshot(): SectorEffectsSnapshot {
-    return { secretsFound: this.secretsFound, timer: this.timer };
+    return { secretsFound: this.secretsFound, timer: this.timers[0] };
   }
 
   /**
@@ -88,10 +91,10 @@ export class SectorEffects {
   }
 
   /**
-   * Runs this frame's specials for the sector the player is standing in and reports what they did
-   * — a secret being entered, and whether one of them ends the level (an `exitBelowHealth` floor).
-   * Gated on `player.z === sector.floorHeight` (vanilla's `mo->z != floorheight`),
-   * read off the local sector rather than `World.groundFloor`.
+   * Runs this frame's specials for the sector slot `slot`'s player is standing in and reports what
+   * they did — a secret being entered, and whether one of them ends the level (an
+   * `exitBelowHealth` floor). Gated on `player.z === sector.floorHeight` (vanilla's
+   * `mo->z != floorheight`), read off the local sector rather than `World.groundFloor`.
    */
   update(
     dt: number,
@@ -99,10 +102,11 @@ export class SectorEffects {
     player: Pos3,
     inv: Inventory,
     damage: (amount: number) => void,
+    slot = 0,
   ): SectorEffectResult {
     const sector = world.sectorAt(player.x, player.y);
     if (!sector || player.z !== sector.floorHeight) {
-      this.timer = DAMAGE_FLOOR_INTERVAL;
+      this.timers[slot] = DAMAGE_FLOOR_INTERVAL;
       return { exit: false, secretFound: false };
     }
     let secretFound = false;
@@ -117,15 +121,15 @@ export class SectorEffects {
     }
     const effect = decoded.damage;
     if (!effect) {
-      this.timer = DAMAGE_FLOOR_INTERVAL;
+      this.timers[slot] = DAMAGE_FLOOR_INTERVAL;
       return { exit: false, secretFound };
     }
-    this.timer -= dt;
-    if (this.timer <= 0) {
+    this.timers[slot] -= dt;
+    if (this.timers[slot] <= 0) {
       // The interval keeps running even when a suit blocks the hit, matching
       // vanilla's own global `leveltime&0x1f` clock: the suit skips the damage,
       // it doesn't bank it up for the moment it expires.
-      this.timer += DAMAGE_FLOOR_INTERVAL;
+      this.timers[slot] += DAMAGE_FLOOR_INTERVAL;
       if (!suitBlocks(effect, inv)) damage(effect.amount);
     }
     // Tested every frame the player stands here and at any health down to 0, *outside* the damage

@@ -57,7 +57,7 @@ const alive = (layer: ReturnType<typeof arena>['layer'], grid: ReturnType<typeof
 
 /** Runs `seconds` of simulation at the fixed tic, stopping early once `done` holds. */
 function run(layer: ReturnType<typeof arena>['layer'], player: Pos3, seconds: number, done?: () => boolean): number {
-  return stepFor(seconds, () => layer.update(DOOM_TIC, player), done);
+  return stepFor(seconds, () => layer.update(DOOM_TIC, [player]), done);
 }
 
 describe('Monster AI · nightmare respawn', () => {

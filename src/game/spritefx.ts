@@ -308,10 +308,18 @@ export class SpriteFxLayer {
    */
   spawnTeleportPair(from: Pos3, dest: Placement, destZ: number): void {
     this.spawnTeleportFog(from);
+    this.spawnArrivalFog(dest, destZ);
+  }
+
+  /**
+   * The pair's landing half alone, ahead of `dest` along its facing on floor `z` — also
+   * `G_CheckSpot`'s fog for a coop respawn (docs/multiplayer-coop.md § Respawn).
+   */
+  spawnArrivalFog(dest: Placement, z: number): void {
     this.spawnTeleportFog({
       x: dest.x + cos(dest.angle) * TFOG_SPAWN_OFFSET,
       y: dest.y + sin(dest.angle) * TFOG_SPAWN_OFFSET,
-      z: destZ,
+      z,
     });
   }
 

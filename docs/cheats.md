@@ -156,9 +156,7 @@ and its best-time comparison for one red `You cheated` line under the `STFKILL3`
 them into the next map the way vanilla's `player_t.cheats` does; `restart` after a death reloads a
 checkpoint, and what that save recorded is what comes back.
 
-A save records the toggles for a session that **used** one (`GameSnapshot.cheats`, optional and
-absent otherwise), which is also what a save from before cheats existed carries — so old saves read
-as "no cheats" and `SAVE_VERSION` did not move (docs/savegames.md § The format and its version).
-The block's mere presence is what restores `used`: it is written for no other reason, so an IDKFA
-session records `{god: false, noclip: false}` where it used to record nothing. An old build reading
-that block sets both toggles off, which is what absence meant to it — the format did not change.
+A save records the toggles per slot for a session that **used** one (`PlayerSlotSnapshot.cheats`,
+optional and absent otherwise), so a save that never cheated reads as "no cheats". The block's mere
+presence is what restores `used`: it is written for no other reason, so an IDKFA session records
+`{god: false, noclip: false}`.

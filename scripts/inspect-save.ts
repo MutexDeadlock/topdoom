@@ -39,8 +39,11 @@ const state = JSON.parse(
   await decompressText(base64ToBytes(file.state as string)),
 ) as GameSnapshot;
 
-const p = state.player;
-console.log(`\nplayer: ${p.x.toFixed(1)}, ${p.y.toFixed(1)}  z ${p.z}  angle ${p.angle.toFixed(3)}  camera yaw ${state.cameraYawDeg}°`);
+console.log(state.netgame ? `\nnetgame, ${state.players.length} players` : '\nsingle player');
+for (const [slot, { player: p, cameraYawDeg, dead }] of state.players.entries()) {
+  const where = `${p.x.toFixed(1)}, ${p.y.toFixed(1)}  z ${p.z}  angle ${p.angle.toFixed(3)}`;
+  console.log(`player ${slot + 1}: ${where}  camera yaw ${cameraYawDeg}°${dead ? '  (dead)' : ''}`);
+}
 console.log(`level time ${Number(file.levelTime).toFixed(1)}s, records ${state.cheated ? 'forfeited' : 'eligible'}`);
 console.log(
   `state: ${Object.keys(state).length} top-level keys — ` +

@@ -163,8 +163,8 @@ Explored subsectors are skipped forever after, so the per-frame cost falls as a 
 
 **The sight-sampling sweep is budgeted, not run to completion**, under two caps that a `tick` stops
 at whichever it reaches first. `MAX_SIGHT_TESTS_PER_TIC` (350, tuned by feel) caps how many
-not-yet-explored subsectors get their sample rays tested; `scanCursor` remembers where the
-round-robin left off — over the nearest-first `order`, § Sweep order — and a subsector that fails
+not-yet-explored subsectors get their sample rays tested; each slot's sweep remembers where its
+round-robin left off — over its nearest-first `order`, § Sweep order — and a subsector that fails
 every sample is simply retried on a later pass.
 Without a cap, cost is `unexplored subsectors × samples per subsector × the cost of a ray`, and on a
 level where all three are large at once — freedoom2 MAP03 (315 sectors, 2855 linedefs, 1531
@@ -199,7 +199,7 @@ the surroundings don't rise out of black on frame one.
 
 **The budgeted sweep visits candidates nearest the player first** (`order`, `buildOrder`), and on a
 large level that ordering matters more than either budget. Under the plain BSP-index round-robin
-this started as, `scanCursor` walks the subsector array in an order with no relation to where the
+this started as, the cursor walks the subsector array in an order with no relation to where the
 player is, so a tic's whole budget goes on whatever indices the cursor happens to be sitting on.
 
 That is fine while the level is small enough for one pass to fit in a tic or two, and it collapses
@@ -216,9 +216,9 @@ instead of misses, because near subsectors have both short rays and a ~99% hit r
 not move (DOOM2 MAP01 and MAP15 are inside two tics either way).
 
 **The cursor is still needed, and pure nearest-first starves.** Restarting from the near end every
-tic and dropping `scanCursor` sounds simpler and reveals only 1,421 of the 9,778: the near band
-soaks the budget and the sweep never reaches anything behind it. So `scanCursor` advances through
-`order` as before and wraps at `orderCount`; what changed is only the sequence it walks.
+tic and dropping the cursor sounds simpler and reveals only 1,421 of the 9,778: the near band
+soaks the budget and the sweep never reaches anything behind it. So the cursor advances through
+`order` as before and wraps at its live `count`; what changed is only the sequence it walks.
 
 **`order` is rebuilt when the player drifts `ORDER_ANCHOR_SLACK` from the point it was built for**,
 and the rebuild restarts the cursor at the near end — the player being somewhere new is exactly
@@ -245,6 +245,13 @@ player stands perfectly still, with the cursor already deep in a pass, still wai
 worse than before, but not better either. Both are bounded by the same underlying quantity, which is
 that `VIEW_DISTANCE` admits 56% of this map as candidates — the sweep is spending its budget well
 now, not spending less of it.
+
+**Every slot sweeps from an anchor of its own** (`SweepAnchor`: `order`, its live `count`, the point
+it was built for, the cursor), made on the slot's first reveal. The constructor seeds every slot's
+start unbounded; `tick(points)` divides both caps between the points it is handed and runs each
+slot's share from its body. Only the local slot's (the constructor's `local`)
+sweep moves the drawn island, and a ray from another slot merges into the island that slot stands
+in (§ Islands). docs/multiplayer-coop.md § Shared fog of war.
 
 ## Closed sectors
 

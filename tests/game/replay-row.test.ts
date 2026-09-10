@@ -12,6 +12,7 @@ import {
   NO_CAMERA,
   START_POSE,
   START_SNAPSHOT,
+  beginTic,
   recordingStart,
   replayCapture,
   scriptedInput,
@@ -99,34 +100,37 @@ describe('Replays · the row codec', () => {
 
   test('a playback answers the right button under its own settings, and moves with their events', () => {
     const capture = replayCapture(3);
-    capture.data.tics.buttons = [BUTTON_RIGHT_EDGE, BUTTON_RIGHT_EDGE, BUTTON_RIGHT_EDGE];
-    capture.data.events = [{ tic: 2, kind: 'settings', settings: { ...capture.data.settings, rightMouse: 'none' } }];
-    capture.data.typed = [[0, 'iddqd']];
+    const [record] = capture.data.slots;
+    record.tics.buttons = [BUTTON_RIGHT_EDGE, BUTTON_RIGHT_EDGE, BUTTON_RIGHT_EDGE];
+    record.typed = [[0, 'iddqd']];
+    capture.data.events = [{ tic: 2, kind: 'settings', slot: 0, settings: { ...record.settings, rightMouse: 'none' } }];
     const playback = new ReplayPlayback(capture as Replay);
-    assert.equal(playback.rightMousePressed('use'), true, 'recorded under `use`, stored `previousweapon`');
-    assert.equal(playback.typed(), 'iddqd');
+    const input = playback.input(0);
+    assert.equal(input.rightMousePressed('use'), true, 'recorded under `use`, stored `previousweapon`');
+    assert.equal(input.typed(), 'iddqd');
     playback.endTic();
     playback.endTic();
     playback.eventsAt(2);
-    assert.equal(playback.rightMousePressed('use'), false);
-    assert.equal(playback.rightMousePressed('none'), true);
+    assert.equal(input.rightMousePressed('use'), false);
+    assert.equal(input.rightMousePressed('none'), true);
   });
 
-  test('the recorder writes, byte for byte, what it wrote before the codec was shared', () => {
-    const other = { player: { x: 1 }, rng: { p: 5, m: 0 } } as unknown as GameSnapshot;
-    const recorder = new ReplayRecorder(scriptedInput(ORACLE_ROWS), recordingStart());
+  test('the recorder writes, byte for byte, the one-player record reshaped as one slot', () => {
+    const other = { players: [{ player: { x: 1 } }], rng: { p: 5, m: 0 } } as unknown as GameSnapshot;
+    const recorder = new ReplayRecorder([scriptedInput(ORACLE_ROWS)], recordingStart());
+    const input = recorder.input(0);
     for (let i = 0; i < ORACLE_ROWS.length; i++) {
       const settings = captureSimSettings();
       if (i >= 4) settings.autorun = !settings.autorun;
-      recorder.beginTic(10.4 + i, -3.6 - i, settings, ORACLE_POSES[i % ORACLE_POSES.length]);
+      beginTic(recorder, 10.4 + i, -3.6 - i, settings, ORACLE_POSES[i % ORACLE_POSES.length]);
       if (i === 2) recorder.restore('E1M1', other);
       if (i === 3) recorder.levelLoaded('E1M2');
       if (i === 5) recorder.restore('E1M2', other);
       if (i === 6) recorder.keyframe('E1M2', START_SNAPSHOT);
       const row = ORACLE_ROWS[i];
-      if (row.readAim) recorder.aim(NO_CAMERA, 0);
-      if (row.readWheel) recorder.consumeWheel();
-      recorder.endTic();
+      if (row.readAim) input.aim(NO_CAMERA, 0);
+      if (row.readWheel) input.consumeWheel();
+      input.endTic();
     }
     assert.equal(JSON.stringify(recorder.finish()), ORACLE);
   });
@@ -154,18 +158,22 @@ const ORACLE_POSES: CameraPose[] = [
   { yaw: 135, point: [-3.140625, 0, 12], distance: 350, tilt: 50 },
 ];
 
-/** `ReplayRecorder.finish()` over the run above, as the recorder wrote it before `replay/row.ts`. */
+/**
+ * `ReplayRecorder.finish()` over the run above: what the recorder wrote before `replay/row.ts`,
+ * moved into one slot's record — the columns, the typed tics and the settings as they were, the
+ * session's half beside them, the check positions per slot — and nothing else changed.
+ */
 const ORACLE =
-  '{"skill":3,"wads":[{"name":"DOOM.WAD","id":"abc"}],"mapWad":"abc","ticCount":7,"levels":[{"tic":0,"map":"E1M1"},' +
-  '{"tic":3,"map":"E1M2"}],"data":{"snapshots":[{"player":{},"rng":{"p":0,"m":0}},{"player":{"x":1},"rng":{"p":5,' +
-  '"m":0}}],"keyframes":[{"tic":0,"map":"E1M1","snapshot":0},{"tic":6,"map":"E1M2","snapshot":0}],"settings":' +
-  '{"autorun":true,"autoSwitchWeapon":true,"rightMouse":"previousweapon","cameraMode":"auto","infiniteTallActors":' +
-  'false,"pistolStart":false},"tics":{"held":[1,265,0,0,536870976,0,1024],"pressed":[0,4096,0,147456,0,0,0],' +
-  '"buttons":[0,1,2,0,3,0,0],"wheel":[0,0,1,-1,0,0,0],"aimX":[6408,6464,null,null,null,null,-497],"aimY":' +
-  '[-3232,-3264,null,null,null,null,193],"poseYaw":[5760,5761,8640,5760,5761,8640,5760],"poseX":[4096,4128,-201,' +
-  '4096,4128,-201,4096],"poseY":[2624,2640,0,2624,2640,0,2624],"poseZ":[-8192,-8192,768,-8192,-8192,768,-8192],' +
-  '"poseDistance":[30720,30784,22400,30720,30784,22400,30720],"poseTilt":[3680,3680,3200,3680,3680,3200,3680]},' +
-  '"typed":[[2,"id"],[6,"dqd"]],"events":[{"tic":2,"kind":"restore","map":"E1M1","snapshot":1},{"tic":4,"kind":' +
-  '"settings","settings":{"autorun":false,"autoSwitchWeapon":true,"rightMouse":"previousweapon","cameraMode":"auto",' +
-  '"infiniteTallActors":false,"pistolStart":false}},{"tic":5,"kind":"restore","map":"E1M2","snapshot":1}],"checks":' +
-  '{"x":[10],"y":[-4],"cursor":[0]}}}';
+  '{"skill":3,"wads":[{"name":"DOOM.WAD","id":"abc"}],"mapWad":"abc","ticCount":7,"levels":[{"tic":0,"map":"E1M1"' +
+  '},{"tic":3,"map":"E1M2"}],"data":{"snapshots":[{"players":[{"player":{}}],"rng":{"p":0,"m":0}},{"players":[{"p' +
+  'layer":{"x":1}}],"rng":{"p":5,"m":0}}],"keyframes":[{"tic":0,"map":"E1M1","snapshot":0},{"tic":6,"map":"E1M2",' +
+  '"snapshot":0}],"session":{"infiniteTallActors":false,"pistolStart":false},"slots":[{"settings":{"autorun":true' +
+  ',"autoSwitchWeapon":true,"rightMouse":"previousweapon","cameraMode":"auto"},"tics":{"held":[1,265,0,0,53687097' +
+  '6,0,1024],"pressed":[0,4096,0,147456,0,0,0],"buttons":[0,1,2,0,3,0,0],"wheel":[0,0,1,-1,0,0,0],"aimX":[6408,64' +
+  '64,null,null,null,null,-497],"aimY":[-3232,-3264,null,null,null,null,193],"poseYaw":[5760,5761,8640,5760,5761,' +
+  '8640,5760],"poseX":[4096,4128,-201,4096,4128,-201,4096],"poseY":[2624,2640,0,2624,2640,0,2624],"poseZ":[-8192,' +
+  '-8192,768,-8192,-8192,768,-8192],"poseDistance":[30720,30784,22400,30720,30784,22400,30720],"poseTilt":[3680,3' +
+  '680,3200,3680,3680,3200,3680]},"typed":[[2,"id"],[6,"dqd"]]}],"events":[{"tic":2,"kind":"restore","map":"E1M1"' +
+  ',"snapshot":1},{"tic":4,"kind":"settings","slot":0,"settings":{"autorun":false,"autoSwitchWeapon":true,"rightM' +
+  'ouse":"previousweapon","cameraMode":"auto"}},{"tic":5,"kind":"restore","map":"E1M2","snapshot":1}],"checks":{"' +
+  'x":[[10]],"y":[[-4]],"cursor":[0]}}}';

@@ -58,7 +58,7 @@ describe('Regressions · fog of war and detached regions', () => {
       [-660, -990],
       [1240, -1060],
     ] as const) {
-      const fog = new FogOfWar(world, [], { x, y });
+      const fog = new FogOfWar(world, [], [{ x, y }], 0);
       const here = island[at(x, y)];
       for (let ss = 0; ss < polys.length; ss++) {
         if (!fog.isVisible(ss) || island[ss] === here) continue;
@@ -68,13 +68,13 @@ describe('Regressions · fog of war and detached regions', () => {
   });
 
   test('the pool room goes dark again on the way back, and takes the main map’s place', () => {
-    const fog = new FogOfWar(world, [], start);
-    for (let i = 0; i < 40; i++) fog.tick(-660, -990);
+    const fog = new FogOfWar(world, [], [start], 0);
+    for (let i = 0; i < 40; i++) fog.tick([{ x: -660, y: -990 }]);
     assert.equal(fog.isVisible(mainPool), true, 'the tunnel the player is standing in');
     assert.equal(fog.isVisible(sector92), false, 'the pool room, never visited');
 
     // Arriving in the pool room: it is drawn and the main map is not.
-    for (let i = 0; i < 40; i++) fog.tick(1240, -1060);
+    for (let i = 0; i < 40; i++) fog.tick([{ x: 1240, y: -1060 }]);
     assert.equal(fog.isVisible(sector92), true);
     assert.equal(fog.isVisible(mainPool), false);
     // The map left behind cuts to black rather than fading out, the way the camera cuts on a
@@ -85,13 +85,13 @@ describe('Regressions · fog of war and detached regions', () => {
     assert.equal(fog.alphaOf(sector92), 1);
 
     // And back: the reported bug is `sector92` still being visible here.
-    for (let i = 0; i < 40; i++) fog.tick(-660, -990);
+    for (let i = 0; i < 40; i++) fog.tick([{ x: -660, y: -990 }]);
     assert.equal(fog.isVisible(mainPool), true);
     assert.equal(fog.isVisible(sector92), false);
   });
 
   test('the computer area map reveals the island the player is in, not the pool room', () => {
-    const fog = new FogOfWar(world, [], start);
+    const fog = new FogOfWar(world, [], [start], 0);
     fog.revealAll();
     assert.equal(fog.isVisible(mainPool), true);
     assert.equal(fog.isVisible(sector92), false);

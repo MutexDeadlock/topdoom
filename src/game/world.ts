@@ -541,10 +541,11 @@ export class World {
    */
   private sectorNeighbors: { neighbor: number; lineIndex: number }[][] = [];
   /**
-   * Sectors a noise has ever reached (`noiseAlert`) — never cleared, matching vanilla's own
-   * `soundtarget`, which persists for the rest of the level once set.
+   * Sectors a noise has ever reached (`noiseAlert`), each with the slot whose shot it was —
+   * vanilla's `sector->soundtarget`: never cleared, and a later noise through the sector overwrites
+   * it.
    */
-  private soundAlertedSectors = new Set<Sector>();
+  private soundTargets = new Map<Sector, number>();
   /**
    * Per-linedef "last query that already visited this line" stamps, so
    * `forEachLineAlongSegment` can dedupe a line that spans several of the
@@ -719,23 +720,24 @@ export class World {
   }
 
   /**
-   * The sound-alerted set as sector indices, for a savegame — the live set
-   * holds `Sector` object references into `map.sectors`, which is also why
-   * `restoreSoundAlerted` must resolve through the *current* map's array.
+   * The sound targets as `[sectorIndex, slot]` in sector order, for a savegame — the live map holds
+   * `Sector` object references into `map.sectors`, which is also why `restoreSoundAlerted` must
+   * resolve through the *current* map's array.
    */
-  snapshotSoundAlerted(): number[] {
-    const indices: number[] = [];
+  snapshotSoundAlerted(): [sector: number, slot: number][] {
+    const pairs: [number, number][] = [];
     for (let i = 0; i < this.map.sectors.length; i++) {
-      if (this.soundAlertedSectors.has(this.map.sectors[i])) indices.push(i);
+      const slot = this.soundTargets.get(this.map.sectors[i]);
+      if (slot !== undefined) pairs.push([i, slot]);
     }
-    return indices;
+    return pairs;
   }
 
-  restoreSoundAlerted(indices: number[]): void {
-    this.soundAlertedSectors.clear();
-    for (const i of indices) {
+  restoreSoundAlerted(pairs: readonly [sector: number, slot: number][]): void {
+    this.soundTargets.clear();
+    for (const [i, slot] of pairs) {
       const sector = this.map.sectors[i];
-      if (sector) this.soundAlertedSectors.add(sector);
+      if (sector) this.soundTargets.set(sector, slot);
     }
   }
 
@@ -1314,11 +1316,20 @@ export class World {
    * Player start.
    */
   playerStart(): Placement {
-    const starts = this.thingsOfType(ThingType.playerStart);
-    const t = starts[starts.length - 1];
-    if (t) return { x: t.x, y: t.y, angle: (spawnAngleDeg(t.angle) * Math.PI) / 180 };
+    const start = this.placedStart(ThingType.playerStart);
+    if (start) return start;
     const { minX, minY, maxX, maxY } = this.map.bounds;
     return { x: (minX + maxX) / 2, y: (minY + maxY) / 2, angle: 0 };
+  }
+
+  /**
+   * The last thing of doomednum `type` as a placement, null where the map has none — how
+   * `P_SpawnMapThing` files a player start, overwriting it per thing.
+   */
+  placedStart(type: number): Placement | null {
+    const placed = this.thingsOfType(type);
+    const t = placed[placed.length - 1];
+    return t ? { x: t.x, y: t.y, angle: (spawnAngleDeg(t.angle) * Math.PI) / 180 } : null;
   }
 
   /**
@@ -1329,9 +1340,10 @@ export class World {
    *
    * The search state is a `(sector, hasCrossedABlockLine)` pair rather than a sector, so one
    * reached first through a sound-blocked path can still be re-entered by a later unblocked one —
-   * vanilla's `soundtraversed <= soundblocks+1` guard.
+   * vanilla's `soundtraversed <= soundblocks+1` guard. `slot` is the player who fired, and what a
+   * monster woken by it goes after.
    */
-  noiseAlert(x: number, y: number): void {
+  noiseAlert(x: number, y: number, slot: number): void {
     const start = this.sectorIndexAt(x, y);
     const visited = new Set<number>();
     const stack: number[] = [start * 2];
@@ -1343,7 +1355,7 @@ export class World {
       const soundBlocked = state & 1;
       const sector = this.map.sectors[sectorIndex];
       if (!sector) continue;
-      this.soundAlertedSectors.add(sector);
+      this.soundTargets.set(sector, slot);
 
       for (const { neighbor, lineIndex } of this.sectorNeighbors[sectorIndex] ?? []) {
         const opening = this.openingOf(lineIndex);
@@ -1357,9 +1369,9 @@ export class World {
     }
   }
 
-  /** True if a noise (`noiseAlert`) has ever reached this sector this level. */
-  isSoundAlerted(sector: Sector): boolean {
-    return this.soundAlertedSectors.has(sector);
+  /** The slot whose noise (`noiseAlert`) last reached this sector this level, or -1 for none. */
+  soundTargetOf(sector: Sector): number {
+    return this.soundTargets.get(sector) ?? -1;
   }
 
   /**

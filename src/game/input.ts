@@ -34,6 +34,26 @@ export interface TicInput {
 }
 
 /**
+ * The input of a player nobody drives: nothing held or pressed, no aim. What a slot with no source
+ * reads — a second slot under `?coop=`. docs/multiplayer.md § Player slots.
+ */
+export const IDLE_TIC_INPUT: TicInput = {
+  held: () => false,
+  pressed: () => false,
+  typed: () => '',
+  mouseDown: false,
+  rightMousePressed: () => false,
+  consumeWheel: () => 0,
+  aim: () => null,
+  endTic: () => {},
+};
+
+/** Whether `input` pressed use this tic: Space, or the right button bound to it. */
+export function usePressed(input: TicInput): boolean {
+  return input.pressed('Space') || input.rightMousePressed('use');
+}
+
+/**
  * The lattice the aim point sits on, in map units — 1/64 is far below anything a pick or a
  * turn can resolve (tuned by feel). The point is quantized *before* the simulation reads it, so
  * what a replay stores is exactly what ran. docs/replays.md § The TicInput seam.

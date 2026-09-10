@@ -81,13 +81,7 @@ export class ProjectileLayer {
    * savegame.
    */
   snapshot(): ProjectileSnapshot[] {
-    return this.projectiles.map(({ anim: _anim, ...rest }) => {
-      const s: ProjectileSnapshot = structuredClone(rest);
-      // Player 1 as `null`, the encoding on the wire — see `ProjectileSnapshot`.
-      if (s.sourceId === targetOfSlot(0)) s.sourceId = null;
-      if (s.homing?.targetId === targetOfSlot(0)) s.homing.targetId = null;
-      return s;
-    });
+    return this.projectiles.map(({ anim: _anim, ...rest }) => structuredClone(rest));
   }
 
   /**
@@ -101,13 +95,7 @@ export class ProjectileLayer {
     for (const s of saved) {
       const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, s.sprite, PROJECTILE_FRAMES[s.sprite]);
       if (!anim.resolve(0, VIEWER_ANGLE_DEG)) continue;
-      const { sourceId, homing, ...rest } = structuredClone(s);
-      this.projectiles.push({
-        ...rest,
-        anim,
-        sourceId: sourceId ?? targetOfSlot(0),
-        homing: homing ? { ...homing, targetId: homing.targetId ?? targetOfSlot(0) } : undefined,
-      });
+      this.projectiles.push({ ...structuredClone(s), anim });
     }
   }
 
@@ -142,7 +130,7 @@ export class ProjectileLayer {
         // A fist swing traces exactly MELEERANGE and so takes the sparkless
         // puff; the chainsaw's own +1 is what buys it the spark back.
         else this.effects.spawnPuff(hitAt, shot.range === PLAYER_MELEE_RANGE);
-        things?.damage(swung.id, shot.damage, { from: origin });
+        things?.damage(swung.id, shot.damage, { from: origin, slot: shooter });
       }
       // A_Punch/A_Saw both key their sound off whether they found a target: the
       // chainsaw revs on air and bites on contact, the fist is silent on a miss.
@@ -216,7 +204,7 @@ export class ProjectileLayer {
         const hitAt = { x: endX, y: endY, z: path.z };
         if (things?.bleeds(hitMonsterId)) this.effects.spawnBlood(hitAt, shot.damage);
         else this.effects.spawnPuff(hitAt);
-        things?.damage(hitMonsterId, shot.damage, { from: origin });
+        things?.damage(hitMonsterId, shot.damage, { from: origin, slot: shooter });
       } else {
         this.effects.spawnWallPuff(path, shot.angleRad);
       }
@@ -417,7 +405,8 @@ export class ProjectileLayer {
           // the missile but takes no damage from it (see bodyStruckBy).
           if (struck.id !== null) {
             const source = fromMonster ? { id: p.sourceId, type: p.sourceType } : undefined;
-            things?.damage(struck.id, p.damage, { source, from: at });
+            const slot = fromMonster ? undefined : slotOfTarget(p.sourceId);
+            things?.damage(struck.id, p.damage, { source, slot, from: at });
           }
         }
         // A clean miss arrived at the wall `shotPath` found at launch, so its shoot special fires
@@ -433,6 +422,7 @@ export class ProjectileLayer {
             maxDamage: p.splash.damage,
             hitsPlayer: p.splash.hitsPlayer,
             source: fromMonster ? { id: p.sourceId, type: p.sourceType } : undefined,
+            slot: fromMonster ? undefined : slotOfTarget(p.sourceId),
             // No `source` means the shot is the player's own, which is the one
             // splash that can kill them without anyone else being involved.
             cause: fromMonster ? p.sourceType : 'self',
@@ -618,7 +608,7 @@ export class ProjectileLayer {
       for (let j = 0; j < spray.diceRolls; j++) damage += rollDamage(spray.diceSides, 1);
       // Vanilla's inflictor is the ball itself, by then far from the player;
       // this engine doesn't track where it stopped, so `origin` stands in.
-      things?.damage(hit.id, damage, { from: origin });
+      things?.damage(hit.id, damage, { from: origin, slot: shooter });
       // `A_BFGSpray` spawns MT_EXTRABFG at `linetarget->height>>2`, which the
       // body's own `mobjinfo.height` gives exactly.
       this.effects.spawnImpact('BFE2', BFG_SPRAY_HIT_FRAMES, IMPACT_FRAME_SECONDS, {

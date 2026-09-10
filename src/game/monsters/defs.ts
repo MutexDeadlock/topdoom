@@ -506,6 +506,12 @@ export interface WakeCheckBody extends Pos3 {
    * docs/world.md § REJECT.
    */
   subsector: number;
+  /**
+   * The slot `lookForPlayers` looks at first, 0–3 — vanilla's `mobj->lastlook`, drawn at spawn
+   * (`P_Random() % MAXPLAYERS`, `p_mobj.c`) and advanced by every look. docs/monster-ai.md § Waking
+   * up.
+   */
+  lastlook: number;
 }
 
 /**

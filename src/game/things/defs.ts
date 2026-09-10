@@ -51,6 +51,8 @@ export interface PosedThing extends Pos3, MonsterBody {
    * this exact instance with `ThingLayer.damage`.
    */
   id: number;
+  /** `WakeCheckBody.lastlook` — drawn for every thing, read only for a monster. */
+  lastlook: number;
   /**
    * This thing's animation state and current-lump lookup. Deliberately *not*
    * a `SpriteActor` (which owns a `THREE.Mesh`): every map thing is drawn
@@ -382,6 +384,11 @@ export interface DamageHit {
    * (docs/monster-ai.md § Infighting).
    */
   source?: { id: number; type: number };
+  /**
+   * The player whose hit it was, where a player's: re-points a monster already hunting a player at
+   * this one (docs/multiplayer-coop.md § Target choice).
+   */
+  slot?: number;
   /**
    * The arch-vile's `A_VileAttack` launch. Applied inside `damage` because it writes the same
    * `z`/`velZ` fields gravity integration owns.

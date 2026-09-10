@@ -263,6 +263,10 @@ before the first chase call — with `over` for what the test varies (`angle`, `
 `justHit`). Every test that steps the AI by hand, and `pinky.ts`, builds its body here, so a field
 added to `MonsterBody` is a one-file edit.
 
+`tests/fixtures/arena.ts`'s `monsterArena(types, { netgame? })` is the open room the thing layer's
+player-targeting tests stand in: `types` down its east wall facing west, every look rotation
+restored to 0. It returns `grid`, `world` and `layer`.
+
 `tests/fixtures/tics.ts` runs it: `stepFor(seconds, step, done?)` calls `step` once per whole tic
 (`ticsIn(seconds)`, rounded) and stops early once `done` holds, returning the seconds run. Every
 "run the simulation for N seconds" loop goes through it rather than rounding its own.

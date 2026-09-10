@@ -62,6 +62,7 @@ export type {
   ReplayMeta,
   SessionSettings,
   SimSettings,
+  SlotRecord,
   TicColumns,
 } from './replay/defs.ts';
 export {
@@ -92,6 +93,7 @@ export { ReplayRecorder, type RecordingStart } from './replay/recorder.ts';
 export {
   GLOBAL_PLAYER_SETTINGS,
   applySimSettings,
+  captureSessionSettings,
   captureSimSettings,
   releaseSimSettings,
 } from './replay/settings.ts';
@@ -166,7 +168,7 @@ export async function readReplay(id: string): Promise<Replay> {
   }
   const meta = asReplayMeta(rawMeta, id);
   if (!isPlayableData(data, meta.ticCount)) throw damaged();
-  return { ...meta, data: { ...data, tics: unpackTics(data.tics) } };
+  return { ...meta, data: unpackData(data) };
 }
 
 /**
@@ -245,6 +247,14 @@ export function isReplayFileName(name: string): boolean {
 }
 
 /**
+ * A stored record's tic columns out of their second differences — what a playback reads, and
+ * `scripts/inspect-replay.ts` too.
+ */
+export function unpackData(data: ReplayData): ReplayData {
+  return { ...data, slots: data.slots.map((slot) => ({ ...slot, tics: unpackTics(slot.tics) })) };
+}
+
+/**
  * Validates a downloaded replay and stores it under a fresh ID; the record is decoded here, the
  * one moment a foreign file's bytes are in hand, and stored as decoded rather than recompressed.
  */
@@ -274,7 +284,7 @@ const stockText = 'this replay ships with TopDoom: it can be played and download
 /** A served replay, fetched and decoded — never stored, so watching one leaves nothing behind. */
 async function readStock(id: string): Promise<Replay> {
   const { meta, data } = await decodeFile(await fetchStockReplay(id), damagedText);
-  return { ...meta, id, data: { ...data, tics: unpackTics(data.tics) } };
+  return { ...meta, id, data: unpackData(data) };
 }
 
 /**
@@ -370,14 +380,17 @@ function metaRefusal(raw: unknown): string | null {
  */
 function hasThingList(snapshot: unknown): boolean {
   const things = isRecord(snapshot) && isRecord(snapshot.things) ? snapshot.things : null;
-  return things !== null && Array.isArray(things.changed);
+  return things !== null && Array.isArray(things.changed) && typeof things.lastlook === 'string';
 }
 
 /** The record half: what the playback would crash without. */
 function isPlayableData(data: unknown, ticCount: number): data is ReplayData {
   if (!isRecord(data) || !Array.isArray(data.snapshots) || !isLoadableState(data.snapshots[0])) return false;
-  if (!data.snapshots.every(hasThingList)) return false;
-  if (!isRecord(data.tics) || !isRecord(data.settings)) return false;
+  // Every snapshot is restored the way the first is, and into as many slots as the record holds.
+  const players = data.snapshots[0].players.length;
+  const restorable = (s: unknown) => isLoadableState(s) && s.players.length === players && hasThingList(s);
+  if (!data.snapshots.every(restorable)) return false;
+  if (!isRecord(data.session) || !Array.isArray(data.slots) || data.slots.length !== players) return false;
   // The seek anchors, `[0]` the start the level is built from — every playback needs that one.
   const keyframes = data.keyframes;
   if (!Array.isArray(keyframes) || !isRecord(keyframes[0]) || keyframes[0].tic !== 0) return false;
@@ -386,20 +399,22 @@ function isPlayableData(data: unknown, ticCount: number): data is ReplayData {
     if (!isRecord(frame) || typeof frame.map !== 'string') return false;
     if (!isRecord(snapshots[frame.snapshot as number])) return false;
   }
-  const tics = data.tics;
-  // The input columns, then the camera the tic ran at, without which the playback would have to
-  // recompute it.
+  // Every slot's input columns, then the camera the tic ran at, without which the playback would
+  // have to recompute it.
   const columns = ['held', 'pressed', 'buttons', 'wheel', 'aimX', 'aimY', 'poseYaw', 'poseX', 'poseY', 'poseZ', 'poseDistance', 'poseTilt'];
-  for (const column of columns) {
-    if (!Array.isArray(tics[column]) || tics[column].length !== ticCount) return false;
+  for (const slot of data.slots) {
+    if (!isRecord(slot) || !isRecord(slot.settings) || !isRecord(slot.tics) || !Array.isArray(slot.typed)) return false;
+    const tics = slot.tics;
+    if (!columns.every((column) => Array.isArray(tics[column]) && tics[column].length === ticCount)) return false;
   }
-  if (!Array.isArray(data.typed) || !Array.isArray(data.events)) return false;
+  if (!Array.isArray(data.events)) return false;
   // The desync samples carry no tic of their own — one per `CHECK_INTERVAL` from tic 0 — so the
   // count is what says the columns line up with the stream they are read against.
   const checks = data.checks;
-  if (!isRecord(checks)) return false;
+  if (!isRecord(checks) || !Array.isArray(checks.x) || !Array.isArray(checks.y)) return false;
   const samples = Math.ceil(ticCount / CHECK_INTERVAL);
-  return ['x', 'y', 'cursor'].every((column) => Array.isArray(checks[column]) && checks[column].length === samples);
+  const sampled = (column: unknown) => Array.isArray(column) && column.length === samples;
+  return sampled(checks.cursor) && [checks.x, checks.y].every((axis) => axis.length === players && axis.every(sampled));
 }
 
 /** The tail of the serialized meta writes; a rejection must not poison the ones behind it. */
@@ -421,6 +436,6 @@ const freshId = (): Promise<string> => freshStoredId(store());
  * state the recording ran on, and a shortest-roundtrip double reads back bit-identical.
  */
 async function encodeData(id: string, data: ReplayData): Promise<StoredState> {
-  const stored = { ...data, tics: packTics(data.tics) };
+  const stored = { ...data, slots: data.slots.map((slot) => ({ ...slot, tics: packTics(slot.tics) })) };
   return { id, encoding: STATE_ENCODING, bytes: await compressText(JSON.stringify(stored)) };
 }

@@ -171,6 +171,14 @@ export class Cheats {
    */
   warped(): void {
     this.used = true;
+    this.reborn();
+  }
+
+  /**
+   * A coop respawn: `G_PlayerReborn`'s memset takes the toggles, as a warp's does, and `used` stays
+   * — the run cheated all the same. docs/multiplayer-coop.md § Respawn.
+   */
+  reborn(): void {
     this.god = false;
     this.noclip = false;
   }
@@ -180,8 +188,8 @@ export class Cheats {
   }
 
   /**
-   * A save from before cheats existed — or one taken by a session that never typed one — carries
-   * nothing, and means both off and nothing cheated. A block being there at all is what says a code
+   * A save taken by a session that never typed a code carries nothing, and means both off and
+   * nothing cheated. A block being there at all is what says a code
    * fired: it is only written for a session that used one. docs/cheats.md § Saves and best times.
    */
   restore(saved?: CheatSnapshot): void {

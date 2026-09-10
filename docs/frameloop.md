@@ -61,7 +61,7 @@ stale, so `tic` reports it and `frame` returns immediately.
 The whole simulation, in the order it has always run — several orderings are load-bearing:
 
 - `specials.beginTic` runs **before** `player.update`, so a lift or door underfoot has already
-  moved by the time `groundFloor` samples it; each slot's `specials.activate` follows, and
+  moved by the time `groundFloor` samples it; each living slot's `specials.activate` follows, and
   `specials.endTic` (switch flashes, light patterns) runs once every slot has acted —
   docs/multiplayer.md § What a slot's tic does.
 - the aim ray runs **before** `player.update`, so `player.angle` is this tic's.

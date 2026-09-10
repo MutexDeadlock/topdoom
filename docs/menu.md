@@ -430,6 +430,7 @@ Read once in `boot()` and applied through `Menu.init`:
 | `?pwad=` | Comma-separated add-ons, applied in the order given |
 | `?map=` | Preselect the level **and skip the menu**, at the last skill played |
 | `?pos=x,y` | Drop the player at those DOOM map coordinates instead of the map's own start |
+| `?coop=N` | Start a fresh level as a netgame of 2–4 players, every one but the first idle (docs/multiplayer-coop.md) |
 
 `?pos=` is applied *before* fog of war is seeded, so the reveal shows exactly what is visible from
 there. **That is the practical way to check a specific spot in a level** — the room with MAP01's big

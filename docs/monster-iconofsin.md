@@ -35,7 +35,8 @@ other spit is skipped, halving the rate.
 
 `eyeNotices` stands in for idle `A_Look`, since an `MF_NOSECTOR` thing with no `PosedThing` has
 nothing for `tryWake` to run on. Both of `A_Look`'s paths are reproduced: its sector's sound target
-(`World.isSoundAlerted`, checked first because it is a Set lookup) and line of sight. No FOV cone,
+(`World.soundTargetOf`, while the player who made the noise lives — checked first because it is a
+Map lookup) and line of sight. No FOV cone,
 though vanilla's `A_Look` passes `allaround == false` — gating the whole boss on the facing angle a
 mapper happened to give a thing that draws nothing is not worth reproducing.
 

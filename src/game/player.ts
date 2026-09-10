@@ -122,6 +122,11 @@ export function clampMomentum(v: number): number {
   return v > MAX_MOMENTUM_SPEED ? MAX_MOMENTUM_SPEED : v < -MAX_MOMENTUM_SPEED ? -MAX_MOMENTUM_SPEED : v;
 }
 
+/** A living player as the solid body another body collides with. */
+export function playerBlocker(player: Pos3): ThingBlocker {
+  return { x: player.x, y: player.y, z: player.z, radius: PLAYER_RADIUS, height: PLAYER_HEIGHT };
+}
+
 const AUTORUN_STORAGE_KEY = 'autorun';
 
 /**
@@ -324,6 +329,18 @@ export class Player implements Pos3 {
     this.momY = 0;
     this.z = this.world.groundFloor(pos.x, pos.y, PLAYER_RADIUS);
     this.syncInterpolation();
+  }
+
+  /**
+   * A coop respawn (`P_SpawnPlayer`): a fresh body at `start`, facing its way, standing still with
+   * nothing pushing it. The same object, so every list holding the player keeps holding them.
+   * docs/multiplayer-coop.md § Respawn.
+   */
+  respawnAt(start: Placement): void {
+    this.angle = start.angle;
+    this.forced = false;
+    this.landingSpeed = 0;
+    this.moveTo(start);
   }
 
   /**

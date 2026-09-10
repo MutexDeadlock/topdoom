@@ -4,6 +4,7 @@
  */
 import { roundFloat, type GameSnapshot } from './snapshot.ts';
 import { type Skill } from './skill.ts';
+import { MAX_PLAYERS } from './playerstarts.ts';
 import {
   STATE_ENCODING,
   base64ToBytes,
@@ -416,7 +417,9 @@ export const asWad = (v: unknown): SaveWad => {
  * is actually decoded.
  */
 export function isLoadableState(state: unknown): state is GameSnapshot {
-  return isRecord(state) && isRecord(state.player) && isRecord(state.rng);
+  if (!isRecord(state) || !isRecord(state.rng) || !Array.isArray(state.players)) return false;
+  const { players } = state;
+  return players.length > 0 && players.length <= MAX_PLAYERS && players.every((slot) => isRecord(slot) && isRecord(slot.player));
 }
 
 const readMeta = (id: string): Promise<unknown> => readStoredMeta(store(), 'save', id);

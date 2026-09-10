@@ -161,10 +161,10 @@ describe('Savegames · specials round-trip', () => {
     const world = new World(map);
     const built = buildMapMesh(map, BANK, { movableSectors: scanSectors(map).movable });
     const at = grid.centre(1, 1);
-    const fog = new FogOfWar(world, built.occluders, at);
+    const fog = new FogOfWar(world, built.occluders, [at], 0);
     const runs = JSON.parse(JSON.stringify(fog.snapshotExplored()));
 
-    const fresh = new FogOfWar(world, built.occluders, at);
+    const fresh = new FogOfWar(world, built.occluders, [at], 0);
     fresh.restoreExplored(runs);
     assert.deepEqual(fresh.snapshotExplored(), fog.snapshotExplored());
   });

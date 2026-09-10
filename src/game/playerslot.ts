@@ -20,8 +20,8 @@ import type { Pos3 } from '../types.ts';
 
 /**
  * What drives a slot's input: the live `Input`, a replay's record, a network row, or nothing at
- * all. Only the first two exist today; the others are named so the rest of the engine can
- * already ask. docs/multiplayer.md § Player slots.
+ * all (`IDLE_TIC_INPUT`). A network row is named so the rest of the engine can already ask; nothing
+ * produces one yet. docs/multiplayer.md § Player slots.
  */
 export type SlotSource = 'live' | 'replay' | 'row' | 'idle';
 
@@ -94,6 +94,16 @@ export class PlayerSlot {
     this.settings = options.settings;
     this.actor = options.actor;
     this.consumePickup = options.consumePickup;
+  }
+
+  /**
+   * Alive again with the inventory it holds now: the weapons reset onto it, the billboard back on
+   * its feet — a level load's, and a coop respawn's (docs/multiplayer-coop.md § Respawn).
+   */
+  standUp(): void {
+    this.weapons.beginLevel(this.inventory);
+    this.dead = false;
+    this.actor.revive();
   }
 
   /** How solid this player draws — the billboard and the disc under it fade together. */

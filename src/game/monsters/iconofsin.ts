@@ -331,7 +331,9 @@ export class IconOfSin {
     if (!this.shooter) return false;
     const { world } = this.ctx;
     const sector = world.sectorAt(this.shooter.x, this.shooter.y);
-    if (sector && world.isSoundAlerted(sector)) return true;
+    // A noise wakes it while whoever made it lives — `A_Look`'s `MF_SHOOTABLE` test on the target.
+    const heard = sector ? world.soundTargetOf(sector) : -1;
+    if (heard >= 0 && this.ctx.slots[heard]?.dead === false) return true;
     const floor = world.floorAt(this.shooter.x, this.shooter.y);
     const at = { x: this.shooter.x, y: this.shooter.y, z: floor + SHOOTER_SIGHT_Z - SIGHT_EYE_HEIGHT };
     for (const slot of this.ctx.slots) if (!slot.dead && world.hasLineOfSight(at, slot.player)) return true;

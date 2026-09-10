@@ -15,6 +15,7 @@ import {
   MISSILE_HEIGHT_OFFSET,
   PLAYER_HEIGHT,
   PLAYER_RADIUS,
+  playerBlocker,
 } from './player.ts';
 import { pRandom } from '../util/random.ts';
 import { DOOM_TIC } from '../constants.ts';
@@ -72,7 +73,16 @@ import {
   type MonsterBody,
 } from './monsters/defs.ts';
 import { INERT_SHOOTABLE, monsterStatsFor } from './monsters/tables.ts';
-import { commitTarget, reactToDamage, shouldRetarget, stepMonsterAI, tryWake } from './monsters/ai.ts';
+import {
+  commitTarget,
+  lookForPlayers,
+  reactToDamage,
+  shouldRetarget,
+  stepMonsterAI,
+  tryWake,
+  type PlayerLook,
+} from './monsters/ai.ts';
+import { MAX_PLAYERS } from './playerstarts.ts';
 import {
   MONSTER_FIELD_DEFAULTS,
   MONSTER_KEYS_WITH_DEFAULTS,
@@ -218,11 +228,17 @@ export interface ThingLayerOptions {
    * a tint. A session with lights off passes none and no light code runs at all.
    */
   lights?: DynamicLights;
+  /**
+   * A netgame: multiplayer-only things spawn, a monster's kill counts only when a player made it,
+   * and a chasing monster that loses sight of its target looks for another player. Part of thing
+   * identity — a save restores under the netgame it was taken in. docs/multiplayer-coop.md.
+   */
+  netgame?: boolean;
 }
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
 export function buildThingSprites(world: World, options: ThingLayerOptions): ThingLayer {
-  const { bank, materials, skill, sfx = SILENT, onBossDeath, restore, onRespawn, lights } = options;
+  const { bank, materials, skill, sfx = SILENT, onBossDeath, restore, onRespawn, lights, netgame = false } = options;
   // Taken off `World`, never passed beside it — docs/conventions.md § Named arguments.
   const map = world.map;
 
@@ -268,6 +284,12 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /** Reused by `crossAfterPush`, which runs for every pushed thing every tic. */
   const pushedFrom: Pos2 = { x: 0, y: 0 };
 
+  /** Who a look can find this tic — `update` refills both halves before any monster looks. */
+  const lookSubsectors = new Int32Array(MAX_PLAYERS);
+  const look: PlayerLook = { players: [], subsectors: lookSubsectors };
+  /** `MonsterStep.retarget`, which only a netgame has. */
+  const retarget = netgame ? retargetAllAround : undefined;
+
   /**
    * Every thing as the map spawned it — what `snapshotThings` elides against and what a restore's
    * missing entries stand for. Assigned once the spawn loop below has run, which is every level: a
@@ -278,7 +300,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   {
     for (const t of map.things) {
       if (!tables.THING_SPRITES[t.type]) continue;
-      if (isMultiplayerOnly(t.flags)) continue;
+      if (!netgame && isMultiplayerOnly(t.flags)) continue;
       if (!spawnsAtSkill(t.flags, skill)) continue;
 
       // MF_SPAWNCEILING things (ceiling-hung gore, Commander Keen) measure z down from the ceiling
@@ -317,7 +339,11 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       const asSpawned = i < spawnBaseline.length && sameThingState(s, spawnBaseline[i]);
       if (!asSpawned) changed.push([i, s]);
     }
-    return { clock, stats: { ...stats }, changed };
+    let lastlook = '';
+    for (const p of posed) {
+      if (p.stats) lastlook += p.lastlook;
+    }
+    return { clock, stats: { ...stats }, changed, lastlook };
   }
 
   /** One live thing as it is stored — the sparse rules are in `ThingState`'s own doc. */
@@ -389,11 +415,13 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // The idle look-around, on the same clock and for the same reason: one cadence for the level,
     // which a restore gets back with `clock` itself. docs/monster-ai.md § Waking up.
     const lookTic = tic % LOOK_INTERVAL_TICS === 0;
-    // The wake check's player: the first slot still alive, until the vanilla rotation over every
-    // slot arrives with coop (docs/multiplayer.md § Player slots). One BSP descent for the whole
-    // sweep — a player moves once a tic rather than once per monster.
-    const player = firstLiving(players);
-    const playerSubsector = player ? world.subsectorAt(player.x, player.y) : -1;
+    // Who a look can find, and where each stands: one BSP descent per player for the whole sweep —
+    // a player moves once a tic rather than once per monster.
+    look.players = players;
+    for (let slot = 0; slot < players.length; slot++) {
+      const body = players[slot];
+      lookSubsectors[slot] = body ? world.subsectorAt(body.x, body.y) : -1;
+    }
     for (const p of posed) {
       // Every thing, every tic, before anything below can move it: `prev` is no substitute (see
       // its doc), and a thing that skips a tic via a `continue` below still needs an
@@ -467,15 +495,17 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         }
       }
       if (stats) {
-        // Only the wake check needs a living player: `P_LookForPlayers` skips
-        // `player->health <= 0`, so a dead player rouses nobody new. An alerted monster keeps
-        // stepping either way — it may be mid-infight, and `resolveTarget` decides that.
-        if (lookTic && !p.alerted && player) {
+        // A look runs whether or not anyone is alive to find: `P_LookForPlayers` passes a dead
+        // player over, and a look that finds nobody still turns `lastlook`. An alerted monster
+        // keeps stepping either way — it may be mid-infight, and `resolveTarget` decides that.
+        if (lookTic && !p.alerted) {
           // This loop owns only the throttle (`LOOK_INTERVAL_TICS`); the wake decision itself is
           // `monsters/ai.ts`'s `tryWake`. docs/monster-ai.md § Waking up.
-          // One of the two events that reshuffle a revenant's guided/unguided personality —
-          // see `MonsterBody.homingBias`'s doc. A no-op for every other type.
-          if (tryWake(p, world, p.sector, player, playerSubsector)) {
+          const slot = tryWake(p, world, p.sector, look);
+          if (slot >= 0) {
+            p.targetId = targetOfSlot(slot);
+            // One of the two events that reshuffle a revenant's guided/unguided personality —
+            // see `MonsterBody.homingBias`'s doc. A no-op for every other type.
             p.homingBias = (pRandom() & 1) !== 0;
             // `A_Look`'s sight sound, randomized within its family and unattenuated for the
             // two bosses.
@@ -484,11 +514,11 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
           }
         }
         if (p.alerted) {
-          const target = resolveTarget(p, players);
+          const target = resolveTarget(p);
           if (!target) {
             // Nobody left to want, so the monster gives up and idles exactly like one that never
-            // woke — `A_Chase` sends a target-less actor to its spawnstate. Only `damage`'s
-            // unconditional re-alert gets it going again.
+            // woke — `A_Chase` sends a target-less actor to its spawnstate — until a look or a hit
+            // wakes it again.
             p.alerted = false;
             p.movedir = DI_NODIR;
             p.movecount = 0;
@@ -513,6 +543,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
               blockersFor: blockersNear,
               resurrect: grid.findRaisableCorpse,
               useLines: useBlockingLines,
+              retarget,
               sfx,
             });
             // Additive on top of the AI walk step above, as `P_XYMovement` is on `A_Chase`'s —
@@ -950,6 +981,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     const { x, y, z } = at;
     const isMonster = tables.MONSTER_TYPES.has(type);
     const isDecoration = tables.SOLID_DECORATION_TYPES.has(type);
+    // `P_SpawnMobj`'s one draw, `lastlook = P_Random() % MAXPLAYERS`. The revenant's coin rides its
+    // low bit rather than drawing a second time (docs/monster-ai.md § Waking up).
+    const spawnRoll = pRandom();
     const thing: PosedThing = {
       id: posed.length,
       anim,
@@ -1014,7 +1048,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       alerted: opts?.alerted ?? false,
       ambush: opts?.ambush ?? false,
       angle: (facingDeg * Math.PI) / 180,
-      homingBias: (pRandom() & 1) !== 0,
+      homingBias: (spawnRoll & 1) !== 0,
+      lastlook: spawnRoll & 3,
       prev: { x, y },
       targetId: opts?.targetId ?? targetOfSlot(0),
     };
@@ -1040,6 +1075,15 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     restoreCounts(saved);
     for (const [id, s] of saved.changed) {
       applyThingState(id < spawned ? posed[id] : pushSaved(s), s);
+    }
+    // Over every monster, the ones the run created included, in the order `snapshotThings` wrote.
+    let at = 0;
+    for (const p of posed) {
+      if (!p.stats) continue;
+      const digit = saved.lastlook.charCodeAt(at++) - 48;
+      if (digit >= 0 && digit <= 3) {
+        p.lastlook = digit;
+      }
     }
   }
 
@@ -1190,7 +1234,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       }
       p.dead = true;
       p.deadTime = 0;
-      if (tables.COUNTKILL_TYPES.has(p.type)) stats.kills++;
+      if (countsKill(p, source)) stats.kills++;
       const deathFrames = tables.MONSTER_DEATH_FRAMES[p.type];
       p.deathFrameCount = deathFrames ? deathFrames.length : 0;
       sfx.play(inert.deathSound, inert.unattenuated ? null : p, monsterOrigin(p.id));
@@ -1257,6 +1301,11 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         p.targetId = source.id;
         commitTarget(p);
       }
+      // A player's hit takes over a monster already hunting a player — in single player, the one
+      // it was after anyway. docs/multiplayer-coop.md § Target choice.
+      if (!source && hit?.slot !== undefined && p.targetId < 0) {
+        p.targetId = targetOfSlot(hit.slot);
+      }
       return;
     }
     p.dead = true;
@@ -1264,7 +1313,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // `P_KillMobj`'s unconditional `if (target->flags & MF_COUNTKILL) killcount++`, with no
     // "already counted" guard. Barrels never match, so this sits before the barrel branch without
     // needing one of its own. docs/hud.md § Level stats.
-    if (tables.COUNTKILL_TYPES.has(p.type)) stats.kills++;
+    if (countsKill(p, source)) stats.kills++;
     if (isBarrel) {
       // The splash fires later, once `BARREL_CHAIN.explodeDelaySeconds` elapses in `update`, so
       // `source` is captured now to stay attributable then — see `PosedThing.explodeSource`.
@@ -1477,19 +1526,37 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /**
    * Where a monster should currently be heading, or `null` if it has nobody left to want.
    * `targetId` names a monster only after something other than a player hurt it
-   * (`damageThing` → `shouldRetarget`), and a target that dies hands attention straight back to
-   * player 1, as `A_Chase` does via `P_LookForPlayers`. A dead player is a null slot, so a monster
-   * with no *other* target finds nobody. docs/monster-ai.md § Infighting.
+   * (`damageThing` → `shouldRetarget`). A target gone — a dead monster, a dead player — is
+   * `A_Chase`'s case: the threshold drops, and the monster looks all around for a player it can
+   * see (`lookForPlayers`) and goes after the one it finds. docs/monster-ai.md § Infighting.
    */
-  function resolveTarget(p: PosedThing, players: readonly (Pos3 | null)[]): Pos3 | null {
-    if (p.targetId < 0) return players[slotOfTarget(p.targetId)] ?? null;
-    const other = posed[p.targetId];
-    if (!other || other.dead) {
-      p.targetId = targetOfSlot(0);
-      p.threshold = 0;
-      return players[0] ?? null;
+  function resolveTarget(p: PosedThing): Pos3 | null {
+    if (p.targetId < 0) {
+      const player = look.players[slotOfTarget(p.targetId)];
+      if (player) return player;
+    } else {
+      const other = posed[p.targetId];
+      if (other && !other.dead) return other;
     }
-    return other;
+    p.threshold = 0;
+    return retargetAllAround(p) ? look.players[slotOfTarget(p.targetId)] : null;
+  }
+
+  /** `MonsterStep.retarget`: the look `resolveTarget` makes, asked while the target still stands. */
+  function retargetAllAround(body: MonsterBody): boolean {
+    const thing = body as PosedThing;
+    const slot = lookForPlayers(thing, true, world, look);
+    if (slot < 0) return false;
+    thing.targetId = targetOfSlot(slot);
+    return true;
+  }
+
+  /**
+   * `P_KillMobj`'s kill count: an `MF_COUNTKILL` death — in a netgame only one no monster dealt,
+   * its `!netgame` gate on the kills monsters make. docs/multiplayer-coop.md § Items and kills.
+   */
+  function countsKill(p: PosedThing, source: DamageHit['source']): boolean {
+    return tables.COUNTKILL_TYPES.has(p.type) && (!netgame || source === undefined);
   }
 
   /**
@@ -1560,7 +1627,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // aren't in `posed` at all and have to be added by hand.
     const blockers = grid.solidBodies({ x: p.spawnX, y: p.spawnY });
     for (const player of players) {
-      if (player) blockers.push({ x: player.x, y: player.y, z: player.z, radius: PLAYER_RADIUS, height: PLAYER_HEIGHT });
+      if (player) blockers.push(playerBlocker(player));
     }
     const at = makeCollider({ radius: p.blockRadius, z, height: p.bodyHeight, forMonster: true, blockers });
     if (world.positionBlocked(p.spawnX, p.spawnY, at)) return false;
@@ -1779,10 +1846,4 @@ function monsterRef(p: PosedThing): MonsterRef {
     radius: p.blockRadius,
     height: p.bodyHeight,
   };
-}
-
-/** The first slot whose player is still alive, or null with none — `update`'s wake-check player. */
-function firstLiving(players: readonly (Pos3 | null)[]): Pos3 | null {
-  for (const player of players) if (player) return player;
-  return null;
 }

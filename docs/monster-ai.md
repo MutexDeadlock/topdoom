@@ -49,9 +49,8 @@ restore cannot put back: a keyframe restored every sleeper's look to phase 0, wh
 10 tics off what the recording ran and desynced any seek past the first minute
 (docs/replays.md § Seeking). What did change with it: a monster spawned, revived or respawned
 mid-level, and one that has lost its target and gone idle again, now join the level's cadence
-instead of starting one of their own, and the cadence no longer stops while the player is dead
-(`updateThings` passes no player then — docs/death.md § Player death); nobody wakes either way,
-since the wake check still wants a living player.
+instead of starting one of their own, and the cadence runs while every player is dead too: a look
+passes a dead player over (docs/death.md § Player death) and still turns `lastlook`.
 
 This sweep is the engine's largest consumer of `hasLineOfSight`, and the only caller that hands it
 subsector hints for the REJECT test — docs/world.md § REJECT.
@@ -61,6 +60,13 @@ lets a monster notice the player within roughly its forward 180° (the map-place
 unchanged until it wakes), unless the player is within melee range regardless of facing. Without
 this, most of a level's population — everything facing away at spawn — attacked the instant an
 unobstructed line existed, which reads exactly backwards.
+
+**Which player a look examines is vanilla's rotation** (`lookForPlayers`, `P_LookForPlayers`): from
+`lastlook`, at most two slots a call, stopping a lap short of where it began. `lastlook` is
+`P_SpawnMobj`'s `P_Random() % MAXPLAYERS` — the one draw `pushThing` makes, whose low bit is also
+`homingBias` — so in single player a monster spawned on 1 misses its first look (the lap stops on
+slot 0 before examining it), and every rotation stands on 0 from then on.
+docs/multiplayer-coop.md § Target choice.
 
 **The spawn angle that cone is measured from is snapped to 45°** (`game/skill.ts: spawnAngleDeg`,
 vanilla's `ANG45 * (mthing->angle/45)`), and every reader of a map thing's facing goes through it —
@@ -73,7 +79,7 @@ which never re-checks it. There is no "lost the scent" in vanilla either. Taking
 unconditionally (`reactToDamage`, matching `P_DamageMobj` setting `target` regardless of prior
 sight or facing).
 
-**Gunfire wakes monsters without sight** — `World.noiseAlert`/`isSoundAlerted`, confirmed against
+**Gunfire wakes monsters without sight** — `World.noiseAlert`/`soundTargetOf`, confirmed against
 `linuxdoom-1.10/p_enemy.c` and `p_pspr.c`. `game.ts` calls `noiseAlert` at the player's position
 whenever a shot fires, melee included (`P_FireWeapon` is the same entry point for every weapon, so
 swinging a fist in an empty room wakes the neighbours). Propagation matches `P_RecursiveSound`
@@ -82,7 +88,8 @@ once (crossable, but a *second* on the same path stops it), every other two-side
 through. A marked sector stays marked for the rest of the level (vanilla's `sector->soundtarget` is
 never cleared), so a monster wandering in later still wakes.
 
-A sound-alerted monster wakes with **no FOV or sight check at all** (`A_Look` `goto seeyou`s
+A sound-alerted monster wakes after the player who made the noise — the sector remembers the last
+one, while they live — with **no FOV or sight check at all** (`A_Look` `goto seeyou`s
 straight off `soundtarget`) — deliberately more permissive than the sight path. **Ambush-flagged**
 things (`game/skill.ts: isAmbush`, `MF_AMBUSH`/editor "deaf") are the exception: they ignore the
 sector flag unless they can actually see the source, falling back to the ordinary FOV+sight check.
@@ -836,12 +843,12 @@ Three vanilla rules keep it from degenerating:
   — `posed` index 0 is a valid monster ID, and `if (reachedPlayer || struck || …)` treated a hit on
   it as no hit.
 
-A target that dies hands attention straight back to the player (`resolveTarget`), matching
-`A_Chase`'s fallback to `P_LookForPlayers` once `target->health <= 0` — unless the player is dead
-too, in which case `resolveTarget` reports no target at all and the monster reverts to idle instead
-of turning on the corpse (`game/things.ts`'s per-frame update loop, docs/death.md § Player death). A
-monster already infighting someone else is unaffected by the player's death and fights on
-regardless.
+A target that dies — a monster, or the player it hunted — drops `threshold` and sends the monster
+looking all around for a player it can see (`resolveTarget` → `lookForPlayers`), `A_Chase`'s
+fallback once the target is no longer shootable. Finding none, `resolveTarget` reports no target
+and the monster reverts to idle instead of turning on a corpse (`game/things.ts`'s per-tic update
+loop, docs/death.md § Player death). A monster already infighting someone else is unaffected by
+the player's death and fights on regardless.
 
 ## The lost soul: a charge, not a projectile
 

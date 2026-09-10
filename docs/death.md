@@ -141,13 +141,12 @@ movement/aim/firing/pickups. Everything else keeps running: fog of war, effects,
 rendering, and monster AI — but AI follows vanilla's own rule for it, not a blanket freeze.
 `P_KillMobj` strips the player's `MF_SHOOTABLE`/`MF_SOLID` on death, so `Game.updateThings` passes
 `ThingLayer.update` `null` in that slot's place once `PlayerSlot.dead` (`game/things.ts`'s
-`resolveTarget` and `blockersFor` both take the `(Pos3 | null)[]` this produces). A monster already mid-infight with another
-monster is unaffected and keeps fighting; one whose only target *was* the player finds
-`resolveTarget` reporting no target the very next frame and reverts to idle right there —
-`p.alerted = false`, `movedir`/`movecount` cleared — the same as `A_Chase`'s own "no shootable
-target" branch falling through to `P_SetMobjState(spawnstate)`. It only wakes again via `damage`'s
-unconditional re-alert (getting caught in someone else's infight), same path any other dormant
-monster uses. A rocket or vile blast already in flight still lands and can still deal splash (or,
+`blockersFor` takes the `(Pos3 | null)[]` this produces, and `resolveTarget` reads it as `look.players`). A monster already mid-infight with another
+monster is unaffected and keeps fighting; one whose target *was* the player looks all around for
+another living player it can see (`resolveTarget` → `lookForPlayers`), and with none reverts to idle
+right there — `p.alerted = false`, `movedir`/`movecount` cleared — the same as `A_Chase`'s own "no
+shootable target" branch falling through to `P_SetMobjState(spawnstate)`. It wakes again the way any
+other dormant monster does: a look, or `damage`'s unconditional re-alert. A rocket or vile blast already in flight still lands and can still deal splash (or,
 for the vile's knockup, do nothing beyond the first killing blow — `resolveVileBlast` gates its
 knockup on `damageSlot`'s return, and `resolveBullet` skipping a dead slot for the hitscan
 equivalent) — a dead player can still be "hit" for nothing to happen, matching `damageSlot`'s own
@@ -164,7 +163,9 @@ delay (`R` answers throughout, since `tic` reads `PlayerSlot.dead`, not the over
 `DeathOverlay.clear` inside the window means the overlay is never seen at all, which is what § Dying
 on the way out needs. Vanilla has no overlay here, so none of this is a fidelity claim.
 
-`R` calls `restart`, which reloads the level from one of three states, in this order.
+A corpse uses no line and crosses none (`specials.activate` skips a dead slot). In a netgame it
+respawns in place on use instead of reloading anything (docs/multiplayer-coop.md § Respawn); in
+single player `R` calls `restart`, which reloads the level from one of three states, in this order.
 
 **A savegame of this level, when there is one.** `Game.savedState` is the snapshot the level is
 currently being played out of: what it was loaded from (the constructor's `restore`) and every

@@ -59,7 +59,7 @@ for (let row = 3; row < 3 + ROOM; row++) {
 
 /** A fog freshly seeded in the corridor — per test, since the sweep mutates it. */
 function darkRoom(): FogOfWar {
-  return new FogOfWar(world, [], seed);
+  return new FogOfWar(world, [], [seed], 0);
 }
 
 /**
@@ -81,7 +81,7 @@ describe('Regressions · fog sweep order', () => {
     const fog = darkRoom();
     assert.equal(cells.filter((c) => fog.isVisible(c.subsector)).length, 0, 'the room starts dark');
 
-    fog.tick(centre.x, centre.y);
+    fog.tick([centre]);
 
     const revealed = cells.filter((c) => fog.isVisible(c.subsector));
     assert.ok(revealed.length > 0, 'the sweep revealed something');
@@ -109,7 +109,7 @@ describe('Regressions · fog sweep order', () => {
   test('the whole room still reveals', () => {
     const fog = darkRoom();
     for (let tic = 0; tic < 200 && cells.some((c) => !fog.isVisible(c.subsector)); tic++) {
-      fog.tick(centre.x, centre.y);
+      fog.tick([centre]);
     }
     const dark = cells.filter((c) => !fog.isVisible(c.subsector));
     assert.equal(dark.length, 0, `${dark.length} cells of the open room never revealed`);

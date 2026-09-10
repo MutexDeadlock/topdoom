@@ -164,7 +164,7 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
   const transfers = transfersOf(map);
   const built = buildMapMesh(map, BANK, { movableSectors, movingSectors, transfers });
   const scene = new THREE.Group();
-  const fog = new FogOfWar(world, built.occluders, at);
+  const fog = new FogOfWar(world, built.occluders, [at], 0);
   const specials = new SpecialsController(world, {
     bank: BANK,
     scene,

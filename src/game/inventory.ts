@@ -275,15 +275,21 @@ export interface PickupOptions {
    * slot's `PlayerSettings.autoSwitchWeapon`. Default on, the setting's own default.
    */
   autoSwitch?: boolean;
+  /**
+   * A netgame: a weapon the map placed gives nothing to a player who already owns it, not even its
+   * ammo (`P_GiveWeapon`). Default false. docs/multiplayer-coop.md § Items and kills.
+   */
+  netgame?: boolean;
 }
 
 /**
  * Applies a picked-up thing's effect, vanilla's `P_TouchSpecialThing` rules. Returns false for an
  * item that shouldn't be collected right now (Stimpack at full health), so the caller leaves it on
- * the ground. See docs/items.md § Collecting things.
+ * the ground — and in a netgame, `leftInNetgame` says which taken ones stay there too. See
+ * docs/items.md § Collecting things.
  */
 export function applyPickup(inv: Inventory, type: number, options: PickupOptions = {}): boolean {
-  const { dropped = false, skill = DEFAULT_SKILL, autoSwitch = true } = options;
+  const { dropped = false, skill = DEFAULT_SKILL, autoSwitch = true, netgame = false } = options;
   // DOOM II only: full health *and* blue armor at once, both past what any single pickup gives.
   if (type === ThingType.megasphere) {
     inv.health = LIMITS.megasphereHealth;
@@ -364,6 +370,8 @@ export function applyPickup(inv: Inventory, type: number, options: PickupOptions
   const weapon = WEAPON_PICKUPS[type];
   if (weapon) {
     const hadWeapon = inv.weapons.has(weapon.weapon);
+    // "leave placed weapons forever on net games": owning one already is the end of it.
+    if (netgame && !dropped && hadWeapon) return false;
     let gaveAmmo = false;
     if (weapon.ammoType) {
       const cap = ammoMax(inv, weapon.ammoType);
@@ -388,6 +396,16 @@ export function applyPickup(inv: Inventory, type: number, options: PickupOptions
   }
 
   return false;
+}
+
+/**
+ * Whether a netgame leaves a taken pickup where it lies, for every other player — `p_inter.c`'s
+ * early returns: every key ("leave cards for everyone") and a weapon the map placed ("leave placed
+ * weapons forever on net games"). A monster's drop is taken as in single player.
+ * docs/multiplayer-coop.md § Items and kills.
+ */
+export function leftInNetgame(type: number, dropped: boolean): boolean {
+  return !!KEY_PICKUPS[type] || (!!WEAPON_PICKUPS[type] && !dropped);
 }
 
 /**

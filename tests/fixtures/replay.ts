@@ -3,9 +3,13 @@ import type { SaveCapture } from '../../src/game/savegames.ts';
 import { getRightMouseAction, quantizeAim, type TicInput } from '../../src/game/input.ts';
 import {
   CHECK_INTERVAL,
+  GLOBAL_PLAYER_SETTINGS,
+  captureSessionSettings,
   captureSimSettings,
   type RecordingStart,
   type ReplayCapture,
+  type ReplayRecorder,
+  type SimSettings,
 } from '../../src/game/replay.ts';
 import type { CameraPose, TopDownCamera } from '../../src/render/camera.ts';
 import type { Pos2 } from '../../src/types.ts';
@@ -46,9 +50,9 @@ export const NO_CAMERA = {} as TopDownCamera;
 
 /** The camera a recording starts at, as `startRecording` hands one over — already snapped. */
 export const START_POSE: CameraPose = { yaw: 90, point: [64, 41, -128], distance: 480, tilt: 57.5 };
-export const START_SNAPSHOT = { player: {}, rng: { p: 0, m: 0 } } as unknown as GameSnapshot;
+export const START_SNAPSHOT = { players: [{ player: {} }], rng: { p: 0, m: 0 } } as unknown as GameSnapshot;
 
-/** A recording's start on E1M1 at `START_POSE`, under the settings in force. */
+/** A one-slot recording's start on E1M1 at `START_POSE`, under the settings in force. */
 export function recordingStart(): RecordingStart {
   const capture = {
     map: 'E1M1',
@@ -59,7 +63,28 @@ export function recordingStart(): RecordingStart {
     thumb: '',
     state: START_SNAPSHOT,
   } as SaveCapture;
-  return { capture, pose: START_POSE, settings: captureSimSettings() };
+  return { capture, poses: [START_POSE], players: [{ ...GLOBAL_PLAYER_SETTINGS }], session: captureSessionSettings() };
+}
+
+/**
+ * `ReplayRecorder.beginTic` for a one-slot recording: the slot at (x, y) under `settings`, split
+ * into its player and session halves, at `pose` (omitted: the last one).
+ */
+export function beginTic(
+  recorder: ReplayRecorder,
+  x: number,
+  y: number,
+  settings: SimSettings = captureSimSettings(),
+  pose?: CameraPose,
+): void {
+  const { player, session } = splitSettings(settings);
+  recorder.beginTic([{ x, y }], [player], session, pose ? [pose] : undefined);
+}
+
+/** `settings` as a recording stores them: the player's half and the session's. */
+export function splitSettings(settings: SimSettings) {
+  const { infiniteTallActors, pistolStart, ...player } = settings;
+  return { player, session: { infiniteTallActors, pistolStart } };
 }
 
 /**
@@ -79,31 +104,29 @@ export function replayCapture(ticCount = 2): ReplayCapture {
     data: {
       snapshots: [REPLAY_SNAPSHOT],
       keyframes: [{ tic: 0, map: 'MAP01', snapshot: 0 }],
-      settings: {
-        autorun: true,
-        autoSwitchWeapon: true,
-        rightMouse: 'use',
-        cameraMode: 'auto',
-        infiniteTallActors: false,
-        pistolStart: false,
-      },
-      tics: {
-        poseYaw: Array(ticCount).fill(0),
-        poseX: Array(ticCount).fill(0),
-        poseY: Array(ticCount).fill(0),
-        poseZ: Array(ticCount).fill(0),
-        poseDistance: Array(ticCount).fill(0),
-        poseTilt: Array(ticCount).fill(0),
-        held: Array(ticCount).fill(0),
-        pressed: Array(ticCount).fill(0),
-        buttons: Array(ticCount).fill(0),
-        wheel: Array(ticCount).fill(0),
-        aimX: Array(ticCount).fill(null),
-        aimY: Array(ticCount).fill(null),
-      },
-      typed: [],
+      session: { infiniteTallActors: false, pistolStart: false },
+      slots: [
+        {
+          settings: { autorun: true, autoSwitchWeapon: true, rightMouse: 'use', cameraMode: 'auto' },
+          tics: {
+            poseYaw: Array(ticCount).fill(0),
+            poseX: Array(ticCount).fill(0),
+            poseY: Array(ticCount).fill(0),
+            poseZ: Array(ticCount).fill(0),
+            poseDistance: Array(ticCount).fill(0),
+            poseTilt: Array(ticCount).fill(0),
+            held: Array(ticCount).fill(0),
+            pressed: Array(ticCount).fill(0),
+            buttons: Array(ticCount).fill(0),
+            wheel: Array(ticCount).fill(0),
+            aimX: Array(ticCount).fill(null),
+            aimY: Array(ticCount).fill(null),
+          },
+          typed: [],
+        },
+      ],
       events: [],
-      checks: { x: samples.map(() => 1), y: samples.map(() => 2), cursor: samples.map(() => 0) },
+      checks: { x: [samples.map(() => 1)], y: [samples.map(() => 2)], cursor: samples.map(() => 0) },
     },
   };
 }
@@ -113,7 +136,7 @@ export function replayCapture(ticCount = 2): ReplayCapture {
  * own test is about — a snapshot round-trips exactly rather than through a lossy encoding.
  */
 const REPLAY_SNAPSHOT = {
-  player: { x: 1.000000123456789 },
+  players: [{ player: { x: 1.000000123456789 } }],
   rng: { p: 0, m: 0 },
-  things: { changed: [] },
+  things: { changed: [], lastlook: '' },
 } as unknown as GameSnapshot;

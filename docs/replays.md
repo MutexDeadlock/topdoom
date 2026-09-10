@@ -13,7 +13,8 @@ by another port.
 ## The TicInput seam
 
 `Game.tic` reads a `TicInput` (`game/input.ts`), never the concrete `Input`: live play hands it the
-`Input`, a recording a `ReplayRecorder` wrapping it, a playback a `ReplayPlayback`. The surface is
+`Input`, a recording each slot's tap from `ReplayRecorder.input(slot)`, a playback each slot's
+`ReplayPlayback.input(slot)`. The surface is
 `held`, `pressed`, `typed`, `mouseDown`, `rightMousePressed`, `consumeWheel`, `aim`, `endTic`.
 
 **The pointer is never read in a tic.** `aim(camera, planeZ)` answers where the player aims on the
@@ -31,12 +32,12 @@ ray a playback casts is the one the recording cast. Two consequences, both delib
 
 ## The record
 
-Per tic, in `ReplayData.tics` as columns: `held` and `pressed` as bit masks over `BOUND_KEYS`
+Per tic and per slot, in `SlotRecord.tics` as columns: `held` and `pressed` as bit masks over `BOUND_KEYS`
 (`replay/keys.ts` — every code the simulation asks for, in a fixed bit order; append, never
 reorder; `tests/game/replay-keys.test.ts` pins the table against the tree), `buttons` (fire held,
 right-button edge), `wheel` (the sign — `handleSwitching` reads nothing else), `aimX`/`aimY` in
 `AIM_QUANTUM` units or null, and the camera pose the tic was read at in `POSE_QUANTUM` units
-(§ Camera state). Typed characters ride sparsely in `typed`.
+(§ Camera state). Typed characters ride sparsely in the slot's `typed`.
 
 **`replay/row.ts` is the one codec over those columns.** A `TicRow` is one tic of them plus what it
 typed: the recorder fills one as the tic reads it and appends it (`sampleInput`, `writeRowPose`,
@@ -54,8 +55,10 @@ column moving at a constant rate stores zeros. The mask columns are left alone �
 measured *worse* on those. A null leaves the prediction where it was. The wheel is handed to the
 live tic as its sign too, so the recording sees what the playback will.
 
-Around the tics: `snapshots` (`[0]` the start, the rest restore and seek targets), `keyframes`
-(§ Seeking), `settings`, `events`, `checks`. `ReplayMeta` carries the WAD set plus the build, the JS engine, the
+`slots` holds one `SlotRecord` per slot — its own `settings`, `tics` and `typed`, as many as
+`snapshots[0].players`. Around them: `snapshots` (`[0]` the start, the rest restore and seek
+targets), `keyframes` (§ Seeking), `session`, `events`, `checks`. A record from before slot records
+is damaged to this build (`isPlayableData`). `ReplayMeta` carries the WAD set plus the build, the JS engine, the
 tic count and the level markers — nothing derivable from another field: the map recording began on
 is `levels[0].map` (`replayMap`), and `replayWadSet` is what hands the meta to the savegames' WAD
 gate (`wadSetRefusal` and friends) in the `SaveWadSet` shape they take.
@@ -104,13 +107,15 @@ button's binding, the camera mode, infinitely tall actors, pistol start. Each ow
 `replay/settings.ts` captures all six (`captureSimSettings`) and pins them (`applySimSettings`).
 
 A playback pins them **before every tic**, not once: the menu's setters write the same variables,
-and a toggle made during a paused playback would otherwise stand. A recording diffs them at tic
-start and writes a change as a `settings` event, so a change made in the menu is stamped "apply
-before tic k". `releaseSimSettings` puts the stored values back when a playback ends.
+and a toggle made during a paused playback would otherwise stand. A recording diffs every slot's
+player settings and the session's at tic start and writes a change as a `settings` event carrying
+its slot, or a `session` event, so a change made in the menu is stamped "apply before tic k".
+`releaseSimSettings` puts the stored values back when a playback ends.
 
 Four of the six are a player's (`PlayerSettings`) and reach the tic through the slot —
-docs/multiplayer.md § Player settings. A playback answers its right-button edge under its own
-`settings.rightMouse`, which the pin makes the same value for the local slot.
+docs/multiplayer.md § Player settings: the local slot's through the pins, every other slot's as the
+playback's own record of it (`ReplayPlayback.slotSettings`). A playback answers each slot's
+right-button edge under that slot's settings in force.
 
 ## Restore events
 
@@ -129,7 +134,7 @@ events: they follow from the input deterministically.
 `Game.startRecording` captures the moment like a save (`captureSave`), then **reloads the level
 from that capture** — so the run being recorded is exactly what a playback restores, dropped
 transients and all, and a mid-level start costs no guessing about which of them matter. The reload
-builds a fresh camera and a fresh `AutoCamera`, so both are put back over it
+builds a fresh camera and a fresh `AutoCamera` for every slot, so both are put back over them
 (`TopDownCamera.snapshot`/`restore`, `AutoCamera.snapshot`/`restore`): this is the one place either
 snapshot is still used, and without it pressing Record mid-glide would hop the framing under the
 player. Nothing is stored — the recorded run carries its camera per tic (§ Camera state). Refused (`recordingRefusal`) during a playback, while already recording,
@@ -171,8 +176,8 @@ cadence and neither shows during a playback.
 
 ### Desync samples
 
-Every `CHECK_INTERVAL` tics the recorder samples the player's position and the P_Random cursor,
-into `checks` as three columns (`CheckColumns`). **No tic is stored**: sample `i` is tic
+Every `CHECK_INTERVAL` tics the recorder samples every slot's position and the P_Random cursor,
+into `checks` (`CheckColumns`: `x` and `y` by slot, `cursor`). **No tic is stored**: sample `i` is tic
 `checkTic(i)`, which is what lets the playback index them instead of walking a cursor, and what
 `isPlayableData` counts against the stream's length.
 

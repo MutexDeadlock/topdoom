@@ -82,9 +82,9 @@ describe('Replays · the ones the engine ships', () => {
     const replay = await readReplay(ID);
     assert.equal(replay.id, ID);
     assert.equal(replay.ticCount, 4);
-    assert.equal(replay.data.tics.held.length, 4);
+    assert.equal(replay.data.slots[0].tics.held.length, 4);
     // Nothing about the record is re-encoded on the way through, floats included.
-    assert.equal(replay.data.snapshots[0].player.x, 1.000000123456789);
+    assert.equal(replay.data.snapshots[0].players[0].player.x, 1.000000123456789);
   });
 
   test('downloading one hands over the served file unchanged', async () => {

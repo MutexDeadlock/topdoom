@@ -116,6 +116,8 @@ export interface RadiusBlast {
   maxDamage: number;
   hitsPlayer: boolean;
   source?: { id: number; type: number };
+  /** The player whose blast it is, where a player's — `DamageHit.slot`. */
+  slot?: number;
   /**
    * Who the overlay names for a killing blast, when that is not `source`'s own type: a barrel
    * blames the barrel rather than whoever set it off, and a shot of the player's has no `source`
@@ -137,7 +139,7 @@ export interface RadiusBlast {
  * Vanilla carries one number where this takes two — docs/combat.md § Splash and the BFG.
  */
 export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBlast): void {
-  const { radius, maxDamage, hitsPlayer, source } = blast;
+  const { radius, maxDamage, hitsPlayer, source, slot } = blast;
   const cause = 'cause' in blast ? blast.cause : source?.type;
   for (const m of ctx.things?.monstersNear(at, radius) ?? []) {
     // Vanilla's PIT_RadiusAttack: the spider mastermind and cyberdemon take
@@ -145,7 +147,7 @@ export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBla
     if (m.type === ThingType.spiderMastermind || m.type === ThingType.cyberdemon) continue;
     const dist = blastDistanceToBox(at.x, at.y, m.x, m.y, m.radius);
     if (dist >= radius || !ctx.world.hasLineOfSight(at, m)) continue;
-    ctx.things?.damage(m.id, maxDamage * (1 - dist / radius), { source, from: at });
+    ctx.things?.damage(m.id, maxDamage * (1 - dist / radius), { source, slot, from: at });
   }
 
   if (!hitsPlayer) return;

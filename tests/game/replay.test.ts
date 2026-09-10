@@ -18,6 +18,7 @@ import {
   speedAt,
   unpackTics,
   ticAtFraction,
+  type PlayerSettings,
   type Replay,
   type SimSettings,
 } from '../../src/game/replay/defs.ts';
@@ -27,7 +28,15 @@ import { getInfiniteTallActors } from '../../src/game/world.ts';
 import { getRightMouseAction } from '../../src/game/input.ts';
 import { clearRandom, pRandom } from '../../src/util/random.ts';
 import type { GameSnapshot } from '../../src/game/snapshot.ts';
-import { NO_CAMERA, recordingStart, scriptedInput, type ScriptedRow } from '../fixtures/replay.ts';
+import {
+  NO_CAMERA,
+  START_POSE,
+  beginTic,
+  recordingStart,
+  scriptedInput,
+  splitSettings,
+  type ScriptedRow,
+} from '../fixtures/replay.ts';
 
 /**
  * A recording is what the tic read, tic for tic, and a playback serves exactly that back — the
@@ -77,20 +86,20 @@ describe('Replays · recording and playing back', () => {
       { pressed: ['KeyR'], wheel: -3, aim: { x: 0, y: 0 } },
       {},
     ];
-    const live = scriptedInput(rows);
-    const recorder = new ReplayRecorder(live, recordingStart());
+    const recorder = new ReplayRecorder([scriptedInput(rows)], recordingStart());
+    const input = recorder.input(0);
     const seen: Record<string, unknown>[] = [];
     for (let i = 0; i < rows.length; i++) {
-      recorder.beginTic(0, 0, captureSimSettings());
-      seen.push(readTic(recorder));
-      recorder.endTic();
+      beginTic(recorder, 0, 0);
+      seen.push(readTic(input));
+      input.endTic();
     }
     assert.equal(recorder.tics, rows.length);
 
     const playback = new ReplayPlayback(replayOf(recorder));
     const served: Record<string, unknown>[] = [];
     while (playback.hasTic) {
-      served.push(readTic(playback));
+      served.push(readTic(playback.input(0)));
       playback.endTic();
     }
     assert.deepEqual(served, seen);
@@ -98,28 +107,77 @@ describe('Replays · recording and playing back', () => {
     assert.equal(playback.desyncedAt, null);
   });
 
+  test('every slot is recorded and served back its own reads, settings and checks', () => {
+    clearRandom();
+    const start = recordingStart();
+    const [mine] = start.players;
+    const theirs: PlayerSettings = { ...mine, autorun: !mine.autorun };
+    const recorder = new ReplayRecorder(
+      [
+        scriptedInput([{ held: ['KeyW'] }, { pressed: ['Space'] }]),
+        scriptedInput([{ held: ['KeyS'], aim: { x: 5, y: 6 } }, { typed: 'x', fire: true }]),
+      ],
+      { ...start, poses: [START_POSE, START_POSE], players: [mine, theirs] },
+    );
+    const seen: Record<string, unknown>[][] = [[], []];
+    for (let tic = 0; tic < 2; tic++) {
+      // Slot 1's settings go back to slot 0's from the second tic.
+      recorder.beginTic(
+        [
+          { x: 1, y: 2 },
+          { x: 30, y: 40 },
+        ],
+        [mine, tic === 0 ? theirs : mine],
+        start.session,
+      );
+      for (const slot of [0, 1]) seen[slot].push(readTic(recorder.input(slot)));
+      for (const slot of [0, 1]) recorder.input(slot).endTic();
+    }
+    const replay = replayOf(recorder);
+    assert.deepEqual(replay.data.events, [{ tic: 1, kind: 'settings', slot: 1, settings: mine }]);
+    assert.deepEqual(replay.data.checks, { x: [[1], [30]], y: [[2], [40]], cursor: [0] });
+
+    const playback = new ReplayPlayback(replay);
+    assert.equal(playback.slotSettings[1].autorun, theirs.autorun);
+    const served: Record<string, unknown>[][] = [[], []];
+    while (playback.hasTic) {
+      playback.eventsAt(playback.cursor);
+      for (const slot of [0, 1]) served[slot].push(readTic(playback.input(slot)));
+      playback.endTic();
+    }
+    assert.deepEqual(served, seen);
+    assert.equal(playback.slotSettings[1].autorun, mine.autorun, 'the event moved slot 1 alone');
+
+    const drifted = new ReplayPlayback(replay);
+    drifted.check([
+      { x: 1, y: 2 },
+      { x: 31, y: 40 },
+    ]);
+    assert.equal(drifted.desyncedAt, 0, "a second slot's drift is a desync too");
+  });
+
   test('the live tic sees the wheel as its sign and the aim quantized, which is what is stored', () => {
     const live = scriptedInput([{ wheel: 37.5, aim: { x: 100.123, y: -50.5 } }]);
-    const recorder = new ReplayRecorder(live, recordingStart());
-    assert.equal(recorder.consumeWheel(), 1);
-    const aim = recorder.aim(NO_CAMERA, 0);
+    const input = new ReplayRecorder([live], recordingStart()).input(0);
+    assert.equal(input.consumeWheel(), 1);
+    const aim = input.aim(NO_CAMERA, 0);
     assert.deepEqual(aim, { x: Math.round(100.123 * 64) / 64, y: -50.5 });
     assert.equal(quantizeAim(null), null);
     assert.equal(AIM_QUANTUM, 1 / 64);
   });
 
   test('a settings change is an event on the tic it is first in force for', () => {
-    const live = scriptedInput([{}, {}, {}]);
-    const recorder = new ReplayRecorder(live, recordingStart());
+    const recorder = new ReplayRecorder([scriptedInput([{}, {}, {}])], recordingStart());
+    const input = recorder.input(0);
     const changed: SimSettings = { ...captureSimSettings(), autorun: !getAutorun() };
-    recorder.beginTic(0, 0, captureSimSettings());
-    recorder.endTic();
-    recorder.beginTic(0, 0, changed);
-    recorder.endTic();
-    recorder.beginTic(0, 0, changed);
-    recorder.endTic();
+    beginTic(recorder, 0, 0);
+    input.endTic();
+    beginTic(recorder, 0, 0, changed);
+    input.endTic();
+    beginTic(recorder, 0, 0, changed);
+    input.endTic();
     const replay = replayOf(recorder);
-    assert.deepEqual(replay.data.events, [{ tic: 1, kind: 'settings', settings: changed }]);
+    assert.deepEqual(replay.data.events, [{ tic: 1, kind: 'settings', slot: 0, settings: splitSettings(changed).player }]);
 
     const playback = new ReplayPlayback(replay);
     assert.deepEqual(playback.eventsAt(0), []);
@@ -129,15 +187,33 @@ describe('Replays · recording and playing back', () => {
     assert.equal(playback.settings.autorun, changed.autorun);
   });
 
+  test("a session change is an event of its own, whichever slot's menu made it", () => {
+    const recorder = new ReplayRecorder([scriptedInput([{}, {}])], recordingStart());
+    const input = recorder.input(0);
+    const changed: SimSettings = { ...captureSimSettings(), pistolStart: !captureSimSettings().pistolStart };
+    beginTic(recorder, 0, 0);
+    input.endTic();
+    beginTic(recorder, 0, 0, changed);
+    input.endTic();
+    const replay = replayOf(recorder);
+    const session = { infiniteTallActors: changed.infiniteTallActors, pistolStart: changed.pistolStart };
+    assert.deepEqual(replay.data.events, [{ tic: 1, kind: 'session', settings: session }]);
+
+    const playback = new ReplayPlayback(replay);
+    playback.endTic();
+    playback.eventsAt(1);
+    assert.equal(playback.settings.pistolStart, changed.pistolStart);
+  });
+
   test('a restore is stamped for the tic that follows it, and a snapshot is stored once', () => {
-    const live = scriptedInput([{}, {}, {}]);
-    const recorder = new ReplayRecorder(live, recordingStart());
-    const other = { player: {}, rng: { p: 5, m: 0 } } as unknown as GameSnapshot;
-    recorder.beginTic(0, 0, captureSimSettings());
-    recorder.endTic();
+    const recorder = new ReplayRecorder([scriptedInput([{}, {}, {}])], recordingStart());
+    const input = recorder.input(0);
+    const other = { players: [{ player: {} }], rng: { p: 5, m: 0 } } as unknown as GameSnapshot;
+    beginTic(recorder, 0, 0);
+    input.endTic();
     recorder.restore('E1M1', other);
-    recorder.beginTic(0, 0, captureSimSettings());
-    recorder.endTic();
+    beginTic(recorder, 0, 0);
+    input.endTic();
     recorder.restore('E1M1', other);
     recorder.restore('E1M1', null);
     const replay = replayOf(recorder);
@@ -152,9 +228,9 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('a level marker is added once per new map', () => {
-    const recorder = new ReplayRecorder(scriptedInput([{}]), recordingStart());
+    const recorder = new ReplayRecorder([scriptedInput([{}])], recordingStart());
     recorder.levelLoaded('E1M1');
-    recorder.endTic();
+    recorder.input(0).endTic();
     recorder.levelLoaded('E1M2');
     recorder.levelLoaded('E1M2');
     assert.deepEqual(recorder.finish().levels, [
@@ -164,13 +240,14 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('the camera the tic ran at is recorded and served back, snapped to the lattice', () => {
-    const recorder = new ReplayRecorder(scriptedInput([{}, {}]), recordingStart());
+    const recorder = new ReplayRecorder([scriptedInput([{}, {}])], recordingStart());
+    const input = recorder.input(0);
     const pose = quantizePose({ yaw: 91.3333, point: [64.51, 41, -128.02], distance: 500.4, tilt: 57.77 });
-    recorder.beginTic(0, 0, captureSimSettings(), pose);
-    recorder.endTic();
+    beginTic(recorder, 0, 0, captureSimSettings(), pose);
+    input.endTic();
     // A tic told nothing keeps the last camera, which is what a recording that starts mid-glide
     // has.
-    recorder.endTic();
+    input.endTic();
     const playback = new ReplayPlayback(replayOf(recorder));
     assert.deepEqual(playback.poseAt(0), pose, 'through JSON, exactly the pose the tic ran at');
     assert.deepEqual(playback.poseAt(1), pose);
@@ -178,16 +255,17 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('a keyframe is due once an interval has passed, and only then', () => {
-    const recorder = new ReplayRecorder(scriptedInput([]), recordingStart());
+    const recorder = new ReplayRecorder([scriptedInput([])], recordingStart());
+    const input = recorder.input(0);
     assert.equal(recorder.keyframeDue, false, 'the start is keyframe 0 already');
-    for (let i = 0; i < KEYFRAME_INTERVAL - 1; i++) recorder.endTic();
+    for (let i = 0; i < KEYFRAME_INTERVAL - 1; i++) input.endTic();
     assert.equal(recorder.keyframeDue, false);
-    recorder.endTic();
+    input.endTic();
     assert.equal(recorder.keyframeDue, true);
     // A refused moment leaves it due: the anchor waits rather than being skipped.
-    recorder.endTic();
+    input.endTic();
     assert.equal(recorder.keyframeDue, true);
-    const state = { player: {}, rng: { p: 1, m: 0 } } as unknown as GameSnapshot;
+    const state = { players: [{ player: {} }], rng: { p: 1, m: 0 } } as unknown as GameSnapshot;
     recorder.keyframe('E1M2', state);
     assert.equal(recorder.keyframeDue, false);
     const { data } = recorder.finish();
@@ -202,30 +280,31 @@ describe('Replays · recording and playing back', () => {
 
   test('a seek re-seats the settings and the check cursor, forwards and back', () => {
     const rows: ScriptedRow[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));
-    const recorder = new ReplayRecorder(scriptedInput(rows), recordingStart());
+    const recorder = new ReplayRecorder([scriptedInput(rows)], recordingStart());
+    const input = recorder.input(0);
     const changed: SimSettings = { ...captureSimSettings(), autorun: !captureSimSettings().autorun };
     for (let tic = 0; tic < rows.length; tic++) {
-      recorder.beginTic(tic, 0, tic < CHECK_INTERVAL ? captureSimSettings() : changed);
-      recorder.endTic();
+      beginTic(recorder, tic, 0, tic < CHECK_INTERVAL ? captureSimSettings() : changed);
+      input.endTic();
     }
     const playback = new ReplayPlayback(replayOf(recorder));
-    const settled = playback.replay.data.settings;
+    const settled = { ...playback.settings };
     playback.seek(CHECK_INTERVAL * 2);
     assert.deepEqual(playback.settings, changed, 'the last settings event before the target is in force');
     assert.equal(playback.ended, false);
     // The sample at that tic is still ahead, so the check still lands.
-    playback.check(CHECK_INTERVAL * 2, 0);
+    playback.check([{ x: CHECK_INTERVAL * 2, y: 0 }]);
     assert.equal(playback.desyncedAt, null);
     playback.seek(0);
     assert.deepEqual(playback.settings, settled, 'a jump back drops the events it had passed');
-    playback.check(999, 0);
+    playback.check([{ x: 999, y: 0 }]);
     assert.equal(playback.desyncedAt, 0, 'the sample at tic 0 is served again, not skipped');
   });
 
   test('a jump lands on the last keyframe at or before it', () => {
-    const recorder = new ReplayRecorder(scriptedInput([]), recordingStart());
-    const state = { player: {}, rng: { p: 1, m: 0 } } as unknown as GameSnapshot;
-    for (let i = 0; i < KEYFRAME_INTERVAL; i++) recorder.endTic();
+    const recorder = new ReplayRecorder([scriptedInput([])], recordingStart());
+    const state = { players: [{ player: {} }], rng: { p: 1, m: 0 } } as unknown as GameSnapshot;
+    for (let i = 0; i < KEYFRAME_INTERVAL; i++) recorder.input(0).endTic();
     recorder.keyframe('E1M1', state);
     const playback = new ReplayPlayback(replayOf(recorder));
     assert.equal(playback.keyframeAt(0).tic, 0);
@@ -235,9 +314,10 @@ describe('Replays · recording and playing back', () => {
   });
 
   test('a level entered anchors a jump at its own first tic', () => {
-    const recorder = new ReplayRecorder(scriptedInput([]), recordingStart());
-    const state = { player: {}, rng: { p: 1, m: 0 } } as unknown as GameSnapshot;
-    for (let i = 0; i < 100; i++) recorder.endTic();
+    const recorder = new ReplayRecorder([scriptedInput([])], recordingStart());
+    const input = recorder.input(0);
+    const state = { players: [{ player: {} }], rng: { p: 1, m: 0 } } as unknown as GameSnapshot;
+    for (let i = 0; i < 100; i++) input.endTic();
     // `Game.runEnterLevel`'s order: the track marker, then the anchor at the same tic.
     recorder.levelLoaded('E1M2');
     recorder.keyframe('E1M2', state);
@@ -247,27 +327,27 @@ describe('Replays · recording and playing back', () => {
     assert.equal(playback.keyframeAt(marker.tic).tic, marker.tic, 'a jump to the marker lands on the level');
     assert.equal(playback.keyframeAt(marker.tic).map, 'E1M2');
     // And the interval measures from it, not from the last anchor before the level.
-    for (let i = 0; i < KEYFRAME_INTERVAL - 1; i++) recorder.endTic();
+    for (let i = 0; i < KEYFRAME_INTERVAL - 1; i++) input.endTic();
     assert.equal(recorder.keyframeDue, false);
-    recorder.endTic();
+    input.endTic();
     assert.equal(recorder.keyframeDue, true);
   });
 
   test('the check samples catch a divergence at the first sample that disagrees', () => {
     clearRandom();
     const rows: ScriptedRow[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));
-    const recorder = new ReplayRecorder(scriptedInput(rows), recordingStart());
+    const recorder = new ReplayRecorder([scriptedInput(rows)], recordingStart());
     for (let i = 0; i < rows.length; i++) {
-      recorder.beginTic(i, 0, captureSimSettings());
-      recorder.endTic();
+      beginTic(recorder, i, 0);
+      recorder.input(0).endTic();
     }
     const replay = replayOf(recorder);
-    assert.equal(replay.data.checks.x.length, 3);
+    assert.equal(replay.data.checks.cursor.length, 3);
 
     clearRandom();
     const playback = new ReplayPlayback(replay);
     for (let i = 0; i < rows.length; i++) {
-      playback.check(i, 0);
+      playback.check([{ x: i, y: 0 }]);
       playback.endTic();
     }
     assert.equal(playback.desyncedAt, null, 'the same run matches');
@@ -277,7 +357,7 @@ describe('Replays · recording and playing back', () => {
     for (let i = 0; i < rows.length; i++) {
       // A stray draw after the first sample shifts the cursor for the second.
       if (i === 1) pRandom();
-      diverged.check(i, 0);
+      diverged.check([{ x: i, y: 0 }]);
       diverged.endTic();
     }
     assert.equal(diverged.desyncedAt, CHECK_INTERVAL);
@@ -286,21 +366,21 @@ describe('Replays · recording and playing back', () => {
   test('a check sample is indexed by its tic, and the position compares rounded', () => {
     clearRandom();
     const rows: ScriptedRow[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));
-    const recorder = new ReplayRecorder(scriptedInput(rows), recordingStart());
+    const recorder = new ReplayRecorder([scriptedInput(rows)], recordingStart());
     // `beginTic` is handed the tic number as the x coordinate, so a sample's x is the tic it
     // was taken at — which is what says no tic column is needed to find it again.
     for (let i = 0; i < rows.length; i++) {
-      recorder.beginTic(i, 0, captureSimSettings());
-      recorder.endTic();
+      beginTic(recorder, i, 0);
+      recorder.input(0).endTic();
     }
     const replay = replayOf(recorder);
-    assert.deepEqual(replay.data.checks.x, [checkTic(0), checkTic(1), checkTic(2)]);
+    assert.deepEqual(replay.data.checks.x, [[checkTic(0), checkTic(1), checkTic(2)]]);
 
     // Under half a unit rounds onto the sample and passes; over it does not.
     clearRandom();
     const near = new ReplayPlayback(replay);
     for (let i = 0; i < rows.length; i++) {
-      near.check(i + 0.4, -0.4);
+      near.check([{ x: i + 0.4, y: -0.4 }]);
       near.endTic();
     }
     assert.equal(near.desyncedAt, null, 'a drift below half a unit is not a desync');
@@ -308,7 +388,7 @@ describe('Replays · recording and playing back', () => {
     clearRandom();
     const far = new ReplayPlayback(replay);
     for (let i = 0; i < rows.length; i++) {
-      far.check(i + 0.6, 0);
+      far.check([{ x: i + 0.6, y: 0 }]);
       far.endTic();
     }
     assert.equal(far.desyncedAt, 0, 'a drift over half a unit is caught at the first sample');

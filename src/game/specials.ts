@@ -37,7 +37,7 @@ import { pRandom } from '../util/random.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './things/doomednums.ts';
 import type { CrossingBody } from './things/defs.ts';
-import type { TicInput } from './input.ts';
+import { usePressed, type TicInput } from './input.ts';
 import { satisfiesLock, type KeySlot } from './inventory.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
@@ -601,8 +601,7 @@ export class SpecialsController {
       lightStates: [...this.lightStates.entries()],
       moveSoundTimer: this.moveSoundTimer,
       crushDamageTimer: this.crushDamageTimer,
-      prevX: this.prev[0].x,
-      prevY: this.prev[0].y,
+      prev: this.prev.map((at): [number, number] => [at.x, at.y]),
       stairFlips: [...this.retriggerFlips],
     });
   }
@@ -632,8 +631,10 @@ export class SpecialsController {
     this.lightStates = new Map(structuredClone(s.lightStates));
     this.moveSoundTimer = s.moveSoundTimer;
     this.crushDamageTimer = s.crushDamageTimer;
-    this.prev[0].x = s.prevX;
-    this.prev[0].y = s.prevY;
+    for (let slot = 0; slot < Math.min(s.prev.length, this.prev.length); slot++) {
+      this.prev[slot].x = s.prev[slot][0];
+      this.prev[slot].y = s.prev[slot][1];
+    }
     const dirty = new Set<number>();
     // Two sources, since a switch shows its on-texture for two different
     // reasons: a repeatable one mid-BUTTONTIME (`switchFlashes`), and a
@@ -776,6 +777,15 @@ export class SpecialsController {
     const prev = this.prev[slot];
     prev.x = teleport ? teleport.x : at.x;
     prev.y = teleport ? teleport.y : at.y;
+  }
+
+  /**
+   * A player put down somewhere new between two tics — a coop respawn: the next `activate` tests
+   * the crossings from `at`, not from where the corpse lay.
+   */
+  reseatSlot(slot: number, at: Pos2): void {
+    this.prev[slot].x = at.x;
+    this.prev[slot].y = at.y;
   }
 
   /**
@@ -2518,7 +2528,7 @@ export class SpecialsController {
   }
 
   private handleUseTrigger(slot: number, at: Placement, input: TicInput, ownedKeys: ReadonlySet<KeySlot>): void {
-    if (!input.pressed('Space') && !input.rightMousePressed('use')) return;
+    if (!usePressed(input)) return;
     const tx = at.x + cos(at.angle) * USE_RANGE;
     const ty = at.y + sin(at.angle) * USE_RANGE;
 

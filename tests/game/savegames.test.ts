@@ -46,7 +46,7 @@ beforeEach(() => {
 });
 
 /** The smallest state payload the loadability check accepts — the store never looks deeper than this. */
-const state = { player: { x: 0 }, rng: { p: 0, m: 0 } } as unknown as SaveCapture['state'];
+const state = { players: [{ player: { x: 0 } }], rng: { p: 0, m: 0 } } as unknown as SaveCapture['state'];
 
 const capture = (map = 'E1M1'): SaveCapture => ({
   map,

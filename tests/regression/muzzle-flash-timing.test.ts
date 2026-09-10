@@ -40,6 +40,7 @@ function fireOnce(type: number): { pose: string[]; shotTic: number; poseStart: n
       stats: { totalKills: 1, kills: 0, totalItems: 0, items: 0 },
       // Over the map's own spawn: thing 0 is the monster it places, awake from the first tic.
       changed: [[0, { type, x: map.things[1].x, y: map.things[1].y, z: 0, facingDeg: 180, monster: { alerted: true } }]],
+      lastlook: '',
     },
   });
 

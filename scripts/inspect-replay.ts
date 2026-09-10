@@ -6,6 +6,7 @@
  *
  *   node scripts/inspect-replay.ts <run.topdoomreplay.json>
  *   node scripts/inspect-replay.ts run.topdoomreplay.json --tics 0-60      # decode a tic range
+ *   node scripts/inspect-replay.ts run.topdoomreplay.json --tics 0-60 --slot 1   # another player's
  *   node scripts/inspect-replay.ts run.topdoomreplay.json --data data.json # dump the whole record
  *   node scripts/inspect-replay.ts run.topdoomreplay.json --state s.json --snapshot 1
  */
@@ -25,11 +26,12 @@ import {
   poseAt,
   replayMap,
   replaySeconds,
-  unpackTics,
+  unpackData,
   type LevelMarker,
+  type PlayerSettings,
   type ReplayData,
   type ReplayEvent,
-  type SimSettings,
+  type SessionSettings,
 } from '../src/game/replay.ts';
 import { AIM_QUANTUM } from '../src/game/input.ts';
 
@@ -38,11 +40,11 @@ const flag = (name: string): string | undefined => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const values = ['--tics', '--data', '--state', '--snapshot'].map(flag);
+const values = ['--tics', '--slot', '--data', '--state', '--snapshot'].map(flag);
 const path = args.find((a) => !a.startsWith('--') && !values.includes(a));
 if (!path) {
   console.error(
-    'usage: node scripts/inspect-replay.ts <run.topdoomreplay.json> [--tics a-b] [--data out.json] [--state out.json [--snapshot n]]',
+    'usage: node scripts/inspect-replay.ts <run.topdoomreplay.json> [--tics a-b [--slot n]] [--data out.json] [--state out.json [--snapshot n]]',
   );
   process.exit(1);
 }
@@ -76,48 +78,53 @@ const markers = levels.map((l) => `${l.map} @ ${clock(replaySeconds(l.tic))}`).j
 console.log(`\nlevels: ${markers || 'none recorded'}`);
 
 const stored = JSON.parse(await decompressText(base64ToBytes(file.data as string))) as ReplayData;
-// The smooth columns are differences on disk (docs/replays.md § The record).
-const data: ReplayData = { ...stored, tics: unpackTics(stored.tics) };
 // A file the game would refuse still gets read this far — saying what it is missing beats a stack
 // trace, and this is the tool a broken download is brought to.
+if (!Array.isArray(stored.slots)) {
+  console.log('\nWARNING: no player records — a replay from before coop, which this build will not play');
+  process.exit(0);
+}
+// The smooth columns are differences on disk (docs/replays.md § The record).
+const data = unpackData(stored);
 const keyframes = Array.isArray(data.keyframes) ? data.keyframes : [];
 if (keyframes.length === 0) console.log('\nWARNING: no seek anchors — this replay will not play');
 
 console.log(
-  `record: ${data.snapshots.length} snapshot(s), ${keyframes.length} keyframe(s), ${data.events.length} event(s), ` +
-    `${data.typed.length} typing tic(s), ${data.checks.x.length} check sample(s)`,
+  `record: ${data.slots.length} player(s), ${data.snapshots.length} snapshot(s), ${keyframes.length} keyframe(s), ` +
+    `${data.events.length} event(s), ${data.checks.cursor.length} check sample(s)`,
 );
-console.log(`settings at tic 0: ${describeSettings(data.settings)}`);
-const camera = poseAt(data.tics, 0);
-if (camera) {
-  console.log(
-    `camera at tic 0: yaw ${camera.yaw.toFixed(1)}°, distance ${camera.distance.toFixed(0)}, tilt ${camera.tilt.toFixed(1)}°`,
-  );
-}
+console.log(`session at tic 0: ${describeSession(data.session)}`);
 if (keyframes.length > 0) {
   console.log(`seek anchors: ${keyframes.map((f) => `${f.map} @ ${clock(replaySeconds(f.tic))}`).join(', ')}`);
 }
 
-const tics = data.tics;
-const rows = tics.held.length;
-if (rows !== ticCount) console.log(`WARNING: the meta claims ${ticCount} tics, the record holds ${rows}`);
-const counts = new Map<string, number>();
-for (const mask of tics.held) {
-  for (const code of BOUND_KEYS) {
-    if (maskHas(mask, code)) counts.set(code, (counts.get(code) ?? 0) + 1);
+for (const [index, slot] of data.slots.entries()) {
+  const { tics } = slot;
+  console.log(`\nplayer ${index + 1}: ${describePlayer(slot.settings)}`);
+  const camera = poseAt(tics, 0);
+  if (camera) {
+    console.log(
+      `  camera at tic 0: yaw ${camera.yaw.toFixed(1)}°, distance ${camera.distance.toFixed(0)}, tilt ${camera.tilt.toFixed(1)}°`,
+    );
   }
-}
-const fire = tics.buttons.filter((b) => (b & BUTTON_FIRE) !== 0).length;
-const rightEdges = tics.buttons.filter((b) => (b & BUTTON_RIGHT_EDGE) !== 0).length;
-const wheel = tics.wheel.filter((w) => w !== 0).length;
-const noAim = tics.aimX.filter((x) => x === null).length;
-console.log(
-  `\ninput: fire held ${fire} tic(s), right-click ${rightEdges}, wheel ${wheel}, aim off-plane ${noAim}`,
-);
-const held = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-console.log(`keys held: ${held.map(([code, n]) => `${code} ${n}`).join(', ') || 'none'}`);
-if (data.typed.length > 0) {
-  console.log(`typed: ${data.typed.map(([tic, text]) => `${tic}:${JSON.stringify(text)}`).join(' ')}`);
+  const rows = tics.held.length;
+  if (rows !== ticCount) console.log(`  WARNING: the meta claims ${ticCount} tics, this record holds ${rows}`);
+  const counts = new Map<string, number>();
+  for (const mask of tics.held) {
+    for (const code of BOUND_KEYS) {
+      if (maskHas(mask, code)) counts.set(code, (counts.get(code) ?? 0) + 1);
+    }
+  }
+  const fire = tics.buttons.filter((b) => (b & BUTTON_FIRE) !== 0).length;
+  const rightEdges = tics.buttons.filter((b) => (b & BUTTON_RIGHT_EDGE) !== 0).length;
+  const wheel = tics.wheel.filter((w) => w !== 0).length;
+  const noAim = tics.aimX.filter((x) => x === null).length;
+  console.log(`  input: fire held ${fire} tic(s), right-click ${rightEdges}, wheel ${wheel}, aim off-plane ${noAim}`);
+  const held = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  console.log(`  keys held: ${held.map(([code, n]) => `${code} ${n}`).join(', ') || 'none'}`);
+  if (slot.typed.length > 0) {
+    console.log(`  typed: ${slot.typed.map(([tic, text]) => `${tic}:${JSON.stringify(text)}`).join(' ')}`);
+  }
 }
 
 if (data.events.length > 0) {
@@ -126,31 +133,39 @@ if (data.events.length > 0) {
 }
 
 const checks = data.checks;
-if (checks.x.length > 0) {
-  const sample = (i: number): string =>
-    `tic ${checkTic(i)}: ${checks.x[i]}, ${checks.y[i]}  P_Random cursor ${checks.cursor[i]}`;
+if (checks.cursor.length > 0) {
+  const sample = (i: number): string => {
+    const where = checks.x.map((xs, slot) => `${xs[i]}, ${checks.y[slot][i]}`).join(' | ');
+    return `tic ${checkTic(i)}: ${where}  P_Random cursor ${checks.cursor[i]}`;
+  };
   console.log(`\nchecks: ${sample(0)}`);
-  if (checks.x.length > 1) console.log(`        ${sample(checks.x.length - 1)}`);
+  if (checks.cursor.length > 1) console.log(`        ${sample(checks.cursor.length - 1)}`);
 }
 
 const range = flag('--tics');
 if (range) {
-  const [from, to] = range.split('-').map((n) => Number(n));
-  const codes = (mask: number): string => BOUND_KEYS.filter((c) => maskHas(mask, c)).join('+') || '-';
-  console.log(`\ntic  held / pressed  buttons  wheel  aim`);
-  for (let t = Math.max(0, from); t <= Math.min(rows - 1, Number.isFinite(to) ? to : from); t++) {
-    const aim =
-      tics.aimX[t] === null
-        ? 'off-plane'
-        : `${(tics.aimX[t]! * AIM_QUANTUM).toFixed(2)}, ${(tics.aimY[t]! * AIM_QUANTUM).toFixed(2)}`;
-    const buttons = [
-      (tics.buttons[t] & BUTTON_FIRE) !== 0 ? 'fire' : null,
-      (tics.buttons[t] & BUTTON_RIGHT_EDGE) !== 0 ? 'right' : null,
-    ]
-      .filter((b) => b !== null)
-      .join('+');
-    const keys = `${codes(tics.held[t])} / ${codes(tics.pressed[t])}`;
-    console.log(`${t}  ${keys}  ${buttons || '-'}  ${tics.wheel[t]}  ${aim}`);
+  const slotIndex = Number(flag('--slot') ?? 0);
+  const tics = data.slots[slotIndex]?.tics;
+  if (!tics) {
+    console.error(`no player ${slotIndex + 1} in this replay`);
+  } else {
+    const [from, to] = range.split('-').map((n) => Number(n));
+    const codes = (mask: number): string => BOUND_KEYS.filter((c) => maskHas(mask, c)).join('+') || '-';
+    console.log(`\nplayer ${slotIndex + 1}\ntic  held / pressed  buttons  wheel  aim`);
+    for (let t = Math.max(0, from); t <= Math.min(tics.held.length - 1, Number.isFinite(to) ? to : from); t++) {
+      const aim =
+        tics.aimX[t] === null
+          ? 'off-plane'
+          : `${(tics.aimX[t]! * AIM_QUANTUM).toFixed(2)}, ${(tics.aimY[t]! * AIM_QUANTUM).toFixed(2)}`;
+      const buttons = [
+        (tics.buttons[t] & BUTTON_FIRE) !== 0 ? 'fire' : null,
+        (tics.buttons[t] & BUTTON_RIGHT_EDGE) !== 0 ? 'right' : null,
+      ]
+        .filter((b) => b !== null)
+        .join('+');
+      const keys = `${codes(tics.held[t])} / ${codes(tics.pressed[t])}`;
+      console.log(`${t}  ${keys}  ${buttons || '-'}  ${tics.wheel[t]}  ${aim}`);
+    }
   }
 }
 
@@ -176,16 +191,23 @@ function clock(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
-function describeSettings(s: SimSettings): string {
-  const onOff = (v: boolean): string => (v ? 'on' : 'off');
+function onOff(v: boolean): string {
+  return v ? 'on' : 'off';
+}
+
+function describePlayer(s: PlayerSettings): string {
   return (
     `autorun ${onOff(s.autorun)}, auto weapon switch ${onOff(s.autoSwitchWeapon)}, ` +
-    `right mouse ${s.rightMouse}, camera ${s.cameraMode}, ` +
-    `infinite tall actors ${onOff(s.infiniteTallActors)}, pistol start ${onOff(s.pistolStart)}`
+    `right mouse ${s.rightMouse}, camera ${s.cameraMode}`
   );
 }
 
+function describeSession(s: SessionSettings): string {
+  return `infinite tall actors ${onOff(s.infiniteTallActors)}, pistol start ${onOff(s.pistolStart)}`;
+}
+
 function describeEvent(event: ReplayEvent): string {
-  if (event.kind === 'settings') return `settings  ${describeSettings(event.settings)}`;
+  if (event.kind === 'settings') return `settings  player ${event.slot + 1}: ${describePlayer(event.settings)}`;
+  if (event.kind === 'session') return `session   ${describeSession(event.settings)}`;
   return `restore   ${event.map}  ${event.snapshot === null ? 'fresh start' : `snapshot ${event.snapshot}`}`;
 }

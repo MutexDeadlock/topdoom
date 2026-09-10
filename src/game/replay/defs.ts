@@ -102,12 +102,13 @@ export interface LevelMarker {
 
 /**
  * Something that reached the simulation between two tics and was not input: a settings change
- * made in the menu, or a death restart's reload landing. Applied *before* tic `tic` runs.
- * `snapshot` indexes `ReplayData.snapshots`; null is the plain reload with a fresh inventory.
- * docs/replays.md § Restore events.
+ * made in the menu — one slot's player settings, or the session's — or a death restart's reload
+ * landing. Applied *before* tic `tic` runs. `snapshot` indexes `ReplayData.snapshots`; null is the
+ * plain reload with a fresh inventory. docs/replays.md § Restore events.
  */
 export type ReplayEvent =
-  | { tic: number; kind: 'settings'; settings: SimSettings }
+  | { tic: number; kind: 'settings'; slot: number; settings: PlayerSettings }
+  | { tic: number; kind: 'session'; settings: SessionSettings }
   | { tic: number; kind: 'restore'; map: string; snapshot: number | null };
 
 /**
@@ -168,7 +169,7 @@ export function poseAt(tics: TicColumns, tic: number): CameraPose | null {
 
 /**
  * The desync samples as columns, one entry per `CHECK_INTERVAL` tics from tic 0 — `checkTic` is
- * the tic an index stands for, so no tic column is stored. The player position is **rounded to
+ * the tic an index stands for, so no tic column is stored. Every slot's position is **rounded to
  * whole map units**: the cursor beside it is exact, and it is the cursor that moves on every
  * diverging random draw, so what rounding can hide is a drift below half a unit that has not yet
  * drawn — which the next sample a second later no longer hides. Rounded rather than hashed because
@@ -176,10 +177,10 @@ export function poseAt(tics: TicColumns, tic: number): CameraPose | null {
  * by how much it drifted. docs/replays.md § The record.
  */
 export interface CheckColumns {
-  /** `player.x`, rounded. */
-  x: number[];
-  /** `player.y`, rounded. */
-  y: number[];
+  /** Each slot's `player.x`, rounded — by slot, then by sample. */
+  x: number[][];
+  /** Each slot's `player.y`, rounded. */
+  y: number[][];
   /** The `P_Random` cursor, exact. */
   cursor: number[];
 }
@@ -208,17 +209,25 @@ export interface Keyframe {
   snapshot: number;
 }
 
+/** One player slot's share of a recording: what it ran under, and what it was told tic by tic. */
+export interface SlotRecord {
+  /** The slot's player settings at tic 0; later changes are its `settings` events. */
+  settings: PlayerSettings;
+  tics: TicColumns;
+  /** The characters typed in a tic, for the tics that typed any — cheat codes. */
+  typed: [tic: number, text: string][];
+}
+
 /** The stored (gzipped) half of a replay. */
 export interface ReplayData {
   /** `[0]` is the moment recording began; restore events index the rest. */
   snapshots: GameSnapshot[];
   /** Never empty and `[0].tic === 0`: the start, and every seek anchor after it. */
   keyframes: Keyframe[];
-  /** The settings at tic 0; later changes are events. */
-  settings: SimSettings;
-  tics: TicColumns;
-  /** The characters typed in a tic, for the tics that typed any — cheat codes. */
-  typed: [tic: number, text: string][];
+  /** The session settings at tic 0; later changes are `session` events. */
+  session: SessionSettings;
+  /** Every slot's record, by slot — as many as `snapshots[0].players`. docs/multiplayer-coop.md. */
+  slots: SlotRecord[];
   events: ReplayEvent[];
   /** The desync samples, one per `CHECK_INTERVAL` tics — § `CheckColumns`. */
   checks: CheckColumns;

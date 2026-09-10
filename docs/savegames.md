@@ -42,10 +42,12 @@ deliberate encodings, all owned by `game/snapshot.ts`:
   cost nothing, so only `levelTime` is rounded (in `createMeta`, because the export file
   stringifies the meta without a replacer).
 
-**`SAVE_VERSION` stays 1** through the thing-list change, deliberately: before v1.0 there are no
-saves worth a version, and the number is being kept for the first break that costs real players
-something. A save written before the change simply does not load, and nothing was added to explain
-it — the only such saves were made by development builds. Everything else added since is still the
+**`SAVE_VERSION` stays 1** through the thing-list change and the coop break (every per-player field
+moved into `players`, § What is saved and what is deliberately not), deliberately: before v1.0
+there are no saves worth a version, and the number is being kept for the first break that costs
+real players something. A save written before either simply does not load — `isLoadableState`
+refuses it as damaged — and nothing was added to explain it: the only such saves were made by
+development builds. Everything else added since is still the
 optional-field rule: absence means the old behaviour, the `teleportFogs` pattern. Breaking saves at
 all is the user's decision, not a free move (CLAUDE.md § Project-wide rules).
 
@@ -80,8 +82,12 @@ fully-populated pre-sparse block still restores identically — every listed key
 and unlisted keys are ignored — which is why the sparse encoding shipped without a `SAVE_VERSION`
 bump (pinned in `tests/game/things-snapshot.test.ts`).
 
-Object references never serialize as references: a thing's `sector`, the world's
-`soundAlertedSectors` and a spawn cube's `target` are saved as indices and re-resolved against the
+**`lastlook` is not in the block.** It is drawn at spawn with `homingBias`, and nearly every
+monster's turns with its first look, so a block per monster would carry the whole level:
+`ThingsSnapshot.lastlook` holds every monster's as one digit, in `posed` order.
+
+Object references never serialize as references: a thing's `sector`, the world's sound targets
+(`[sector, slot]`) and a spawn cube's `target` are saved as indices and re-resolved against the
 freshly loaded map — **a thing's from its saved position** (`applyThingState` → `refreshSector`),
 since the spawn loop cached the sector under its *spawn* point and a corpse never moves again to
 re-derive it. Without that the floor ride (`ThingLayer.update`'s non-AI branch) snaps every
@@ -103,13 +109,14 @@ the snapshot inside is unchanged.
 
 ## What is saved and what is deliberately not
 
-**The save holds player slot 0 and nothing of any other slot** — `player`, `inventory`, `weapons`,
-`cheats`, `cameraYawDeg`, `SpecialsController`'s `prev`, `SectorEffects`' timer are all slot 0's,
-and a restore reads them back into slot 0. docs/multiplayer.md § Player slots.
+**The save holds every player slot** (`players`, by slot): each one's `player`, `inventory`,
+`weapons`, `cameraYawDeg`, `dead` and optional `cheats`, beside `netgame` and every slot's
+`SpecialsController.prev` and `SectorEffects` timer. A restore builds as many slots as the save
+holds, whatever the session was started with. docs/multiplayer-coop.md § Exit, death and saves.
 
-Saved: the cheats currently switched on (`cheats`, **optional** for the same no-bump reason
-`teleportFogs` is, and written only while one is on: absent means neither, which is what a save
-from before cheats existed also means — docs/cheats.md § Saves and best times), the player
+Saved: the cheats currently switched on (`cheats`, **optional**, written only for a session that
+used one: absent means neither toggle on and nothing cheated — docs/cheats.md § Saves and best
+times), the player
 (position, velocities, private knockback), inventory (whose exact card/skull
 keys ride the optional `keySlots` — the always-written `keys` colors keep the save readable by
 pre-slot builds, and a save without `keySlots` restores each color as both slots, exactly the
@@ -123,13 +130,13 @@ the *changed* sectors' mutable fields (`floorHeight`/`ceilHeight`/`light`/`speci
 `floorTex`, plus the optional `ceilTex` only Boom's generalized ceiling changes rewrite —
 `DoomMap` is mutated in place at runtime by specials and secrets), the specials controller (movers
 mid-motion, `usedOnce`, switch flashes, light states, the two shared sound/damage clocks,
-`prevX`/`prevY`, the optional `stairFlips` — the line indices Boom's retrigger alternation
+every slot's `prev`, the optional `stairFlips` — the line indices Boom's retrigger alternation
 currently has flipped, restored as a plain Set since the map itself is never mutated
 (docs/specials.md § Generalized linedefs) — and the optional `ceilingMovers`, the second of the two
 per-sector mover slots Boom keeps apart. **That one is read back by `mover.kind`, not by which
 field it arrived in**: a save written before the split holds every kind in `movers`, so sorting on
 restore covers both shapes without a bump (docs/specials.md § One mover per sector)),
-secrets found + damage-floor timer (an older save's `dollTimer` beside it, from the removed
+secrets found + every slot's damage-floor timer (an older save's `dollTimer` beside it, from the removed
 per-doll damage pass, is simply ignored), fog of war's `explored`, sound-alerted
 sectors, every thing, the Icon of Sin, projectiles in flight, the optional `voodoo` block — where
 each of the level's dolls has been carried to and the momentum it is carrying, absent in any save
@@ -284,13 +291,14 @@ load gets a fresh object per read either way and does not depend on it.
    the authored heights would make the first restored tic read the whole saved-to-authored
    difference as one tic of movement. Only the accelerative integrators need the explicit restore on
    top.
-7. `new Player(world)` → `player.restore(...)`; camera yaw from the snapshot rather than the spawn
+7. Every slot's `new Player(world, start)` on its own start → `player.restore(...)`; each slot's
+   camera yaw from the snapshot rather than the spawn
    angle — snapped onto the 45° lattice (`latticeYaw`), which is what an older save written
    mid-step needs (docs/camera.md § Camera orbit) — and `camera.snapTo` on the restored position so
    the view doesn't fly in from the outgoing level (docs/camera.md § The camera is simulation
    state).
-8. `new FogOfWar(...)` → `restoreExplored(...)` (the constructor's spawn-seeded reveal is
-   overwritten wholesale, not ORed in).
+8. `new FogOfWar(...)` and every other slot's `seed` → `restoreExplored(...)` (the spawn-seeded
+   reveal is overwritten wholesale, not ORed in).
 9. `new SpecialsController(...)` → `specials.restore(...)`. Switch on-textures are flipped *here*,
    not in step 3: `findSwitchEntries` reads the authored sidedef as the off state, so flipping
    before that scan would invert every pair.
@@ -298,10 +306,10 @@ load gets a fresh object per read either way and does not depend on it.
 11. `buildThingSprites(world, { restore, … })` — the spawn loop is skipped and `posed` rebuilt
     from the save in order.
 12. `new IconOfSin(...)` → `icon.restore(...)`.
-13. `projectiles.restore(...)` — into the layer step 4's `beginLevel` already cleared — then
-    `cheats.restore(...)`, order-free: nothing else reads the toggles during a load
-    (docs/cheats.md § Saves and best times).
-14. Slot 0's inventory deserialized, then `WeaponSystem.restore(..., inventory)` — **in that order, and it
+13. `projectiles.restore(...)` — into the layer step 4's `beginLevel` already cleared — then, per
+    slot (`restoreSlot`), `cheats.restore(...)`, order-free: nothing else reads the toggles during
+    a load (docs/cheats.md § Saves and best times); a saved corpse is laid down again after step 14.
+14. Each slot's inventory deserialized, then `WeaponSystem.restore(..., inventory)` — **in that order, and it
     takes the restored inventory**. `WeaponSystem.beginLevel` ran back at the top of the load
     against the *outgoing* inventory, so `weaponLastFrame` is left pointing at whatever weapon was
     in hand before, which is why it is derived from `inventory.currentWeapon` here rather than

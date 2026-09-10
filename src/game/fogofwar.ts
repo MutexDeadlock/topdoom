@@ -33,9 +33,9 @@ const EVERYWHERE = { minX: -Infinity, minY: -Infinity, maxX: Infinity, maxY: Inf
 
 /**
  * Cap on how many not-yet-explored subsectors get their sample rays tested in one `tick` call
- * (tuned by feel; `scanCursor` carries the rest of the nearest-first `order` onto later tics),
- * alongside the work cap below. Counted per tic, not per frame — `explored` is a gameplay input,
- * so the sweep rate must not depend on framerate. See docs/fogofwar.md § Sight testing.
+ * (tuned by feel; `SweepAnchor.cursor` carries the rest of the nearest-first `order` onto later
+ * tics), alongside the work cap below. Counted per tic, not per frame — `explored` is a gameplay
+ * input, so the sweep rate must not depend on framerate. See docs/fogofwar.md § Sight testing.
  */
 const MAX_SIGHT_TESTS_PER_TIC = 350;
 
@@ -183,34 +183,22 @@ export class FogOfWar {
    */
   private workLeft = 0;
 
-  /**
-   * Round-robin resume point into `order` for `tick`'s budgeted scan — see
-   * `MAX_SIGHT_TESTS_PER_TIC`.
-   */
-  private scanCursor = 0;
-
-  /**
-   * The subsectors the sweep may test, **nearest the player first** — the order `scanCursor` walks,
-   * rebuilt by `buildOrder` once the player drifts `ORDER_ANCHOR_SLACK` off the point it was built
-   * for. On a large level which subsector is scanned when decides what a tic's budget buys at all;
-   * docs/fogofwar.md § Sweep order.
-   */
-  private order: Int32Array;
-  /** How much of `order` is live: entries past this are out of reveal range from the anchor. */
-  private orderCount = 0;
+  /** Each slot's sweep, by slot, grown as players first reveal — see `SweepAnchor`. */
+  private anchors: SweepAnchor[] = [];
+  /** The slot this browser draws, whose sweep alone moves the drawn island. */
+  private readonly local: number;
   /** Scratch bucket counts for `buildOrder`'s counting sort, one per `ORDER_RING`-wide ring. */
   private orderRings: Int32Array;
-  /** The point `order` was built for; `ensureOrder` rebuilds once the player drifts off it. */
-  private orderX = 0;
-  private orderY = 0;
 
   constructor(
     world: World,
     occluders: WallOccluder[],
-    start: Pos2,
+    starts: readonly Pos2[],
+    local: number,
     movableSectors?: ReadonlySet<number>,
   ) {
     this.world = world;
+    this.local = local;
     const map = world.map;
     // Passed in by `game.ts`, which has already run this scan for the mesh
     // build; derived here only so a caller that has no reason to care (a test,
@@ -308,15 +296,13 @@ export class FogOfWar {
     for (let ss = 0; ss < this.island.length; ss++) {
       if (!this.sights[ss]) this.island[ss] = NO_ISLAND;
     }
-    const startSS = world.subsectorAt(start.x, start.y);
+    const startSS = world.subsectorAt(starts[local].x, starts[local].y);
     this.currentIsland = startSS >= 0 ? this.island[startSS] : NO_ISLAND;
 
-    this.order = new Int32Array(polys.length);
     // One ring per `ORDER_RING` up to the farthest key `ringOf` admits, inclusive. Sized off
     // `VIEW_DISTANCE` rather than the map, so it is a handful of entries however large the level
     // is.
     this.orderRings = new Int32Array(Math.floor((VIEW_DISTANCE + ORDER_ANCHOR_SLACK) / ORDER_RING) + 1);
-    this.buildOrder(start.x, start.y);
 
     // Which subsector each wall quad faces into, so a wall reveals with the
     // space it encloses. `mapmesh` resolves the same quantity for the dynamic
@@ -337,11 +323,13 @@ export class FogOfWar {
     const cursor = Int32Array.from(this.wallsBySubsectorStart.subarray(0, polys.length));
     for (let i = 0; i < occluders.length; i++) this.wallsBySubsector[cursor[this.wallSubsector[i]]++] = i;
 
-    // Seed the spawn's surroundings fully revealed instead of fading up from
+    // Seed every start's surroundings fully revealed instead of fading up from
     // black on frame one: unbounded on both caps, so this one call reveals
     // everything visible from spawn rather than leaving some of it to fade in
     // over the first few tics. The alpha snap below skips the fade itself.
-    this.sweep(start.x, start.y, Infinity, Infinity);
+    for (let slot = 0; slot < starts.length; slot++) {
+      this.sweep(this.anchorFor(slot), starts[slot].x, starts[slot].y, slot === local, Infinity, Infinity);
+    }
     this.snapAlpha();
   }
 
@@ -368,12 +356,19 @@ export class FogOfWar {
   }
 
   /**
-   * One tic of reveal: marks newly seen subsectors `explored`, from the player's DOOM (x, y). On
-   * the **simulation** clock, because `explored` decides what can be shot; the visual fade is
-   * `updateFade`, which is not. docs/fogofwar.md § What gameplay reads.
+   * One tic of reveal: marks newly seen subsectors `explored` from every slot's body, dead or
+   * alive, by slot — one fog for everyone, the per-tic caps split between them. On the
+   * **simulation** clock, because `explored` decides what can be shot; the visual fade is
+   * `updateFade`, which is not. docs/fogofwar.md § What gameplay reads, § Sweep order.
    */
-  tick(playerX: number, playerY: number): void {
-    this.sweep(playerX, playerY, MAX_SIGHT_TESTS_PER_TIC, MAX_SIGHT_WORK_PER_TIC);
+  tick(points: readonly Pos2[]): void {
+    if (points.length === 0) return;
+    const tests = Math.ceil(MAX_SIGHT_TESTS_PER_TIC / points.length);
+    const work = Math.ceil(MAX_SIGHT_WORK_PER_TIC / points.length);
+    for (let slot = 0; slot < points.length; slot++) {
+      const at = points[slot];
+      this.sweep(this.anchorFor(slot), at.x, at.y, slot === this.local, tests, work);
+    }
   }
 
   /**
@@ -489,28 +484,40 @@ export class FogOfWar {
   }
 
   /**
-   * `tick`'s body, with both caps named rather than defaulted, so the constructor's spawn seed can
-   * ask for an unbounded pass on both without an in-band flag.
+   * One player's share of `tick`, with both caps named rather than defaulted, so the spawn seeds
+   * can ask for an unbounded pass on both without an in-band flag. `follow` is the local player's:
+   * only their sweep moves the drawn island.
    */
-  private sweep(playerX: number, playerY: number, subsectorBudget: number, workBudget: number): void {
+  private sweep(
+    anchor: SweepAnchor,
+    playerX: number,
+    playerY: number,
+    follow: boolean,
+    subsectorBudget: number,
+    workBudget: number,
+  ): void {
     const currentSS = this.world.subsectorAt(playerX, playerY);
-    if (currentSS >= 0 && currentSS < this.explored.length) {
-      this.enterIsland(this.island[currentSS]);
+    const inMap = currentSS >= 0 && currentSS < this.explored.length;
+    if (inMap) {
+      if (follow) this.enterIsland(this.island[currentSS]);
       if (!this.explored[currentSS]) {
         this.explored[currentSS] = 1;
         this.pending--;
       }
     }
     if (this.pending <= 0) return;
+    // The island a reveal here proves connected to what it reaches: the drawn one for the local
+    // player, whatever they stand in for anyone else.
+    const from = follow ? this.currentIsland : inMap ? this.island[currentSS] : NO_ISLAND;
 
-    this.ensureOrder(playerX, playerY);
+    this.ensureOrder(anchor, playerX, playerY);
 
     this.scanId++;
     this.workLeft = workBudget;
-    const order = this.order;
-    const n = this.orderCount;
+    const order = anchor.order;
+    const n = anchor.count;
     let budget = subsectorBudget;
-    let k = this.scanCursor;
+    let k = anchor.cursor;
     for (let steps = 0; steps < n && budget > 0 && this.workLeft > 0; steps++, k = k + 1 < n ? k + 1 : 0) {
       const ss = order[k];
       const s = this.explored[ss] ? undefined : this.sights[ss];
@@ -534,26 +541,35 @@ export class FogOfWar {
           this.pending--;
           // A ray reached it, so the two are one place and the partition was wrong: the only
           // merge rule there is, docs/fogofwar.md § Islands.
-          if (this.island[ss] !== this.currentIsland && this.island[ss] !== NO_ISLAND) {
-            this.mergeIsland(this.island[ss]);
+          const reached = this.island[ss];
+          if (reached !== from && reached !== NO_ISLAND && (follow || from !== NO_ISLAND)) {
+            this.mergeIsland(reached, from);
           }
           break;
         }
       }
     }
     this.rayTargetSector = -1;
-    this.scanCursor = k;
+    anchor.cursor = k;
+  }
+
+  /** Slot `slot`'s sweep anchor, made on first use with no order yet — `ensureOrder` builds one. */
+  private anchorFor(slot: number): SweepAnchor {
+    while (this.anchors.length <= slot) {
+      this.anchors.push({ order: new Int32Array(this.sights.length), count: 0, x: NaN, y: NaN, cursor: 0 });
+    }
+    return this.anchors[slot];
   }
 
   /**
-   * Rebuilds `order` if the player has drifted `ORDER_ANCHOR_SLACK` from the point it was built
-   * for.
+   * Rebuilds `anchor`'s order if the player has drifted `ORDER_ANCHOR_SLACK` from the point it was
+   * built for — or it was never built, which the `NaN` it starts at always fails.
    */
-  private ensureOrder(playerX: number, playerY: number): void {
-    const dx = playerX - this.orderX;
-    const dy = playerY - this.orderY;
+  private ensureOrder(anchor: SweepAnchor, playerX: number, playerY: number): void {
+    const dx = playerX - anchor.x;
+    const dy = playerY - anchor.y;
     if (dx * dx + dy * dy <= ORDER_ANCHOR_SLACK * ORDER_ANCHOR_SLACK) return;
-    this.buildOrder(playerX, playerY);
+    this.buildOrder(anchor, playerX, playerY);
   }
 
   /**
@@ -562,7 +578,7 @@ export class FogOfWar {
    * rings rather than a comparison sort, keyed on `distance - radius`; both choices are
    * load-bearing at this cadence — docs/fogofwar.md § Sweep order.
    */
-  private buildOrder(px: number, py: number): void {
+  private buildOrder(anchor: SweepAnchor, px: number, py: number): void {
     const rings = this.orderRings;
     const ringCount = rings.length;
     rings.fill(0);
@@ -583,9 +599,9 @@ export class FogOfWar {
       rings[r] = at;
       at += count;
     }
-    this.orderCount = at;
+    anchor.count = at;
 
-    const order = this.order;
+    const order = anchor.order;
     for (let ss = 0; ss < n; ss++) {
       const s = this.sights[ss];
       if (!s) continue;
@@ -594,9 +610,9 @@ export class FogOfWar {
       order[rings[ring]++] = ss;
     }
 
-    this.orderX = px;
-    this.orderY = py;
-    this.scanCursor = 0;
+    anchor.x = px;
+    anchor.y = py;
+    anchor.cursor = 0;
   }
 
   /**
@@ -717,13 +733,32 @@ export class FogOfWar {
   }
 
   /**
-   * Folds another island into the player's: a sight ray reaching one is proof the two are a single
-   * place. Relabelling in one pass keeps the per-leaf gate a single compare, and a level has only
-   * as many merges to do as it has islands. docs/fogofwar.md § Islands.
+   * Folds island `other` into `into`, the one the ray was cast from: a sight ray reaching it is
+   * proof the two are a single place. Relabelling in one pass keeps the per-leaf gate a single
+   * compare, and a level has only as many merges to do as it has islands. The drawn island
+   * follows when it is the one folded away. docs/fogofwar.md § Islands.
    */
-  private mergeIsland(other: number): void {
+  private mergeIsland(other: number, into: number): void {
     for (let ss = 0; ss < this.island.length; ss++) {
-      if (this.island[ss] === other) this.island[ss] = this.currentIsland;
+      if (this.island[ss] === other) this.island[ss] = into;
     }
+    if (this.currentIsland === other) this.currentIsland = into;
   }
+}
+
+/**
+ * One player's sweep: the subsectors it may test **nearest that player first**, rebuilt once they
+ * drift `ORDER_ANCHOR_SLACK` off the point it was built for, and where the budgeted scan resumes.
+ * On a large level which subsector is scanned when decides what a tic's budget buys at all;
+ * docs/fogofwar.md § Sweep order.
+ */
+interface SweepAnchor {
+  order: Int32Array;
+  /** How much of `order` is live: entries past this are out of reveal range from the anchor. */
+  count: number;
+  /** The point `order` was built for; `NaN` until the first build. */
+  x: number;
+  y: number;
+  /** Round-robin resume point into `order` — see `MAX_SIGHT_TESTS_PER_TIC`. */
+  cursor: number;
 }

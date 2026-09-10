@@ -27,11 +27,14 @@ const DEATH_OVERLAY_DELAY = PLAYER_DEATH_FRAMES.length * PLAYER_DEATH_FRAME_SECO
  * Which applies is the game layer's to know, so `show` is told that and this layer keeps the
  * wording. docs/death.md § Player death.
  */
-export type DeathHint = 'restart' | 'reload-save' | 'none';
+export type DeathHint = 'restart' | 'reload-save' | 'respawn' | 'none';
 
 const HINTS: Record<DeathHint, string> = {
   restart: 'press R to restart',
   'reload-save': 'press R to reload last savegame',
+  // A netgame's: `R`, like use, brings the player back in the level (docs/multiplayer-coop.md §
+  // Respawn).
+  respawn: 'press R to respawn',
   none: '',
 };
 

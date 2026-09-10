@@ -48,7 +48,7 @@ export class SectorEffects {
    * Per slot, counts down to the next damage-floor tick while that player stands on one.
    * Reset (not merely paused) whenever they aren't, so re-entering a hazard
    * always gives the same brief grace period rather than resuming mid-countdown
-   * from a stale visit. Sized per slot at construction; the save carries slot 0's
+   * from a stale visit. Sized per slot at construction, and saved per slot
    * (docs/savegames.md § What is saved and what is deliberately not).
    */
   private timers: number[];
@@ -69,12 +69,12 @@ export class SectorEffects {
   restore(s: SectorEffectsSnapshot): void {
     this.secretsFound = s.secretsFound;
     this.timers.fill(DAMAGE_FLOOR_INTERVAL);
-    this.timers[0] = s.timer;
+    for (let slot = 0; slot < Math.min(s.timers.length, this.timers.length); slot++) this.timers[slot] = s.timers[slot];
   }
 
   /** The counterpart snapshot — docs/savegames.md § What is saved and what is deliberately not. */
   snapshot(): SectorEffectsSnapshot {
-    return { secretsFound: this.secretsFound, timer: this.timers[0] };
+    return { secretsFound: this.secretsFound, timers: [...this.timers] };
   }
 
   /**

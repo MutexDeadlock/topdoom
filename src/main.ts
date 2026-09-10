@@ -28,6 +28,7 @@ import { LoadingScreen } from './ui/loading.ts';
 import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
 import type { Pos2 } from './types.ts';
+import { MAX_PLAYERS } from './game/playerstarts.ts';
 
 /** What a level start begins from beside the selection — at most one of the two. */
 interface LevelSource {
@@ -48,6 +49,9 @@ async function boot(): Promise<void> {
 
   const params = new URLSearchParams(location.search);
   const startPos = parsePos(params.get('pos'));
+  /** `?coop=N`: 2 to `MAX_PLAYERS` players in one browser — docs/menu.md § URL parameters. */
+  const coopParam = Number(params.get('coop'));
+  const coop = Number.isInteger(coopParam) && coopParam >= 2 && coopParam <= MAX_PLAYERS ? coopParam : null;
   /**
    * Session-level, like the Viewport: one AudioContext for every level and WAD
    * set that follows (see AudioEngine). Constructing it starts nothing — the
@@ -115,8 +119,10 @@ async function boot(): Promise<void> {
         startMap: selection.map,
         title: titleOf(selection.iwad, selection.pwads),
         skill: selection.skill,
-        // A load carries its own position; `?pos=` is for a fresh start only.
+        // A load carries its own position and players; `?pos=` and `?coop=` are for a fresh start
+        // only.
         startPos: save || replay ? null : startPos,
+        coop: save || replay ? null : coop,
         // A replay starts from its own first snapshot — docs/replays.md § Playback.
         restore: replay ? replay.data.snapshots[0] : (save?.state ?? null),
         playback: replay,

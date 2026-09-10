@@ -44,7 +44,7 @@ describe('Replays · the store', () => {
 
     const replay = await readReplay(meta.id);
     assert.equal(
-      (replay.data.snapshots[0] as unknown as { player: { x: number } }).player.x,
+      replay.data.snapshots[0].players[0].player.x,
       1.000000123456789,
       'no float rounding on the way through',
     );

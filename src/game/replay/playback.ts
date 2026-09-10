@@ -1,9 +1,9 @@
 /**
- * `ReplayPlayback`: a replay's record served as the tic's input, one row per `endTic` through the
+ * `ReplayPlayback`: a replay's record served as every slot's input, one row per tic through the
  * codec in `replay/row.ts`, with the playback controls (speed, pause) and the desync check the bar
  * reads. docs/replays.md § Playback.
  */
-import type { RightMouseAction, TicInput } from '../input.ts';
+import type { TicInput } from '../input.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 import type { CameraPose, TopDownCamera } from '../../render/camera.ts';
 import { getRandomCursors } from '../../util/random.ts';
@@ -14,8 +14,10 @@ import {
   poseAt,
   speedAt,
   type Keyframe,
+  type PlayerSettings,
   type Replay,
   type ReplayEvent,
+  type SessionSettings,
   type SimSettings,
 } from './defs.ts';
 import { RowInput, readRow } from './row.ts';
@@ -23,7 +25,7 @@ import { RowInput, readRow } from './row.ts';
 /** What the viewer is watching a replay through — see `ReplayPlayback.cameraView`. */
 export type ReplayCameraView = 'recording' | 'manual';
 
-export class ReplayPlayback implements TicInput {
+export class ReplayPlayback {
   readonly replay: Replay;
   /** The next tic to serve; `ticCount` once the stream is spent. */
   cursor = 0;
@@ -38,15 +40,12 @@ export class ReplayPlayback implements TicInput {
    */
   cameraView: ReplayCameraView = 'recording';
   /**
-   * The settings in force, re-asserted by `Game` before every tic; events move it. Its
-   * `rightMouse` is also what the right-button edge is served under.
+   * Slot 0's player settings in force beside the session's — what `Game` pins through the owners
+   * before every tic, the viewer's slot being 0. Events move it.
    */
   settings: SimSettings;
-  /**
-   * The aim point of the tic just run, with its plane height — the manual view's camera lead, which
-   * is a per-tic reader. What the reticle is *drawn* at is `aimAt`'s interpolation of it.
-   */
-  lastAim: Pos3 | null = null;
+  /** Every slot's player settings in force, by slot; events move them. */
+  readonly slotSettings: PlayerSettings[];
   /**
    * The tic a seek in progress is catching up to, null when none is. `Game` sets it and grinds
    * the tics out a frame's worth at a time. docs/replays.md § Seeking.
@@ -59,19 +58,21 @@ export class ReplayPlayback implements TicInput {
    */
   seekBack = false;
 
-  private typedAt: Map<number, string>;
+  private session: SessionSettings;
+  private typedAt: Map<number, string>[];
   private eventIndex = 0;
-  /** The tic before `lastAim`'s — the point `aimAt` draws the reticle from. */
-  private prevAim: Pos3 | null = null;
-  /** Tic `cursor`'s row, the reads are answered from — re-read wherever the cursor moves. */
-  private input: RowInput;
+  /** Each slot's input, its row re-read wherever the cursor moves. */
+  private inputs: PlaybackInput[];
 
   constructor(replay: Replay) {
     this.replay = replay;
-    this.settings = replay.data.settings;
-    this.typedAt = new Map(replay.data.typed);
-    this.input = new RowInput({ rightMouse: this.settings.rightMouse });
-    this.readCursorRow();
+    const { slots } = replay.data;
+    this.slotSettings = slots.map((slot) => slot.settings);
+    this.session = replay.data.session;
+    this.settings = { ...this.slotSettings[0], ...this.session };
+    this.typedAt = slots.map((slot) => new Map(slot.typed));
+    this.inputs = slots.map((slot) => new PlaybackInput({ rightMouse: slot.settings.rightMouse }));
+    this.readCursorRows();
   }
 
   get ticCount(): number {
@@ -91,49 +92,27 @@ export class ReplayPlayback implements TicInput {
     return speedAt(this.speedIndex);
   }
 
-  held(...codes: string[]): boolean {
-    return this.input.held(...codes);
-  }
-
-  pressed(code: string): boolean {
-    return this.input.pressed(code);
-  }
-
-  typed(): string {
-    return this.input.typed();
-  }
-
-  get mouseDown(): boolean {
-    return this.input.mouseDown;
-  }
-
-  rightMousePressed(action: RightMouseAction): boolean {
-    // Under the binding in force, never the stored one, so the edge means what it meant to the
-    // recording — events move `settings`.
-    this.input.rightMouse = this.settings.rightMouse;
-    return this.input.rightMousePressed(action);
-  }
-
-  consumeWheel(): number {
-    return this.input.consumeWheel();
-  }
-
-  aim(camera: TopDownCamera, planeZ: number): Pos2 | null {
-    const point = this.input.aim(camera, planeZ);
-    this.prevAim = this.lastAim;
-    this.lastAim = point ? { x: point.x, y: point.y, z: planeZ } : null;
-    return point;
+  /** Slot `slot`'s input: its record's row for the tic about to run. */
+  input(slot: number): TicInput {
+    return this.inputs[slot];
   }
 
   /**
-   * Where the recording aimed `alpha` of the way through the tic being drawn, or null while
+   * Slot 0's aim point of the tic just run, with its plane height — the manual view's camera lead,
+   * which is a per-tic reader. What the reticle is *drawn* at is `aimAt`'s interpolation of it.
+   */
+  get lastAim(): Pos3 | null {
+    return this.inputs[0].lastAim;
+  }
+
+  /**
+   * Where slot 0's recording aimed `alpha` of the way through the tic being drawn, or null while
    * nothing is. Interpolated between the last two tics' points for the same reason every sprite in
    * the frame is: the record holds one per tic, and a reticle stepping 35 times a second under a
    * camera moving at the refresh rate reads as stutter. docs/replays.md § Playback.
    */
   aimAt(alpha: number): Pos3 | null {
-    const to = this.lastAim;
-    const from = this.prevAim;
+    const { lastAim: to, prevAim: from } = this.inputs[0];
     // A tic that aimed nowhere has no point to come from — the reticle arrives at this one.
     if (!to || !from) return to;
     return {
@@ -143,14 +122,16 @@ export class ReplayPlayback implements TicInput {
     };
   }
 
+  /** Closes the tic for every slot: the cursor moves on and each input's row with it. */
   endTic(): void {
     this.cursor++;
-    this.readCursorRow();
+    this.readCursorRows();
   }
 
-  /** The camera tic `tic` was recorded at, null past the end of the stream. */
-  poseAt(tic: number): CameraPose | null {
-    return poseAt(this.replay.data.tics, tic);
+  /** The camera slot `slot` was recorded at on tic `tic`, null past the end of the stream. */
+  poseAt(tic: number, slot = 0): CameraPose | null {
+    const record = this.replay.data.slots[slot];
+    return record ? poseAt(record.tics, tic) : null;
   }
 
   /** The keyframe a jump to `tic` starts from: the last one at or before it, `[0]` at worst. */
@@ -171,16 +152,19 @@ export class ReplayPlayback implements TicInput {
    * since `Game` applies those before running it. docs/replays.md § Seeking.
    */
   seek(tic: number): void {
-    const { events } = this.replay.data;
+    const { data } = this.replay;
     this.cursor = Math.max(0, Math.min(this.ticCount, Math.round(tic)));
-    this.readCursorRow();
-    this.lastAim = null;
-    this.prevAim = null;
-    this.settings = this.replay.data.settings;
+    this.readCursorRows();
+    for (const input of this.inputs) {
+      input.lastAim = null;
+      input.prevAim = null;
+    }
+    for (let slot = 0; slot < data.slots.length; slot++) this.slotSettings[slot] = data.slots[slot].settings;
+    this.session = data.session;
+    this.settle();
     this.eventIndex = 0;
-    while (this.eventIndex < events.length && events[this.eventIndex].tic < this.cursor) {
-      const event = events[this.eventIndex++];
-      if (event.kind === 'settings') this.settings = event.settings;
+    while (this.eventIndex < data.events.length && data.events[this.eventIndex].tic < this.cursor) {
+      this.applyEvent(data.events[this.eventIndex++]);
     }
   }
 
@@ -191,30 +175,71 @@ export class ReplayPlayback implements TicInput {
     while (this.eventIndex < events.length && events[this.eventIndex].tic <= tic) {
       const event = events[this.eventIndex++];
       if (event.tic === tic) (due ??= []).push(event);
-      if (event.kind === 'settings') this.settings = event.settings;
+      this.applyEvent(event);
     }
     return due ?? NO_EVENTS;
   }
 
   /**
-   * Compares the recording's sample for the tic about to run, if it took one, against the live
-   * state; the first disagreement is kept and later ones ignored. The samples sit one per
-   * `CHECK_INTERVAL` from tic 0, so the tic indexes them and a seek needs no cursor of its own.
+   * Compares the recording's sample for the tic about to run, if it took one, against every slot's
+   * live position and the random cursor; the first disagreement is kept and later ones ignored. The
+   * samples sit one per `CHECK_INTERVAL` from tic 0, so the tic indexes them and a seek needs no
+   * cursor of its own.
    */
-  check(x: number, y: number): void {
+  check(bodies: readonly Pos2[]): void {
     if (this.desyncedAt !== null || this.cursor % CHECK_INTERVAL !== 0) return;
     const { checks } = this.replay.data;
     const i = this.cursor / CHECK_INTERVAL;
-    if (i >= checks.x.length) return;
-    if (checks.x[i] !== checkCoord(x) || checks.y[i] !== checkCoord(y) || checks.cursor[i] !== getRandomCursors().p) {
-      this.desyncedAt = this.cursor;
+    if (i >= checks.cursor.length) return;
+    let agrees = checks.cursor[i] === getRandomCursors().p;
+    for (let slot = 0; agrees && slot < bodies.length; slot++) {
+      agrees = checks.x[slot]?.[i] === checkCoord(bodies[slot].x) && checks.y[slot]?.[i] === checkCoord(bodies[slot].y);
+    }
+    if (!agrees) this.desyncedAt = this.cursor;
+  }
+
+  /** A settings or session event taking effect; a restore is `Game`'s to carry out. */
+  private applyEvent(event: ReplayEvent): void {
+    if (event.kind === 'restore') return;
+    if (event.kind === 'settings') this.slotSettings[event.slot] = event.settings;
+    else this.session = event.settings;
+    this.settle();
+  }
+
+  /** `settings` and every input's right-button binding brought up to the settings in force. */
+  private settle(): void {
+    this.settings = { ...this.slotSettings[0], ...this.session };
+    for (let slot = 0; slot < this.inputs.length; slot++) {
+      this.inputs[slot].rightMouse = this.slotSettings[slot].rightMouse;
     }
   }
 
-  private readCursorRow(): void {
-    readRow(this.replay.data.tics, this.typedAt, this.cursor, this.input.row);
+  private readCursorRows(): void {
+    const { slots } = this.replay.data;
+    for (let slot = 0; slot < this.inputs.length; slot++) {
+      readRow(slots[slot].tics, this.typedAt[slot], this.cursor, this.inputs[slot].row);
+    }
   }
 }
 
 /** What `eventsAt` answers on the ordinary tic, so it allocates nothing there. */
 const NO_EVENTS: readonly ReplayEvent[] = [];
+
+/**
+ * One slot's row served as its input, keeping the last two aim points it answered — the reticle
+ * is drawn between them. The row and the binding it answers under are the playback's to set, and
+ * so is the cursor (`ReplayPlayback.endTic`).
+ */
+class PlaybackInput extends RowInput {
+  /** The aim point of the tic just run, with its plane height. */
+  lastAim: Pos3 | null = null;
+  /** The tic before `lastAim`'s. */
+  prevAim: Pos3 | null = null;
+
+  aim(camera: TopDownCamera, planeZ: number): Pos2 | null {
+    const point = super.aim(camera, planeZ);
+    this.prevAim = this.lastAim;
+    this.lastAim = point ? { x: point.x, y: point.y, z: planeZ } : null;
+    return point;
+  }
+}

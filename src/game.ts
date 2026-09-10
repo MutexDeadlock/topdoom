@@ -50,7 +50,7 @@ import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
 import { collectFadeTargets, FadePass, FlatFader, WallFader } from './render/occlusion.ts';
 import { SurfaceScroller } from './render/scroller.ts';
-import { makeTouchCache, World, type Opening } from './game/world.ts';
+import { makeCollider, makeTouchCache, World, type Opening, type ThingBlocker } from './game/world.ts';
 import {
   AIM_HEIGHT_OFFSET,
   EYE_HEIGHT,
@@ -59,6 +59,7 @@ import {
   PLAYER_HEIGHT,
   PLAYER_MASS,
   PLAYER_RADIUS,
+  playerBlocker,
 } from './game/player.ts';
 import type { StandingBody } from './game/things/defs.ts';
 import {
@@ -113,6 +114,7 @@ import {
   serializeInventory,
   snapshotSectors,
   type GameSnapshot,
+  type PlayerSlotSnapshot,
   type SectorSnapshot,
 } from './game/snapshot.ts';
 import {
@@ -126,7 +128,7 @@ import {
   ReplayPlayback,
   ReplayRecorder,
   applySimSettings,
-  captureSimSettings,
+  captureSessionSettings,
   quantizePose,
   releaseSimSettings,
   // Ours, not the DOM's animation type of the same name — game.ts sees both.
@@ -142,6 +144,7 @@ import {
   finishLevel,
   getPistolStart,
   hasPower,
+  leftInNetgame,
   pickupSound,
   PICKUP_RANGE,
   tickPowers,
@@ -154,11 +157,13 @@ import { WEAPONS } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
 import { playerOrigin } from './audio/sfx.ts';
 import { PlayerSlot } from './game/playerslot.ts';
+import { coopStarts, levelStartFor, MAX_PLAYERS, rebornSpot } from './game/playerstarts.ts';
+import { IDLE_TIC_INPUT, usePressed } from './game/input.ts';
 import { SoundBank } from './wad/sound.ts';
 import { MusicBank } from './wad/music.ts';
 import { MapInfo } from './wad/campaign/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
-import type { Pos2, Pos3 } from './types.ts';
+import type { Placement, Pos2, Pos3 } from './types.ts';
 import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 import { vecLength } from './util/geom.ts';
 import { readStorage, writeStorage } from './util/storage.ts';
@@ -290,6 +295,12 @@ export interface GameOptions {
    * Absent means taking over stores nothing.
    */
   autoSave?: (() => Promise<unknown>) | null;
+  /**
+   * `?coop=` — how many players the session runs, as a netgame; absent is single player. Every slot
+   * past the first stands idle until something drives it. A restore's own `players` and `netgame`
+   * win over it. docs/multiplayer-coop.md.
+   */
+  coop?: number | null;
 }
 
 /** One loaded WAD set, playing one level at a time. */
@@ -333,15 +344,24 @@ export class Game {
   private sectorBaseline: SectorSnapshot[] = [];
   private world!: World;
   /**
-   * Every player in the level, by slot — one today. Built in the constructor body, after the
-   * DEHACKED patch, and never replaced: a level load rebuilds what is per-level *inside* each.
-   * docs/multiplayer.md § Player slots.
+   * Every player in the level, by slot — one, or `GameOptions.coop`'s. Built in the constructor
+   * body, after the DEHACKED patch, and never replaced: a level load rebuilds what is per-level
+   * *inside* each. docs/multiplayer.md § Player slots.
    */
   private slots: PlayerSlot[] = [];
   /** Which slot this browser plays and draws for: the HUD, the audio listener, the view camera. */
   private readonly localSlot = 0;
   /** `slots` as the thing layer reads them, `null` where dead — refilled per tic, never reallocated. */
   private players: (Pos3 | null)[] = [];
+  /** Every slot's body, the dead included, as the fog sweeps from them — refilled like `players`. */
+  private fogPoints: Pos2[] = [];
+  /**
+   * Whether the session runs as a netgame: `GameOptions.coop`, or the restored snapshot's own.
+   * Decided once, since which things spawn depends on it. docs/multiplayer-coop.md.
+   */
+  private netgame: boolean;
+  /** The level's player starts by slot (`coopStarts`), resolved per level load. */
+  private starts: (Placement | null)[] = [];
   private built: BuiltMap | null = null;
   private things: ThingLayer | null = null;
 
@@ -592,6 +612,7 @@ export class Game {
       loading = null,
       playback = null,
       autoSave = null,
+      coop = null,
     } = options;
     this.view = view;
     this.audio = audio;
@@ -609,6 +630,8 @@ export class Game {
     // fact of being a replay; whether a best time may actually be *written* is
     // `recordCompletion`'s separate question.
     this.cheated = restore ? restore.cheated : startPos !== null;
+    // The snapshot's own when restoring, for the same reason: its thing ids were counted under it.
+    this.netgame = restore ? restore.netgame : coop !== null;
     // Primed here, where a one-off scan of each file's bytes disappears into a load that is about
     // to build every mesh in the level, so the exit frame only ever hits the memo.
     for (const file of wad.files) wadId(file);
@@ -689,7 +712,10 @@ export class Game {
     // After the patch, never as a field initializer: a slot's opening inventory reads `Misc`'s
     // `Initial Health`/`Initial Bullets` off `LIMITS` (docs/dehacked.md § Applying: reset, then
     // patch), and after the sprite banks, which its billboard is built on.
-    this.slots.push(this.buildSlot(0));
+    // A restore brings its own slots, however the session was asked to start.
+    const slotCount = restore ? restore.players.length : Math.min(Math.max(coop ?? 1, 1), MAX_PLAYERS);
+    for (let index = 0; index < slotCount; index++) this.slots.push(this.buildSlot(index));
+    this.setReplay(null);
     // The vile-flame resolver is `monsterAttacks`', not the batch's — where the
     // flame belongs depends on live monster/player state. Both callbacks are
     // reached through a closure because `monsterAttacks` and `fogOfWar` are both
@@ -745,18 +771,16 @@ export class Game {
     if (playback) {
       const replay = new ReplayPlayback(playback);
       this.setReplay(replay);
-      const local = this.local;
       // A camera of its own, so the viewer's can be moved without moving the ray the picks are
       // cast along — `syncViewCamera` is what the drawn one follows.
-      local.simCamera = new TopDownCamera(view.camera.camera.aspect);
-      // The record's own first pose, on both cameras: the level load left them framed on the
-      // player start, which is not where the recording was looking from.
-      const start = replay.poseAt(0);
-      if (start) {
-        local.simCamera.snapPose(start);
-        view.camera.snapPose(start);
+      this.local.simCamera = new TopDownCamera(view.camera.camera.aspect);
+      // Every slot's own first pose, the viewer's on both of its cameras: the level load left them
+      // framed on the player starts, which is not where the recording was looking from.
+      for (const slot of this.slots) {
+        const start = replay.poseAt(0, slot.index);
+        if (start) this.forEachCameraOf(slot, (camera) => camera.snapPose(start));
       }
-      applySimSettings(playback.data.settings);
+      this.pinPlaybackSettings(replay);
       this.crosshair.detach(true);
     }
   }
@@ -776,14 +800,28 @@ export class Game {
   }
 
   /**
-   * Puts `replay` in charge, or nothing, and points the local slot's `input` and `source` at it in
-   * the same step — the one place either is switched. docs/replays.md § The TicInput seam.
+   * Puts `replay` in charge, or nothing, and points every slot's `input` and `source` at it in the
+   * same step — the one place either is switched. With none, the local slot is the keyboard's and
+   * every other stands idle. docs/replays.md § The TicInput seam.
    */
   private setReplay(replay: ReplayRecorder | ReplayPlayback | null): void {
     this.replay = replay;
-    const local = this.local;
-    local.input = replay ?? this.view.input;
-    local.source = replay instanceof ReplayPlayback ? 'replay' : 'live';
+    for (const slot of this.slots) {
+      const local = slot === this.local;
+      slot.input = replay ? replay.input(slot.index) : local ? this.view.input : IDLE_TIC_INPUT;
+      slot.source = replay instanceof ReplayPlayback ? 'replay' : local ? 'live' : 'idle';
+    }
+  }
+
+  /**
+   * A playback's settings in force: the local slot's pinned through the owners, where
+   * `GLOBAL_PLAYER_SETTINGS` reads them, and every other slot's as a record of its own.
+   */
+  private pinPlaybackSettings(playback: ReplayPlayback): void {
+    applySimSettings(playback.settings);
+    for (const slot of this.slots) {
+      if (slot !== this.local) slot.settings = playback.slotSettings[slot.index];
+    }
   }
 
   get recording(): boolean {
@@ -800,8 +838,10 @@ export class Game {
   }
 
   /**
-   * One player slot on the viewport's own camera and keyboard, its billboard in the scene. Only
-   * the constructor calls it, once per player; a level load rebuilds what is per-level inside.
+   * One player slot, its billboard in the scene. The local one runs on the viewport's own camera
+   * under the menu's settings; any other on a camera of its own, under a copy of them. What drives
+   * its input is `setReplay`'s to say. Only the constructor calls it, once per player; a level
+   * load rebuilds what is per-level inside.
    */
   private buildSlot(index: number): PlayerSlot {
     // PLAY's own walk cycle: DOOM has no separate idle art, it just holds
@@ -812,12 +852,13 @@ export class Game {
       animFrames: ['A', 'B', 'C', 'D'],
       brightFrames: FULLBRIGHT_FRAMES,
     });
+    const local = index === this.localSlot;
     const slot: PlayerSlot = new PlayerSlot({
       index,
       inventory: createInventory(),
-      simCamera: this.view.camera,
-      input: this.view.input,
-      settings: GLOBAL_PLAYER_SETTINGS,
+      simCamera: local ? this.view.camera : new TopDownCamera(this.view.camera.camera.aspect),
+      input: IDLE_TIC_INPUT,
+      settings: local ? GLOBAL_PLAYER_SETTINGS : { ...GLOBAL_PLAYER_SETTINGS },
       actor,
       consumePickup: (type, dropped, at) => this.consumePickup(slot, type, dropped, at),
     });
@@ -849,24 +890,28 @@ export class Game {
   startRecording(): void {
     const refusal = this.recordingRefusal();
     if (refusal) throw new Error(refusal);
-    const local = this.local;
-    const camera = local.simCamera.snapshot();
-    const auto = local.autoCamera.snapshot();
+    const cameras = this.slots.map((slot) => ({ sim: slot.simCamera.snapshot(), auto: slot.autoCamera.snapshot() }));
     // Elided: this is a replay's snapshot 0, and the reload below re-spawns the things it leaves
     // out — docs/replays.md § The record.
     const capture = this.captureSave({ thumbnail: false });
     const entering = this.levelTime === 0;
     this.loadMapByIndex(this.mapIndex, capture.state);
-    local.simCamera.restore(camera);
-    local.autoCamera.restore(auto);
+    for (const slot of this.slots) {
+      slot.simCamera.restore(cameras[slot.index].sim);
+      slot.autoCamera.restore(cameras[slot.index].auto);
+    }
     // A reload shows no card, but a recording that begins as the level does still is arriving.
     if (entering) this.levelCard.show(this.levelNames.nameFor(this.currentMap), this.levelNames.graphicFor(this.currentMap));
     this.setReplay(
-      new ReplayRecorder(this.view.input, {
-        capture,
-        pose: quantizePose(local.simCamera.pose()),
-        settings: captureSimSettings(),
-      }),
+      new ReplayRecorder(
+        this.slots.map((slot) => slot.input),
+        {
+          capture,
+          poses: this.slots.map((slot) => quantizePose(slot.simCamera.pose())),
+          players: this.slots.map((slot) => slot.settings),
+          session: captureSessionSettings(),
+        },
+      ),
     );
   }
 
@@ -983,11 +1028,13 @@ export class Game {
     // recording typed has to arrive with the recording's own verdict on the run.
     this.cheated = state.cheated;
     playback.seek(frame.tic);
-    // The pose of the tic being landed on, snapped rather than glided into: the camera was
+    // Every slot's pose of the tic being landed on, snapped rather than glided into: the camera was
     // somewhere else entirely a moment ago. docs/replays.md § Camera state.
-    const pose = playback.poseAt(frame.tic);
-    if (pose) this.forEachCamera((camera) => camera.snapPose(pose));
-    applySimSettings(playback.settings);
+    for (const slot of this.slots) {
+      const pose = playback.poseAt(frame.tic, slot.index);
+      if (pose) this.forEachCameraOf(slot, (camera) => camera.snapPose(pose));
+    }
+    this.pinPlaybackSettings(playback);
     // The state is the record's own again, so whatever had drifted before this point is gone.
     playback.desyncedAt = null;
   }
@@ -1208,10 +1255,6 @@ export class Game {
     const { thumbnail = true } = options;
     const refusal = this.saveRefusal();
     if (refusal) throw new Error(refusal);
-    // Slot 0's, and only slot 0's: the format holds one player until the coop break
-    // (docs/multiplayer.md § Player slots, docs/savegames.md § What is saved and what is
-    // deliberately not).
-    const first = this.slots[0];
     return {
       map: this.currentMap,
       skill: this.skill,
@@ -1228,14 +1271,9 @@ export class Game {
       thumb: thumbnail ? this.captureThumbnail() : '',
       state: {
         levelTime: this.levelTime,
-        // Where the orbit is heading, not the angle a Q/E step happens to be passing through: only
-        // whole steps move it afterwards, so a mid-glide yaw would strand the restored camera
-        // between two lattice angles for good. docs/camera.md § Camera orbit.
-        cameraYawDeg: first.simCamera.targetYawDeg,
         cheated: this.cheated,
-        player: first.player.snapshot(),
-        inventory: serializeInventory(first.inventory),
-        weapons: first.weapons.snapshot(),
+        netgame: this.netgame,
+        players: this.slots.map((slot) => this.captureSlot(slot)),
         sectors: snapshotSectors(this.map, this.sectorBaseline),
         // Non-null: all three are built by every `loadMapByIndex` pass, and
         // `captureSave` is only reachable with a level loaded.
@@ -1246,15 +1284,45 @@ export class Game {
         things: this.things!.snapshot(),
         icon: this.icon!.snapshot(),
         projectiles: this.projectiles.snapshot(),
-        // Only while one is actually on: an honest run's save carries nothing, which is what a
-        // save from before cheats existed also carries. docs/cheats.md § Saves and best times.
-        ...(first.cheats.used ? { cheats: first.cheats.snapshot() } : {}),
         teleportFogs: this.effects.snapshotTeleportFogs(),
         voodoo: this.voodoo.snapshot(),
         scrollers: this.forces.snapshot(),
         rng: getRandomCursors(),
       },
     };
+  }
+
+  /** One slot as a snapshot holds it — `captureSave`'s per-player half. */
+  private captureSlot(slot: PlayerSlot): PlayerSlotSnapshot {
+    return {
+      player: slot.player.snapshot(),
+      inventory: serializeInventory(slot.inventory),
+      weapons: slot.weapons.snapshot(),
+      // Where the orbit is heading, not the angle a Q/E step happens to be passing through: only
+      // whole steps move it afterwards, so a mid-glide yaw would strand the restored camera
+      // between two lattice angles for good. docs/camera.md § Camera orbit.
+      cameraYawDeg: slot.simCamera.targetYawDeg,
+      dead: slot.dead,
+      // Only while one is actually on: an honest slot's save carries nothing.
+      // docs/cheats.md § Saves and best times.
+      ...(slot.cheats.used ? { cheats: slot.cheats.snapshot() } : {}),
+    };
+  }
+
+  /**
+   * One slot back from its snapshot, at `loadMapByIndex`'s step for it: the cheats, the inventory,
+   * the weapons that read that inventory, and a corpse laid down again.
+   */
+  private restoreSlot(slot: PlayerSlot, saved: PlayerSlotSnapshot): void {
+    slot.cheats.restore(saved.cheats);
+    slot.inventory = deserializeInventory(saved.inventory);
+    // After the line above: `restore` derives `weaponLastFrame` off the
+    // inventory it is handed, and `beginLevel` only saw the outgoing one.
+    slot.weapons.restore(saved.weapons, slot.inventory);
+    if (saved.dead) {
+      slot.dead = true;
+      slot.actor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
+    }
   }
 
   /**
@@ -1285,15 +1353,11 @@ export class Game {
     // Whatever was still ringing belongs to the level being torn down — a door
     // closing, a monster's death cry — and its origins are about to be reused.
     this.audio.stopAll();
-    for (const slot of this.slots) {
-      slot.weapons.beginLevel(slot.inventory);
-      // A fresh map always starts with living players — covers both a normal
-      // level transition (a level can end over a corpse, and `enterLevel` has
-      // just reborn the inventory for it) and `restart`'s "reload the same map"
-      // call, defensively in one place rather than duplicated at each caller.
-      slot.dead = false;
-      slot.actor.revive();
-    }
+    // A fresh map always starts with living players — covers both a normal
+    // level transition (a level can end over a corpse, and `enterLevel` has
+    // just reborn the inventory for it) and `restart`'s "reload the same map"
+    // call, defensively in one place rather than duplicated at each caller.
+    for (const slot of this.slots) slot.standUp();
     this.clearOverlays();
     this.screenEffects.clearPain();
     this.popup = null;
@@ -1411,19 +1475,26 @@ export class Game {
     // player starts — the same state a fresh load gives them.
     this.voodoo.restore(restore?.voodoo);
     this.surfaceScroller = new SurfaceScroller(this.forces, this.built, this.materials);
-    // Every slot on the map's own start until coop starts arrive (docs/multiplayer.md § Player
-    // slots); the save and a `?pos=` override both speak of slot 0.
-    const start = this.world.playerStart();
-    for (const slot of this.slots) slot.player = new Player(this.world, start);
+    // Every slot on its own start (docs/multiplayer-coop.md § Starts); a save and a `?pos=`
+    // override are applied over them below.
+    this.starts = coopStarts(this.world);
+    const taken: Pos2[] = [];
+    for (const slot of this.slots) {
+      slot.player = new Player(this.world, levelStartFor(this.starts, slot.index, taken));
+      taken.push({ x: slot.player.x, y: slot.player.y });
+    }
     const first = this.slots[0];
     if (restore) {
-      // The saved position and camera replace both the map's own start and any
+      // The saved positions and cameras replace both the map's own starts and any
       // `?pos=` override, which stays queued for the next fresh level.
-      first.player.restore(restore.player);
-      // `latticeYaw`: a save written before the orbit's target was what got stored — or by a build
-      // that took a playback over mid-glide — carries an off-lattice yaw, and nothing downstream
-      // would ever bring it back. docs/camera.md § Camera orbit.
-      this.forEachCamera((camera) => (camera.yawDeg = latticeYaw(restore.cameraYawDeg)));
+      for (const slot of this.slots) {
+        const saved = restore.players[slot.index];
+        slot.player.restore(saved.player);
+        // `latticeYaw`: a save written by a build that took a playback over mid-glide carries an
+        // off-lattice yaw, and nothing downstream would ever bring it back.
+        // docs/camera.md § Camera orbit.
+        this.forEachCameraOf(slot, (camera) => (camera.yawDeg = latticeYaw(saved.cameraYawDeg)));
+      }
     } else {
       // Applied before fog of war is seeded, so an explicit start position reveals
       // exactly what is visible from there and nothing from the map's real spawn.
@@ -1434,7 +1505,7 @@ export class Game {
       // Every level (re)load starts each camera facing the same way its player
       // spawns facing, instead of always defaulting to due-north regardless of
       // the map's own player-start angle.
-      this.forEachCamera((camera, slot) => (camera.yawDeg = (slot.player.angle * 180) / Math.PI - 90));
+      this.forEachCamera((camera, slot) => camera.faceHeading(slot.player.angle));
     }
     // After both branches, and after the yaw each sets: a camera belongs to
     // the session, not the level, so its smoothed follow point still holds the
@@ -1450,9 +1521,10 @@ export class Game {
     // A level change re-seeds the viewer's own camera from the simulation's: it is a hard reset of
     // the framing, and gliding in from the outgoing level is exactly what `snapTo` exists to stop.
     if (this.view.camera !== this.local.simCamera) this.view.camera.copyFrom(this.local.simCamera);
-    this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.local.player, movableSectors);
-    if (restore) this.fogOfWar.restoreExplored(restore.fog);
+    // One fog for everyone: every player's start is revealed at once.
     const bodies = this.slots.map((slot) => slot.player);
+    this.fogOfWar = new FogOfWar(this.world, this.built.occluders, bodies, this.localSlot, movableSectors);
+    if (restore) this.fogOfWar.restoreExplored(restore.fog);
     this.specials = new SpecialsController(this.world, {
       bank: this.materials,
       scene: this.scene,
@@ -1485,7 +1557,7 @@ export class Game {
         // either, and the operations are applied rather than the state copied, so a manual view
         // keeps its zoom.
         this.forEachCameraOf(slot, (camera) => {
-          if (dest.rotateBy === undefined) camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
+          if (dest.rotateBy === undefined) camera.faceHeading(dest.angle);
           else camera.turnYaw((dest.rotateBy * 180) / Math.PI);
           camera.snapTo({ x: player.x, y: player.y, z: player.eyeZ });
         });
@@ -1532,6 +1604,7 @@ export class Game {
         this.effects.spawnTeleportFog(to);
       },
       lights: this.lights,
+      netgame: this.netgame,
     });
     this.scene.add(this.things.group);
 
@@ -1551,11 +1624,7 @@ export class Game {
     if (restore) {
       this.icon.restore(restore.icon);
       this.projectiles.restore(restore.projectiles);
-      first.cheats.restore(restore.cheats);
-      first.inventory = deserializeInventory(restore.inventory);
-      // After the line above: `restore` derives `weaponLastFrame` off the
-      // inventory it is handed, and `beginLevel` only saw the outgoing one.
-      first.weapons.restore(restore.weapons, first.inventory);
+      for (const slot of this.slots) this.restoreSlot(slot, restore.players[slot.index]);
     }
 
     // Raised last: this method clears every overlay at its top, so a card shown any earlier than
@@ -1730,6 +1799,63 @@ export class Game {
     return true;
   }
 
+  /** Whether a dead slot asked to respawn this tic: use, or `R` for the local player. */
+  private wantsRespawn(slot: PlayerSlot): boolean {
+    const { input } = slot;
+    return usePressed(input) || (slot === this.local && input.pressed('KeyR'));
+  }
+
+  /**
+   * A netgame's respawn, in place — `G_DoReborn`: a fresh inventory and the cheats cleared
+   * (`G_PlayerReborn`), the spot `rebornSpot` picks with `G_CheckSpot`'s fog in front of it, and
+   * the body stood back up there. The level runs on untouched. docs/multiplayer-coop.md § Respawn.
+   */
+  private respawnSlot(slot: PlayerSlot): void {
+    const own = levelStartFor(this.starts, slot.index, []);
+    const spot = rebornSpot(this.starts, own, (at) => this.spotBlocked(at));
+    slot.inventory = createInventory();
+    slot.cheats.reborn();
+    slot.player.respawnAt(spot);
+    slot.touch = makeTouchCache();
+    slot.standUp();
+    this.specials?.reseatSlot(slot.index, spot);
+    this.effects.spawnArrivalFog(spot, this.world.floorAt(spot.x, spot.y));
+    // Every camera of the slot faces the way the new body does and cuts to it, as a teleport does.
+    this.forEachCameraOf(slot, (camera) => {
+      camera.faceHeading(spot.angle);
+      camera.snapTo({ x: slot.player.x, y: slot.player.y, z: slot.player.eyeZ });
+    });
+    slot.autoCamera.seed(slot.player, slot.simCamera);
+    if (slot === this.local) {
+      this.deathOverlay.clear();
+      this.screenEffects.clearPain();
+    }
+  }
+
+  /**
+   * `G_CheckSpot`'s `P_CheckPosition` for a respawn: a player's box at `at` against the walls and
+   * every solid body there — monsters, barrels and solid decorations, and the living players.
+   */
+  private spotBlocked(at: Pos2): boolean {
+    const blockers = this.solidBodiesAround(at);
+    const z = this.world.groundFloor(at.x, at.y, PLAYER_RADIUS);
+    return this.world.positionBlocked(at.x, at.y, makeCollider({ radius: PLAYER_RADIUS, z, height: PLAYER_HEIGHT, blockers }));
+  }
+
+  /**
+   * The solid bodies around `at`: the thing layer's, and every living player but `except` — a
+   * player is `MF_SOLID` to another (`PIT_CheckThing`). docs/multiplayer-coop.md § Collision.
+   */
+  private solidBodiesAround(at: Pos2, except?: PlayerSlot): ThingBlocker[] {
+    const bodies = this.things?.solidBodies(at) ?? [];
+    for (const other of this.slots) {
+      if (other !== except && !other.dead) {
+        bodies.push(playerBlocker(other.player));
+      }
+    }
+    return bodies;
+  }
+
   /**
    * The keys a shot fires a line's special with: the shooting player's, or — for a monster's
    * stray shot — `playerOneKeys`.
@@ -1757,6 +1883,7 @@ export class Game {
   /** Which line the death overlay offers — nothing under a playback, where `R` is the record's. */
   private deathHint(): DeathHint {
     if (this.playback) return 'none';
+    if (this.netgame) return 'respawn';
     return this.savedState !== null ? 'reload-save' : 'restart';
   }
 
@@ -2062,27 +2189,41 @@ export class Game {
         const state = this.captureSave({ thumbnail: false }).state;
         recorder.keyframe(this.currentMap, state);
       }
-      // Snapped onto the record's lattice *before* the tic reads the camera, so what ran is what
-      // is stored — the aim point's own rule. `roundPose`, not `setPose`: the orbit and the framing
-      // are heading somewhere and that is not part of a pose. docs/replays.md § Camera state.
-      const local = this.local;
-      const pose = quantizePose(local.simCamera.pose());
-      local.simCamera.roundPose(pose);
-      recorder.beginTic(local.player.x, local.player.y, captureSimSettings(), pose);
+      // Every slot's camera snapped onto the record's lattice *before* the tic reads it, so what
+      // ran is what is stored — the aim point's own rule. `roundPose`, not `setPose`: the orbit and
+      // the framing are heading somewhere and that is not part of a pose.
+      // docs/replays.md § Camera state.
+      const { slots } = this;
+      const poses = slots.map((slot) => {
+        const pose = quantizePose(slot.simCamera.pose());
+        slot.simCamera.roundPose(pose);
+        return pose;
+      });
+      recorder.beginTic(
+        slots.map((slot) => slot.player),
+        slots.map((slot) => slot.settings),
+        captureSessionSettings(),
+        poses,
+      );
       return;
     }
     const playback = this.playback;
     if (!playback) return;
-    // The camera is an input here, not a computation: the tic runs at the pose the recording ran
-    // at, whatever this build's camera code would have picked. docs/replays.md § Camera state.
-    const pose = playback.poseAt(playback.cursor);
-    if (pose) this.local.simCamera.setPose(pose);
+    // The camera is an input here, not a computation: every slot's tic runs at the pose the
+    // recording ran at, whatever this build's camera code would have picked.
+    // docs/replays.md § Camera state.
+    for (const slot of this.slots) {
+      const pose = playback.poseAt(playback.cursor, slot.index);
+      if (pose) slot.simCamera.setPose(pose);
+    }
     for (const event of playback.eventsAt(playback.cursor)) {
       if (event.kind !== 'restore') continue;
       this.reloadLevel(event.snapshot === null ? null : playback.replay.data.snapshots[event.snapshot]);
     }
-    applySimSettings(playback.settings);
-    playback.check(this.local.player.x, this.local.player.y);
+    this.pinPlaybackSettings(playback);
+    // After the events, whose reload stands every body up anew.
+    this.refillBodies();
+    playback.check(this.fogPoints);
   }
 
   /**
@@ -2253,6 +2394,9 @@ export class Game {
       if (specials) {
         specials.beginTic(DOOM_TIC);
         for (const slot of this.slots) {
+          // A corpse uses no line and crosses none — `P_DeathThink` runs instead of
+          // `P_MovePlayer` — and in a netgame its use press is the respawn's.
+          if (slot.dead) continue;
           specials.activate(slot.index, slot.player, slot.input, slot.inventory.keys, slot.player.noclip);
         }
         specials.endTic(DOOM_TIC);
@@ -2314,9 +2458,16 @@ export class Game {
       return false;
     }
 
-    // `R` is the only input a corpse still answers; everything else the player
-    // drives is skipped below instead of branching here.
-    if (local.dead && !this.levelEnding && input.pressed('KeyR')) {
+    // A corpse answers one input: in single player `R`, which reloads the level; in a netgame use,
+    // or the local player's `R`, which stands them back up in it. Everything else a player drives
+    // is skipped below instead of branching here.
+    if (this.netgame) {
+      for (const slot of this.slots) {
+        if (slot.dead && !this.levelEnding && this.wantsRespawn(slot)) {
+          this.respawnSlot(slot);
+        }
+      }
+    } else if (local.dead && !this.levelEnding && input.pressed('KeyR')) {
       this.endTicInputs();
       this.restart();
       return true;
@@ -2346,7 +2497,8 @@ export class Game {
     }
     if (anyPlayerAlive(this.slots)) this.levelTime += DOOM_TIC;
 
-    this.profiler.time('Fog of War', () => this.fogOfWar.tick(local.player.x, local.player.y));
+    this.refillBodies();
+    this.profiler.time('Fog of War', () => this.fogOfWar.tick(this.fogPoints));
     this.updateThings(DOOM_TIC);
     this.updateEffects(DOOM_TIC);
 
@@ -2354,9 +2506,24 @@ export class Game {
     return false;
   }
 
-  /** Closes every slot's input for the tic — the edges cleared, the wheel spent. */
+  /** `players` and `fogPoints` for the rest of the tic, refilled in place. */
+  private refillBodies(): void {
+    const { slots, players, fogPoints } = this;
+    players.length = slots.length;
+    fogPoints.length = slots.length;
+    for (let i = 0; i < slots.length; i++) {
+      players[i] = livingPlayer(slots[i]);
+      fogPoints[i] = slots[i].player;
+    }
+  }
+
+  /**
+   * Closes every slot's input for the tic — the edges cleared, the wheel spent, a recording's rows
+   * written — and moves a playback's cursor, which serves every slot the next row.
+   */
   private endTicInputs(): void {
     for (const slot of this.slots) slot.input.endTic();
+    this.playback?.endTic();
   }
 
   /**
@@ -2467,7 +2634,7 @@ export class Game {
         cache: slot.touch,
       });
       // Monsters are solid: the player walks around them, not through them.
-      player.update(dt, input, at, camera.viewerAngleDeg + 180, this.things?.solidBodies(player), ground);
+      player.update(dt, input, at, camera.viewerAngleDeg + 180, this.solidBodiesAround(player, slot), ground);
       return { monster: m, shootLine: line, cursor: onPlane };
     });
 
@@ -2500,7 +2667,7 @@ export class Game {
     // entry point for every weapon, so swinging a fist in an empty room wakes
     // the neighbours the same as firing a pistol would.
     if (shots.length > 0) {
-      this.world.noiseAlert(player.x, player.y);
+      this.world.noiseAlert(player.x, player.y, slot.index);
       slot.actor.playOnce(PLAYER_ATTACK_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
       // One shot sound per trigger pull, not per pellet (see
       // `WeaponDef.fireSound`), on the player's own origin — so a held
@@ -2528,7 +2695,11 @@ export class Game {
       dropped,
       skill: this.skill,
       autoSwitch: slot.settings.autoSwitchWeapon,
+      netgame: this.netgame,
     });
+    // What a netgame leaves lying for everyone else: taken, and still there.
+    // docs/multiplayer-coop.md § Items and kills.
+    const left = taken && this.netgame && leftInNetgame(type, dropped);
     // The computer area map is the one pickup whose whole effect lives outside the `Inventory`
     // struct: it reveals the level's own geometry. Watched for here rather than handled in
     // `applyPickup` — the same "state there, world effect at the caller" split `tryPickup`
@@ -2537,12 +2708,17 @@ export class Game {
       this.fogOfWar.revealAll();
     }
     // Unattenuated, as vanilla plays every pickup: you're standing on it — and for the local
-    // player alone, `P_TouchSpecialThing`'s own `player == &players[consoleplayer]` gate.
+    // player alone, `P_TouchSpecialThing`'s own `player == &players[consoleplayer]` gate. An item
+    // left lying puffs nothing, and a key left lying is silent too: `P_TouchSpecialThing` returns
+    // before its sound, where a weapon's `wpnup` is `P_GiveWeapon`'s own.
     if (taken && slot === this.local) {
-      this.audio.play(pickupSound(type));
-      this.effects.spawnPickupFog(at);
+      const sound = pickupSound(type);
+      if (!left || sound === 'wpnup') {
+        this.audio.play(sound);
+      }
+      if (!left) this.effects.spawnPickupFog(at);
     }
-    return taken;
+    return taken && !left;
   }
 
   /**
@@ -2608,6 +2784,8 @@ export class Game {
     // whoever holds the record. docs/replays.md § Playback.
     if (this.playback) return null;
     if (this.cheated) return null;
+    // A netgame claims none either: the run is several players'.
+    if (this.netgame) return null;
     const map = this.currentMap;
     const source = mapProvider(this.wad, map);
     if (!source) return null;
@@ -2677,9 +2855,8 @@ export class Game {
    * for what that does and doesn't freeze in the AI.
    */
   private updateThings(dt: number): void {
-    const { slots, players } = this;
-    players.length = slots.length;
-    for (let i = 0; i < slots.length; i++) players[i] = livingPlayer(slots[i]);
+    // Refilled by `refillBodies` ahead of the fog, earlier in the same tic.
+    const { players } = this;
     // Every attack a monster fired this tic comes back for us to apply/render, the same "system
     // returns data, caller realizes it" split as `WeaponSystem.fire`.
     const thingUpdate = this.profiler.time(

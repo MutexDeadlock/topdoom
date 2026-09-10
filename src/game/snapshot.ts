@@ -127,10 +127,11 @@ export interface SectorSnapshot {
  */
 export type SectorEntry = [number, SectorSnapshot];
 
-/** `SectorEffects`' own two counters; `totalSecrets` is re-counted from the map, not saved. */
+/** `SectorEffects`' own counters; `totalSecrets` is re-counted from the map, not saved. */
 export interface SectorEffectsSnapshot {
   secretsFound: number;
-  timer: number;
+  /** Each slot's damage-floor countdown, by slot. */
+  timers: number[];
 }
 
 export interface SpecialsSnapshot {
@@ -154,8 +155,8 @@ export interface SpecialsSnapshot {
   lightStates: [number, LightState][];
   moveSoundTimer: number;
   crushDamageTimer: number;
-  prevX: number;
-  prevY: number;
+  /** Where each slot's walk-trigger crossing test starts from next tic, by slot. */
+  prev: [x: number, y: number][];
   /**
    * Line indices whose generalized stair direction is flipped from the
    * authored special (Boom's retrigger alternation mutates `line.special`).
@@ -327,6 +328,12 @@ export interface ThingsSnapshot {
    * docs/savegames.md § The format and its version.
    */
   changed: [number, ThingState][];
+  /**
+   * Every monster's `lastlook`, one digit each in `posed` order. Not a field of the monster block:
+   * nearly every monster's turns with its first look, so a block each would carry the whole level.
+   * docs/savegames.md § The format and its version.
+   */
+  lastlook: string;
 }
 
 export interface CubeState {
@@ -354,15 +361,12 @@ export interface IconSnapshot {
 }
 
 /**
- * A `Projectile` minus its animator, which restore rebuilds from `sprite`. Player 1 as its
- * `sourceId` or its homing `targetId` is written as `null`, the encoding saves have always carried
- * — `ProjectileLayer` maps `targetOfSlot(0)` across at the boundary, until the coop format break
- * (docs/multiplayer.md § Slot addressing). docs/savegames.md § The format and its version.
+ * A `Projectile` minus its animator, which restore rebuilds from `sprite`. Its `sourceId` and
+ * homing `targetId` are target ids as the live record holds them, a player slot as
+ * `targetOfSlot` (docs/multiplayer.md § Slot addressing). docs/savegames.md § The format and its
+ * version.
  */
-export type ProjectileSnapshot = Omit<Projectile, 'anim' | 'sourceId' | 'homing'> & {
-  sourceId: number | null;
-  homing?: Omit<NonNullable<Projectile['homing']>, 'targetId'> & { targetId: number | null };
-};
+export type ProjectileSnapshot = Omit<Projectile, 'anim'>;
 
 /**
  * A teleport-fog puff mid-animation: where it is and how far into its ~1.7 s it
@@ -376,28 +380,45 @@ export interface TeleportFogState extends Pos3 {
   elapsed: number;
 }
 
+/** One player slot's share of a `GameSnapshot`. */
+export interface PlayerSlotSnapshot {
+  player: PlayerSnapshot;
+  inventory: InventorySnapshot;
+  weapons: WeaponsSnapshot;
+  /** Where the slot's camera orbit is heading — `Game.captureSave`. */
+  cameraYawDeg: number;
+  /** A corpse waiting to respawn, lying where `player` says. docs/multiplayer-coop.md § Respawn. */
+  dead: boolean;
+  /**
+   * The cheats switched on, written only while one is: an honest slot saves nothing, and absent
+   * means neither cheat. docs/cheats.md § Saves and best times.
+   */
+  cheats?: CheatSnapshot;
+}
+
 export interface GameSnapshot {
   levelTime: number;
-  cameraYawDeg: number;
   /**
    * Whether this level's run is disqualified from best times — a cheat, a `?pos=` start, a replay
    * taken over. Carried through so none of them can be laundered by saving and restoring.
    * docs/hud.md § Best times.
    */
   cheated: boolean;
-  player: PlayerSnapshot;
-  inventory: InventorySnapshot;
-  weapons: WeaponsSnapshot;
+  /**
+   * Whether the level runs as a netgame: which things spawn depends on it, so it decides every
+   * thing id in `things` and a restore runs under it. docs/multiplayer-coop.md.
+   */
+  netgame: boolean;
+  /** Every player slot, by slot — how many there are is the snapshot's to say. */
+  players: PlayerSlotSnapshot[];
   /** Only the sectors that differ from the freshly loaded map — see `snapshotSectors`. */
   sectors: SectorEntry[];
   specials: SpecialsSnapshot;
   sectorEffects: SectorEffectsSnapshot;
   /** `encodeRuns` of the fog-of-war `explored` bitmap. */
   fog: number[];
-  /**
-   * Sector indices of `World.soundAlertedSectors` — the live set holds `Sector` object references.
-   */
-  soundAlerted: number[];
+  /** `[sectorIndex, slot]` for every sector a noise reached — `World.snapshotSoundAlerted`. */
+  soundAlerted: [sector: number, slot: number][];
   things: ThingsSnapshot;
   icon: IconSnapshot | null;
   projectiles: ProjectileSnapshot[];
@@ -422,13 +443,6 @@ export interface GameSnapshot {
    * what a save from before it restored to.
    */
   scrollers?: ScrollerSnapshot[];
-  /**
-   * The cheats currently switched on. Optional because it was added without a
-   * `SAVE_VERSION` bump — and written only while one *is* on, so an honest run
-   * saves nothing: absent means neither cheat, which is exactly what a save
-   * from before them restored to. docs/cheats.md § Saves and best times.
-   */
-  cheats?: CheatSnapshot;
   /**
    * The two random-table cursors. Restored after every other step — docs/savegames.md § Apply
    * order.

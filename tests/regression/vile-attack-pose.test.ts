@@ -68,6 +68,7 @@ function awake(vile: { x: number; y: number }): ThingsSnapshot {
     clock: 0,
     stats: { totalKills: 1, kills: 0, totalItems: 0, items: 0 },
     changed: [[0, { type: ThingType.archVile, x: vile.x, y: vile.y, z: 0, facingDeg: 180, monster: { alerted: true } }]],
+    lastlook: '',
   };
 }
 

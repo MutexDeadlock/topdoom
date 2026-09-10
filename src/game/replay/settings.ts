@@ -14,7 +14,7 @@ import {
 } from '../inventory.ts';
 import { getAutorun, overrideAutorun } from '../player.ts';
 import { getInfiniteTallActors, overrideInfiniteTallActors } from '../world.ts';
-import type { PlayerSettings, SimSettings } from './defs.ts';
+import type { PlayerSettings, SessionSettings, SimSettings } from './defs.ts';
 
 /**
  * The player half as the owners hold it this moment — stored, or pinned by a playback — read
@@ -38,7 +38,12 @@ export const GLOBAL_PLAYER_SETTINGS: PlayerSettings = {
 
 export function captureSimSettings(): SimSettings {
   // The spread runs the getters: a copy of this moment's values, in the stored field order.
-  return { ...GLOBAL_PLAYER_SETTINGS, infiniteTallActors: getInfiniteTallActors(), pistolStart: getPistolStart() };
+  return { ...GLOBAL_PLAYER_SETTINGS, ...captureSessionSettings() };
+}
+
+/** The session half as the owners hold it this moment. */
+export function captureSessionSettings(): SessionSettings {
+  return { infiniteTallActors: getInfiniteTallActors(), pistolStart: getPistolStart() };
 }
 
 /** Pins every owner to `settings` without writing storage. */
@@ -61,13 +66,15 @@ export function releaseSimSettings(): void {
   overridePistolStart(null);
 }
 
-export function sameSettings(a: SimSettings, b: SimSettings): boolean {
+export function samePlayerSettings(a: PlayerSettings, b: PlayerSettings): boolean {
   return (
     a.autorun === b.autorun &&
     a.autoSwitchWeapon === b.autoSwitchWeapon &&
     a.rightMouse === b.rightMouse &&
-    a.cameraMode === b.cameraMode &&
-    a.infiniteTallActors === b.infiniteTallActors &&
-    a.pistolStart === b.pistolStart
+    a.cameraMode === b.cameraMode
   );
+}
+
+export function sameSessionSettings(a: SessionSettings, b: SessionSettings): boolean {
+  return a.infiniteTallActors === b.infiniteTallActors && a.pistolStart === b.pistolStart;
 }

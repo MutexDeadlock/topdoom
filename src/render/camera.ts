@@ -216,6 +216,14 @@ export class TopDownCamera {
   }
 
   /**
+   * Jumps the orbit behind a DOOM heading of `angle` radians, the way `yawDeg` assigns — a spawn's,
+   * a teleport's and a respawn's reorient. `viewerAngleDeg` reads back `angle` turned 180°.
+   */
+  faceHeading(angle: number): void {
+    this.yawDeg = (angle * 180) / Math.PI - 90;
+  }
+
+  /**
    * Where the orbit is heading — `yawDeg` itself outside of a Q/E step. What a savegame stores, so
    * a save taken mid-step comes back on the lattice instead of stranding the orbit between two
    * (docs/camera.md § Camera orbit). Read-only: `stepYaw` glides, the `yawDeg` setter jumps.

@@ -69,6 +69,22 @@ export interface MonsterStep {
    * docs/monster-ai.md § Opening doors.
    */
   useLines?: (body: MonsterBody, x: number, y: number) => void;
+  /**
+   * `A_Chase`'s netgame retarget, present only in a netgame: a monster with no `threshold` left
+   * that cannot see its target looks all around for a player (`lookForPlayers`), and a chase call
+   * that found one ends there. True when the target moved.
+   * docs/multiplayer-coop.md § Target choice.
+   */
+  retarget?: (body: MonsterBody) => boolean;
+}
+
+/**
+ * Every player a look can find this tic, by slot: the body — `null` where dead — and the subsector
+ * it stands in. A slot past the end is one nobody plays. Refilled per tic by `ThingLayer.update`.
+ */
+export interface PlayerLook {
+  players: readonly (Pos3 | null)[];
+  subsectors: ArrayLike<number>;
 }
 
 /**
@@ -178,28 +194,51 @@ const probeCollider = makeCollider({ radius: 0, z: 0, height: 0, forMonster: tru
 
 /**
  * The idle `A_Look`, called once per unalerted monster on `ThingLayer.update`'s `LOOK_INTERVAL`
- * throttle: sound, ambush/deaf things and the ordinary FOV+sight path all land here. On success
- * mutates `body.alerted` and seeds `reactionTicks`, the same "mutate the body, report what
- * happened" shape as `stepMonsterAI`. docs/monster-ai.md § Waking up.
+ * throttle. A noise that reached its sector wakes it after whoever made it, while they are alive —
+ * an ambush monster only if it can see them; otherwise it looks for a player ahead of it
+ * (`lookForPlayers`). On success mutates `body.alerted` and seeds `reactionTicks`, the same "mutate
+ * the body, report what happened" shape as `stepMonsterAI`, and returns the slot it goes after; -1
+ * while it sleeps on. docs/monster-ai.md § Waking up.
  */
-export function tryWake(
-  body: WakeCheckBody,
-  world: World,
-  sector: Sector | undefined,
-  player: Pos3,
-  playerSubsector: number,
-): boolean {
-  const heardIt = !!sector && world.isSoundAlerted(sector);
-  const seesDespiteDeaf =
-    body.ambush && heardIt && world.hasLineOfSight(body, player, body.subsector, playerSubsector);
-  const heardAndAware = !body.ambush && heardIt;
-  const spottedNormally =
-    canSpotPlayer(body.facingDeg, body.x, body.y, player.x, player.y) &&
-    world.hasLineOfSight(body, player, body.subsector, playerSubsector);
-  if (!seesDespiteDeaf && !heardAndAware && !spottedNormally) return false;
+export function tryWake(body: WakeCheckBody, world: World, sector: Sector | undefined, look: PlayerLook): number {
+  const heard = sector ? world.soundTargetOf(sector) : -1;
+  // `targ->flags & MF_SHOOTABLE`: a dead player's noise wakes nobody after them.
+  const source = heard >= 0 ? look.players[heard] : null;
+  const slot =
+    source && (!body.ambush || world.hasLineOfSight(body, source, body.subsector, look.subsectors[heard]))
+      ? heard
+      : lookForPlayers(body, false, world, look);
+  if (slot < 0) return -1;
   body.alerted = true;
   body.reactionTicks = REACTION_CHASES;
-  return true;
+  return slot;
+}
+
+/**
+ * `P_LookForPlayers`: a player this monster could go after, in `lastlook` rotation — from where
+ * the last look stopped, examining at most two players and never a full lap. A dead player is
+ * passed over, as is one out of sight or, unless `allaround`, behind its back beyond melee range.
+ * Returns the slot, or -1; `body.lastlook` keeps where the rotation stopped either way, which is
+ * why a monster placed with `lastlook` 1 misses its first look in single player.
+ * docs/monster-ai.md § Waking up.
+ */
+export function lookForPlayers(body: WakeCheckBody, allaround: boolean, world: World, look: PlayerLook): number {
+  const { players, subsectors } = look;
+  if (players.length === 0) return -1;
+  const stop = (body.lastlook - 1) & 3;
+  let examined = 0;
+  for (; ; body.lastlook = (body.lastlook + 1) & 3) {
+    // `!playeringame`: a slot nobody plays is stepped over without being counted.
+    if (body.lastlook >= players.length) continue;
+    if (examined++ === 2 || body.lastlook === stop) return -1;
+    const player = players[body.lastlook];
+    if (!player) continue;
+    // The cone before the sight line, the cheaper of the two pure tests: vanilla asks them
+    // the other way round, for the same answer.
+    if (!allaround && !canSpotPlayer(body.facingDeg, body.x, body.y, player.x, player.y)) continue;
+    if (!world.hasLineOfSight(body, player, body.subsector, subsectors[body.lastlook])) continue;
+    return body.lastlook;
+  }
 }
 
 /**
@@ -271,6 +310,7 @@ export function stepMonsterAI(
     blockersFor: step.blockersFor,
     resurrect: step.resurrect,
     useLines: step.useLines,
+    retarget: step.retarget,
     sfx: step.sfx ?? SILENT,
     dx,
     dy,
@@ -468,6 +508,8 @@ function runChaseCall(c: Chase): MonsterAttack | null {
     body.justAttacked = true;
     return beginRangedAttack(c);
   }
+
+  if (c.retarget && body.threshold === 0 && !canSee(c) && c.retarget(body)) return null;
 
   if (--body.movecount < 0 || body.moveBlocked || body.movedir === DI_NODIR) {
     newChaseDir(c);

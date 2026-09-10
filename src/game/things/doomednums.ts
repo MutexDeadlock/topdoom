@@ -145,6 +145,10 @@ export const ThingType = {
 
   // Markers — spawn points only, never rendered, and deliberately absent from `THING_SPRITES`.
   playerStart: 1, // no mobjinfo entry: P_SpawnMapThing handles types 1-4 itself
+  playerStart2: 2,
+  playerStart3: 3,
+  playerStart4: 4,
+  deathmatchStart: 11, // P_SpawnMapThing files it in `deathmatchstarts`; nothing reads one yet
   teleportDest: 14, // MT_TELEPORTMAN
   bossTarget: 87, // MT_BOSSTARGET
   bossShooter: 89, // MT_BOSSSPIT

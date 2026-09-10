@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites } from '../../src/game/things.ts';
 import { slotOfTarget, targetOfSlot } from '../../src/game/things/defs.ts';
 import { MONSTER_HEALTH } from '../../src/game/things/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
@@ -14,16 +13,19 @@ import type { MonsterAttackEvent } from '../../src/game/monsters/defs.ts';
 import { SILENT } from '../../src/audio/sfx.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { clearRandom, getRandomCursors } from '../../src/util/random.ts';
-import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { BANK, MATERIALS, ROT0_BANK, fxLayer } from '../fixtures/spritestubs.ts';
+import { gridMap } from '../fixtures/gridmap.ts';
+import { monsterArena } from '../fixtures/arena.ts';
+import { MATERIALS, ROT0_BANK, fxLayer } from '../fixtures/spritestubs.ts';
 
 /**
- * The player-slot refactor changed nothing a tic does and nothing a save holds: the thing layer
- * takes every slot's body where it took the one player, and `targetId` names a slot as
- * `targetOfSlot` where it held `null`. The run below is pinned against the literals the
- * single-player code produced before the change — the random cursor every 50 tics, the final
- * cursor, and two `ThingsSnapshot`s byte for byte. docs/multiplayer.md § Player slots,
- * § Slot addressing.
+ * The player-slot refactor changed nothing a tic does: the thing layer takes every slot's body
+ * where it took the one player, and `targetId` names a slot as `targetOfSlot` where it held
+ * `null`. The run below is pinned against the literals the single-player code produced before the
+ * change — the random cursor every 50 tics, the final cursor, and two `ThingsSnapshot`s byte for
+ * byte. Every monster's `lastlook` is restored to 0 first: vanilla's rotation, which came with
+ * coop, is the one thing since that moves a single-player tic, and at 0 it looks exactly where
+ * that code did. docs/multiplayer.md § Player slots, § Slot addressing; docs/monster-ai.md §
+ * Waking up.
  */
 
 /** The random cursor after every 50th tic of the three-monster run, as the one-player code drew it. */
@@ -31,16 +33,13 @@ const TRACE = [54, 100, 147, 183, 216, 237, 245, 23, 52, 76, 104, 129, 139, 150]
 /** The cursor after the two-monster run's 200 tics. */
 const INFIGHT_CURSOR = 111;
 /** `layer.snapshot()` after the run: two corpses, a drop, and every `targetId` back at its default. */
-const END = '{"clock":19.999999999999936,"stats":{"totalKills":3,"kills":2,"totalItems":0,"items":0},"changed":[[0,{"type":3004,"x":280.16241555550334,"y":311.0094978463168,"z":0,"facingDeg":174.17730019571033,"monster":{"homingBias":false,"health":17,"spawnX":704,"spawnY":448,"spawnAngle":180,"alerted":true,"attackPause":0.48571428571428565,"burstLeft":1,"burstTimer":0.028571428571428522,"movedir":2,"justAttacked":true}}],[1,{"type":3001,"x":237.49999999999812,"y":320,"z":0,"facingDeg":180,"monster":{"homingBias":false,"health":0,"spawnX":704,"deadTime":5.68571428571427,"alerted":true,"attackPause":0.3999999999999999,"burstLeft":1,"burstTimer":0.22857142857142848,"swinging":true,"reactionTicks":2}}],[2,{"type":9,"x":246.49401337142635,"y":330.7213189714275,"z":0,"facingDeg":-168.86961101369786,"monster":{"homingBias":false,"health":0,"spawnX":704,"spawnY":192,"spawnAngle":180,"deadTime":2.8285714285714225,"alerted":true,"attackPause":0.31428571428571406,"movedir":1,"justAttacked":true}}],[3,{"type":2001,"x":246.49401337142635,"y":330.7213189714275,"z":0,"facingDeg":-168.86961101369786,"dropped":true}]]}';
+const END = '{"clock":19.999999999999936,"stats":{"totalKills":3,"kills":2,"totalItems":0,"items":0},"changed":[[0,{"type":3004,"x":280.16241555550334,"y":311.0094978463168,"z":0,"facingDeg":174.17730019571033,"monster":{"homingBias":false,"health":17,"spawnX":704,"spawnY":448,"spawnAngle":180,"alerted":true,"attackPause":0.48571428571428565,"burstLeft":1,"burstTimer":0.028571428571428522,"movedir":2,"justAttacked":true}}],[1,{"type":3001,"x":237.49999999999812,"y":320,"z":0,"facingDeg":180,"monster":{"homingBias":false,"health":0,"spawnX":704,"deadTime":5.68571428571427,"alerted":true,"attackPause":0.3999999999999999,"burstLeft":1,"burstTimer":0.22857142857142848,"swinging":true,"reactionTicks":2}}],[2,{"type":9,"x":246.49401337142635,"y":330.7213189714275,"z":0,"facingDeg":-168.86961101369786,"monster":{"homingBias":false,"health":0,"spawnX":704,"spawnY":192,"spawnAngle":180,"deadTime":2.8285714285714225,"alerted":true,"attackPause":0.31428571428571406,"movedir":1,"justAttacked":true}}],[3,{"type":2001,"x":246.49401337142635,"y":330.7213189714275,"z":0,"facingDeg":-168.86961101369786,"dropped":true}]],"lastlook":"000"}';
 /** The same at tic 200 of a two-monster run, the zombieman still hunting the imp (`targetId: 1`). */
-const INFIGHT = '{"clock":5.714285714285698,"stats":{"totalKills":2,"kills":0,"totalItems":0,"items":0},"changed":[[0,{"type":3004,"x":486.83420573613853,"y":384.8930326663284,"z":0,"facingDeg":135,"monster":{"homingBias":false,"health":17,"spawnX":704,"spawnY":448,"spawnAngle":180,"alerted":true,"targetId":1,"movedir":3,"movecount":2,"chaseTimer":0.05714285714285714,"threshold":83}}],[1,{"type":3001,"x":320.1371428571406,"y":320,"z":0,"facingDeg":180,"monster":{"homingBias":true,"spawnX":704,"alerted":true,"movedir":4,"movecount":11,"chaseTimer":0.02857142857142857}}]]}';
+const INFIGHT = '{"clock":5.714285714285698,"stats":{"totalKills":2,"kills":0,"totalItems":0,"items":0},"changed":[[0,{"type":3004,"x":486.83420573613853,"y":384.8930326663284,"z":0,"facingDeg":135,"monster":{"homingBias":false,"health":17,"spawnX":704,"spawnY":448,"spawnAngle":180,"alerted":true,"targetId":1,"movedir":3,"movecount":2,"chaseTimer":0.05714285714285714,"threshold":83}}],[1,{"type":3001,"x":320.1371428571406,"y":320,"z":0,"facingDeg":180,"monster":{"homingBias":true,"spawnX":704,"alerted":true,"movedir":4,"movecount":11,"chaseTimer":0.02857142857142857}}]],"lastlook":"00"}';
 
-/** The room every run below stands in: three monsters facing a player across it. */
+/** The room every run below stands in (`monsterArena`), a player facing its monsters across it. */
 function arena(...types: number[]) {
-  const grid = gridMap(['#######', '#.....#', '#.....#', '#.....#', '#######'], { cell: 128 });
-  types.forEach((type, i) => grid.map.things.push(thingAt(grid, 5, 1 + i, type, 180)));
-  const world = new World(grid.map);
-  const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
+  const { grid, world, layer } = monsterArena(types);
   const start = grid.centre(1, 2);
   const player = { x: start.x, y: start.y, z: world.floorAt(start.x, start.y) };
   return { layer, player };
@@ -119,17 +118,17 @@ function projectileRig() {
   return { projectiles, at };
 }
 
-describe('Player slots · a projectile saves player 1 as null', () => {
-  test("the player's own shot: sourceId null on the wire, and back again", () => {
+describe('Player slots · a projectile saves a slot as its target id', () => {
+  test("a player's own shot: sourceId is the slot's target id, and back again", () => {
     const { projectiles } = projectileRig();
     projectiles.spawnPlayerShot(ROCKET, null, null, 0);
     const [saved] = projectiles.snapshot();
-    assert.equal(saved.sourceId, null, 'the encoding every save has carried');
+    assert.equal(saved.sourceId, targetOfSlot(0));
     projectiles.restore([saved]);
-    assert.equal(projectiles.snapshot()[0].sourceId, null, 'and the round trip keeps it');
+    assert.equal(projectiles.snapshot()[0].sourceId, targetOfSlot(0), 'and the round trip keeps it');
   });
 
-  test("a revenant's tracer at the player: homing targetId null on the wire", () => {
+  test("a revenant's tracer at a player: homing targetId is the slot's target id", () => {
     const { projectiles, at } = projectileRig();
     const atk: MonsterAttackEvent = {
       kind: 'ranged',
@@ -148,8 +147,8 @@ describe('Player slots · a projectile saves player 1 as null', () => {
     projectiles.spawnMonsterShot(atk);
     const [saved] = projectiles.snapshot();
     assert.equal(saved.sourceId, 0, "a monster's id is written as it is");
-    assert.equal(saved.homing?.targetId, null);
+    assert.equal(saved.homing?.targetId, targetOfSlot(0));
     projectiles.restore([saved]);
-    assert.equal(projectiles.snapshot()[0].homing?.targetId, null);
+    assert.equal(projectiles.snapshot()[0].homing?.targetId, targetOfSlot(0));
   });
 });

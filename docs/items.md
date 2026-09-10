@@ -104,7 +104,9 @@ already carries its doomednum and position, so `tryPickup(from, to, blockdist, c
 and calls back into `applyPickup`, hiding the mesh and marking it `picked` only if `consume` reports
 the pickup actually happened. `picked` short-circuits `ThingLayer.update` before it touches
 fog-of-war visibility — without that, a subsector coming into view after its item was picked would
-make `fogAlphaOf` flip the permanently-hidden mesh back to visible.
+make `fogAlphaOf` flip the permanently-hidden mesh back to visible. In a netgame a key or a weapon
+the map placed is taken and left lying (`leftInNetgame`) — docs/multiplayer-coop.md § Items and
+kills.
 
 **Reach is a box, not a circle.** `PIT_CheckThing` misses a thing only when
 `abs(dx) >= blockdist || abs(dy) >= blockdist`, so the reachable region is an axis-aligned square of

@@ -20,7 +20,9 @@ const MAX_PAYLOAD = 64 * 1024 * 1024;
 const rooms = createRooms({ capacity: MAX_PLAYERS });
 const server = new WebSocketServer({ port: PORT, maxPayload: MAX_PAYLOAD });
 
-server.on('connection', (socket: WebSocket) => {
+server.on('connection', (socket: WebSocket, req) => {
+  console.log(`connected: ${req.socket.remoteAddress}`);
+
   const member: RoomMember = {
     send: (text) => {
       if (socket.readyState === socket.OPEN) socket.send(text);
@@ -51,6 +53,7 @@ server.on('connection', (socket: WebSocket) => {
     if (!rooms.receive(member, message as Record<string, unknown>)) socket.close();
   });
   socket.on('close', () => {
+    console.log(`disconnected: ${req.socket.remoteAddress}`);
     clearInterval(ping);
     rooms.leave(member);
   });

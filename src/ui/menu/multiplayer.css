@@ -23,7 +23,7 @@
 /* The code is five letters; the field stays that wide and the buttons take the rest. */
 #menu .net-field.code {
   flex: none;
-  width: 9ch;
+  width: 10ch;
 }
 
 #menu .net-field .label,

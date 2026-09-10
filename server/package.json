@@ -3,6 +3,9 @@
   "private": true,
   "description": "The WebSocket relay TopDoom's multiplayer runs through — see docs/multiplayer-net.md",
   "type": "module",
+  "engines": {
+    "node": "^22.18.0 || >=23.6.0"
+  },
   "scripts": {
     "start": "node relay.ts",
     "typecheck": "tsc -p ."

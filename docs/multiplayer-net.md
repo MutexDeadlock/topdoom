@@ -24,7 +24,8 @@ dependency-free so `tests/server/rooms.test.ts` and the client's loopback fixtur
   and the room is gone. A socket answering no ping for `2 × PING_MS` is dropped.
 - Codes are five of `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` — no `I`/`O`/`0`/`1`.
 
-`server/` is its own package (`ws` is the one dependency), typechecked by its own `tsconfig`;
+`server/` is its own package (`ws` is the one dependency), typechecked by its own `tsconfig`, and
+runs `relay.ts` directly, so it needs a Node that strips types unflagged (`engines`: 22.18+ or 23.6+);
 `server/rooms.ts` is typechecked by the root too, through the test that imports it. `npm run relay`
 starts it; `MAX_PLAYERS` is stated there as `4` and the test pins it to the engine's. The relay's own
 messages and the join are typed in `rooms.ts` (`RelayMessage`, `JoinRequest`); `net/defs.ts` takes

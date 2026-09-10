@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+    "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "test": "node --test --disable-warning=ExperimentalWarning \"tests/**/*.test.ts\"",
     "test:watch": "node --test --watch --disable-warning=ExperimentalWarning \"tests/**/*.test.ts\"",

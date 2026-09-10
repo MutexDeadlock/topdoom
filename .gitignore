@@ -2,6 +2,10 @@
 .env.local
 node_modules
 dist
+
 public/game/iwad/DOOM.WAD
 public/game/iwad/DOOM2.WAD
+
+tunnel.sh
+
 .DS_Store

@@ -47,6 +47,7 @@ Fixed bugs
     own corner, on the face its walls show
   - the camera orbit no longer sticks between two 45° steps: taking a replay
     over mid-turn snaps it back, and a save stores where the turn was heading
+  - shooting a wall under an open sky leaves its bullet puff again
 
 
 ===============================================================================

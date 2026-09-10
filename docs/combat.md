@@ -718,16 +718,22 @@ fist/chainsaw swing, a monster's bolt — are the only sources, and `MT_PUFF`'s 
 forwards at 4 tics each (`S_PUFF1`-`4`), unlike the blood's backwards three.
 
 `SpriteFxLayer.spawnWallPuff` (`game/spritefx.ts`, shared by the player's pellet and
-`resolveHitscan`) owns the geometry case and **skips two things vanilla also skips**:
+`resolveHitscan`) owns the geometry case and **skips two things vanilla skips too**, the second on
+Boom's narrower terms:
 
 - A shot that ran out of range without crossing a blocking line (`ShotPath.lineIndex === null`).
   Vanilla only reaches `P_SpawnPuff` from the `hitline` label, never from the trace simply ending.
-- Sky (`World.hitsSky`, vanilla's "don't shoot the sky!"): the shot is above a sky ceiling, or the
-  line is a two-sided *sky-hack wall* with sky on both sides — the seam between two open-air
-  sectors, which is a wall to a shot but nothing to draw an impact on. Confirmed reachable: on
-  DOOM2 MAP01, 9 of the 36 sky-hack lines stop a flat shot fired at them, and its 11 zero-height
-  sky "pillars" (floor == ceiling, e.g. lines 200-205) put every shot above their ceiling. The
-  shoot-triggered special still fires either way — `P_ShootSpecialLine` runs *before* this test.
+- Sky (`World.hitsSky`, vanilla's "don't shoot the sky!"): the shot is above the front sector's sky
+  ceiling, or above the **back** ceiling of a two-sided *sky-hack wall* (sky on both sides) — the
+  band such a seam draws as sky instead of wall. That second test is **Boom's**, killough's "fix
+  bullet-eaters" (`p_map.c`, 1/18/98) narrowing vanilla's, which eats the puff over the whole face
+  however low the shot lands. Vanilla's costs a map roofed in `F_SKY1` throughout every impact it
+  has: GoingDown MAP01 (439 of its 485 sectors, and every wall around the player start a sky/sky
+  line) showed no puff anywhere. Both branches stay reachable — on DOOM2 MAP01, 10 of the 36
+  sky/sky lines have a lowered back ceiling, and its 11 zero-height sky "pillars" (floor == ceiling,
+  e.g. lines 200-205) put every shot above their ceiling.
+  `tests/regression/sky-hack-wall-puff.test.ts` pins both. The shoot-triggered special still fires
+  either way — `P_ShootSpecialLine` runs *before* this test.
 
 The wall puff sits `PUFF_WALL_OFFSET` (4 units, vanilla's `frac - 4/attackrange`) back along the
 shot so the sprite doesn't straddle the wall it marks. The 10-unit pullback vanilla applies to a

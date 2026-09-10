@@ -1201,10 +1201,12 @@ export class World {
     const front = this.map.sectors[this.map.sidedefs[line.right]?.sector];
     if (!front || front.ceilTex !== SKY_FLAT) return false;
     if (z > front.ceilHeight) return true;
-    // The sky-hack wall: a two-sided line with sky on both sides is the seam
-    // between two open-air sectors, not a surface anything can splash on.
+    // The sky-hack wall, narrowed to the band actually drawn as sky — Boom's
+    // "fix bullet-eaters" (`p_map.c`, killough 1/18/98), which vanilla applies
+    // to the whole face. See docs/combat.md § Bullet puffs.
     if (line.left === NO_SIDE) return false;
-    return this.map.sectors[this.map.sidedefs[line.left]?.sector]?.ceilTex === SKY_FLAT;
+    const back = this.map.sectors[this.map.sidedefs[line.left]?.sector];
+    return back?.ceilTex === SKY_FLAT && z > back.ceilHeight;
   }
 
   /** Gap a two-sided line leaves free, or null if the line is impassable. */

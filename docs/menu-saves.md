@@ -171,7 +171,7 @@ Play for a set the library can't supply. What is this tab's own:
 - **The panel's buttons and warnings never scroll** (`.detail-body` is the scroller, the rest are
   its siblings): the fields and facts scroll under them. A reason scrolled out of sight beside a
   greyed Play is the state the "say why" rule exists to prevent.
-- **The split asks for a fixed height** (`flex: 1 0 auto` over `height: 190px`, the list's own basis
+- **The split asks for a fixed height** (`flex: 1 0 auto` over a `height`, the list's own basis
   plus its button) and grows from there — the `.saves` rule, docs/menu.md § Panel sizing. Without it
   the detail panel's content set the *menu's* height: a replay carrying a two-line warning made this
   tab taller than every other one, so switching to it grew the menu. The panel scrolls instead.

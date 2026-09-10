@@ -70,7 +70,7 @@ under that rule rather than restating it.
   tab costs, the others pay too.
 - **A scroller inside a panel grows into height the tabs have already paid for, and never creates
   it** — it must offer a definite height while the menu measures itself, a `max-height` for the WAD
-  `.list` and `height: 150px` for `.saves` (savegames.css). Otherwise the shared cell stops being a
+  `.list` and a `height` for `.saves` (savegames.css). Otherwise the shared cell stops being a
   shared cost and becomes one tab's: the panel grows to the viewport cap and every *other* tab is a
   full-height box with its content at the top. `.saves` needs `flex: 1 0 auto` for that, **not** the
   usual `flex: 1` — measured: a `0` basis makes the ask fall back to the content and the `height`
@@ -136,7 +136,7 @@ Load-bearing:
   the one-grid-cell panel stacking (§ One screen, two jobs) rather than restating either. Each
   panel is its own scroller, which is what keeps the CHANGELOG inside the panel instead of
   stretching it.
-- **The panel's height is fixed** (`height: min(90%, 620px)`), not capped. The tabs share one grid
+- **The panel's height is fixed** (a `height`), not capped (a `max-height`). The tabs share one grid
   cell sized to the tallest of them, so a panel free to shrink sits at the About tab's own height
   until the CHANGELOG is first measured and then jumps to the cap.
 - **The contact address is not in the markup**: `about.ts` holds it ROT13'd and writes the link's

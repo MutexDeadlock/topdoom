@@ -4,6 +4,7 @@ This was supposed to become v0.18.2, but the amount of changes, together with
 the breaking of existing replays, justifies a v0.19.
 
 Roadmap: more polish, better camera, MULTIPLAYER (v0.20), then v1.0!
+MULTIPLAYER will also mean: Savegames AND replays will break again :(
 
 Features and improvements
   - replays
@@ -43,8 +44,8 @@ Fixed bugs
   - running into a wall no longer collects an item sealed behind it
   - a lift or door narrower than a monster no longer moves straight through
     one standing at its edge, pinning it in mid-air
-  - a crate's top cropped its texture mid-face: it now starts at the structure's
-    own corner, on the face its walls show
+  - a crate's top cropped its texture mid-face: it now starts at the 
+    structure's own corner, on the face its walls show
   - the camera orbit no longer sticks between two 45° steps: taking a replay
     over mid-turn snaps it back, and a save stores where the turn was heading
   - shooting a wall under an open sky leaves its bullet puff again

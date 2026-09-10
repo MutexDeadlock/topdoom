@@ -86,10 +86,11 @@ the filter, choosing a folder, and the one status line.
   `library:megawads` reason below — and lands on `.name` rather than the row, so it survives
   `.active`'s own colour.
 - **The sidebar is three boxes, not one scroller**, and the panel's height is *definite*
-  (`height: min(620px, 100%)`) rather than content-driven — so the overlay is the same size whether
-  a library holds three WADs or three hundred. What the server ships is a fixed few rows and the
-  folder buttons must stay put, so only the middle box (`#wadlibrary-tree`, the player's own folders
-  — the one thing that can grow without bound) takes `overflow-y` and the leftover height.
+  (a `height`, capped at the viewport) rather than content-driven — so the overlay is the same
+  size whether a library holds three WADs or three hundred. What the server ships is a fixed few
+  rows and the folder buttons must stay put, so only the middle box (`#wadlibrary-tree`, the
+  player's own folders — the one thing that can grow without bound) takes `overflow-y` and the
+  leftover height.
   `Dropped on the menu` rides with the server's rows: like them it is a place the player never
   chose, and never one to scroll past their own folders to reach. **Only the two lists are framed**
   — `#wadlibrary-controls` gets no inset panel, because those buttons act *on* the library rather
@@ -177,10 +178,10 @@ the filter, choosing a folder, and the one status line.
 - **Incompatible add-ons render disabled rather than hidden**, the same `mapStyle` rule and the same
   reasoning as `renderPwads` (§ Picking a WAD set), with the mismatched game named in the row's
   badge — `labels.ts: mapStyleLabel`, the wording the New Game tab's rows carry too, so one refusal
-  cannot be worded two ways in one menu. **One already in the draft keeps a live checkbox** (`refused && index < 0`): unticking is
-  the only way to drop a pick from this pane, and a game WAD that no longer suits one is exactly
-  when the player might want to — what the row must not do is accept a *new* pick the set can't
-  use.
+  cannot be worded two ways in one menu. **One already in the draft keeps a live checkbox**
+  (`refused && index < 0`): unticking is the only way to drop a pick from this pane, and a game
+  WAD that no longer suits one is exactly when the player might want to — what the row must not do
+  is accept a *new* pick the set can't use.
 - **Applying a library file gives it its content ID** (`Menu.identify` → `ensureWadId` +
   `rememberLibraryId`), which the scan deliberately skipped — docs/wad.md § Content ID. It is
   remembered on disk, so a file is hashed once ever rather than once per session. Deferred to
@@ -307,8 +308,8 @@ the filter, choosing a folder, and the one status line.
 - **The status line runs to two lines and no further**, in the overlay and on the menu alike. What
   lands there is often a sentence naming a failure *and* what to do about it, and one clipped line
   cut off the half that said what to do; unbounded, it would grow the footer inside a fixed-height
-  panel and eat the file list. The messages are written to that budget — measured, not guessed: the
-  line is ~465px at 13px monospace, so roughly 115 characters — and both writers mirror the full
+  panel and eat the file list. The messages are written to that budget — measured in the rendered
+  panel, not guessed, at roughly a hundred characters a line — and both writers mirror the full
   text into `title`, since a message long enough to be clipped is one that was explaining something.
 - **While the overlay is up, its footer is the only status line there is** (`#wadlibrary-status`,
   written by `LibraryUi.showStatus`), and `Menu.setStatus` **routes into it** rather than writing

@@ -7,7 +7,9 @@ import { mapProvider, wadSetId } from './wad/checksum.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { Menu, type MenuSession, type MenuTab, type Selection } from './ui/menu/menu.ts';
 import {
+  blockingWad,
   blockingWadText,
+  missingWadLabel,
   overwriteSave,
   readAutosave,
   wadSetOf,
@@ -269,9 +271,21 @@ async function boot(): Promise<void> {
     return { set: wadSetOf(wad, selection.map, dehackedSources(wad)), skill: selection.skill };
   };
 
+  /**
+   * The New Game pick the hosted room was last handed, by where its files live — an unchanged one
+   * is not read again, reading it being its WAD download.
+   */
+  let hostedPick = '';
+  const pickKey = (selection: Selection): string =>
+    JSON.stringify([selection.iwad.key, selection.pwads.map((pwad) => pwad.key), selection.map, selection.skill]);
+
   /** What the session needs from the page — docs/multiplayer-net.md § The session. */
   const netHooks: NetHooks = {
-    setRefusal: (netGame) => blockingWadText(menu.resolveSaveWads(netGame.set).missing),
+    // The file's label alone: the advice a Load row adds after it is not what a lobby's line needs.
+    setRefusal: (netGame) => {
+      const blocker = blockingWad(menu.resolveSaveWads(netGame.set).missing);
+      return blocker ? missingWadLabel(blocker) : null;
+    },
     startGame: (netGame, restore) => {
       if (!net) return;
       void startNetGame(net, netGame, restore);
@@ -362,21 +376,26 @@ async function boot(): Promise<void> {
           game: netGame,
           session: captureSessionSettings(),
         });
+        hostedPick = pickKey(selection);
+      },
+      announce: async () => {
+        const session = net;
+        const selection = menu.currentSelection();
+        if (!session?.isHost || session.phase !== 'lobby' || !selection) return false;
+        const key = pickKey(selection);
+        const game = key === hostedPick ? session.game : await netGameOf(selection);
+        if (!game) return false;
+        hostedPick = key;
+        return session.setGame(game, captureSessionSettings());
       },
       join: async (url, code, name) => {
         const transport = await WebSocketTransport.connect(url);
         leaveNet();
         net = NetSession.join(transport, netHooks, { ...identity(name), code });
       },
-      updateGame: async () => {
-        if (!net?.isHost) throw new Error('only the host picks the level');
-        const selection = menu.currentSelection();
-        if (!selection) throw new Error('pick a game WAD and a level on the New Game tab first');
-        net.setSession(captureSessionSettings());
-        net.setGame(await netGameOf(selection));
-      },
       start: () => net?.start(),
       kick: (member) => net?.kick(member),
+      recheckWads: () => net?.recheckSet(),
       leave: leaveNet,
     },
   );

@@ -20,6 +20,8 @@ export interface JoinRequest {
 export interface KickRequest {
   type: 'kick';
   member: number;
+  /** What the kicked member is told, passed on unread; absent for a plain kick. */
+  reason?: string;
 }
 
 /** What the relay itself says to a member. The client's guard is `isRelayMessage` (`src/game/net/defs.ts`). */
@@ -28,7 +30,7 @@ export type RelayMessage =
   | { type: 'joined'; member: number }
   | { type: 'left'; member: number }
   | { type: 'closed' }
-  | { type: 'kicked' }
+  | { type: 'kicked'; reason?: string }
   | { type: 'refused'; reason: string };
 
 export interface RoomsOptions {
@@ -53,10 +55,10 @@ export interface Rooms {
   /** `message` from `member`, sent to every other member of its room with `from` stamped on it. */
   relay(member: RoomMember, message: Record<string, unknown>): void;
   /**
-   * The host `member` puts member `target` out: `target` hears `kicked` and is closed, the rest hear
-   * it leave. From anyone but the host, or at the host itself, nothing happens.
+   * The host `member` puts member `target` out: `target` hears `kicked` with `reason` and is closed,
+   * the rest hear it leave. From anyone but the host, or at the host itself, nothing happens.
    */
-  kick(member: RoomMember, target: number): void;
+  kick(member: RoomMember, target: number, reason?: string): void;
   /** `member` is gone: the room hears `left`, and a host leaving closes the whole room. */
   leave(member: RoomMember): void;
   readonly roomCount: number;
@@ -84,8 +86,11 @@ export function createRooms(options: RoomsOptions): Rooms {
 
   function receive(member: RoomMember, message: Record<string, unknown>): boolean {
     if (seats.has(member)) {
-      if (message.type !== 'kick') relay(member, message);
-      else if (typeof message.member === 'number') kick(member, message.member);
+      if (message.type !== 'kick') {
+        relay(member, message);
+      } else if (typeof message.member === 'number') {
+        kick(member, message.member, typeof message.reason === 'string' ? message.reason : undefined);
+      }
       return true;
     }
     if (message.type !== 'join') {
@@ -131,12 +136,12 @@ export function createRooms(options: RoomsOptions): Rooms {
     }
   }
 
-  function kick(member: RoomMember, target: number): void {
+  function kick(member: RoomMember, target: number, reason?: string): void {
     const seat = seats.get(member);
     if (seat?.id !== 0 || target === 0) return;
     const conn = seat.room.members.get(target);
     if (!conn) return;
-    say(conn, { type: 'kicked' });
+    say(conn, { type: 'kicked', reason });
     leave(conn);
     conn.close();
   }

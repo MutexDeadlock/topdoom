@@ -20,8 +20,8 @@ dependency-free so `tests/server/rooms.test.ts` and the client's loopback fixtur
 - Every later message is forwarded to every other member with `from` (the sender's member id)
   stamped on, serialized once for the whole room — a snapshot is megabytes. The relay never reads
   them.
-- **`kick {member}` is the one exception**: from the host, the relay tells that member `kicked`,
-  closes it, and the rest hear `left {member}`; from anyone else, or at the host itself, it is
+- **`kick {member, reason?}` is the one exception**: from the host, the relay tells that member
+  `kicked {reason?}` (passed on unread), closes it, and the rest hear `left {member}`; from anyone else, or at the host itself, it is
   dropped. The relay enforces it, so a peer ignoring the host cannot stay seated.
 - A member leaving is `left {member}` to the rest; **the host leaving is `closed`** to everyone,
   and the room is gone. A socket answering no ping for `2 × PING_MS` is dropped.
@@ -41,7 +41,7 @@ sees it — a malformed one is dropped, never half-applied:
 
 | Message | From | Says |
 |---|---|---|
-| `hello {name, settings, build, compat}` | joiner | who this is; `compat` ≠ the host's is refused |
+| `hello {name, settings, build, compat}` | joiner | who this is; a `compat` ≠ the host's is refused, a name `nameRefusal` rejects kicked (§ The session) |
 | `lobby {game, session, delay, peers, playing}` | host | the room as it stands, after every change |
 | `ready {refusal}` | joiner | whether its library can play `game`'s set (`main.ts`'s `setRefusal`) |
 | `start {slots, session, delay}` | host | the game begins: who holds which slot |
@@ -72,8 +72,13 @@ Phases: `lobby` → `loading` (`start` or a join's snapshot; the level is buildi
 room back in `lobby`.
 
 **The lobby.** The host's `peers` list is the room; every `lobby` message mirrors it. A joiner
-sends `hello`, gets `lobby`, resolves the set through `Menu.resolveSaveWads` and answers `ready`;
-the host refuses a `compat` mismatch itself. `canStart` is every peer ready. `start` assigns slots
+sends `hello`, gets `lobby`, resolves the set through `Menu.resolveSaveWads` and answers `ready` — and again
+whenever its own WADs change (`recheckSet`, from the menu beside the save rows' refresh), where
+the answer differs;
+the host refuses a `compat` mismatch itself, and no later set check lifts that. **A name is checked before a seat**: a `hello` whose
+name is shorter than `MIN_NAME_LENGTH` (3, trimmed) or matches a present player's
+case-insensitively is kicked with `nameRefusal`'s sentence as the reason, and never reaches the
+list. A slot whose player left holds no name: they can come back under it. `canStart` is every peer ready. `start` assigns slots
 in join order, the host slot 0. A `?coop=`-style idle slot does not exist here: every slot is a
 browser, until one leaves (§ Leaving).
 
@@ -163,7 +168,7 @@ no room for one.
   drop and ends.
 - **A kicked peer** (`NetSession.kick`, the host's) is a peer leaving: the relay's `left` takes the
   same path — out of the lobby, or dropped from the game — and the peer's own session ends on
-  `kicked`. Nothing keeps it from joining again with the code.
+  `kicked`, with the host's reason where it gave one. Nothing keeps it from joining again with the code.
 - **The host leaving** closes the room (`closed`): every peer's session ends.
 - **A session ending under a running level** — the room closed, the connection lost, the menu's
   Leave — leaves the level running alone: `Game.unbindNet` puts the local slot back on the
@@ -177,8 +182,7 @@ no room for one.
 - **Player settings are per slot** and travel in the rows (§ Lockstep). The local slot's
   `settings` under `net` is the session's record of them, not `GLOBAL_PLAYER_SETTINGS`; the menu's
   live values are what `sampleNetRow` sends.
-- **Session settings are the host's**, read when it opens the room (and again on announcing a
-  level), carried by `start`, and pinned on every browser before every tic
+- **Session settings are the host's**, read when it opens the room and again on each return to the tab in the lobby, carried by `start`, and pinned on every browser before every tic
   (`applySessionSettings`) — a toggle in the menu during a network game does nothing until it
   ends (`releaseSessionSettings`).
 - The camera mode reaches the simulation only through the row's pose, so each browser's own
@@ -192,17 +196,26 @@ no room for one.
 `ui/menu/multiplayer.ts` (`MultiplayerUi`), `MultiplayerHooks` in `main.ts`
 (docs/session.md § Session lifecycle); the tab sits between Load and Replays:
 
-- **Relay** and **Your name** fields; the relay URL is the `relayUrl` setting (docs/menu.md
-  § Persisted settings), the name is `playerName`, the replays' (`setPlayerName`).
+- **Relay URL** and **Your name** fields; the relay URL is the `relayUrl` setting (docs/menu.md
+  § Persisted settings), the name is `playerName`, the replays' (`setPlayerName`). Host and Join
+  refuse a name `nameRefusal` rejects before connecting, in the status line.
 - **Host the New Game tab's level**: `Menu.currentSelection` loaded for its content IDs
-  (`netGameOf`: `wadSetOf`, as `captureSave` reads it), then the room. **Room code** + **Join**.
+  (`netGameOf`: `wadSetOf`, as `captureSave` reads it), then the room. **Back on the tab, a host
+  in the lobby hands the room the New Game tab's pick again** (`announce` → `NetSession.setGame`):
+  another set or skill has every peer check it again, a session setting alone is only shown, an
+  unchanged pick sends nothing — `main.ts` reads the WADs again only when the sources, level or
+  skill changed (`pickKey`), and Start waits meanwhile. A check, not a vote: a player who doesn't
+  want to play it leaves. A game under way keeps what it started with. **Room code** + **Join**.
 - The room: its code, `phaseText`, the facts (level, skill, WADs, rules, delay), the peer list —
-  in the lobby each peer's `ready`/`checking…`/refusal in red; in a game the roster, a slot whose
+  in the lobby each peer's `ready`/`checking…`/`not ready`, with the refusal in red in a column of
+  its own — for a missing file its label alone (`missingWadLabel`), a Load row's advice left out; in a game the roster, a slot whose
   player left dimmed; the host sees **Kick** on every other player's row — the host's input delay
-  select, **Announce the New Game tab's level** (`setGame` + `setSession`: every peer checks
-  again), **Start** (`canStart`), **Leave** (status line: "Room closed." for the host, "Room left."
-  for a peer).
+  select, **Start** (`canStart`), **Leave** for a peer, status line "Room left.";
+  **Close** for the host, "Room closed.".
 - The hint line: who Start waits on, or a desync being resynced.
+- **The tab carries a green light while this browser is in a room**, seen from every tab: a ring
+  in the lobby (`.net-lobby`), filled while the game loads or runs (`.net-game`). Set in
+  `MultiplayerUi.refresh`, which every session change reaches, the menu hidden or not.
 
 ## Deviations
 

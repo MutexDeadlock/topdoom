@@ -3,16 +3,17 @@
     <h2>Play together <span class="hint">through a relay — <code>npm run relay</code> starts one</span></h2>
     <div class="net-form">
       <label class="net-field">
-        <span class="label">Relay</span>
+        <span class="label">Relay URL</span>
         <input type="text" id="net-relay" autocomplete="off" spellcheck="false" />
       </label>
       <label class="net-field">
         <span class="label">Your name</span>
-        <input type="text" id="net-name" maxlength="24" placeholder="player" autocomplete="off" spellcheck="false" />
+        <input type="text" id="net-name" maxlength="24" autocomplete="off" spellcheck="false" />
       </label>
     </div>
     <div class="net-form">
       <button class="primary" id="net-host">Host the New Game tab's level</button>
+      <span class="net-or">or</span>
       <label class="net-field code">
         <span class="label">Room code</span>
         <input type="text" id="net-code" maxlength="5" placeholder="ABCDE" autocomplete="off" spellcheck="false" />
@@ -33,7 +34,6 @@
         <span class="label">Input delay</span>
         <select id="net-delay"></select>
       </label>
-      <button class="ghost" id="net-update">Announce the New Game tab's level</button>
       <button class="primary" id="net-start">Start</button>
       <button id="net-leave">Leave</button>
     </div>

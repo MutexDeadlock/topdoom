@@ -76,15 +76,56 @@ describe('Network · session', () => {
   test('a joiner that cannot play the set says so, in its own words', () => {
     const hub = new Hub();
     const host = hostSession(hub);
-    joinSession(hub, 'ROOM1', { name: 'short', refusal: 'Missing IWAD: DOOM2.WAD' });
-    const peer = host.session.peers.find((p) => p.name === 'short')!;
-    assert.equal(peer.ready, false);
-    assert.equal(peer.refusal, 'Missing IWAD: DOOM2.WAD');
+    const short = joinSession(hub, 'ROOM1', { name: 'short', refusal: 'Missing IWAD: DOOM2.WAD' });
+    const peer = () => host.session.peers.find((p) => p.name === 'short')!;
+    assert.equal(peer().ready, false);
+    assert.equal(peer().refusal, 'Missing IWAD: DOOM2.WAD');
     assert.ok(!host.session.canStart);
-    // The host picking another set asks everyone again; the same answer keeps Start greyed.
-    host.session.setGame({ ...GAME, skill: 4 });
+
+    // Its WADs changing asks again; only a different answer goes out.
+    const readies = () => short.transport.sent.filter((m) => (m as { type: string }).type === 'ready').length;
+    const answered = readies();
+    short.session.recheckSet();
+    assert.equal(readies(), answered, 'the same answer is not sent again');
+    short.log.refusal = null;
+    short.session.recheckSet();
     hub.flush();
-    assert.equal(host.session.peers.find((p) => p.name === 'short')!.refusal, 'Missing IWAD: DOOM2.WAD');
+    assert.equal(peer().ready, true);
+    assert.equal(peer().refusal, null);
+    assert.ok(host.session.canStart);
+  });
+
+  test("the host's new pick has every peer check again; an unchanged one, or a game under way, sends nothing", () => {
+    const hub = new Hub();
+    const host = hostSession(hub);
+    const short = joinSession(hub, 'ROOM1', { name: 'short', refusal: 'Missing IWAD: DOOM2.WAD' });
+    const other = joinSession(hub, 'ROOM1', { name: 'other', build: '0.9', compat: 2 });
+    const peer = (name: string) => host.session.peers.find((p) => p.name === name)!;
+    const vanilla = { infiniteTallActors: false, pistolStart: false };
+    assert.equal(host.session.setGame(GAME, vanilla), false, 'the same pick is no change');
+
+    // The next pick is one `short` can play: its refusal is lifted, the other build's is not.
+    short.log.refusal = null;
+    assert.equal(host.session.setGame({ ...GAME, skill: 4 }, vanilla), true);
+    assert.equal(peer('short').ready, null, 'checking again');
+    hub.flush();
+    assert.equal(short.session.game?.skill, 4);
+    assert.equal(peer('short').ready, true);
+    assert.equal(peer('short').refusal, null);
+    assert.equal(peer('other').ready, false);
+    assert.match(peer('other').refusal!, /other game rules/);
+
+    // A session setting alone reaches everyone without a new check.
+    assert.equal(host.session.setGame({ ...GAME, skill: 4 }, { ...vanilla, pistolStart: true }), true);
+    assert.equal(peer('short').ready, true);
+    hub.flush();
+    assert.equal(short.session.session.pistolStart, true);
+
+    other.session.leave();
+    hub.flush();
+    host.session.start();
+    hub.flush();
+    assert.equal(host.session.setGame({ ...GAME, skill: 2 }, vanilla), false, 'a game under way keeps its pick');
   });
 
   test('a start hands every session the same game and slots, and the run reads the same rows', () => {
@@ -181,6 +222,27 @@ describe('Network · session', () => {
     assert.equal(drop.atTic, 6);
     for (let tic = 6; tic < 10; tic++) runTic(hub, [host.session], seen);
     assert.deepEqual(seen.get(host.session)![9], [7 * 10 + 1, 0], 'the dropped slot reads idle');
+  });
+
+  test("a joiner under a present player's name, in any case, or a short one, is refused and told why", () => {
+    const hub = new Hub();
+    const host = hostSession(hub);
+    const twin = joinSession(hub, 'ROOM1', { name: ' HOST ' });
+    assert.equal(twin.session.phase, 'ended');
+    assert.deepEqual(twin.log.ended, ['someone named HOST is already in this room']);
+    const short = joinSession(hub, 'ROOM1', { name: 'ab' });
+    assert.deepEqual(short.log.ended, ['your name needs at least 3 characters']);
+    assert.deepEqual(host.session.peers.map((p) => p.name), ['host']);
+
+    // A player who left a running game holds no name: they can come back under it.
+    const guest = joinSession(hub, 'ROOM1');
+    host.session.start();
+    hub.flush();
+    guest.session.leave();
+    hub.flush();
+    const back = joinSession(hub, 'ROOM1', { name: 'Guest' });
+    assert.deepEqual(back.log.ended, []);
+    assert.equal(back.session.phase, 'loading', 'queued for its sync like any late joiner');
   });
 
   test('a kicked player hears why; the lobby loses them, a running game drops their slot', () => {

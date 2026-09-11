@@ -38,6 +38,9 @@ export const DROP_TIMEOUT_MS = 30_000;
 /** Where the relay runs when nothing else is entered — `npm run relay` on this machine. */
 export const DEFAULT_RELAY_URL = 'ws://localhost:8765';
 
+/** The fewest characters a player's name has, trimmed — tuned by feel. */
+export const MIN_NAME_LENGTH = 3;
+
 /**
  * What the host is running, as every peer must match it: the WAD set a save identifies its files
  * by, and the skill — every input to the simulation that is decided before tic 0.
@@ -115,8 +118,9 @@ export function isRelayMessage(v: unknown): v is RelayMessage {
     case 'left':
       return isIndex(v.member);
     case 'closed':
-    case 'kicked':
       return true;
+    case 'kicked':
+      return v.reason === undefined || typeof v.reason === 'string';
     case 'refused':
       return typeof v.reason === 'string';
     default:
@@ -179,6 +183,19 @@ export function asNetGame(game: NetGame): NetGame {
     set: { map, wads: wads.map(asWad), mapWad, ...(patchWads ? { patchWads } : {}) },
     skill: game.skill,
   };
+}
+
+/**
+ * Why `name` cannot sit beside `others` (the names of the room's present players), or null: too
+ * short, or already one of theirs — trimmed, case-insensitively. The tab asks it before connecting,
+ * the host of every `hello`. docs/multiplayer-net.md § The session.
+ */
+export function nameRefusal(name: string, others: readonly string[]): string | null {
+  const wanted = name.trim();
+  if ([...wanted].length < MIN_NAME_LENGTH) return `your name needs at least ${MIN_NAME_LENGTH} characters`;
+  const key = wanted.toLowerCase();
+  if (others.some((other) => other.trim().toLowerCase() === key)) return `someone named ${wanted} is already in this room`;
+  return null;
 }
 
 function isPlayerSettings(v: unknown): v is PlayerSettings {

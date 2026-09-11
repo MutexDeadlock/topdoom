@@ -8,6 +8,8 @@ export {
   INPUT_DELAY,
   MAX_INPUT_DELAY,
   MIN_INPUT_DELAY,
+  MIN_NAME_LENGTH,
+  nameRefusal,
   type LobbyPeer,
   type NetGame,
   type NetRestore,

@@ -49,6 +49,8 @@ describe('Network · protocol', () => {
     assert.ok(isRelayMessage({ type: 'joined', member: 2 }));
     assert.ok(isRelayMessage({ type: 'closed' }));
     assert.ok(isRelayMessage({ type: 'kicked' }));
+    assert.ok(isRelayMessage({ type: 'kicked', reason: 'name taken' }));
+    assert.ok(!isRelayMessage({ type: 'kicked', reason: 7 }));
     assert.ok(!isRelayMessage({ type: 'room', code: 'ABCDE', member: -1, host: true, members: [] }));
     assert.ok(!isRelayMessage({ type: 'left' }));
     assert.ok(!isRelayMessage(null));

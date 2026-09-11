@@ -398,7 +398,7 @@ export class Menu {
 
   /**
    * What the New Game tab would start right now, or null while it can't: the set, the level and
-   * the skill — a network game's host announces this to the room (docs/multiplayer-net.md § The
+   * the skill — what a network game's host hands its room (docs/multiplayer-net.md § The
    * Multiplayer tab). `record` is the tab's toggle, as a start reads it.
    */
   currentSelection(): Selection | null {
@@ -1026,6 +1026,7 @@ export class Menu {
     this.mapCache.clear();
     this.render();
     this.savegames.refresh();
+    this.multiplayer.wadsChanged();
     this.saveSelection();
   }
 
@@ -1337,9 +1338,11 @@ export class Menu {
     this.render();
     // The file just added may be the one a save was waiting for, so the save
     // rows are re-resolved here too: bringing a WAD back must clear its
-    // "Missing …" warning right away, not on the menu's next open.
+    // "Missing …" warning right away, not on the menu's next open — and a lobby's answer on the
+    // host's set with it.
     this.mapCache.clear();
     this.savegames.refresh();
+    this.multiplayer.wadsChanged();
     this.saveSelection();
     const skipped = failed.length > 0 ? ` — skipped ${failed.join('; ')}` : '';
     this.setStatus(`Added ${added.map((s) => `${s.label} (${s.type})`).join(', ')}${skipped}`, failed.length > 0);

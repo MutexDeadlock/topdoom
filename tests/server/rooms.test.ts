@@ -123,8 +123,8 @@ describe('Relay · rooms', () => {
     assert.equal(r.receive(host, { type: 'kick', member: 0 }), true);
     assert.ok(!b.closed && !host.closed, 'only the host kicks, and never itself');
     assert.equal(host.got.length, heard, 'a kick is never forwarded');
-    assert.equal(r.receive(host, { type: 'kick', member: 2 }), true);
-    assert.deepEqual(b.got.at(-1), { type: 'kicked' });
+    assert.equal(r.receive(host, { type: 'kick', member: 2, reason: 'name taken' }), true);
+    assert.deepEqual(b.got.at(-1), { type: 'kicked', reason: 'name taken' });
     assert.ok(b.closed);
     assert.deepEqual(host.got.at(-1), { type: 'left', member: 2 });
     assert.deepEqual(a.got.at(-1), { type: 'left', member: 2 });

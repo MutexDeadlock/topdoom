@@ -4,7 +4,14 @@
  * whether they can play it, the host's input delay and Start. Pure DOM over a `NetSession`;
  * every failure goes to the menu's status line. docs/multiplayer-net.md § The Multiplayer tab.
  */
-import { DEFAULT_RELAY_URL, MAX_INPUT_DELAY, MIN_INPUT_DELAY, type NetSession } from '../../game/net.ts';
+import {
+  DEFAULT_RELAY_URL,
+  MAX_INPUT_DELAY,
+  MIN_INPUT_DELAY,
+  MIN_NAME_LENGTH,
+  nameRefusal,
+  type NetSession,
+} from '../../game/net.ts';
 import { getPlayerName, setPlayerName } from '../../game/replay.ts';
 import { wadLabel, type SaveWadSet } from '../../game/savegames.ts';
 import { SKILL_NAMES } from '../../game/skill.ts';
@@ -32,12 +39,14 @@ export interface MultiplayerHooks {
   host(url: string, name: string): Promise<void>;
   /** Joins the room `code` names on the relay at `url`. */
   join(url: string, code: string, name: string): Promise<void>;
-  /** The host announces the New Game tab's current level to the room. */
-  updateGame(): Promise<void>;
+  /** The host's lobby takes the New Game tab's current pick; whether anything changed. */
+  announce(): Promise<boolean>;
   /** The host starts the game. */
   start(): void;
   /** The host puts relay member `member` out of the room. */
   kick(member: number): void;
+  /** This browser's WADs changed: a peer's answer on the host's set is asked again. */
+  recheckWads(): void;
   /** Leaves the room; a level already running plays on alone. */
   leave(): void;
 }
@@ -58,9 +67,9 @@ export class MultiplayerUi {
   private delaySelect = el<HTMLSelectElement>('net-delay');
   private delayRow = el<HTMLElement>('net-delay-row');
   private startButton = el<HTMLButtonElement>('net-start');
-  private updateButton = el<HTMLButtonElement>('net-update');
   private leaveButton = el<HTMLButtonElement>('net-leave');
   private roomHint = el<HTMLSpanElement>('net-room-hint');
+  private tabButton = el<HTMLButtonElement>('tab-button-multiplayer');
 
   private hooks: MultiplayerHooks;
   private setStatus: StatusLine;
@@ -68,6 +77,8 @@ export class MultiplayerUi {
   private visible = false;
   /** A connect in flight: both buttons wait for it rather than opening a second room. */
   private connecting = false;
+  /** The New Game tab's pick being read for the room: Start waits for it. */
+  private announcing = false;
 
   constructor(hooks: MultiplayerHooks, setStatus: StatusLine, describe: (set: SaveWadSet) => SaveSetInfo) {
     this.hooks = hooks;
@@ -76,6 +87,7 @@ export class MultiplayerUi {
     this.relayInput.value = readStorage(RELAY_URL_STORAGE_KEY, DEFAULT_RELAY_URL);
     this.relayInput.placeholder = DEFAULT_RELAY_URL;
     this.nameInput.value = getPlayerName();
+    this.nameInput.placeholder = `at least ${MIN_NAME_LENGTH} characters`;
     // Stored as typed, so a Host or a Join only reads them.
     this.relayInput.addEventListener('input', () => writeStorage(RELAY_URL_STORAGE_KEY, this.relayInput.value.trim()));
     this.nameInput.addEventListener('input', () => setPlayerName(this.nameInput.value));
@@ -97,9 +109,6 @@ export class MultiplayerUi {
     });
     this.hostButton.addEventListener('click', () => void this.host());
     this.joinButton.addEventListener('click', () => void this.join());
-    this.updateButton.addEventListener('click', () => {
-      void attempt(this.setStatus, () => this.hooks.updateGame(), 'Level announced to the room.');
-    });
     this.startButton.addEventListener('click', () => this.hooks.start());
     this.leaveButton.addEventListener('click', () => {
       // The host leaving takes the room with it (docs/multiplayer-net.md § Leaving).
@@ -112,6 +121,7 @@ export class MultiplayerUi {
 
   /** Redraws from the session as it stands — every menu open, and every change the session reports. */
   refresh(): void {
+    this.refreshTabLight();
     if (!this.visible) return;
     this.render();
   }
@@ -119,7 +129,14 @@ export class MultiplayerUi {
   /** Whether the Multiplayer tab is showing — `Menu.setTab`'s hand-off. */
   setVisible(on: boolean): void {
     this.visible = on;
-    if (on) this.render();
+    if (!on) return;
+    this.render();
+    void this.announce();
+  }
+
+  /** A WAD was added or the library rescanned — the menu's hand-off, beside the save rows' refresh. */
+  wadsChanged(): void {
+    this.hooks.recheckWads();
   }
 
   private host(): Promise<void> {
@@ -139,13 +156,50 @@ export class MultiplayerUi {
   private async enter(request: (url: string, name: string) => Promise<void>, done: string): Promise<void> {
     if (this.connecting) return;
     const url = this.relayInput.value.trim() || DEFAULT_RELAY_URL;
-    const name = this.nameInput.value.trim() || 'player';
+    const name = this.nameInput.value.trim();
+    // Said before connecting; the host asks the same of the name against the room's.
+    const unnamed = nameRefusal(name, []);
+    if (unnamed) {
+      this.setStatus(unnamed, true);
+      this.nameInput.focus();
+      return;
+    }
     this.connecting = true;
     this.renderConnect();
     this.setStatus(`Connecting to ${url} …`);
     await attempt(this.setStatus, () => request(url, name), done);
     this.connecting = false;
     this.render();
+  }
+
+  /**
+   * Back on the tab, a host's lobby follows whatever the New Game tab was changed to meanwhile.
+   * docs/multiplayer-net.md § The Multiplayer tab.
+   */
+  private async announce(): Promise<void> {
+    const session = this.hooks.session();
+    if (!session?.isHost || session.phase !== 'lobby' || this.announcing) return;
+    this.announcing = true;
+    this.render();
+    let changed = false;
+    await attempt(this.setStatus, async () => {
+      changed = await this.hooks.announce();
+    });
+    this.announcing = false;
+    if (changed) this.setStatus("The room now plays the New Game tab's pick.");
+    this.refresh();
+  }
+
+  /**
+   * The tab's own light, seen from every tab: a ring while this browser sits in a room's lobby,
+   * filled while its game loads or runs, off outside a room.
+   */
+  private refreshTabLight(): void {
+    const phase = this.hooks.session()?.phase;
+    const inGame = phase === 'loading' || phase === 'playing';
+    this.tabButton.classList.toggle('net-lobby', phase === 'lobby');
+    this.tabButton.classList.toggle('net-game', inGame);
+    this.tabButton.title = phase === 'lobby' ? 'In a lobby' : inGame ? 'In a network game' : '';
   }
 
   private render(): void {
@@ -165,9 +219,10 @@ export class MultiplayerUi {
     this.delayRow.classList.toggle('hidden', !hosting);
     this.delaySelect.value = String(session.delay);
     this.startButton.classList.toggle('hidden', !hosting);
-    this.startButton.disabled = !session.canStart;
-    this.updateButton.classList.toggle('hidden', !hosting);
-    this.roomHint.textContent = roomHint(session);
+    this.startButton.disabled = !session.canStart || this.announcing;
+    // The host leaving takes the room with it (docs/multiplayer-net.md § Leaving).
+    this.leaveButton.textContent = session.isHost ? 'Close' : 'Leave';
+    this.roomHint.textContent = this.announcing ? "reading the New Game tab's pick…" : roomHint(session);
   }
 
   private renderConnect(): void {
@@ -209,17 +264,13 @@ export class MultiplayerUi {
         if (peer.build && peer.build !== VERSION) {
           marks.push(markChip(`v${peer.build}`, 'another build'));
         }
-        const state =
-          peer.ready === true
-            ? stateLine('ready')
-            : peer.ready === null
-              ? stateLine('checking…')
-              : stateLine(noteLine('warning', peer.refusal ?? 'cannot play this set'));
+        const state = stateLine(peer.ready === true ? 'ready' : peer.ready === null ? 'checking…' : 'not ready');
         state.classList.toggle('ready', peer.ready === true);
+        const note = peer.ready === false ? noteLine('warning', peer.refusal ?? 'cannot play this set') : null;
         const name = peer.name || `player ${index + 1}`;
         // The host is the list's first row; everyone after it can be kicked.
         const kick = session.isHost && index > 0 ? this.kickButton(peer.member, name) : null;
-        this.peers.append(peerRow(name, marks, state, kick));
+        this.peers.append(peerRow({ name, note, marks, state, kick }));
       }
       return;
     }
@@ -229,7 +280,7 @@ export class MultiplayerUi {
       if (entry.local) marks.push(markChip('you'));
       const state = stateLine(entry.present ? `player ${entry.slot + 1}` : 'left — standing idle');
       const kick = session.isHost && !entry.local && entry.member !== null ? this.kickButton(entry.member, entry.name) : null;
-      const row = peerRow(entry.name, marks, state, kick);
+      const row = peerRow({ name: entry.name, note: null, marks, state, kick });
       row.classList.toggle('disabled', !entry.present);
       this.peers.append(row);
     }
@@ -266,7 +317,6 @@ function phaseText(session: NetSession): string {
 function roomHint(session: NetSession): string {
   if (session.desyncedAt !== null) return `out of step since tic ${session.desyncedAt} — the host is resyncing`;
   if (session.phase !== 'lobby' || !session.isHost) return '';
-  if (!session.game) return 'pick a level on the New Game tab and announce it';
   const waiting = session.peers.filter((peer) => peer.ready !== true);
   if (waiting.length === 0) return session.peers.length === 1 ? 'alone so far — Start works, or wait for the others' : '';
   return `waiting on ${waiting.map((peer) => peer.name).join(', ')}`;
@@ -276,22 +326,43 @@ function ticsLabel(tics: number): string {
   return `${tics} tic${tics === 1 ? '' : 's'}`;
 }
 
-/** One line of the room's list: the name, the chips beside it, where that player stands, the host's Kick. */
-function peerRow(name: string, marks: readonly HTMLElement[], state: HTMLSpanElement, kick: HTMLElement | null): HTMLDivElement {
+/** What one line of the room's list shows; `note` and `kick` are null where the row has none. */
+interface PeerRowParts {
+  name: string;
+  /** Why that player cannot play the host's pick. */
+  note: HTMLElement | null;
+  marks: readonly HTMLElement[];
+  state: HTMLSpanElement;
+  kick: HTMLElement | null;
+}
+
+/**
+ * One line of the room's list: the name, why that player cannot play, the host's Kick and the
+ * chips in one cell, where that player stands. Always the four cells, so the list's shared columns
+ * line up down it; Kick leads its cell, so it starts where the host row's badge does — no row
+ * carries both.
+ */
+function peerRow({ name, note, marks, state, kick }: PeerRowParts): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'row';
   const label = document.createElement('span');
   label.className = 'name truncate';
   label.textContent = name;
-  row.append(label, ...marks, state);
-  if (kick) row.append(kick);
+  const why = document.createElement('span');
+  why.className = 'note';
+  if (note) why.append(note);
+  const tags = document.createElement('div');
+  tags.className = 'marks';
+  if (kick) tags.append(kick);
+  tags.append(...marks);
+  row.append(label, why, tags, state);
   return row;
 }
 
-/** A row's state column around `content`: a word, or a refusal's warning line. */
-function stateLine(content: string | HTMLElement): HTMLSpanElement {
+/** A row's state column: where that player stands, in a word or two. */
+function stateLine(text: string): HTMLSpanElement {
   const state = document.createElement('span');
   state.className = 'meta state';
-  state.append(content);
+  state.textContent = text;
   return state;
 }

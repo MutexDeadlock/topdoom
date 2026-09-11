@@ -1,7 +1,8 @@
 /*
  * The Multiplayer tab panel (ui/menu/multiplayer.ts): the relay/name form and the host/join row,
- * then the room — code, facts, the peer list and the controls. The list is the save lists' `.row`
- * shape, the facts block and the name chips menu.css's shared `.fact-grid` and `.mark`.
+ * then the room — code, facts, the peer list and the controls. The list's rows are the save lists'
+ * `.row` laid on shared grid columns, the facts block and the name chips menu.css's shared
+ * `.fact-grid` and `.mark`.
  */
 
 /* A form row: fields and buttons side by side, each field labelled above its input. */
@@ -62,6 +63,13 @@
   white-space: nowrap;
 }
 
+/* The word between Host and Join: two ways in, not one form. Level with the buttons' text. */
+#menu .net-or {
+  flex: none;
+  padding: 0 6px 9px;
+  color: var(--fg-dim);
+}
+
 #menu .net-head {
   display: flex;
   align-items: baseline;
@@ -86,17 +94,32 @@
   margin-bottom: 10px;
 }
 
-/* The list asks for a few rows and no more: the tab pays the menu's shared height like every other. */
+/*
+ * The list asks for a few rows and no more: the tab pays the menu's shared height like every other.
+ * It is one grid its rows share (`subgrid`) — name | refusal | Kick and chips | state — so each
+ * column lines up down the list; a long refusal wraps in its column rather than squeezing names.
+ */
 #menu .net-peers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) fit-content(45%) auto auto;
+  align-content: start;
   max-height: 150px;
   margin-bottom: 10px;
 }
 
 #menu .net-peers .row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: baseline;
-  gap: 10px;
+  gap: 0;
   padding: 7px 12px;
   cursor: default;
+}
+
+/* The gutter before a cell, where it has something: a column nobody fills takes no width at all. */
+#menu .net-peers .row > :not(:first-child):not(:empty) {
+  margin-left: 10px;
 }
 
 #menu .net-peers .row:hover {
@@ -104,13 +127,19 @@
 }
 
 #menu .net-peers .row .name {
-  flex: 1;
-  min-width: 0;
   color: var(--fg);
 }
 
+#menu .net-peers .row .marks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Flush right, the row's last word against its edge. */
 #menu .net-peers .row .state {
-  flex: none;
+  justify-self: end;
+  text-align: right;
   font-size: 12px;
   color: var(--fg-dim);
 }
@@ -124,8 +153,8 @@
   padding: 1px 8px;
 }
 
-/* A refusal wraps rather than ellipsizing: it says what to do about it. */
-#menu .net-peers .row .state .warning {
+/* A refusal wraps rather than ellipsizing: the file it names is the point of it. */
+#menu .net-peers .row .note .warning {
   font-size: 12px;
   white-space: normal;
 }

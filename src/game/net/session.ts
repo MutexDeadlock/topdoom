@@ -20,6 +20,7 @@ import {
   asNetGame,
   isPeerMessage,
   isRelayMessage,
+  nameRefusal,
   type JoinRequest,
   type KickRequest,
   type LobbyPeer,
@@ -135,6 +136,10 @@ export class NetSession {
   private restoreAt: NetRestore | null = null;
   /** Members that reported ready while the game runs, waiting for a sync of their own. */
   private joinQueue: number[] = [];
+  /** Members the host refused for running other game rules — a verdict no set check lifts. */
+  private otherRules = new Set<number>();
+  /** A peer's last answer on the host's set, so an unchanged one is not sent again. */
+  private lastRefusal: string | null = null;
   /** The host's samples by tic (a peer's), and the peer's own until the host's arrives. */
   private hostChecks = new Map<number, CheckSample>();
   private ownChecks = new Map<number, CheckSample>();
@@ -218,28 +223,29 @@ export class NetSession {
     return this.assignments[slot]?.settings;
   }
 
-  /** The host's pick of what to play, re-announced to the room; every peer checks its set again. */
-  setGame(game: NetGame): void {
-    if (!this.host) return;
+  /**
+   * The host's pick, handed to the room again in the lobby: what is played and the session settings
+   * it runs under. Another set or skill has every peer check it again — a check, never a vote; an
+   * unchanged pick sends nothing. Whether anything changed.
+   */
+  setGame(game: NetGame, session: SessionSettings): boolean {
+    if (!this.host || this.phase !== 'lobby') return false;
+    const gameChanged = JSON.stringify(game) !== JSON.stringify(this.game);
+    if (!gameChanged && JSON.stringify(session) === JSON.stringify(this.session)) return false;
     this.game = game;
+    this.session = { ...session };
     for (const peer of this.peers) {
-      if (peer.member !== this.member && peer.refusal === null) {
-        peer.ready = null;
-      }
+      if (!gameChanged || peer.member === this.member || this.otherRules.has(peer.member)) continue;
+      peer.ready = null;
+      peer.refusal = null;
     }
     this.broadcastLobby();
+    return true;
   }
 
   setDelay(delay: number): void {
     if (!this.host || this.phase !== 'lobby') return;
     this.delay = delay;
-    this.broadcastLobby();
-  }
-
-  /** The host's session settings, re-read from the menu — announced with the next lobby message. */
-  setSession(session: SessionSettings): void {
-    if (!this.host) return;
-    this.session = { ...session };
     this.broadcastLobby();
   }
 
@@ -276,6 +282,18 @@ export class NetSession {
   kick(member: number): void {
     if (!this.host || this.phase === 'ended' || member === this.member) return;
     this.transport.send({ type: 'kick', member } satisfies KickRequest);
+  }
+
+  /**
+   * A peer's WADs changed — a file added from disk or the library: its answer on the host's set is
+   * asked again, and sent where it differs from the last one.
+   */
+  recheckSet(): void {
+    if (this.host || this.phase !== 'lobby' || !this.game) return;
+    const refusal = this.hooks.setRefusal(this.game);
+    if (refusal === this.lastRefusal) return;
+    this.lastRefusal = refusal;
+    this.transport.send({ type: 'ready', refusal } satisfies PeerMessage);
   }
 
   // The game's side, per tic. docs/multiplayer-net.md § What a tic does.
@@ -440,7 +458,7 @@ export class NetSession {
         this.end('the host closed the room');
         return;
       case 'kicked':
-        this.end('the host kicked you from the room');
+        this.end(m.reason ?? 'the host kicked you from the room');
         return;
       case 'refused':
         this.end(m.reason);
@@ -491,9 +509,18 @@ export class NetSession {
 
   private hello(message: Stamped<Extract<PeerMessage, { type: 'hello' }>>): void {
     const { from, name, settings, build, compat } = message;
+    // A name the room cannot tell apart is refused its seat outright, where a build is only marked.
+    const others = this.peers.filter((p) => p.member !== from).map((p) => p.name);
+    const unnamed = nameRefusal(name, others);
+    if (unnamed) {
+      this.transport.send({ type: 'kick', member: from, reason: unnamed } satisfies KickRequest);
+      return;
+    }
     const refusal =
       compat !== this.me.compat ? `runs other game rules (build v${build}); this game runs v${this.me.build}` : null;
     const peer: LobbyPeer = { member: from, name, settings, build, ready: refusal ? false : null, refusal };
+    if (refusal) this.otherRules.add(from);
+    else this.otherRules.delete(from);
     const known = this.peers.findIndex((p) => p.member === from);
     if (known >= 0) this.peers[known] = peer;
     else this.peers.push(peer);
@@ -509,8 +536,8 @@ export class NetSession {
     this.peers = message.peers;
     this.playing = message.playing;
     if (changed) {
-      const refusal = this.hooks.setRefusal(game);
-      this.transport.send({ type: 'ready', refusal } satisfies PeerMessage);
+      this.lastRefusal = this.hooks.setRefusal(game);
+      this.transport.send({ type: 'ready', refusal: this.lastRefusal } satisfies PeerMessage);
     }
     this.hooks.changed();
   }
@@ -518,8 +545,8 @@ export class NetSession {
   private ready(member: number, refusal: string | null): void {
     const peer = this.peers.find((p) => p.member === member);
     if (!peer) return;
-    // The host's own verdict on the peer's build stands over the peer's on the set.
-    if (peer.refusal === null || refusal !== null) {
+    // The host's own verdict on the peer's build stands over whatever the peer says of the set.
+    if (!this.otherRules.has(member)) {
       peer.refusal = refusal;
       peer.ready = refusal === null;
     }
@@ -598,6 +625,7 @@ export class NetSession {
 
   private memberLeft(member: number): void {
     this.joinQueue = this.joinQueue.filter((m) => m !== member);
+    this.otherRules.delete(member);
     if (!this.host) return;
     const slot = this.assignments.findIndex((a) => a.member === member);
     if (this.playing && slot >= 0) {

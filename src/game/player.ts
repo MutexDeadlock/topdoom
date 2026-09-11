@@ -107,14 +107,14 @@ export const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
 /**
  * Below this, `momX`/`momY` snap to exactly 0 rather than crawling on forever — see
  * `game/things.ts`'s identical constant, and `applyForce` for the one case exempt from it.
- * `game/voodoo.ts` shares it, a doll's channel being a copy of this one.
+ * `game/specials/voodoo.ts` shares it, a doll's channel being a copy of this one.
  */
 export const MOMENTUM_STOP_SPEED = 1;
 
 /**
  * `P_XYMovement`'s `MAXMOVE` (`p_local.h`, 30 units/tic) in units/sec: what `clampMomentum` holds
- * each axis of the momentum channel to before it moves anything — here, in `game/voodoo.ts` and in
- * `game/things.ts: applyKnockback`. docs/movement.md § Knockback.
+ * each axis of the momentum channel to before it moves anything — here, in
+ * `game/specials/voodoo.ts` and in `game/things.ts: applyKnockback`. docs/movement.md § Knockback.
  */
 export const MAX_MOMENTUM_SPEED = 30 * 35;
 

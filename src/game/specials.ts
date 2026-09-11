@@ -56,6 +56,7 @@ export {
   type SectorEffectResult,
 } from './specials/sectoreffects.ts';
 export type { Occupancy, OccupancySources } from './specials/moverblocking.ts';
+export type { TeleportDest } from './specials/defs.ts';
 
 export interface LightState {
   pattern: defs.LightPattern;
@@ -69,32 +70,6 @@ export interface LightState {
    * isn't a two-level toggle `bright` can express — see `tickLight`.
    */
   level: number;
-}
-
-/**
- * A teleport landing spot: where to put the thing and which way it faces on
- * arrival (`angle`, radians — see `Placement`), plus what the Boom silent
- * family needs on top. The three optional fields are absent for a vanilla
- * teleport, which is exactly its old behavior.
- * See docs/specials-teleporters.md § Silent and line-to-line teleporters.
- */
-export interface TeleportDest extends Placement {
-  /**
-   * No fog puffs and no `telept` — the whole point of Boom's silent numbers.
-   * It also means "preserve the body's height above the floor" (`p_telept.c`'s
-   * `z = thing->z - thing->floorz`, which loud `EV_Teleport` discards); the
-   * height itself is the caller's to measure, since this controller is never
-   * told it.
-   */
-  silent?: boolean;
-  /**
-   * How far the arrival turned the body, in radians. `angle` above already has
-   * it applied; this is here so the caller can turn the body's *momentum*
-   * through the same angle, which is what makes a silent teleport read as
-   * walking through a doorway. Absent means vanilla's landing, which sets an
-   * absolute facing and zeroes momentum outright.
-   */
-  rotateBy?: number;
 }
 
 /**
@@ -388,7 +363,7 @@ export interface SpecialsOptions extends MoverGeometryOptions {
    */
   onExit: (secret: boolean, slot: number | null) => void;
   /** A player teleported by a line they used or crossed — which slot, and where it lands. */
-  onTeleport: (dest: TeleportDest, slot: number) => void;
+  onTeleport: (dest: defs.TeleportDest, slot: number) => void;
   /**
    * Who a mover could catch — the bodies, not the tests over them, which are this layer's own
    * (`specials/moverblocking.ts`). Absent, nothing is ever in the way.
@@ -422,7 +397,7 @@ export class SpecialsController {
    */
   private geometry: MoverGeometry;
   private onExit: (secret: boolean, slot: number | null) => void;
-  private onTeleport: (dest: TeleportDest, slot: number) => void;
+  private onTeleport: (dest: defs.TeleportDest, slot: number) => void;
   /** Who is standing in a mover — see `specials/moverblocking.ts`. */
   private occupancy: Occupancy;
   private sfx: SoundEmitter;
@@ -806,7 +781,7 @@ export class SpecialsController {
    * teleported it, so the caller can move the monster and puff the fog; everything else happens as
    * a side effect, as it does under the player. See docs/specials-teleporters.md § Teleporters.
    */
-  crossMonster(prev: Pos2, pos: CrossingBody, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
+  crossMonster(prev: Pos2, pos: CrossingBody, ownedKeys: ReadonlySet<KeySlot>): defs.TeleportDest | null {
     return this.crossLines(prev, pos, 'monster', ownedKeys);
   }
 
@@ -822,7 +797,7 @@ export class SpecialsController {
    * The coordinates stay scalars: the caller is `P_Move`'s refused step, which computes them
    * inline — docs/conventions.md § Named arguments.
    */
-  useMonster(body: CrossingBody, tryX: number, tryY: number, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
+  useMonster(body: CrossingBody, tryX: number, tryY: number, ownedKeys: ReadonlySet<KeySlot>): defs.TeleportDest | null {
     if (this.monsterUseLines.size === 0) return null;
     const radius = body.blockRadius;
     const left = tryX - radius;
@@ -840,7 +815,7 @@ export class SpecialsController {
       if (this.world.boxOnLineSide(left, bottom, right, top, i) !== -1) continue;
       hits.push(i);
     }
-    let dest: TeleportDest | null = null;
+    let dest: defs.TeleportDest | null = null;
     // Where the monster *stands*, not where it was heading: a silent teleport reads the body's
     // own position, as `P_UseSpecialLine` does from `thing`.
     const at: Placement = { x: body.x, y: body.y, angle: body.angle };
@@ -854,7 +829,7 @@ export class SpecialsController {
    * lines — but the landing spot of a teleport comes back for the caller to
    * move the *doll*, not the player. See docs/specials-forces.md § Voodoo dolls.
    */
-  crossVoodoo(prev: Pos2, pos: Placement, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
+  crossVoodoo(prev: Pos2, pos: Placement, ownedKeys: ReadonlySet<KeySlot>): defs.TeleportDest | null {
     return this.crossLines(prev, pos, 'voodoo', ownedKeys);
   }
 
@@ -2167,7 +2142,7 @@ export class SpecialsController {
     effect: defs.TeleportEffect,
     at: Placement,
     activator: defs.Activator,
-  ): TeleportDest | null {
+  ): defs.TeleportDest | null {
     if (effect.destination === 'line') return this.lineArrival(lineIndex, effect, at, activator);
     const dest = this.findTeleportDestination(resolveTargets(this.map, this.map.linedefs[lineIndex], def));
     if (!dest) return null;
@@ -2202,7 +2177,7 @@ export class SpecialsController {
     effect: defs.TeleportEffect,
     at: Placement,
     activator: defs.Activator,
-  ): TeleportDest | null {
+  ): defs.TeleportDest | null {
     const line = this.map.linedefs[lineIndex];
     const from = { a: this.map.vertexes[line.v1], b: this.map.vertexes[line.v2] };
     if (!from.a || !from.b) return null;
@@ -2305,7 +2280,7 @@ export class SpecialsController {
     fromBackSide = false,
     at: Placement = NO_SOURCE,
     slot = 0,
-  ): TeleportDest | null {
+  ): defs.TeleportDest | null {
     const line = this.map.linedefs[lineIndex];
     const def = lookupSpecial(this.lineSpecial(lineIndex));
     if (!def || !this.stillFires(lineIndex, def)) return null;
@@ -2463,7 +2438,7 @@ export class SpecialsController {
     activator: defs.Activator,
     ownedKeys: ReadonlySet<KeySlot>,
     slot = 0,
-  ): TeleportDest | null {
+  ): defs.TeleportDest | null {
     const { x: prevX, y: prevY } = from;
     const { x, y } = to;
     if (prevX === x && prevY === y) return null;

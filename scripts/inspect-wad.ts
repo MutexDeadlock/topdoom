@@ -25,7 +25,7 @@ import { titleLookupFor } from '../src/wad/campaign/names.ts';
 import { classifyLineSpecial, type SpecialClass } from '../src/game/specials/tables.ts';
 import { Forces } from '../src/game/specials/forces.ts';
 import { Transfers } from '../src/game/specials/transfers.ts';
-import { VoodooDolls } from '../src/game/voodoo.ts';
+import { VoodooDolls } from '../src/game/specials/voodoo.ts';
 import { decodeSectorType, sectorTypeUnderstood } from '../src/game/specials/sectortypes.ts';
 import { buildSubSectorPolys, sectorOfSubSector } from '../src/render/bsp.ts';
 import { findSolidBlocks, findSolidCaps, pocketsOf } from '../src/render/solids.ts';

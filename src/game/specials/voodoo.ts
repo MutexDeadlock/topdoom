@@ -9,17 +9,17 @@ import {
   type PinnedMemo,
   type SectorTouchCache,
   type World,
-} from './world.ts';
-import { clampMomentum, MOMENTUM_STOP_SPEED, PLAYER_RADIUS } from './player.ts';
-import { ThingType } from './things/doomednums.ts';
-import { spawnAngleDeg } from './skill.ts';
-import type { Forces } from './specials/forces.ts';
-import type { TeleportDest } from './specials.ts';
-import type { VoodooSnapshot } from './snapshot.ts';
-import type { Pos2, Pos3 } from '../types.ts';
-import { vecLength } from '../util/geom.ts';
-import { decayOverTics } from '../util/damping.ts';
-import { cos, sin } from '../util/fdlibm.ts';
+} from '../world.ts';
+import { clampMomentum, MOMENTUM_STOP_SPEED, PLAYER_RADIUS } from '../player.ts';
+import { ThingType } from '../things/doomednums.ts';
+import { spawnAngleDeg } from '../skill.ts';
+import type { Forces } from './forces.ts';
+import type { TeleportDest } from './defs.ts';
+import type { VoodooSnapshot } from '../snapshot.ts';
+import type { Pos2, Pos3 } from '../../types.ts';
+import { vecLength } from '../../util/geom.ts';
+import { decayOverTics } from '../../util/damping.ts';
+import { cos, sin } from '../../util/fdlibm.ts';
 
 /**
  * One doll. It has a player's radius and height because it *is* a player mobj —

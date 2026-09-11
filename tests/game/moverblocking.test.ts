@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
 import { buildThingSprites, type ThingLayer } from '../../src/game/things.ts';
 import { MoverOccupancy } from '../../src/game/specials/moverblocking.ts';
-import { VoodooDolls } from '../../src/game/voodoo.ts';
+import { VoodooDolls } from '../../src/game/specials/voodoo.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap } from '../fixtures/gridmap.ts';

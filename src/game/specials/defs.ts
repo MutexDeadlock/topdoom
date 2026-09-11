@@ -8,6 +8,7 @@
  */
 import { DOOM_TIC } from '../../constants.ts';
 import type { KeyColor, KeySlot } from '../inventory.ts';
+import type { Placement } from '../../types.ts';
 
 /** Map units/second. Vanilla speeds are per-tic at 35 tics/s. */
 export const DOOR_SPEED = 70; // 2 u/tic
@@ -399,6 +400,32 @@ export interface TeleportEffect {
    * pins.
    */
   spendOnlyOnSuccess?: boolean;
+}
+
+/**
+ * A teleport landing spot: where to put the thing and which way it faces on
+ * arrival (`angle`, radians — see `Placement`), plus what the Boom silent
+ * family needs on top. The two optional fields are absent for a vanilla
+ * teleport, which is exactly its old behavior.
+ * See docs/specials-teleporters.md § Silent and line-to-line teleporters.
+ */
+export interface TeleportDest extends Placement {
+  /**
+   * No fog puffs and no `telept` — the whole point of Boom's silent numbers.
+   * It also means "preserve the body's height above the floor" (`p_telept.c`'s
+   * `z = thing->z - thing->floorz`, which loud `EV_Teleport` discards); the
+   * height itself is the caller's to measure, since `SpecialsController` is
+   * never told it.
+   */
+  silent?: boolean;
+  /**
+   * How far the arrival turned the body, in radians. `angle` above already has
+   * it applied; this is here so the caller can turn the body's *momentum*
+   * through the same angle, which is what makes a silent teleport read as
+   * walking through a doorway. Absent means vanilla's landing, which sets an
+   * absolute facing and zeroes momentum outright.
+   */
+  rotateBy?: number;
 }
 
 /**

@@ -467,7 +467,7 @@ export interface CheatSnapshot {
  */
 export type ScrollerSnapshot = [number, number, number];
 
-/** One voodoo doll's mutable state — `game/voodoo.ts`. */
+/** One voodoo doll's mutable state — `game/specials/voodoo.ts`. */
 export interface VoodooSnapshot {
   x: number;
   y: number;

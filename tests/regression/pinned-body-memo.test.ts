@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
 import { buildThingSprites } from '../../src/game/things.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
-import { VoodooDolls } from '../../src/game/voodoo.ts';
+import { VoodooDolls } from '../../src/game/specials/voodoo.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { addControlLine, gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { TIC } from '../fixtures/specialsrig.ts';

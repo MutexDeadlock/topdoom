@@ -1,6 +1,6 @@
 # Specials: scrollers, friction, pushers and voodoo dolls
 
-`src/game/specials/forces.ts`, `src/game/voodoo.ts`, `src/game/specials/tables.ts`
+`src/game/specials/forces.ts`, `src/game/specials/voodoo.ts`, `src/game/specials/tables.ts`
 
 Boom's **parameter lines** that change how things *move*: numbers read once at level spawn to give
 a surface or a sector a permanent property, never dispatched from a trigger. `lookupSpecial` returns
@@ -79,7 +79,7 @@ rest stand around being player bodies nobody controls. Push one onto a conveyor 
 on the player's behalf; drop a crusher on it and the player dies. That is the whole of Boom-era
 mapper scripting, and it is why conveyors and dolls landed in the same phase.
 
-`game/voodoo.ts: VoodooDolls` owns them. Each tic a doll takes the same conveyor and pusher impulses
+`specials/voodoo.ts: VoodooDolls` owns them. Each tic a doll takes the same conveyor and pusher impulses
 the player does, slides with `slideMove` (it is a player mobj, so it gets `P_SlideMove`), rides
 whatever floor it is standing on, and decays its momentum by that floor's friction. It has no
 gravity, no input and no AI — the world is the only thing that moves it. A doll a belt pins against

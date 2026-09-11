@@ -15,7 +15,7 @@ import type { ThingLayer } from './things.ts';
 import type { SectorEffects, SpecialsController } from './specials.ts';
 import type { Forces } from './specials/forces.ts';
 import type { Transfers } from './specials/transfers.ts';
-import type { VoodooDolls } from './voodoo.ts';
+import type { VoodooDolls } from './specials/voodoo.ts';
 import type { FogOfWar } from './fogofwar.ts';
 import type { IconOfSin } from './monsters/iconofsin.ts';
 import { snapshotSectors, type GameSnapshot, type SectorSnapshot } from './snapshot.ts';
@@ -75,7 +75,7 @@ export interface LevelParts {
   /** The always-on parameter lines — scrollers and conveyors (game/specials/forces.ts). */
   readonly forces: Forces;
   readonly surfaceScroller: SurfaceScroller;
-  /** The voodoo dolls, if the map places any (game/voodoo.ts). */
+  /** The voodoo dolls, if the map places any (game/specials/voodoo.ts). */
   readonly voodoo: VoodooDolls;
   /** The player starts by slot (`coopStarts`). */
   readonly starts: (Placement | null)[];

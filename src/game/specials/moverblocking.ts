@@ -50,7 +50,7 @@ export interface OccupancySources {
    * themselves. `z` is the feet height the crusher's spray is measured up from.
    */
   players: readonly Pos3[];
-  /** The level's voodoo dolls (`game/voodoo.ts`): a crusher catching one hurts player 1. */
+  /** The level's voodoo dolls (`voodoo.ts`): a crusher catching one hurts player 1. */
   dolls: readonly Pos2[];
   /** Crush damage to one player. The cause is fixed per wiring site, so the caller binds it. */
   damageSlot: (slot: number, amount: number) => void;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { addControlLine, gridMap } from '../fixtures/gridmap.ts';
 import { crushSources, specialsRig, TIC } from '../fixtures/specialsrig.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
-import { VoodooDolls } from '../../src/game/voodoo.ts';
+import { VoodooDolls } from '../../src/game/specials/voodoo.ts';
 import { SectorEffects } from '../../src/game/specials/sectoreffects.ts';
 import { applyCrushDamage } from '../../src/game/specials/moverblocking.ts';
 import { createInventory, PICKUP_RANGE } from '../../src/game/inventory.ts';

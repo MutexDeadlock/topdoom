@@ -19,6 +19,11 @@ the rules that must be in context on every change and points here for the rest.
   `audio/music.ts`, `render/{mapmesh,occlusion,sprites,lights}.ts`, and `game.ts` beside `game/`.
   The parent re-exports what importers need (`things.ts` hands out `ThingLayer`; `map.ts` hands
   out `SUBSECTOR_BIT`) so no importer learns which inner file a shape lives in.
+- **`game/specials/` also holds the level systems Boom's parameter lines drive**, beside
+  `SpecialsController`'s internals: `forces.ts`, `transfers.ts`, `voodoo.ts`. `specials.ts` never
+  imports them; `game.ts` builds them, `Level` holds them, and callers import them directly. A new
+  system of that kind goes there too. The other outside imports into `specials/` (`defs`, `tables`,
+  `mapscan`, `shootaim`, `sectortypes`) are not covered by this and still owe the rule above.
 - **A shape the directory's own files share goes in `<domain>/defs.ts`, never in the parent**: the
   parent imports every child, so a child importing the parent is a cycle that survives only while
   the edge is `import type`. `wad/map/defs.ts`, `wad/library/defs.ts`.

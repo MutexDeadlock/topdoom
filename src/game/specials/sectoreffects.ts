@@ -62,7 +62,7 @@ export class SectorEffects {
 
   /**
    * Savegame restore. `totalSecrets` stays whatever this instance counted from
-   * the freshly loaded map — which is why a restoring `loadMapByIndex`
+   * the freshly loaded map — which is why a restoring `buildLevel`
    * constructs this *before* applying the saved sector specials (a consumed
    * secret zeroes its sector's `special`) — docs/savegames.md § Apply order.
    */

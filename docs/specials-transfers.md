@@ -111,7 +111,7 @@ drawn at the surface height wearing the sector's own flat.
 names three colormaps and vanilla casts the whole view through the *bottom* one once the eye sinks
 below the surface (`R_SetupFrame`). Here the camera stays above the water while the player wades in,
 so most of what is on screen is still dry land — turning it all blue reads as a bug rather than as
-submersion. `Game.viewColormap` applies only the mid and top colormaps and returns no tint below the
+submersion. `Presenter.viewColormap` applies only the mid and top colormaps and returns no tint below the
 surface; the bottom name is never even decoded (docs/hud.md § Screen effects, docs/wad.md § Colormap
 lumps).
 

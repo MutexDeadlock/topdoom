@@ -83,7 +83,7 @@ of nothing-but-`triangularDraw` has a small nonzero mean. The distribution is sy
 ## What this does not buy
 
 **Cross-engine determinism, now that the tic computes its own transcendentals.** `clearRandom()`
-runs at level load (`game.ts: loadMapByIndex`, vanilla's `G_InitNew` position), so a level always
+runs at level load (`game.ts: buildLevel`, vanilla's `G_InitNew` position), so a level always
 starts from the same table position, and the simulation is tic-locked (docs/frameloop.md), so which
 draw lands on which entry no longer varies with framerate. Across *browsers* it used to vary:
 ECMA-262 leaves `Math.sin`, `cos`, `atan2`, `exp` and `log` implementation-approximated, so a

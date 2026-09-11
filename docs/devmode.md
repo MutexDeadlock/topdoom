@@ -24,7 +24,7 @@ behavior is behind it: jumping to another map is IDCLEV (docs/cheats.md § IDCLE
 `#hud`, top-left, carries two independent settings: **`Show FPS counter`**, the `N fps` figure, and
 **`Show debug infos`**, the block behind it — map, triangles, awake monsters, position, sector,
 sound channels, camera. Either one alone keeps the element up, and with the counter off the debug
-block simply omits its figure (`Game.debugLines` takes `fps: number | null`).
+block simply omits its figure (`Presenter.debugLines` takes `fps: number | null`).
 
 Both are `debughud.ts`'s own (`fps`, `getFpsVisible`/`setFpsVisible`; `debuginfo`,
 `getDebugInfo`/`setDebugInfo`), both **default to `DEVMODE`**, and both are memoized: `DebugHud.update`
@@ -47,7 +47,7 @@ nothing (docs/replays.md § Playback). The block used to end with two static hot
 well, which were the game's only controls reference and so invisible to exactly the players who
 needed them; that list is now the menu's Settings tab (docs/menu.md § Settings tab).
 
-`Game.debugLines` reports `ThingLayer.awakeMonsterCount()` — the number of living monsters
+`Presenter.debugLines` reports `ThingLayer.awakeMonsterCount()` — the number of living monsters
 currently alerted (chasing/attacking, or mid-`reactionTicks` delay) — useful for judging whether a
 level's population has actually noticed the player. Its sound-channel line is
 `AudioEngine.channelUsage` — voices in flight over the pool size (`CHANNELS`, docs/audio.md § The
@@ -143,7 +143,7 @@ scheduling), and an unsmoothed bar graph would flicker faster than it could be r
 branching around, the same call the fps counter already makes. The `visible` class is the only skip,
 and `ProfilerHud.update` takes the `FrameProfiler` rather than its `samples()` so that a hidden
 panel does not build the array and its per-label objects every frame — which is the default outside
-dev mode. `Game.debugLines` is a closure for the same shape of reason, but a DEVMODE one: its body
+dev mode. `Presenter.debugLines` is a closure for the same shape of reason, but a DEVMODE one: its body
 walks the BSP for the player's sector and must not run when the *debug* text is off.
 
 **The checkbox alone decides whether the panel is up** — General's `Debug / Dev` section

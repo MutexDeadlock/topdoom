@@ -588,7 +588,7 @@ revealed or shootable moves with it.
 ## The player's shadow (`playershadow.ts`)
 
 A soft disc on the ground under the player, placed each frame from the same interpolated position
-their billboard uses (`game.ts: posePlayer`).
+their billboard uses (`game/presenter.ts: posePlayer`).
 
 **It is cast on `Player.groundZ`, not on the player's own feet** — this tic's own `groundFloor`
 answer, the height they would stand at here, which is the height they will land at. So the disc

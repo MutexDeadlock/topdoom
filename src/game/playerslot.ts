@@ -1,7 +1,7 @@
 /**
  * `PlayerSlot`: one player's whole share of a level — body, inventory, weapons, cheats, the camera
  * the simulation reads for them, the input that drives them, and the billboard and shadow they are
- * drawn as. `game.ts` holds one per player; which one is the local player is `Game.localSlot`.
+ * drawn as. `game.ts` holds one per player; which one is the local player is `local`.
  * docs/multiplayer.md § Player slots.
  */
 import type { Player } from './player.ts';
@@ -11,12 +11,14 @@ import { Cheats } from './cheats.ts';
 import type { TicInput } from './input.ts';
 import type { AutoCamera } from './autocamera.ts';
 import { makeTouchCache, type SectorTouchCache } from './world.ts';
+import { deserializeInventory, serializeInventory, type PlayerSlotSnapshot } from './snapshot.ts';
+import { PLAYER_DEATH_FRAME_SECONDS, PLAYER_DEATH_FRAMES } from './things/tables.ts';
 import type { TopDownCamera } from '../render/camera.ts';
 import type { SpriteActor } from '../render/sprites.ts';
 import { PlayerShadow } from '../render/playershadow.ts';
 import { playerOrigin } from '../audio/sfx.ts';
 import type { PlayerSettings } from './replay/defs.ts';
-import type { PlayerColor } from '../wad/playercolor.ts';
+import { getPlayerColor, slotColor, type PlayerColor } from '../wad/playercolor.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
@@ -30,6 +32,8 @@ export type PickupConsumer = (type: number, dropped: boolean, at: Pos3) => boole
 
 export interface PlayerSlotOptions {
   index: number;
+  /** Whether this is the slot the browser plays and draws for. */
+  local: boolean;
   /** Built after the DEHACKED patch, never before — docs/dehacked.md § Applying: reset, then patch. */
   inventory: Inventory;
   simCamera: TopDownCamera;
@@ -41,6 +45,8 @@ export interface PlayerSlotOptions {
 
 export class PlayerSlot {
   readonly index: number;
+  /** The slot this browser plays and draws for: the HUD, the audio listener, the view camera. */
+  readonly local: boolean;
   /** The body, rebuilt by every level load. */
   player!: Player;
   inventory: Inventory;
@@ -81,7 +87,7 @@ export class PlayerSlot {
   settings: PlayerSettings;
   /**
    * The armour colour this player picked, where it came with the slot — a network game's
-   * assignment, a replay's record — or null for `Game.colorOf`'s default. docs/sprites.md § Player
+   * assignment, a replay's record — or null for `drawColor`'s default. docs/sprites.md § Player
    * colours.
    */
   color: PlayerColor | null = null;
@@ -93,6 +99,7 @@ export class PlayerSlot {
 
   constructor(options: PlayerSlotOptions) {
     this.index = options.index;
+    this.local = options.local;
     this.weapons = new WeaponSystem(playerOrigin(options.index));
     this.inventory = options.inventory;
     this.simCamera = options.simCamera;
@@ -116,5 +123,70 @@ export class PlayerSlot {
   setOpacity(opacity: number): void {
     this.actor.setOpacity(opacity);
     this.shadow.setOpacityScale(opacity);
+  }
+
+  /**
+   * The colour this player's armour draws in: the one that came with the slot; the menu's for the
+   * local player otherwise; its player number's vanilla colour for anyone else.
+   * docs/sprites.md § Player colours.
+   */
+  drawColor(): PlayerColor {
+    return this.color ?? (this.local ? getPlayerColor() : slotColor(this.index));
+  }
+
+  /**
+   * `apply` on every camera of this slot: its own, and `viewCamera` where a playback or a network
+   * game has separated it from the local slot's. For the discontinuities both must take — a level
+   * load, a teleport, a keyframe restore — since neither may be left gliding in from where it was.
+   */
+  eachCamera(viewCamera: TopDownCamera, apply: (camera: TopDownCamera) => void): void {
+    apply(this.simCamera);
+    if (this.local && viewCamera !== this.simCamera) {
+      apply(viewCamera);
+    }
+  }
+
+  /**
+   * Hands the simulation back to `viewCamera`, at the pose it is being drawn at, with the auto
+   * camera seeded there rather than left to glide in from wherever it last stood — a replay taken
+   * over, a network game left. docs/camera.md § The camera is simulation state.
+   */
+  attachSimCamera(viewCamera: TopDownCamera): void {
+    this.simCamera = viewCamera;
+    this.autoCamera.seed(this.player, viewCamera);
+  }
+
+  /** The slot as a save holds it. */
+  snapshot(): PlayerSlotSnapshot {
+    return {
+      player: this.player.snapshot(),
+      inventory: serializeInventory(this.inventory),
+      weapons: this.weapons.snapshot(),
+      // Where the orbit is heading, not the angle a Q/E step happens to be passing through: only
+      // whole steps move it afterwards, so a mid-glide yaw would strand the restored camera
+      // between two lattice angles for good. docs/camera.md § Camera orbit.
+      cameraYawDeg: this.simCamera.targetYawDeg,
+      dead: this.dead,
+      // Only while one is actually on: an honest slot's save carries nothing.
+      // docs/cheats.md § Saves and best times.
+      ...(this.cheats.used ? { cheats: this.cheats.snapshot() } : {}),
+    };
+  }
+
+  /**
+   * The slot back from its snapshot, at `Game.buildLevel`'s step for it: the cheats, the
+   * inventory, the weapons that read that inventory, and a corpse laid down again. The body and
+   * the camera yaw are the load's own steps, earlier — docs/savegames.md § Apply order.
+   */
+  restore(saved: PlayerSlotSnapshot): void {
+    this.cheats.restore(saved.cheats);
+    this.inventory = deserializeInventory(saved.inventory);
+    // After the line above: `restore` derives `weaponLastFrame` off the
+    // inventory it is handed, and `beginLevel` only saw the outgoing one.
+    this.weapons.restore(saved.weapons, this.inventory);
+    if (saved.dead) {
+      this.dead = true;
+      this.actor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
+    }
   }
 }

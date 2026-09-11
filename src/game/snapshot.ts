@@ -385,7 +385,7 @@ export interface PlayerSlotSnapshot {
   player: PlayerSnapshot;
   inventory: InventorySnapshot;
   weapons: WeaponsSnapshot;
-  /** Where the slot's camera orbit is heading — `Game.captureSave`. */
+  /** Where the slot's camera orbit is heading — `PlayerSlot.snapshot`. */
   cameraYawDeg: number;
   /** A corpse waiting to respawn, lying where `player` says. docs/multiplayer-coop.md § Respawn. */
   dead: boolean;

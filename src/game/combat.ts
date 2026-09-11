@@ -43,8 +43,8 @@ export interface PlayerHit {
  *
  * Every member is a **getter, not a captured value** — `world`, `things` and
  * the player are all replaced on a map load, and `Game` implements this as one
- * object literal that reads its own live fields. `things` is nullable for the
- * same reason it is on `Game` itself: a level is briefly loaded without one.
+ * object literal that reads its own live level. `things` is nullable for the
+ * tests, which stub a context with none.
  */
 export interface CombatContext {
   readonly world: World;

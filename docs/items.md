@@ -72,7 +72,7 @@ past the normal 100/100 cap up to 200 and are always consumed. A weapon's ammo g
 weapon gives full while a monster-dropped one gives half (see `dropped`, below).
 
 **Keys and powerups don't survive a level transition; health/armor/ammo and the backpack's raised
-caps do** (`finishLevel`, called from `loadMapByIndex` before the new map loads) — matching
+caps do** (`finishLevel`, called from `buildLevel` before the new map loads) — matching
 `G_PlayerFinishLevel`, which clears `player->cards` and `player->powers` (and drops `MF_SHADOW`) but
 nothing else; `player->backpack`/`maxammo` are deliberately not among them. This does mean a locked
 door on the far side of a transition needs its key collected again, same as vanilla requires.

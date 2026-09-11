@@ -101,7 +101,7 @@ slot's. Another player's reveal can let a monster be seen sooner — `isVisible`
 ## Exit, death and saves
 
 Any slot's exit ends the level for everyone. Entering the next level reborns every dead slot and
-keeps the living ones' inventories (`runEnterLevel`, `P_SetupLevel`'s `PST_REBORN`). `levelTime`
+keeps the living ones' inventories (`runEnterLevel`, `P_SetupLevel`'s `PST_REBORN`). `Level.time`
 runs while any slot lives.
 
 A save holds every slot (`GameSnapshot.players`) and `netgame`, and restores into as many slots as

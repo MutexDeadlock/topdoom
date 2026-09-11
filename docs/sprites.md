@@ -641,7 +641,7 @@ so § Weapon-matching player sprites holds as written — the frame key stays `P
 its colour. Green is the palette itself and draws from the set's atlas. The whole sprite is
 translated, as vanilla's is: any other pixel in the green ramp changes with the armour.
 
-**Which colour a slot draws** (`Game.colorOf`): `PlayerSlot.color` where the slot came with one —
+**Which colour a slot draws** (`PlayerSlot.drawColor`): `PlayerSlot.color` where the slot came with one —
 a network game's `SlotAssignment` (docs/multiplayer-net.md § Protocol), a replay's `SlotRecord`
 (docs/replays.md § The record) — else the menu's, per frame, for the local player, else its player
 number's vanilla colour (`slotColor`): a `?coop=` slot, and a replay recorded before colours. A

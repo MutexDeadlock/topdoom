@@ -1,7 +1,8 @@
 # Multiplayer — over the network
 
 `src/game/net.ts` over `src/game/net/` — `defs.ts` (the peer messages, the dials),
-`transport.ts`, `lockstep.ts`, `session.ts`; the seam in `src/game.ts` and `src/main.ts`; the tab
+`transport.ts`, `lockstep.ts`, `session.ts`, `seat.ts` (the level's side of a session, `NetSeat`);
+the seam in `src/game.ts` and `src/main.ts`; the tab
 in `src/ui/menu/multiplayer.ts`; the relay in `server/`
 
 Coop across browsers: every browser runs the whole simulation (docs/multiplayer-coop.md) in
@@ -57,7 +58,7 @@ sees it — a malformed one is dropped, never half-applied:
 (docs/savegames.md § WAD-set identity), read off the loaded set when the host opens the room.
 
 **A player's `color`** (docs/sprites.md § Player colours) rides `hello`, `LobbyPeer` and
-`SlotAssignment` beside the name, and `Game.bindNet` hands it to the slot. `isPeerMessage` does not
+`SlotAssignment` beside the name, and `NetSeat.bind` hands it to the slot. `isPeerMessage` does not
 check it; the session reads it through `asPlayerColor`, so a build without colours still takes a
 seat, in green.
 
@@ -73,7 +74,7 @@ host's set), `startGame` (the level, fresh or from a snapshot), `changed` (the t
 `ended` (the room closed, the connection dropped, a refusal).
 
 Phases: `lobby` → `loading` (`start` or a join's snapshot; the level is building) → `playing`
-(`Game.bindNet` calls `attach`) → `ended`. `endGame` (the host, at the campaign's end) puts the
+(`NetSeat.bind` calls `attach`) → `ended`. `endGame` (the host, at the campaign's end) puts the
 room back in `lobby`.
 
 **The lobby.** The host's `peers` list is the room; every `lobby` message mirrors it. A joiner
@@ -104,7 +105,7 @@ browser, until one leaves (§ Leaving).
 - **A settings change rides the row** it was sampled with (`input.settings`) and takes effect on
   every browser at that row's tic — `Game.beginTic`'s `slot.settings` push, as a replay's
   `settings` event. **One record per slot**: the slot's assignment (`NetSession.settingsOf`),
-  changed in place, is the object `Game.bindNet` hands the slot. A replaced copy leaves the level
+  changed in place, is the object `NetSeat.bind` hands the slot. A replaced copy leaves the level
   reading the old settings and every snapshot carrying them.
 
 ## What a tic does
@@ -112,7 +113,7 @@ browser, until one leaves (§ Leaving).
 `Game.tic` under `net` is docs/multiplayer.md § What a slot's tic does with every slot on
 `source: 'row'` — including the local one:
 
-1. `beginTic`: `sampleNetRow` — the live keyboard, buttons and wheel into the local row
+1. `beginTic` (`NetSeat.beginTic`): `sampleRow` — the live keyboard, buttons and wheel into the local row
    (`sampleInput`), the aim point through the **drawn** camera at the plane the tic will use, the
    drawn camera's pose (`quantizePose`); the menu up means an idle row. `NetSession.beginTic` sends
    it for `tic + delay`, applies the settings events due, copies every slot's row into its
@@ -122,7 +123,7 @@ browser, until one leaves (§ Leaving).
 2. The tic proper. The local slot's `simCamera` is a private camera, as under a playback: posed
    from the row, `delay` tics behind the drawn one, so camera-relative movement and the aim ray
    are the row's on every browser. `handleHotkeys` and the audio listener use the drawn camera.
-3. `tickViewCamera`: the drawn camera's own advance — Q/E, the framing keys, the auto camera, the
+3. `NetSeat.tickViewCamera`: the drawn camera's own advance — Q/E, the framing keys, the auto camera, the
    glide toward `liveAim` — then the live input's `endTic`. Presentation: the next row's pose is
    read off it.
 4. `endTicInputs`: `NetSession.endTic` moves the cursor.
@@ -137,13 +138,13 @@ under a tenth of a second.
 ## Snapshots
 
 `sync {atTic, joining}` names a tic `2 × delay` past the host's own, which no peer has reached
-(a peer is at most `delay` ahead). Every browser stops before `atTic` (`Game.netReady` →
+(a peer is at most `delay` ahead). Every browser stops before `atTic` (`NetSeat.ready` →
 `NetSession.pendingRestore`):
 
 - The host captures the level there (`Game.captureState`: `captureMoment` without a save's death
   refusal — a corpse restores as one) and sends `snapshot`; a moment no snapshot can carry (a
   popup up, an exit pending) moves the sync `2 × delay` on and lets the tics run.
-- Everyone, the host included, restores it (`applyNetRestore` → `loadMapByIndex`) and continues
+- Everyone, the host included, restores it (`Game.restoreFromNet` → `buildLevel`) and continues
   from `atTic` on the rows already in the table (`LockstepScheduler.seek`). A restore is the
   replay's keyframe path, which plays on bit-identically (docs/replays.md § Seeking).
 
@@ -176,7 +177,7 @@ no room for one.
   `kicked`, with the host's reason where it gave one. Nothing keeps it from joining again with the code.
 - **The host leaving** closes the room (`closed`): every peer's session ends.
 - **A session ending under a running level** — the room closed, the connection lost, the menu's
-  Leave — leaves the level running alone: `Game.unbindNet` puts the local slot back on the
+  Leave — leaves the level running alone: `NetSeat.release` puts the local slot back on the
   keyboard and the viewport's camera, every other slot idle, and says why on screen. A start of
   the player's own (New Game, Load, a replay) leaves the room first.
 - **The campaign's end** reaches every browser on the same tic; the host's `endGame` takes the
@@ -186,7 +187,7 @@ no room for one.
 
 - **Player settings are per slot** and travel in the rows (§ Lockstep). The local slot's
   `settings` under `net` is the session's record of them, not `GLOBAL_PLAYER_SETTINGS`; the menu's
-  live values are what `sampleNetRow` sends.
+  live values are what `NetSeat.sampleRow` sends.
 - **Session settings are the host's**, read when it opens the room and again on each return to the tab in the lobby, carried by `start`, and pinned on every browser before every tic
   (`applySessionSettings`) — a toggle in the menu during a network game does nothing until it
   ends (`releaseSessionSettings`).

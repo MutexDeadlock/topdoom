@@ -297,7 +297,7 @@ frame would re-derive it over rings that only a mover rebuild reshapes.
 ## Which sightlines a wall fades for
 
 `WallFader.update`/`FlatFader.update` take a *list* of sightline targets (`FadeTarget[]`), not just
-the player — `collectFadeTargets` (same file, called from `game.ts` with `Game.fadeBodies`:
+the player — `collectFadeTargets` (same file, called from `game.ts` with `Presenter.fadeBodies`:
 `ThingLayer.awakeMonsters` and every other living player slot) returns the player plus every
 currently-**awake** monster or other player
 within `MONSTER_FADE_RANGE` (a plain 2D distance cap, tuned by feel to
@@ -475,7 +475,7 @@ edges and a fan's points, since either can vary across the surface. A mover mesh
 quad came out at 0 — fog of war has not revealed the sector, or view distance has faded it out —
 draws nothing, and `MoverGeometry.updateFading` sets `visible = false` on it rather than paying a
 draw call for no pixels. One mesh can hold both wall quads and flat fans, so both faders' verdicts
-are consulted. The flag is set immediately before the frame's render (`game.ts: draw` calls
+are consulted. The flag is set immediately before the frame's render (`game/presenter.ts: draw` calls
 `updateFading` and then `renderer.render`), so it is never a frame stale.
 
 Two details are load-bearing. The max is accumulated **before** `commit`'s unchanged-alpha
@@ -531,7 +531,7 @@ unchanged, so it is accepted in place; without the re-resolve the fader would go
 the batch the quad no longer draws in. Pinned by
 `tests/regression/fader-rebatched-quad.test.ts`.
 
-Measured on Sunder 2512 MAP20 at the player start, timing each part of `game.ts: updatePresentation`
+Measured on Sunder 2512 MAP20 at the player start, timing each part of `game/presenter.ts: updatePresentation`
 separately: `MoverGeometry.updateFading` 3.34 → 0.19 ms/frame, and with the wall-fader work
 above the block as a whole 18.2 → 1.8 ms/frame. What is left of it is the flat fader, which still
 walks its 49,716 fans a frame behind per-fan early-outs (§ Flats).

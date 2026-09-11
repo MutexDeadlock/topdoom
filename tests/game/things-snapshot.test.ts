@@ -188,7 +188,7 @@ describe('Savegames · things round-trip', () => {
     for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, [player]);
 
     // Deliberately *not* JSON round-tripped: this is the live object, the way
-    // a savegame held in memory is handed back to `loadMapByIndex`.
+    // a savegame held in memory is handed back to `buildLevel`.
     const saved = layer.snapshot();
     const cursors = getRandomCursors();
 

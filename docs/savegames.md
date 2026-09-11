@@ -3,7 +3,7 @@
 A save is two things: a `SaveMeta` (which WAD set, which map, which skill, a small JPEG thumbnail)
 and a `GameSnapshot` — the full mutable state of the running level, down to the random-table
 cursors — stored separately so that listing saves reads metas alone (§ Storage).
-Loading one rebuilds the level through the ordinary `Game.loadMapByIndex` funnel and then
+Loading one rebuilds the level through the ordinary `Game.buildLevel` funnel and then
 overwrites the mutable state, so everything the constructors derive (BSP polys, meshes, spatial
 grids) is always derived from restored data rather than patched afterwards. The store lives in
 `game/savegames.ts` over `game/savestore.ts`'s IndexedDB backend and byte codecs, the payload
@@ -258,7 +258,7 @@ nearly so:
 
 ## Apply order
 
-`loadMapByIndex(index, restore)` runs its normal construction and interleaves the restore at fixed
+`buildLevel(index, restore)` runs its normal construction and interleaves the restore at fixed
 points. The order is load-bearing; the two rules are **geometry before anything that reads
 heights** and **RNG cursors dead last**.
 
@@ -307,7 +307,7 @@ load gets a fresh object per read either way and does not depend on it.
     from the save in order.
 12. `new IconOfSin(...)` → `icon.restore(...)`.
 13. `projectiles.restore(...)` — into the layer step 4's `beginLevel` already cleared — then, per
-    slot (`restoreSlot`), `cheats.restore(...)`, order-free: nothing else reads the toggles during
+    slot (`PlayerSlot.restore`), `cheats.restore(...)`, order-free: nothing else reads the toggles during
     a load (docs/cheats.md § Saves and best times); a saved corpse is laid down again after step 14.
 14. Each slot's inventory deserialized, then `WeaponSystem.restore(..., inventory)` — **in that order, and it
     takes the restored inventory**. `WeaponSystem.beginLevel` ran back at the top of the load
@@ -371,7 +371,7 @@ NUTS.WAD with all 10k monsters wounded ~3 MB.
 ## The checkpoint
 
 Advancing into a level writes a **checkpoint**: an ordinary save, under the reserved ID
-`AUTOSAVE_ID` (`'auto'`), taken by `Game.enterLevel` immediately *after* `loadMapByIndex` has built
+`AUTOSAVE_ID` (`'auto'`), taken by `Game.enterLevel` immediately *after* `buildLevel` has built
 the new level. Dying and pressing `R` reloads it, so a death costs the level and not the run's
 inventory (docs/death.md § Player death) — unless the level has a savegame of its own, which `R`
 prefers: `Game.savedState` holds the snapshot the level was loaded from plus any manual save

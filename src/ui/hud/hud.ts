@@ -73,7 +73,7 @@ const VALUE_TIERS: readonly { atLeast: number; recolor: WadFontRecolor }[] = [
 
 /**
  * `hh:mm:ss`, shared by the HUD clock and the intermission's "your time" line so the two can never
- * disagree about the same `Game.levelTime`.
+ * disagree about the same `Level.time`.
  */
 export function formatClock(elapsedSeconds: number): string {
   const total = Math.max(0, Math.floor(elapsedSeconds));

@@ -69,9 +69,10 @@ src/render/    BSP polygon reconstruction (bsp, sectorprobe), the solids a map d
                (playerskin), the blob shadow (playershadow), wall contact shading (wallshadow), the
                sky tint (skytint), the void fog (voidfloor), bloom, GLDEFS dynamic lights (lights/),
                shot tracers, camera, viewport, the GPU's own frame time (gputimer)
-src/game/      spatial queries + collision, player controller, player slots (playerslot), input,
-               where players start (playerstarts), the auto camera, what each
-               skill level changes (skill), thing world state, monsters (AI, attacks, the
+src/game/      the loaded level (level), what a frame draws (presenter), spatial queries +
+               collision, player controller, player slots (playerslot), input, where players start
+               (playerstarts), the auto camera, what each skill level changes (skill), thing world
+               state, monsters (AI, attacks, the
                arch-vile), fog of war, inventory/pickups, weapons and firing, shots in flight +
                splash, damage/death, transient effects (spritefx), voodoo dolls, DEHACKED/BEX
                patches (dehacked), the typed cheat codes (cheats), best times, savegames (the

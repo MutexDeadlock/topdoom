@@ -293,7 +293,7 @@ speed, which makes every direction equally fast and takes SR40 away with it.
 produces: off, Shift runs exactly as above (vanilla's own sense); on — the default — the player runs
 and Shift walks instead. The stored value is module-level state in `player.ts`; `Player.update`
 reads its own `autorun` field, pushed from the slot's settings every tic — `Player` is recreated
-every map load (`game.ts: loadMapByIndex`), a menu change must reach a level already in progress,
+every map load (`game.ts: buildLevel`), a menu change must reach a level already in progress,
 and each slot runs under its own (docs/multiplayer.md § Player settings). Persisted as
 `autorun` — docs/menu.md § Persisted settings.
 

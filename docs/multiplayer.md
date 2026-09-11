@@ -16,10 +16,10 @@ browsers run one together — the relay, lockstep, snapshots — is docs/multipl
 HUD, crosshair, screen effects, death overlay, center messages, audio listener, `viewColormap`, the
 fade anchor, the fog's drawn island and the view camera read `local`, and nothing else does.
 
-Level-global, on `Game`: `netgame`, `starts`, `fogOfWar` (one shared reveal), `levelTime` (runs
-while any slot is alive), `cheated` (any slot's cheat taints the run), `sectorEffects` (per-slot
-damage-floor timers, one secret count), `specials`, `voodoo` (player-1 starts; player 1's inventory
-and keys), `replay` (every slot's recorder or playback).
+Level-global: on `Game`, `netgame`, `cheated` (any slot's cheat taints the run) and `replay` (every
+slot's recorder or playback); on `Level`, `starts`, `fogOfWar` (one shared reveal), `time` (runs
+while any slot is alive), `sectorEffects` (per-slot damage-floor timers, one secret count),
+`specials` and `voodoo` (player-1 starts; player 1's inventory and keys).
 
 **`source` says what drives a slot's input.** `'live'`: the keyboard — its camera turns on its own
 keys and its auto camera ticks. `'replay'`: posed from the record each tic, the camera left alone.
@@ -88,7 +88,7 @@ game, and every slot reads the one module value.
 `Game.tic` keeps the single-player order (docs/frameloop.md § What runs in a tic) and loops the
 slots where a step was per player.
 
-1. `local.input` is read — `setReplay` points every slot's `input` at `replay.input(slot)`, or at
+1. `local.input` is read — `ReplayDriver.set` points every slot's `input` at `replay.input(slot)`, or at
    the network's rows, or at the keyboard for the local slot and `IDLE_TIC_INPUT` for the rest, and
    sets `source` with it; the popup's continue key is any slot's.
 2. Per slot: a living slot's cheat buffer, `player.noclip`, `player.autorun`, `weapons.autoSwitch`.
@@ -103,7 +103,7 @@ slots where a step was per player.
    own `R` in a netgame (`respawnSlot`, docs/multiplayer-coop.md § Respawn).
 8. Per slot: `applyToCamera(1)` and `updateLivingPlayer` while alive, then the camera ticks for
    a live slot.
-9. `levelTime` while any slot is alive; `refillBodies`; the fog from every slot's body; things
+9. `Level.time` while any slot is alive; `refillBodies`; the fog from every slot's body; things
    (`players`: every slot's body, `null` where dead); effects.
 10. `endTic` on every slot's input, then a playback's cursor.
 

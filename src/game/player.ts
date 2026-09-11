@@ -8,6 +8,7 @@ import type { PlayerSnapshot } from './snapshot.ts';
 // Type-only, so the specials <-> player edge stays compile-time and no runtime cycle forms.
 import type { TeleportDest } from './specials.ts';
 import { NO_FRICTION, type FrictionEffect } from './specials/defs.ts';
+import type { TopDownCamera } from '../render/camera.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 import { vecLength } from '../util/geom.ts';
 import { decayOverTics } from '../util/damping.ts';
@@ -125,6 +126,17 @@ export function clampMomentum(v: number): number {
 /** A living player as the solid body another body collides with. */
 export function playerBlocker(player: Pos3): ThingBlocker {
   return { x: player.x, y: player.y, z: player.z, radius: PLAYER_RADIUS, height: PLAYER_HEIGHT };
+}
+
+/**
+ * The height of the plane the pointer aims on, hung off `camera`'s own follow height rather than
+ * the player's live `z`: identical once the follow smoother has caught up, but during a fall —
+ * into a Boom water pool, off any ledge — a plane that drops while the camera lags swings the
+ * cursor's world point and turns the player with it. The tic's aim and a network row's sample
+ * both read it. docs/camera.md § Aim lead.
+ */
+export function aimPlaneZ(camera: TopDownCamera): number {
+  return camera.followHeight - EYE_HEIGHT + AIM_HEIGHT_OFFSET;
 }
 
 const AUTORUN_STORAGE_KEY = 'autorun';
@@ -310,6 +322,11 @@ export class Player implements Pos3 {
 
   get eyeZ(): number {
     return this.z + EYE_HEIGHT;
+  }
+
+  /** Where a camera follows this player — the eyes, in map space; what `snapTo` and `tick` take. */
+  followPoint(): Pos3 {
+    return { x: this.x, y: this.y, z: this.eyeZ };
   }
 
   /**

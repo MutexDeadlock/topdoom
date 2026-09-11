@@ -184,7 +184,7 @@ retains a reference into it (docs/savegames.md § Apply order).
 The checkpoint) — so the health, armor, ammo and weapons carried in are what the level restarts
 with, and the inventory comes out of the snapshot.
 
-**Otherwise a plain reload**, what `R` always did: a fresh `Inventory` and a bare `loadMapByIndex`.
+**Otherwise a plain reload**, what `R` always did: a fresh `Inventory` and a bare `buildLevel`.
 That covers no checkpoint written this session (the first level of a run), one that no longer
 matches map/skill/WAD set, and a store that refused the read.
 
@@ -210,7 +210,7 @@ which is a distinction the player has no reason to care about anyway.
 viewer's, so offering a key that answers to someone else would be a promise the overlay cannot keep.
 The line is left out the way an unattributed killer is — the `.blank` class, no gap
 (docs/replays.md § Playback). Taking the replay over hands `R` back with the corpse still on
-screen, so `Game.takeOver` re-asserts the hint (`DeathOverlay.setHint`) — the overlay is drawn once
+screen, so `Game.takenOver` re-asserts the hint (`DeathOverlay.setHint`) — the overlay is drawn once
 and does not redraw itself. The intermission and the end card do the same with their continue key.
 
 ### Who killed the player
@@ -281,7 +281,7 @@ finish, so the disarm always wins.
 the exit, exactly as vanilla does it: `G_ExitLevel` has no player-state check at all, and it is
 `G_DoLoadLevel` that turns a `PST_DEAD` player into `PST_REBORN` for the next map. So `enterLevel`
 simply asks whether the player is dead and, if so, installs a fresh `createInventory()` before the
-map load — before, because `loadMapByIndex` hands the inventory object it finds to
+map load — before, because `buildLevel` hands the inventory object it finds to
 `WeaponSystem.beginLevel`. That fresh inventory is what vanilla's `memset(p, 0, …)` plus its
 explicit re-fills come to: 100 health, no armor, fist + pistol with 50 bullets, no backpack. Without
 it the player would walk into the next level alive on 0 health, dying to the first scratch.

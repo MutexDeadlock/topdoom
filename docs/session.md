@@ -109,7 +109,7 @@ directory lookup; a UDMF map's `TEXTMAP` size scaled to the same unit) times `bu
 above `SLOW_LOAD_MS` does the overlay go up. An ordinary level change is a few frames, and an
 overlay up that briefly is a flicker, not feedback.
 
-**The estimate exists because the build cannot be interrupted.** `loadMapByIndex` is one synchronous
+**The estimate exists because the build cannot be interrupted.** `buildLevel` is one synchronous
 block, so nothing paints while it runs and a "show it if it takes long" timer would fire into a
 frozen main thread. The decision therefore has to be made *before* the build, from what is cheap to
 know. Four rules follow:

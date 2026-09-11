@@ -1,9 +1,10 @@
 # Replays
 
 `src/game/replay.ts` (store, player name) over `src/game/replay/` — `defs.ts` (format), `keys.ts`,
-`row.ts` (the per-tic codec), `settings.ts`, `recorder.ts`, `playback.ts`, `stock.ts` (the ones the
-engine ships, § Stock replays); the seam in `game.ts`; the bar in
-`ui/hud/replaybar.ts`; the tab in `ui/menu/replays.ts` (docs/menu-saves.md § Replays tab).
+`row.ts` (the per-tic codec), `settings.ts`, `recorder.ts`, `playback.ts`, `driver.ts` (the level's
+side of either, `ReplayDriver`), `stock.ts` (the ones the engine ships, § Stock replays); the seam in
+`game.ts`; the bar in `ui/hud/replaybar.ts`; the tab in `ui/menu/replays.ts` (docs/menu-saves.md
+§ Replays tab).
 
 A replay is **the level's state at one moment plus one input record per tic**, played back through
 the same `Game.tic`. It rests on the fixed 35 Hz simulation (docs/frameloop.md) and the table RNG
@@ -135,12 +136,12 @@ fresh reload with a fresh inventory) at the tic count it lands on: **an event at
 before tic k**. All three routes land between tics, a parked load included.
 
 In a playback `restart` is a no-op and `beginTic` performs the event's reload synchronously,
-through `loadMapByIndex` directly — never `loadLevel`, which may park a load. Level exits are not
+through `buildLevel` directly — never `loadLevel`, which may park a load. Level exits are not
 events: they follow from the input deterministically.
 
 ## Recording
 
-`Game.startRecording` captures the moment like a save (`captureSave`), then **reloads the level
+`ReplayDriver.startRecording` captures the moment like a save (`captureSave`), then **reloads the level
 from that capture** — so the run being recorded is exactly what a playback restores, dropped
 transients and all, and a mid-level start costs no guessing about which of them matter. The reload
 builds a fresh camera and a fresh `AutoCamera` for every slot, so both are put back over them
@@ -231,7 +232,7 @@ on the frame the verdict *changes*, so a re-anchoring seek that clears one takes
 the overlay with its killer line and no `R` hint (docs/death.md § Player death), and the
 intermission and end card drop "Press SPACE to continue" (docs/hud.md § Intermission) — those keys
 belong to the record's input, while the viewer's `Space` pauses the playback. **Taking over puts
-all three back** (`Game.takeOver`, through each popup's own setter): the keys are the viewer's from
+all three back** (`Game.takenOver`, through each popup's own setter): the keys are the viewer's from
 that moment, and a popup already on screen does not redraw itself. DEVMODE's status text says `replay camera: recording`/`manual` for
 the same reason — the auto camera is not driving, so its dials would be a frozen readout
 (docs/devmode.md § Dev mode).
@@ -239,7 +240,7 @@ the same reason — the auto camera is not driving, so its dials would be a froz
 **The simulation keeps a camera of its own** (`PlayerSlot.simCamera`, the viewport's outside a replay).
 The camera is simulation state — `viewerAngleDeg` is the movement basis and the camera's position
 is the pick ray's origin — so a viewer moving the camera would change what auto-aim locks onto.
-A playback therefore evolves a private `TopDownCamera` from the record and `syncViewCamera` brings
+A playback therefore evolves a private `TopDownCamera` from the record and `ReplayDriver.syncViewCamera` brings
 the drawn one up to it each tic: mirrored outright in the **recording** view, and in the **manual**
 one driven by the viewer's own Q/E orbit and framing keys (`applyFramingKeys`, whatever camera mode
 the replay was recorded under) around the same follow point and aim lead. Nothing in the manual
@@ -260,7 +261,7 @@ seek to tic 0): there is nothing left to pause, and the run is right there to wa
 
 The bar (`#replay-bar`, `--z-replaybar`): a track with one marker per level advanced into; on
 hover the pause, the speed steps (`SPEED_STEPS`, 0.25×–5×), the crosshair and camera toggles, and **Take
-over** (`Game.takeOver`): live input from the next tic, the orbit glided back onto the 45° lattice
+over** (`ReplayDriver.takeOver`): live input from the next tic, the orbit glided back onto the 45° lattice
 (the pose it inherits is wherever the recording's own Q/E step had got to —
 docs/camera.md § Camera orbit), the settings released, `cheated`
 set **for that level** — the run up to that point was not this player's, but the next level
@@ -423,7 +424,7 @@ interval anchor. It shares its tic with the level's track marker, so a jump to a
 the level itself instead of restoring an anchor in the level before it and catching up through a
 level end and two map builds. The interval is measured from the last keyframe of either kind.
 
-`Game.seekTo` restores the last keyframe at or before the target and then **runs the tics** from
+`ReplayDriver.seekTo` restores the last keyframe at or before the target and then **runs the tics** from
 there — a jump that stays ahead of the current position and passes no keyframe skips the reload and
 runs on from where it is. The catch-up is spent `SEEK_BUDGET_MS` per frame (`advanceSeek`), so the
 page still answers a click between slices; sound is off while it runs (`AudioEngine.setSilent`), or
@@ -448,7 +449,7 @@ the way `ReplayPlayback.seekBack` says the viewer asked to go — not the way th
 always forwards. Only the bar updates. Drawing the catch-up instead ran the level at several times
 speed under a camera that only moves once the seek ends, which reads as a bug. Two details of the
 marker are load-bearing: it pulses on `opacity`/`transform` alone, which the compositor animates
-while the main thread grinds tics, and the keyframe restore waits one frame (`Game.seekAnchor`) so
+while the main thread grinds tics, and the keyframe restore waits one frame (`ReplayDriver.seekAnchor`) so
 the marker is painted before a level build blocks the page for as long as any map load.
 
 What a jump has to put back beyond the snapshot: both cameras (`snapPose`, from the landing tic's

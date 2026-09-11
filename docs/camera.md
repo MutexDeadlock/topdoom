@@ -44,7 +44,7 @@ lands on the lattice measured from the new bearing. `tests/render/camera-yaw.tes
 **A yaw taken from outside the orbit is snapped onto the lattice** (`latticeYaw`, the nearest
 multiple of `KEY_YAW_STEP`), because only whole `stepYaw`s move it afterwards: an angle inherited
 mid-glide stays that far off the lattice for the rest of the session. Two seams inherit one — a
-savegame's restore (`game.ts: loadMapByIndex`) and a playback taken over (`Game.takeOver`, which
+savegame's restore (`game.ts: buildLevel`) and a playback taken over (`ReplayDriver.takeOver`, which
 glides there with a partial `stepYaw` rather than jumping, so the view turns the last few degrees
 instead of cutting). A save stores `targetYawDeg`, not `yawDeg`, so saving mid-step needs no snap at
 all — and the take-over's save, written after the step is queued, is lattice-true on the way out.
@@ -117,12 +117,12 @@ that starts mid-level, a seek that lands mid-run, and a playback handed back to 
 
 **The camera outlives the level**, since it belongs to the `Viewport` and a load only replaces the
 `Game` — so the follow point's exponential smoother still holds the *outgoing* level's position when
-the next one starts. `loadMapByIndex` therefore ends the player's placement with `snapTo`, which
+the next one starts. `buildLevel` therefore ends the player's placement with `snapTo`, which
 puts the smoothed point, the interpolation source and the `THREE` camera itself on the new player
 position at once; without it a level change or a save restore opens with the camera gliding in from
 wherever the last level left it. It poses the `THREE` camera immediately rather than leaving that to
 the next `applyToCamera` because two paths render without one (the pause loop's `stillFrame`, and
-`captureThumbnail`). The yaw has had this since the beginning — the `yawDeg` setter is the same
+`Viewport.thumbnail`). The yaw has had this since the beginning — the `yawDeg` setter is the same
 collapse for the orbit angle — which is why `snapTo` is called *after* whichever branch set the yaw.
 
 **A teleport is the same discontinuity** and takes the same pair, in the same order

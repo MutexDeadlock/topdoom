@@ -90,6 +90,7 @@ export {
 export { BOUND_KEYS, maskHas } from './replay/keys.ts';
 export { ReplayPlayback } from './replay/playback.ts';
 export { ReplayRecorder, type RecordingStart } from './replay/recorder.ts';
+export { ReplayDriver, type ReplayHost } from './replay/driver.ts';
 export {
   GLOBAL_PLAYER_SETTINGS,
   applySessionSettings,

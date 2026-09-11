@@ -76,4 +76,21 @@ export class Viewport {
   present(scene: THREE.Scene, camera: THREE.Camera): void {
     this.bloom.render(scene, camera);
   }
+
+  /**
+   * A small JPEG of the frame, `width` pixels across — the savegame's thumbnail. The renderer runs
+   * without `preserveDrawingBuffer`, so the pixels are only readable in the same task as a
+   * `present` call — hence the fresh synchronous one here rather than trusting whatever was last
+   * composited.
+   */
+  thumbnail(scene: THREE.Scene, width: number): string {
+    this.present(scene, this.camera.camera);
+    const src = this.renderer.domElement;
+    const height = Math.max(1, Math.round((src.height / Math.max(1, src.width)) * width));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d')!.drawImage(src, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.7);
+  }
 }

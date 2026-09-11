@@ -96,7 +96,7 @@ Every drawn sprite offers its frame key, at the three places a sprite is drawn:
 |---|---|
 | `game/things.ts`'s draw loop | Every map thing: torches, lamps, pickups, keys, barrels, and every monster — including the firing frames (`POSSF`, `CPOSE`/`CPOSF`, the arch-vile's `VILEH`..`VILEP`). |
 | `game/spritefx.ts: batchSprite` | The single funnel for projectiles in flight, every one-shot effect (puffs, teleport fog, impact explosions, the vile's flame) and the Icon of Sin's cubes. |
-| `game.ts: posePlayer` | The player, whose `PLAY F` firing frame is the muzzle flash. |
+| `game/presenter.ts: posePlayer` | The player, whose `PLAY F` firing frame is the muzzle flash. |
 
 **Fog of war is inherited for free.** Both batched sites already skip a sprite the player has never
 had sight of (`PosedThing.visible`, `SpriteFxLayer.drawList`'s `fogVisible` gate), so an unrevealed

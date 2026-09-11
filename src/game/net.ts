@@ -16,6 +16,7 @@ export {
   type SlotAssignment,
 } from './net/defs.ts';
 export { WebSocketTransport, type Transport } from './net/transport.ts';
+export { NetSeat, type NetHost } from './net/seat.ts';
 export {
   NetSession,
   type HostOptions,

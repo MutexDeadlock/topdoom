@@ -290,7 +290,7 @@ A map matching none of them is simply a level without music. One deviation, and 
 vanilla never had: a megawad's MAP33+ or a sixth episode runs off the end of the table, which
 vanilla reads straight past into whatever follows it in memory; the index wraps instead.
 
-`loadMapByIndex` starts the track **before it builds the map**, so the build has something to play
+`buildLevel` starts the track **before it builds the map**, so the build has something to play
 over, and `play` is a no-op when the level being entered wants the one already running. The cost is
 that a build which *throws* leaves the track playing with no `Game` to dispose it, so `startLevel`'s
 `catch` in `main.ts` stops it — the level that started it never came to exist.

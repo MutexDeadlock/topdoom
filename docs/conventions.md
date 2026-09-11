@@ -205,6 +205,13 @@ A doc-owned comment holding something the doc lacks moves it into the doc.
   Only a span too long for any line wraps (`combat.ts`'s `P_RadiusAttack(…)`, `skill.ts`'s
   `P_LoadThings` quote), and then it has no choice.
 
+## Map and level
+
+- **A map is the WAD's data; a level is the map being played.** `DoomMap`, `BuiltMap`, `MapInfo`
+  and `Game.mapNames` are fixed — two games on MAP01 read the same. `Level`, `LevelStats`,
+  `Level.time` and `enterLevel` are one run through it, which starts, reloads and ends (vanilla's
+  `P_SetupLevel` over `gamemap`). A load builds a level from a map.
+
 ## Abbreviations
 
 - **Upper case in prose** — comments, docs, player-facing text: `ESC`, `ID`, `IDs`.

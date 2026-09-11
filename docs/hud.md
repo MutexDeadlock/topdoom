@@ -161,9 +161,9 @@ REC because everything else in this bar is the WAD's own sprite glyphs. docs/rep
 `#hud-timer`, the third column of `#hud-bar`'s grid (mirroring `#hud-levelstats` on the opposite
 side, flush against `#game-hud`'s right edge via `justify-self: start`), shows time spent in the
 level as `hh:mm:ss`, drawn with the same `WadFont` used for the strip's labels (native STCFN red,
-no recolor). `Game.levelTime` accumulates `dt` in `frame`, gated the same way `tickPowers` is —
-frozen once `PlayerSlot.dead` — and reset to 0 in `loadMapByIndex`. It also never advances on the frame
-an exit trigger fires: that frame already returns early once `pendingExit` is set (see that field's
+no recolor). `Level.time` advances a `DOOM_TIC` per tic while any slot lives (`Game.tic`), and
+starts at 0 with every `buildLevel`. It also never advances on the tic an exit is consumed: that
+tic already returns early once `pendingExit` is set (see that field's
 own doc in `game.ts`), before reaching the increment, so no separate "level complete" check is
 needed on top of the death check. That frozen instant is exactly what the intermission below shows,
 and it stays frozen for as long as the popup is up: those frames return early too.
@@ -174,7 +174,7 @@ and it stays frozen for as long as the popup is up: those frames return early to
 centered, 30% down so it clears `#hud-message`'s 40%) for 3.5 seconds after every map load that
 *enters* a level — a normal exit, a `restart()` after death with nothing to reload, and IDCLEV's
 warp alike — fading out over the last second of that. **Loading a save is the one map load
-that raises no card** (`loadMapByIndex`'s `restore` branch, docs/savegames.md § Apply order): it
+that raises no card** (`buildLevel`'s `restore` branch, docs/savegames.md § Apply order): it
 resumes a level rather than entering one. A `restart()` that *does* reload something — the level's
 savegame or its checkpoint — goes through that same branch, so it raises none either. The fade is
 `opacity` driven from `update`'s own `dt`, not a CSS transition: a transition runs on wall-clock
@@ -191,7 +191,7 @@ single-map PWAD) or a WAD set where the only candidate patch belongs to a differ
 drawn in a grey sampled from `CWILV00`'s glyph body, so the two forms read as the same thing rather
 than as two different announcements.
 
-It is shown at the **end** of `loadMapByIndex` — that method clears every per-level overlay at its
+It is shown at the **end** of `buildLevel` — that method clears every per-level overlay at its
 top, so a card raised any earlier would be wiped by its own load. The text form shows the level's
 bare title ("Hangar"), not its lump name, which the menu listed a moment earlier and the DEVMODE HUD
 shows anyway.
@@ -246,7 +246,7 @@ excluded from records for its own reasons (§ Best times), reports itself cheate
 **Under a playback the continue hint is left out**, on this popup and on the end card alike
 (`show`'s `canContinue`, `Game.viewerContinues`): `Space` there is the record's input, and the
 viewer's own pauses the playback. Taking the replay over with either popup on screen puts the hint
-back — `Intermission.setContinueHint`/`EndCard.setContinueHint`, called from `Game.takeOver`, since
+back — `Intermission.setContinueHint`/`EndCard.setContinueHint`, called from `Game.takenOver`, since
 neither popup redraws itself. The death overlay's `R` hint follows the same rule
 (docs/death.md § Player death, docs/replays.md § Playback).
 
@@ -425,7 +425,7 @@ holds at dead center), for 3 seconds. Four callers so far:
   vanilla's and Boom's `PD_*` text lives and where a DEH patch will have replaced it (docs/items.md
   § Locked doors and use triggers, docs/dehacked.md § Locked-door lines); its `oof` was already
   played there;
-- things the WAD set has no art for — `loadMapByIndex` shows `missingArtMessage(n)` when
+- things the WAD set has no art for — `buildLevel` shows `missingArtMessage(n)` when
   `ThingLayer.missingArt` is non-empty, so a monster the set could not draw and therefore did not
   spawn is not simply absent with nothing to explain it (docs/wad.md § Art a WAD set doesn't have).
   Raised at level load, which `clearOverlays` precedes, and it sits in its own band clear of the
@@ -454,7 +454,7 @@ glyph height, roughly the level-stats strip's own) and `opacity: 0.75` are **tun
 sits over the playfield, so it reads as an overlay rather than competing with what's under it.
 
 The timeout is ticked from `Game.frame`'s `dt`, so a paused game doesn't burn a message's display
-time behind the menu; `loadMapByIndex` and `dispose` both `clear()` it, since the element is static
+time behind the menu; `buildLevel` and `dispose` both `clear()` it, since the element is static
 markup that outlives any one `Game` (the same reason `Hud`'s panels `replaceChildren()`).
 
 ## `WadFont` and `WadNumbers` (`src/ui/hud/wadfont.ts`)
@@ -551,7 +551,7 @@ Boom's 242 colormaps get a third element, `#colormap-tint`, at the same `--z-tin
 the powerup tints in being a **multiply** blend rather than a wash, because that is all a colormap
 can do — take light away — and in being driven from `game.ts` rather than from inventory state:
 which of the control sector's colormaps applies depends on the player's eye height against that
-sector (docs/specials-transfers.md § Deep water). `Game.viewColormap` resolves it,
+sector (docs/specials-transfers.md § Deep water). `Presenter.viewColormap` resolves it,
 `ScreenEffects.setColormapTint` writes it, and `reset` clears it with the rest. **The underwater
 colormap is deliberately never applied** — see docs/specials-transfers.md § Deep water for why the
 top-down camera can't wear it.
@@ -575,7 +575,7 @@ echoes vanilla's palette-shift pain flash (`ST_doPaletteStuff`'s `damagecount`),
 by `PAIN_FLASH_MAX_ALPHA`, tuned by feel since vanilla swaps palettes outright rather than blending
 an overlay). **It's a separate element because its red has to blend with, not replace, the suit's
 persistent green wash** — two `background`s on one element can't coexist, but two stacked elements
-can. `damageSlot` bumps it on every hit, lethal or not, and `loadMapByIndex`/`dispose` reset it
+can. `damageSlot` bumps it on every hit, lethal or not, and `buildLevel`/`dispose` reset it
 alongside `PlayerSlot.dead`/the tint classes. So does a replay's seek, on the frame it lands
 (docs/replays.md § Seeking): the catch-up bumps it per hit while no frame draws to decay it.
 

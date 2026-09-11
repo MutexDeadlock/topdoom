@@ -1,6 +1,7 @@
 # The frame loop (`game.ts`)
 
-`src/game.ts: frame`, `tic`, `draw`, `dueThisFrame`, `resume`, `pause`, `stillFrame`, `stop`
+`src/game.ts: frame`, `tic`, `dueThisFrame`, `resume`, `pause`, `stillFrame`, `stop`; the frame's
+drawing in `src/game/presenter.ts: draw`
 
 Who starts and stops a session around this loop is docs/session.md § Session lifecycle.
 
@@ -50,7 +51,7 @@ Three rules hold it together:
 - **A stall drops its debt rather than paying it back.** `MAX_TICS_PER_FRAME` caps both the burst
   after a backgrounded tab and the worst-case cost of one frame. This is the same "never take a
   giant step" the old `dt` clamp bought, expressed in tics.
-- **`accumulator` is zeroed by `resume` and by `loadMapByIndex`.** Time spent paused or loading is
+- **`accumulator` is zeroed by `resume` and by `buildLevel`.** Time spent paused or loading is
   not simulation time; without it the level would run a catch-up burst the moment the menu closes.
 
 A tic that swaps the level (an exit, a restart) makes every reference the rest of the frame holds
@@ -163,14 +164,14 @@ a snapshot it is to restore is still on its way: nothing is banked, so no catch-
 wait (docs/multiplayer-net.md § Lockstep). Its menu does not pause at all — `pause` only marks the
 menu up, and the local rows go out idle meanwhile.
 
-A **seek owns the frame**: `runSeek` banks no time, runs its own tics for up to `SEEK_BUDGET_MS`
+A **seek owns the frame**: `ReplayDriver.runSeek` banks no time, runs its own tics for up to `SEEK_BUDGET_MS`
 and **draws nothing at all** until the target lands — the frame before the jump stays on screen,
 with only the bar and its marker updated over it. Landing draws at alpha 1, except on a tic that
 swapped the level, which ends the frame undrawn like the tic loop's own does. `resyncClock` is what
 keeps the catch-up's real seconds from becoming a burst of tics afterwards.
 docs/replays.md § Seeking.
 
-## What runs in a frame (`game.ts: draw`)
+## What runs in a frame (`game/presenter.ts: draw`)
 
 Presentation only — it advances no gameplay state. The camera pose, the sprite batches, the HUD and
 overlays, the occlusion and fog *fades*, the texture scroller and animator, and the render call.

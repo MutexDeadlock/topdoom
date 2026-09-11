@@ -1,6 +1,7 @@
 /**
  * The session: boots the page, runs the menu as launcher and pause screen, starts and tears down
- * one `Game` per level, and autosaves around the edges. See docs/session.md § Session lifecycle.
+ * one {@link Game} per level, and autosaves around the edges.
+ * See docs/session.md § Session lifecycle.
  */
 import { Wad } from './wad/wad.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
@@ -42,7 +43,10 @@ interface LevelSource {
   save?: savegames.SaveGame;
   /** A replay to watch — docs/replays.md § Playback. */
   replay?: Replay;
-  /** A network game's level, from its start or (`restore`) the host's snapshot — docs/multiplayer-net.md. */
+  /**
+   * A network game's level, from its start or ({@link LevelSource.restore}) the host's snapshot —
+   * docs/multiplayer-net.md.
+   */
   net?: NetSession;
   restore?: NetRestore | null;
 }
@@ -59,10 +63,15 @@ async function boot(): Promise<void> {
 
   const params = new URLSearchParams(location.search);
   const startPos = parsePos(params.get('pos'));
-  /** `?coop=N`: 2 to `MAX_PLAYERS` players in one browser — docs/menu.md § URL parameters. */
+  /**
+   * `?coop=N`: 2 to {@link MAX_PLAYERS} players in one browser — docs/menu.md § URL parameters.
+   */
   const coopParam = Number(params.get('coop'));
   const coop = Number.isInteger(coopParam) && coopParam >= 2 && coopParam <= MAX_PLAYERS ? coopParam : null;
-  /** One `AudioContext` for the whole page, started by the first `resume` (a user gesture). */
+  /**
+   * One `AudioContext` for the whole page, started by the first {@link AudioEngine.resume} (a user
+   * gesture).
+   */
   const audio = new AudioEngine();
   /** The boot screen, reused by every level load — docs/session.md § The loading screen. */
   const loading = new LoadingScreen();
@@ -201,7 +210,9 @@ async function boot(): Promise<void> {
       startLevel({ iwad, pwads, map: restore?.map ?? netGame.set.map, skill: netGame.skill }, { net: room, restore }),
     );
 
-  /** Leaves the room; a level already running plays on alone (`Game` sees the session end). */
+  /**
+   * Leaves the room; a level already running plays on alone ({@link Game} sees the session end).
+   */
   const leaveNet = (): void => {
     net?.leave();
     net = null;
@@ -219,8 +230,8 @@ async function boot(): Promise<void> {
 
   /**
    * The New Game tab's selection as the room must match it: the set as a save records it
-   * (`wadSetOf`, as `Game.captureSave` reads it), which costs the host its WAD download up front
-   * and the level start nothing more.
+   * ({@link savegames.wadSetOf}, as {@link Game.captureSave} reads it), which costs the host its
+   * WAD download up front and the level start nothing more.
    */
   const netGameOf = async (selection: Selection): Promise<NetGame> => {
     const wad = new Wad(await loadWadFiles(selection.iwad, selection.pwads));
@@ -288,7 +299,7 @@ async function boot(): Promise<void> {
 
   /**
    * The body Save, Overwrite and the autosave share: only the store call differs, and
-   * `Game.saveVia` owns the capture around it — docs/menu-saves.md § Save and Load tabs.
+   * {@link Game.saveVia} owns the capture around it — docs/menu-saves.md § Save and Load tabs.
    */
   const withCapture = async (write: (capture: savegames.SaveCapture) => Promise<unknown>): Promise<void> => {
     if (!game) throw new Error('no running game to save');
@@ -446,8 +457,8 @@ function takeOverSaveName(replay: Replay | null, capture: savegames.SaveCapture)
 
 /**
  * Refuses a load the freshly assembled set can't play, naming the offending file. The rule is
- * `wadSetRefusal`'s (docs/savegames.md § WAD-set identity), asked over the bytes actually in hand,
- * which is what catches a manifest ID left stale by a changed file.
+ * {@link savegames.wadSetRefusal}'s (docs/savegames.md § WAD-set identity), asked over the bytes
+ * actually in hand, which is what catches a manifest ID left stale by a changed file.
  */
 function verifySaveWads(wad: Wad, save: savegames.SaveWadSet): void {
   const refusal = savegames.loadedSetRefusal(save, wad);

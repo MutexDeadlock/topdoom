@@ -50,6 +50,7 @@ function check(file) {
 
   headerPointer(lines, at);
   sourceOrder(rel, lines, at);
+  paramTags(lines, at);
   lines.forEach((line, i) => {
     inlineIf(line, i + 1, at);
     commentWidth(line, i + 1, at);
@@ -105,6 +106,79 @@ function sourceOrder(rel, lines, at) {
   for (const [line, name] of helpers.filter(([line]) => line < lastExport).slice(0, 4)) {
     at(line, 'source order', `private \`${name}\` sits above the last export (line ${lastExport})`);
   }
+}
+
+/**
+ * An `@param` names a parameter of the declaration its block documents — never a type, which TS
+ * has, and never an options field, which the interface documents. A signature this can't read
+ * (destructured, or no parameter list) is held to the first two only.
+ */
+function paramTags(lines, at) {
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*\/\*\*/.test(lines[i])) continue;
+    let end = i;
+    while (end < lines.length - 1 && !lines[end].includes('*/')) end++;
+    const params = parameterNames(lines, end + 1);
+    for (let j = i; j <= end; j++) {
+      const tag = /^\s*(?:\/\*\*|\*)\s*@(param|returns?)(?:\s+(.*))?$/.exec(lines[j]);
+      if (!tag) continue;
+      const [, kind, rest = ''] = tag;
+      if (kind === 'return') at(j + 1, 'jsdoc', 'spell it `@returns`');
+      if (rest.startsWith('{')) {
+        at(j + 1, 'jsdoc', `\`@${kind}\` carries no \`{Type}\` — TS has it`);
+        continue;
+      }
+      if (kind !== 'param') continue;
+      for (const name of rest.split(/\s/)[0].split(',')) {
+        if (name.includes('.')) {
+          at(j + 1, 'jsdoc', `\`${name}\` is an options field — document it on the interface`);
+        } else if (params && !params.includes(name)) {
+          at(j + 1, 'jsdoc', `\`@param ${name}\` names no parameter of the declaration below`);
+        }
+      }
+    }
+    i = end;
+  }
+}
+
+/**
+ * The parameter names of the declaration opening at line index `from`, or null when a body or
+ * statement end comes before any parameter list, or a parameter is destructured. `=>` is not a
+ * closing `>`: a callback type would otherwise end a generic early.
+ */
+function parameterNames(lines, from) {
+  const text = lines.slice(from, from + 30).join('\n');
+  let angle = 0;
+  let open = -1;
+  for (let i = 0; i < text.length && open < 0; i++) {
+    const c = text[i];
+    if (c === '<') angle++;
+    else if (c === '>' && text[i - 1] !== '=') angle--;
+    else if (angle === 0 && c === '(') open = i;
+    else if (angle === 0 && '{[;'.includes(c)) return null;
+  }
+  if (open < 0) return null;
+  const pieces = [];
+  let depth = 0;
+  let start = open + 1;
+  for (let i = open; i < text.length; i++) {
+    const c = text[i];
+    if ('([{<'.includes(c)) depth++;
+    else if (')]}'.includes(c) || (c === '>' && text[i - 1] !== '=')) depth--;
+    if (depth === 0 || (depth === 1 && c === ',')) {
+      pieces.push(text.slice(start, i));
+      start = i + 1;
+    }
+    if (depth === 0) break;
+  }
+  if (depth !== 0) return null;
+  const names = [];
+  for (const piece of pieces.map((p) => p.trim().replace(/^\.\.\./, ''))) {
+    if (/^[{[]/.test(piece)) return null;
+    const name = /^[A-Za-z_$][\w$]*/.exec(piece)?.[0];
+    if (name && name !== 'this') names.push(name);
+  }
+  return names;
 }
 
 /** An inline `if` is for early outs; a multi-clause condition with a real statement gets braces. */

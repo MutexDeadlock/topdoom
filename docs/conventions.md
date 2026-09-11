@@ -192,6 +192,21 @@ A doc-owned comment holding something the doc lacks moves it into the doc.
 - **A doc block belongs to a declaration.** Never stack two `/** */` blocks or insert code between
   a block and what it documents — editors show the doc on the wrong symbol. A group of related
   constants carries its rationale on the first one's JSDoc, not a floating block.
+- **A parameter that needs describing gets an `@param`, not a sentence in the block's prose** —
+  the editor shows it under the argument being typed. It needs one only where name and type don't
+  carry the meaning: a unit, a coordinate space, what `null` means, what is deliberately not
+  passed (`TopDownCamera.tick`'s `cursor`; its `dt` gets none). No `{Type}`, and no
+  `@param options.x`: an options object's fields are documented on the interface
+  (§ Named arguments). `@returns` on the same terms. The tiers above still hold: a doc-owned rule
+  in an `@param` is a name and a pointer.
+- **A declaration of ours that a JSDoc names is a `{@link}`**, not a code span — Ctrl+click and
+  the hover jump to it, and a rename carries it. Only what resolves from the file's scope: an
+  import or a module-level declaration, and a member of either always as `Class.member` — also
+  inside its own class, where an unqualified name loses to the method's locals and the DOM globals
+  without a word (`{@link stop}` in `Game` opens `window.stop`); `#` resolves nothing. A symbol
+  the file doesn't import stays a code span — no import just for a link — as do parameters,
+  locals, expressions, platform and library names, and foreign ones (`P_TeleportMove`, `PLAY`). A
+  `//` comment keeps code spans: only JSDoc resolves a link. Never split one across a line.
 - **State what is true, not what changed.** No "now", "used to", "was tried" — they date the
   comment. Bug history goes in the commit message. A decision worth protecting from a revert says
   it is deliberate and points at the doc that argues it.
@@ -255,7 +270,7 @@ line break) and wraps prose at 100 columns; tables run past it. The file whiteli
 under `public/game/` and `tests/fixtures/` stay byte-verbatim. A new text extension is added there.
 
 `.claude/hooks/conventions.mjs` checks the mechanical rules here — source order, inline `if`,
-comment width, the two toolchain constraints — on files *Claude* writes; run by hand with
+comment width, `@param` names and types, the two toolchain constraints — on files *Claude* writes; run by hand with
 `node .claude/hooks/conventions.mjs <file>`. Agent tooling: no npm script runs it, it gates nothing.
 
 ## Inline `if`

@@ -4,8 +4,9 @@
  * signatures each, or passed as loose scalar parameter runs.
  *
  * These are **structural**, deliberately: `Player`, `PosedThing`, `MonsterBody` and the WAD's own
- * `Thing` all already carry `x`/`y`(/`z`), so they satisfy `Pos2`/`Pos3` with no conversion and no
- * allocation at a call site — which is what makes one safe to take even in per-frame code.
+ * `Thing` all already carry `x`/`y`(/`z`), so they satisfy {@link Pos2}/{@link Pos3} with no
+ * conversion and no allocation at a call site — which is what makes one safe to take even in
+ * per-frame code.
  *
  * Cross-cutting, so there is no `docs/` page of its own. The rest of the rule — always DOOM map
  * space, never a direction or a velocity — is CLAUDE.md § Position types; when to take one rather
@@ -25,7 +26,7 @@ export interface Pos3 extends Pos2 {
 
 /**
  * A spot plus which way to face on arrival — a player start, a teleport
- * landing. `angle` is **radians**, matching `Player.angle`/`MonsterBody.angle`
+ * landing. {@link Placement.angle} is **radians**, matching `Player.angle`/`MonsterBody.angle`
  * rather than the WAD's own degrees: every producer here (`World.playerStart`,
  * `SpecialsController.findTeleportDestination`) already converts on the way
  * out, so a consumer converts again at its peril.

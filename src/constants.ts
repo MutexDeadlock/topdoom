@@ -37,23 +37,23 @@ export const BRIGHTNESS_LIFT = 0.06;
 export const VIEW_DISTANCE = 16000;
 
 /**
- * Where that fog starts hazing, as a fraction of `VIEW_DISTANCE` (fully opaque at 1.0), so moving
- * the one dial above keeps the fade band in proportion — which is why it lives beside it rather
- * than with the `game.ts` line that reads it.
+ * Where that fog starts hazing, as a fraction of {@link VIEW_DISTANCE} (fully opaque at 1.0), so
+ * moving the one dial above keeps the fade band in proportion — which is why it lives beside it
+ * rather than with the `game.ts` line that reads it.
  * docs/render.md § View distance.
  */
 export const FOG_START_FRACTION = 0.54;
 
 /**
- * `PICKUP_SCALE_TYPES` (ammo, health/armor, keys, powerups) draw at vanilla's native patch size
- * times this factor. Tuned by feel: the far, tilted top-down camera reads a lot worse than DOOM's
- * own ground-level first-person view at the same pixel size, and small collectibles like a clip or
- * a shell box are the ones that suffer most.
+ * {@link PICKUP_SCALE_TYPES} (ammo, health/armor, keys, powerups) draw at vanilla's native patch
+ * size times this factor. Tuned by feel: the far, tilted top-down camera reads a lot worse than
+ * DOOM's own ground-level first-person view at the same pixel size, and small collectibles like a
+ * clip or a shell box are the ones that suffer most.
  */
 export const PICKUP_SCALE = 1.25;
 
 /**
- * Which things `PICKUP_SCALE` applies to.
+ * Which things {@link PICKUP_SCALE} applies to.
  * docs/sprites.md § Pickup scale.
  */
 export const PICKUP_SCALE_TYPES: Set<number> = new Set([

@@ -1,7 +1,7 @@
 /**
- * `Game`: one running level — builds the scene from the WAD, owns the frame/tic loop, and wires
- * every subsystem (world, things, specials, weapons, projectiles, effects, fog of war, HUD, audio)
- * into the simulation order. See docs/frameloop.md.
+ * {@link Game}: one running level — builds the scene from the WAD, owns the frame/tic loop, and
+ * wires every subsystem (world, things, specials, weapons, projectiles, effects, fog of war, HUD,
+ * audio) into the simulation order. See docs/frameloop.md.
  */
 import * as THREE from 'three';
 import type { Wad, WadFile } from './wad/wad.ts';
@@ -170,10 +170,10 @@ import { readStorage, writeStorage } from './util/storage.ts';
 const MAX_TICS_PER_FRAME = 5;
 
 /**
- * What a level build costs per KB of `LINEDEFS`, and only the seed for `buildMsPerKb`, which
- * re-measures from every build this session. **Tuned by feel** in that sense: it has to be right
- * enough to put the first level of a session on the correct side of `SLOW_LOAD_MS`, and the
- * measurements it came from are in the commit that added it.
+ * What a level build costs per KB of `LINEDEFS`, and only the seed for {@link Game.buildMsPerKb},
+ * which re-measures from every build this session. **Tuned by feel** in that sense: it has to be
+ * right enough to put the first level of a session on the correct side of {@link SLOW_LOAD_MS},
+ * and the measurements it came from are in the commit that added it.
  */
 const BUILD_MS_PER_KB = 1.1;
 
@@ -198,9 +198,9 @@ export type FpsCap = (typeof FPS_CAPS)[number];
 const DEFAULT_FPS_CAP: FpsCap = 60;
 
 /**
- * How many frames a second the loop is allowed to run at, `0` for as many as the
- * display offers. Lives here because `frame` is the only thing it changes; the
- * menu just wires its select to these two. See docs/frameloop.md § The FPS cap.
+ * How many frames a second the loop is allowed to run at, `0` for as many as the display offers.
+ * Lives here because {@link Game.frame} is the only thing it changes; the menu just wires its
+ * select to {@link getFpsCap} and {@link setFpsCap}. See docs/frameloop.md § The FPS cap.
  */
 let fpsCap: FpsCap = readStoredFpsCap();
 
@@ -214,8 +214,9 @@ export function setFpsCap(cap: FpsCap): void {
 }
 
 /**
- * What a `Game` is being asked to play, beside the three handles it is given. Named rather than
- * positional because `startMap` and `title` are both strings and a swap would typecheck.
+ * What a {@link Game} is being asked to play, beside the three handles it is given. Named rather
+ * than positional because {@link GameOptions.startMap} and {@link GameOptions.title} are both
+ * strings and a swap would typecheck.
  */
 export interface GameOptions {
   /**
@@ -240,8 +241,8 @@ export interface GameOptions {
   checkpoint?: CheckpointStore | null;
   /**
    * Called when the campaign is over and nothing follows: the session layer's cue to tear this
-   * `Game` down and put the menu back up (docs/session.md § Session lifecycle). A port like
-   * `checkpoint` — this class knows nothing about the menu.
+   * {@link Game} down and put the menu back up (docs/session.md § Session lifecycle). A port like
+   * {@link GameOptions.checkpoint} — this class knows nothing about the menu.
    */
   onCampaignEnd?: (() => void) | null;
   /**
@@ -253,38 +254,40 @@ export interface GameOptions {
   /**
    * The shipped weapon-matching player art (`assets/playerskins.wad`, via the shipped WAD), fetched
    * by the session layer alongside the WAD files and deliberately **never** added to `wad` — see
-   * `buildPlayerSkins`. Null when the fetch failed, which draws the set's own `PLAY` art.
+   * {@link PlayerSkins}. Null when the fetch failed, which draws the set's own `PLAY` art.
    * docs/sprites.md § Weapon-matching player sprites.
    */
   playerSkins?: WadFile | null;
   /**
    * The session's loading screen, so a level too big to build between two frames can put it up
-   * first. A port like `checkpoint`: absent means the load simply happens inline.
+   * first. A port like {@link GameOptions.checkpoint}: absent means the load simply happens inline.
    * docs/session.md § The loading screen.
    */
   loading?: LoadingScreen | null;
   /**
-   * A replay to play instead of taking live input: `restore` is then its first snapshot, and the
-   * level starts under its recorded camera and settings. A constructor option rather than a
-   * method because a playback always begins with a load. docs/replays.md § Playback.
+   * A replay to play instead of taking live input: {@link GameOptions.restore} is then its first
+   * snapshot, and the level starts under its recorded camera and settings. A constructor option
+   * rather than a method because a playback always begins with a load. docs/replays.md § Playback.
    */
   playback?: Replay | null;
   /**
-   * Stores the current moment as a savegame — the session layer's store call around `saveVia`.
-   * Taking a replay over calls it, so the level the player is handed is one they can come back to.
-   * Absent means taking over stores nothing.
+   * Stores the current moment as a savegame — the session layer's store call around
+   * {@link Game.saveVia}. Taking a replay over calls it, so the level the player is handed is one
+   * they can come back to. Absent means taking over stores nothing.
    */
   autoSave?: (() => Promise<unknown>) | null;
   /**
    * `?coop=` — how many players the session runs, as a netgame; absent is single player. Every slot
-   * past the first stands idle until something drives it. A restore's own `players` and `netgame`
-   * win over it. docs/multiplayer-coop.md.
+   * past the first stands idle until something drives it. A restore's own
+   * {@link GameSnapshot.players} and {@link GameSnapshot.netgame} win over it.
+   * docs/multiplayer-coop.md.
    */
   coop?: number | null;
   /**
    * The network game this level is one seat of: every slot's input comes from its rows, the local
    * slot's is sampled and sent ahead, and the session says which slot this browser plays. A
-   * joiner's `restore` is the host's snapshot. docs/multiplayer-net.md § What a tic does.
+   * joiner's {@link GameOptions.restore} is the host's snapshot.
+   * docs/multiplayer-net.md § What a tic does.
    */
   net?: NetSession | null;
 }
@@ -306,7 +309,10 @@ export class Game {
   private spriteMaterials: SpriteMaterialCache;
   /** The shipped weapon-matching art, or null where the file never arrived (render/playerskin.ts). */
   private playerSkins: PlayerSkins;
-  /** Whether the loaded set draws the player its own way — resolved once, per `setDrawsOwnPlayer`. */
+  /**
+   * Whether the loaded set draws the player its own way — resolved once, per
+   * {@link setDrawsOwnPlayer}.
+   */
   private setDrawsPlayer = false;
   private mapNames: string[];
   /**
@@ -316,34 +322,40 @@ export class Game {
   private gameMode: GameMode;
   /**
    * The level being played, whole (game/level.ts): unset only before the constructor's own
-   * `buildLevel`, and replaced by every load after it.
+   * {@link Game.buildLevel}, and replaced by every load after it.
    */
   private level!: Level;
   /**
-   * Every player in the level, by slot — one, or `GameOptions.coop`'s. Built in the constructor
-   * body, after the DEHACKED patch, and never replaced: a level load rebuilds what is per-level
-   * *inside* each. docs/multiplayer.md § Player slots.
+   * Every player in the level, by slot — one, or {@link GameOptions.coop}'s. Built in the
+   * constructor body, after the DEHACKED patch, and never replaced: a level load rebuilds what is
+   * per-level *inside* each. docs/multiplayer.md § Player slots.
    */
   private slots: PlayerSlot[] = [];
   /** Which slot this browser plays and draws for: the HUD, the audio listener, the view camera. */
   private readonly localSlot: number;
   /**
-   * This browser's seat in the network game the level runs in (`GameOptions.net`), or null. Read
-   * through `net`, which is null again once the session ends. docs/multiplayer-net.md § What a tic
-   * does.
+   * This browser's seat in the network game the level runs in ({@link GameOptions.net}), or null.
+   * Read through {@link Game.net}, which is null again once the session ends.
+   * docs/multiplayer-net.md § What a tic does.
    */
   private readonly seat: NetSeat | null;
-  /** `slots` as the thing layer reads them, `null` where dead — refilled per tic, never reallocated. */
+  /**
+   * {@link Game.slots} as the thing layer reads them, `null` where dead — refilled per tic, never
+   * reallocated.
+   */
   private players: (Pos3 | null)[] = [];
-  /** Every slot's body, the dead included, as the fog sweeps from them — refilled like `players`. */
+  /**
+   * Every slot's body, the dead included, as the fog sweeps from them — refilled like
+   * {@link Game.players}.
+   */
   private fogPoints: Pos2[] = [];
   /**
-   * Whether the session runs as a netgame: `GameOptions.coop`, or the restored snapshot's own.
-   * Decided once, since which things spawn depends on it. docs/multiplayer-coop.md.
+   * Whether the session runs as a netgame: {@link GameOptions.coop}, or the restored snapshot's
+   * own. Decided once, since which things spawn depends on it. docs/multiplayer-coop.md.
    */
   private netgame: boolean;
   /**
-   * `Forces.carryForBody` bound once rather than per tic: `ThingLayer.update` takes it or
+   * {@link Forces.carryForBody} bound once rather than per tic: `ThingLayer.update` takes it or
    * `undefined`, and building the closure at the call site allocated one every frame.
    */
   private carryForBody: CarryQuery = (pos, radius, cache) =>
@@ -364,12 +376,12 @@ export class Game {
    */
   private monsterAttacks: MonsterAttacks;
   /**
-   * The live-level view `projectiles`, `monsterAttacks` and the splash helpers read this class
-   * through — see game/combat.ts.
+   * The live-level view {@link Game.projectiles}, {@link Game.monsterAttacks} and the splash
+   * helpers read this class through — see game/combat.ts.
    */
   private combat: CombatContext;
   /**
-   * Set by the exit trigger and consumed in `tic` once the specials block has returned —
+   * Set by the exit trigger and consumed in {@link Game.tic} once the specials block has returned —
    * **never** acted on inside the callback, or a mover rebuild still pending from that same pass
    * would add the old map's mesh to the new map's scene. Which of the two exits fired is carried
    * along, since it decides where the level leads.
@@ -378,57 +390,61 @@ export class Game {
   /**
    * The map the continue key loads, or -1 when nothing follows the exit just taken. Resolved the
    * moment the popup goes up rather than when it is dismissed — that is the last moment
-   * `currentMap` is still the level just finished. docs/wad.md § Level progression.
+   * {@link Game.currentMap} is still the level just finished. docs/wad.md § Level progression.
    */
   private nextMapIndex = 0;
   /**
    * What the exit just taken ended, or null when it merely led somewhere. Resolved with
-   * `nextMapIndex`, and for the same reason: both are answers about the level being left. Outlives
-   * the popups — it is also what makes the transition off the card a rebirth rather than an
-   * ordinary level change (`enterLevel`'s `reborn`). docs/hud.md § End card.
+   * {@link Game.nextMapIndex}, and for the same reason: both are answers about the level being
+   * left. Outlives the popups — it is also what makes the transition off the card a rebirth rather
+   * than an ordinary level change ({@link Game.enterLevel}'s `reborn`). docs/hud.md § End card.
    */
   private pendingEnd: EndScope | null = null;
   /**
    * Which end-of-level popup is up, or null while the level is running. The level is finished and
-   * frozen behind either: `frame` advances nothing until the player presses the continue key. Not
-   * `pause()`, which is the menu's — a popup has to keep reading input. One field rather than a
-   * flag each, so "both at once" isn't a state that can be reached. docs/hud.md § Intermission.
+   * frozen behind either: {@link Game.frame} advances nothing until the player presses the continue
+   * key. Not {@link Game.pause}, which is the menu's — a popup has to keep reading input. One field
+   * rather than a flag each, so "both at once" isn't a state that can be reached.
+   * docs/hud.md § Intermission.
    */
   private popup: 'intermission' | 'endcard' | null = null;
   /**
-   * Seconds the popup has been up, for `INTERMISSION_INPUT_DELAY`. The only thing that still
-   * advances while it is. Shared by both popups, and restarted when the card takes over so one
-   * press can't dismiss them both.
+   * Seconds the popup has been up, for {@link INTERMISSION_INPUT_DELAY}. The only thing that
+   * still advances while it is. Shared by both popups, and restarted when the card takes over so
+   * one press can't dismiss them both.
    */
   private intermissionTime = 0;
 
   private running = false;
   private lastTime = 0;
   /**
-   * Real time banked but not yet spent on a tic, always under `DOOM_TIC` once
-   * `frame` has drained it. Doubles as the interpolation alpha's numerator — see
+   * Real time banked but not yet spent on a tic, always under {@link DOOM_TIC} once
+   * {@link Game.frame} has drained it. Doubles as the interpolation alpha's numerator — see
    * docs/frameloop.md § The accumulator.
    */
   private accumulator = 0;
   /**
    * A level load parked for the next frame with the loading screen up, as the thunk that performs
-   * it — every caller's own body differs, and only `loadLevel` decides whether to park one.
-   * docs/frameloop.md § A parked level load.
+   * it — every caller's own body differs, and only {@link Game.loadLevel} decides whether to park
+   * one. docs/frameloop.md § A parked level load.
    */
   private pendingLoad: (() => void) | null = null;
   /**
-   * `BUILD_MS_PER_KB` re-measured from the builds this session, so the prediction is *this*
+   * {@link BUILD_MS_PER_KB} re-measured from the builds this session, so the prediction is *this*
    * machine's speed rather than the reference machine's after the first level.
    */
   private buildMsPerKb = BUILD_MS_PER_KB;
   /**
    * Timestamp of the previous rendering opportunity, skipped ones included — the display's own
-   * period. See `dueThisFrame`.
+   * period. See {@link Game.dueThisFrame}.
    */
   private lastRaf = 0;
-  /** When the next frame is due under the FPS cap; ignored while uncapped. See `dueThisFrame`. */
+  /**
+   * When the next frame is due under the FPS cap; ignored while uncapped. See
+   * {@link Game.dueThisFrame}.
+   */
   private nextFrameAt = 0;
-  /** Paused, not stopped: the level is frozen but still being drawn — see `stillFrame`. */
+  /** Paused, not stopped: the level is frozen but still being drawn — see {@link Game.stillFrame}. */
   private paused = false;
   private lastStill = 0;
 
@@ -440,15 +456,17 @@ export class Game {
   private crosshair: Crosshair;
   /** The playback bar; hidden outside a replay. docs/replays.md § Playback. */
   private replayBar: ReplayBar;
-  /** The session's savegame writer, called when a replay is taken over — see `GameOptions`. */
+  /**
+   * The session's savegame writer, called when a replay is taken over — see {@link GameOptions}.
+   */
   private autoSave: (() => Promise<unknown>) | null;
   /** Center-screen text — docs/hud.md § Center messages. */
   private message: CenterMessage;
   /** The "Entering / <level name>" card every map load raises — see ui/hud/levelcard.ts. */
   private levelCard: LevelCard;
-  /** The end-of-level popup — see ui/hud/intermission.ts and `popup`. */
+  /** The end-of-level popup — see ui/hud/intermission.ts and {@link Game.popup}. */
   private intermission: Intermission;
-  /** The campaign-over card the popup hands over to — see ui/hud/endcard.ts and `popup`. */
+  /** The campaign-over card the popup hands over to — see ui/hud/endcard.ts and {@link Game.popup}. */
   private endCard: EndCard;
   /**
    * The set's DEHACKED/BEX patch, or null for a set with none. Read once per `Game` like the banks
@@ -483,13 +501,13 @@ export class Game {
    * one (the tests, mainly). docs/savegames.md § The checkpoint.
    */
   private checkpoint: CheckpointStore | null;
-  /** What the last exit of the last level calls — `GameOptions.onCampaignEnd`. */
+  /** What the last exit of the last level calls — {@link GameOptions.onCampaignEnd}. */
   private onCampaignEnd: (() => void) | null;
   /** The session's loading screen, or null where nothing offers one (the tests). */
   private loading: LoadingScreen | null;
   /**
    * Whether *this session* has written a checkpoint, i.e. has advanced a level
-   * at least once. What stops `restart` from restoring a checkpoint left in the
+   * at least once. What stops {@link Game.restart} from restoring a checkpoint left in the
    * store by an earlier run — that save would be a level start with a different
    * run's inventory, which is not what "restart this level" means.
    */
@@ -498,11 +516,14 @@ export class Game {
    * The savegame this level is currently playing out of, if any: the one it was
    * loaded from, and every manual save taken since. It is what `R` goes back to,
    * ahead of the checkpoint — in memory, so no store read and no session match
-   * (docs/death.md § Player death). Dropped by `enterLevel`, which is the only
+   * (docs/death.md § Player death). Dropped by {@link Game.enterLevel}, which is the only
    * way out of a level.
    */
   private savedState: GameSnapshot | null;
-  /** Guards the two async gaps in `restart`: a held-down `R`, and a `Game` torn down mid-read. */
+  /**
+   * Guards the two async gaps in {@link Game.restart}: a held-down `R`, and a {@link Game} torn
+   * down mid-read.
+   */
   private restarting = false;
   private disposed = false;
 
@@ -513,8 +534,8 @@ export class Game {
    * player anywhere — next to the exit included — and a taken-over replay was someone else's run up
    * to that point, so neither may set a record; the next level entered through an exit is the
    * player's own again. A cheat outlives the level, through `Cheats.used`
-   * (docs/hud.md § Best times). Decided up front because `startPos` is nulled out once the first
-   * map has consumed it.
+   * (docs/hud.md § Best times). Decided up front because {@link Game.startPos} is nulled out once
+   * the first map has consumed it.
    */
   private cheated: boolean;
   /**
@@ -785,7 +806,7 @@ export class Game {
     }
   }
 
-  /** `driver`'s recorder, if a replay is being recorded. */
+  /** {@link Game.driver}'s recorder, if a replay is being recorded. */
   private get recorder(): ReplayRecorder | null {
     return this.driver.recorder;
   }
@@ -794,7 +815,7 @@ export class Game {
     return this.driver.playback;
   }
 
-  /** The slot this browser plays — `localSlot`'s. */
+  /** The slot this browser plays — {@link Game.localSlot}'s. */
   private get local(): PlayerSlot {
     return this.slots[this.localSlot];
   }
@@ -810,7 +831,8 @@ export class Game {
 
   /**
    * What drives `slot` with no replay in charge: the network's rows, the keyboard for the local
-   * slot, nothing for any other. `ReplayDriver.set` reads it. docs/replays.md § The TicInput seam.
+   * slot, nothing for any other. {@link ReplayDriver.set} reads it.
+   * docs/replays.md § The TicInput seam.
    */
   private ownInput(slot: PlayerSlot): TicInput {
     const net = this.net;
@@ -818,7 +840,7 @@ export class Game {
     return slot === this.local ? this.view.input : IDLE_TIC_INPUT;
   }
 
-  /** `ownInput`'s source, as `PlayerSlot.source` names it. */
+  /** {@link Game.ownInput}'s source, as {@link PlayerSlot.source} names it. */
   private ownSource(slot: PlayerSlot): SlotSource {
     if (this.net) return 'row';
     return slot === this.local ? 'live' : 'idle';
@@ -848,8 +870,8 @@ export class Game {
   /**
    * One player slot, its billboard in the scene. The local one runs on the viewport's own camera
    * under the menu's settings; any other on a camera of its own, under a copy of them. What drives
-   * its input is `ReplayDriver.set`'s to say. Only `growSlots` calls it, once per player; a level
-   * load rebuilds what is per-level inside.
+   * its input is {@link ReplayDriver.set}'s to say. Only {@link Game.growSlots} calls it, once per
+   * player; a level load rebuilds what is per-level inside.
    */
   private buildSlot(index: number): PlayerSlot {
     // PLAY's own walk cycle: DOOM has no separate idle art, it just holds
@@ -876,12 +898,15 @@ export class Game {
     return slot;
   }
 
-  /** Why a recording can't start now, or null — `ReplayDriver.recordingRefusal`. */
+  /** Why a recording can't start now, or null — {@link ReplayDriver.recordingRefusal}. */
   recordingRefusal(): string | null {
     return this.driver.recordingRefusal();
   }
 
-  /** Starts recording from this moment; throws `recordingRefusal`. docs/replays.md § Recording. */
+  /**
+   * Starts recording from this moment; throws {@link Game.recordingRefusal}.
+   * docs/replays.md § Recording.
+   */
   startRecording(): void {
     this.driver.startRecording();
   }
@@ -892,8 +917,9 @@ export class Game {
   }
 
   /**
-   * What a take-over changes besides the seam and the camera (`ReplayDriver.takeOver`): the level
-   * is the player's from here, and `cheated` stays set — the run up to here was not theirs.
+   * What a take-over changes besides the seam and the camera ({@link ReplayDriver.takeOver}): the
+   * level is the player's from here, and {@link Game.cheated} stays set — the run up to here was
+   * not theirs.
    * docs/replays.md § Playback.
    */
   private takenOver(): void {
@@ -910,9 +936,10 @@ export class Game {
 
   /**
    * The savegame taking over writes, so the handed-over level is one the player can come back to —
-   * and, through `saveVia`, what `R` reloads from here on. Reported in the center message rather
-   * than on the bar, which is gone by the time it lands; a refused moment (an intermission, a
-   * corpse) says so there and takes nothing else down with it. docs/replays.md § Playback.
+   * and, through {@link Game.saveVia}, what `R` reloads from here on. Reported in the center
+   * message rather than on the bar, which is gone by the time it lands; a refused moment (an
+   * intermission, a corpse) says so there and takes nothing else down with it.
+   * docs/replays.md § Playback.
    */
   private async saveTakeOver(): Promise<void> {
     if (!this.autoSave) return;
@@ -925,8 +952,9 @@ export class Game {
   }
 
   /**
-   * The level `map` at `state`, for a keyframe restore (`ReplayDriver.runSeek`): the map this one
-   * when the set has no such map.
+   * The level at `state`, for a keyframe restore ({@link ReplayDriver.runSeek}).
+   *
+   * @param map  the level to restore — this one when the set has no such map
    */
   private restoreKeyframe(map: string, state: GameSnapshot): void {
     const index = this.mapNames.indexOf(map);
@@ -954,8 +982,8 @@ export class Game {
   /**
    * The moment a state capture is refused at, as the clause both refusals end in, or null. One
    * list, two verbs: what stops a save stops a recording from starting, and each says so in its
-   * own words. Deliberately narrower than `levelEnding`: the Icon of Sin's death cascade stays
-   * saveable, since `IconSnapshot` carries `exitTimer`.
+   * own words. Deliberately narrower than {@link Game.levelEnding}: the Icon of Sin's death cascade
+   * stays saveable, since `IconSnapshot` carries `exitTimer`.
    */
   private blockedMoment(): string | null {
     if (this.local.dead) return 'while dead';
@@ -967,8 +995,8 @@ export class Game {
 
   /**
    * Saves this moment through the caller's writer — Save, Overwrite and a take-over's autosave,
-   * whose store call is all that differs. The capture, the write and `savedState` stay together
-   * because only a write that actually stored the bytes may move what `R` reloads
+   * whose store call is all that differs. The capture, the write and {@link Game.savedState} stay
+   * together because only a write that actually stored the bytes may move what `R` reloads
    * (docs/death.md § Player death). Refuses by *throwing*, the save path's one refusal convention
    * (docs/savegames.md § What is saved and what is deliberately not).
    */
@@ -981,8 +1009,9 @@ export class Game {
   /**
    * Starts the frame clock over: whatever real time just passed — paused behind the menu, or spent
    * building a level — is not simulation time, and running it back as a catch-up burst of tics is
-   * exactly what `accumulator` must not carry. `nextFrameAt` is zeroed rather than advanced, since
-   * the first frame after is always due and `dueThisFrame` resyncs off its own timestamp.
+   * exactly what {@link Game.accumulator} must not carry. {@link Game.nextFrameAt} is zeroed
+   * rather than advanced, since the first frame after is always due and {@link Game.dueThisFrame}
+   * resyncs off its own timestamp.
    * docs/frameloop.md § The accumulator.
    */
   private resyncClock(): void {
@@ -1065,7 +1094,7 @@ export class Game {
     this.playerSkins.dispose();
   }
 
-  /** Clears the per-level 2D overlays, shared by `dispose` and every map load. */
+  /** Clears the per-level 2D overlays, shared by {@link Game.dispose} and every map load. */
   private clearOverlays(): void {
     this.deathOverlay.clear();
     this.message.clear();
@@ -1096,10 +1125,10 @@ export class Game {
   }
 
   /**
-   * The full state of this moment plus a thumbnail, ready for the store; throws `saveRefusal`'s
-   * reason when there is one. Only the store's own bookkeeping (ID, name, date) is the caller's to
-   * add — a capture identifies its WAD set by content, so this class knows nothing about the
-   * library it was picked from.
+   * The full state of this moment plus a thumbnail, ready for the store; throws
+   * {@link Game.saveRefusal}'s reason when there is one. Only the store's own bookkeeping (ID,
+   * name, date) is the caller's to add — a capture identifies its WAD set by content, so this
+   * class knows nothing about the library it was picked from.
    */
   private captureSave(options: { thumbnail?: boolean } = {}): SaveCapture {
     const { thumbnail = true } = options;
@@ -1109,10 +1138,12 @@ export class Game {
   }
 
   /**
-   * The level for a network sync — the host's snapshot everyone restores, with a fresh body for
-   * `joining` where one is joining — or null on a moment no snapshot can carry: the popups and a
-   * pending exit, which `blockedMoment` refuses a save over too. A corpse is not one of them: a
-   * dead slot restores as one. docs/multiplayer-net.md § Snapshots.
+   * The level for a network sync — the host's snapshot everyone restores. A corpse is no moment it
+   * refuses: a dead slot restores as one. docs/multiplayer-net.md § Snapshots.
+   *
+   * @param joining  the slot joining, if any, whose body the snapshot holds fresh
+   * @returns null on a moment no snapshot can carry: the popups and a pending exit, which
+   *          {@link Game.blockedMoment} refuses a save over too
    */
   private captureState(joining: SlotAssignment | null): NetCapture | null {
     if (this.popup !== null || this.pendingExit !== null) return null;
@@ -1140,9 +1171,9 @@ export class Game {
   }
 
   /**
-   * `captureSave`'s body, refusing nothing: what every capture is made of — the level's own share
-   * (`Level.snapshot`), every slot's, and what outlives a level: the session's verdicts, the
-   * effects in flight, the RNG.
+   * {@link Game.captureSave}'s body, refusing nothing: what every capture is made of — the level's
+   * own share ({@link Level.snapshot}), every slot's, and what outlives a level: the session's
+   * verdicts, the effects in flight, the RNG.
    */
   private captureMoment(thumbnail: boolean): SaveCapture {
     const { level } = this;
@@ -1508,7 +1539,10 @@ export class Game {
     this.levelCard.show(this.levelNames.nameFor(map), this.levelNames.graphicFor(map));
   }
 
-  /** Stops both loops. `dispose` uses this rather than `pause` — see `stillFrame`. */
+  /**
+   * Stops both loops. {@link Game.dispose} uses this rather than {@link Game.pause} — see
+   * {@link Game.stillFrame}.
+   */
   private stop(): void {
     this.running = false;
     this.paused = false;
@@ -1519,8 +1553,8 @@ export class Game {
    * Keeps redrawing the frozen level while paused, so the menu can sit over it
    * (see docs/frameloop.md § Pausing). Nothing is advanced here — no dt, no input,
    * no profiling — only `render`, and only every ~50 ms, since a static scene
-   * has no reason to cost 60 fps. `dispose` must go through `stop`, never
-   * `pause`, or this would keep drawing a scene whose geometry and materials
+   * has no reason to cost 60 fps. {@link Game.dispose} must go through {@link Game.stop}, never
+   * {@link Game.pause}, or this would keep drawing a scene whose geometry and materials
    * are already released.
    */
   private stillFrame = (now: number) => {
@@ -1534,7 +1568,7 @@ export class Game {
 
   /**
    * Runs the walk triggers **any non-player thing** crossed this tic
-   * (`SpecialsController.crossMonster` — teleports plus the few door/lift types
+   * ({@link SpecialsController.crossMonster} — teleports plus the few door/lift types
    * vanilla lets one activate). Usually that is a monster walking, but a barrel or a decoration a
    * conveyor carried counts too — docs/specials-forces.md § Scrollers and conveyors. A teleport
    * gets the same `TFOG` puff at both ends the player's own does; vanilla spawns it for any thing
@@ -1547,8 +1581,8 @@ export class Game {
 
   /**
    * The other half of the same pair: `P_Move`'s `spechit` pass for a monster whose step to
-   * `(tryX, tryY)` was refused (`SpecialsController.useMonster`), which is what opens a door for a
-   * chasing monster. A teleport-switch landing is realized exactly as a crossed one is.
+   * `(tryX, tryY)` was refused ({@link SpecialsController.useMonster}), which is what opens a door
+   * for a chasing monster. A teleport-switch landing is realized exactly as a crossed one is.
    * docs/monster-ai.md § Opening doors.
    */
   private thingUsedLines(mover: CrossingBody, tryX: number, tryY: number): TeleportDest | null {
@@ -1560,8 +1594,8 @@ export class Game {
    * The landing a monster's teleport asked for, stomped and puffed — shared by the two paths
    * above, since a teleport means the same thing however the line was activated.
    *
-   * Returning null after a teleport *did* fire is `P_TeleportMove` refusing the
-   * landing, which leaves the thing where it stood — docs/death.md § Telefrag.
+   * @returns null where no teleport fired, or where one did and `P_TeleportMove` refused the
+   *          landing, which leaves the thing where it stood — docs/death.md § Telefrag
    */
   private realizeThingTeleport(dest: TeleportDest | null | undefined, mover: CrossingBody): TeleportDest | null {
     if (!dest) return null;
@@ -1586,15 +1620,11 @@ export class Game {
   }
 
   /**
-   * Applies armor-mitigated damage (`applyDamage`) to one player, transitioning to the death
-   * animation once health hits 0. `hit.from` is where the damage physically came from — omitted
-   * for damage floors and crushers, as in `ThingLayer.damage` — and drives vanilla's
-   * `P_DamageMobj` knockback. `hit.cause` is only read by the killing hit, which names it on the
-   * overlay.
+   * Applies armor-mitigated damage ({@link applyDamage}) to one player, transitioning to the death
+   * animation once health hits 0. See docs/death.md § Player death.
    *
-   * Returns whether the hit actually landed; `false` covers both a no-op corpse hit and
-   * invulnerability blocking it outright, so a caller with a follow-up effect (e.g.
-   * `resolveVileBlast`'s knockup) can gate on it. See docs/death.md § Player death.
+   * @returns whether the hit landed — false for a corpse and for invulnerability alike, so a
+   *          caller with a follow-up effect (`resolveVileBlast`'s knockup) can gate on it
    */
   private damageSlot(slot: PlayerSlot, rawAmount: number, hit: PlayerHit = {}): boolean {
     if (slot.dead || rawAmount <= 0) return false;
@@ -1639,8 +1669,9 @@ export class Game {
 
   /**
    * A netgame's respawn, in place — `G_DoReborn`: a fresh inventory and the cheats cleared
-   * (`G_PlayerReborn`), the spot `rebornSpot` picks with `G_CheckSpot`'s fog in front of it, and
-   * the body stood back up there. The level runs on untouched. docs/multiplayer-coop.md § Respawn.
+   * (`G_PlayerReborn`), the spot {@link rebornSpot} picks with `G_CheckSpot`'s fog in front of it,
+   * and the body stood back up there. The level runs on untouched.
+   * docs/multiplayer-coop.md § Respawn.
    */
   private respawnSlot(slot: PlayerSlot): void {
     const spot = this.rebornSpotFor(slot.index);
@@ -1697,7 +1728,7 @@ export class Game {
 
   /**
    * The keys a shot fires a line's special with: the shooting player's, or — for a monster's
-   * stray shot — `playerOneKeys`.
+   * stray shot — {@link Game.playerOneKeys}.
    */
   private shooterKeys(shooter: number | null): ReadonlySet<KeySlot> {
     return shooter === null ? this.playerOneKeys : this.slots[shooter].inventory.keys;
@@ -1731,7 +1762,7 @@ export class Game {
    * IDCLEV asked for.
    *
    * A cheat also ends this run's claim on a best time, the same way a `?pos=` start does — it
-   * travels in the save with `cheated`. docs/cheats.md § Saves and best times.
+   * travels in the save with {@link Game.cheated}. docs/cheats.md § Saves and best times.
    */
   private applyCheats(slot: PlayerSlot): void {
     const typed = slot.input.typed();
@@ -1768,9 +1799,10 @@ export class Game {
    * the same way. The checkpoint is written *after* the load — what a death on the
    * new level returns to is that level at tic 0. Advancing while dead is `G_DoLoadLevel`'s
    * `PST_DEAD` → `PST_REBORN`, read off player state here rather than queued at the exit;
-   * `restart` restores a checkpoint instead (docs/death.md § Player death). `reborn` forces a fresh
-   * `Inventory` on a living player, as the pistol-start setting does for every transition
-   * (docs/hud.md § End card, docs/items.md § Pistol start).
+   * {@link Game.restart} restores a checkpoint instead (docs/death.md § Player death).
+   *
+   * @param reborn  a fresh `Inventory` for a living player too, as the pistol-start setting gives
+   *                every transition (docs/hud.md § End card, docs/items.md § Pistol start)
    */
   private enterLevel(index: number, reborn = false): void {
     this.loadLevel(index, () => this.runEnterLevel(index, reborn));
@@ -1799,7 +1831,9 @@ export class Game {
     this.loading?.hide();
   }
 
-  /** Indices wrap, so an exit past the last map lands on the first — `Level.index` always is. */
+  /**
+   * Indices wrap, so an exit past the last map lands on the first — {@link Level.index} always is.
+   */
   private wrapIndex(index: number): number {
     return (index + this.mapNames.length) % this.mapNames.length;
   }
@@ -1817,7 +1851,7 @@ export class Game {
     return (mapLinedefBytes(this.wad, this.mapNameAt(index)) / 1024) * this.buildMsPerKb;
   }
 
-  /** `enterLevel`'s body, run either at once or on the frame after the overlay is up. */
+  /** {@link Game.enterLevel}'s body, run either at once or on the frame after the overlay is up. */
   private runEnterLevel(index: number, reborn: boolean): void {
     // A level entered through an exit is the player's own run again, whatever disqualified the last
     // one — a `?pos=` start, a replay taken over. A cheat is the exception: it is the session's,
@@ -1842,10 +1876,10 @@ export class Game {
   }
 
   /**
-   * Where the exit just taken leads, into `nextMapIndex` and `pendingEnd`. `LevelProgression`
-   * answers for the WAD set's own MAPINFO and for vanilla's tables; where neither knows one — a
-   * PWAD map set naming its levels its own way — the next map in load order stands in, which is
-   * what every exit did before there was a progression at all.
+   * Where the exit just taken leads, into {@link Game.nextMapIndex} and {@link Game.pendingEnd}.
+   * {@link LevelProgression} answers for the WAD set's own MAPINFO and for vanilla's tables; where
+   * neither knows one — a PWAD map set naming its levels its own way — the next map in load order
+   * stands in, which is what every exit did before there was a progression at all.
    *
    * An exit vanilla ends the game on is the case that is *not* that fallback: it raises the end
    * card, and only then loads the next episode's first map if the set has one.
@@ -1867,8 +1901,8 @@ export class Game {
 
   /**
    * Swaps the intermission for the campaign-over card, on the same frozen level and the same
-   * continue key — `intermissionTime` restarts so the press that dismissed the popup can't carry
-   * straight through this one. docs/hud.md § End card.
+   * continue key — {@link Game.intermissionTime} restarts so the press that dismissed the popup
+   * can't carry straight through this one. docs/hud.md § End card.
    */
   private showEndCard(scope: EndScope): void {
     this.intermission.clear();
@@ -1916,7 +1950,7 @@ export class Game {
 
   /**
    * `R`, while dead. Reloads the level's savegame where there is one, and
-   * otherwise dispatches the checkpoint read below; stays `void` because `tic`
+   * otherwise dispatches the checkpoint read below; stays `void` because {@link Game.tic}
    * calls it, and re-entrant while a read is in flight is the same press twice.
    */
   private restart(): void {
@@ -1941,7 +1975,8 @@ export class Game {
   /**
    * The level again from its checkpoint, or — with none written this session, one that no longer
    * matches, or a store that refused the read — fresh with a fresh inventory. Both go through
-   * `loadLevel`, so `R` on a map slow enough to freeze gets the loading screen an exit would.
+   * {@link Game.loadLevel}, so `R` on a map slow enough to freeze gets the loading screen an exit
+   * would.
    */
   private async resumeFromCheckpoint(): Promise<void> {
     const save = this.hasCheckpoint && this.checkpoint ? await this.checkpoint.read() : null;
@@ -1953,9 +1988,10 @@ export class Game {
   }
 
   /**
-   * The level again, from `state` or (null) fresh with a fresh inventory — every way `R` reloads
-   * ends here, which is what lets a recording write the reload down as one event at the tic it
-   * lands on. docs/replays.md § Restore events.
+   * The level again — every way `R` reloads ends here, which is what lets a recording write the
+   * reload down as one event at the tic it lands on. docs/replays.md § Restore events.
+   *
+   * @param state  the snapshot to reload, or null for the level fresh with a fresh inventory
    */
   private reloadLevel(state: GameSnapshot | null): void {
     if (!state) for (const slot of this.slots) slot.inventory = createInventory();
@@ -1965,9 +2001,10 @@ export class Game {
 
   /**
    * The host's snapshot, in place of whatever this browser had run to: a resync, or a joiner's
-   * arrival — which adds a slot, and ends a recording, whose record has no room for one. False
-   * when these WADs have no such map, which ends the seat (`NetSeat.ready`).
+   * arrival — which adds a slot, and ends a recording, whose record has no room for one.
    * docs/multiplayer-net.md § Snapshots.
+   *
+   * @returns false when these WADs have no such map, which ends the seat ({@link NetSeat.ready})
    */
   private restoreFromNet(restore: NetRestore): boolean {
     const index = this.mapNames.indexOf(restore.map);
@@ -1983,8 +2020,8 @@ export class Game {
   }
 
   /**
-   * What goes between two tics: the seat's row and poses (`NetSeat.beginTic`), then the recorder's
-   * or the playback's own step (`ReplayDriver.beginTic`).
+   * What goes between two tics: the seat's row and poses ({@link NetSeat.beginTic}), then the
+   * recorder's or the playback's own step ({@link ReplayDriver.beginTic}).
    * docs/replays.md § Restore events, docs/multiplayer-net.md § What a tic does.
    */
   private beginTic(): void {
@@ -2005,9 +2042,9 @@ export class Game {
   }
 
   /**
-   * The FPS cap (`getFpsCap`): whether this rendering opportunity is the one to use. Skipping is
-   * the whole frame, so the input it would have consumed arrives on the next one; read live rather
-   * than cached, so a change in the menu applies to the level already running.
+   * The FPS cap ({@link getFpsCap}): whether this rendering opportunity is the one to use.
+   * Skipping is the whole frame, so the input it would have consumed arrives on the next one; read
+   * live rather than cached, so a change in the menu applies to the level already running.
    * docs/frameloop.md § The FPS cap.
    */
   private dueThisFrame(now: number): boolean {
@@ -2097,14 +2134,15 @@ export class Game {
   };
 
   /**
-   * One fixed `DOOM_TIC` step of the whole simulation, and the only place
-   * input is consumed. Returns true if it loaded a different level, which makes
-   * every reference the caller holds stale.
+   * One fixed {@link DOOM_TIC} step of the whole simulation, and the only place input is consumed.
    *
-   * Parts of the call order here are load-bearing — specials before
-   * `player.update` so a lift underfoot has already moved when `groundFloor`
-   * samples it, the aim ray before `player.update` so `player.angle` is this
-   * tic's. docs/frameloop.md § What runs in a tic.
+   * Parts of the call order here are load-bearing — specials before {@link Player.update} so a
+   * lift underfoot has already moved when {@link World.groundFloor} samples it, the aim ray before
+   * {@link Player.update} so {@link Player.angle} is this tic's.
+   * docs/frameloop.md § What runs in a tic.
+   *
+   * @returns true if it loaded a different level, which makes every reference the caller holds
+   *          stale
    */
   private tic(): boolean {
     const local = this.local;
@@ -2283,7 +2321,7 @@ export class Game {
     return this.fogPoints;
   }
 
-  /** `players` and `fogPoints` for the rest of the tic, refilled in place. */
+  /** {@link Game.players} and {@link Game.fogPoints} for the rest of the tic, refilled in place. */
   private refillBodies(): void {
     const { slots, players, fogPoints } = this;
     players.length = slots.length;
@@ -2306,8 +2344,10 @@ export class Game {
 
   /**
    * Everything a *living* player drives in a frame: powers, aim, movement, firing, pickups and the
-   * sector underfoot. Returns the point the camera leads toward, which is always where the cursor
-   * meets the aim plane — never the locked-on monster.
+   * sector underfoot.
+   *
+   * @returns the point the camera leads toward: always where the cursor meets the aim plane, never
+   *          the locked-on monster
    */
   private updateLivingPlayer(slot: PlayerSlot, dt: number): Pos2 | null {
     const { player, input, inventory, simCamera: camera } = slot;
@@ -2378,10 +2418,11 @@ export class Game {
   }
 
   /**
-   * Weapon switching and this tic's trigger pull, turning each shot `WeaponSystem.fire` returns
-   * into a projectile or tracer. `monster` and `shootLine` are whatever aim locked onto — a body
-   * or a shoot-triggered wall — which is what lets a shot angle toward its height; see
-   * docs/combat.md § Auto-aim.
+   * Weapon switching and this tic's trigger pull, turning each shot {@link WeaponSystem.fire}
+   * returns into a projectile or tracer. docs/combat.md § Auto-aim.
+   *
+   * @param monster    the body aim locked onto, if any — what lets a shot angle toward its height
+   * @param shootLine  the shoot-triggered wall aim locked onto, if any, likewise
    */
   private fireWeapons(slot: PlayerSlot, monster: MonsterRef | null, shootLine: ShootAim | null): void {
     const { player, input, inventory } = slot;
@@ -2412,7 +2453,8 @@ export class Game {
   /**
    * What picking one item up means, for whichever player mobj reached it — the slot's own body or
    * a voodoo doll collecting on its behalf (docs/items.md § Collecting things). Bound to the slot
-   * once (`PlayerSlot.consumePickup`), since both `tryPickup` call sites hand it straight over.
+   * once ({@link PlayerSlot.consumePickup}), since both `tryPickup` call sites hand it straight
+   * over.
    */
   private consumePickup(slot: PlayerSlot, type: number, dropped: boolean, at: Pos3): boolean {
     const taken = applyPickup(slot.inventory, type, {
@@ -2536,7 +2578,7 @@ export class Game {
 
   /**
    * One tic of everything transient: teleport fog, tracers, things in flight, the icon's cubes.
-   * Draws nothing — `Presenter.drawEffects` is the other half.
+   * Draws nothing — {@link Presenter.drawEffects} is the other half.
    *
    * The order is load-bearing: projectiles advance before impacts, so an explosion or smoke puff
    * spawned by an arrival this tic is drawn on the very next frame rather than one late.
@@ -2552,7 +2594,7 @@ export class Game {
     });
   }
 
-  /** One sky name as art, however the set ships it — `levelSkyArt`'s lookup. */
+  /** One sky name as art, however the set ships it — {@link levelSkyArt}'s lookup. */
   private skyArt(name: string): Bitmap | null {
     return this.gfx.texture(name) ?? this.gfx.picture(name);
   }

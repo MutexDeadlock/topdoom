@@ -221,7 +221,9 @@ Five rules:
 sector's previous-tic heights, and `drawMovers(alpha)` — called by `draw` ahead of the fade pass —
 writes the lerped heights into the sectors, refreshes their meshes (`MoverGeometry.rebuildAround`,
 docs/render.md § Mover meshes), and restores the tic-exact values before returning. The simulation
-never sees a fractional-tic plane; collision, saves and `moverblocking` all read exact heights. A
+never sees a fractional-tic plane; collision, saves and `moverblocking` all read exact heights. The
+fade pass is the one presentation reader that needs the drawn ones back, and asks
+`drawnOpeningInto` for them (docs/render-occlusion.md § Which sightlines a wall fades for). A
 one-tic jump — a toggle plat's stroke, `T_MovePlane`'s clamp branch — collapses its window and
 draws as the instant move vanilla shows (rule two above); `trackPlaneMove` detects it as a tic
 that travelled further than the mover's own speed allows, so no per-branch marking exists to

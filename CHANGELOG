@@ -1,5 +1,8 @@
 v0.19.1 (2026-09-1?)
 
+Fixed bugs
+  - bars on a rising lift no longer vanish when the player stands behind them
+  - a faded grate or fence now dithers instead of vanishing
 
 
 

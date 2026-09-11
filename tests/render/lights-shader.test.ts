@@ -155,7 +155,7 @@ describe('Dynamic lights · the geometry shader patch', () => {
   test('it sits after the texel and the dither, and the fog mix still runs last', () => {
     const { fragment } = patched(new DynamicLights(parseGldefs('')));
     const sampled = fragment.indexOf('vec4 sampledDiffuseColor');
-    const dither = fragment.indexOf('if (diffuseColor.a < dither)');
+    const dither = fragment.indexOf('if (diffuseColor.a < dither * texelAlpha)');
     const ours = fragment.indexOf('dynLight += uLightColor');
     const fog = fragment.indexOf('fogColor, fogFactor');
     assert.ok(sampled >= 0 && sampled < ours, 'sampledDiffuseColor must be assigned before it is read');
@@ -175,7 +175,15 @@ describe('Dynamic lights · the geometry shader patch', () => {
   test('the dither fade the patch shares its hook with is untouched', () => {
     // Both tenants live in one `#include <color_fragment>` replacement — docs/render-occlusion.md.
     const { fragment } = patched(new DynamicLights(parseGldefs('')));
-    assert.ok(fragment.includes('if (diffuseColor.a < dither) discard;'));
+    assert.ok(fragment.includes('if (diffuseColor.a < dither * texelAlpha) discard;'));
+    // The fade and the texel's coverage are tested apart, or a faded masked texture fails its alpha
+    // test whole — docs/render-occlusion.md § Flats.
+    const captured = fragment.indexOf('float texelAlpha = diffuseColor.a;');
+    const vertexAlpha = fragment.indexOf('diffuseColor *= vColor;');
+    const restored = fragment.indexOf('diffuseColor.a = texelAlpha;');
+    const alphaTest = fragment.indexOf('diffuseColor.a < alphaTest');
+    assert.ok(captured >= 0 && captured < vertexAlpha, 'the texel alpha must be read before the vertex alpha scales it');
+    assert.ok(restored >= 0 && alphaTest >= 0 && restored < alphaTest, 'the alpha test must see the texel alone');
   });
 
   test('a patched material carries a program cache key, lit and unlit apart', () => {
@@ -198,7 +206,7 @@ describe('Dynamic lights · the geometry shader patch', () => {
     // ride along unlit.
     assert.deepEqual(Object.keys(uniforms), ['uWallShade', 'uSkyTint', 'uDiminish']);
     // …but still fades, which is the other tenant of the same hook.
-    assert.ok(fragment.includes('if (diffuseColor.a < dither) discard;'));
+    assert.ok(fragment.includes('if (diffuseColor.a < dither * texelAlpha) discard;'));
   });
 
   test('the live uniforms are the very objects their owners mutate, not copies', () => {

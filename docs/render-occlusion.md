@@ -343,6 +343,15 @@ window is built inside that opening (docs/render.md § Mesh building), so a quad
 the passable gap itself: a shot and a look already pass straight through it, so fading it has
 nothing left to reveal.
 
+**The opening is asked at the drawn heights** (`SpecialsController.drawnOpeningInto`), not the
+tic-exact ones `World.openingInto` reads: the fade pass runs after `drawMovers` has restored the
+map, while the mover quads it tests were built at the lerped heights (docs/frameloop.md
+§ Interpolation). Against the tic heights a rising floor stands above its own drawn midtexture for
+the whole stroke, the gap test fails and the bars fade. Repro: GoingDown.wad MAP01, lift sector 483
+(`MIDBARS3` on lines 194 and 3034). The test is exact, so the quad's own heights must be too: `addWall`
+takes a wall's outermost band edges as `topH`/`botH` themselves, since interpolating
+`top + (bottom - top)` lands a lerped floor an ulp low and the bars dip for the first frames.
+
 **The masked half used to be assumed rather than asked, and that was the bug.** Nothing stops a map
 hanging a *solid* texture in a full-height opening and calling it a wall — EPIC.WAD MAP05 at
 (3231, -5243) is screened by a curved run of two-sided lines carrying `EBIGBRIK` over a 0..1288
@@ -442,9 +451,11 @@ default, so whichever draws first can win the depth test and blank out the other
 instead injects a fragment-shader snippet (`onBeforeCompile`) that discards a per-pixel fraction of
 fragments using interleaved-gradient-noise dithering, keyed off a per-vertex alpha `WallFader`
 writes into the 4th colour channel. That keeps walls in the ordinary opaque, depth-tested/written
-pass — no batching or sort-order concerns, just fewer pixels drawn. `holes` textures (masked
-middles) already alpha-test on the *combined* texture × vertex alpha, so a faded grate discards
-outright instead of dithering.
+pass — no batching or sort-order concerns, just fewer pixels drawn. **The dither reads the vertex
+alpha alone and three's alpha test the texel's alone** (`texelAlpha`, captured ahead of
+`color_fragment` and restored after the discard): `holes` textures (masked middles) alpha-test at
+0.5, so tested against the product a grate faded to `FADE_ALPHA` vanished whole instead of
+dithering.
 
 Fade amount is exponentially smoothed (`FADE_SPEED`) so walls don't pop, but a pure exponential lerp
 never actually reaches its target — `update` snaps once the remaining gap drops below a threshold,

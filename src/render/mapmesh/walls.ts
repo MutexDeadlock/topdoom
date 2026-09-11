@@ -357,9 +357,12 @@ function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean
     const cu1 = u0 + (u1 - u0) * t1;
 
     for (let r = 0; r < bands; r++) {
-      // Bands run bottom-up, so `r`'s top is `r + 1`'s bottom.
-      const bandTop = topH + ((botH - topH) * r) / bands;
-      const bandBot = topH + ((botH - topH) * (r + 1)) / bands;
+      // Bands run bottom-up, so `r`'s top is `r + 1`'s bottom. The wall's own two edges are taken
+      // as given: interpolated, `top + (bottom - top)` lands an ulp off, and the fade tests a quad
+      // against its line's opening exactly (docs/render-occlusion.md § Which sightlines a wall
+      // fades for).
+      const bandTop = r === 0 ? topH : topH + ((botH - topH) * r) / bands;
+      const bandBot = r === bands - 1 ? botH : topH + ((botH - topH) * (r + 1)) / bands;
       const bandVTop = vTop + ((vBot - vTop) * r) / bands;
       const bandVBot = vTop + ((vBot - vTop) * (r + 1)) / bands;
 

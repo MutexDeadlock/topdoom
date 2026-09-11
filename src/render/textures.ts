@@ -213,13 +213,18 @@ export class MaterialBank {
           )
           .replace(
           '#include <color_fragment>',
-          `#include <color_fragment>
+          `float texelAlpha = diffuseColor.a;
+            #include <color_fragment>
             ${DISTANCE_LIGHT_GLSL.fragmentApply}
             {
               // Interleaved gradient noise (Jimenez) — a cheap, decorrelated
               // per-pixel threshold for screen-door transparency.
               float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-              if (diffuseColor.a < dither) discard;
+              // The vertex alpha dithers and the texel's own coverage meets the alpha test, each
+              // alone: tested as their product, a masked texture faded under its alphaTest is
+              // discarded whole. docs/render-occlusion.md § Flats.
+              if (diffuseColor.a < dither * texelAlpha) discard;
+              diffuseColor.a = texelAlpha;
             }${lights ? DYN_LIGHT_FRAGMENT : ''}`,
         );
         if (!lights) return;

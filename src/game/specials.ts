@@ -679,6 +679,29 @@ export class SpecialsController {
   }
 
   /**
+   * `World.openingInto` at the plane heights `drawMovers` last drew rather than the tic-exact ones
+   * the map holds — the fade pass's lookup, since the quads it tests against the opening were built
+   * at the lerped heights. docs/render-occlusion.md § Which sightlines a wall fades for.
+   */
+  drawnOpeningInto(lineIndex: number, out: Opening): boolean {
+    const found = this.world.openingInto(lineIndex, out);
+    if (!found || this.moverLerp.size === 0) return found;
+    const line = this.map.linedefs[lineIndex];
+    const front = this.map.sidedefs[line.right].sector;
+    const back = this.map.sidedefs[line.left].sector;
+    const f = this.moverLerp.get(front);
+    const b = this.moverLerp.get(back);
+    if (!f && !b) return true;
+    const frontFloor = f ? f.drawnFloor : this.map.sectors[front].floorHeight;
+    const frontCeil = f ? f.drawnCeil : this.map.sectors[front].ceilHeight;
+    const backFloor = b ? b.drawnFloor : this.map.sectors[back].floorHeight;
+    const backCeil = b ? b.drawnCeil : this.map.sectors[back].ceilHeight;
+    out.top = Math.min(frontCeil, backCeil);
+    out.bottom = Math.max(frontFloor, backFloor);
+    return true;
+  }
+
+  /**
    * The keyed line slot `slot`'s player was refused this tic, if any — one read per attempt, so
    * holding `use` against a locked door re-announces it on every press and not in between. Call
    * after `activate`, which is where every keyed line is reached from (all of them are `use`

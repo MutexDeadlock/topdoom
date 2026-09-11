@@ -85,11 +85,12 @@ export class Presenter {
   private readonly profilerHud = new ProfilerHud();
   private readonly debugHud = new DebugHud();
   /**
-   * The fade's opening lookup. A field so the frame allocates none; it reads the level per call, so
-   * a level change needs no rebind.
+   * The fade's opening lookup, at the heights the movers were drawn at this frame
+   * (`SpecialsController.drawnOpeningInto`). A field so the frame allocates none; it reads the level
+   * per call, so a level change needs no rebind.
    */
   private readonly openingInto = (line: number, out: Opening) =>
-    this.host.level.world.openingInto(line, out);
+    this.host.level.specials.drawnOpeningInto(line, out);
 
   constructor(host: PresentHost) {
     this.host = host;

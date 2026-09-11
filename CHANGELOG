@@ -7,7 +7,6 @@ to more replay/save breaks, so... I followed through with it!
 
 Features and improvements
   - initial MULTIPLAYER: Co-op only, so far!
-    - pick your armour colour beside your name on the Multiplayer tab
   - replays
     - replay files are about a quarter smaller: the camera and aim columns are
       stored against a linear prediction, the desync samples as rounded columns

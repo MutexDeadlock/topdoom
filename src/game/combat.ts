@@ -26,6 +26,17 @@ import { blastDistanceToBox } from '../util/geom.ts';
 export type DamageCause = number | 'self' | 'crush' | 'slime';
 
 /**
+ * Everything about a hit on a player except how hard it lands — `DamageHit` for a slot. Every field
+ * is optional; so is the record.
+ */
+export interface PlayerHit {
+  /** Where it physically came from, which drives knockback; absent for damage floors and crushers. */
+  from?: Pos2;
+  /** Who to name if this is the hit that kills. */
+  cause?: DamageCause;
+}
+
+/**
  * The live level as the combat systems (`game/projectiles.ts` and the shot
  * resolution still in `game.ts`) see it: the state they need to read, plus the
  * two effects they raise that belong to somebody else.
@@ -41,12 +52,10 @@ export interface CombatContext {
   /** Every player slot by index — what a `targetOfSlot` id names. docs/multiplayer.md § Player slots. */
   readonly slots: readonly CombatSlot[];
   /**
-   * Armor-mitigated damage to one player, returning whether the hit actually
-   * landed (`false` covers both a corpse hit and invulnerability). `fromX`/
-   * `fromY` are where it physically came from, and drive knockback; `cause`
-   * is who to name if this is the hit that kills.
+   * Armor-mitigated damage to one player, returning whether the hit actually landed (`false`
+   * covers both a corpse hit and invulnerability).
    */
-  damageSlot(slot: number, amount: number, fromX?: number, fromY?: number, cause?: DamageCause): boolean;
+  damageSlot(slot: number, amount: number, hit?: PlayerHit): boolean;
   /**
    * Fires a shoot-triggered line special, with whatever keys the shooting player is carrying.
    * `null` is a monster's stray shot, which reproduces vanilla's own hardcoded exception —
@@ -156,7 +165,7 @@ export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBla
     if (dead) continue;
     const pdist = blastDistanceToBox(at.x, at.y, player.x, player.y, PLAYER_RADIUS);
     if (pdist < radius && ctx.world.hasLineOfSight(at, player)) {
-      ctx.damageSlot(slot, maxDamage * (1 - pdist / radius), at.x, at.y, cause);
+      ctx.damageSlot(slot, maxDamage * (1 - pdist / radius), { from: at, cause });
     }
   }
 }

@@ -70,7 +70,27 @@ export interface MenuDefaults {
   map?: string | null;
 }
 
-const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+/**
+ * What the menu's owner (main.ts) does with what the player asks of it — the menu itself never
+ * touches the running game.
+ */
+export interface MenuHooks {
+  /**
+   * Starts a level from the New Game tab's selection — Start new game and `submit`. A thrown or
+   * rejected start is shown on the status line.
+   */
+  onStart(selection: Selection): void | Promise<void>;
+  /** "Return to game": closes the menu onto the level paused behind it. */
+  onResume(): void;
+  /** The Save and Load tabs' requests (`SavegamesUi`). */
+  saves: SaveHooks;
+  /** The Replays tab's (`ReplaysUi`). */
+  replays: ReplayHooks;
+  /** The Multiplayer tab's (`MultiplayerUi`). */
+  multiplayer: MultiplayerHooks;
+}
+
+const el =<T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /** The menu's top-level tabs; exported for the F2/F3/F4 hotkeys in `main.ts`. */
 export type MenuTab = 'newgame' | 'save' | 'load' | 'multiplayer' | 'replays' | 'settings';
@@ -207,33 +227,24 @@ export class Menu {
    */
   private disabledPwads = new Set<string>();
 
-  private onStart: (selection: Selection) => void | Promise<void>;
-  private onResume: () => void;
   private audio: AudioEngine;
+  private hooks: MenuHooks;
 
-  constructor(
-    onStart: (selection: Selection) => void | Promise<void>,
-    onResume: () => void,
-    audio: AudioEngine,
-    saves: SaveHooks,
-    replays: ReplayHooks,
-    multiplayer: MultiplayerHooks,
-  ) {
-    this.onStart = onStart;
-    this.onResume = onResume;
+  constructor(audio: AudioEngine, hooks: MenuHooks) {
     this.audio = audio;
+    this.hooks = hooks;
     this.savegames = new SavegamesUi(
-      saves,
+      hooks.saves,
       (text, isError) => this.setStatus(text, isError),
       (meta) => this.describeSave(meta),
     );
     this.replays = new ReplaysUi(
-      replays,
+      hooks.replays,
       (text, isError) => this.setStatus(text, isError),
       (meta) => this.describeSave(meta),
     );
     this.multiplayer = new MultiplayerUi(
-      multiplayer,
+      hooks.multiplayer,
       (text, isError) => this.setStatus(text, isError),
       (meta) => this.describeSave(meta),
     );
@@ -263,7 +274,7 @@ export class Menu {
       // and over a replay, which costs nothing to leave — it stays an ordinary button.
       required: () => this.session === 'game',
     });
-    this.resumeButton.addEventListener('click', () => this.onResume());
+    this.resumeButton.addEventListener('click', () => this.hooks.onResume());
     for (const tab of Object.keys(this.tabButtons) as MenuTab[]) {
       this.tabButtons[tab].addEventListener('click', () => this.setTab(tab));
     }
@@ -1131,7 +1142,12 @@ export class Menu {
    * where it was chosen from — this only undoes the pick.
    */
   private removeButton(source: WadSource): HTMLButtonElement {
-    return rowButton('forget', '×', `Remove ${source.label}`, () => this.removePwad(source));
+    return rowButton({
+      className: 'forget',
+      glyph: '×',
+      title: `Remove ${source.label}`,
+      onClick: () => this.removePwad(source),
+    });
   }
 
   private renderLevels(): void {
@@ -1389,7 +1405,7 @@ export class Menu {
         if (!granted) {
           throw new Error('Permission to read your WAD folder was refused — reopen the WAD Library.');
         }
-        return this.onStart({ ...selection, skill });
+        return this.hooks.onStart({ ...selection, skill });
       })
       .catch((err: Error) => this.setStatus(err.message, true))
       .finally(() => this.refreshButtons());

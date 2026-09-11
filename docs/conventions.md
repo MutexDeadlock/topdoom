@@ -95,7 +95,10 @@ lives (CLAUDE.md's constants rule); behavior goes below because a helper's name 
   bend the order.
 - **Exception**: a bag of independent pure functions keeps each function's own types and constants
   above it and interleaves private with exported, so it reads one analysis at a time
-  (`specials/mapscan.ts`).
+  (`specials/mapscan.ts`). A private helper still sits directly below the function that reads it —
+  the first one, where several do — never above it or across unrelated declarations. A helper the
+  whole file reads (`dehacked/frames.ts`' `cycleOf`, `lettersOf`) sits below the primitive it
+  extends.
 
 ## Publics above privates
 
@@ -254,11 +257,11 @@ this.moverLerp.delete(id);` is braced.
 ## Known deviations
 
 `node .claude/hooks/conventions.mjs <file>` reports nothing across `src/`, `tests/` and `scripts/`
-bar four files, and those are the bag-of-pure-functions exception (§ Source order inside a file),
-which the hook cannot recognise: `specials/mapscan.ts`, `ui/menu/labels.ts`, `wad/support.ts`,
-`dehacked/frames.ts`. Each keeps its private helpers beside the export that reads them, so the file
-reads one analysis at a time. A finding in any other file is new drift, and is fixed in the file
-that carries it rather than left to accumulate.
+bar three files, and those are the bag-of-pure-functions exception (§ Source order inside a file),
+which the hook cannot recognise: `specials/mapscan.ts`, `wad/support.ts`, `dehacked/frames.ts`.
+Each keeps its private helpers directly below the function that reads them, so the file reads one
+analysis at a time. A finding in any other file is new drift, and is fixed in the file that carries
+it rather than left to accumulate.
 
 Not a deviation: a layer entry point re-exporting its own — `specials.ts` hands out
 `SectorEffects`, built before the `World` the controller needs (docs/savegames.md § Apply order).

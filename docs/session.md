@@ -32,7 +32,7 @@ Rules that hold this together:
 - **A finished campaign ends the session.** `Game` takes an `onCampaignEnd` port beside its
   checkpoint store, called when the end card's continue key has nowhere left to go (docs/hud.md
   § End card). The handler nulls `game` *before* disposing it — the call arrives from inside that
-  very `Game`'s tic — and reopens the menu with `open(false)`, as a launcher: there is no returning
+  very `Game`'s tic — and reopens the menu with `open('none')`, as a launcher: there is no returning
   to a run that is over.
 - **A reload over a run of the player's own is confirmed** (`beforeunload`, armed only while
   `session()` is `'game'`): nothing in a running level survives it — the checkpoint is
@@ -43,14 +43,15 @@ Rules that hold this together:
 - **`audio.resume()` runs synchronously before `startLevel`'s first `await`**, while still inside
   the click handler — the only moment a browser reliably lets an `AudioContext` start. A `?map=`
   deep link never gets that click, so `boot` also arms one-shot `pointerdown`/`keydown` unlockers.
-- **The `game` slot is cleared before the old level is disposed.** A `Game` constructor that throws
-  (a WAD with no maps, a mesh build failure) would otherwise leave `game` pointing at a *disposed*
-  instance, and both "Return to game" and the `ESC` handler key off it being non-null — resuming it
-  restarts a render loop over released GPU resources. On failure the menu stays open, shows the
-  error, and is re-synced with `open(game !== null)` so it stops offering a return.
+- **The `game` slot is cleared before the old level is disposed** (`disposeGame`). A `Game`
+  constructor that throws (a WAD with no maps, a mesh build failure) would otherwise leave `game`
+  pointing at a *disposed* instance, and both "Return to game" and the `ESC` handler key off it
+  being non-null — resuming it restarts a render loop over released GPU resources. On failure the
+  menu stays open, shows the error, and is re-synced with `open(session())` so it stops offering a
+  return.
 - **"Return to game" is disabled for the duration of a start** (`startWithSkill`), since the level
   it would return to is disposed part-way through.
-- **A replay is the same `startLevel` too**, given the replay as a third argument: its WAD set is
+- **A replay is the same `startLevel` too**, given the replay (`LevelSource.replay`): its WAD set is
   resolved by `playReplay` exactly as `loadSave` resolves a save's, and `Game` gets snapshot 0 as
   `restore` plus the replay as `playback` (docs/replays.md § Playback). Every teardown of a `Game`
   stores whatever it was still recording first (`storeRecording`), so a recording survives the
@@ -60,12 +61,13 @@ Rules that hold this together:
   gets the session as `net` (docs/multiplayer-net.md § The session). A start of the player's own
   — New Game, Load, a replay — leaves the room first; the campaign's end hands the room back to
   its lobby (`endGame`).
-- **A load is the same `startLevel`**, given the save as a second argument: it verifies the
+- **A load is the same `startLevel`**, given the save (`LevelSource.save`): it verifies the
   assembled set's game WAD and map provider against the save's own IDs (`verifySaveWads`, over
   `wadSetRefusal` — docs/savegames.md § WAD-set identity) and hands `Game` the snapshot instead of
   `?pos=`. Everything above — the audio gesture, the dispose ordering, the failure re-sync — is one
-  copy, so a lifecycle fix can't reach the new-game path and miss the load path. `loadSave` only
-  re-resolves each `wads` entry to a `WadSource` by content ID first, and a *required* file the
+  copy, so a lifecycle fix can't reach the new-game path and miss the load path. `startFromSet`
+  (behind `loadSave`, `playReplay` and a network game's start) only re-resolves each `wads` entry
+  to a `WadSource` by content ID first, and a *required* file the
   library can't supply fails *there*, before anything is torn down, so the running level survives a
   load that can't happen; an add-on that supplied neither the map nor the game WAD is left out of
   the set instead.

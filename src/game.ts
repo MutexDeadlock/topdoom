@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 import type { Wad, WadFile } from './wad/wad.ts';
-import { mapProvider, wadId, wadSetId } from './wad/checksum.ts';
+import { mapProvider, wadId } from './wad/checksum.ts';
 import { bestTimeKey, recordBestTime, type BestTimeResult } from './game/besttimes.ts';
 import { GraphicsBank, type Bitmap } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
@@ -67,7 +67,7 @@ import {
   applyBarrelExplosion,
   livingPlayer,
   type CombatContext,
-  type DamageCause,
+  type PlayerHit,
 } from './game/combat.ts';
 import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
@@ -117,7 +117,7 @@ import {
   type PlayerSlotSnapshot,
   type SectorSnapshot,
 } from './game/snapshot.ts';
-import { wadSetOf, wadSetRefusal, type CheckpointStore, type SaveCapture, type SaveGame } from './game/savegames.ts';
+import { loadedSetRefusal, wadSetOf, type CheckpointStore, type SaveCapture, type SaveGame } from './game/savegames.ts';
 import {
   GLOBAL_PLAYER_SETTINGS,
   ReplayPlayback,
@@ -457,8 +457,8 @@ export class Game {
    */
   private combat: CombatContext;
   /**
-   * Set by the exit trigger and consumed right after `specials.update()` returns — **never** loaded
-   * from inside the callback itself, or a mover rebuild still pending from that same `update()`
+   * Set by the exit trigger and consumed in `tic` once the specials block has returned —
+   * **never** acted on inside the callback, or a mover rebuild still pending from that same pass
    * would add the old map's mesh to the new map's scene. Which of the two exits fired is carried
    * along, since it decides where the level leads.
    */
@@ -494,10 +494,8 @@ export class Game {
    */
   private sectorEffects!: SectorEffects;
   /**
-   * Seconds spent in the current level, shown on the HUD as hh:mm:ss. Advanced below in `frame`,
-   * gated the same way `tickPowers` is: frozen once `playerDead`. Never advances on the frame a
-   * level-exit trigger fires either, without any extra check here — that frame already returns
-   * early (see `pendingExit`'s doc) before reaching the increment.
+   * Seconds spent in the current level, shown on the HUD as hh:mm:ss. Advanced in `tic` while any
+   * player lives, and never on the tic an exit is consumed, which returns before the increment.
    */
   private levelTime = 0;
 
@@ -541,7 +539,7 @@ export class Game {
   private replayBar: ReplayBar;
   /** The session's savegame writer, called when a replay is taken over — see `GameOptions`. */
   private autoSave: (() => Promise<unknown>) | null;
-  /** Center-screen text — currently only the secret-found line (see `SECRET_MESSAGE`). */
+  /** Center-screen text — docs/hud.md § Center messages. */
   private message: CenterMessage;
   /** The "Entering / <level name>" card every map load raises — see ui/hud/levelcard.ts. */
   private levelCard: LevelCard;
@@ -582,7 +580,7 @@ export class Game {
    * one (the tests, mainly). docs/savegames.md § The checkpoint.
    */
   private checkpoint: CheckpointStore | null;
-  /** What the last exit of the last level calls — see the constructor parameter. */
+  /** What the last exit of the last level calls — `GameOptions.onCampaignEnd`. */
   private onCampaignEnd: (() => void) | null;
   /** The session's loading screen, or null where nothing offers one (the tests). */
   private loading: LoadingScreen | null;
@@ -782,7 +780,7 @@ export class Game {
       get slots() {
         return game.slots;
       },
-      damageSlot: (slot, amount, fromX, fromY, cause) => this.damageSlot(this.slots[slot], amount, fromX, fromY, cause),
+      damageSlot: (slot, amount, hit) => this.damageSlot(this.slots[slot], amount, hit),
       triggerShot: (lineIndex, shooter) => this.specials?.triggerShot(lineIndex, this.shooterKeys(shooter), shooter),
       triggerShotPath: (from, to, blocker, shooter) =>
         this.specials?.triggerShotPath(from, to, blocker, this.shooterKeys(shooter), shooter),
@@ -990,7 +988,7 @@ export class Game {
       slot.autoCamera.restore(cameras[slot.index].auto);
     }
     // A reload shows no card, but a recording that begins as the level does still is arriving.
-    if (entering) this.levelCard.show(this.levelNames.nameFor(this.currentMap), this.levelNames.graphicFor(this.currentMap));
+    if (entering) this.showLevelCard(this.currentMap);
     this.setReplay(
       new ReplayRecorder(
         this.slots.map((slot) => slot.input),
@@ -1111,7 +1109,6 @@ export class Game {
   private applyKeyframe(frame: Keyframe, playback: ReplayPlayback): void {
     const state = playback.replay.data.snapshots[frame.snapshot];
     const index = this.mapNames.indexOf(frame.map);
-    this.audio.stopAll();
     this.loadMapByIndex(index >= 0 ? index : this.mapIndex, state);
     // Not part of what `loadMapByIndex` restores — it is the session's, and only a load that
     // starts a session (the constructor) reads it from a snapshot. A seek past a cheat the
@@ -1196,11 +1193,11 @@ export class Game {
   }
 
   /**
-   * Saves this moment through the caller's writer — the menu's Save and Overwrite, whose store call
-   * is all that differs. The capture, the write and `savedState` stay together because only a write
-   * that actually stored the bytes may move what `R` reloads (docs/death.md § Player death).
-   * Refuses by *throwing*, the save path's one refusal convention (docs/savegames.md § What is
-   * saved and what is deliberately not).
+   * Saves this moment through the caller's writer — Save, Overwrite and a take-over's autosave,
+   * whose store call is all that differs. The capture, the write and `savedState` stay together
+   * because only a write that actually stored the bytes may move what `R` reloads
+   * (docs/death.md § Player death). Refuses by *throwing*, the save path's one refusal convention
+   * (docs/savegames.md § What is saved and what is deliberately not).
    */
   async saveVia(write: (capture: SaveCapture) => Promise<unknown>): Promise<void> {
     const capture = this.captureSave();
@@ -1307,8 +1304,8 @@ export class Game {
   /**
    * Releases the current level's scene content: the mover-owned meshes (`specials`), the static
    * batches, the thing sprites and the void floor. The batched sprite meshes/materials are
-   * per-level; the
-   * geometry and textures behind them belong to `spriteMaterials`, which outlives a map.
+   * per-level; the geometry and textures behind them belong to `spriteMaterials`, which outlives a
+   * map.
    */
   private disposeLevelGeometry(): void {
     this.specials?.dispose();
@@ -1481,7 +1478,7 @@ export class Game {
     // `M_ClearRandom`, from vanilla's own `G_InitNew` — this is the one place
     // every level start funnels through. docs/random.md § What this does not buy.
     clearRandom();
-    // A slow load is not simulation time, same as a pause — see `resume`.
+    // A slow load is not simulation time, same as a pause — see `resyncClock`.
     this.accumulator = 0;
     // A snapshot holding a player this level has no slot for yet: a joiner's, over the network.
     if (restore) this.growSlots(restore.players.length);
@@ -1489,10 +1486,7 @@ export class Game {
     // Whatever was still ringing belongs to the level being torn down — a door
     // closing, a monster's death cry — and its origins are about to be reused.
     this.audio.stopAll();
-    // A fresh map always starts with living players — covers both a normal
-    // level transition (a level can end over a corpse, and `enterLevel` has
-    // just reborn the inventory for it) and `restart`'s "reload the same map"
-    // call, defensively in one place rather than duplicated at each caller.
+    // A fresh map always starts with living players, however it was entered.
     for (const slot of this.slots) slot.standUp();
     this.clearOverlays();
     this.screenEffects.clearPain();
@@ -1517,12 +1511,10 @@ export class Game {
     // that mutates a sector — this is the state a later load starts from, so it
     // is what a capture may leave out (docs/savegames.md § Apply order).
     this.sectorBaseline = sectorBaseline(map);
-    // Boom's render transfers, resolved here rather than where they are first
-    // read below: the two scans in `Transfers`' constructor compare sector
-    // heights (`markFakeFloors`, `markPools`), and those have to be the map's
-    // authored ones — after the restore below, a saved mover's sector reads at
-    // the height it had stopped at. docs/savegames.md § Apply order.
-    transfersOf(map, (name) => this.wad.find(name)?.size ?? null);
+    // Boom's render transfers, resolved ahead of the restore below: the two scans in `Transfers`'
+    // constructor compare sector heights (`markFakeFloors`, `markPools`), and those have to be the
+    // map's authored ones. docs/savegames.md § Apply order.
+    const transfers = transfersOf(map, (name) => this.wad.find(name)?.size ?? null);
     // Before the sector snapshot below, so `totalSecrets` counts the map's
     // authored secrets — a found secret zeroes its sector's `special`.
     this.sectorEffects = new SectorEffects(map, this.slots.length);
@@ -1544,13 +1536,6 @@ export class Game {
     // above, so a fog re-samples its sector's *restored* light.
     if (restore?.teleportFogs) this.effects.restoreTeleportFogs(restore.teleportFogs);
     this.projectiles.beginLevel();
-    // Sectors a door/lift/floor mover will drive are pulled out of the static
-    // batches up front — SpecialsController owns their geometry instead (see
-    // render/mapmesh.ts's MapMeshOptions doc for why).
-    // The same memoized table the pre-restore call above built: the mesh takes
-    // its transferred lighting and water planes from here, as does the
-    // movable-sector scan. docs/specials-transfers.md § Render transfers.
-    const transfers = transfersOf(map, (name) => this.wad.find(name)?.size ?? null);
     this.transfers = transfers;
     this.colormapTints.clear();
     for (const { control } of transfers.waterSectors()) {
@@ -1561,8 +1546,9 @@ export class Game {
         top: colormapTint(this.wad, names.top),
       });
     }
-    // One scan, two sets: everything that must leave the static batch, and the
-    // subset of it that actually moves a vertex — see `MapMeshOptions.movingSectors`.
+    // One scan, two sets: every sector a mover will drive, which leaves the static batch for
+    // `SpecialsController` to own, and the subset of it that actually moves a vertex — see
+    // `MapMeshOptions.movingSectors`.
     const { moving: movingSectors, movable: movableSectors } = scanSectors(map, this.switchPairs);
     // A saved mid-motion mover's sector may have had its authored special
     // consumed, dropping it from the scan above — union it back in so its
@@ -1705,7 +1691,7 @@ export class Game {
         players: bodies,
         // A crusher over a voodoo doll kills the player it stands for.
         dolls: this.voodoo.dolls,
-        damageSlot: (slot, amount) => this.damageSlot(this.slots[slot], amount, undefined, undefined, 'crush'),
+        damageSlot: (slot, amount) => this.damageSlot(this.slots[slot], amount, { cause: 'crush' }),
         sprayBlood: (at) => this.effects.spawnCrushBlood(at),
       },
       playersAt: bodies,
@@ -1767,7 +1753,7 @@ export class Game {
     // here would be wiped by its own load. A restore shows none — "Entering …" announces arriving
     // at a level, and loading a save resumes one already under way — the level-entry checkpoint
     // `restart` reloads included, which is a load like any other.
-    if (!restore) this.levelCard.show(this.levelNames.nameFor(name), this.levelNames.graphicFor(name));
+    if (!restore) this.showLevelCard(name);
 
     // Dead last, after every construction-time pRandom draw above (light-state
     // seeds, pushThing's homingBias) has happened and been overwritten: the
@@ -1802,6 +1788,11 @@ export class Game {
       // (docs/hud.md § Center messages).
       this.message.show(missingArtMessage(this.things.missingArt.length));
     }
+  }
+
+  /** The "Entering" card for `map` — raised by every arrival at a level. */
+  private showLevelCard(map: string): void {
+    this.levelCard.show(this.levelNames.nameFor(map), this.levelNames.graphicFor(map));
   }
 
   /** Stops both loops. `dispose` uses this rather than `pause` — see `stillFrame`. */
@@ -1865,7 +1856,7 @@ export class Game {
     for (const slot of this.slots) {
       if (slot.dead || !bodiesOverlap(dest, slot.player, mover.blockRadius + PLAYER_RADIUS)) continue;
       if (!this.monsterStomps) return null;
-      this.damageSlot(slot, TELEFRAG_DAMAGE, dest.x, dest.y, mover.type);
+      this.damageSlot(slot, TELEFRAG_DAMAGE, { from: dest, cause: mover.type });
     }
     // Boom's silent numbers puff at neither end (docs/specials-teleporters.md § Silent and
     // line-to-line teleporters). A fog puff has no body, so the plain sector
@@ -1880,25 +1871,23 @@ export class Game {
 
   /**
    * Applies armor-mitigated damage (`applyDamage`) to one player, transitioning to the death
-   * animation once health hits 0. `fromX`/`fromY`, when both given, are where the damage
-   * physically came from — same omitted-for-damage-floors-and-crushers convention as
-   * `ThingLayer.damage`'s own params — and drive vanilla's `P_DamageMobj` knockback.
-   * `cause` is only read by the killing hit, which names it on the overlay.
+   * animation once health hits 0. `hit.from` is where the damage physically came from — omitted
+   * for damage floors and crushers, as in `ThingLayer.damage` — and drives vanilla's
+   * `P_DamageMobj` knockback. `hit.cause` is only read by the killing hit, which names it on the
+   * overlay.
    *
    * Returns whether the hit actually landed; `false` covers both a no-op corpse hit and
    * invulnerability blocking it outright, so a caller with a follow-up effect (e.g.
    * `resolveVileBlast`'s knockup) can gate on it. See docs/death.md § Player death.
    */
-  private damageSlot(slot: PlayerSlot, rawAmount: number, fromX?: number, fromY?: number, cause?: DamageCause): boolean {
+  private damageSlot(slot: PlayerSlot, rawAmount: number, hit: PlayerHit = {}): boolean {
     if (slot.dead || rawAmount <= 0) return false;
     const { player, inventory } = slot;
     // Before anything reads it — knockback and the pain flash included, exactly as in vanilla.
     const amount = playerDamageAtSkill(rawAmount, this.skill);
     const healthBefore = inventory.health;
     if (!applyDamage(inventory, amount, slot.cheats.god)) return false;
-    if (fromX !== undefined && fromY !== undefined) {
-      player.applyDamageThrust(thrustSpeed(amount, PLAYER_MASS), fromX, fromY);
-    }
+    if (hit.from) player.applyDamageThrust(thrustSpeed(amount, PLAYER_MASS), hit.from.x, hit.from.y);
     // The flash is the local player's own eyes, and the overlay below their own screen.
     if (slot === this.local) this.screenEffects.addPain(amount);
     if (inventory.health <= 0) {
@@ -1913,12 +1902,8 @@ export class Game {
       // somewhere else between the last two live tics. docs/frameloop.md §
       // Interpolation.
       player.syncInterpolation();
-      // A_PlayerScream: the drawn-out `pdiehi` for a death that overkilled by
-      // more than 50, the ordinary `pldeth` otherwise. Vanilla tests the
-      // *post-hit* health, which goes negative there; `applyDamage` clamps it at
-      // 0, so the overkill is reconstructed from the hit instead — off by
-      // however much armor absorbed, which only shifts a few borderline deaths
-      // between the two cries.
+      // `pdiehi` for an overkill past 50, reconstructed from the hit (`applyDamage` clamps at 0) —
+      // docs/audio.md § Player and pickups.
       this.audio.play(amount > healthBefore + 50 ? 'pdiehi' : 'pldeth', player, playerOrigin(slot.index));
       slot.actor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
       // The hint depends on what `R` will actually do — a savegame to reload is
@@ -1926,7 +1911,7 @@ export class Game {
       // is the record's rather than the viewer's, so there is nothing to offer
       // (docs/death.md § Player death).
       if (!this.levelEnding && slot === this.local) {
-        this.deathOverlay.show(obituary(cause), this.deathHint());
+        this.deathOverlay.show(obituary(hit.cause), this.deathHint());
       }
       return true;
     }
@@ -2133,9 +2118,7 @@ export class Game {
     // The level's own seek anchor, on the tic its track marker gets: the advancing tic's row was
     // closed before this ran, so `ticCount` is already the new level's first. docs/replays.md
     // § Seeking.
-    if (this.recorder && !this.local.cheats.typing && this.saveRefusal() === null) {
-      this.recorder.keyframe(this.currentMap, this.captureSave({ thumbnail: false }).state);
-    }
+    if (this.recorder) this.writeKeyframe(this.recorder);
   }
 
   /**
@@ -2235,12 +2218,8 @@ export class Game {
   }
 
   /**
-   * The level again from its checkpoint, or — with none written this session,
-   * one that no longer matches, or a store that refused the read — a fresh
-   * inventory and a plain reload, which is what `R` has always done.
-   * `loadMapByIndex` resets the player/world/specials/fog and, via the doc on
-   * its own top, `playerDead`/the death overlay/`playerActor` too; on the
-   * restore path the inventory comes out of the snapshot instead. Both reloads go through
+   * The level again from its checkpoint, or — with none written this session, one that no longer
+   * matches, or a store that refused the read — fresh with a fresh inventory. Both go through
    * `loadLevel`, so `R` on a map slow enough to freeze gets the loading screen an exit would.
    */
   private async resumeFromCheckpoint(): Promise<void> {
@@ -2248,12 +2227,8 @@ export class Game {
     // The read is async, so the session may have moved on underneath it: the
     // menu can have started another level (and disposed this Game) meanwhile.
     if (this.disposed || !this.local.dead) return;
-    if (save && this.matchesSession(save)) {
-      const state = save.state;
-      this.loadLevel(this.mapIndex, () => this.reloadLevel(state));
-      return;
-    }
-    this.loadLevel(this.mapIndex, () => this.reloadLevel(null));
+    const state = save && this.matchesSession(save) ? save.state : null;
+    this.loadLevel(this.mapIndex, () => this.reloadLevel(state));
   }
 
   /**
@@ -2283,7 +2258,6 @@ export class Game {
       this.finishRecording();
       this.message.show('recording ended: a player joined');
     }
-    this.audio.stopAll();
     this.recorder?.restore(restore.map, restore.state);
     this.loadMapByIndex(index, restore.state);
     this.cheated = restore.state.cheated;
@@ -2293,8 +2267,8 @@ export class Game {
 
   /**
    * Applies `apply` to every camera there is: each slot's own, and the viewport's where a
-   * playback has separated it from the local slot's. For the discontinuities all must take — a
-   * level load — since none may be left gliding in from where the last one was.
+   * playback or a network game has separated it from the local slot's. For the discontinuities all
+   * must take — a level load — since none may be left gliding in from where the last one was.
    */
   private forEachCamera(apply: (camera: TopDownCamera, slot: PlayerSlot) => void): void {
     for (const slot of this.slots) this.forEachCameraOf(slot, apply);
@@ -2333,9 +2307,10 @@ export class Game {
   }
 
   /**
-   * What a replay puts between two tics: the recorder's settings diff and desync sample, or the
-   * playback's due events (a reload lands here, synchronously — never parked), its settings pinned
-   * again, and its sample compared. docs/replays.md § Restore events.
+   * What goes between two tics: the network's row and poses, then the recorder's keyframe,
+   * settings diff and desync sample, or the playback's due events (a reload lands here,
+   * synchronously — never parked), its settings pinned again, and its sample compared.
+   * docs/replays.md § Restore events, docs/multiplayer-net.md § What a tic does.
    */
   private beginTic(): void {
     const net = this.net;
@@ -2352,13 +2327,8 @@ export class Game {
     }
     const recorder = this.recorder;
     if (recorder) {
-      // Before the tic the anchor is stamped for, and only where the moment allows a capture at
-      // all: a keyframe taken mid-cheat or over a corpse would restore what `captureSave` refuses
-      // to write. A refused one waits for the next tic. docs/replays.md § Seeking.
-      if (recorder.keyframeDue && !this.local.cheats.typing && this.saveRefusal() === null) {
-        const state = this.captureSave({ thumbnail: false }).state;
-        recorder.keyframe(this.currentMap, state);
-      }
+      // Before the tic the anchor is stamped for; a refused one waits for the next tic.
+      if (recorder.keyframeDue) this.writeKeyframe(recorder);
       // Every slot's camera snapped onto the record's lattice *before* the tic reads it, so what
       // ran is what is stored — the aim point's own rule. `roundPose`, not `setPose`: the orbit and
       // the framing are heading somewhere and that is not part of a pose.
@@ -2394,6 +2364,16 @@ export class Game {
     // After the events, whose reload stands every body up anew.
     this.refillBodies();
     playback.check(this.fogPoints);
+  }
+
+  /**
+   * A seek anchor for `recorder` at this moment, only where the moment allows a capture at all: a
+   * keyframe taken mid-cheat or over a corpse would restore what `captureSave` refuses to write.
+   * docs/replays.md § Seeking.
+   */
+  private writeKeyframe(recorder: ReplayRecorder): void {
+    if (this.local.cheats.typing || this.saveRefusal() !== null) return;
+    recorder.keyframe(this.currentMap, this.captureSave({ thumbnail: false }).state);
   }
 
   /**
@@ -2447,7 +2427,7 @@ export class Game {
    */
   private matchesSession(save: SaveGame): boolean {
     if (save.map !== this.currentMap || save.skill !== this.skill) return false;
-    return wadSetRefusal(save, wadSetId(this.wad), (map) => mapProvider(this.wad, map)) === null;
+    return loadedSetRefusal(save, this.wad) === null;
   }
 
   /**
@@ -2503,8 +2483,6 @@ export class Game {
     const stalled = this.net !== null && !this.netReady(this.net, now);
     const held = stalled || (playback !== null && (playback.paused || playback.ended));
     this.accumulator += held ? 0 : rawDt * (playback?.speed ?? 1);
-    // A stall (backgrounded tab, a slow map load) must not be paid back as a
-    // burst of catch-up tics — drop the debt instead: never take a giant step.
     if (this.accumulator > MAX_TICS_PER_FRAME * DOOM_TIC) this.accumulator = MAX_TICS_PER_FRAME * DOOM_TIC;
     this.profiler.beginFrame();
 
@@ -2608,7 +2586,7 @@ export class Game {
       // Crossing into a new episode is a new game in vanilla, so it pistol-starts where an ordinary
       // exit carries health, armor and weapons over — read off what the *exit* ended rather than
       // off which popup is up, since both continues land here. docs/hud.md § End card.
-      this.enterLevel(this.nextMapIndex, this.pendingEnd !== null); // clears both popups, like every other per-level overlay
+      this.enterLevel(this.nextMapIndex, this.pendingEnd !== null);
       return true;
     }
     for (const slot of this.slots) {
@@ -2637,8 +2615,6 @@ export class Game {
       if (slot.source === 'live') slot.simCamera.applyYawInput(slot.input, DOOM_TIC);
     }
 
-    // Runs before player.update so a lift/door a player is standing on has
-    // already moved this tic by the time groundFloor is sampled below.
     this.profiler.time('Specials', () => {
       const specials = this.specials;
       if (specials) {
@@ -2682,9 +2658,8 @@ export class Game {
         this.message.show(...lockedLineMessage(locked.lock, locked.kind));
       }
     }
-    // Deferred from the exit trigger's callback — see `pendingExit`'s doc.
-    // The outgoing SpecialsController's update() has fully returned by here, so
-    // it is safe to dispose it and swap in the next map.
+    // Deferred from the exit trigger's callback (`pendingExit`): the popup goes up on the level as
+    // it stands, and the continue key at the top of `tic` loads the next one.
     if (this.pendingExit) {
       this.resolveExit(this.pendingExit === 'secret');
       // Before `pendingExit` is cleared, which is half of what `levelEnding` reads. Catches a
@@ -2692,8 +2667,6 @@ export class Game {
       // walk-over is queued and consumed with nothing in between, but a crusher can kill between.
       this.endingOverCorpse();
       this.pendingExit = null;
-      // The next map isn't loaded here any more: the popup goes up on the level as it stands, and
-      // the continue key at the top of `tic` is what loads it.
       // The cheated popup reads the *same* flag that already refuses a best time — a run that
       // can't set one has nothing worth stating (docs/cheats.md § Saves and best times).
       this.intermission.setContinueHint(this.viewerContinues);
@@ -2912,12 +2885,8 @@ export class Game {
     // Called after player.update so player.angle already reflects this frame's aim.
     slot.weapons.handleSwitching(input, inventory, input.consumeWheel());
     const shots = slot.weapons.fire(input.mouseDown, inventory, player.angle);
-    // Every shot actually fired (ammo/cooldown allowed it) raises a noise
-    // alert, which is what lets a monster with no line of sight to the player
-    // still wake up on gunfire (World.noiseAlert, game/world.ts; vanilla's
-    // P_FireWeapon calls P_NoiseAlert). Melee swings count: it is the same
-    // entry point for every weapon, so swinging a fist in an empty room wakes
-    // the neighbours the same as firing a pistol would.
+    // Every shot actually fired wakes monsters without sight, melee included —
+    // docs/monster-ai.md § Waking up.
     if (shots.length > 0) {
       this.world.noiseAlert(player.x, player.y, slot.index);
       slot.actor.playOnce(PLAYER_ATTACK_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
@@ -2986,7 +2955,7 @@ export class Game {
       this.world,
       player,
       inventory,
-      (amount) => this.damageSlot(slot, amount, undefined, undefined, 'slime'),
+      (amount) => this.damageSlot(slot, amount, { cause: 'slime' }),
       slot.index,
     );
     // The count is the level's; the announcement is the local player's own screen.
@@ -3032,12 +3001,9 @@ export class Game {
    * *provides* the map rather than to the loaded set — see docs/hud.md § Best times.
    */
   private recordCompletion(): BestTimeResult | null {
-    // A replay is watched, not run: it reports the recording player's time and claims nothing,
-    // whoever holds the record. docs/replays.md § Playback.
-    if (this.playback) return null;
-    if (this.cheated) return null;
-    // A netgame claims none either: the run is several players'.
-    if (this.netgame) return null;
+    // A replay is watched, not run, and a netgame's run is several players' — neither claims one,
+    // any more than a cheated run does. docs/replays.md § Playback.
+    if (this.playback || this.cheated || this.netgame) return null;
     const map = this.currentMap;
     const source = mapProvider(this.wad, map);
     if (!source) return null;
@@ -3138,9 +3104,8 @@ export class Game {
    * One tic of everything transient: teleport fog, tracers, things in flight, the icon's cubes.
    * Draws nothing — `drawEffects` is the other half.
    *
-   * The order is load-bearing and unchanged: projectiles advance before impacts,
-   * so an explosion or smoke puff spawned by an arrival this tic is drawn on the
-   * very next frame rather than one late.
+   * The order is load-bearing: projectiles advance before impacts, so an explosion or smoke puff
+   * spawned by an arrival this tic is drawn on the very next frame rather than one late.
    */
   private updateEffects(dt: number): void {
     this.profiler.time('Effects', () => {

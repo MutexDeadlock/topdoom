@@ -399,7 +399,7 @@ export class ProjectileLayer {
 
       if (reachedPlayer || struck || hitGround || arrived) {
         if (reachedPlayer) {
-          this.ctx.damageSlot(struckSlot, p.damage, at.x, at.y, p.sourceType);
+          this.ctx.damageSlot(struckSlot, p.damage, { from: at, cause: p.sourceType });
         } else if (struck) {
           // `struck.id === null` is the same-species fizzle: the body stopped
           // the missile but takes no damage from it (see bodyStruckBy).

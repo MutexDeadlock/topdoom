@@ -378,7 +378,7 @@ in vanilla; the only knockback that existed before was the arch-vile's own *vert
 completely different mechanic (`A_VileAttack`'s explicit `momz` set) that this doesn't touch.
 
 Vanilla calls `P_DamageMobj` with a null inflictor for damage floors and crushers, which skips the
-whole thrust block — reproduced here simply by never passing a `fromX`/`fromY` at those two call
+whole thrust block — reproduced here simply by never passing a `from` at those two call
 sites (`applyCrushDamage`/`SectorEffects.update`), rather than a special-cased exemption.
 
 **`monsters/defs.ts: thrustSpeed(damage, mass)`** is the shared formula
@@ -394,7 +394,7 @@ than switching to this table — shipped, working behavior for one rare attack.
 
 **Where the impulse gets computed is centralized to the two places all damage already flows
 through** — `ThingLayer.damage` (monsters and barrels) and `game.ts`'s `damageSlot` — rather than
-at each of the dozen-plus call sites that deal damage. Both take optional trailing `fromX`/`fromY`;
+at each of the dozen-plus call sites that deal damage. Both take an optional `hit.from`;
 when given, they compute the away-from-source unit vector (falling back to the victim's own facing
 in the degenerate case where attacker and victim occupy essentially the same point, e.g. point-blank
 melee — vanilla's `R_PointToAngle2(0,0,0,0)` returns angle 0 for the same reason) and add

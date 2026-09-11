@@ -117,26 +117,6 @@ export function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
 }
 
 /**
- * Every sector a map's boss-death table can move — the tags in `bossDeathTriggersFor`, resolved
- * against `map.sectors`. **Load-bearing for `scanSectors`:** these sectors are driven by
- * `triggerTag`, which has no triggering linedef, so nothing else in that scan can find them.
- * MAP32's Keen door (sector 16, tag 666) and MAP07's Arachnotron platform (sector 1, tag 667) both
- * have no linedef carrying their tag at all; without this they stay in the static batch and get
- * drawn a second time the moment their mover mesh appears. See docs/death.md § Boss death.
- */
-function bossDeathSectors(map: DoomMap): number[] {
-  const tags = new Set<number>();
-  for (const t of bossDeathTriggersFor(map.name)) {
-    if (t.action.kind !== 'exit') tags.add(t.action.tag);
-  }
-  const out: number[] = [];
-  for (let i = 0; i < map.sectors.length; i++) {
-    if (tags.has(map.sectors[i].tag)) out.push(i);
-  }
-  return out;
-}
-
-/**
  * True when (x, y) sits on the line's front (right-sidedef) side
  * (`P_PointOnLineSide`). Two callers need it:
  *
@@ -325,6 +305,26 @@ export function scanSectors(map: DoomMap, pairs?: SwitchPairLookup): SectorScan 
   addWaterDependents(map, movable);
   addBlockMates(map, movable);
   return { moving, movable };
+}
+
+/**
+ * Every sector a map's boss-death table can move — the tags in `bossDeathTriggersFor`, resolved
+ * against `map.sectors`. **Load-bearing for `scanSectors`:** these sectors are driven by
+ * `triggerTag`, which has no triggering linedef, so nothing else in that scan can find them.
+ * MAP32's Keen door (sector 16, tag 666) and MAP07's Arachnotron platform (sector 1, tag 667) both
+ * have no linedef carrying their tag at all; without this they stay in the static batch and get
+ * drawn a second time the moment their mover mesh appears. See docs/death.md § Boss death.
+ */
+function bossDeathSectors(map: DoomMap): number[] {
+  const tags = new Set<number>();
+  for (const t of bossDeathTriggersFor(map.name)) {
+    if (t.action.kind !== 'exit') tags.add(t.action.tag);
+  }
+  const out: number[] = [];
+  for (let i = 0; i < map.sectors.length; i++) {
+    if (tags.has(map.sectors[i].tag)) out.push(i);
+  }
+  return out;
 }
 
 /**

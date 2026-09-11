@@ -3,23 +3,9 @@
  * one `Game` per level, and autosaves around the edges. See docs/session.md § Session lifecycle.
  */
 import { Wad } from './wad/wad.ts';
-import { mapProvider, wadSetId } from './wad/checksum.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { Menu, type MenuSession, type MenuTab, type Selection } from './ui/menu/menu.ts';
-import {
-  blockingWad,
-  blockingWadText,
-  missingWadLabel,
-  overwriteSave,
-  readAutosave,
-  wadSetOf,
-  wadSetRefusal,
-  writeAutosave,
-  writeSave,
-  type SaveCapture,
-  type SaveGame,
-  type SaveWadSet,
-} from './game/savegames.ts';
+import * as savegames from './game/savegames.ts';
 import {
   COMPAT,
   GLOBAL_PLAYER_SETTINGS,
@@ -53,7 +39,7 @@ import { VERSION } from './constants.ts';
 
 /** What a level start begins from beside the selection — at most one of the three. */
 interface LevelSource {
-  save?: SaveGame;
+  save?: savegames.SaveGame;
   /** A replay to watch — docs/replays.md § Playback. */
   replay?: Replay;
   /** A network game's level, from its start or (`restore`) the host's snapshot — docs/multiplayer-net.md. */
@@ -76,16 +62,9 @@ async function boot(): Promise<void> {
   /** `?coop=N`: 2 to `MAX_PLAYERS` players in one browser — docs/menu.md § URL parameters. */
   const coopParam = Number(params.get('coop'));
   const coop = Number.isInteger(coopParam) && coopParam >= 2 && coopParam <= MAX_PLAYERS ? coopParam : null;
-  /**
-   * Session-level, like the Viewport: one AudioContext for every level and WAD
-   * set that follows (see AudioEngine). Constructing it starts nothing — the
-   * context itself waits for the first `resume`, i.e. for a user gesture.
-   */
+  /** One `AudioContext` for the whole page, started by the first `resume` (a user gesture). */
   const audio = new AudioEngine();
-  /**
-   * Session-level like the AudioEngine, and already on screen: `#loading` is the boot overlay, and
-   * every level load after it takes the same screen (docs/session.md § The loading screen).
-   */
+  /** The boot screen, reused by every level load — docs/session.md § The loading screen. */
   const loading = new LoadingScreen();
   let game: Game | null = null;
   /** The network session this browser sits in, or null — docs/multiplayer-net.md § The session. */
@@ -99,23 +78,18 @@ async function boot(): Promise<void> {
   const session = (): MenuSession => (game === null ? 'none' : game.watchingReplay ? 'replay' : 'game');
 
   /**
-   * The one session lifecycle, for both a fresh start and a load: assemble the
-   * WAD set, tear the old level down, build the new one. Starting `from` a save
-   * or a recording it additionally verifies the set against what that was made
-   * with and threads the snapshot through `Game`'s restore path — the same
-   * sequence, so they stay one function rather than drifting apart.
+   * The one session lifecycle for every start — New Game, a load, a replay, a network game:
+   * assemble the WAD set, tear the old level down, build the new one.
+   * docs/session.md § Session lifecycle.
    */
   const startLevel = async (selection: Selection, from: LevelSource = {}): Promise<void> => {
-    const { save = null, replay = null, restore: netRestore = null } = from;
-    const netGame = from.net ?? null;
+    const { save = null, replay = null, net: netGame = null, restore: netRestore = null } = from;
     // A start of the player's own leaves a network game behind; the session's own starts are the
     // one exception (docs/multiplayer-net.md § Leaving).
     if (net && netGame !== net) {
       leaveNet();
     }
-    // Synchronously, before the first `await`: this call is still inside the
-    // Start button's own click handler, which is the safest moment a browser
-    // will let an AudioContext start.
+    // Before the first `await`, still inside the click — docs/session.md § Session lifecycle.
     audio.resume();
     // Over the menu rather than in its status line: a 28 MB IWAD is tens of seconds, and the menu
     // behind it is one the player can no longer use.
@@ -137,40 +111,25 @@ async function boot(): Promise<void> {
       loading.detail(`Building ${selection.map} …`);
       await loading.painted();
 
-      // Cleared before the old level is torn down, so a constructor that throws
-      // (a WAD with no maps, a mesh build failure) can't leave `game` pointing at
-      // a disposed instance — the menu's "Return to game" and the ESC handler
-      // both key off it being null.
-      const previous = game;
-      game = null;
-      if (previous) {
-        storeRecording(previous);
-        previous.dispose();
-      }
+      disposeGame();
+      // `?pos=` and `?coop=` are for a fresh start only: a load, a replay and a network game carry
+      // their own position and players.
+      const freshStart = !save && !replay && !netGame;
       game = new Game(view, audio, wad, {
         startMap: selection.map,
-        title: titleOf(selection.iwad, selection.pwads),
+        title: [selection.iwad, ...selection.pwads].map((source) => source.label).join(' + '),
         skill: selection.skill,
-        // A load carries its own position and players; `?pos=` and `?coop=` are for a fresh start
-        // only, and a network game's slots are its own.
-        startPos: save || replay || netGame ? null : startPos,
-        coop: save || replay || netGame ? null : coop,
+        startPos: freshStart ? startPos : null,
+        coop: freshStart ? coop : null,
         // A replay starts from its own first snapshot — docs/replays.md § Playback — and a joiner
         // from the host's (docs/multiplayer-net.md § Joining a game).
         restore: replay ? replay.data.snapshots[0] : (save?.state ?? netRestore?.state ?? null),
         playback: replay,
         net: netGame,
-        autoSave: () => withCapture((capture) => writeSave(capture, takeOverSaveName(replay, capture))),
-        checkpoint: { write: writeAutosave, read: readAutosave },
-        // Nulled before `dispose()` — the call arrives from inside this very `Game`'s tic — and
-        // the menu reopens as a launcher (docs/session.md § Session lifecycle).
+        autoSave: () => withCapture((capture) => savegames.writeSave(capture, takeOverSaveName(replay, capture))),
+        checkpoint: { write: savegames.writeAutosave, read: savegames.readAutosave },
         onCampaignEnd: () => {
-          const finished = game;
-          game = null;
-          if (finished) {
-            storeRecording(finished);
-            finished.dispose();
-          }
+          disposeGame();
           // Every browser in the game reaches this tic together; the host takes the room back to
           // its lobby (docs/multiplayer-net.md § Leaving).
           net?.endGame();
@@ -189,10 +148,8 @@ async function boot(): Promise<void> {
       game.resume();
     } catch (err) {
       loading.hide();
-      // The level's own music starts before its map is built, so that the build has something to
-      // play over (`loadMapByIndex`). A build that threw leaves that track playing under the error
-      // with nothing to stop it — the `Game` it belonged to was never constructed, so nothing will
-      // ever dispose it. docs/music.md § Which track a level plays.
+      // The level's music starts before its map is built; a build that threw leaves it playing
+      // with no `Game` to dispose it (docs/music.md § Which track a level plays).
       audio.music.stop();
       menu.setStatus((err as Error).message, true);
       // The previous level is gone by now, so re-sync the menu: with nothing
@@ -203,23 +160,20 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * The stored-set side of `startLevel`, for a save and a replay alike: re-resolves the set from
-   * the current library and hands `start` what it could supply. A *required* file the library no
-   * longer offers fails here, before anything is torn down, so the running level survives a load
-   * that can't happen.
+   * The stored-set side of `startLevel`, for a save, a replay and a network game alike:
+   * re-resolves the set from the current library and hands `start` what it could supply. A
+   * *required* file the library no longer offers fails here, before anything is torn down.
    */
   const startFromSet = async (
-    set: SaveWadSet,
+    set: savegames.SaveWadSet,
     noun: 'save' | 'replay' | 'game',
     start: (iwad: WadSource, pwads: WadSource[]) => Promise<void>,
   ): Promise<void> => {
     try {
-      // The same resolution the row shows, so a row that reports no problem can't fail here — and
-      // a file it does report is named in the same words (docs/savegames.md § WAD-set identity).
-      // Only a *required* file stops the load; the rest are a note on the row and are simply left
-      // out of the set.
+      // The resolution the row shows, so a row that reports no problem can't fail here
+      // (docs/savegames.md § WAD-set identity).
       const { iwad, pwads, missing } = menu.resolveSaveWads(set);
-      const blocker = blockingWadText(missing);
+      const blocker = savegames.blockingWadText(missing);
       if (blocker) throw new Error(blocker);
       if (!iwad) throw new Error(`this ${noun} does not name a game WAD`);
       await start(iwad, pwads);
@@ -229,7 +183,7 @@ async function boot(): Promise<void> {
     }
   };
 
-  const loadSave = (save: SaveGame): Promise<void> =>
+  const loadSave = (save: savegames.SaveGame): Promise<void> =>
     startFromSet(save, 'save', (iwad, pwads) => startLevel({ iwad, pwads, map: save.map, skill: save.skill }, { save }));
 
   const playReplay = (replay: Replay): Promise<void> =>
@@ -242,9 +196,9 @@ async function boot(): Promise<void> {
    * the level the game starts on or the one the host's snapshot is of.
    * docs/multiplayer-net.md § The session.
    */
-  const startNetGame = (session: NetSession, netGame: NetGame, restore: NetRestore | null): Promise<void> =>
+  const startNetGame = (room: NetSession, netGame: NetGame, restore: NetRestore | null): Promise<void> =>
     startFromSet(netGame.set, 'game', (iwad, pwads) =>
-      startLevel({ iwad, pwads, map: restore?.map ?? netGame.set.map, skill: netGame.skill }, { net: session, restore }),
+      startLevel({ iwad, pwads, map: restore?.map ?? netGame.set.map, skill: netGame.skill }, { net: room, restore }),
     );
 
   /** Leaves the room; a level already running plays on alone (`Game` sees the session end). */
@@ -270,7 +224,7 @@ async function boot(): Promise<void> {
    */
   const netGameOf = async (selection: Selection): Promise<NetGame> => {
     const wad = new Wad(await loadWadFiles(selection.iwad, selection.pwads));
-    return { set: wadSetOf(wad, selection.map, dehackedSources(wad)), skill: selection.skill };
+    return { set: savegames.wadSetOf(wad, selection.map, dehackedSources(wad)), skill: selection.skill };
   };
 
   /**
@@ -285,8 +239,8 @@ async function boot(): Promise<void> {
   const netHooks: NetHooks = {
     // The file's label alone: the advice a Load row adds after it is not what a lobby's line needs.
     setRefusal: (netGame) => {
-      const blocker = blockingWad(menu.resolveSaveWads(netGame.set).missing);
-      return blocker ? missingWadLabel(blocker) : null;
+      const blocker = savegames.blockingWad(menu.resolveSaveWads(netGame.set).missing);
+      return blocker ? savegames.missingWadLabel(blocker) : null;
     },
     startGame: (netGame, restore) => {
       if (!net) return;
@@ -300,9 +254,20 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * Whatever `finished` was still recording goes to the store before it is torn down — a new
-   * start, the campaign's end and the menu's own Stop all land here. Fire-and-forget like the
-   * checkpoint: a refused write must not take the session change down with it.
+   * Ends the running level, if any: `game` is nulled before the dispose, and whatever it was still
+   * recording is stored first — docs/session.md § Session lifecycle.
+   */
+  const disposeGame = (): void => {
+    const finished = game;
+    game = null;
+    if (!finished) return;
+    storeRecording(finished);
+    finished.dispose();
+  };
+
+  /**
+   * Stores whatever `finished` was still recording (docs/replays.md § Recording). Fire-and-forget
+   * like the checkpoint: a refused write must not take the session change down with it.
    */
   const storeRecording = (finished: Game): void => {
     const capture = finished.finishRecording();
@@ -322,32 +287,26 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * The shared body of the two save hooks: the only thing they need from the
-   * session is that there *is* one, since a capture identifies its WAD set by
-   * content and needs nothing else from around it. Which store call to make is
-   * all that separates Save from Overwrite, so it is the one thing handed to
-   * `Game.saveVia`, which owns the capture around it. `saveVia` throws its own
-   * reason when the moment is unsaveable, like the store's writers do — the
-   * menu turns any of them into its status line (see `SaveHooks`).
+   * The body Save, Overwrite and the autosave share: only the store call differs, and
+   * `Game.saveVia` owns the capture around it — docs/menu-saves.md § Save and Load tabs.
    */
-  const withCapture = async (write: (capture: SaveCapture) => Promise<unknown>): Promise<void> => {
+  const withCapture = async (write: (capture: savegames.SaveCapture) => Promise<unknown>): Promise<void> => {
     if (!game) throw new Error('no running game to save');
     await game.saveVia(write);
   };
 
-  const menu: Menu = new Menu(
-    (selection) => startLevel(selection),
-    resumeGame,
-    audio,
-    {
-      onSave: (name) => withCapture((capture) => writeSave(capture, name)),
-      onOverwrite: (id) => withCapture((capture) => overwriteSave(id, capture)),
-      onLoad: (save) => loadSave(save),
+  const menu: Menu = new Menu(audio, {
+    onStart: (selection) => startLevel(selection),
+    onResume: resumeGame,
+    saves: {
+      onSave: (name) => withCapture((capture) => savegames.writeSave(capture, name)),
+      onOverwrite: (id) => withCapture((capture) => savegames.overwriteSave(id, capture)),
+      onLoad: loadSave,
       // No game is the menu's own `session` gate, so there is nothing to say here.
       saveRefusal: () => game?.saveRefusal() ?? null,
     },
-    {
-      onPlay: (replay) => playReplay(replay),
+    replays: {
+      onPlay: playReplay,
       onStartRecording: () => {
         if (!game) throw new Error('no running game to record');
         game.startRecording();
@@ -365,7 +324,7 @@ async function boot(): Promise<void> {
       recordingRefusal: () => game?.recordingRefusal() ?? null,
       isRecording: () => game?.recording ?? false,
     },
-    {
+    multiplayer: {
       session: () => net,
       host: async (url, name) => {
         const selection = menu.currentSelection();
@@ -381,14 +340,14 @@ async function boot(): Promise<void> {
         hostedPick = pickKey(selection);
       },
       announce: async () => {
-        const session = net;
+        const room = net;
         const selection = menu.currentSelection();
-        if (!session?.isHost || session.phase !== 'lobby' || !selection) return false;
+        if (!room?.isHost || room.phase !== 'lobby' || !selection) return false;
         const key = pickKey(selection);
-        const game = key === hostedPick ? session.game : await netGameOf(selection);
-        if (!game) return false;
+        const netGame = key === hostedPick ? room.game : await netGameOf(selection);
+        if (!netGame) return false;
         hostedPick = key;
-        return session.setGame(game, captureSessionSettings());
+        return room.setGame(netGame, captureSessionSettings());
       },
       join: async (url, code, name) => {
         const transport = await WebSocketTransport.connect(url);
@@ -400,20 +359,14 @@ async function boot(): Promise<void> {
       recheckWads: () => net?.recheckSet(),
       leave: leaveNet,
     },
-  );
+  });
 
-  // A `?map=` deep link starts a level without the player ever clicking
-  // anything, so no gesture has unlocked audio by then — the first one that
-  // arrives does it. Idempotent, and `once` keeps it off the hot path.
+  // A `?map=` deep link gets no click to start audio in, so the first gesture does it.
   const unlockAudio = () => audio.resume();
   window.addEventListener('pointerdown', unlockAudio, { once: true });
   window.addEventListener('keydown', unlockAudio, { once: true });
 
-  // A reload takes the run with it: the level-entry checkpoint is session-local and never offered
-  // at boot, and a recording lives in its recorder until a teardown stores it. The browser's own
-  // dialog is the whole guard available — F5 can't be swallowed, and the text is the browser's,
-  // not ours. Only over a run of the player's own: a playback reproduces from the store, and the
-  // menu alone holds nothing. docs/session.md § Session lifecycle.
+  // A reload over a run of the player's own is confirmed — docs/session.md § Session lifecycle.
   window.addEventListener('beforeunload', (e) => {
     if (session() !== 'game') return;
     e.preventDefault();
@@ -475,16 +428,8 @@ async function boot(): Promise<void> {
     menu.showWelcome();
   }
 
-  // Whatever just took the screen replaces `#loading`, which is in the page from
-  // the first paint (docs/session.md § Session lifecycle). A deep link's own load has already put
-  // it back up and taken it down again by now; this is the boot screen's own hand-over.
+  // Whatever took the screen replaces the boot screen — docs/session.md § Session lifecycle.
   loading.hide();
-}
-
-
-/** A short label naming the WAD set, for the HUD. */
-function titleOf(iwad: WadSource, pwads: WadSource[]): string {
-  return pwads.length === 0 ? iwad.label : `${iwad.label} + ${pwads.map((p) => p.label).join(' + ')}`;
 }
 
 /** `?pos=x,y` — drop the player there instead of at the map's own start. */
@@ -495,18 +440,17 @@ function parsePos(raw: string | null): Pos2 | null {
 }
 
 /** What taking a replay over calls the savegame it writes: the replay and how far into it. */
-function takeOverSaveName(replay: Replay | null, capture: SaveCapture): string {
+function takeOverSaveName(replay: Replay | null, capture: savegames.SaveCapture): string {
   return replay ? `${replay.name} @ ${formatClock(capture.levelTime)}` : '';
 }
 
 /**
- * Refuses a load the freshly assembled set can't play, naming the offending
- * file. The rule itself is `wadSetRefusal`'s (docs/savegames.md § WAD-set
- * identity); this re-hashes the bytes actually in hand to feed it, which is
- * what catches a manifest ID left stale by a changed file.
+ * Refuses a load the freshly assembled set can't play, naming the offending file. The rule is
+ * `wadSetRefusal`'s (docs/savegames.md § WAD-set identity), asked over the bytes actually in hand,
+ * which is what catches a manifest ID left stale by a changed file.
  */
-function verifySaveWads(wad: Wad, save: SaveWadSet): void {
-  const refusal = wadSetRefusal(save, wadSetId(wad), (map) => mapProvider(wad, map));
+function verifySaveWads(wad: Wad, save: savegames.SaveWadSet): void {
+  const refusal = savegames.loadedSetRefusal(save, wad);
   if (refusal) throw new Error(refusal);
 }
 

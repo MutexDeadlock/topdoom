@@ -7,12 +7,6 @@
 import { mapStyle, type MergedMap, type WadSource } from '../../wad/library.ts';
 import { describeSupport, supportLevel, type SupportLevel } from '../../wad/support.ts';
 
-function formatSize(bytes: number): string {
-  return bytes >= 1024 * 1024
-    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
-    : `${Math.round(bytes / 1024)} KB`;
-}
-
 /**
  * The three things a WAD row says about a file, kept apart so the two lists that have room for
  * columns can line them up down the list (docs/menu-wads.md § WAD Library) — `sourceColumnSpans`
@@ -73,12 +67,22 @@ export function mapStyleLabel(src: WadSource): string {
   return mapStyle(src) === 'doom1' ? 'DOOM 1' : 'DOOM II';
 }
 
+export interface RowButtonOptions {
+  /** Its CSS classes (menu.css). */
+  className: string;
+  /** The one character it shows. */
+  glyph: string;
+  /** What it does in words: the tooltip and the accessible name, neither of which the glyph gives. */
+  title: string;
+  onClick: () => void;
+}
+
 /**
  * A glyph-sized control inside a WAD row — the info column and the add-on list's `×`. **The row is
  * a `<label>`**, so the click has to be stopped from reaching it or the row's own checkbox toggles
  * as well; that hazard is stated here once rather than at each button.
  */
-export function rowButton(className: string, glyph: string, title: string, onClick: () => void): HTMLButtonElement {
+export function rowButton({ className, glyph, title, onClick }: RowButtonOptions): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = className;
@@ -91,27 +95,6 @@ export function rowButton(className: string, glyph: string, title: string, onCli
     onClick();
   });
   return button;
-}
-
-/**
- * The info column's control, in the two lists that render one: a WAD shipped with a text file
- * beside it (`WadSource.textFile`) offers it here, anything else gets the empty span that keeps the
- * columns behind it lined up.
- */
-function infoColumn(src: WadSource, onInfo: () => void): HTMLElement {
-  const text = src.textFile;
-  if (!text) return metaSpan('info', '');
-  // The circled `i`, `U+24D8`, and not `U+2139`: that one has an emoji presentation to be talked
-  // out of (`U+FE0E`, as the support glyphs do) and still renders as a bare letter when it is.
-  return rowButton('meta info', '\u24D8', `Read ${text.name}`, onInfo);
-}
-
-/** One fixed-width detail column. The class name is what both stylesheets target. */
-function metaSpan(kind: string, text: string): HTMLSpanElement {
-  const span = document.createElement('span');
-  span.className = `meta ${kind} truncate`;
-  span.textContent = text;
-  return span;
 }
 
 /**
@@ -175,6 +158,27 @@ export function describeMap(map: MergedMap, iwadLabel: string): string {
   return parts.join('  —  ');
 }
 
+/**
+ * The info column's control, in the two lists that render one: a WAD shipped with a text file
+ * beside it (`WadSource.textFile`) offers it here, anything else gets the empty span that keeps the
+ * columns behind it lined up.
+ */
+function infoColumn(src: WadSource, onInfo: () => void): HTMLElement {
+  const text = src.textFile;
+  if (!text) return metaSpan('info', '');
+  // The circled `i`, `U+24D8`, and not `U+2139`: that one has an emoji presentation to be talked
+  // out of (`U+FE0E`, as the support glyphs do) and still renders as a bare letter when it is.
+  return rowButton({ className: 'meta info', glyph: 'ⓘ', title: `Read ${text.name}`, onClick: onInfo });
+}
+
+/** One fixed-width detail column. The class name is what both stylesheets target. */
+function metaSpan(kind: string, text: string): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.className = `meta ${kind} truncate`;
+  span.textContent = text;
+  return span;
+}
+
 function sourceColumns(src: WadSource): SourceColumns {
   return {
     size: formatSize(src.size),
@@ -188,4 +192,10 @@ function sourceColumns(src: WadSource): SourceColumns {
           `${src.lumpCount} lump${src.lumpCount === 1 ? '' : 's'}`,
     dehacked: src.dehacked ? 'DEH' : '',
   };
+}
+
+function formatSize(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.round(bytes / 1024)} KB`;
 }

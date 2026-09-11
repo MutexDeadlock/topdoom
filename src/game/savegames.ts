@@ -215,9 +215,9 @@ export function standInBlocker(
  * `wadSetId`'s list for the set in hand and `providerOf` names the file
  * supplying a map in it (null where it supplies none).
  *
- * Both callers are the same question asked in two shapes: `main.ts` throws the
- * message on a load, `Game.matchesSession` compares it to null for a
- * checkpoint. docs/savegames.md § WAD-set identity.
+ * Both callers ask it over a loaded set through `loadedSetRefusal`: `main.ts` throws the message
+ * on a load, `Game.matchesSession` compares it to null for a checkpoint.
+ * docs/savegames.md § WAD-set identity.
  */
 export function wadSetRefusal(
   save: SaveWadSet,
@@ -261,6 +261,11 @@ export function wadSetRefusal(
     return `${missing ? missing.name : 'a DEHACKED patch'} carries a DEHACKED patch this save was made with`;
   }
   return null;
+}
+
+/** `wadSetRefusal` asked of a loaded set: its files' content IDs, and the file supplying each map. */
+export function loadedSetRefusal(save: SaveWadSet, wad: Wad): string | null {
+  return wadSetRefusal(save, wadSetId(wad), (map) => mapProvider(wad, map));
 }
 
 /**

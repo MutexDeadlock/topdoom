@@ -61,17 +61,6 @@ const SUPPORT_ISSUES: Record<
 const SUPPORT_ORDER = Object.keys(SUPPORT_ISSUES) as SupportCode[];
 
 /**
- * Whether a code means the map is refused outright, as against flagged red for what will not run
- * in one that does load (`loads`, above). The refusal count and the tooltip's headline must agree
- * on this, so they read it here rather than each spelling out the pair — `supportLevel` is the
- * deliberate exception: the glyph is red either way.
- */
-function refusesToLoad(code: SupportCode): boolean {
-  const { level, loads } = SUPPORT_ISSUES[code];
-  return level === 'broken' && !loads;
-}
-
-/**
  * How bad the worst of them is — the glyph, the colour and the tooltip's headline all key off this.
  */
 export function supportLevel(support: WadSupport): SupportLevel {
@@ -193,6 +182,17 @@ export function nothingLoads(support: WadSupport, mapCount: number): boolean {
     if (refusesToLoad(issue.code)) refused += issue.maps.length;
   }
   return refused >= mapCount;
+}
+
+/**
+ * Whether a code means the map is refused outright, as against flagged red for what will not run
+ * in one that does load (`loads`, above). The refusal count and the tooltip's headline must agree
+ * on this, so they read it here rather than each spelling out the pair — `supportLevel` is the
+ * deliberate exception: the glyph is red either way.
+ */
+function refusesToLoad(code: SupportCode): boolean {
+  const { level, loads } = SUPPORT_ISSUES[code];
+  return level === 'broken' && !loads;
 }
 
 /** How many map names a tooltip line spells out before it starts counting instead. */

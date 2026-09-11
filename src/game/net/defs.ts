@@ -11,6 +11,7 @@ import type { PlayerSettings, SessionSettings } from '../replay/defs.ts';
 import type { SaveWadSet } from '../savegames.ts';
 import type { Skill } from '../skill.ts';
 import type { GameSnapshot } from '../snapshot.ts';
+import type { PlayerColor } from '../../wad/playercolor.ts';
 import { asSkill, asWad, isLoadableState, isRecord } from '../savegames.ts';
 import { isWireRow, type WireRow } from '../replay/row.ts';
 
@@ -54,6 +55,12 @@ export interface NetGame {
 export interface LobbyPeer {
   member: number;
   name: string;
+  /**
+   * The armour colour the player picked (docs/sprites.md § Player colours). `isPeerMessage` leaves
+   * it unchecked and the session reads it through `asPlayerColor`, so a build without colours still
+   * takes a seat.
+   */
+  color: PlayerColor;
   settings: PlayerSettings;
   build: string;
   /** Whether the peer can play the host's set, null while unanswered; the host's own is ready. */
@@ -68,6 +75,8 @@ export interface SlotAssignment {
   /** The relay member, or null for a slot nobody drives any more. */
   member: number | null;
   name: string;
+  /** As `LobbyPeer.color`. */
+  color: PlayerColor;
   settings: PlayerSettings;
 }
 
@@ -81,7 +90,7 @@ export interface NetRestore {
 
 /** What peers say to each other; the relay adds `from`. */
 export type PeerMessage =
-  | { type: 'hello'; name: string; settings: PlayerSettings; build: string; compat: number }
+  | { type: 'hello'; name: string; color: PlayerColor; settings: PlayerSettings; build: string; compat: number }
   | {
       type: 'lobby';
       game: NetGame;

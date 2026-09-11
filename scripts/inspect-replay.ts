@@ -34,6 +34,7 @@ import {
   type SessionSettings,
 } from '../src/game/replay.ts';
 import { AIM_QUANTUM } from '../src/game/input.ts';
+import { asPlayerColor, slotColor } from '../src/wad/playercolor.ts';
 
 const args = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
@@ -100,7 +101,8 @@ if (keyframes.length > 0) {
 
 for (const [index, slot] of data.slots.entries()) {
   const { tics } = slot;
-  console.log(`\nplayer ${index + 1}: ${describePlayer(slot.settings)}`);
+  const color = asPlayerColor(slot.color, slotColor(index));
+  console.log(`\nplayer ${index + 1}: ${describePlayer(slot.settings)}, color ${color}`);
   const camera = poseAt(tics, 0);
   if (camera) {
     console.log(

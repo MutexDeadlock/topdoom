@@ -59,9 +59,9 @@ src/wad/       WAD files, merged lump directory, content IDs (checksum), map lum
                dynamic-light definitions (gldefs), the text lumps' shared grammar (textlump),
                whether this engine can run a file (support), what a file holds unloaded (describe),
                the engine's own WAD (shipped) and writing one (write), the shipped player art and
-               when it stands in (playerskin), the menu's WAD library, and the campaign lumps —
-               MAPINFO, level names, par times, the sky, the game mode, the level progression
-               (campaign/)
+               when it stands in (playerskin), the players' armour colours (playercolor), the menu's
+               WAD library, and the campaign lumps — MAPINFO, level names, par times, the sky, the
+               game mode, the level progression (campaign/)
 src/render/    BSP polygon reconstruction (bsp, sectorprobe), the solids a map draws as void
                (solids), mesh building (mapmesh/), sector light + depth falloff (sectorlight),
                materials + texture animation, occlusion fading (occlusion/), Boom's scrolling

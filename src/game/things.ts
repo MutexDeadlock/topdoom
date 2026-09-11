@@ -626,6 +626,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       // Whether this thing can be seen — and so shot, and so auto-aimed at. Keyed to fog's crisp
       // `explored` flag, never its damped alpha. docs/fogofwar.md § What gameplay reads.
       p.visible = !fogVisible || fogVisible(p.subsector);
+      // A dormant monster plays its stand loop, where vanilla runs `A_Look`; an alerted one that
+      // did not step holds its walk frame. docs/sprites.md § Pain, and attack/pain poses.
+      p.anim.standing = !p.alerted;
       p.anim.advance(dt, animating);
     }
     return { attacks, barrelExplosions };
@@ -975,6 +978,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
           : ['A'];
     const frameSeconds = isBarrel ? BARREL_CHAIN.idleFrameSeconds : itemAnim ? itemAnim.frameSeconds : undefined;
     const anim = new SpriteAnimator(bank, materials, spriteName, animFrames, frameSeconds);
+    // What a dormant monster stands in; `update` says when.
+    const stand = tables.MONSTER_STAND_FRAMES[type];
+    if (stand) anim.setStand(stand.frames, stand.frameSeconds);
     // Resolved once, here: a thing whose art this WAD set lacks is skipped rather than spawned
     // pointing at a missing lump.
     if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) return null;

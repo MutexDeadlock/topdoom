@@ -2,6 +2,7 @@ import { createRooms, type RoomMember, type Rooms } from '../../server/rooms.ts'
 import type { Transport } from '../../src/game/net/transport.ts';
 import { MAX_PLAYERS } from '../../src/game/playerstarts.ts';
 import type { PlayerSettings } from '../../src/game/replay/defs.ts';
+import type { PlayerColor } from '../../src/wad/playercolor.ts';
 import type { NetGame, NetRestore } from '../../src/game/net/defs.ts';
 import { NetSession, type NetHooks } from '../../src/game/net/session.ts';
 import type { GameSnapshot } from '../../src/game/snapshot.ts';
@@ -124,6 +125,7 @@ export function hostSession(hub: Hub, name = 'host', delay = 3) {
   const transport = hub.transport();
   const session = NetSession.host(transport, hooks, {
     name,
+    color: 'green',
     settings: SETTINGS,
     build: '1.0',
     compat: 1,
@@ -137,6 +139,7 @@ export function hostSession(hub: Hub, name = 'host', delay = 3) {
 
 export interface JoinerOptions {
   name?: string;
+  color?: PlayerColor;
   build?: string;
   compat?: number;
   /** What the joiner's set check answers the host's lobby with. */
@@ -145,11 +148,11 @@ export interface JoinerOptions {
 
 /** A session joining `code` on `hub`, its hello delivered and the host's lobby answered. */
 export function joinSession(hub: Hub, code: string, options: JoinerOptions = {}) {
-  const { name = 'guest', build = '1.0', compat = 1, refusal = null } = options;
+  const { name = 'guest', color = 'green', build = '1.0', compat = 1, refusal = null } = options;
   const { hooks, log, clock } = hookLog();
   log.refusal = refusal;
   const transport = hub.transport();
-  const session = NetSession.join(transport, hooks, { name, settings: SETTINGS, build, compat, code });
+  const session = NetSession.join(transport, hooks, { name, color, settings: SETTINGS, build, compat, code });
   hub.flush();
   return { session, transport, log, clock };
 }

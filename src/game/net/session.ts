@@ -13,6 +13,7 @@ import { MAX_PLAYERS } from '../playerstarts.ts';
 import { getRandomCursors } from '../../util/random.ts';
 import type { CameraPose } from '../../render/camera.ts';
 import type { Pos2 } from '../../types.ts';
+import { asPlayerColor, DEFAULT_PLAYER_COLOR, type PlayerColor } from '../../wad/playercolor.ts';
 import {
   DROP_TIMEOUT_MS,
   INPUT_DELAY,
@@ -57,6 +58,8 @@ export interface NetHooks {
 /** This browser's player, as the lobby introduces them. */
 export interface NetIdentity {
   name: string;
+  /** The armour colour the player picked — docs/sprites.md § Player colours. */
+  color: PlayerColor;
   settings: PlayerSettings;
   /** `VERSION` and `COMPAT`: a peer on other game rules is refused, one on another build noted. */
   build: string;
@@ -84,6 +87,7 @@ export interface RosterEntry {
   /** The relay member playing it, null once its player is gone. */
   member: number | null;
   name: string;
+  color: PlayerColor;
   /** False for a slot whose player is gone — it stands idle in the level. */
   present: boolean;
   local: boolean;
@@ -210,6 +214,7 @@ export class NetSession {
       slot: a.slot,
       member: a.member,
       name: a.name,
+      color: a.color,
       present: a.member !== null,
       local: a.slot === this.mySlot,
     }));
@@ -221,6 +226,11 @@ export class NetSession {
    */
   settingsOf(slot: number): PlayerSettings | undefined {
     return this.assignments[slot]?.settings;
+  }
+
+  /** The armour colour `slot`'s player picked — docs/sprites.md § Player colours. */
+  colorOf(slot: number): PlayerColor | undefined {
+    return this.assignments[slot]?.color;
   }
 
   /**
@@ -256,6 +266,7 @@ export class NetSession {
       slot,
       member: peer.member,
       name: peer.name,
+      color: peer.color,
       settings: peer.settings,
     }));
     const message: PeerMessage = { type: 'start', slots, session: this.session, delay: this.delay };
@@ -442,6 +453,7 @@ export class NetSession {
           this.transport.send({
             type: 'hello',
             name: this.me.name,
+            color: this.me.color,
             settings: this.me.settings,
             build: this.me.build,
             compat: this.me.compat,
@@ -518,7 +530,9 @@ export class NetSession {
     }
     const refusal =
       compat !== this.me.compat ? `runs other game rules (build v${build}); this game runs v${this.me.build}` : null;
-    const peer: LobbyPeer = { member: from, name, settings, build, ready: refusal ? false : null, refusal };
+    // A build without colours still takes a seat, in the default one.
+    const color = asPlayerColor(message.color, DEFAULT_PLAYER_COLOR);
+    const peer: LobbyPeer = { member: from, name, color, settings, build, ready: refusal ? false : null, refusal };
     if (refusal) this.otherRules.add(from);
     else this.otherRules.delete(from);
     const known = this.peers.findIndex((p) => p.member === from);
@@ -533,7 +547,7 @@ export class NetSession {
     this.game = game;
     this.session = message.session;
     this.delay = message.delay;
-    this.peers = message.peers;
+    this.peers = message.peers.map((peer) => ({ ...peer, color: asPlayerColor(peer.color, DEFAULT_PLAYER_COLOR) }));
     this.playing = message.playing;
     if (changed) {
       this.lastRefusal = this.hooks.setRefusal(game);
@@ -663,12 +677,16 @@ export class NetSession {
     let slot = this.assignments.findIndex((a) => a.member === null);
     if (slot < 0) slot = this.assignments.length;
     if (slot >= MAX_PLAYERS) return;
-    this.scheduleSync({ slot, member, name: peer.name, settings: peer.settings });
+    this.scheduleSync({ slot, member, name: peer.name, color: peer.color, settings: peer.settings });
   }
 
   /** The slots as announced: names and settings by slot, an input each; the table grows with them. */
   private applyAssignments(slots: SlotAssignment[]): void {
-    this.assignments = slots.map((a) => ({ ...a, settings: { ...a.settings } }));
+    this.assignments = slots.map((a) => ({
+      ...a,
+      color: asPlayerColor(a.color, DEFAULT_PLAYER_COLOR),
+      settings: { ...a.settings },
+    }));
     for (const a of this.assignments) {
       if (!this.inputs[a.slot]) this.inputs[a.slot] = new RowInput({ rightMouse: a.settings.rightMouse });
       else this.inputs[a.slot].rightMouse = a.settings.rightMouse;
@@ -749,6 +767,7 @@ export class NetSession {
     return {
       member: this.member,
       name: this.me.name,
+      color: this.me.color,
       settings: this.me.settings,
       build: this.me.build,
       ready: true,

@@ -1,7 +1,7 @@
 /**
- * The menu's Multiplayer tab: the relay and name fields, hosting the New Game tab's level or
- * joining a room by code, and the room itself — its code, what is being played, who is in it and
- * whether they can play it, the host's input delay and Start. Pure DOM over a `NetSession`;
+ * The menu's Multiplayer tab: the relay, name and colour fields, hosting the New Game tab's level
+ * or joining a room by code, and the room itself — its code, what is being played, who is in it
+ * and whether they can play it, the host's input delay and Start. Pure DOM over a `NetSession`;
  * every failure goes to the menu's status line. docs/multiplayer-net.md § The Multiplayer tab.
  */
 import {
@@ -15,6 +15,14 @@ import {
 import { getPlayerName, setPlayerName } from '../../game/replay.ts';
 import { wadLabel, type SaveWadSet } from '../../game/savegames.ts';
 import { SKILL_NAMES } from '../../game/skill.ts';
+import {
+  DEFAULT_PLAYER_COLOR,
+  PLAYER_COLORS,
+  asPlayerColor,
+  getPlayerColor,
+  setPlayerColor,
+  type PlayerColor,
+} from '../../wad/playercolor.ts';
 import { readStorage, writeStorage } from '../../util/storage.ts';
 import { DOOM_TIC, VERSION } from '../../constants.ts';
 import { attempt, emptyLine, fillFacts, markChip, noteLine, type StatusLine } from './actions.ts';
@@ -56,6 +64,8 @@ export class MultiplayerUi {
   private room = el<HTMLElement>('net-room');
   private relayInput = el<HTMLInputElement>('net-relay');
   private nameInput = el<HTMLInputElement>('net-name');
+  private colorSelect = el<HTMLSelectElement>('net-color');
+  private colorSwatch = el<HTMLSpanElement>('net-color-swatch');
   private hostButton = el<HTMLButtonElement>('net-host');
   private codeInput = el<HTMLInputElement>('net-code');
   private joinButton = el<HTMLButtonElement>('net-join');
@@ -91,6 +101,19 @@ export class MultiplayerUi {
     // Stored as typed, so a Host or a Join only reads them.
     this.relayInput.addEventListener('input', () => writeStorage(RELAY_URL_STORAGE_KEY, this.relayInput.value.trim()));
     this.nameInput.addEventListener('input', () => setPlayerName(this.nameInput.value));
+    for (const color of PLAYER_COLORS) {
+      const option = document.createElement('option');
+      option.value = color;
+      option.textContent = color[0].toUpperCase() + color.slice(1);
+      this.colorSelect.append(option);
+    }
+    this.colorSelect.value = getPlayerColor();
+    paintSwatch(this.colorSwatch, getPlayerColor());
+    this.colorSelect.addEventListener('change', () => {
+      const color = asPlayerColor(this.colorSelect.value, DEFAULT_PLAYER_COLOR);
+      setPlayerColor(color);
+      paintSwatch(this.colorSwatch, color);
+    });
     // Typed as they are read back: a code is five capitals, and a lowercase one is the same room.
     this.codeInput.addEventListener('input', () => {
       this.codeInput.value = this.codeInput.value.toUpperCase();
@@ -270,7 +293,7 @@ export class MultiplayerUi {
         const name = peer.name || `player ${index + 1}`;
         // The host is the list's first row; everyone after it can be kicked.
         const kick = session.isHost && index > 0 ? this.kickButton(peer.member, name) : null;
-        this.peers.append(peerRow({ name, note, marks, state, kick }));
+        this.peers.append(peerRow({ name, color: peer.color, note, marks, state, kick }));
       }
       return;
     }
@@ -280,7 +303,7 @@ export class MultiplayerUi {
       if (entry.local) marks.push(markChip('you'));
       const state = stateLine(entry.present ? `player ${entry.slot + 1}` : 'left — standing idle');
       const kick = session.isHost && !entry.local && entry.member !== null ? this.kickButton(entry.member, entry.name) : null;
-      const row = peerRow({ name: entry.name, note: null, marks, state, kick });
+      const row = peerRow({ name: entry.name, color: entry.color, note: null, marks, state, kick });
       row.classList.toggle('disabled', !entry.present);
       this.peers.append(row);
     }
@@ -329,6 +352,8 @@ function ticsLabel(tics: number): string {
 /** What one line of the room's list shows; `note` and `kick` are null where the row has none. */
 interface PeerRowParts {
   name: string;
+  /** The armour colour that player draws in, as a swatch before the name. */
+  color: PlayerColor;
   /** Why that player cannot play the host's pick. */
   note: HTMLElement | null;
   marks: readonly HTMLElement[];
@@ -342,12 +367,14 @@ interface PeerRowParts {
  * line up down it; Kick leads its cell, so it starts where the host row's badge does — no row
  * carries both.
  */
-function peerRow({ name, note, marks, state, kick }: PeerRowParts): HTMLDivElement {
+function peerRow({ name, color, note, marks, state, kick }: PeerRowParts): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'row';
   const label = document.createElement('span');
   label.className = 'name truncate';
-  label.textContent = name;
+  const swatch = document.createElement('span');
+  paintSwatch(swatch, color);
+  label.append(swatch, name);
   const why = document.createElement('span');
   why.className = 'note';
   if (note) why.append(note);
@@ -366,3 +393,26 @@ function stateLine(text: string): HTMLSpanElement {
   state.textContent = text;
   return state;
 }
+
+/** `swatch` as a square in `color`'s own shade, named on hover. */
+function paintSwatch(swatch: HTMLElement, color: PlayerColor): void {
+  swatch.className = 'swatch';
+  swatch.style.background = SWATCHES[color];
+  swatch.title = color;
+}
+
+/**
+ * Each colour as the menu shows it: its ramp's sixth shade in DOOM2.WAD's PLAYPAL
+ * (`PLAYER_COLOR_RAMPS` + 5). The menu draws before any set is loaded, so it cannot ask the loaded
+ * palette.
+ */
+const SWATCHES: Record<PlayerColor, string> = {
+  green: '#53af47',
+  gray: '#636363',
+  brown: '#8f5f37',
+  red: '#7f1b1b',
+  blue: '#5353ff',
+  white: '#cbcbcb',
+  orange: '#ffa35b',
+  pink: '#df8787',
+};

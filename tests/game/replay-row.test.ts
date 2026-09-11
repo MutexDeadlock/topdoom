@@ -8,6 +8,7 @@ import { captureSimSettings } from '../../src/game/replay/settings.ts';
 import { BUTTON_FIRE, BUTTON_RIGHT_EDGE, type Replay } from '../../src/game/replay/defs.ts';
 import type { GameSnapshot } from '../../src/game/snapshot.ts';
 import type { CameraPose } from '../../src/render/camera.ts';
+import type { PlayerColor } from '../../src/wad/playercolor.ts';
 import {
   NO_CAMERA,
   START_POSE,
@@ -113,6 +114,19 @@ describe('Replays · the row codec', () => {
     playback.eventsAt(2);
     assert.equal(input.rightMousePressed('use'), false);
     assert.equal(input.rightMousePressed('none'), true);
+  });
+
+  test("a slot's colour is written only where it is not its default, and read back with the default", () => {
+    const record = (colors: PlayerColor[]) => {
+      const recorder = new ReplayRecorder([scriptedInput([{}])], { ...recordingStart(), colors });
+      beginTic(recorder, 0, 0, captureSimSettings());
+      recorder.input(0).endTic();
+      return recorder.finish();
+    };
+    assert.equal(record(['red']).data.slots[0].color, 'red');
+    assert.ok(!('color' in record(['green']).data.slots[0]), "player 1's own green is left out");
+    assert.deepEqual(new ReplayPlayback(record(['red']) as Replay).slotColors, ['red']);
+    assert.deepEqual(new ReplayPlayback(replayCapture(1) as Replay).slotColors, ['green'], 'a record with none');
   });
 
   test('the recorder writes, byte for byte, the one-player record reshaped as one slot', () => {

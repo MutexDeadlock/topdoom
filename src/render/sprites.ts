@@ -140,6 +140,17 @@ export class SpriteAnimator {
   private lastSkin: SpriteSkin | null = null;
   private animIndex = 0;
   private animTimer = 0;
+  /** The cycle `animIndex` last indexed: `animFrames`, or `stand` while standing. */
+  private base: string[];
+  /** A loop to play while still and `standing`, and its per-frame rate — see `setStand`. */
+  private stand: string[] | null = null;
+  private standDuration = 0;
+
+  /**
+   * Whether a still tic plays `stand` rather than holding `animFrames[0]` — the owner's to set each
+   * tic: a monster stands while dormant, and holds its first walk frame while it chases in place.
+   */
+  standing = false;
 
   /**
    * The logical `SPRITE + LETTER` the last `resolve` drew (`TROOA`, `BEXPC`), for the caller to
@@ -207,18 +218,22 @@ export class SpriteAnimator {
     this.spriteName = spriteName;
     this.animFrames = animFrames;
     this.frameDuration = frameDuration;
+    this.base = animFrames;
   }
 
   /**
    * Advances the frame cycle by `dt`. `animating` selects the cycle (e.g. the
    * player only cycles legs while actually moving); while false the actor
    * holds on `animFrames[0]` and the cycle resets, so motion always resumes
-   * from the first frame instead of wherever it happened to stop.
+   * from the first frame instead of wherever it happened to stop — unless it
+   * is `standing` with a `stand` loop, which plays instead.
    */
   advance(dt: number, animating: boolean): void {
+    const stand = animating || !this.standing ? null : this.stand;
     // A still thing with nothing playing — most of a map, every tic — lands exactly here through
     // the three steps below; taken first, since this runs per thing per tic.
-    if (!animating && !this.death.frames && !this.override.frames) {
+    if (!animating && !stand && !this.death.frames && !this.override.frames) {
+      this.base = this.animFrames;
       this.animTimer = 0;
       this.animIndex = 0;
       return;
@@ -243,12 +258,20 @@ export class SpriteAnimator {
     // themselves to cover one *starting*, since `resolve` can be reached
     // between a state change and the next `advance` (docs/frameloop.md § What
     // runs in a tic) and must never see an index past the end of its array.
-    if (this.animIndex >= this.animFrames.length) this.animIndex = 0;
-    if (animating && this.animFrames.length > 1) {
+    const base = stand ?? this.animFrames;
+    // Walking and standing each start their cycle from its first frame.
+    if (base !== this.base) {
+      this.base = base;
+      this.animTimer = 0;
+      this.animIndex = 0;
+    }
+    if (this.animIndex >= base.length) this.animIndex = 0;
+    const duration = stand ? this.standDuration : this.frameDuration;
+    if ((animating || stand) && base.length > 1) {
       this.animTimer += dt;
-      while (this.animTimer >= this.frameDuration) {
-        this.animTimer -= this.frameDuration;
-        this.animIndex = (this.animIndex + 1) % this.animFrames.length;
+      while (this.animTimer >= duration) {
+        this.animTimer -= duration;
+        this.animIndex = (this.animIndex + 1) % base.length;
       }
     } else {
       this.animTimer = 0;
@@ -263,7 +286,7 @@ export class SpriteAnimator {
    * changed) costs one `SpriteBank` lookup and nothing else.
    */
   resolve(facingDeg: number, viewerAngleDeg: number): CachedSprite | null {
-    const frames = this.death.frames ?? this.override.frames ?? this.animFrames;
+    const frames = this.death.frames ?? this.override.frames ?? this.base;
     const letter = frames[this.animIndex];
     const spriteName = this.death.frames && this.deathSpriteName ? this.deathSpriteName : this.spriteName;
     const digit = pickRotationDigit(facingDeg, viewerAngleDeg);
@@ -313,6 +336,15 @@ export class SpriteAnimator {
    */
   setSkin(skin: SpriteSkin | null): void {
     this.skin = skin;
+  }
+
+  /**
+   * Gives this sprite a loop to play while still and `standing`, in place of holding
+   * `animFrames[0]` — a monster's stand art, `MONSTER_STAND_FRAMES`.
+   */
+  setStand(frames: string[], frameDuration: number): void {
+    this.stand = frames;
+    this.standDuration = frameDuration;
   }
 
   /**

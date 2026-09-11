@@ -9,6 +9,7 @@ import type { SaveWad, SaveWadSet } from '../savegames.ts';
 import type { Skill } from '../skill.ts';
 import type { GameSnapshot } from '../snapshot.ts';
 import type { CameraPose } from '../../render/camera.ts';
+import type { PlayerColor } from '../../wad/playercolor.ts';
 import { DOOM_TIC } from '../../constants.ts';
 
 /**
@@ -213,6 +214,11 @@ export interface Keyframe {
 export interface SlotRecord {
   /** The slot's player settings at tic 0; later changes are its `settings` events. */
   settings: PlayerSettings;
+  /**
+   * The armour colour the slot's player picked; absent where it is the slot's own default
+   * (`slotColor`), as in every record written before colours. docs/sprites.md § Player colours.
+   */
+  color?: PlayerColor;
   tics: TicColumns;
   /** The characters typed in a tic, for the tics that typed any — cheat codes. */
   typed: [tic: number, text: string][];

@@ -11,7 +11,7 @@ browsers run one together — the relay, lockstep, snapshots — is docs/multipl
 ## Player slots
 
 `PlayerSlot` is one player's whole share of a level: `player`, `inventory`, `weapons`, `cheats`,
-`dead`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `actor`, `shadow`,
+`dead`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
 `consumePickup`. `Game.slots` holds them by index. `localSlot` is the one this browser plays: the
 HUD, crosshair, screen effects, death overlay, center messages, audio listener, `viewColormap`, the
 fade anchor, the fog's drawn island and the view camera read `local`, and nothing else does.
@@ -99,8 +99,8 @@ slots where a step was per player.
    `specials.endTic` (switch flashes, light patterns — **after every trigger**, so a light a switch
    lit this tic draws from the table this tic). Then `forces.tick` and the dolls (slot 0's).
 6. Per slot: `consumeLockedLine(slot)`; the message is the local slot's.
-7. The exit. Then a corpse's one input: the local `R` in single player (`restart`), use or the local
-   `R` in a netgame (`respawnSlot`, docs/multiplayer-coop.md § Respawn).
+7. The exit. Then a corpse's one input: the local `R` in single player (`restart`), use or the slot's
+   own `R` in a netgame (`respawnSlot`, docs/multiplayer-coop.md § Respawn).
 8. Per slot: `applyToCamera(1)` and `updateLivingPlayer` while alive, then the camera ticks for
    a live slot.
 9. `levelTime` while any slot is alive; `refillBodies`; the fog from every slot's body; things

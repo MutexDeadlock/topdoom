@@ -9,6 +9,9 @@ import { applyPickup, createInventory, leftInNetgame } from '../../src/game/inve
 import { SectorEffects } from '../../src/game/specials.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
 import { isLoadableState } from '../../src/game/savegames.ts';
+import { IDLE_TIC_INPUT, respawnPressed } from '../../src/game/input.ts';
+import { BOUND_KEYS } from '../../src/game/replay.ts';
+import { RowInput } from '../../src/game/replay/row.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { monsterArena } from '../fixtures/arena.ts';
@@ -110,6 +113,22 @@ describe('Coop · netgame pickups', () => {
     assert.equal(leftInNetgame(ThingType.shotgun, false), true);
     assert.equal(leftInNetgame(ThingType.shotgun, true), false);
     assert.equal(leftInNetgame(ThingType.clip, false), false);
+  });
+});
+
+describe('Coop · respawn', () => {
+  test("a corpse's own row respawns it on R or use, on every browser that runs the row", () => {
+    const row = (code: string) => {
+      const input = new RowInput({ rightMouse: 'previousweapon' });
+      input.row.pressed = 1 << BOUND_KEYS.indexOf(code);
+      return input;
+    };
+    // Read only for the local slot, a guest's R respawned them on their own browser alone: a
+    // desync, and the host's resync laid the body down again.
+    assert.equal(respawnPressed(row('KeyR')), true, "another browser's player pressing R");
+    assert.equal(respawnPressed(row('Space')), true);
+    assert.equal(respawnPressed(row('KeyW')), false);
+    assert.equal(respawnPressed(IDLE_TIC_INPUT), false, 'a slot nobody drives stays down');
   });
 });
 

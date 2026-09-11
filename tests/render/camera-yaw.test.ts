@@ -99,6 +99,37 @@ describe('Rendering · camera orbit', () => {
     assert.ok(Math.abs(camera.yawDeg - -145) < 1e-6, 'and it arrives at the wrapped target');
   });
 
+  test('a step onto -180° lands instead of crossing the wrap every tic', () => {
+    const camera = new TopDownCamera(16 / 9);
+    camera.snapTo(AT);
+    camera.yawDeg = -135;
+    camera.stepYaw(-45);
+    for (let i = 0; i < 200; i++) camera.tick(DOOM_TIC, AT, null);
+
+    // Unsnapped, the ease reaching -180 wrapped to +180 and the next ulp wrapped it back: invisible
+    // live, but a network row's pose read 180 and -180 on alternate tics.
+    for (let i = 0; i < 10; i++) {
+      camera.tick(DOOM_TIC, AT, null);
+      assert.equal(camera.yawDeg, 180, `tic ${i} rests on the wrap`);
+    }
+  });
+
+  test('a pose stream crossing the wrap draws the short way, and runs at the pose given', () => {
+    const camera = new TopDownCamera(16 / 9);
+    camera.snapPose({ yaw: -180, point: [0, 41, 0], distance: 480, tilt: 60 });
+    // The shape a coop recording's rows took: one bearing, written either side of the wrap in turn.
+    camera.setPose({ yaw: 180, point: [0, 41, 0], distance: 480, tilt: 60 });
+    camera.applyToCamera(0.5);
+    const drawn = (((camera.viewAngleDeg + 90) % 360) + 360) % 360;
+    assert.ok(Math.abs(drawn - 180) < 1e-9, `halfway between the two tics draws ${drawn}°, not a half turn`);
+    camera.applyToCamera(1);
+    assert.equal(camera.viewAngleDeg + 90, 180, 'the simulation still reads the recorded yaw verbatim');
+
+    camera.setPose({ yaw: -170, point: [0, 41, 0], distance: 480, tilt: 60 });
+    camera.applyToCamera(0.5);
+    assert.ok(Math.abs(camera.viewAngleDeg + 90 - -175) < 1e-9, 'a real turn across the wrap takes the 10° arc');
+  });
+
   test('a save mid-step stores where the orbit is heading, not what it is passing through', () => {
     const camera = new TopDownCamera(16 / 9);
     camera.snapTo(AT);

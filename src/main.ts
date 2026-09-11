@@ -43,6 +43,7 @@ import { Game } from './game.ts';
 import { loadBestTimes } from './game/besttimes.ts';
 import { stockGldefs } from './wad/gldefs.ts';
 import { shippedWad } from './wad/shipped.ts';
+import { getPlayerColor } from './wad/playercolor.ts';
 import { LoadingScreen } from './ui/loading.ts';
 import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
@@ -256,6 +257,7 @@ async function boot(): Promise<void> {
   /** This browser's player, as a lobby introduces them: the name, the menu's player settings, the build. */
   const identity = (name: string): NetIdentity => ({
     name,
+    color: getPlayerColor(),
     settings: { ...GLOBAL_PLAYER_SETTINGS },
     build: VERSION,
     compat: COMPAT,

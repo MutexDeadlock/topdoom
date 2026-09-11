@@ -252,8 +252,8 @@ spawn shooter) are skipped by number.
   what makes this the boundary.
 - **Letters are kept distinct, in first-appearance order.** Vanilla holds a pose by repeating its
   frame across states; against a flat per-frame rate that repeat is a no-op, and it is how the
-  pose tables were written. A decoration's idle loop is the exception and is taken as written —
-  the evil eye's `A,B,C,B` is a real wobble.
+  pose tables were written. A decoration's idle loop and a monster's stand loop are the exception
+  and are taken as written — the evil eye's `A,B,C,B` is a real wobble.
 - **Attack** is the melee chain's letters, then the missile chain's, distinct, minus the walk
   cycle's — `SKEL`'s two attacks become one sequence, and `SPID`/`BSPI`'s `A_FaceTarget` frame
   reuses their idle letter.
@@ -272,6 +272,8 @@ spawn shooter) are skipped by number.
 - **A decoration's** idle loop is one flat rate, the loop's mean tics with ties rounding down —
   the rule the hand transcription turns out to have used (`POL6`'s 6/8 → 7, `ARM1`'s 6/7 → 6,
   `GOR1`'s 10/15/8/6 → 10). A single held frame that isn't `A` is a one-letter entry.
+- **A monster's** spawn loop is `MONSTER_STAND_FRAMES`, by the decoration's rule; a spawn chain that
+  holds one frame is `MONSTER_IDLE_FRAMES` instead (Keen, the brain).
 - **A missile's** spawn loop is its flight art, its death chain its impact, both under the pristine
   flight sprite's key. A patched flight sprite moves the missile to the new key in every
   sprite-keyed table — `AttackStats.projectile.sprite`, `WeaponDef.projectileSprite`,

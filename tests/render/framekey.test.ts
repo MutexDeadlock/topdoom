@@ -33,6 +33,25 @@ describe('Sprites · frameKey', () => {
     assert.equal(anim.frameKey, 'TROOA');
   });
 
+  test('a standing sprite plays its stand loop while still; otherwise it holds its walk frame', () => {
+    const anim = new SpriteAnimator(BANK, MATERIALS, 'SPID', ['A', 'B', 'C', 'D', 'E', 'F'], 3 * DOOM_TIC);
+    anim.setStand(['A', 'B'], 10 * DOOM_TIC);
+    const frame = () => {
+      anim.resolve(0, VIEWER_ANGLE_DEG);
+      return anim.frameKey;
+    };
+    anim.advance(12 * DOOM_TIC + 1e-6, true);
+    assert.equal(frame(), 'SPIDE', 'mid-stride when its target is gone');
+    anim.standing = true;
+    anim.advance(DOOM_TIC, false);
+    assert.equal(frame(), 'SPIDA', 'the stand loop starts from its own first frame');
+    anim.advance(10 * DOOM_TIC, false);
+    assert.equal(frame(), 'SPIDB', 'and steps on at its own rate');
+    anim.standing = false;
+    anim.advance(10 * DOOM_TIC, false);
+    assert.equal(frame(), 'SPIDA', 'an alerted monster standing still holds its walk frame');
+  });
+
   test('a SpriteActor lifts a bright frame to 255 and leaves the rest to its sector', () => {
     const pose = {
       facingDeg: 0,

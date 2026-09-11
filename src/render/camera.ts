@@ -99,8 +99,11 @@ const MAX_AIM_LEAD = 220;
 const FRAMING_SMOOTH_RATE = 10;
 
 /**
- * Snap epsilons for the framing dampers, in map units / degrees — tuned by feel (imperceptible).
+ * Snap epsilons for the orbit and framing dampers, in map units / degrees — tuned by feel
+ * (imperceptible). The yaw's is also what lets a step onto -180° land
+ * (docs/camera.md § Camera orbit).
  */
+const YAW_SNAP_EPS = 0.001;
 const DISTANCE_SNAP_EPS = 0.01;
 const TILT_SNAP_EPS = 0.001;
 
@@ -345,11 +348,13 @@ export class TopDownCamera {
    * Puts the camera *at* `pose`, this tic's state becoming the previous one so the draw still
    * interpolates between the two. The targets follow it, so a camera handed back to its own
    * `tick` afterwards (a replay taken over) carries on from here instead of gliding somewhere else.
+   * The previous yaw is taken a whole turn round where that is the shorter arc, so a pose read at
+   * 180° after one at -180° draws no turn; the pose itself is kept as given.
    * docs/replays.md § Camera state.
    */
   setPose(pose: CameraPose): void {
     this.prevSmoothed.copy(this.smoothed);
-    this.prevYawDeg = this._yawDeg;
+    this.prevYawDeg = this._yawDeg - Math.round((this._yawDeg - pose.yaw) / 360) * 360;
     this.prevDistance = this._distance;
     this.prevTiltDeg = this._tiltDeg;
     this.roundPose(pose);
@@ -568,7 +573,7 @@ export class TopDownCamera {
       this.smoothed.lerp(this.target, 1 - Math.exp(-FOLLOW_SMOOTH_RATE * dt));
     }
 
-    this._yawDeg += (this._targetYawDeg - this._yawDeg) * (1 - Math.exp(-YAW_STEP_SMOOTH_RATE * dt));
+    this._yawDeg = dampen(this._yawDeg, this._targetYawDeg, YAW_STEP_SMOOTH_RATE, dt, YAW_SNAP_EPS);
     this.normaliseYaw();
   }
 
@@ -581,8 +586,9 @@ export class TopDownCamera {
   applyToCamera(alpha: number): void {
     this.viewPoint.copy(this.prevSmoothed).lerp(this.smoothed, alpha);
     // A straight lerp, with no shortest-arc case to handle: `normaliseYaw` only ever shifts both
-    // ends by the same whole turn, so their difference is always the arc actually being turned
-    // through (`stepYaw` adds ±45 without normalising at all).
+    // ends by the same whole turn and `setPose` puts the previous end on the shorter arc, so their
+    // difference is always the arc actually being turned through (`stepYaw` adds ±45 without
+    // normalising at all).
     const yawDeg = this.prevYawDeg + (this._yawDeg - this.prevYawDeg) * alpha;
     this.viewYawDeg = yawDeg;
 

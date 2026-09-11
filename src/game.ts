@@ -162,7 +162,8 @@ import type { AudioEngine } from './audio/audio.ts';
 import { playerOrigin } from './audio/sfx.ts';
 import { PlayerSlot } from './game/playerslot.ts';
 import { coopStarts, levelStartFor, MAX_PLAYERS, rebornSpot } from './game/playerstarts.ts';
-import { IDLE_TIC_INPUT, usePressed } from './game/input.ts';
+import { getPlayerColor, slotColor, type PlayerColor } from './wad/playercolor.ts';
+import { IDLE_TIC_INPUT, respawnPressed } from './game/input.ts';
 import { SoundBank } from './wad/sound.ts';
 import { MusicBank } from './wad/music.ts';
 import { MapInfo } from './wad/campaign/mapinfo.ts';
@@ -329,7 +330,7 @@ export class Game {
   private spriteBank: SpriteBank;
   private spriteMaterials: SpriteMaterialCache;
   /** The shipped weapon-matching art, or null where the file never arrived (render/playerskin.ts). */
-  private playerSkins: PlayerSkins | null = null;
+  private playerSkins: PlayerSkins;
   /** Whether the loaded set draws the player its own way — resolved once, per `setDrawsOwnPlayer`. */
   private setDrawsPlayer = false;
   private mapNames: string[];
@@ -718,7 +719,13 @@ export class Game {
     // After `applyDehacked`, which both the bank and the predicate read: a patch may have pointed
     // `PLAY` somewhere else.
     this.setDrawsPlayer = setDrawsOwnPlayer(wad);
-    if (playerSkins) this.playerSkins = new PlayerSkins(playerSkins, gfx.palette, view.renderer);
+    this.playerSkins = new PlayerSkins({
+      file: playerSkins,
+      wad,
+      bank: this.spriteBank,
+      palette: gfx.palette,
+      renderer: view.renderer,
+    });
     this.hud = new Hud(gfx);
     this.message = new CenterMessage(gfx);
     this.levelCard = new LevelCard(gfx);
@@ -814,6 +821,7 @@ export class Game {
         if (start) this.forEachCameraOf(slot, (camera) => camera.snapPose(start));
       }
       this.pinPlaybackSettings(replay);
+      for (const slot of this.slots) slot.color = replay.slotColors[slot.index];
       this.crosshair.detach(true);
     }
   }
@@ -861,7 +869,10 @@ export class Game {
       local.simCamera = new TopDownCamera(this.view.camera.camera.aspect);
       local.simCamera.copyFrom(this.view.camera);
     }
-    for (const slot of this.slots) slot.settings = net.settingsOf(slot.index) ?? slot.settings;
+    for (const slot of this.slots) {
+      slot.settings = net.settingsOf(slot.index) ?? slot.settings;
+      slot.color = net.colorOf(slot.index) ?? slot.color;
+    }
     applySessionSettings(net.session);
     this.setReplay(this.replay);
     net.attach();
@@ -987,6 +998,7 @@ export class Game {
           capture,
           poses: this.slots.map((slot) => quantizePose(slot.simCamera.pose())),
           players: this.slots.map((slot) => slot.settings),
+          colors: this.slots.map((slot) => this.colorOf(slot)),
           session: captureSessionSettings(),
         },
       ),
@@ -1280,7 +1292,7 @@ export class Game {
     this.effects.dispose();
     this.materials.dispose();
     this.spriteMaterials.dispose();
-    this.playerSkins?.dispose();
+    this.playerSkins.dispose();
   }
 
   /** Clears the per-level 2D overlays, shared by `dispose` and every map load. */
@@ -1921,12 +1933,6 @@ export class Game {
     this.audio.play('plpain', player, playerOrigin(slot.index));
     slot.actor.playOnce(PLAYER_PAIN_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
     return true;
-  }
-
-  /** Whether a dead slot asked to respawn this tic: use, or `R` for the local player. */
-  private wantsRespawn(slot: PlayerSlot): boolean {
-    const { input } = slot;
-    return usePressed(input) || (slot === this.local && input.pressed('KeyR'));
   }
 
   /**
@@ -2702,12 +2708,12 @@ export class Game {
       return false;
     }
 
-    // A corpse answers one input: in single player `R`, which reloads the level; in a netgame use,
-    // or the local player's `R`, which stands them back up in it. Everything else a player drives
-    // is skipped below instead of branching here.
+    // A corpse answers one input: in single player `R`, which reloads the level; in a netgame use
+    // or `R` on the slot's own input, whichever browser this is, which stands them back up in it.
+    // Everything else a player drives is skipped below instead of branching here.
     if (this.netgame) {
       for (const slot of this.slots) {
-        if (slot.dead && !this.levelEnding && this.wantsRespawn(slot)) {
+        if (slot.dead && !this.levelEnding && respawnPressed(slot.input)) {
           this.respawnSlot(slot);
         }
       }
@@ -3213,6 +3219,15 @@ export class Game {
   }
 
   /**
+   * The colour `slot`'s armour draws in: the one its player picked, where it came with the slot (a
+   * network game's assignment, a replay's record); the menu's for the local player otherwise; its
+   * player number's vanilla colour for anyone else. docs/sprites.md § Player colours.
+   */
+  private colorOf(slot: PlayerSlot): PlayerColor {
+    return slot.color ?? (slot === this.local ? getPlayerColor() : slotColor(slot.index));
+  }
+
+  /**
    * Places the player's own billboard: position, facing, sector light and which
    * animation is due. Positions are interpolated `alpha` through the last tic;
    * the animation advances on `dt`, since it is presentation and its own frame
@@ -3221,9 +3236,9 @@ export class Game {
    * § Pausing).
    */
   private posePlayer(slot: PlayerSlot, alpha: number, dt: number, viewAngleDeg: number): void {
-    // Chosen before the pose that reads it. The setting is read per frame rather than captured, so
-    // the menu applies it to the level already running.
-    slot.actor.setSkin(this.playerSkins?.skinFor(slot.inventory.currentWeapon, this.setDrawsPlayer) ?? null);
+    // Chosen before the pose that reads it. The settings are read per frame rather than captured,
+    // so the menu applies them to the level already running.
+    slot.actor.setSkin(this.playerSkins.skinFor(slot.inventory.currentWeapon, this.colorOf(slot), this.setDrawsPlayer));
     slot.setOpacity(invisibilityOpacity(slot.inventory));
     const p = slot.player;
     const x = p.prevX + (p.x - p.prevX) * alpha;

@@ -188,6 +188,18 @@ export const CEILING_HUNG_HEIGHT: Record<number, number> = {
 export const MONSTER_IDLE_FRAMES: Record<number, string[]> = {};
 
 /**
+ * The loop a dormant monster stands in: its `spawnstate` chain, the states `A_Look` runs on —
+ * `S_SPID_STND`/`S_SPID_STND2` are `SPID` `A` and `B` for 10 tics each (`info.c`). Played while
+ * the monster is not alerted (`SpriteAnimator.standing`). The cacodemon and pain elemental loop a
+ * lone `A` and have no entry, nor do the two `MONSTER_IDLE_FRAMES` types.
+ * docs/sprites.md § Pain, and attack/pain poses.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
+ */
+export const MONSTER_STAND_FRAMES: Record<number, { frames: string[]; frameSeconds: number }> = {};
+
+/**
  * DOOM's usual walk cycle: 4 frames (A-D), the same one `PLAY` uses, held by
  * every type absent from `MONSTER_WALK_FRAMES_OVERRIDE` below.
  */
@@ -506,9 +518,9 @@ export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds:
 /**
  * Fills every table above from the walker's reading of vanilla's own `states[]`
  * (docs/dehacked.md § Frames). These are not transcribed any more: one `mobjinfo` row's eight
- * state pointers decide its sprite, its walk/idle/death/pain/raise letters and both attack poses,
- * so walking the chains is what *defines* them here and `tests/fixtures/frametables.ts` is the
- * independent reading that pins the result.
+ * state pointers decide its sprite, its walk/idle/stand/death/pain/raise letters and both attack
+ * poses, so walking the chains is what *defines* them here and `tests/fixtures/frametables.ts` is
+ * the independent reading that pins the result.
  *
  * Runs at import, before `dehacked/apply.ts` snapshots these tables for `resetDehacked`. A patch
  * re-derives the same way and writes only what differs.
@@ -522,6 +534,7 @@ for (const [key, m] of Object.entries(pristineFrameTables().monsters)) {
     MONSTER_WALK_FRAMES_OVERRIDE[dn] = m.walk;
   }
   if (m.idle) MONSTER_IDLE_FRAMES[dn] = m.idle;
+  if (m.stand) MONSTER_STAND_FRAMES[dn] = m.stand;
   if (m.death) MONSTER_DEATH_FRAMES[dn] = m.death;
   if (m.xdeath) MONSTER_XDEATH_FRAMES[dn] = m.xdeath;
   if (m.deathSprite) MONSTER_DEATH_SPRITE_OVERRIDE[dn] = m.deathSprite;

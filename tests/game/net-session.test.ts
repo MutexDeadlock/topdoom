@@ -131,7 +131,7 @@ describe('Network · session', () => {
   test('a start hands every session the same game and slots, and the run reads the same rows', () => {
     const hub = new Hub();
     const host = hostSession(hub, 'host', 2);
-    const guest = joinSession(hub, 'ROOM1');
+    const guest = joinSession(hub, 'ROOM1', { color: 'red' });
     host.session.start();
     hub.flush();
     assert.equal(host.log.starts.length, 1);
@@ -140,10 +140,11 @@ describe('Network · session', () => {
     assert.equal(host.session.slot, 0);
     assert.equal(guest.session.slot, 1);
     assert.equal(guest.session.delay, 2);
-    assert.deepEqual(guest.session.roster().map((r) => [r.name, r.present, r.local]), [
-      ['host', true, false],
-      ['guest', true, true],
+    assert.deepEqual(guest.session.roster().map((r) => [r.name, r.color, r.present, r.local]), [
+      ['host', 'green', true, false],
+      ['guest', 'red', true, true],
     ]);
+    assert.equal(host.session.colorOf(1), 'red', "the guest's colour reached the host's slot");
     attached(host.session, guest.session);
     assert.equal(guest.session.phase, 'playing');
 

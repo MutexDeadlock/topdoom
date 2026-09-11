@@ -164,7 +164,7 @@ delay (`R` answers throughout, since `tic` reads `PlayerSlot.dead`, not the over
 on the way out needs. Vanilla has no overlay here, so none of this is a fidelity claim.
 
 A corpse uses no line and crosses none (`specials.activate` skips a dead slot). In a netgame it
-respawns in place on use instead of reloading anything (docs/multiplayer-coop.md § Respawn); in
+respawns in place on use or `R` instead of reloading anything (docs/multiplayer-coop.md § Respawn); in
 single player `R` calls `restart`, which reloads the level from one of three states, in this order.
 
 **A savegame of this level, when there is one.** `Game.savedState` is the snapshot the level is

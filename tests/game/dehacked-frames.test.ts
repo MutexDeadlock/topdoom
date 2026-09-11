@@ -86,6 +86,7 @@ describe('DEHACKED · the frame walker reproduces the shipped tables', () => {
       cmp(`${n} sprite`, g.sprite, m.sprite);
       cmp(`${n} walk`, g.walk, m.walk);
       cmp(`${n} idle`, g.idle, m.idle);
+      cmp(`${n} stand`, g.stand, m.stand && { frames: m.stand.frames, tics: inTics(m.stand.frameSeconds) });
       cmp(`${n} death`, g.death, m.death);
       cmp(`${n} xdeath`, g.xdeath, m.xdeath);
       // No stock monster dies in another type's sprite.

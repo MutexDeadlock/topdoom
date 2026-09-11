@@ -54,6 +54,14 @@ export function usePressed(input: TicInput): boolean {
 }
 
 /**
+ * Whether a netgame corpse's own `input` asked to respawn this tic: use, or `R` — a row carries its
+ * player's `R` to every browser like any other key. docs/multiplayer-coop.md § Respawn.
+ */
+export function respawnPressed(input: TicInput): boolean {
+  return usePressed(input) || input.pressed('KeyR');
+}
+
+/**
  * The lattice the aim point sits on, in map units — 1/64 is far below anything a pick or a
  * turn can resolve (tuned by feel). The point is quantized *before* the simulation reads it, so
  * what a replay stores is exactly what ran. docs/replays.md § The TicInput seam.

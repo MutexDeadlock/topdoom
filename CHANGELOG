@@ -1,4 +1,4 @@
-v0.19.0 (2026-09-10)
+v0.19.0 (2026-09-11)
 
 This was supposed to become v0.18.2, but a lot more changes came together 
 plus a replay format break.
@@ -7,6 +7,7 @@ to more replay/save breaks, so... I followed through with it!
 
 Features and improvements
   - initial MULTIPLAYER: Co-op only, so far!
+    - pick your armour colour beside your name on the Multiplayer tab
   - replays
     - replay files are about a quarter smaller: the camera and aim columns are
       stored against a linear prediction, the desync samples as rounded columns
@@ -37,6 +38,8 @@ Features and improvements
   - added IDCLEV cheat to warp to any map of the loaded set 
     (replaces the dev-mode's N/P map jump)
   - the status text's debug lines are now a setting of their own
+  - sleeping monsters idle on the spot as in vanilla, instead of standing
+    frozen mid-stride
 
 Fixed bugs
   - IDKFA no longer hands over weapons the loaded set could never select:

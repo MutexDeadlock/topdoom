@@ -89,6 +89,7 @@ const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(things.THING_ANIM_FRAMES),
   patchable(things.MONSTER_WALK_FRAMES_OVERRIDE),
   patchable(things.MONSTER_IDLE_FRAMES),
+  patchable(things.MONSTER_STAND_FRAMES),
   patchable(things.MONSTER_DEATH_FRAMES),
   patchable(things.MONSTER_XDEATH_FRAMES),
   patchable(things.MONSTER_DEATH_SPRITE_OVERRIDE),
@@ -525,6 +526,7 @@ function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
   }
   if (!same(a.walk, b.walk)) put(things.MONSTER_WALK_FRAMES_OVERRIDE, dn, same(b.walk, things.MONSTER_WALK_FRAMES) || b.walk.length === 0 ? null : b.walk);
   if (!same(a.idle, b.idle)) put(things.MONSTER_IDLE_FRAMES, dn, b.idle);
+  if (!same(a.stand, b.stand)) put(things.MONSTER_STAND_FRAMES, dn, b.stand);
   if (!same(a.death, b.death)) put(things.MONSTER_DEATH_FRAMES, dn, b.death);
   if (!same(a.xdeath, b.xdeath)) put(things.MONSTER_XDEATH_FRAMES, dn, b.xdeath);
   if (!same(a.deathSprite, b.deathSprite)) put(things.MONSTER_DEATH_SPRITE_OVERRIDE, dn, b.deathSprite);

@@ -56,7 +56,9 @@ column moving at a constant rate stores zeros. The mask columns are left alone �
 measured *worse* on those. A null leaves the prediction where it was. The wheel is handed to the
 live tic as its sign too, so the recording sees what the playback will.
 
-`slots` holds one `SlotRecord` per slot — its own `settings`, `tics` and `typed`, as many as
+`slots` holds one `SlotRecord` per slot — its own `settings`, `tics` and `typed`, and `color` only
+where it is not the slot's default (docs/sprites.md § Player colours), so a record of defaults is
+byte for byte the one written before colours — as many as
 `snapshots[0].players`. Around them: `snapshots` (`[0]` the start, the rest restore and seek
 targets), `keyframes` (§ Seeking), `session`, `events`, `checks`. A record from before slot records
 is damaged to this build (`isPlayableData`). `ReplayMeta` carries the WAD set plus the build, the JS engine, the
@@ -80,6 +82,12 @@ each tic was read at (`CameraPose`: orbit, follow point, distance, tilt) and a p
 camera *at* it (`TopDownCamera.setPose`) before the tic runs. Under a playback the camera's own
 advance is skipped entirely: neither `AutoCamera.tick` nor `camera.tick` runs, since either would
 leave the next tic interpolating out of a pose nothing ever saw.
+
+**`setPose` draws the shorter arc and runs the pose as given.** A recorded yaw is in [-180°, 180°],
+so one bearing can be stored as 180 on one tic and -180 on the next — a coop recording of v0.19.0
+did exactly that for minutes on end (docs/camera.md § Camera orbit), and a straight lerp between
+the two drew a full turn per tic. The *previous* yaw is moved a whole turn instead: it is only ever
+interpolated out of, so the tic still reads the recorded yaw verbatim and no recording's run moves.
 
 That is what makes a replay survive a change to how the camera behaves. Retune the auto camera and
 an old recording still plays through the framing its player saw, and — because the camera feeds

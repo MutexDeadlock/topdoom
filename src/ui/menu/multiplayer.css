@@ -27,6 +27,44 @@
   width: 10ch;
 }
 
+/* The colour is one of eight short names; its swatch stands before the select. */
+#menu .net-field.color {
+  flex: none;
+  width: 16ch;
+}
+
+#menu .net-color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * As tall as the text fields beside it — a line, `.net-field input`'s 7px padding and 1px border
+ * each side — so the three labels stand on one line.
+ */
+#menu .net-color select {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  box-sizing: border-box;
+  height: calc(1lh + 16px);
+  padding: 0 8px;
+}
+
+/* A player's colour: beside the pick, and before each name in the room's list. */
+#menu .swatch {
+  flex: none;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--border);
+}
+
+#menu .net-peers .row .name .swatch {
+  margin-right: 8px;
+}
+
 #menu .net-field .label,
 #menu .net-controls .label {
   color: var(--fg-dim);

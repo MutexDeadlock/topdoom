@@ -10,6 +10,7 @@ import type { GameSnapshot } from '../snapshot.ts';
 import type { Pos2 } from '../../types.ts';
 import type { CameraPose, TopDownCamera } from '../../render/camera.ts';
 import { getRandomCursors } from '../../util/random.ts';
+import { slotColor, type PlayerColor } from '../../wad/playercolor.ts';
 import {
   CHECK_INTERVAL,
   KEYFRAME_INTERVAL,
@@ -32,6 +33,8 @@ export interface RecordingStart {
   poses: CameraPose[];
   /** Each slot's player settings, by slot. */
   players: PlayerSettings[];
+  /** Each slot's armour colour, by slot. */
+  colors: PlayerColor[];
   session: SessionSettings;
 }
 
@@ -52,7 +55,14 @@ export class ReplayRecorder {
     this.lastPlayers = start.players.map((settings) => ({ ...settings }));
     this.lastSession = { ...start.session };
     this.levels = [{ tic: 0, map: start.capture.map }];
-    const slots: SlotRecord[] = this.lastPlayers.map((settings) => ({ settings, tics: emptyColumns(), typed: [] }));
+    // A colour the slot would draw in anyway is left out, so a record of defaults is the one a
+    // build before colours wrote. docs/replays.md § The record.
+    const slots: SlotRecord[] = this.lastPlayers.map((settings, slot) => ({
+      settings,
+      ...(start.colors[slot] !== slotColor(slot) ? { color: start.colors[slot] } : {}),
+      tics: emptyColumns(),
+      typed: [],
+    }));
     this.data = {
       snapshots: [start.capture.state],
       keyframes: [{ tic: 0, map: start.capture.map, snapshot: 0 }],

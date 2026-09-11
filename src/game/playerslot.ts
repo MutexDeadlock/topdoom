@@ -16,6 +16,7 @@ import type { SpriteActor } from '../render/sprites.ts';
 import { PlayerShadow } from '../render/playershadow.ts';
 import { playerOrigin } from '../audio/sfx.ts';
 import type { PlayerSettings } from './replay/defs.ts';
+import type { PlayerColor } from '../wad/playercolor.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
@@ -78,6 +79,12 @@ export class PlayerSlot {
    * docs/multiplayer.md § Player settings.
    */
   settings: PlayerSettings;
+  /**
+   * The armour colour this player picked, where it came with the slot — a network game's
+   * assignment, a replay's record — or null for `Game.colorOf`'s default. docs/sprites.md § Player
+   * colours.
+   */
+  color: PlayerColor | null = null;
   /** The billboard this player is drawn as, and the disc under its feet. Session-scoped. */
   readonly actor: SpriteActor;
   readonly shadow = new PlayerShadow();

@@ -146,6 +146,12 @@ export interface MonsterFrames {
   sprite: string | undefined;
   walk: string[];
   idle: string[] | null;
+  /**
+   * The spawn loop a dormant monster stands in, where the spawn chain cycles rather than holding
+   * one frame (`idle`) — `A_Look`'s `S_*_STND` states, at one flat rate. Null for a loop of a lone
+   * `A`, which the held walk frame already draws.
+   */
+  stand: { frames: string[]; frameSeconds: number } | null;
   death: string[] | null;
   xdeath: string[] | null;
   deathSprite: { death?: string; xdeath?: string } | null;
@@ -548,6 +554,7 @@ function deriveMonster(
 
   const walk = distinctLetters(states, see.indices);
   const idle = spawn.holds && spawn.indices.length === 1 ? lettersOf(states, spawn.indices) : null;
+  const stand = idle ? null : deriveAnim(states, spawn);
 
   const deathLetters = distinctLetters(states, death.indices);
   const xdeathLetters = distinctLetters(states, xdeath.indices);
@@ -580,6 +587,7 @@ function deriveMonster(
     sprite,
     walk,
     idle,
+    stand,
     death: orNull(deathLetters),
     xdeath: orNull(xdeathLetters),
     deathSprite: Object.keys(deathSprite).length ? deathSprite : null,
@@ -613,7 +621,8 @@ function deriveMonster(
 }
 
 /**
- * A decoration's idle animation off its spawn chain: the loop's letters as written (the evil eye's
+ * A decoration's idle animation, or a monster's stand loop, off its spawn chain: the loop's letters
+ * as written (the evil eye's
  * `A,B,C,B` wobble is a real repeat), at one flat rate (`flatTics`). A single held frame that isn't
  * `A` is a one-letter entry (the dead-monster props spawn mid-death-chain); a held `A` needs no
  * entry.

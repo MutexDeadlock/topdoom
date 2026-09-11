@@ -7,6 +7,7 @@ import type { TicInput } from '../input.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 import type { CameraPose, TopDownCamera } from '../../render/camera.ts';
 import { getRandomCursors } from '../../util/random.ts';
+import { asPlayerColor, slotColor, type PlayerColor } from '../../wad/playercolor.ts';
 import {
   CHECK_INTERVAL,
   NORMAL_SPEED_INDEX,
@@ -46,6 +47,8 @@ export class ReplayPlayback {
   settings: SimSettings;
   /** Every slot's player settings in force, by slot; events move them. */
   readonly slotSettings: PlayerSettings[];
+  /** Every slot's armour colour: the record's, or the slot's default where it wrote none. */
+  readonly slotColors: PlayerColor[];
   /**
    * The tic a seek in progress is catching up to, null when none is. `Game` sets it and grinds
    * the tics out a frame's worth at a time. docs/replays.md § Seeking.
@@ -68,6 +71,7 @@ export class ReplayPlayback {
     this.replay = replay;
     const { slots } = replay.data;
     this.slotSettings = slots.map((slot) => slot.settings);
+    this.slotColors = slots.map((slot, index) => asPlayerColor(slot.color, slotColor(index)));
     this.session = replay.data.session;
     this.settings = { ...this.slotSettings[0], ...this.session };
     this.typedAt = slots.map((slot) => new Map(slot.typed));

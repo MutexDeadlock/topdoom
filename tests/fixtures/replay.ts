@@ -63,7 +63,13 @@ export function recordingStart(): RecordingStart {
     thumb: '',
     state: START_SNAPSHOT,
   } as SaveCapture;
-  return { capture, poses: [START_POSE], players: [{ ...GLOBAL_PLAYER_SETTINGS }], session: captureSessionSettings() };
+  return {
+    capture,
+    poses: [START_POSE],
+    players: [{ ...GLOBAL_PLAYER_SETTINGS }],
+    colors: ['green'],
+    session: captureSessionSettings(),
+  };
 }
 
 /**

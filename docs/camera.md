@@ -61,6 +61,12 @@ of them — but a lone wrapped field would leave the target or the previous tic 
 the camera the long way round. A stored `cameraYawDeg` from an older save needs nothing: the setter
 wraps it on the way in.
 
+**The orbit snaps onto its target** (`YAW_SNAP_EPS`, as the framing dampers do), or a step onto
+-180° never lands: the ease reaching -180 wraps to +180, the next ulp past it wraps back, and the
+yaw crosses the wrap every tic. Invisible live — every field shifts together — but a network row's
+pose, quantized off that yaw, read 180 and -180 on alternate tics, and every replay of the game
+drew a full turn per tic between them (docs/replays.md § Camera state).
+
 The DEVMODE readout rounds *before* wrapping, to [0°, 360°) (`game.ts: debugLines`). The orbit settles
 a hair either side of its lattice, so wrapping the raw float labels one physical angle `180` or
 `-180` (and yaw 0 `-0`) depending on which way it was turned into.

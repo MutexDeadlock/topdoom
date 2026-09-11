@@ -51,8 +51,10 @@ where the lap stopped.
 
 ## Respawn
 
-A dead slot in a netgame respawns on **use**, or `R` for the local player, and the level runs on
-(`Game.respawnSlot`, `G_DoReborn`):
+A dead slot in a netgame respawns on **use** or **`R`** from its own input (`respawnPressed`), and
+the level runs on (`Game.respawnSlot`, `G_DoReborn`). A row carries its player's `R` to every
+browser: gated to the local slot, each `R` respawned on one browser alone, desynced, and the host's
+resync laid a guest's body down again.
 
 1. `G_PlayerReborn`: a fresh inventory, the weapons reset, the cheat toggles off (`Cheats.reborn`;
    `used` stays).

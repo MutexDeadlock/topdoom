@@ -41,7 +41,7 @@ sees it — a malformed one is dropped, never half-applied:
 
 | Message | From | Says |
 |---|---|---|
-| `hello {name, settings, build, compat}` | joiner | who this is; a `compat` ≠ the host's is refused, a name `nameRefusal` rejects kicked (§ The session) |
+| `hello {name, color, settings, build, compat}` | joiner | who this is; a `compat` ≠ the host's is refused, a name `nameRefusal` rejects kicked (§ The session) |
 | `lobby {game, session, delay, peers, playing}` | host | the room as it stands, after every change |
 | `ready {refusal}` | joiner | whether its library can play `game`'s set (`main.ts`'s `setRefusal`) |
 | `start {slots, session, delay}` | host | the game begins: who holds which slot |
@@ -55,6 +55,11 @@ sees it — a malformed one is dropped, never half-applied:
 
 `NetGame` is `{set: SaveWadSet, skill}` — the WAD set by content ID, exactly what a save records
 (docs/savegames.md § WAD-set identity), read off the loaded set when the host opens the room.
+
+**A player's `color`** (docs/sprites.md § Player colours) rides `hello`, `LobbyPeer` and
+`SlotAssignment` beside the name, and `Game.bindNet` hands it to the slot. `isPeerMessage` does not
+check it; the session reads it through `asPlayerColor`, so a build without colours still takes a
+seat, in green.
 
 **A row on the wire is `WireRow`** (`replay/row.ts`, beside the record's own codec): the twelve
 `TicColumns` of one tic as an array — a network game is the replay record, sent live. `typed` is not carried: cheats
@@ -196,8 +201,9 @@ no room for one.
 `ui/menu/multiplayer.ts` (`MultiplayerUi`), `MultiplayerHooks` in `main.ts`
 (docs/session.md § Session lifecycle); the tab sits between Load and Replays:
 
-- **Relay URL** and **Your name** fields; the relay URL is the `relayUrl` setting (docs/menu.md
-  § Persisted settings), the name is `playerName`, the replays' (`setPlayerName`). Host and Join
+- **Relay URL**, **Your name** and **Color** fields; the relay URL is the `relayUrl` setting
+  (docs/menu.md § Persisted settings), the name is `playerName`, the replays' (`setPlayerName`),
+  the colour `playerColor` with its swatch — name and colour read once, at Host or Join. Host and Join
   refuse a name `nameRefusal` rejects before connecting, in the status line.
 - **Host the New Game tab's level**: `Menu.currentSelection` loaded for its content IDs
   (`netGameOf`: `wadSetOf`, as `captureSave` reads it), then the room. **Back on the tab, a host
@@ -207,7 +213,7 @@ no room for one.
   skill changed (`pickKey`), and Start waits meanwhile. A check, not a vote: a player who doesn't
   want to play it leaves. A game under way keeps what it started with. **Room code** + **Join**.
 - The room: its code, `phaseText`, the facts (level, skill, WADs, rules, delay), the peer list —
-  in the lobby each peer's `ready`/`checking…`/`not ready`, with the refusal in red in a column of
+  each name after its colour's swatch; in the lobby each peer's `ready`/`checking…`/`not ready`, with the refusal in red in a column of
   its own — for a missing file its label alone (`missingWadLabel`), a Load row's advice left out; in a game the roster, a slot whose
   player left dimmed; the host sees **Kick** on every other player's row — the host's input delay
   select, **Start** (`canStart`), **Leave** for a peer, status line "Room left.";

@@ -373,6 +373,7 @@ a setting touches one module.
 | `pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
 | `autoSwitchWeapon` | `game/inventory.ts` (`getAutoSwitchWeapon`/`setAutoSwitchWeapon`) | docs/weapons.md § Automatic weapon switching |
 | `playerName` | `game/replay.ts` (written by `describeReplay` and the Multiplayer tab's `setPlayerName`) | docs/replays.md § Recording |
+| `playerColor` | `wad/playercolor.ts` (`getPlayerColor`/`setPlayerColor`) | docs/sprites.md § Player colours |
 | `relayUrl` | `ui/menu/multiplayer.ts` | docs/multiplayer-net.md § The Multiplayer tab |
 | `skill` | `ui/menu/menu.ts` | § Difficulty above |
 | `showWelcome` | `ui/menu/welcome.ts` | § Welcome popup above |

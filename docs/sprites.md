@@ -367,12 +367,12 @@ so the plane's bottom-center sits at local `(0, 0)` *before* `scale` is applied,
 the plane upward and outward from that point instead of moving its anchor. The one unbatched sprite,
 the player, never takes `PICKUP_SCALE` at all.
 
-Animation (`SpriteActorOptions.animFrames`, `SpritePose.animating`) is a plain frame-letter cycle
-with no separate idle art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D` as its
-walk cycle and holds `A` while not moving.
+Animation (`SpriteActorOptions.animFrames`, `SpritePose.animating`) is a plain frame-letter cycle:
+the player's `PLAY` sprite reuses `A,B,C,D` as its walk cycle and holds `A` while not moving.
 
 Monsters gate `animating` on whether they actually stepped this frame (`ThingLayer.update`), like
-the player — but they run their own per-type frame tables rather than `THING_ANIM_FRAMES`, and a
+the player, and stand in their own loop while dormant (§ Pain, and attack/pain poses) — but they
+run their own per-type frame tables rather than `THING_ANIM_FRAMES`, and a
 monster's pose is also driven by attacking, pain and death (docs/sprites.md § Pain, and attack/pain
 poses). Every non-monster thing (barrel sway, decoration flicker, item/key/ powerup blink) instead
 animates unconditionally — vanilla's own idle art loops regardless of motion, there being none to
@@ -385,7 +385,7 @@ holds correctly instead of drawing the sprite's first (unrelated) frame. A doome
 table either has vanilla `tics: -1` (genuinely static — ammo, weapons, STIM/MEDI, the plain column)
 or spawns at the literal `'A'` frame already, and needs neither case.
 
-Every one of these tables — `THING_SPRITES`, `THING_ANIM_FRAMES`, the seven `MONSTER_*_FRAMES`, the
+Every one of these tables — `THING_SPRITES`, `THING_ANIM_FRAMES`, the eight `MONSTER_*_FRAMES`, the
 barrel's `BARREL_CHAIN`, the missiles' flight and impact art — is **not written out at all**. Each
 is filled at import by `dehacked/frames.ts`, which walks vanilla's `states[]` (transcribed in
 `dehacked/states.ts`), and the same walker re-derives them from a patched copy when a DEHACKED
@@ -467,6 +467,13 @@ state convention, the same cycle `PLAY` uses and correct for most of the roster;
 chain says otherwise, read off `info.c` by walking that chain to where it loops and keeping the
 distinct frames: cacodemon `A` alone, lost soul `A`-`B`, pain elemental `A`-`C`, and `A`-`F` for the
 arch-vile, revenant, mancubus, arachnotron and spider mastermind.
+
+**A dormant monster stands in its `spawnstate` loop** (`MONSTER_STAND_FRAMES`) — `A_Look`'s
+`S_*_STND` states: `A`/`B` for 10 tics each (`S_SPID_STND`/`S_SPID_STND2`, `info.c`), 15 for the
+mancubus; the cacodemon and pain elemental loop a lone `A`. `ThingLayer.update` sets
+`SpriteAnimator.standing` while the monster is not alerted; an alerted one that did not step holds
+its walk cycle's `A`. Holding `A` while dormant froze a monster that lost its target mid-stride,
+which read as stuck: GoingDown MAP03's spider mastermind once the one player it chased had died.
 
 The flat default used to apply to everything, which was **visible on the cacodemon**: `S_HEAD_RUN1`
 is a single state looping to itself, and `HEAD`'s `B`/`C` are its `missilestate` — so a cacodemon
@@ -617,3 +624,25 @@ A shot that resolves to no weapon at all — an MBF pointer, or a chain left fir
 set's own `PLAY`. Art that lies about one weapon in hand is worse than no weapon-matching art, and
 skins that come and go as the player switches are worse than either. Restored by `resetDehacked`
 with the rest of `WEAPONS` — docs/dehacked.md § Action pointers.
+
+## Player colours
+
+A player sprite's armour is PLAYPAL's sixteen greens, `0x70`-`0x7f`; vanilla draws players 2-4
+through `R_InitTranslationTables` (`r_draw.c`), which maps that ramp by index onto the gray
+(`0x60`), brown (`0x40`) and red (`0x20`) ones. A player here picks one of eight such ramps
+(`wad/playercolor.ts`'s `PLAYER_COLOR_RAMPS`: vanilla's four, then blue `0xc0`, white `0x50`,
+orange `0xd0` and pink `0x10`) — the `playerColor` setting, beside the name on the Multiplayer tab.
+
+**The translation is a palette, not a pixel pass.** `translatedPalette` copies the set's PLAYPAL
+with the green entries replaced by the picked ramp's, and `PlayerSkins` decodes through it: per
+colour in use, built on its first draw, a `GraphicsBank`/`SpriteMaterialCache` over the loaded set
+for `PLAY` and one over the skin file for the weapon-matching art. Both come back as a `SpriteSkin`,
+so § Weapon-matching player sprites holds as written — the frame key stays `PLAYx`, a corpse keeps
+its colour. Green is the palette itself and draws from the set's atlas. The whole sprite is
+translated, as vanilla's is: any other pixel in the green ramp changes with the armour.
+
+**Which colour a slot draws** (`Game.colorOf`): `PlayerSlot.color` where the slot came with one —
+a network game's `SlotAssignment` (docs/multiplayer-net.md § Protocol), a replay's `SlotRecord`
+(docs/replays.md § The record) — else the menu's, per frame, for the local player, else its player
+number's vanilla colour (`slotColor`): a `?coop=` slot, and a replay recorded before colours. A
+colour reaches no tic and no save.

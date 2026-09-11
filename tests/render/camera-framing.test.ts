@@ -17,10 +17,10 @@ import { DOOM_TIC } from '../../src/constants.ts';
  */
 
 
-/** The three.js eye height above the follow point — a pure function of tilt and distance. */
+/** The eye height at `alpha` — above the follow point, a pure function of tilt and distance. */
 function eyeHeight(camera: TopDownCamera, alpha: number): number {
   camera.applyToCamera(alpha);
-  return camera.camera.position.y;
+  return camera.eyeHeight;
 }
 
 describe('Rendering · camera framing', () => {

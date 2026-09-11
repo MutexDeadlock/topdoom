@@ -865,7 +865,7 @@ export class Game {
       index,
       local,
       inventory: createInventory(),
-      simCamera: local ? this.view.camera : new TopDownCamera(this.view.camera.camera.aspect),
+      simCamera: local ? this.view.camera : new TopDownCamera(this.view.camera.aspect),
       input: IDLE_TIC_INPUT,
       settings: local ? GLOBAL_PLAYER_SETTINGS : { ...GLOBAL_PLAYER_SETTINGS },
       actor,

@@ -232,7 +232,6 @@ export class Presenter {
   private updatePresentation(dt: number, camera: TopDownCamera): void {
     const { level, local, profiler } = this.host;
     profiler.time('Fading', () => {
-      const camPos = camera.camera.position;
       // Door/lift geometry lives in its own meshes (game/specials.ts) and so
       // carries its own faders; the pass runs them alongside the static batches
       // over one pair of bags, which is what lets a hole opened in a wall
@@ -240,10 +239,9 @@ export class Presenter {
       level.fadePass.run(
         {
           dt,
-          // The camera in DOOM (x, y, height), not three.js space.
-          camX: camPos.x,
-          camY: -camPos.z,
-          camZ: camPos.y,
+          camX: camera.eyeX,
+          camY: camera.eyeY,
+          camZ: camera.eyeHeight,
           targets: collectFadeTargets(local.player, this.fadeBodies()),
           openingInto: this.openingInto,
         },

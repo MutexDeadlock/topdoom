@@ -80,7 +80,7 @@ export class NetSeat {
   bind(): void {
     const { local, view, slots } = this.host;
     if (local.simCamera === view.camera) {
-      local.simCamera = new TopDownCamera(view.camera.camera.aspect);
+      local.simCamera = new TopDownCamera(view.camera.aspect);
       local.simCamera.copyFrom(view.camera);
     }
     for (const slot of slots) {

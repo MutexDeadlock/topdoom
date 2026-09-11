@@ -523,12 +523,33 @@ export class TopDownCamera {
   }
 
   /**
+   * The eye itself in DOOM map space, at the pose `applyToCamera` last struck — the `follow*`
+   * getters' other end, and where the occlusion fade measures its sight lines from.
+   */
+  get eyeX(): number {
+    return this.camera.position.x;
+  }
+
+  get eyeY(): number {
+    return -this.camera.position.z;
+  }
+
+  get eyeHeight(): number {
+    return this.camera.position.y;
+  }
+
+  /**
    * `viewerAngleDeg` at the interpolated pose the camera is actually drawn at,
    * for billboard orientation. Using the tic-exact angle instead would leave
    * every sprite a fraction of a yaw snap out of line with the walls behind it.
    */
   get viewAngleDeg(): number {
     return this.viewYawDeg - 90;
+  }
+
+  /** Width over height of the view — what a second camera of the same session is built with. */
+  get aspect(): number {
+    return this.camera.aspect;
   }
 
   setAspect(aspect: number): void {

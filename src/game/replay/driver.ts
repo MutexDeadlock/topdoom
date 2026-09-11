@@ -127,7 +127,7 @@ export class ReplayDriver {
     const { local, view, slots } = this.host;
     // A camera of its own, so the viewer's can be moved without moving the ray the picks are
     // cast along — `syncViewCamera` is what the drawn one follows.
-    local.simCamera = new TopDownCamera(view.camera.camera.aspect);
+    local.simCamera = new TopDownCamera(view.camera.aspect);
     // Every slot's own first pose: the level load left them framed on the player starts, which is
     // not where the recording was looking from.
     this.snapToTic(playback, 0);

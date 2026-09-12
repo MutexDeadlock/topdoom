@@ -24,6 +24,14 @@ export const TFOG_FRAME_SECONDS = 6 * DOOM_TIC; // vanilla's S_TFOG* states hold
 export const TFOG_SPAWN_OFFSET = 20;
 
 /**
+ * The item-respawn fog (vanilla's `MT_IFOG`), a one-shot like the teleport fog's: `info.c`'s
+ * `S_IFOG`..`S_IFOG5` show frames A, B, A, B, C, D, E for 6 tics each.
+ * docs/multiplayer-deathmatch.md § Item respawn.
+ */
+export const IFOG_FRAMES = ['A', 'B', 'A', 'B', 'C', 'D', 'E'];
+export const IFOG_FRAME_SECONDS = 6 * DOOM_TIC;
+
+/**
  * Color of a hitscan tracer line (render/tracer.ts) — a hot yellow-white, like a vanilla muzzle
  * flash.
  */

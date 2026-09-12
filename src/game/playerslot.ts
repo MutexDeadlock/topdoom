@@ -21,6 +21,8 @@ import type { PlayerSettings } from './replay/defs.ts';
 import { getPlayerColor, slotColor, type PlayerColor } from '../wad/playercolor.ts';
 import type { Pos3 } from '../types.ts';
 import { asDamageCause, type DamageCause } from './combat.ts';
+import { MAX_PLAYERS } from './playerstarts.ts';
+import { fragSum } from './rules.ts';
 
 /**
  * What drives a slot's input: the live `Input`, a replay's record, a network game's row, or
@@ -76,6 +78,12 @@ export class PlayerSlot {
    * docs/multiplayer-coop.md § Items and kills.
    */
   kills = 0;
+  /**
+   * Whom this player killed this level, by the victim's slot — `player_t.frags[MAXPLAYERS]`, which
+   * `G_DoLoadLevel` zeroes and `G_PlayerReborn` keeps. Counted in a deathmatch only; the board
+   * shows {@link PlayerSlot.netFrags}. docs/multiplayer-deathmatch.md § Frags.
+   */
+  readonly frags: number[] = new Array(MAX_PLAYERS).fill(0);
   /**
    * The body's cached touched-sector list for the three per-tic force queries — one body, one
    * cache (`World.sectorsTouchingCached`), so carry/push/friction share one sector walk per tic
@@ -139,6 +147,11 @@ export class PlayerSlot {
     this.actor.revive();
   }
 
+  /** This player's score: everyone else they killed, minus themselves — `WI_fragSum`. */
+  netFrags(): number {
+    return fragSum(this.frags, this.index);
+  }
+
   /** How solid this player draws — the billboard and the disc under it fade together. */
   setOpacity(opacity: number): void {
     this.actor.setOpacity(opacity);
@@ -193,6 +206,7 @@ export class PlayerSlot {
       // docs/cheats.md § Saves and best times.
       ...(this.cheats.used ? { cheats: this.cheats.snapshot() } : {}),
       ...(this.kills > 0 ? { kills: this.kills } : {}),
+      ...(this.frags.some((n) => n !== 0) ? { frags: [...this.frags] } : {}),
       ...(this.deathCause !== undefined ? { deathCause: this.deathCause } : {}),
     };
   }
@@ -205,6 +219,10 @@ export class PlayerSlot {
   restore(saved: PlayerSlotSnapshot): void {
     this.cheats.restore(saved.cheats);
     this.kills = saved.kills ?? 0;
+    this.frags.fill(0);
+    saved.frags?.forEach((n, slot) => {
+      if (slot < MAX_PLAYERS) this.frags[slot] = n;
+    });
     this.inventory = deserializeInventory(saved.inventory);
     // After the line above: `restore` derives `weaponLastFrame` off the
     // inventory it is handed, and `beginLevel` only saw the outgoing one.

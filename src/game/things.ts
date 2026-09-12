@@ -31,6 +31,8 @@ import {
   DEATH_NOTIFY_TYPES,
   MAX_SKULLS_ON_LEVEL,
   pickupScaleFor,
+  ITEM_RESPAWN_QUEUE,
+  ITEM_RESPAWN_TICS,
   TELEFRAG_DAMAGE,
   type BarrelExplosion,
   type CarryQuery,
@@ -64,7 +66,17 @@ export {
 } from './things/defs.ts';
 import * as tables from './things/tables.ts';
 import { ThingType } from './things/doomednums.ts';
-import { fastMonsters, isAmbush, isMultiplayerOnly, respawnMonsters, spawnAngleDeg, spawnsAtSkill, type Skill } from './skill.ts';
+import {
+  fastMonsters,
+  isAmbush,
+  isMultiplayerOnly,
+  isNotCoop,
+  isNotDeathmatch,
+  respawnMonsters,
+  spawnAngleDeg,
+  spawnsAtSkill,
+  type Skill,
+} from './skill.ts';
 import {
   DI_NODIR,
   BODY_HEIGHT_FALLBACK,
@@ -245,12 +257,35 @@ export interface ThingLayerOptions {
    * identity — a save restores under the netgame it was taken in. docs/multiplayer-coop.md.
    */
   netgame?: boolean;
+  /**
+   * A deathmatch: no monster, key or not-in-deathmatch thing spawns, and a taken item comes back.
+   * Part of thing identity like {@link ThingLayerOptions.netgame}. docs/multiplayer-deathmatch.md.
+   */
+  deathmatch?: boolean;
+  /**
+   * An item back where the map placed it, in a deathmatch — the fog and its sound are the effect
+   * layer's, as {@link ThingLayerOptions.onRespawn}'s are.
+   * docs/multiplayer-deathmatch.md § Item respawn.
+   */
+  onItemRespawn?: (at: Pos3) => void;
 }
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
 export function buildThingSprites(world: World, options: ThingLayerOptions): ThingLayer {
-  const { bank, materials, skill, sfx = SILENT, onBossDeath, restore, onRespawn, onKill, lights, netgame = false } =
-    options;
+  const {
+    bank,
+    materials,
+    skill,
+    sfx = SILENT,
+    onBossDeath,
+    restore,
+    onRespawn,
+    onKill,
+    lights,
+    netgame = false,
+    deathmatch = false,
+    onItemRespawn,
+  } = options;
   // Taken off `World`, never passed beside it — docs/conventions.md § Named arguments.
   const map = world.map;
 
@@ -280,6 +315,12 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * Level time in seconds, driving the drop bob/pulse ({@link DROP_HOVER}) and the fuzz shimmer.
    */
   let clock = 0;
+  /**
+   * The items a deathmatch will put back, oldest first, each with the tic it was taken on —
+   * `itemrespawnque` with `itemrespawntime` (`p_mobj.c`). Only a deathmatch queues, so a coop
+   * save carries none. docs/multiplayer-deathmatch.md § Item respawn.
+   */
+  let itemRespawn: [id: number, tic: number][] = [];
   const posed: PosedThing[] = [];
   const stats: LevelKillItemStats = { totalKills: 0, kills: 0, totalItems: 0, items: 0 };
   /**
@@ -317,7 +358,14 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     for (const t of map.things) {
       if (!tables.THING_SPRITES[t.type]) continue;
       if (!netgame && isMultiplayerOnly(t.flags)) continue;
+      // Boom's two mode flags, then vanilla's own two deathmatch gates, in `P_SpawnMapThing`'s
+      // order: the keys, and `-nomonsters` — which every deathmatch here runs under.
+      // docs/multiplayer-deathmatch.md § Rules, docs/multiplayer-coop.md § Netgame.
+      if (netgame && deathmatch && isNotDeathmatch(t.flags)) continue;
+      if (netgame && !deathmatch && isNotCoop(t.flags)) continue;
       if (!spawnsAtSkill(t.flags, skill)) continue;
+      if (deathmatch && tables.NOT_DEATHMATCH_TYPES.has(t.type)) continue;
+      if (deathmatch && (t.type === ThingType.lostSoul || tables.COUNTKILL_TYPES.has(t.type))) continue;
 
       // MF_SPAWNCEILING things (ceiling-hung gore, Commander Keen) measure z down from the ceiling
       // instead of up from the floor — see CEILING_HUNG_HEIGHT's doc.
@@ -359,7 +407,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     for (const p of posed) {
       if (p.stats) lastlook += p.lastlook;
     }
-    return { clock, stats: { ...stats }, changed, lastlook };
+    // Copied: the live ring shifts on, and a save must hold the moment. Its entries are never
+    // written in place, so the array is all that needs copying.
+    const queue = itemRespawn.slice();
+    return { clock, stats: { ...stats }, changed, lastlook, ...(queue.length > 0 ? { itemRespawn: queue } : {}) };
   }
 
   /** One live thing as it is stored — the sparse rules are in {@link ThingState}'s own doc. */
@@ -427,6 +478,12 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // floored — the simulation advances whole tics, so this is an exact tic index up to float
     // noise. docs/monster-ai.md § Respawning monsters.
     const tic = Math.round(clock / DOOM_TIC);
+    // `P_RespawnSpecials`, once per tic from `P_Ticker`: the oldest taken item, once it has lain
+    // gone long enough — one head compare, so it costs nothing on a level with none.
+    // docs/multiplayer-deathmatch.md § Item respawn.
+    if (itemRespawn.length > 0 && tic - itemRespawn[0][1] >= ITEM_RESPAWN_TICS) {
+      respawnItem(posed[itemRespawn.shift()![0]]);
+    }
     const respawnTic = respawns && tic % RESPAWN_ROLL_INTERVAL_TICS === 0;
     // The idle look-around, on the same clock and for the same reason: one cadence for the level,
     // which a restore gets back with `clock` itself. docs/monster-ai.md § Waking up.
@@ -735,6 +792,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
         p.picked = true;
         p.hidden = true;
         p.visible = false;
+        if (deathmatch) queueItemRespawn(p);
         // `P_TouchSpecialThing`'s `if (special->flags & MF_COUNTITEM) player->itemcount++`. A
         // monster drop never matches, so no `dropped` guard is needed.
         if (tables.COUNTITEM_TYPES.has(p.type)) stats.items++;
@@ -742,7 +800,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     }
   }
 
-  function pickMonster(ray: THREE.Ray, aimAt: Pos3): MonsterRef | null {
+  function pickMonster(ray: THREE.Ray, aimAt: Pos3, reach?: number): (MonsterRef & { dist: number }) | null {
     // DOOM space throughout, for the reason `pickShootAim` states: every candidate is map-space
     // state and the ray is the only thing arriving in three.js space.
     const o = worldToDoom(ray.origin.x, ray.origin.y, ray.origin.z);
@@ -750,7 +808,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     let best: PosedThing | null = null;
     // Bounded where the ray enters the ground past the aim point, and by nothing else —
     // docs/combat.md § Auto-aim.
-    let bestDist = world.groundReach(o, aimAt);
+    let bestDist = reach ?? world.groundReach(o, aimAt);
     for (const p of posed) {
       // A rejected thing is skipped, not treated as a blocker: a decoration in front of a monster
       // must not make it untargetable. `lockable` is the type half of that, settled at spawn.
@@ -764,7 +822,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       best = p;
     }
     if (!best) return null;
-    return monsterRef(best);
+    // `dist` is where the ray enters the box, so a player pick can be ordered against it.
+    return { ...monsterRef(best), dist: bestDist };
   }
 
   function monstersNear(pos: Pos2, radius: number): MonsterRef[] {
@@ -1117,6 +1176,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /** The level-wide totals a restore brings with it, over whatever the spawn loop counted. */
   function restoreCounts(saved: ThingsSnapshot): void {
     clock = saved.clock;
+    itemRespawn = saved.itemRespawn?.slice() ?? [];
     stats.totalKills = saved.stats.totalKills;
     stats.kills = saved.stats.kills;
     stats.totalItems = saved.stats.totalItems;
@@ -1665,10 +1725,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    */
   function respawnCorpse(p: PosedThing, players: readonly (Pos3 | null)[]): boolean {
     const sector = world.sectorAt(p.spawnX, p.spawnY);
-    // The same ceiling-hung measurement the spawn loop makes, and for the same reason; vanilla
-    // splits it as `ONCEILINGZ`/`ONFLOORZ` right here in `P_NightmareRespawn`.
-    const hangHeight = p.hangHeight;
-    const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
+    // Vanilla splits it as `ONCEILINGZ`/`ONFLOORZ` right here in `P_NightmareRespawn`.
+    const z = spawnZ(p, sector);
 
     // `solidBodies` skips the dead, so the corpse itself never blocks its own return; the players
     // aren't in `posed` at all and have to be added by hand.
@@ -1681,19 +1739,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
     onRespawn?.({ x: p.x, y: p.y, z: p.sector?.floorHeight ?? p.z }, { x: p.spawnX, y: p.spawnY, z });
 
-    p.x = p.spawnX;
-    p.y = p.spawnY;
-    p.z = z;
-    // Across the map in one tic, so the interpolation window collapses onto the arrival — the
-    // same reason `arriveAt` does it. docs/frameloop.md § Interpolation.
-    p.drawPrevX = p.x;
-    p.drawPrevY = p.y;
-    p.drawPrevZ = p.z;
-    p.sector = sector;
-    p.subsector = world.subsectorAt(p.x, p.y);
-    p.facingDeg = p.spawnAngle;
-    p.angle = (p.spawnAngle * Math.PI) / 180;
-
+    moveToSpawn(p, sector, z);
     p.dead = false;
     p.deadTime = 0;
     p.health = tables.MONSTER_HEALTH[p.type] ?? p.health;
@@ -1727,6 +1773,58 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     p.reactionTicks = 0;
     p.anim.revive();
     return true;
+  }
+
+  /**
+   * `P_RemoveMobj`'s ring (`p_mobj.c`): a taken item the map placed is remembered with the tic,
+   * except the two spheres it names (`MT_INV`, `MT_INS`) and a monster's drop; the oldest entry
+   * goes once {@link ITEM_RESPAWN_QUEUE} are waiting.
+   * docs/multiplayer-deathmatch.md § Item respawn.
+   */
+  function queueItemRespawn(p: PosedThing): void {
+    if (p.dropped || p.type === ThingType.invulnerability || p.type === ThingType.invisibility) return;
+    itemRespawn.push([p.id, Math.round(clock / DOOM_TIC)]);
+    if (itemRespawn.length > ITEM_RESPAWN_QUEUE) itemRespawn.shift();
+  }
+
+  /**
+   * `P_RespawnSpecials` (`p_mobj.c`): the item back where the map placed it, facing the way it
+   * did, with its fog — the thing reused rather than replaced, so its id and every save naming it
+   * hold, as {@link respawnCorpse} does for a monster.
+   * docs/multiplayer-deathmatch.md § Item respawn.
+   */
+  function respawnItem(p: PosedThing): void {
+    const sector = world.sectorAt(p.spawnX, p.spawnY);
+    moveToSpawn(p, sector, spawnZ(p, sector));
+    p.picked = false;
+    p.hidden = false;
+    p.visible = true;
+    onItemRespawn?.({ x: p.x, y: p.y, z: p.z });
+  }
+
+  /**
+   * Where a thing stands on its own spawn point: `ONCEILINGZ` for a ceiling-hung one, `ONFLOORZ`
+   * otherwise — the spawn loop's own measure, for a respawn.
+   */
+  function spawnZ(p: PosedThing, sector: Sector | undefined): number {
+    const hangHeight = p.hangHeight;
+    return hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
+  }
+
+  /** A respawning thing back on its spawn point at `z`, facing the way the map placed it. */
+  function moveToSpawn(p: PosedThing, sector: Sector | undefined, z: number): void {
+    p.x = p.spawnX;
+    p.y = p.spawnY;
+    p.z = z;
+    // Across the map in one tic, so the interpolation window collapses onto the arrival — the
+    // same reason `arriveAt` does it. docs/frameloop.md § Interpolation.
+    p.drawPrevX = p.x;
+    p.drawPrevY = p.y;
+    p.drawPrevZ = p.z;
+    p.sector = sector;
+    p.subsector = world.subsectorAt(p.x, p.y);
+    p.facingDeg = p.spawnAngle;
+    p.angle = (p.spawnAngle * Math.PI) / 180;
   }
 
   /**

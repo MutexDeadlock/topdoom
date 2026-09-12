@@ -18,7 +18,7 @@ import { transfersOf, type Transfers } from './specials/transfers.ts';
 import { triangularDraw } from '../util/random.ts';
 import { type OneShotEffect } from './spritefx/defs.ts';
 import { FULLBRIGHT_FRAMES } from './things/tables.ts';
-import { BLOOD_FRAME_SECONDS, BLOOD_FRAMES, bloodFrames, CRUSH_BLOOD_SPEED, HIT_Z_JITTER, PICKUP_FOG_FRAME_SECONDS, PICKUP_FOG_FRAMES, PICKUP_FOG_LIGHT, PICKUP_FOG_OPACITY, PICKUP_FOG_SCALE, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
+import { BLOOD_FRAME_SECONDS, BLOOD_FRAMES, bloodFrames, CRUSH_BLOOD_SPEED, HIT_Z_JITTER, IFOG_FRAME_SECONDS, IFOG_FRAMES, PICKUP_FOG_FRAME_SECONDS, PICKUP_FOG_FRAMES, PICKUP_FOG_LIGHT, PICKUP_FOG_OPACITY, PICKUP_FOG_SCALE, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
 import type { TeleportFogState } from './snapshot.ts';
 import type { Placement, Pos3 } from '../types.ts';
 import { cos, sin } from '../util/fdlibm.ts';
@@ -337,6 +337,15 @@ export class SpriteFxLayer {
       y: dest.y + sin(dest.angle) * TFOG_SPAWN_OFFSET,
       z,
     });
+  }
+
+  /**
+   * The fog an item comes back in — `P_RespawnSpecials`' `MT_IFOG` at the spawn point with
+   * `itmbk` on it (`p_mobj.c`). docs/multiplayer-deathmatch.md § Item respawn.
+   */
+  spawnItemFog(at: Pos3): void {
+    this.audio.play('itmbk', at);
+    this.spawnImpact('IFOG', IFOG_FRAMES, IFOG_FRAME_SECONDS, at);
   }
 
   /**

@@ -1,10 +1,14 @@
 /**
- * Where a player enters a level and where a dead one comes back in coop: the four player starts a
- * map places (doomednums 1–4), the level-start pick, and `G_DoReborn`'s spot. Pure over a `World`;
- * the collision test is the caller's. docs/multiplayer-coop.md § Starts and § Respawn.
+ * Where a player enters a level and where a dead one comes back: the four player starts a map
+ * places (doomednums 1–4), the level-start pick, `G_DoReborn`'s spot, and a deathmatch's random
+ * draw over its own starts (doomednum 11). Pure over a `World`; the collision test is the caller's.
+ * docs/multiplayer-coop.md § Starts and § Respawn, docs/multiplayer-deathmatch.md § Starts.
  */
 import { ThingType } from './things/doomednums.ts';
 import type { World } from './world.ts';
+import { spawnAngleDeg } from './skill.ts';
+import { DM_START_TRIES } from './rules.ts';
+import { pRandom } from '../util/random.ts';
 import type { Placement, Pos2 } from '../types.ts';
 
 /** `MAXPLAYERS` (`doomdef.h`): as many slots as there are coop starts. */
@@ -34,9 +38,14 @@ export function levelStartFor(starts: readonly (Placement | null)[], slot: numbe
   const own = starts[slot];
   if (own) return own;
   for (const start of starts) {
-    if (start && !taken.some((at) => at.x === start.x && at.y === start.y)) return start;
+    if (start && !spotTaken(taken, start)) return start;
   }
   return starts[0]!;
+}
+
+/** Whether an earlier slot already stands on `at` — {@link levelStartFor}'s occupancy test. */
+export function spotTaken(taken: readonly Pos2[], at: Pos2): boolean {
+  return taken.some((t) => t.x === at.x && t.y === at.y);
 }
 
 /**
@@ -55,4 +64,37 @@ export function rebornSpot(
     if (start && !blocked(start)) return start;
   }
   return own;
+}
+
+/**
+ * Every deathmatch start the map places, in map order — `P_SpawnMapThing`'s `deathmatchstarts`,
+ * with Boom's unlimited count (`prboom p_mobj.c`, killough 1/11/98) rather than vanilla's ten.
+ * docs/multiplayer-deathmatch.md § Starts.
+ */
+export function deathmatchStarts(world: World): Placement[] {
+  return world
+    .thingsOfType(ThingType.deathmatchStart)
+    .map((t) => ({ x: t.x, y: t.y, angle: (spawnAngleDeg(t.angle) * Math.PI) / 180 }));
+}
+
+/**
+ * `G_DeathMatchSpawnPlayer`'s pick (`g_game.c`): up to {@link DM_START_TRIES} draws of
+ * `P_Random() % selections`, the first start `blocked` allows; null when every draw was refused —
+ * the caller falls back on the slot's coop start, as vanilla does on `playerstarts[playernum]`.
+ * **Deviation:** any number of starts is played, where vanilla refuses fewer than four; a map with
+ * none is a coop-starts game. docs/multiplayer-deathmatch.md § Starts.
+ *
+ * @param draw  the random draw, `pRandom` unless a test supplies one
+ */
+export function deathmatchSpot(
+  starts: readonly Placement[],
+  blocked: (at: Pos2) => boolean,
+  draw: () => number = pRandom,
+): Placement | null {
+  if (starts.length === 0) return null;
+  for (let tries = 0; tries < DM_START_TRIES; tries++) {
+    const start = starts[draw() % starts.length];
+    if (!blocked(start)) return start;
+  }
+  return null;
 }

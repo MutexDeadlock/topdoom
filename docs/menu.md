@@ -371,6 +371,7 @@ a setting touches one module.
 | `playerSprites` | `wad/playerskin.ts` (`getPlayerSpriteMode`/`setPlayerSpriteMode`) | docs/sprites.md § When the skins apply |
 | `infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
 | `pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
+| `deathmatch`, `friendlyFire`, `fragLimit`, `timeLimit` | `game/rules.ts` (`get*`/`set*`) | docs/multiplayer-deathmatch.md § Settings |
 | `autoSwitchWeapon` | `game/inventory.ts` (`getAutoSwitchWeapon`/`setAutoSwitchWeapon`) | docs/weapons.md § Automatic weapon switching |
 | `playerName` | `game/replay.ts` (written by `describeReplay` and the Multiplayer tab's `setPlayerName`) | docs/replays.md § Recording |
 | `playerColor` | `wad/playercolor.ts` (`getPlayerColor`/`setPlayerColor`) | docs/sprites.md § Player colours |
@@ -433,6 +434,7 @@ Read once in `boot()` and applied through `Menu.init`:
 | `?map=` | Preselect the level **and skip the menu**, at the last skill played |
 | `?pos=x,y` | Drop the player at those DOOM map coordinates instead of the map's own start |
 | `?coop=N` | Start a fresh level as a netgame of 2–4 players, every one but the first idle (docs/multiplayer-coop.md) |
+| `?deathmatch=N` | The same as a deathmatch; wins over `?coop=` (docs/multiplayer-deathmatch.md § Testing locally) |
 
 `?pos=` is applied *before* fog of war is seeded, so the reveal shows exactly what is visible from
 there. **That is the practical way to check a specific spot in a level** — the room with MAP01's big

@@ -471,7 +471,8 @@ markup that outlives any one `Game` (the same reason `Hud`'s panels `replaceChil
   sees it. `main.ts` keeps Tab from moving the page's focus while a game runs with the menu closed.
 - **The intermission shows its own above its panel**, no key held, for as long as it is up
   (`Game.intermissionScoreRows`, `Intermission.showScores`); `#intermission` is a column for it.
-- **One row per slot, in slot order**: name, kills, ping. A network game's names and pings are
+- **One row per slot, in slot order**: name, kills — **net frags in a deathmatch**, under the same
+  `Kills` heading (docs/multiplayer-deathmatch.md § Frags) — ping. A network game's names and pings are
   `NetSession.roster`'s; any other slot reads `Player n` with no ping (`—`). A slot whose player left
   is dimmed, the local player's name bold.
 - **Kills are the slot's own this level**: `PlayerSlot.kills` (docs/multiplayer-coop.md § Items and

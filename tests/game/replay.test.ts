@@ -20,9 +20,11 @@ import {
   ticAtFraction,
   type PlayerSettings,
   type Replay,
+  type SessionSettings,
   type SimSettings,
 } from '../../src/game/replay/defs.ts';
-import { applySimSettings, captureSimSettings, releaseSimSettings } from '../../src/game/replay/settings.ts';
+import { applySimSettings, captureSimSettings, releaseSimSettings, withSessionDefaults } from '../../src/game/replay/settings.ts';
+import { unpackData } from '../../src/game/replay.ts';
 import { getAutorun } from '../../src/game/player.ts';
 import { getInfiniteTallActors } from '../../src/game/world.ts';
 import { getRightMouseAction } from '../../src/game/input.ts';
@@ -33,6 +35,7 @@ import {
   START_POSE,
   beginTic,
   recordingStart,
+  replayCapture,
   scriptedInput,
   splitSettings,
   type ScriptedRow,
@@ -187,6 +190,16 @@ describe('Replays · recording and playing back', () => {
     assert.equal(playback.settings.autorun, changed.autorun);
   });
 
+  test('a recording from before the netgame rules reads as coop with none', () => {
+    const capture = replayCapture();
+    const old = { infiniteTallActors: true, pistolStart: false } as SessionSettings;
+    capture.data.session = old;
+    capture.data.events = [{ tic: 1, kind: 'session', settings: old }];
+    const data = unpackData(capture.data);
+    assert.deepEqual(data.session, withSessionDefaults({ infiniteTallActors: true }));
+    assert.deepEqual(data.events, [{ tic: 1, kind: 'session', settings: withSessionDefaults({ infiniteTallActors: true }) }]);
+  });
+
   test("a session change is an event of its own, whichever slot's menu made it", () => {
     const recorder = new ReplayRecorder([scriptedInput([{}, {}])], recordingStart());
     const input = recorder.input(0);
@@ -196,7 +209,7 @@ describe('Replays · recording and playing back', () => {
     beginTic(recorder, 0, 0, changed);
     input.endTic();
     const replay = replayOf(recorder);
-    const session = { infiniteTallActors: changed.infiniteTallActors, pistolStart: changed.pistolStart };
+    const session = splitSettings(changed).session;
     assert.deepEqual(replay.data.events, [{ tic: 1, kind: 'session', settings: session }]);
 
     const playback = new ReplayPlayback(replay);

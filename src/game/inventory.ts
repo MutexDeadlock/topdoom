@@ -88,6 +88,15 @@ export function createInventory(): Inventory {
   };
 }
 
+/**
+ * Every key at once — `P_SpawnPlayer`'s `if (deathmatch) for (i=0 ; i<NUMCARDS ; i++)
+ * p->cards[i] = true;` (`p_mobj.c`), for a deathmatch body on every spawn and reborn.
+ * docs/multiplayer-deathmatch.md § Rules.
+ */
+export function giveAllKeys(inv: Inventory): void {
+  for (const key of KEY_SLOTS) inv.keys.add(key);
+}
+
 /** Whether a powerup is currently active. */
 export function hasPower(inv: Inventory, power: PowerId): boolean {
   return inv.powers[power] > 0;
@@ -276,10 +285,11 @@ export interface PickupOptions {
    */
   autoSwitch?: boolean;
   /**
-   * A netgame: a weapon the map placed gives nothing to a player who already owns it, not even its
-   * ammo (`P_GiveWeapon`). Default false. docs/multiplayer-coop.md § Items and kills.
+   * Weapons stay: a weapon the map placed gives nothing to a player who already owns it, not even
+   * its ammo — `P_GiveWeapon`'s `if (netgame && (deathmatch!=2) && !dropped)`, which is coop here,
+   * every deathmatch being `-altdeath`. Default false. docs/multiplayer-coop.md § Items and kills.
    */
-  netgame?: boolean;
+  weaponsStay?: boolean;
 }
 
 /**
@@ -289,7 +299,7 @@ export interface PickupOptions {
  * docs/items.md § Collecting things.
  */
 export function applyPickup(inv: Inventory, type: number, options: PickupOptions = {}): boolean {
-  const { dropped = false, skill = DEFAULT_SKILL, autoSwitch = true, netgame = false } = options;
+  const { dropped = false, skill = DEFAULT_SKILL, autoSwitch = true, weaponsStay = false } = options;
   // DOOM II only: full health *and* blue armor at once, both past what any single pickup gives.
   if (type === ThingType.megasphere) {
     inv.health = LIMITS.megasphereHealth;
@@ -371,7 +381,7 @@ export function applyPickup(inv: Inventory, type: number, options: PickupOptions
   if (weapon) {
     const hadWeapon = inv.weapons.has(weapon.weapon);
     // "leave placed weapons forever on net games": owning one already is the end of it.
-    if (netgame && !dropped && hadWeapon) return false;
+    if (weaponsStay && !dropped && hadWeapon) return false;
     let gaveAmmo = false;
     if (weapon.ammoType) {
       const cap = ammoMax(inv, weapon.ammoType);
@@ -400,12 +410,15 @@ export function applyPickup(inv: Inventory, type: number, options: PickupOptions
 
 /**
  * Whether a netgame leaves a taken pickup where it lies, for every other player — `p_inter.c`'s
- * early returns: every key ("leave cards for everyone") and a weapon the map placed ("leave placed
- * weapons forever on net games"). A monster's drop is taken as in single player.
+ * early returns: every key in any netgame ("leave cards for everyone", `if (!netgame) break;
+ * return;`) and, where weapons stay, a weapon the map placed ("leave placed weapons forever on net
+ * games"). A monster's drop is taken as in single player.
  * docs/multiplayer-coop.md § Items and kills.
+ *
+ * @param weaponsStay  {@link PickupOptions.weaponsStay}
  */
-export function leftInNetgame(type: number, dropped: boolean): boolean {
-  return !!KEY_PICKUPS[type] || (!!WEAPON_PICKUPS[type] && !dropped);
+export function leftInNetgame(type: number, dropped: boolean, weaponsStay: boolean): boolean {
+  return !!KEY_PICKUPS[type] || (weaponsStay && !!WEAPON_PICKUPS[type] && !dropped);
 }
 
 /**

@@ -529,8 +529,9 @@ export interface ThingLayer {
    *
    * @param aimAt  the point on the aim plane the ray was cast toward; `World.groundReach` bounds
    *               how far past it a body may still be picked
+   * @param reach  that bound, where the caller has already traced it
    */
-  pickMonster(ray: THREE.Ray, aimAt: Pos3): MonsterRef | null;
+  pickMonster(ray: THREE.Ray, aimAt: Pos3, reach?: number): (MonsterRef & { dist: number }) | null;
   /**
    * Living monsters within `radius` of (x, y). Candidates for splash damage (game.ts); the caller
    * still has to check line-of-sight itself, since that needs the `World` this layer doesn't
@@ -704,6 +705,19 @@ export const DEATH_NOTIFY_TYPES: Set<number> = new Set([
   ThingType.commanderKeen,
   ThingType.bossBrain,
 ]);
+
+/**
+ * `ITEMQUESIZE` (`p_local.h`): how many taken items a deathmatch remembers to put back —
+ * `P_RemoveMobj`'s ring, which drops its oldest entry when full.
+ * docs/multiplayer-deathmatch.md § Item respawn.
+ */
+export const ITEM_RESPAWN_QUEUE = 128;
+
+/**
+ * `P_RespawnSpecials`' `if (leveltime - itemrespawntime[iquetail] < 30*35) return;` (`p_mobj.c`):
+ * the tics a taken item lies gone before it comes back.
+ */
+export const ITEM_RESPAWN_TICS = 30 * 35;
 
 /**
  * Vanilla's own `P_TeleportMove` telefrag damage — the literal `10000` it deals to everything

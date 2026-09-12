@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyRow } from '../../src/game/replay/row.ts';
 import { DROP_TIMEOUT_MS, STALL_NOTICE_MS } from '../../src/game/net/defs.ts';
-import type { NetSession } from '../../src/game/net/session.ts';
+import { withRulesDefaults, type NetSession } from '../../src/game/net/session.ts';
 import { GAME, Hub, SETTINGS, hostSession, joinSession, snapshotFor } from '../fixtures/net.ts';
 
 /**
@@ -101,7 +101,7 @@ describe('Network · session', () => {
     const short = joinSession(hub, 'ROOM1', { name: 'short', refusal: 'Missing IWAD: DOOM2.WAD' });
     const other = joinSession(hub, 'ROOM1', { name: 'other', build: '0.9', compat: 2 });
     const peer = (name: string) => host.session.peers.find((p) => p.name === name)!;
-    const vanilla = { infiniteTallActors: false, pistolStart: false };
+    const vanilla = withRulesDefaults({});
     assert.equal(host.session.setGame(GAME, vanilla), false, 'the same pick is no change');
 
     // The next pick is one `short` can play: its refusal is lifted, the other build's is not.

@@ -14,6 +14,7 @@ import type { GameSnapshot } from '../snapshot.ts';
 import type { PlayerColor } from '../../wad/playercolor.ts';
 import { asSkill, asWad, isLoadableState, isRecord } from '../savegames.ts';
 import { isWireRow, type WireRow } from '../replay/row.ts';
+import { sessionFieldsValid } from '../replay/settings.ts';
 
 export type { JoinRequest, KickRequest, RelayMessage } from '../../../server/rooms.ts';
 
@@ -49,6 +50,16 @@ export const MIN_NAME_LENGTH = 3;
 export interface NetGame {
   set: SaveWadSet;
   skill: Skill;
+}
+
+/**
+ * What a lobby's host sets the room to play under: the {@link SessionSettings} every browser pins
+ * per tic, and the mode beside them — `deathmatch`, which `Game` reads once at the level start and
+ * the snapshot keeps (`GameSnapshot.deathmatch`), so neither a pin nor a replay carries it.
+ * docs/multiplayer-deathmatch.md § Settings.
+ */
+export interface NetRules extends SessionSettings {
+  deathmatch: boolean;
 }
 
 /** A player in the lobby, by relay member — what every peer's roster shows. */
@@ -97,13 +108,13 @@ export type PeerMessage =
   | {
       type: 'lobby';
       game: NetGame;
-      session: SessionSettings;
+      session: NetRules;
       delay: number;
       peers: LobbyPeer[];
       playing: boolean;
     }
   | { type: 'ready'; refusal: string | null }
-  | { type: 'start'; slots: SlotAssignment[]; session: SessionSettings; delay: number }
+  | { type: 'start'; slots: SlotAssignment[]; session: NetRules; delay: number }
   | { type: 'input'; slot: number; tic: number; row: WireRow; settings?: PlayerSettings }
   | { type: 'check'; tic: number; cursor: number; x: number[]; y: number[] }
   | { type: 'desync'; tic: number }
@@ -159,7 +170,7 @@ export function isPeerMessage(v: unknown): v is Stamped<PeerMessage> {
     case 'lobby':
       return (
         isNetGame(v.game) &&
-        isSessionSettings(v.session) &&
+        isNetRules(v.session) &&
         isIndex(v.delay) &&
         Array.isArray(v.peers) &&
         v.peers.every(isLobbyPeer) &&
@@ -168,7 +179,7 @@ export function isPeerMessage(v: unknown): v is Stamped<PeerMessage> {
     case 'ready':
       return v.refusal === null || typeof v.refusal === 'string';
     case 'start':
-      return Array.isArray(v.slots) && v.slots.every(isSlotAssignment) && isSessionSettings(v.session) && isIndex(v.delay);
+      return Array.isArray(v.slots) && v.slots.every(isSlotAssignment) && isNetRules(v.session) && isIndex(v.delay);
     case 'input':
       return (
         isIndex(v.slot) && isIndex(v.tic) && isWireRow(v.row) && (v.settings === undefined || isPlayerSettings(v.settings))
@@ -227,8 +238,13 @@ function isPlayerSettings(v: unknown): v is PlayerSettings {
   );
 }
 
-function isSessionSettings(v: unknown): v is SessionSettings {
-  return isRecord(v) && typeof v.infiniteTallActors === 'boolean' && typeof v.pistolStart === 'boolean';
+/**
+ * The netgame rules are optional on the wire, each typed when present — the session settings by
+ * `sessionFieldsValid`'s table: a lobby from a build before them still seats a newer joiner, who
+ * reads it through `withRulesDefaults`. docs/multiplayer-deathmatch.md § Settings.
+ */
+function isNetRules(v: unknown): v is NetRules {
+  return isRecord(v) && sessionFieldsValid(v) && (v.deathmatch === undefined || typeof v.deathmatch === 'boolean');
 }
 
 function isNetGame(v: unknown): v is NetGame {

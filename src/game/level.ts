@@ -79,6 +79,8 @@ export interface LevelParts {
   readonly voodoo: VoodooDolls;
   /** The player starts by slot (`coopStarts`). */
   readonly starts: (Placement | null)[];
+  /** The deathmatch starts (`deathmatchStarts`), read only by a deathmatch. */
+  readonly dmStarts: Placement[];
   readonly fogOfWar: FogOfWar;
   readonly specials: SpecialsController;
   readonly things: ThingLayer;

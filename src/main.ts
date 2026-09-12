@@ -23,6 +23,7 @@ import {
   type NetHooks,
   type NetIdentity,
   type NetRestore,
+  type NetRules,
 } from './game/net.ts';
 import { dehackedSources } from './game/dehacked.ts';
 import { formatClock } from './ui/hud/hud.ts';
@@ -36,6 +37,7 @@ import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
 import type { Pos2 } from './types.ts';
 import { MAX_PLAYERS } from './game/playerstarts.ts';
+import { getDeathmatch } from './game/rules.ts';
 import { VERSION } from './constants.ts';
 
 /** What a level start begins from beside the selection — at most one of the three. */
@@ -66,8 +68,12 @@ async function boot(): Promise<void> {
   /**
    * `?coop=N`: 2 to {@link MAX_PLAYERS} players in one browser — docs/menu.md § URL parameters.
    */
-  const coopParam = Number(params.get('coop'));
-  const coop = Number.isInteger(coopParam) && coopParam >= 2 && coopParam <= MAX_PLAYERS ? coopParam : null;
+  const coop = parsePlayerCount(params.get('coop'));
+  /**
+   * `?deathmatch=N`: the same, as a deathmatch; wins over `?coop=`.
+   * docs/multiplayer-deathmatch.md § Testing locally.
+   */
+  const deathmatch = parsePlayerCount(params.get('deathmatch'));
   /**
    * One `AudioContext` for the whole page, started by the first {@link AudioEngine.resume} (a user
    * gesture).
@@ -121,15 +127,16 @@ async function boot(): Promise<void> {
       await loading.painted();
 
       disposeGame();
-      // `?pos=` and `?coop=` are for a fresh start only: a load, a replay and a network game carry
-      // their own position and players.
+      // `?pos=`, `?coop=` and `?deathmatch=` are for a fresh start only: a load, a replay and a
+      // network game carry their own position and players.
       const freshStart = !save && !replay && !netGame;
       game = new Game(view, audio, wad, {
         startMap: selection.map,
         title: [selection.iwad, ...selection.pwads].map((source) => source.label).join(' + '),
         skill: selection.skill,
         startPos: freshStart ? startPos : null,
-        coop: freshStart ? coop : null,
+        players: freshStart ? (deathmatch ?? coop) : null,
+        deathmatch: freshStart && deathmatch !== null,
         // A replay starts from its own first snapshot — docs/replays.md § Playback — and a joiner
         // from the host's (docs/multiplayer-net.md § Joining a game).
         restore: replay ? replay.data.snapshots[0] : (save?.state ?? netRestore?.state ?? null),
@@ -227,6 +234,12 @@ async function boot(): Promise<void> {
     build: VERSION,
     compat: COMPAT,
   });
+
+  /**
+   * What a hosted room plays under: the session settings as they stand, and the mode beside them —
+   * docs/multiplayer-deathmatch.md § Settings.
+   */
+  const hostRules = (): NetRules => ({ ...captureSessionSettings(), deathmatch: getDeathmatch() });
 
   /**
    * The New Game tab's selection as the room must match it: the set as a save records it
@@ -346,7 +359,7 @@ async function boot(): Promise<void> {
         net = NetSession.host(transport, netHooks, {
           ...identity(name),
           game: netGame,
-          session: captureSessionSettings(),
+          session: hostRules(),
         });
         hostedPick = pickKey(selection);
       },
@@ -358,7 +371,7 @@ async function boot(): Promise<void> {
         const netGame = key === hostedPick ? room.game : await netGameOf(selection);
         if (!netGame) return false;
         hostedPick = key;
-        return room.setGame(netGame, captureSessionSettings());
+        return room.setGame(netGame, hostRules());
       },
       join: async (url, code, name) => {
         const transport = await WebSocketTransport.connect(url);
@@ -456,6 +469,12 @@ function parsePos(raw: string | null): Pos2 | null {
   if (!raw) return null;
   const [x, y] = raw.split(',').map(Number);
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
+/** `?coop=N` or `?deathmatch=N`: 2 to {@link MAX_PLAYERS} players, null for anything else. */
+function parsePlayerCount(raw: string | null): number | null {
+  const count = Number(raw);
+  return Number.isInteger(count) && count >= 2 && count <= MAX_PLAYERS ? count : null;
 }
 
 /** What taking a replay over calls the savegame it writes: the replay and how far into it. */

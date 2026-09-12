@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isPeerMessage, isRelayMessage } from '../../src/game/net/defs.ts';
 import { emptyRow, isWireRow, rowFromWire, rowToWire, type TicRow, type WireRow } from '../../src/game/replay/row.ts';
-import { snapshotFor } from '../fixtures/net.ts';
+import { GAME, snapshotFor } from '../fixtures/net.ts';
 
 /**
  * The wire shapes: a row round-trips through its array form, and the guards let a well-formed
@@ -77,5 +77,16 @@ describe('Network · protocol', () => {
     );
     assert.ok(!isPeerMessage({ type: 'snapshot', restore: { tic: 100, map: 'MAP01', state: {}, slots: [] }, from: 0 }));
     assert.ok(!isPeerMessage({ type: 'teleport', from: 0 }), 'an unknown type');
+  });
+
+  test('the session rules are optional on the wire, typed when present', () => {
+    const lobby = (session: Record<string, unknown>) =>
+      isPeerMessage({ type: 'lobby', game: GAME, session, delay: 3, peers: [], playing: false, from: 0 });
+    const vanilla = { infiniteTallActors: false, pistolStart: false };
+    assert.ok(lobby(vanilla), 'a lobby from before the rules');
+    assert.ok(lobby({}), 'every field optional, as in a replay record');
+    assert.ok(lobby({ ...vanilla, deathmatch: true, friendlyFire: false, fragLimit: 20, timeLimit: 0 }));
+    assert.ok(!lobby({ ...vanilla, fragLimit: -1 }), 'a negative limit');
+    assert.ok(!lobby({ ...vanilla, deathmatch: 'yes' }));
   });
 });

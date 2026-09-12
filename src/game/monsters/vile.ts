@@ -91,15 +91,16 @@ export function resolveVileBlast(
   const player = fallbackPlayer(ctx, atk.targetId);
   const victim = targetMonster(ctx, atk.targetId);
   const at = victim ? { x: victim.x, y: victim.y, z: victim.z } : { x: player.x, y: player.y, z: player.z };
+  const source = { id: atk.sourceId, type: atk.sourceType };
   if (atk.targetId < 0) {
     // A no-op hit (already dead, or invulnerable) reports false — see
     // `CombatContext.damageSlot` — and skips the knockup along with it.
-    if (ctx.damageSlot(slotOfTarget(atk.targetId), atk.damage, { from: atk, cause: atk.sourceType })) {
+    if (ctx.damageSlot(slotOfTarget(atk.targetId), atk.damage, { from: atk, cause: atk.sourceType, source })) {
       player.launchUpward(atk.blast.knockUpSpeed);
     }
   } else {
     ctx.things?.damage(atk.targetId, atk.damage, {
-      source: { id: atk.sourceId, type: atk.sourceType },
+      source,
       knockUpSpeed: atk.blast.knockUpSpeed,
       from: atk,
     });
@@ -113,7 +114,7 @@ export function resolveVileBlast(
     radius: atk.blast.splashRadius,
     maxDamage: atk.blast.splashDamage,
     hitsPlayer: true,
-    source: { id: atk.sourceId, type: atk.sourceType },
+    source,
   });
   effects.spawnImpact('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, fireAt);
 }

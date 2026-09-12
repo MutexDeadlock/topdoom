@@ -309,9 +309,10 @@ Nothing else about a spectre differs from a demon — same stats, same batch mem
 **`game/skill.ts: isMultiplayerOnly`** filters out things carrying THING flag bit `0x10` before
 `buildThingSprites` poses them — vanilla's `P_SpawnMapThing` reads
 `if (!netgame && (options & 16)) return NULL;`, i.e. the bit hides a thing whenever no other players
-are present. This engine has no multiplayer, so the bit always applies. Mappers use it to stash
+are present — a netgame spawns them (docs/multiplayer-coop.md § Netgame). Mappers use it to stash
 deathmatch-only weapons/ammo without cluttering single-player — E1M1 has two `SHOT` things; only the
-one *without* the bit is the real single-player pickup.
+one *without* the bit is the real single-player pickup. Boom's `MTF_NOTDM`/`MTF_NOTCOOP` bits, the
+keys and the monsters a deathmatch leaves out: docs/multiplayer-deathmatch.md § Rules.
 
 ### Why upright planes, not `THREE.Sprite`
 

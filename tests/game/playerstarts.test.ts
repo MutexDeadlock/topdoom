@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { coopStarts, levelStartFor, rebornSpot } from '../../src/game/playerstarts.ts';
+import { coopStarts, deathmatchSpot, deathmatchStarts, levelStartFor, rebornSpot } from '../../src/game/playerstarts.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { fxLayer } from '../fixtures/spritestubs.ts';
@@ -69,5 +69,43 @@ describe('Player starts · respawn', () => {
     assert.ok(Math.abs(fog.x - spot.x) < 1e-9);
     assert.ok(Math.abs(fog.y - (spot.y + 20)) < 1e-9);
     assert.equal(fog.z, world.floorAt(spot.x, spot.y));
+  });
+});
+
+describe('Player starts · deathmatch starts', () => {
+  test('every doomednum-11 thing in map order, however many; a map without any has none', () => {
+    const { grid, world } = room(
+      [ThingType.deathmatchStart, 1, 90],
+      [ThingType.playerStart, 2],
+      [ThingType.deathmatchStart, 3],
+      [ThingType.deathmatchStart, 4],
+      [ThingType.deathmatchStart, 5],
+    );
+    const starts = deathmatchStarts(world);
+    assert.deepEqual(
+      starts.map((s) => s.x),
+      [1, 3, 4, 5].map((col) => grid.centre(col, 1).x),
+    );
+    assert.equal(starts[0].angle, Math.PI / 2);
+    assert.deepEqual(deathmatchStarts(room([ThingType.playerStart, 1]).world), []);
+  });
+
+  test('the draw is `P_Random() % n` up to twenty times, the first free spot winning, else null', () => {
+    const starts = deathmatchStarts(
+      room([ThingType.deathmatchStart, 1], [ThingType.deathmatchStart, 3], [ThingType.deathmatchStart, 5]).world,
+    );
+    const draws = [7, 4];
+    const draw = () => draws.shift() ?? 0;
+    // 7 % 3 = 1, blocked; 4 % 3 = 1 again; then the first start.
+    const blocked = (at: { x: number }) => at.x === starts[1].x;
+    assert.equal(deathmatchSpot(starts, blocked, draw), starts[0]);
+    let tries = 0;
+    assert.equal(
+      deathmatchSpot(starts, () => true, () => tries++),
+      null,
+      'every draw refused',
+    );
+    assert.equal(tries, 20, "`G_DeathMatchSpawnPlayer`'s twenty tries");
+    assert.equal(deathmatchSpot([], () => false), null, 'no starts to draw from');
   });
 });

@@ -76,6 +76,13 @@ const BOUNDARY_INSET = 0.25;
  */
 const NO_ISLAND = -1;
 
+/**
+ * Whether the fog sweeps at all: `'off'` is a deathmatch's — everything explored, every island
+ * gate open, no per-tic work — and answers every reader as a fully revealed level would.
+ * docs/fogofwar.md § Off.
+ */
+export type FogMode = 'sweep' | 'off';
+
 interface SubSectorSight {
   /**
    * Sample points as x,y pairs: centroid first, then every corner and every
@@ -117,6 +124,8 @@ export class FogOfWar {
    * {@link FogOfWar.closedTarget}'s waiver. docs/fogofwar.md § Closed sectors.
    */
   private movableSectors: ReadonlySet<number>;
+  /** {@link FogMode} `'off'`: the readers answer through the tables below, which never change. */
+  private readonly off: boolean;
 
   /**
    * Which tic each line's {@link World.blocksSight} answer was computed on, and what it was — see
@@ -211,15 +220,20 @@ export class FogOfWar {
    */
   private orderRings: Int32Array;
 
+  /**
+   * @param mode  `'off'` for a level with no fog — see {@link FogMode}
+   */
   constructor(
     world: World,
     occluders: WallOccluder[],
     starts: readonly Pos2[],
     drawn: number,
     movableSectors?: ReadonlySet<number>,
+    mode: FogMode = 'sweep',
   ) {
     this.world = world;
     this.drawn = drawn;
+    this.off = mode === 'off';
     const map = world.map;
     // Passed in by `game.ts`, which has already run this scan for the mesh
     // build; derived here only so a caller that has no reason to care (a test,
@@ -342,6 +356,15 @@ export class FogOfWar {
     const cursor = Int32Array.from(this.wallsBySubsectorStart.subarray(0, polys.length));
     for (let i = 0; i < occluders.length; i++) this.wallsBySubsector[cursor[this.wallSubsector[i]]++] = i;
 
+    // Off: the whole level explored and no island to be outside of, so `isVisible`, `isDrawn`
+    // and `alphaOf` answer "shown" through the same reads as ever — no branch on a hot path.
+    if (this.off) {
+      this.explored.fill(1);
+      this.island.fill(NO_ISLAND);
+      this.pending = 0;
+      this.snapAlpha();
+      return;
+    }
     // Seed every start's surroundings fully revealed instead of fading up from
     // black on frame one: unbounded on both caps, so this one call reveals
     // everything visible from spawn rather than leaving some of it to fade in
@@ -365,6 +388,8 @@ export class FogOfWar {
    * recounted and the visual alpha snapped to match, the same snap the constructor ends on.
    */
   restoreExplored(runs: number[]): void {
+    // A deathmatch save's runs say everything, which is what the level already shows.
+    if (this.off) return;
     this.explored.set(decodeRuns(runs, this.explored.length));
     this.pending = 0;
     for (let ss = 0; ss < this.sights.length; ss++) {
@@ -385,7 +410,7 @@ export class FogOfWar {
    * @param points  each slot's body, dead or alive, by slot
    */
   tick(points: readonly Pos2[]): void {
-    if (points.length === 0) return;
+    if (this.off || points.length === 0) return;
     const tests = Math.ceil(MAX_SIGHT_TESTS_PER_TIC / points.length);
     const work = Math.ceil(MAX_SIGHT_WORK_PER_TIC / points.length);
     for (let slot = 0; slot < points.length; slot++) {
@@ -402,6 +427,7 @@ export class FogOfWar {
   updateFade(dt: number): void {
     this.changedWallCount = 0;
     this.changedAny = false;
+    if (this.off) return;
     // One exponential for the sweep rather than one per subsector: every alpha here fades at the
     // same rate over the same frame, which is the case `dampenWith` is for.
     const lerpT = 1 - exp(-FADE_SPEED * dt);

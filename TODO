@@ -5,5 +5,7 @@ wad/library ui/library ?
 
 replay keyframe interval in settings
 
+PICKUP_SCALE_TYPES => PICKUP_SCALE (doomednum => scale)
+
 
 TODO: write new TODO :)

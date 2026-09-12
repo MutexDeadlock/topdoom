@@ -13,6 +13,7 @@ import {
 } from '../../src/game/replay.ts';
 import type { CameraPose, TopDownCamera } from '../../src/render/camera.ts';
 import type { Pos2 } from '../../src/types.ts';
+import { withSessionDefaults } from '../../src/game/replay/settings.ts';
 
 /** One tic's worth of live input, as `scriptedInput` answers it. */
 export interface ScriptedRow {
@@ -90,8 +91,8 @@ export function beginTic(
 
 /** `settings` as a recording stores them: the player's half and the session's. */
 export function splitSettings(settings: SimSettings) {
-  const { infiniteTallActors, pistolStart, ...player } = settings;
-  return { player, session: { infiniteTallActors, pistolStart } };
+  const { autorun, autoSwitchWeapon, rightMouse, cameraMode } = settings;
+  return { player: { autorun, autoSwitchWeapon, rightMouse, cameraMode }, session: withSessionDefaults(settings) };
 }
 
 /**
@@ -111,7 +112,7 @@ export function replayCapture(ticCount = 2): ReplayCapture {
     data: {
       snapshots: [REPLAY_SNAPSHOT],
       keyframes: [{ tic: 0, map: 'MAP01', snapshot: 0 }],
-      session: { infiniteTallActors: false, pistolStart: false },
+      session: withSessionDefaults({}),
       slots: [
         {
           settings: { autorun: true, autoSwitchWeapon: true, rightMouse: 'use', cameraMode: 'auto' },

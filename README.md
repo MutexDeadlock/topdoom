@@ -179,19 +179,23 @@ where one actually diverged. See [docs/replays.md](docs/replays.md).
 
 ## Multiplayer
 
-Coop for up to four, each in their own browser, through a small relay you run yourself:
+Coop or deathmatch for up to four, each in their own browser, through a small relay you run yourself:
 
 ```bash
 npm run relay        # ws://localhost:8765; PORT= picks another
 ```
 
-On the menu's **Multiplayer** tab the host enters the relay's address and a name, and hosts the
-level picked on the New Game tab; the others enter the five-letter room code and join. Everyone
+On the menu's **Multiplayer** tab the host enters the relay's address and a name, picks the rules
+— coop with or without friendly fire, or deathmatch with a frag and a time limit — and hosts the
+level picked on the New Game tab; the others enter the five-letter room code and join. A deathmatch
+runs the classic *altdeath* rules: no monsters, every key, items coming back after thirty seconds,
+random deathmatch starts, and no fog of war. Everyone
 needs the same WADs — a row that can't play the set says so in red. The host picks the input delay
 and presses Start. Someone can join a game already running, and a player who leaves stands idle in
 the level. Every browser runs the whole game in lockstep, so a slow or lost connection holds the
 others rather than desyncing them; cheats are off, and no best time is set. See
-[docs/multiplayer-net.md](docs/multiplayer-net.md).
+[docs/multiplayer-net.md](docs/multiplayer-net.md) and
+[docs/multiplayer-deathmatch.md](docs/multiplayer-deathmatch.md).
 
 ## Sound and music
 

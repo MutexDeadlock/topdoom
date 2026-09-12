@@ -23,6 +23,16 @@ import {
   setPlayerColor,
   type PlayerColor,
 } from '../../wad/playercolor.ts';
+import {
+  getDeathmatch,
+  getFragLimit,
+  getFriendlyFire,
+  getTimeLimit,
+  setDeathmatch,
+  setFragLimit,
+  setFriendlyFire,
+  setTimeLimit,
+} from '../../game/rules.ts';
 import { readStorage, writeStorage } from '../../util/storage.ts';
 import { DOOM_TIC, VERSION } from '../../constants.ts';
 import { attempt, emptyLine, fillFacts, markChip, noteLine, type StatusLine } from './actions.ts';
@@ -70,6 +80,14 @@ export class MultiplayerUi {
   private codeInput = el<HTMLInputElement>('net-code');
   private joinButton = el<HTMLButtonElement>('net-join');
   private connectHint = el<HTMLSpanElement>('net-connect-hint');
+  private rules = el<HTMLElement>('net-rules');
+  private modeSelect = el<HTMLSelectElement>('net-mode');
+  private friendlyFireRow = el<HTMLElement>('net-friendlyfire-row');
+  private friendlyFireCheckbox = el<HTMLInputElement>('net-friendlyfire');
+  private fragLimitRow = el<HTMLElement>('net-fraglimit-row');
+  private fragLimitInput = el<HTMLInputElement>('net-fraglimit');
+  private timeLimitRow = el<HTMLElement>('net-timelimit-row');
+  private timeLimitInput = el<HTMLInputElement>('net-timelimit');
   private codeEl = el<HTMLSpanElement>('net-room-code');
   private phaseEl = el<HTMLSpanElement>('net-phase');
   private facts = el<HTMLDivElement>('net-facts');
@@ -130,6 +148,7 @@ export class MultiplayerUi {
     this.delaySelect.addEventListener('change', () => {
       this.hooks.session()?.setDelay(Number(this.delaySelect.value));
     });
+    this.installRules();
     this.hostButton.addEventListener('click', () => void this.host());
     this.joinButton.addEventListener('click', () => void this.join());
     this.startButton.addEventListener('click', () => this.hooks.start());
@@ -199,7 +218,7 @@ export class MultiplayerUi {
    * Back on the tab, a host's lobby follows whatever the New Game tab was changed to meanwhile.
    * docs/multiplayer-net.md § The Multiplayer tab.
    */
-  private async announce(): Promise<void> {
+  private async announce(done = "The room now plays the New Game tab's pick."): Promise<void> {
     const session = this.hooks.session();
     if (!session?.isHost || session.phase !== 'lobby' || this.announcing) return;
     this.announcing = true;
@@ -209,7 +228,7 @@ export class MultiplayerUi {
       changed = await this.hooks.announce();
     });
     this.announcing = false;
-    if (changed) this.setStatus("The room now plays the New Game tab's pick.");
+    if (changed) this.setStatus(done);
     this.refresh();
   }
 
@@ -229,6 +248,7 @@ export class MultiplayerUi {
     const session = this.hooks.session();
     this.connect.classList.toggle('hidden', session !== null);
     this.room.classList.toggle('hidden', session === null);
+    this.renderRules();
     if (!session) {
       this.renderConnect();
       return;
@@ -254,6 +274,54 @@ export class MultiplayerUi {
     this.connectHint.textContent = this.connecting ? 'connecting…' : '';
   }
 
+  /**
+   * The rules group (`game/rules.ts`): the mode, and the rows the mode has — friendly fire for
+   * coop, the two limits for a deathmatch. Shown only to the host of a lobby, whose every change is
+   * announced at once, where a level or WAD change waits for the tab; everyone else reads the rules
+   * off the room's facts. docs/multiplayer-net.md § The Multiplayer tab.
+   */
+  private installRules(): void {
+    this.modeSelect.value = getDeathmatch() ? 'deathmatch' : 'coop';
+    this.friendlyFireCheckbox.checked = getFriendlyFire();
+    this.fragLimitInput.value = limitText(getFragLimit());
+    this.timeLimitInput.value = limitText(getTimeLimit());
+    this.modeSelect.addEventListener('change', () => {
+      setDeathmatch(this.modeSelect.value === 'deathmatch');
+      this.ruleChanged();
+    });
+    this.friendlyFireCheckbox.addEventListener('change', () => {
+      setFriendlyFire(this.friendlyFireCheckbox.checked);
+      this.ruleChanged();
+    });
+    this.fragLimitInput.addEventListener('change', () => {
+      setFragLimit(Number(this.fragLimitInput.value));
+      this.fragLimitInput.value = limitText(getFragLimit());
+      this.ruleChanged();
+    });
+    this.timeLimitInput.addEventListener('change', () => {
+      setTimeLimit(Number(this.timeLimitInput.value));
+      this.timeLimitInput.value = limitText(getTimeLimit());
+      this.ruleChanged();
+    });
+    this.renderRules();
+  }
+
+  /** A rule changed: the rows follow the mode, and the lobby hears of it. */
+  private ruleChanged(): void {
+    this.renderRules();
+    void this.announce('The room now plays these rules.');
+  }
+
+  /** Whether the group shows, and which rows the mode has — see {@link MultiplayerUi.installRules}. */
+  private renderRules(): void {
+    const session = this.hooks.session();
+    this.rules.classList.toggle('hidden', !(session?.isHost && session.phase === 'lobby'));
+    const deathmatch = this.modeSelect.value === 'deathmatch';
+    this.friendlyFireRow.classList.toggle('hidden', deathmatch);
+    this.fragLimitRow.classList.toggle('hidden', !deathmatch);
+    this.timeLimitRow.classList.toggle('hidden', !deathmatch);
+  }
+
   /** What is being played: the level as the level select names it, the skill, the WADs. */
   private renderFacts(session: NetSession): void {
     const { game } = session;
@@ -261,7 +329,12 @@ export class MultiplayerUi {
       this.facts.replaceChildren(emptyLine('Waiting for the host to pick a level…'));
       return;
     }
+    const { deathmatch, friendlyFire, fragLimit, timeLimit } = session.session;
     const rules = [
+      deathmatch ? 'deathmatch' : null,
+      deathmatch && fragLimit > 0 ? `kill limit ${fragLimit}` : null,
+      deathmatch && timeLimit > 0 ? `time limit ${timeLimit} min` : null,
+      !deathmatch && friendlyFire ? 'friendly fire' : null,
       session.session.pistolStart ? 'pistol start' : null,
       session.session.infiniteTallActors ? 'infinitely tall actors' : null,
     ].filter((rule): rule is string => rule !== null);
@@ -416,3 +489,8 @@ const SWATCHES: Record<PlayerColor, string> = {
   orange: '#ffa35b',
   pink: '#df8787',
 };
+
+/** A limit as the field shows it: blank for none. */
+function limitText(limit: number): string {
+  return limit > 0 ? String(limit) : '';
+}

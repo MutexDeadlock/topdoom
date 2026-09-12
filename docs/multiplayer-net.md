@@ -195,7 +195,9 @@ no room for one.
   live values are what `NetSeat.sampleRow` sends.
 - **Session settings are the host's**, read when it opens the room and again on each return to the tab in the lobby, carried by `start`, and pinned on every browser before every tic
   (`applySessionSettings`) — a toggle in the menu during a network game does nothing until it
-  ends (`releaseSessionSettings`).
+  ends (`releaseSessionSettings`). The netgame rules ride with them as `NetRules`, the mode beside
+  the pinned ones and read once by `Game`; a lobby from a build without them reads as coop
+  (docs/multiplayer-deathmatch.md § Settings).
 - The camera mode reaches the simulation only through the row's pose, so each browser's own
   applies to its drawn camera alone.
 - **Cheats are off**: the row carries nothing typed.
@@ -218,10 +220,15 @@ no room for one.
   unchanged pick sends nothing — `main.ts` reads the WADs again only when the sources, level or
   skill changed (`pickKey`), and Start waits meanwhile. A check, not a vote: a player who doesn't
   want to play it leaves. A game under way keeps what it started with. **Room code** + **Join**.
-- The room: its code, `phaseText`, the facts (level, skill, WADs, rules, delay), the peer list —
+- The room: its code, `phaseText`, the facts (level, skill, WADs, rules — deathmatch, its limits,
+  friendly fire, pistol start, infinitely tall actors — delay), the peer list —
   each name after its colour's swatch; in the lobby each peer's `ready`/`checking…`/`not ready`, with the refusal in red in a column of
   its own — for a missing file its label alone (`missingWadLabel`), a Load row's advice left out; in a game the roster, a slot whose
-  player left dimmed; the host sees **Kick** on every other player's row — the host's input delay
+  player left dimmed; the host sees **Kick** on every other player's row — **Rules**, the lobby
+  host's alone (hidden for a joiner and during a game, who read them off the facts): the mode (Coop / Deathmatch),
+  friendly fire for coop, the frag and time limits for a deathmatch (`game/rules.ts`,
+  docs/multiplayer-deathmatch.md § Settings), stored like every setting, each change announced at
+  once (`announce`; a session-only change resets no readiness) — the host's input delay
   select, **Start** (`canStart`), **Leave** for a peer, status line "Room left.";
   **Close** for the host, "Room closed.".
 - The hint line: who Start waits on, or a desync being resynced.

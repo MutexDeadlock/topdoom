@@ -13,6 +13,7 @@ export {
   type LobbyPeer,
   type NetGame,
   type NetRestore,
+  type NetRules,
   type SlotAssignment,
 } from './net/defs.ts';
 export { WebSocketTransport, type Transport } from './net/transport.ts';

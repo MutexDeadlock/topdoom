@@ -431,7 +431,11 @@ export class IconOfSin {
     for (let slot = 0; slot < this.ctx.slots.length; slot++) {
       const { player, dead } = this.ctx.slots[slot];
       if (dead || !bodiesOverlap(spawned, player, PLAYER_RADIUS + PLAYER_TELEFRAG_RADIUS)) continue;
-      this.ctx.damageSlot(slot, TELEFRAG_DAMAGE, { from: spawned, cause: spawned.type });
+      this.ctx.damageSlot(slot, TELEFRAG_DAMAGE, {
+        from: spawned,
+        cause: spawned.type,
+        source: { id: spawned.id, type: spawned.type },
+      });
     }
   }
 

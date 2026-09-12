@@ -86,7 +86,7 @@ and three arrivals reach it:
 
 | Arrival | Stomps? |
 |---|---|
-| The player off a teleport pad (`game.ts`'s `onTeleport`) | Always |
+| The player off a teleport pad (`game.ts`'s `onTeleport`) | Always — the other living players on the pad too (`bodiesOverlap` at twice `PLAYER_RADIUS`), a frag in a deathmatch |
 | A monster off a teleport pad (`game.ts`'s `thingCrossedLines`) | Only on map 30 |
 | The Icon of Sin's spawn cube (`ThingLayer.spawnMonster`, `A_SpawnFly`'s tail) | Always — it only flies on MAP30 anyway |
 
@@ -228,8 +228,10 @@ absent is an unattributed death, and no tic reads it). The overlay can go up ove
 after the blow — a replay's view switched onto it (docs/replays.md § Playback), a keyframe or a
 network sync restoring one — and `Game.armDeathOverlay` is the one place any of them raises it.
 
-A cause is either a doomednum or one of three strings for the killers with no attacker behind them:
-`'self'` (the player's own splash), `'crush'`, `'slime'`. Either way it keys straight into
+A cause is either a doomednum, another player as `targetOfSlot`'s negative number — `obituary`
+takes a name lookup and fills `OBITUARIES.player`'s `{name}` with the roster's name, `Player n`
+without one (docs/multiplayer-deathmatch.md § Player versus player) — or one of three strings for
+the killers with no attacker behind them: `'self'` (the player's own splash), `'crush'`, `'slime'`. Either way it keys straight into
 `OBITUARIES`, which holds each line **whole** rather than a name to interpolate — a DEH patch's
 `OB_*` string replaces a line entire, and docs/dehacked.md § Obituaries is why the table is shaped
 that way. `OBITUARIES.default` is the fallback for a cause with no line of its own; it is `''`

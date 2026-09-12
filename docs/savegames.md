@@ -49,6 +49,8 @@ real players something. A save written before either simply does not load — `i
 refuses it as damaged — and nothing was added to explain it: the only such saves were made by
 development builds. Everything else added since is still the
 optional-field rule: absence means the old behaviour, the `teleportFogs` pattern. Breaking saves at
+`GameSnapshot.deathmatch`, `PlayerSlotSnapshot.frags` and `ThingsSnapshot.itemRespawn` are that
+pattern's (docs/multiplayer-deathmatch.md).
 all is the user's decision, not a free move (CLAUDE.md § Project-wide rules).
 
 A killable thing's AI block is the one part not written out field by field: `MONSTER_SAVE_KEYS`

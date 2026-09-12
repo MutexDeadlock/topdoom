@@ -82,7 +82,7 @@ export const BUTTON_FIRE = 1;
 export const BUTTON_RIGHT_EDGE = 2;
 
 /**
- * The six persisted settings a tic can observe — `replay/settings.ts` captures and pins them. One
+ * The ten persisted settings a tic can observe — `replay/settings.ts` captures and pins them. One
  * record on disk; the engine splits it by owner (docs/multiplayer.md § Player settings).
  */
 export interface SimSettings extends PlayerSettings, SessionSettings {}
@@ -95,10 +95,20 @@ export interface PlayerSettings {
   cameraMode: CameraMode;
 }
 
-/** The two the whole session runs under, whichever slot reads them. */
+/**
+ * The five the whole session runs under, whichever slot reads them. The last three are the host's
+ * netgame rules a tic reads (`game/rules.ts`, docs/multiplayer-deathmatch.md § Settings) — never
+ * the mode, which a game decides once: a record from before them reads as coop with none —
+ * `withSessionDefaults` (`replay/settings.ts`).
+ */
 export interface SessionSettings {
   infiniteTallActors: boolean;
   pistolStart: boolean;
+  friendlyFire: boolean;
+  /** Net frags that end a deathmatch level; 0 for none. */
+  fragLimit: number;
+  /** Minutes that end a deathmatch level; 0 for none. */
+  timeLimit: number;
 }
 
 /** Where a level began in the tic stream — the bar's markers and the list's level line. */

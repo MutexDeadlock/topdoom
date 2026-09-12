@@ -95,12 +95,38 @@ const MULTIPLAYER_ONLY = 0x0010;
  * netgame: `P_LoadThings` reads `if (!netgame && (options & MTF_NOTSINGLE))
  * continue;` — unconditional on skill, only on whether other players are
  * present. Deathmatch weapon stashes and similar multiplayer-only placements
- * carry this flag so they don't clutter a single-player game. This engine
- * has no multiplayer mode at all, so netgame is always false and the flag
- * always applies.
+ * carry this flag so they don't clutter a single-player game; a netgame spawns
+ * them (docs/multiplayer-coop.md § Netgame).
  */
 export function isMultiplayerOnly(flags: number): boolean {
   return (flags & MULTIPLAYER_ONLY) !== 0;
+}
+
+/**
+ * Boom's two netgame-mode flags (`doomdef.h`: `MTF_NOTDM` bit 5, `MTF_NOTCOOP` bit 6), and the
+ * reserved bit that voids them: `P_SpawnMapThing` (`prboom p_mobj.c`, killough 11/98) ignores every
+ * bit vanilla never read when bit 8 is set — a vanilla-era editor that put ones in the unused bits.
+ */
+const NOT_DEATHMATCH = 0x0020;
+const NOT_COOP = 0x0040;
+const RESERVED = 0x0100;
+
+/**
+ * True if this THING stays out of a deathmatch — `P_SpawnMapThing`'s
+ * `if (netgame && deathmatch && options & MTF_NOTDM) return;` (`prboom p_mobj.c`, jff 3/30/98).
+ * docs/multiplayer-deathmatch.md § Rules.
+ */
+export function isNotDeathmatch(flags: number): boolean {
+  return (flags & RESERVED) === 0 && (flags & NOT_DEATHMATCH) !== 0;
+}
+
+/**
+ * True if this THING stays out of a coop game — the sibling
+ * `if ((coop_spawns || netgame) && !deathmatch && options & MTF_NOTCOOP) return;`.
+ * docs/multiplayer-coop.md § Netgame.
+ */
+export function isNotCoop(flags: number): boolean {
+  return (flags & RESERVED) === 0 && (flags & NOT_COOP) !== 0;
 }
 
 /**

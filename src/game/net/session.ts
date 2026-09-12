@@ -5,9 +5,9 @@
  * `main.ts` builds it and answers its hooks. docs/multiplayer-net.md.
  */
 import type { TicInput } from '../input.ts';
-import { CHECK_INTERVAL, checkCoord, type PlayerSettings, type SessionSettings } from '../replay/defs.ts';
+import { CHECK_INTERVAL, checkCoord, type PlayerSettings } from '../replay/defs.ts';
 import { RowInput, copyRow, emptyRow, rowFromWire, rowPose, rowToWire, type TicRow } from '../replay/row.ts';
-import { samePlayerSettings } from '../replay/settings.ts';
+import { samePlayerSettings, withSessionDefaults } from '../replay/settings.ts';
 import type { GameSnapshot } from '../snapshot.ts';
 import { MAX_PLAYERS } from '../playerstarts.ts';
 import { getRandomCursors } from '../../util/random.ts';
@@ -27,6 +27,7 @@ import {
   type LobbyPeer,
   type NetGame,
   type NetRestore,
+  type NetRules,
   type PeerMessage,
   type RelayMessage,
   type SlotAssignment,
@@ -72,7 +73,7 @@ export interface NetIdentity {
 
 export interface HostOptions extends NetIdentity {
   game: NetGame;
-  session: SessionSettings;
+  session: NetRules;
 }
 
 export interface JoinOptions extends NetIdentity {
@@ -100,6 +101,14 @@ export interface RosterEntry {
    * before its first report, from a relay that sends none, and once the player is gone.
    */
   pingMs: number | null;
+}
+
+/**
+ * `partial` as whole {@link NetRules}: a lobby from before the netgame rules carries only two
+ * session settings, and reads as coop with none. docs/multiplayer-deathmatch.md § Settings.
+ */
+export function withRulesDefaults(partial: Partial<NetRules>): NetRules {
+  return { ...withSessionDefaults(partial), deathmatch: partial.deathmatch ?? false };
 }
 
 /** What a slot with no row this tic reads — nothing held, nothing aimed. */
@@ -131,7 +140,7 @@ export class NetSession {
   peers: LobbyPeer[] = [];
   game: NetGame | null;
   /** The host's session settings; every peer runs under them. */
-  session: SessionSettings;
+  session: NetRules;
   delay: number;
   /** The tic the first check sample disagreed at since the last snapshot, or null. */
   desyncedAt: number | null = null;
@@ -174,7 +183,7 @@ export class NetSession {
 
   /** Joins the room {@link JoinOptions.code} names on `transport`. */
   static join(transport: Transport, hooks: NetHooks, options: JoinOptions): NetSession {
-    const session = new NetSession(transport, hooks, options, null, { infiniteTallActors: false, pistolStart: false }, INPUT_DELAY);
+    const session = new NetSession(transport, hooks, options, null, withRulesDefaults({}), INPUT_DELAY);
     // The relay reads the code the way it was typed: blank, spaced or lowercase.
     transport.send({ type: 'join', code: options.code } satisfies JoinRequest);
     return session;
@@ -185,7 +194,7 @@ export class NetSession {
     hooks: NetHooks,
     me: NetIdentity,
     game: NetGame | null,
-    session: SessionSettings,
+    session: NetRules,
     delay: number,
   ) {
     this.transport = transport;
@@ -255,7 +264,7 @@ export class NetSession {
    *
    * @returns whether anything changed
    */
-  setGame(game: NetGame, session: SessionSettings): boolean {
+  setGame(game: NetGame, session: NetRules): boolean {
     if (!this.host || this.phase !== 'lobby') return false;
     const gameChanged = JSON.stringify(game) !== JSON.stringify(this.game);
     if (!gameChanged && JSON.stringify(session) === JSON.stringify(this.session)) return false;
@@ -568,7 +577,7 @@ export class NetSession {
     const game = asNetGame(message.game);
     const changed = this.game === null || JSON.stringify(this.game) !== JSON.stringify(game);
     this.game = game;
-    this.session = message.session;
+    this.session = withRulesDefaults(message.session);
     this.delay = message.delay;
     this.peers = message.peers.map((peer) => ({ ...peer, color: asPlayerColor(peer.color, DEFAULT_PLAYER_COLOR) }));
     this.playing = message.playing;
@@ -594,9 +603,9 @@ export class NetSession {
     }
   }
 
-  private started(slots: SlotAssignment[], session: SessionSettings, delay: number): void {
+  private started(slots: SlotAssignment[], session: NetRules, delay: number): void {
     if (!this.game) return;
-    this.session = session;
+    this.session = withRulesDefaults(session);
     this.delay = delay;
     this.playing = true;
     this.scheduler = new LockstepScheduler({ delay, slots: slots.length });

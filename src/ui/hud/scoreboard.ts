@@ -9,7 +9,7 @@ import { PLAYER_COLORS, PLAYER_COLOR_RAMPS, type PlayerColor } from '../../wad/p
 export interface ScoreRow {
   name: string;
   color: PlayerColor;
-  /** The player's own kills this level — `PlayerSlot.kills`. */
+  /** The player's own kills this level — `PlayerSlot.kills`, in a deathmatch `PlayerSlot.netFrags`. */
   kills: number;
   /** The round trip to the relay in milliseconds, or null where there is none to show. */
   pingMs: number | null;

@@ -113,8 +113,9 @@ export class MonsterAttacks {
    */
   private applyDirectDamage(atk: MonsterAttackEvent): void {
     const { targetId, damage, sourceId, sourceType } = atk;
-    if (targetId < 0) this.ctx.damageSlot(slotOfTarget(targetId), damage, { from: atk, cause: sourceType });
-    else this.ctx.things?.damage(targetId, damage, { source: { id: sourceId, type: sourceType }, from: atk });
+    const source = { id: sourceId, type: sourceType };
+    if (targetId < 0) this.ctx.damageSlot(slotOfTarget(targetId), damage, { from: atk, cause: sourceType, source });
+    else this.ctx.things?.damage(targetId, damage, { source, from: atk });
   }
 
   /**
@@ -217,7 +218,11 @@ export class MonsterAttacks {
       if (things?.bleeds(blocker.id)) this.effects.spawnBlood(hitAt, damage);
       else this.effects.spawnPuff(hitAt);
     } else if (playerInPath) {
-      this.ctx.damageSlot(playerSlot, damage, { from: atk, cause: atk.sourceType });
+      this.ctx.damageSlot(playerSlot, damage, {
+        from: atk,
+        cause: atk.sourceType,
+        source: { id: atk.sourceId, type: atk.sourceType },
+      });
       const player = slots[playerSlot].player;
       endX = player.x;
       endY = player.y;

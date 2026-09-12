@@ -140,19 +140,21 @@ describe('Coop · target choice', () => {
 describe('Coop · netgame pickups', () => {
   test('a placed weapon gives a player who owns it nothing, not even its ammo', () => {
     const inv = createInventory();
-    assert.equal(applyPickup(inv, ThingType.shotgun, { netgame: true }), true, 'the first one');
+    assert.equal(applyPickup(inv, ThingType.shotgun, { weaponsStay: true }), true, 'the first one');
     assert.equal(inv.currentWeapon, 'shotgun');
     const shells = inv.ammo.shells;
-    assert.equal(applyPickup(inv, ThingType.shotgun, { netgame: true }), false);
+    assert.equal(applyPickup(inv, ThingType.shotgun, { weaponsStay: true }), false);
     assert.equal(inv.ammo.shells, shells);
-    assert.equal(applyPickup(inv, ThingType.shotgun, { netgame: true, dropped: true }), true, 'a drop still gives');
+    assert.equal(applyPickup(inv, ThingType.shotgun, { weaponsStay: true, dropped: true }), true, 'a drop still gives');
   });
 
-  test('keys and placed weapons stay where they lie; drops and everything else go', () => {
-    assert.equal(leftInNetgame(ThingType.redSkullKey, false), true);
-    assert.equal(leftInNetgame(ThingType.shotgun, false), true);
-    assert.equal(leftInNetgame(ThingType.shotgun, true), false);
-    assert.equal(leftInNetgame(ThingType.clip, false), false);
+  test('keys and, where weapons stay, placed weapons stay where they lie; drops and everything else go', () => {
+    assert.equal(leftInNetgame(ThingType.redSkullKey, false, true), true);
+    assert.equal(leftInNetgame(ThingType.redSkullKey, false, false), true, 'a key stays in any netgame');
+    assert.equal(leftInNetgame(ThingType.shotgun, false, true), true);
+    assert.equal(leftInNetgame(ThingType.shotgun, false, false), false, 'a deathmatch takes it');
+    assert.equal(leftInNetgame(ThingType.shotgun, true, true), false);
+    assert.equal(leftInNetgame(ThingType.clip, false, true), false);
   });
 });
 

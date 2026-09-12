@@ -36,6 +36,30 @@
     </div>
     <div class="fact-grid" id="net-facts"></div>
     <div class="list net-peers" id="net-peers"></div>
+    <div id="net-rules" class="hidden">
+      <h2>Rules <span class="hint">yours to set — the room hears each change at once</span></h2>
+      <div class="net-form">
+        <label class="net-field mode">
+          <span class="label">Mode</span>
+          <select id="net-mode">
+            <option value="coop">Coop</option>
+            <option value="deathmatch">Deathmatch</option>
+          </select>
+        </label>
+        <label class="checkbox-row net-rule" id="net-friendlyfire-row">
+          <input type="checkbox" id="net-friendlyfire" />
+          <span>Friendly fire</span>
+        </label>
+        <label class="net-field limit" id="net-fraglimit-row">
+          <span class="label">Kill limit</span>
+          <input type="number" id="net-fraglimit" min="0" step="1" placeholder="none" />
+        </label>
+        <label class="net-field limit" id="net-timelimit-row">
+          <span class="label">Time limit (min)</span>
+          <input type="number" id="net-timelimit" min="0" step="1" placeholder="none" />
+        </label>
+      </div>
+    </div>
     <div class="net-controls">
       <label id="net-delay-row">
         <span class="label">Input delay</span>

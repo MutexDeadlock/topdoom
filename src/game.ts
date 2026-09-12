@@ -15,7 +15,7 @@ import { DynamicLights } from './render/lights.ts';
 import { gldefsFromWad, parseGldefs } from './wad/gldefs.ts';
 import { setDrawsOwnPlayer } from './wad/playerskin.ts';
 import { AnimatedTextures } from './render/textureanim.ts';
-import { buildMapMesh } from './render/mapmesh.ts';
+import { buildMapMesh, worldToDoom } from './render/mapmesh.ts';
 import { islandCount } from './render/bsp.ts';
 import { VoidFloor } from './render/voidfloor.ts';
 import { setLevelSky } from './render/skytint.ts';
@@ -64,6 +64,7 @@ import {
   anyPlayerAlive,
   applyBarrelExplosion,
   livingPlayer,
+  playerRef,
   type CombatContext,
   type PlayerHit,
 } from './game/combat.ts';
@@ -135,11 +136,13 @@ import {
   createInventory,
   finishLevel,
   getPistolStart,
+  giveAllKeys,
   hasPower,
   leftInNetgame,
   pickupSound,
   PICKUP_RANGE,
   tickPowers,
+  type Inventory,
   type KeySlot,
 } from './game/inventory.ts';
 import { warpTargets } from './game/cheats.ts';
@@ -151,7 +154,16 @@ import { playerOrigin } from './audio/sfx.ts';
 import { PlayerSlot, type SlotSource } from './game/playerslot.ts';
 import { Level, type LevelParts } from './game/level.ts';
 import { Presenter } from './game/presenter.ts';
-import { coopStarts, levelStartFor, MAX_PLAYERS, rebornSpot } from './game/playerstarts.ts';
+import {
+  coopStarts,
+  deathmatchSpot,
+  deathmatchStarts,
+  levelStartFor,
+  MAX_PLAYERS,
+  rebornSpot,
+  spotTaken,
+} from './game/playerstarts.ts';
+import { TICS_PER_MINUTE, fragCredit, getFragLimit, getFriendlyFire, getTimeLimit } from './game/rules.ts';
 import { IDLE_TIC_INPUT, respawnPressed, type TicInput } from './game/input.ts';
 import { SoundBank } from './wad/sound.ts';
 import { MusicBank } from './wad/music.ts';
@@ -159,7 +171,7 @@ import { MapInfo } from './wad/campaign/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
 import type { Placement, Pos2, Pos3 } from './types.ts';
 import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
-import { vecLength } from './util/geom.ts';
+import { rayEntersBox, vecLength } from './util/geom.ts';
 import { readStorage, writeStorage } from './util/storage.ts';
 
 /**
@@ -279,12 +291,17 @@ export interface GameOptions {
    */
   autoSave?: (() => Promise<unknown>) | null;
   /**
-   * `?coop=` — how many players the session runs, as a netgame; absent is single player. Every slot
-   * past the first stands idle until something drives it. A restore's own
+   * `?coop=` or `?deathmatch=` — how many players the session runs, as a netgame; absent is single
+   * player. Every slot past the first stands idle until something drives it. A restore's own
    * {@link GameSnapshot.players} and {@link GameSnapshot.netgame} win over it.
    * docs/multiplayer-coop.md.
    */
-  coop?: number | null;
+  players?: number | null;
+  /**
+   * `?deathmatch=` — whether that netgame is a deathmatch. A network game's rules and a restore's
+   * own {@link GameSnapshot.deathmatch} win over it. docs/multiplayer-deathmatch.md § Settings.
+   */
+  deathmatch?: boolean;
   /**
    * The network game this level is one seat of: every slot's input comes from its rows, the local
    * slot's is sampled and sent ahead, and the session says which slot this browser plays. A
@@ -328,7 +345,7 @@ export class Game {
    */
   private level!: Level;
   /**
-   * Every player in the level, by slot — one, or {@link GameOptions.coop}'s. Built in the
+   * Every player in the level, by slot — one, or {@link GameOptions.players}'s. Built in the
    * constructor body, after the DEHACKED patch, and never replaced: a level load rebuilds what is
    * per-level *inside* each. docs/multiplayer.md § Player slots.
    */
@@ -355,10 +372,16 @@ export class Game {
    */
   private fogPoints: Pos2[] = [];
   /**
-   * Whether the session runs as a netgame: {@link GameOptions.coop}, or the restored snapshot's
+   * Whether the session runs as a netgame: {@link GameOptions.players}, or the restored snapshot's
    * own. Decided once, since which things spawn depends on it. docs/multiplayer-coop.md.
    */
   private netgame: boolean;
+  /**
+   * Whether the netgame is a deathmatch: {@link GameOptions.deathmatch}, the network session's
+   * rules, or the restored snapshot's own. Decided once, as {@link Game.netgame} is and for the
+   * same reason. docs/multiplayer-deathmatch.md.
+   */
+  private readonly deathmatch: boolean;
   /**
    * {@link Forces.carryForBody} bound once rather than per tic: `ThingLayer.update` takes it or
    * `undefined`, and building the closure at the call site allocated one every frame.
@@ -565,7 +588,8 @@ export class Game {
       loading = null,
       playback = null,
       autoSave = null,
-      coop = null,
+      players = null,
+      deathmatch = false,
       net = null,
     } = options;
     this.view = view;
@@ -586,7 +610,8 @@ export class Game {
     // `recordCompletion`'s separate question.
     this.cheated = restore ? restore.cheated : startPos !== null;
     // The snapshot's own when restoring, for the same reason: its thing ids were counted under it.
-    this.netgame = restore ? restore.netgame : coop !== null || net !== null;
+    this.netgame = restore ? restore.netgame : players !== null || net !== null;
+    this.deathmatch = restore ? restore.deathmatch === true : net ? net.session.deathmatch : players !== null && deathmatch;
     // Primed here, where a one-off scan of each file's bytes disappears into a load that is about
     // to build every mesh in the level, so the exit frame only ever hits the memo.
     for (const file of wad.files) wadId(file);
@@ -676,7 +701,7 @@ export class Game {
     // `Initial Health`/`Initial Bullets` off `LIMITS` (docs/dehacked.md § Applying: reset, then
     // patch), and after the sprite banks, which its billboard is built on.
     // A restore brings its own slots, however the session was asked to start.
-    const wanted = net ? net.slotCount : Math.min(Math.max(coop ?? 1, 1), MAX_PLAYERS);
+    const wanted = net ? net.slotCount : Math.min(Math.max(players ?? 1, 1), MAX_PLAYERS);
     this.growSlots(restore ? restore.players.length : wanted);
     // `slots` is handed over as is: the list is only ever grown, never replaced.
     this.seat = net
@@ -702,7 +727,7 @@ export class Game {
       get level() {
         return game.level;
       },
-      nameOf: (slot) => this.net?.session.roster().find((entry) => entry.slot === slot.index)?.name ?? null,
+      nameOf: (slot) => this.rosterName(slot.index),
       viewSwitched: () => this.viewSwitched(),
       drawnCamera: (slot) => this.drawnCamera(slot),
       ownInput: (slot) => this.ownInput(slot),
@@ -754,6 +779,9 @@ export class Game {
       },
       get slots() {
         return game.slots;
+      },
+      get pvp() {
+        return game.pvp;
       },
       damageSlot: (slot, amount, hit) => this.damageSlot(this.slots[slot], amount, hit),
       triggerShot: (lineIndex, shooter) =>
@@ -1196,7 +1224,7 @@ export class Game {
       return {
         name: entry?.name ?? `Player ${slot.index + 1}`,
         color: slot.drawColor(),
-        kills: slot.kills,
+        kills: this.deathmatch ? slot.netFrags() : slot.kills,
         pingMs: entry?.pingMs ?? null,
         local: slot.local,
         present: entry?.present ?? true,
@@ -1212,6 +1240,34 @@ export class Game {
    */
   private get levelEnding(): boolean {
     return this.pendingExit !== null || this.level.icon.exiting === true;
+  }
+
+  /**
+   * Whether a player's shots reach the other players: a deathmatch, or coop with friendly fire on
+   * — read live, as `pistolStart` is, so a network game's or a playback's pin applies.
+   * docs/multiplayer-deathmatch.md § Player versus player.
+   */
+  private get pvp(): boolean {
+    return this.deathmatch || getFriendlyFire();
+  }
+
+  /**
+   * Whether a weapon the map placed stays for everyone: `P_GiveWeapon`'s
+   * `netgame && deathmatch != 2` (`p_inter.c`) — coop, every deathmatch here being `-altdeath`.
+   * docs/multiplayer-coop.md § Items and kills.
+   */
+  private get weaponsStay(): boolean {
+    return this.netgame && !this.deathmatch;
+  }
+
+  /** A slot's name as the board shows it: {@link Game.rosterName}, else its player number. */
+  private playerName(index: number): string {
+    return this.rosterName(index) ?? `Player ${index + 1}`;
+  }
+
+  /** A slot's name in the network session's roster, null outside a network game. */
+  private rosterName(index: number): string | null {
+    return this.net?.session.roster().find((entry) => entry.slot === index)?.name ?? null;
   }
 
   /**
@@ -1260,7 +1316,7 @@ export class Game {
    */
   private freshSlotSnapshot(index: number): PlayerSlotSnapshot {
     const spot = this.rebornSpotFor(index);
-    const inventory = createInventory();
+    const inventory = this.freshInventory();
     const weapons = new WeaponSystem(playerOrigin(index));
     weapons.beginLevel(inventory);
     return {
@@ -1289,6 +1345,7 @@ export class Game {
       state: {
         cheated: this.cheated,
         netgame: this.netgame,
+        ...(this.deathmatch ? { deathmatch: true as const } : {}),
         players: this.slots.map((slot) => slot.snapshot()),
         ...level.snapshot(),
         projectiles: this.projectiles.snapshot(),
@@ -1307,8 +1364,12 @@ export class Game {
     // A snapshot holding a player this level has no slot for yet: a joiner's, over the network.
     if (restore) this.growSlots(restore.players.length);
     for (const slot of this.slots) finishLevel(slot.inventory);
-    // `P_SetupLevel` zeroes every player's `killcount`; a restore reads the saved count back below.
-    for (const slot of this.slots) slot.kills = 0;
+    // `P_SetupLevel` zeroes every player's `killcount` and `G_DoLoadLevel` their `frags`; a
+    // restore reads the saved counts back below.
+    for (const slot of this.slots) {
+      slot.kills = 0;
+      slot.frags.fill(0);
+    }
     // Whatever was still ringing belongs to the level being torn down — a door
     // closing, a monster's death cry — and its origins are about to be reused.
     this.audio.stopAll();
@@ -1416,17 +1477,24 @@ export class Game {
     // spawns watching the restored control-sector height rather than the
     // authored one — `Forces.restore` covers what that ordering can't.
     forces.restore(restore?.scrollers);
-    const voodoo = new VoodooDolls(world);
+    const voodoo = new VoodooDolls(world, !this.deathmatch);
     // Absent in a save from before dolls existed, which leaves them on their own
     // player starts — the same state a fresh load gives them.
     voodoo.restore(restore?.voodoo);
     const surfaceScroller = new SurfaceScroller(forces, built, this.materials);
-    // Every slot on its own start (docs/multiplayer-coop.md § Starts); a save and a `?pos=`
-    // override are applied over them below.
+    // Every slot on its own start (docs/multiplayer-coop.md § Starts), or in a deathmatch on a
+    // random one of its own — `P_SetupLevel`'s `G_DeathMatchSpawnPlayer` per player, `G_CheckSpot`
+    // refusing only a spot an earlier player took (docs/multiplayer-deathmatch.md § Starts); a save
+    // and a `?pos=` override are applied over them below.
     const starts = coopStarts(world);
+    const dmStarts = this.deathmatch ? deathmatchStarts(world) : [];
     const taken: Pos2[] = [];
     for (const slot of this.slots) {
-      slot.player = new Player(world, levelStartFor(starts, slot.index, taken));
+      const drawn = restore ? null : deathmatchSpot(dmStarts, (at) => spotTaken(taken, at));
+      slot.player = new Player(world, drawn ?? levelStartFor(starts, slot.index, taken));
+      if (this.deathmatch && !restore) {
+        giveAllKeys(slot.inventory);
+      }
       taken.push({ x: slot.player.x, y: slot.player.y });
     }
     const first = this.slots[0];
@@ -1471,7 +1539,15 @@ export class Game {
     if (this.view.camera !== this.viewed.simCamera) this.view.camera.copyFrom(this.viewed.simCamera);
     // One fog for everyone: every player's start is revealed at once.
     const bodies = this.slots.map((slot) => slot.player);
-    const fogOfWar = new FogOfWar(world, built.occluders, bodies, this.viewed.index, movableSectors);
+    // None at all in a deathmatch — docs/multiplayer-deathmatch.md § Fog.
+    const fogOfWar = new FogOfWar(
+      world,
+      built.occluders,
+      bodies,
+      this.viewed.index,
+      movableSectors,
+      this.deathmatch ? 'off' : 'sweep',
+    );
     if (restore) fogOfWar.restoreExplored(restore.fog);
     const specials = new SpecialsController(world, {
       bank: this.materials,
@@ -1488,6 +1564,11 @@ export class Game {
         // Whatever stands on the landing pad is stomped (`P_TeleportMove`); the
         // player always stomps, so this arrival is never refused — docs/death.md § Telefrag.
         this.level.things.telefragAt(dest, PLAYER_RADIUS, true, targetOfSlot(slotIndex));
+        // The other players' half of the stomp, which the thing layer cannot see.
+        for (const other of this.slots) {
+          if (other === slot || other.dead || !bodiesOverlap(dest, other.player, PLAYER_RADIUS * 2)) continue;
+          this.damageSlot(other, TELEFRAG_DAMAGE, { from: dest, cause: targetOfSlot(slotIndex), slot: slotIndex });
+        }
         // The origin puff's position has to be captured before teleportTo
         // overwrites it; the landing `z` only exists after. See
         // SpriteFxLayer.spawnTeleportPair for the pair itself.
@@ -1554,8 +1635,10 @@ export class Game {
       onKill: (slot) => {
         this.slots[slot].kills++;
       },
+      onItemRespawn: (at) => this.effects.spawnItemFog(at),
       lights: this.lights,
       netgame: this.netgame,
+      deathmatch: this.deathmatch,
     });
     this.scene.add(things.group);
 
@@ -1588,6 +1671,7 @@ export class Game {
       surfaceScroller,
       voodoo,
       starts,
+      dmStarts,
       fogOfWar,
       specials,
       things,
@@ -1716,7 +1800,7 @@ export class Game {
     for (const slot of this.slots) {
       if (slot.dead || !bodiesOverlap(dest, slot.player, mover.blockRadius + PLAYER_RADIUS)) continue;
       if (!monsterStomps) return null;
-      this.damageSlot(slot, TELEFRAG_DAMAGE, { from: dest, cause: mover.type });
+      this.damageSlot(slot, TELEFRAG_DAMAGE, { from: dest, cause: mover.type, source: { id: mover.id, type: mover.type } });
     }
     // Boom's silent numbers puff at neither end (docs/specials-teleporters.md § Silent and
     // line-to-line teleporters). A fog puff has no body, so the plain sector
@@ -1752,6 +1836,10 @@ export class Game {
       // switched onto the corpse, a snapshot restored with it.
       // docs/death.md § Who killed the player.
       slot.deathCause = hit.cause;
+      if (this.deathmatch) {
+        const killer = fragCredit(slot.index, hit);
+        if (killer !== null) this.slots[killer].frags[slot.index]++;
+      }
       // Dying on an `exitBelowHealth` floor ends the level whatever killed the player, not only
       // when that floor's own damage did it — E1M8's pit is the ending, and a baron finishing the
       // job there must not leave the episode unwon. Set before the overlay below, which
@@ -1787,7 +1875,7 @@ export class Game {
    */
   private respawnSlot(slot: PlayerSlot): void {
     const spot = this.rebornSpotFor(slot.index);
-    slot.inventory = createInventory();
+    slot.inventory = this.freshInventory();
     slot.cheats.reborn();
     slot.player.respawnAt(spot);
     slot.touch = makeTouchCache();
@@ -1806,10 +1894,26 @@ export class Game {
     }
   }
 
-  /** Where slot `index` is reborn: `G_DoReborn`'s pick, its own start first. */
+  /**
+   * An inventory for a body just spawned or reborn: {@link createInventory}'s, and in a deathmatch
+   * every key on top — `P_SpawnPlayer`'s grant, once for every spawn path.
+   * docs/multiplayer-deathmatch.md § Rules.
+   */
+  private freshInventory(): Inventory {
+    const inventory = createInventory();
+    if (this.deathmatch) giveAllKeys(inventory);
+    return inventory;
+  }
+
+  /**
+   * Where slot `index` is reborn: `G_DoReborn`'s pick, its own start first — or in a deathmatch a
+   * random deathmatch start, the coop pick only when every draw was blocked
+   * (docs/multiplayer-deathmatch.md § Starts).
+   */
   private rebornSpotFor(index: number): Placement {
-    const { starts } = this.level;
-    return rebornSpot(starts, levelStartFor(starts, index, []), (at) => this.spotBlocked(at));
+    const { starts, dmStarts } = this.level;
+    const blocked = (at: Pos2) => this.spotBlocked(at);
+    return deathmatchSpot(dmStarts, blocked) ?? rebornSpot(starts, levelStartFor(starts, index, []), blocked);
   }
 
   /**
@@ -1878,7 +1982,7 @@ export class Game {
   private armDeathOverlay(): void {
     const { viewed } = this;
     if (!viewed.dead || this.levelEnding || this.popup !== null) return;
-    this.deathOverlay.show(obituary(viewed.deathCause), this.deathHint());
+    this.deathOverlay.show(obituary(viewed.deathCause, (slot) => this.playerName(slot)), this.deathHint());
   }
 
   /**
@@ -2367,6 +2471,7 @@ export class Game {
         this.message.show(...lockedLineMessage(locked.lock, locked.kind));
       }
     }
+    this.checkDeathmatchLimits();
     // Deferred from the exit trigger's callback (`pendingExit`): the popup goes up on the level as
     // it stands, and the continue key at the top of `tic` loads the next one.
     if (this.pendingExit) {
@@ -2495,7 +2600,7 @@ export class Game {
       // That same point in three dimensions — where both picks' ground bound starts
       // (`World.groundReach`, docs/combat.md § Auto-aim).
       const aimAt = onPlane ? { x: onPlane.x, y: onPlane.y, z: planeZ } : null;
-      const m = ray && aimAt ? this.level.things.pickMonster(ray, aimAt) : null;
+      const m = ray && aimAt ? this.pickAimTarget(ray, aimAt, slot) : null;
       // A monster in front of the switch wins: the pointer is over its body,
       // and a shot would be absorbed by it long before reaching the wall.
       const line =
@@ -2575,6 +2680,32 @@ export class Game {
   }
 
   /**
+   * What the cursor's ray locks onto: the thing layer's pick, and — where a player can be shot
+   * ({@link Game.pvp}) — the other living players' own body boxes, tested exactly as a monster's is
+   * (`rayEntersBox` over `PLAYER_RADIUS`/`PLAYER_HEIGHT`, bounded by `World.groundReach`); the
+   * nearer entry wins. Body boxes only, never art. docs/combat.md § Auto-aim.
+   */
+  private pickAimTarget(ray: THREE.Ray, aimAt: Pos3, shooter: PlayerSlot): (MonsterRef & { dist: number }) | null {
+    const { things, world } = this.level;
+    if (!this.pvp) return things.pickMonster(ray, aimAt);
+    const o = worldToDoom(ray.origin.x, ray.origin.y, ray.origin.z);
+    const d = worldToDoom(ray.direction.x, ray.direction.y, ray.direction.z);
+    // Traced once for both scans: `groundReach` walks the map's lines.
+    const reach = world.groundReach(o, aimAt);
+    let best = things.pickMonster(ray, aimAt, reach);
+    let bestDist = best?.dist ?? reach;
+    for (const other of this.slots) {
+      if (other === shooter || other.dead) continue;
+      const { player } = other;
+      const dist = rayEntersBox(o.x, o.y, o.z, d.x, d.y, d.z, player.x, player.y, PLAYER_RADIUS, player.z, player.z + PLAYER_HEIGHT);
+      if (dist === null || dist >= bestDist) continue;
+      bestDist = dist;
+      best = playerRef(other.index, player, player.x, player.y, dist);
+    }
+    return best;
+  }
+
+  /**
    * What picking one item up means, for whichever player mobj reached it — the slot's own body or
    * a voodoo doll collecting on its behalf (docs/items.md § Collecting things). Bound to the slot
    * once ({@link PlayerSlot.consumePickup}), since both `tryPickup` call sites hand it straight
@@ -2585,11 +2716,12 @@ export class Game {
       dropped,
       skill: this.skill,
       autoSwitch: slot.settings.autoSwitchWeapon,
-      netgame: this.netgame,
+      weaponsStay: this.weaponsStay,
     });
-    // What a netgame leaves lying for everyone else: taken, and still there.
+    // What a netgame leaves lying for everyone else: taken, and still there. A deathmatch takes its
+    // weapons and puts them back later (docs/multiplayer-deathmatch.md § Item respawn).
     // docs/multiplayer-coop.md § Items and kills.
-    const left = taken && this.netgame && leftInNetgame(type, dropped);
+    const left = taken && this.netgame && leftInNetgame(type, dropped, this.weaponsStay);
     // The computer area map is the one pickup whose whole effect lives outside the `Inventory`
     // struct: it reveals the level's own geometry. Watched for here rather than handled in
     // `applyPickup` — the same "state there, world effect at the caller" split `tryPickup`
@@ -2645,6 +2777,22 @@ export class Game {
   private parFor(): number | null {
     const opts = { mission: this.levelNames.levelMission, dehPars: this.dehacked?.pars };
     return parSecondsFor(this.currentMap, opts) ?? null;
+  }
+
+  /**
+   * A deathmatch level's own two exits, checked where `P_UpdateSpecials` checks them: the time
+   * limit (`p_spec.c`'s `levelTimer`, over `Level.time`) and Boom's frag limit (`-frags`: any
+   * player's net frags). docs/multiplayer-deathmatch.md § Limits.
+   */
+  private checkDeathmatchLimits(): void {
+    if (!this.deathmatch || this.levelEnding) return;
+    const timeLimit = getTimeLimit();
+    const fragLimit = getFragLimit();
+    const timeUp = timeLimit > 0 && Math.round(this.level.time / DOOM_TIC) >= timeLimit * TICS_PER_MINUTE;
+    const fragsUp = fragLimit > 0 && this.slots.some((slot) => slot.netFrags() >= fragLimit);
+    if (timeUp || fragsUp) {
+      this.pendingExit = 'normal';
+    }
   }
 
   /**

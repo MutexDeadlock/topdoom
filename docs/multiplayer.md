@@ -5,13 +5,15 @@
 `src/game/replay/row.ts`
 
 The engine runs every player as a **slot**, 1 to `MAX_PLAYERS` of them. What a netgame changes —
-starts, target choice, respawn, the item rules, the shared fog — is docs/multiplayer-coop.md; how
-browsers run one together — the relay, lockstep, snapshots — is docs/multiplayer-net.md.
+starts, target choice, respawn, the item rules, the shared fog — is docs/multiplayer-coop.md; what
+a deathmatch adds — players shooting players, frags, item respawn, the limits — is
+docs/multiplayer-deathmatch.md; how browsers run one together — the relay, lockstep, snapshots —
+is docs/multiplayer-net.md.
 
 ## Player slots
 
 `PlayerSlot` is one player's whole share of a level: `player`, `inventory`, `weapons`, `cheats`,
-`dead`, `deathCause`, `kills`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
+`dead`, `deathCause`, `kills`, `frags`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
 `consumePickup`. `Game.slots` holds them by index. `localSlot` is the one this browser plays — its
 keyboard, the menu's settings, its `R`. **`Game.viewed` is the one drawn**: `local`, except under a
 playback, whose camera picker watches any slot (docs/replays.md § Playback). The HUD, crosshair,
@@ -19,8 +21,8 @@ screen effects, death overlay, center messages, pickup and secret sounds, audio 
 `viewColormap`, the fade anchor, the fog's drawn island and the view camera read `viewed`, and no
 tic does.
 
-Level-global: on `Game`, `netgame`, `cheated` (any slot's cheat taints the run) and `replay` (every
-slot's recorder or playback); on `Level`, `starts`, `fogOfWar` (one shared reveal), `time` (runs
+Level-global: on `Game`, `netgame`, `deathmatch` (docs/multiplayer-deathmatch.md), `cheated` (any
+slot's cheat taints the run) and `replay` (every slot's recorder or playback); on `Level`, `starts`, `fogOfWar` (one shared reveal), `time` (runs
 while any slot is alive), `sectorEffects` (per-slot damage-floor timers, one secret count),
 `specials` and `voodoo` (player-1 starts; player 1's inventory and keys).
 
@@ -31,7 +33,7 @@ keys and its auto camera ticks. `'replay'`: posed from the record each tic, the 
 row like a replay's, and the drawn one is driven apart (docs/multiplayer-net.md § What a tic does).
 
 **Saves and replays hold every slot.** `captureSave` writes `GameSnapshot.players`, one
-`PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`, `deathCause`, `kills`);
+`PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`, `deathCause`, `kills`, `frags`);
 `SpecialsController.snapshot` writes every slot's `prev`, `SectorEffects.snapshot` every slot's
 timer; a replay holds one `SlotRecord` and one check column per slot. A restore builds as many
 slots as it holds. docs/savegames.md § What is saved and what is deliberately not, docs/replays.md §
@@ -70,8 +72,9 @@ Sound origins and light emitters are per slot: `playerOrigin(slot)` (`audio/sfx.
 
 `SimSettings` is one stored record with two owners. **`PlayerSettings`** — autorun, automatic
 weapon switching, the right button's binding, the camera mode — belong to a slot
-(`PlayerSlot.settings`). **`SessionSettings`** — infinite tall actors, pistol start — belong to the
-game, and every slot reads the one module value.
+(`PlayerSlot.settings`). **`SessionSettings`** — infinite tall actors, pistol start, and the three
+netgame rules a tic reads, never the mode (docs/multiplayer-deathmatch.md § Settings) — belong to
+the game, and every slot reads the one module value.
 
 - The local slot's `settings` is `GLOBAL_PLAYER_SETTINGS` (`replay/settings.ts`): getters over the
   owners' module values, so a menu change and a playback's pin (docs/replays.md § Settings are

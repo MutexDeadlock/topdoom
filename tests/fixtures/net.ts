@@ -4,7 +4,7 @@ import { MAX_PLAYERS } from '../../src/game/playerstarts.ts';
 import type { PlayerSettings } from '../../src/game/replay/defs.ts';
 import type { PlayerColor } from '../../src/wad/playercolor.ts';
 import type { NetGame, NetRestore } from '../../src/game/net/defs.ts';
-import { NetSession, type NetHooks } from '../../src/game/net/session.ts';
+import { NetSession, withRulesDefaults, type NetHooks } from '../../src/game/net/session.ts';
 import type { GameSnapshot } from '../../src/game/snapshot.ts';
 
 /**
@@ -130,7 +130,7 @@ export function hostSession(hub: Hub, name = 'host', delay = 3) {
     build: '1.0',
     compat: 1,
     game: GAME,
-    session: { infiniteTallActors: false, pistolStart: false },
+    session: withRulesDefaults({}),
   });
   hub.flush();
   session.setDelay(delay);

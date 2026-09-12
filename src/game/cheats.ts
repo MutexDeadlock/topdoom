@@ -3,7 +3,7 @@
  * the two toggles they leave behind and the level IDCLEV asks for. `game.ts` feeds it whatever was
  * typed this tic and acts on what comes back. See docs/cheats.md.
  */
-import { AMMO_TYPES, KEY_SLOTS, ammoMax, inventoryLimit, type Inventory, type WeaponId } from './inventory.ts';
+import { AMMO_TYPES, ammoMax, giveAllKeys, inventoryLimit, type Inventory, type WeaponId } from './inventory.ts';
 import { WEAPON_ORDER } from './dehacked/tables.ts';
 import type { GameMode } from '../wad/campaign/gamemode.ts';
 import type { CheatSnapshot } from './snapshot.ts';
@@ -220,7 +220,7 @@ export class Cheats {
           if (!WITHHELD_WEAPONS[mode].includes(weapon)) inv.weapons.add(weapon);
         }
         for (const type of AMMO_TYPES) inv.ammo[type] = ammoMax(inv, type);
-        for (const slot of KEY_SLOTS) inv.keys.add(slot);
+        giveAllKeys(inv);
         return CHEAT_MESSAGES.STSTR_KFAADDED;
       case 'noclip':
         this.noclip = !this.noclip;

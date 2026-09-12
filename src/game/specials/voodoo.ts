@@ -57,13 +57,19 @@ export interface VoodooDoll extends Pos3 {
  * **They are not drawn.** Vanilla renders them as marines, which in a top-down
  * view would read as a second player standing across the map — a deliberate
  * deviation, and the only one here.
+ *
+ * **A deathmatch has none**: `P_SpawnMapThing` spawns a player start's body only `if
+ * (!deathmatch)` (`p_mobj.c`). docs/multiplayer-deathmatch.md § Rules.
  */
 export class VoodooDolls {
   private world: World;
   readonly dolls: VoodooDoll[] = [];
 
-  constructor(world: World) {
-    const starts = world.thingsOfType(ThingType.playerStart);
+  /**
+   * @param dolls  false leaves the level without any — a deathmatch
+   */
+  constructor(world: World, dolls = true) {
+    const starts = dolls ? world.thingsOfType(ThingType.playerStart) : [];
     for (const t of starts.slice(0, -1)) {
       this.dolls.push({
         x: t.x,

@@ -238,6 +238,21 @@ export const SPAWN_CUBE_MONSTERS: readonly { below: number; type: number }[] = [
 ];
 
 /**
+ * The things `info.c` flags `MF_NOTDMATCH` — the six keys (MT_MISC4–MT_MISC9) — which
+ * `P_SpawnMapThing` keeps out of a deathmatch: `if (deathmatch && mobjinfo[i].flags &
+ * MF_NOTDMATCH) return;` (`p_mobj.c`). MT_PLAYER carries it too and is never a map thing here.
+ * docs/multiplayer-deathmatch.md § Rules.
+ */
+export const NOT_DEATHMATCH_TYPES: Set<number> = new Set([
+  ThingType.blueKeycard,
+  ThingType.yellowKeycard,
+  ThingType.redKeycard,
+  ThingType.blueSkullKey,
+  ThingType.yellowSkullKey,
+  ThingType.redSkullKey,
+]);
+
+/**
  * `MONSTER_TYPES` entries that carry vanilla's `MF_COUNTKILL` flag — every monster except the
  * lost soul (3006) and the Icon of Sin's brain (88), neither of which does in `info.c`'s
  * `mobjinfo` table. `MONSTER_TYPES` exists for targeting/AI and isn't the same list vanilla uses
@@ -635,6 +650,8 @@ export const OBITUARIES: Record<number | string, string> = {
   self: 'You blew yourself up',
   crush: 'You were crushed',
   slime: 'You forgot to wear a protection suit',
+  // Another player, named by `obituary`'s lookup: `{name}` is where the name goes.
+  player: 'You were killed by {name}',
   default: '',
 
   [ThingType.zombieman]: 'You were killed by a Zombieman',
@@ -663,9 +680,16 @@ export const OBITUARIES: Record<number | string, string> = {
 /**
  * The death overlay's middle line, or `''` when there is nothing to say — which the overlay then
  * draws exactly as it did before there was a line at all. `OBITUARIES` holds the text, so a patch
- * that replaced a line is read here without this having to know.
+ * that replaced a line is read here without this having to know. A player (`targetOfSlot`'s
+ * negative number) takes the `player` line with `nameOf`'s name in it.
  * See docs/death.md § Who killed the player.
+ *
+ * @param nameOf  a slot's name for a player cause; without one a player is nobody
  */
-export function obituary(cause: DamageCause | undefined): string {
+export function obituary(cause: DamageCause | undefined, nameOf?: (slot: number) => string): string {
+  if (typeof cause === 'number' && cause < 0) {
+    // `slotOfTarget`'s arithmetic, inline: `things/defs.ts` reads this file, so it cannot be imported.
+    return nameOf ? OBITUARIES.player.replace('{name}', nameOf(-1 - cause)) : OBITUARIES.default;
+  }
   return (cause === undefined ? undefined : OBITUARIES[cause]) ?? OBITUARIES.default;
 }

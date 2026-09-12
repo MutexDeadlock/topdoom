@@ -4,7 +4,7 @@
  * damage. See docs/combat.md § How a shot deals damage and § Splash and the BFG.
  */
 import { type World } from './world.ts';
-import { PLAYER_RADIUS, type Player } from './player.ts';
+import { PLAYER_HEIGHT, PLAYER_RADIUS, type Player } from './player.ts';
 // Type-only, deliberately: a value import here would put `things.ts` — and so
 // `monsters/ai.ts`, which it imports — in the runtime graph of everything that
 // resolves damage, `monsters/attacks.ts` and `monsters/vile.ts` included. Its
@@ -13,9 +13,10 @@ import { PLAYER_RADIUS, type Player } from './player.ts';
 import type { BarrelExplosion, ThingLayer } from './things.ts';
 import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './things/tables.ts';
 import { ThingType } from './things/doomednums.ts';
-import { slotOfTarget, type MonsterRef } from './things/defs.ts';
+import { AIM_SLOPE_LIMIT, slotOfTarget, targetOfSlot, type MonsterRef } from './things/defs.ts';
 import type { Pos2, Pos3 } from '../types.ts';
-import { blastDistanceToBox } from '../util/geom.ts';
+import { blastDistanceToBox, traceHitsBox } from '../util/geom.ts';
+import { cos, sin } from '../util/fdlibm.ts';
 
 /**
  * What killed the player, carried alongside a hit so the death overlay can name
@@ -39,6 +40,18 @@ export interface PlayerHit {
   from?: Pos2;
   /** Who to name if this is the hit that kills. */
   cause?: DamageCause;
+  /**
+   * The player whose hit it was, where a player's — the frag a killing one is, in a deathmatch
+   * (docs/multiplayer-deathmatch.md § Frags). A hit on themselves names their own slot.
+   */
+  slot?: number;
+  /**
+   * The monster whose hit it was, where a monster's — its own, or a barrel's it set off: vanilla's
+   * non-player `source`, which a killing hit credits nobody for. Absent beside an absent
+   * {@link PlayerHit.slot} is `!source` — a crusher, a damage floor, a barrel nobody set off.
+   * docs/multiplayer-deathmatch.md § Frags.
+   */
+  source?: { id: number; type: number };
 }
 
 /**
@@ -56,6 +69,11 @@ export interface CombatContext {
   readonly things: ThingLayer | null;
   /** Every player slot by index — what a `targetOfSlot` id names. docs/multiplayer.md § Player slots. */
   readonly slots: readonly CombatSlot[];
+  /**
+   * Whether a player's shots and missiles hit the other players: a deathmatch, or coop with
+   * friendly fire on. docs/multiplayer-deathmatch.md § Player versus player.
+   */
+  readonly pvp: boolean;
   /**
    * Armor-mitigated damage to one player.
    *
@@ -128,6 +146,85 @@ export function anyPlayerAlive(slots: readonly CombatSlot[]): boolean {
 }
 
 /**
+ * The nearest body along a player's shot: `ThingLayer.raycastMonster`, and — where a player can be
+ * shot ({@link CombatContext.pvp}) — {@link raycastPlayers}, a monster winning a tie. The one place
+ * a player's trace asks for both. docs/multiplayer-deathmatch.md § Player versus player.
+ *
+ * @param shooter  the firing slot, which its own shot never hits
+ * @param slope  the slope a locked shot flies at; absent, `P_AimLineAttack`'s cone
+ */
+export function raycastBody(
+  ctx: CombatContext,
+  origin: Pos3,
+  angleRad: number,
+  maxDist: number,
+  shooter: number,
+  slope?: number,
+): (MonsterRef & { dist: number }) | null {
+  const monster = ctx.things?.raycastMonster(origin, angleRad, maxDist, { slope }) ?? null;
+  if (!ctx.pvp) return monster;
+  const player = raycastPlayers(ctx, origin, angleRad, maxDist, shooter, slope);
+  return player && (!monster || player.dist < monster.dist) ? player : monster;
+}
+
+/**
+ * The nearest other living player along a shot — `PTR_ShootTraverse` over the players' bodies,
+ * which are not in the thing layer: `ThingLayer.raycastMonster`'s box and vertical test over
+ * `PLAYER_RADIUS`/`PLAYER_HEIGHT`, at most three bodies, each as {@link playerRef}.
+ * docs/multiplayer-deathmatch.md § Player versus player.
+ *
+ * @param shooter  the firing slot, which its own shot never hits
+ * @param slope  the slope a locked shot flies at; absent, `P_AimLineAttack`'s cone
+ */
+export function raycastPlayers(
+  ctx: CombatContext,
+  origin: Pos3,
+  angleRad: number,
+  maxDist: number,
+  shooter: number,
+  slope?: number,
+): (MonsterRef & { dist: number }) | null {
+  const dx = cos(angleRad);
+  const dy = sin(angleRad);
+  const topSlope = slope ?? AIM_SLOPE_LIMIT;
+  const bottomSlope = slope ?? -AIM_SLOPE_LIMIT;
+  let nearest: (MonsterRef & { dist: number }) | null = null;
+  for (let slot = 0; slot < ctx.slots.length; slot++) {
+    const { player, dead } = ctx.slots[slot];
+    if (slot === shooter || dead) continue;
+    const t = traceHitsBox(origin.x, origin.y, dx, dy, player.x, player.y, PLAYER_RADIUS);
+    if (t === null || t > maxDist || (nearest && t >= nearest.dist)) continue;
+    const dist = Math.max(t, 1e-6);
+    if ((player.z + PLAYER_HEIGHT - origin.z) / dist < bottomSlope) continue;
+    if ((player.z - origin.z) / dist > topSlope) continue;
+    nearest = playerRef(slot, player, origin.x + dx * t, origin.y + dy * t, t);
+  }
+  return nearest;
+}
+
+/**
+ * Slot `slot`'s player as a {@link MonsterRef} a shot or an aim pick resolves the way it resolves
+ * a monster: `targetOfSlot`'s id, the player's own box, and `MT_PLAYER`'s doomednum, -1
+ * (`info.c`), for the type.
+ *
+ * @param x  where the ray met the body, as `y` is
+ * @param dist  how far along the ray that was
+ */
+export function playerRef(slot: number, player: Player, x: number, y: number, dist: number): MonsterRef & { dist: number } {
+  return {
+    id: targetOfSlot(slot),
+    x,
+    y,
+    z: player.z,
+    dist,
+    type: PLAYER_BODY_TYPE,
+    height: PLAYER_HEIGHT,
+    angle: player.angle,
+    radius: PLAYER_RADIUS,
+  };
+}
+
+/**
  * One blast, as everything that raises `P_RadiusAttack` describes it: the rocket, the BFG's
  * tracers, a barrel and the arch-vile all fill this same record.
  */
@@ -171,12 +268,15 @@ export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBla
   }
 
   if (!hitsPlayer) return;
-  for (let slot = 0; slot < ctx.slots.length; slot++) {
-    const { player, dead } = ctx.slots[slot];
+  for (let victim = 0; victim < ctx.slots.length; victim++) {
+    const { player, dead } = ctx.slots[victim];
     if (dead) continue;
     const pdist = blastDistanceToBox(at.x, at.y, player.x, player.y, PLAYER_RADIUS);
     if (pdist < radius && ctx.world.hasLineOfSight(at, player)) {
-      ctx.damageSlot(slot, maxDamage * (1 - pdist / radius), { from: at, cause });
+      // A player's own shot names its shooter to everyone else it reaches, and stays their own
+      // to themselves; a barrel keeps blaming the barrel, the credit riding on `slot` or `source`.
+      const named = slot !== undefined && slot !== victim && cause === 'self' ? targetOfSlot(slot) : cause;
+      ctx.damageSlot(victim, maxDamage * (1 - pdist / radius), { from: at, cause: named, slot, source });
     }
   }
 }
@@ -202,3 +302,6 @@ export function applyBarrelExplosion(ctx: CombatContext, exp: BarrelExplosion): 
 
 /** {@link DamageCause}'s strings: the causes with no attacker behind them. */
 const DAMAGE_CAUSE_NAMES = ['self', 'crush', 'slime'] as const;
+
+/** `MT_PLAYER`'s `doomednum` (`info.c`): what a player stands as where a body's type is asked. */
+const PLAYER_BODY_TYPE = -1;

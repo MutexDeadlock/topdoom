@@ -46,6 +46,7 @@ import {
 } from './replay/defs.ts';
 
 import { fetchStockManifest, fetchStockReplay, isStockReplay, stockReplayId } from './replay/stock.ts';
+import { withSessionDefaults } from './replay/settings.ts';
 
 export { replayMap, replayWadSet } from './replay/defs.ts';
 export { isStockReplay } from './replay/stock.ts';
@@ -265,7 +266,15 @@ export function isReplayFileName(name: string): boolean {
  * `scripts/inspect-replay.ts` too.
  */
 export function unpackData(data: ReplayData): ReplayData {
-  return { ...data, slots: data.slots.map((slot) => ({ ...slot, tics: unpackTics(slot.tics) })) };
+  return {
+    ...data,
+    // A recording from before the netgame rules reads as coop with none.
+    session: withSessionDefaults(data.session),
+    events: data.events.map((event) =>
+      event.kind === 'session' ? { ...event, settings: withSessionDefaults(event.settings) } : event,
+    ),
+    slots: data.slots.map((slot) => ({ ...slot, tics: unpackTics(slot.tics) })),
+  };
 }
 
 /**

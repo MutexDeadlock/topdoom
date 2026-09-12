@@ -112,10 +112,16 @@ Keeping a second copy of the camera in the file would be one more thing to keep 
 
 ## Settings are frozen per tic
 
-Six persisted settings reach the simulation: autorun, automatic weapon switching, the right
-button's binding, the camera mode, infinitely tall actors, pistol start. Each owner has an
-`override*(value | null)` beside its setter that pins the module value without writing storage.
-`replay/settings.ts` captures all six (`captureSimSettings`) and pins them (`applySimSettings`).
+Nine persisted settings reach the simulation: autorun, automatic weapon switching, the right
+button's binding, the camera mode, infinitely tall actors, pistol start, friendly fire and the frag
+and time limits — never the deathmatch mode, which the first snapshot carries
+(docs/multiplayer-deathmatch.md § Settings). Each owner has an `override*(value | null)` beside
+its setter that pins the module value without writing storage. `replay/settings.ts` captures all
+nine (`captureSimSettings`) and pins them (`applySimSettings`). The session half is one table,
+`SESSION_FIELDS` — each field's getter, pin and fallback, keyed by `SessionSettings` — that
+capture, `withSessionDefaults`, the wire's check (`sessionFieldsValid`), the pins and
+`sameSessionSettings` all loop over: a new session setting is its field and one row. A recording from before the rules
+lacks them: `withSessionDefaults` fills its `session` and every `session` event as coop with none.
 
 A playback pins them **before every tic**, not once: the menu's setters write the same variables,
 and a toggle made during a paused playback would otherwise stand. A recording diffs every slot's
@@ -123,7 +129,7 @@ player settings and the session's at tic start and writes a change as a `setting
 its slot, or a `session` event, so a change made in the menu is stamped "apply before tic k".
 `releaseSimSettings` puts the stored values back when a playback ends.
 
-Four of the six are a player's (`PlayerSettings`) and reach the tic through the slot —
+Four of the ten are a player's (`PlayerSettings`) and reach the tic through the slot —
 docs/multiplayer.md § Player settings: the local slot's through the pins, every other slot's as the
 playback's own record of it (`ReplayPlayback.slotSettings`). A playback answers each slot's
 right-button edge under that slot's settings in force.

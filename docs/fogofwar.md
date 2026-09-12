@@ -422,6 +422,15 @@ Specials); hearing a teleport you can't see is vanilla, seeing it is not. Projec
 tracers are also left ungated on purpose: both are incoming fire, and a missile or tracer coming out
 of an unexplored room is the warning that something is shooting from there.
 
+## Off
+
+`FogOfWar`'s `mode` `'off'` (`FogMode`) is a deathmatch's (docs/multiplayer-deathmatch.md § Fog):
+the constructor marks everything `explored`, every island `NO_ISLAND` and snaps the alpha, so
+`isVisible`, `isDrawn` and `alphaOf` answer "shown" through their ordinary reads with no branch
+added; `tick`, `updateFade` and `restoreExplored` return at once. The snapshot shape is untouched —
+`snapshotExplored` writes the all-explored runs. `revealAll` alone is not this: the island gate
+would still hide a detached region.
+
 ## What gameplay reads
 
 **`explored` is the gameplay gate; `alpha` is only ever drawn.** The two are split because `alpha`

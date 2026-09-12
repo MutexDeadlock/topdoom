@@ -235,7 +235,9 @@ candidate's body and keeps the nearest, accepting `MONSTER_TYPES` **and the expl
 minus anything already dead, picked up, `NO_AUTO_AIM_TYPES`, or not currently `visible` — the last
 so a fog-of-war-hidden monster can't be targeted through the geometry hiding it. Anything rejected
 is *skipped*, not treated as a blocker, so a decoration standing in front of a monster doesn't make
-it untargetable.
+it untargetable. Where a player can be shot (`Game.pvp`), `Game.pickAimTarget` tests the other
+living players' body boxes the same way and the nearer entry wins
+(docs/multiplayer-deathmatch.md § Player versus player).
 
 **What the ray is tested against is the body's own `mobjinfo` box, never its drawn sprite** —
 `util/geom.ts: rayEntersBox`, a plain slab test over `blockRadius` either side of the anchor and
@@ -463,7 +465,10 @@ vertical miss within half of `MONSTER_LOCK_HEIGHT` at the body's distance. A *fr
 tests its straight flight path against every monster's body (`ThingLayer.raycastMonster`), the way
 any real hitscan trace would, so a monster standing between the player and the wall they're shooting
 at still gets hit even though it was never clicked; only the nearer of "a wall/step" (`shotPath`)
-and "a monster in the way" (`raycastMonster`) stops the shot.
+and "a monster in the way" (`raycastMonster`) stops the shot. Under `CombatContext.pvp` the other
+players' bodies are in that trace too (`raycastPlayers`, `combat.ts`), for a free pellet, a swing
+and each BFG ray alike; a lock on a player is tested at the player's own box
+(docs/multiplayer-deathmatch.md § Player versus player).
 
 **The lateral test is what keeps the lock from being homing.** `WeaponSystem` offsets each hitscan
 pellet by its own spread angle, but the lock is per *trigger pull* — all of a shotgun's pellets
@@ -777,6 +782,10 @@ damage)` uses `damage` as the range too, so its falloff is a plain `bombdamage -
 site here passes `radius === maxDamage` (barrel 128/128, cyberdemon rocket 128/128, arch-vile blast
 70/70), which makes `maxDamage * (1 - dist / radius)` exactly that; the pair stays split only so a
 caller could tune them apart.
+
+**A blast names its shooter.** With `RadiusBlast.slot` set, every other player it reaches is told
+`targetOfSlot(slot)` as the cause and `slot` as the credit; the shooter's own stays `'self'`, and a
+barrel's stays the barrel (docs/multiplayer-deathmatch.md § Frags).
 
 **The spider mastermind and the cyberdemon take no splash damage at all**, direct hits only —
 `PIT_RadiusAttack` skips them outright, and `applyRadiusDamage` reproduces that by type before it

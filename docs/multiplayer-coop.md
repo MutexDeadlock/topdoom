@@ -5,15 +5,18 @@ branches in `src/game/things.ts`, `src/game/inventory.ts` and `src/game.ts`
 
 Coop runs 2–4 slots through one simulation as a **netgame**. Under `?coop=N` (docs/menu.md § URL
 parameters) every slot but the local one stands idle on `IDLE_TIC_INPUT`; over the network each is
-another browser's (docs/multiplayer-net.md). The slot machinery itself is docs/multiplayer.md.
+another browser's (docs/multiplayer-net.md). The slot machinery itself is docs/multiplayer.md; the
+netgame that is a deathmatch is docs/multiplayer-deathmatch.md.
 
 ## Netgame
 
-`Game.netgame` is decided once per session: `GameOptions.coop`, or a restored snapshot's
+`Game.netgame` is decided once per session: `GameOptions.players`, or a restored snapshot's
 `netgame`. Which things spawn depends on it, so it is saved and every thing id is counted under it.
 
 - **Multiplayer-only things spawn** — `P_SpawnMapThing`'s `if (!netgame && (mthing->options & 16))`
-  (`p_mobj.c`).
+  (`p_mobj.c`). **Boom's not-in-coop things don't** — `MTF_NOTCOOP`, bit 6, void under
+  `MTF_RESERVED` (`isNotCoop`, `skill.ts`; `prboom p_mobj.c`); its deathmatch twin is
+  docs/multiplayer-deathmatch.md § Rules.
 - **No best time** is recorded (`Game.recordCompletion`).
 - `R` never reloads the level; § Respawn.
 
@@ -24,8 +27,8 @@ another browser's (docs/multiplayer-net.md). The slot machinery itself is docs/m
 its start with no occupancy test (`P_SpawnPlayer`).
 
 **Deviation:** a map with no start for a slot puts it on the first start no earlier slot took, else
-on player 1's (`levelStartFor`); vanilla spawns no body for it. Doomednum 11 is named
-(`ThingType.deathmatchStart`) and read by nothing. Extra starts of types 2–4 spawn nothing: voodoo
+on player 1's (`levelStartFor`); vanilla spawns no body for it. Doomednum 11 is a deathmatch's
+(docs/multiplayer-deathmatch.md § Starts). Extra starts of types 2–4 spawn nothing: voodoo
 dolls stay type 1's (docs/specials-forces.md § Voodoo dolls).
 
 ## Target choice
@@ -78,9 +81,11 @@ in the tic the press is read rather than at the next `G_Ticker`.
 `p_inter.c` in a netgame:
 
 - **A key stays** for everyone (`leftInNetgame`): given, not removed, silent.
-- **A placed weapon stays forever.** A player who owns it gets nothing, not even ammo; one who
-  doesn't gets it with its two clips and is switched to it, `wpnup` plays, and it stays. A dropped
-  weapon is taken as in single player.
+- **A placed weapon stays forever** — `Game.weaponsStay` (`P_GiveWeapon`'s
+  `netgame && deathmatch != 2`), handed to `applyPickup` and `leftInNetgame`. A player who owns it
+  gets nothing, not even ammo; one who doesn't gets it with its two clips and is switched to it, `wpnup` plays, and it stays. A dropped
+  weapon is taken as in single player. Coop only: a deathmatch takes everything
+  (docs/multiplayer-deathmatch.md § Rules).
 - **Kills**: a monster's death counts toward the level unless a monster dealt it (`countKill`,
   `P_KillMobj`'s `!netgame` gate). **Deviation:** a crusher's or a monster's telefrag still counts —
   both carry no `source`, which is also what a player's hit carries.
@@ -96,7 +101,10 @@ in the tic the press is read rather than at the next `G_Ticker`.
 
 Living players are solid to each other (`PIT_CheckThing`): `Game.solidBodiesAround` adds every other
 living slot to what a player walks around, and `blockersFor` holds every slot for the monsters. A
-player's bullets and missiles pass through another player; a blast hurts every player in reach.
+player's bullets and missiles pass through another player — **deviation**, vanilla's coop has no
+such mercy — unless the host turns friendly fire on (docs/multiplayer-deathmatch.md § Friendly
+fire); a blast hurts every player in reach either way, and a player arriving off a teleport pad
+telefrags the players on it (docs/death.md § Telefrag).
 
 ## Shared fog of war
 

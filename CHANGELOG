@@ -1,3 +1,17 @@
+v0.20.0 (2026-09-1?)
+
+Features and improvements
+  - multiplayer: 
+    - deathmatch! the classic altdeath rules: no monsters, all
+      keys, weapons taken, items back after 30 s, random deathmatch starts,
+      no fog of war, kills on the scoreboard, kill and time limits
+    - friendly fire as a host option for coop
+    - a player teleporting onto another player telefrags them
+    - Boom's not-in-coop / not-in-deathmatch thing flags are honoured
+
+
+===============================================================================
+
 v0.19.1 (2026-09-12)
 
 Replays break, but I am quiet confident everything is in it's right place now.

@@ -1,8 +1,8 @@
 /*
  * The Multiplayer tab panel (ui/menu/multiplayer.ts): the relay/name form and the host/join row,
- * then the room — code, facts, the peer list and the controls. The list's rows are the save lists'
- * `.row` laid on shared grid columns, the facts block and the name chips menu.css's shared
- * `.fact-grid` and `.mark`.
+ * then the room — code, facts, the peer list, the host's rules group and the controls. The list's
+ * rows are the save lists' `.row` laid on shared grid columns, the facts block and the name chips
+ * menu.css's shared `.fact-grid` and `.mark`.
  */
 
 /* A form row: fields and buttons side by side, each field labelled above its input. */
@@ -232,4 +232,28 @@
   display: block;
   margin-top: 8px;
   min-height: 1.2em;
+}
+
+/* The host's rules group: the mode select stands like the colour one, the limits are short numbers. */
+#menu .net-field.mode {
+  flex: none;
+  width: 16ch;
+}
+
+#menu .net-field.mode select {
+  box-sizing: border-box;
+  height: calc(1lh + 16px);
+  padding: 0 8px;
+}
+
+/* Wide enough that "Time limit (min)" stays on one line beside the mode's label. */
+#menu .net-field.limit {
+  flex: none;
+  width: 19ch;
+}
+
+/* The friendly-fire row stands on the fields' baseline, its label beside the box. */
+#menu .net-form .net-rule {
+  flex: none;
+  padding-bottom: 8px;
 }

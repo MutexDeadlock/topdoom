@@ -327,6 +327,11 @@ export interface ThingsSnapshot {
    */
   changed: [number, ThingState][];
   /**
+   * The items waiting to come back in a deathmatch, oldest first, each with the tic it was taken
+   * on — written only while there are any. docs/multiplayer-deathmatch.md § Item respawn.
+   */
+  itemRespawn?: [id: number, tic: number][];
+  /**
    * Every monster's {@link PosedThing.lastlook}, one digit each in `posed` order. Not a field of
    * the monster block: nearly every monster's turns with its first look, so a block each would
    * carry the whole level. docs/savegames.md § The format and its version.
@@ -407,6 +412,11 @@ export interface PlayerSlotSnapshot {
    * joiner's fresh slot, a save from before the count. docs/multiplayer-coop.md § Items and kills.
    */
   kills?: number;
+  /**
+   * `PlayerSlot.frags`, written only once one entry is: absent is a row of zeros — a coop save, a
+   * save from before deathmatch. docs/multiplayer-deathmatch.md § Frags.
+   */
+  frags?: number[];
 }
 
 export interface GameSnapshot {
@@ -422,6 +432,11 @@ export interface GameSnapshot {
    * thing id in {@link GameSnapshot.things} and a restore runs under it. docs/multiplayer-coop.md.
    */
   netgame: boolean;
+  /**
+   * Whether the netgame is a deathmatch, written only when it is: part of thing identity like
+   * {@link GameSnapshot.netgame}, and absent in every save from before it. docs/multiplayer-deathmatch.md.
+   */
+  deathmatch?: true;
   /** Every player slot, by slot — how many there are is the snapshot's to say. */
   players: PlayerSlotSnapshot[];
   /** Only the sectors that differ from the freshly loaded map — see {@link snapshotSectors}. */

@@ -196,7 +196,8 @@ const ORACLE =
   '{"skill":3,"wads":[{"name":"DOOM.WAD","id":"abc"}],"mapWad":"abc","ticCount":7,"levels":[{"tic":0,"map":"E1M1"' +
   '},{"tic":3,"map":"E1M2"}],"data":{"snapshots":[{"players":[{"player":{}}],"rng":{"p":0,"m":0}},{"players":[{"p' +
   'layer":{"x":1}}],"rng":{"p":5,"m":0}}],"keyframes":[{"tic":0,"map":"E1M1","snapshot":0},{"tic":6,"map":"E1M2",' +
-  '"snapshot":0}],"session":{"infiniteTallActors":false,"pistolStart":false},"slots":[{"settings":{"autorun":true' +
+  '"snapshot":0}],"session":{"infiniteTallActors":false,"pistolStart":false,"friendlyFire":false' +
+  ',"fragLimit":0,"timeLimit":0},"slots":[{"settings":{"autorun":true' +
   ',"autoSwitchWeapon":true,"rightMouse":"previousweapon","cameraMode":"auto"},"tics":{"held":[1,265,0,0,53687097' +
   '6,0,1024],"pressed":[0,4096,0,147456,0,0,0],"buttons":[0,1,2,0,3,0,0],"wheel":[0,0,1,-1,0,0,0],"aimX":[6408,64' +
   '64,null,null,null,null,-497],"aimY":[-3232,-3264,null,null,null,null,193],"poseYaw":[5760,5761,8640,5760,5761,' +

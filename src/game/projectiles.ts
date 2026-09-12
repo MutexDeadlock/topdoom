@@ -18,7 +18,7 @@ import {
 import { PLAYER_MELEE_RANGE, type Shot } from './weapons.ts';
 import { DOOM_TIC } from '../constants.ts';
 import { rollDamage } from '../util/random.ts';
-import { applyRadiusDamage, fallbackPlayer, livingPlayer, targetMonster, type CombatContext } from './combat.ts';
+import { applyRadiusDamage, fallbackPlayer, livingPlayer, raycastBody, targetMonster, type CombatContext } from './combat.ts';
 import type { ProjectileSnapshot } from './snapshot.ts';
 import type { SpriteFxLayer } from './spritefx.ts';
 import { stepTouchesBody, turnToward, type Projectile } from './spritefx/defs.ts';
@@ -113,7 +113,7 @@ export class ProjectileLayer {
    * docs/combat.md § Where a missile starts, § How a shot deals damage.
    */
   spawnPlayerShot(shot: Shot, target: MonsterRef | null, lineAim: Pos3 | null, shooter: number): void {
-    const { world, things } = this.ctx;
+    const { world } = this.ctx;
     const player = this.ctx.slots[shooter].player;
     const fireHeight = shot.kind === 'projectile' ? MISSILE_HEIGHT_OFFSET : AIM_HEIGHT_OFFSET;
     const origin: Pos3 = { x: player.x, y: player.y, z: player.z + fireHeight };
@@ -121,16 +121,13 @@ export class ProjectileLayer {
     // A swing never travels, so it skips `shotPath`: `A_Punch`/`A_Saw` just trace MELEERANGE
     // along the facing. Aim already points at a hovered monster, so the ray needs no lock case.
     if (shot.kind === 'melee') {
-      const swung = things?.raycastMonster(origin, shot.angleRad, shot.range) ?? null;
+      const swung = raycastBody(this.ctx, origin, shot.angleRad, shot.range, shooter);
       if (swung) {
         // At the swing's own flat height, not the target's feet: a melee trace
         // never slopes, so the fire height *is* where it crossed the body.
-        const hitAt = { x: swung.x, y: swung.y, z: origin.z };
-        if (things?.bleeds(swung.id)) this.effects.spawnBlood(hitAt, shot.damage);
         // A fist swing traces exactly MELEERANGE and so takes the sparkless
         // puff; the chainsaw's own +1 is what buys it the spark back.
-        else this.effects.spawnPuff(hitAt, shot.range === PLAYER_MELEE_RANGE);
-        things?.damage(swung.id, shot.damage, { from: origin, slot: shooter });
+        this.hitBody(swung.id, shot.damage, origin, { x: swung.x, y: swung.y, z: origin.z }, shooter, shot.range === PLAYER_MELEE_RANGE);
       }
       // A_Punch/A_Saw both key their sound off whether they found a target: the
       // chainsaw revs on air and bites on contact, the fist is silent on a miss.
@@ -167,7 +164,10 @@ export class ProjectileLayer {
         const along = relX * dirX + relY * dirY;
         const perp = Math.abs(relX * dirY - relY * dirX);
         const missZ = Math.abs(slopeOffset) * along;
-        const onBody = perp <= MONSTER_HIT_RADIUS && missZ <= MONSTER_LOCK_HEIGHT / 2;
+        // A player lock is tested at the player's own box; a monster's at the shared hitbox.
+        const lockRadius = target.id < 0 ? PLAYER_RADIUS : MONSTER_HIT_RADIUS;
+        const lockHeight = target.id < 0 ? PLAYER_HEIGHT : MONSTER_LOCK_HEIGHT;
+        const onBody = perp <= lockRadius && missZ <= lockHeight / 2;
         if (onBody && along >= 0 && path.dist >= along - 1) {
           hitMonsterId = target.id;
           endX = origin.x + dirX * along;
@@ -183,7 +183,7 @@ export class ProjectileLayer {
         // shotgun's vertical spread miss; a shot with no lock keeps the aim cone.
         // docs/combat.md § The vertical test.
         const slope = target !== null && path.dist > 0 ? path.slope : undefined;
-        const monsterHit = things?.raycastMonster(origin, shot.angleRad, path.dist, { slope }) ?? null;
+        const monsterHit = raycastBody(this.ctx, origin, shot.angleRad, path.dist, shooter, slope);
         if (monsterHit) {
           hitMonsterId = monsterHit.id;
           endX = monsterHit.x;
@@ -201,10 +201,7 @@ export class ProjectileLayer {
         // Where the tracer stops is where the bolt met the body, so the same
         // point is the splash's — `PTR_ShootTraverse` spawns blood on the
         // trace, a touch short of the thing it hit.
-        const hitAt = { x: endX, y: endY, z: path.z };
-        if (things?.bleeds(hitMonsterId)) this.effects.spawnBlood(hitAt, shot.damage);
-        else this.effects.spawnPuff(hitAt);
-        things?.damage(hitMonsterId, shot.damage, { from: origin, slot: shooter });
+        this.hitBody(hitMonsterId, shot.damage, origin, { x: endX, y: endY, z: path.z }, shooter, false);
       } else {
         this.effects.spawnWallPuff(path, shot.angleRad);
       }
@@ -393,13 +390,18 @@ export class ProjectileLayer {
       // docs/combat.md § Where an impact sits, docs/monster-attacks.md § Monster projectiles in
       // flight.
       const hitGround = !hitWall && !!sector && (at.z <= sector.floorHeight || at.z >= sector.ceilHeight);
-      const struckSlot = fromMonster ? this.playerStruckBy(p, from, at) : -1;
+      // A player's missile reaches the other players only where they are shootable at all
+      // (`CombatContext.pvp`); a monster's always did.
+      const struckSlot = fromMonster || this.ctx.pvp ? this.playerStruckBy(p, from, at) : -1;
       const reachedPlayer = struckSlot >= 0;
       const struck = reachedPlayer ? null : this.bodyStruckBy(p, from, at);
 
       if (reachedPlayer || struck || hitGround || arrived) {
         if (reachedPlayer) {
-          this.ctx.damageSlot(struckSlot, p.damage, { from: at, cause: p.sourceType });
+          // A monster's names its type and is the hit's `source`; a player's names and credits
+          // its shooter.
+          const cause = fromMonster ? p.sourceType : p.sourceId;
+          this.ctx.damageSlot(struckSlot, p.damage, { from: at, cause, ...hitBy(p.sourceId, p.sourceType) });
         } else if (struck) {
           // `struck.id === null` is the same-species fizzle: the body stopped
           // the missile but takes no damage from it (see bodyStruckBy).
@@ -471,17 +473,41 @@ export class ProjectileLayer {
   }
 
   /**
-   * Whether this frame's step carried a *monster's* missile into the player —
-   * vanilla's `PIT_CheckThing` against `MT_PLAYER`, swept over the step rather
-   * than sampled at its end. Contact is the player's own 16-unit box widened by
-   * the missile's `mobjinfo.radius`, and the height band is `PIT_CheckThing`'s
+   * A shot landing on the body `id` names: blood or a puff at `hitAt`, then the damage — a
+   * monster's through the thing layer, a player's ({@link targetOfSlot}'s id) through
+   * {@link CombatContext.damageSlot}, blamed on `shooter`.
+   * docs/multiplayer-deathmatch.md § Player versus player.
+   *
+   * @param sparkless  the fist's puff rather than the chainsaw's — see `spawnPuff`
+   */
+  private hitBody(id: number, damage: number, origin: Pos3, hitAt: Pos3, shooter: number, sparkless: boolean): void {
+    const bleeds = id < 0 || this.ctx.things?.bleeds(id) === true;
+    if (bleeds) this.effects.spawnBlood(hitAt, damage);
+    else this.effects.spawnPuff(hitAt, sparkless);
+    this.damageBody(id, damage, origin, shooter);
+  }
+
+  /** {@link ProjectileLayer.hitBody}'s damage half, for the BFG's rays, which burst instead of bleed. */
+  private damageBody(id: number, damage: number, from: Pos3, shooter: number): void {
+    if (id < 0) this.ctx.damageSlot(slotOfTarget(id), damage, { from, cause: targetOfSlot(shooter), slot: shooter });
+    else this.ctx.things?.damage(id, damage, { from, slot: shooter });
+  }
+
+  /**
+   * Whether this frame's step carried a missile into a player — vanilla's `PIT_CheckThing`
+   * against `MT_PLAYER`, swept over the step rather than sampled at its end; a player's own
+   * reaches the others only under {@link CombatContext.pvp}. Contact is the player's own 16-unit
+   * box widened by the missile's `mobjinfo.radius`, and the height band is `PIT_CheckThing`'s
    * asymmetric over/under pair, not a tolerance either side of the feet.
    */
   private playerStruckBy(p: Projectile, from: Pos3, at: Pos3): number {
     const { world, slots } = this.ctx;
+    // `thing == tmthing->target`: a player's own missile leaves their body without touching it.
+    const shooter = p.sourceId < 0 ? slotOfTarget(p.sourceId) : -1;
     for (let slot = 0; slot < slots.length; slot++) {
       const { player, dead } = slots[slot];
-      if (dead || stepTouchesBody(from, at, player, PLAYER_RADIUS, PLAYER_HEIGHT, p.radius) === null) continue;
+      if (slot === shooter || dead) continue;
+      if (stepTouchesBody(from, at, player, PLAYER_RADIUS, PLAYER_HEIGHT, p.radius) === null) continue;
       // Proximity alone isn't arrival, and the trace runs player→projectile, not
       // the other way round — docs/monster-attacks.md § Monster projectiles in
       // flight. Last in the chain so it only runs once the cheap tests passed.
@@ -593,19 +619,19 @@ export class ProjectileLayer {
   ): void {
     const player = livingPlayer(this.ctx.slots[shooter]);
     if (!player) return;
-    const { things } = this.ctx;
     const origin: Pos3 = { x: player.x, y: player.y, z: player.z + AIM_HEIGHT_OFFSET };
     const arcRad = (spray.arcDeg * Math.PI) / 180;
     const startRad = travelAngleRad - arcRad / 2;
     const stepRad = spray.rays > 1 ? arcRad / spray.rays : 0;
     for (let i = 0; i < spray.rays; i++) {
-      const hit = things?.raycastMonster(origin, startRad + stepRad * i, spray.range) ?? null;
+      const rayRad = startRad + stepRad * i;
+      const hit = raycastBody(this.ctx, origin, rayRad, spray.range, shooter);
       if (!hit) continue;
       let damage = 0;
       for (let j = 0; j < spray.diceRolls; j++) damage += rollDamage(spray.diceSides, 1);
       // Vanilla's inflictor is the ball itself, by then far from the player;
       // this engine doesn't track where it stopped, so `origin` stands in.
-      things?.damage(hit.id, damage, { from: origin, slot: shooter });
+      this.damageBody(hit.id, damage, origin, shooter);
       // `A_BFGSpray` spawns MT_EXTRABFG at `linetarget->height>>2`, which the
       // body's own `mobjinfo.height` gives exactly.
       this.effects.spawnImpact('BFE2', BFG_SPRAY_HIT_FRAMES, IMPACT_FRAME_SECONDS, {

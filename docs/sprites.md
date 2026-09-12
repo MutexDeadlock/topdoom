@@ -348,17 +348,17 @@ keys and the monsters a deathmatch leaves out: docs/multiplayer-deathmatch.md §
 
 ### Pickup scale
 
-**Ammo/health/armor/keys/powerups render `PICKUP_SCALE` (1.4×) larger than their native WAD pixel
-size; nothing else does.** Vanilla's 1:1 unit-per-pixel sizing suits a ground-level view; from this
-far, tilted camera small collectibles get lost.
+**Ammo/health/armor/keys/powerups render larger than their native WAD pixel size, each by its own
+`PICKUP_SCALE` entry; nothing else does.** Vanilla's 1:1 unit-per-pixel sizing suits a ground-level
+view; from this far, tilted camera small collectibles get lost. An entry not tuned on its own takes
+`DEFAULT_PICKUP_SCALE`.
 
-**Both halves of that decision live in `src/constants.ts`** — the factor and `PICKUP_SCALE_TYPES`,
-the whitelist of which doomednums take it — rather than the whitelist sitting with the other thing
-tables in `things/tables.ts`. They are one tuned-by-feel presentation choice and get retuned
-together; splitting them put the dial and the list of what it applies to in different files. It is a
-whitelist of exactly those four blocks, not "everything but monsters/weapons" — monsters are already
+**The table lives in `src/constants.ts`** — doomednum → factor, so which types scale and by how much
+are one entry each — rather than with the other thing tables in `things/tables.ts`: it is a
+tuned-by-feel presentation dial, retuned as one. It is a whitelist of exactly those four blocks, not
+"everything but monsters/weapons" — monsters are already
 large enough to read, weapons already stand out, and solid decorations/gore props (torches, columns,
-trees, corpses) are already sized to fill a room or a body, so blowing them up another 40% on top of
+trees, corpses) are already sized to fill a room or a body, so blowing them up further on top of
 vanilla's own size reads as oversized rather than more readable.
 
 Carried per instance (`pickupScaleFor` in `game/things/defs.ts` → `PosedThing.scale` →
@@ -366,7 +366,7 @@ Carried per instance (`pickupScaleFor` in `game/things/defs.ts` → `PosedThing.
 type even when two types reuse art. It composes safely with floor-anchoring: geometry is translated
 so the plane's bottom-center sits at local `(0, 0)` *before* `scale` is applied, so scaling stretches
 the plane upward and outward from that point instead of moving its anchor. The one unbatched sprite,
-the player, never takes `PICKUP_SCALE` at all.
+the player, never takes a `PICKUP_SCALE` factor at all.
 
 Animation (`SpriteActorOptions.animFrames`, `SpritePose.animating`) is a plain frame-letter cycle:
 the player's `PLAY` sprite reuses `A,B,C,D` as its walk cycle and holds `A` while not moving.

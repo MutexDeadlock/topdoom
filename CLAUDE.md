@@ -93,7 +93,7 @@ src/util/      helpers shared across layers: 2D geometry plus the aim ray's box 
                approximated Math functions in software so a tic runs the same on every engine
                (fdlibm), vanilla's random table — the engine's only entropy source
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
-                   BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE +
+                   BRIGHTNESS_LIFT, DEFAULT_PICKUP_SCALE + PICKUP_SCALE, VIEW_DISTANCE +
                    FOG_START_FRACTION, WATER_SURFACE_ALPHA, FIRST_RUN_WADS)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 src/styles.css     the stylesheet index.html links; @imports the .css beside each ui module
@@ -207,10 +207,10 @@ indistinguishable from a transcription error.
 **`constants.ts` stays small**, and admits a constant on exactly one of two grounds: it is used in
 more than two files and isn't identity-coupled to any one module (`DOOM_TIC`), or it is a **feel
 dial** — a tuned-by-feel presentation number parked somewhere obvious so it stays easy to retune,
-however few files read it (`BRIGHTNESS_LIFT`, `PICKUP_SCALE`, `VIEW_DISTANCE`). A dial brings its
-own scope with it when the two are retuned together and separating them would hide half the
-decision — `PICKUP_SCALE_TYPES`, the whitelist of what `PICKUP_SCALE` applies to, is the one such
-table here and stays the exception, not a licence for tables generally. Nothing else: a constant
+however few files read it (`BRIGHTNESS_LIFT`, `DEFAULT_PICKUP_SCALE`, `VIEW_DISTANCE`). A dial
+brings its own scope with it when the two are retuned together and separating them would hide half
+the decision — `PICKUP_SCALE`, the per-type factors and so the whitelist of what scales at all, is
+the one such table here and stays the exception, not a licence for tables generally. Nothing else: a constant
 identity-coupled to one module lives in that module (`PLAYER_RADIUS` in `game/player.ts`,
 `SUBSECTOR_BIT` in `wad/map.ts`), however many files import it.
 

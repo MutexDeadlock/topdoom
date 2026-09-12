@@ -45,52 +45,53 @@ export const VIEW_DISTANCE = 16000;
 export const FOG_START_FRACTION = 0.54;
 
 /**
- * {@link PICKUP_SCALE_TYPES} (ammo, health/armor, keys, powerups) draw at vanilla's native patch
- * size times this factor. Tuned by feel: the far, tilted top-down camera reads a lot worse than
- * DOOM's own ground-level first-person view at the same pixel size, and small collectibles like a
- * clip or a shell box are the ones that suffer most.
+ * The factor a {@link PICKUP_SCALE} entry takes unless it is tuned on its own. Tuned by feel: the
+ * far, tilted top-down camera reads a lot worse than DOOM's own ground-level first-person view at
+ * the same pixel size, and small collectibles like a clip or a shell box are the ones that suffer
+ * most.
  */
-export const PICKUP_SCALE = 1.25;
+export const DEFAULT_PICKUP_SCALE = 1.25;
 
 /**
- * Which things {@link PICKUP_SCALE} applies to.
+ * Which things draw larger than vanilla's native patch size, and by how much — a type missing here
+ * draws at 1. Every factor is tuned by feel.
  * docs/sprites.md § Pickup scale.
  */
-export const PICKUP_SCALE_TYPES: Set<number> = new Set([
+export const PICKUP_SCALE: Partial<Record<number, number>> = {
   // Ammo
-  ThingType.clip,
-  ThingType.boxOfBullets,
-  ThingType.rocket,
-  ThingType.cellCharge,
-  ThingType.shells,
-  ThingType.boxOfShells,
-  ThingType.backpack,
+  [ThingType.clip]: DEFAULT_PICKUP_SCALE,
+  [ThingType.boxOfBullets]: 1.1,
+  [ThingType.rocket]: DEFAULT_PICKUP_SCALE,
+  [ThingType.cellCharge]: DEFAULT_PICKUP_SCALE,
+  [ThingType.shells]: DEFAULT_PICKUP_SCALE,
+  [ThingType.boxOfShells]: DEFAULT_PICKUP_SCALE,
+  [ThingType.backpack]: DEFAULT_PICKUP_SCALE,
 
   // Health & armor
-  ThingType.stimpack,
-  ThingType.medikit,
-  ThingType.soulsphere,
-  ThingType.healthBonus,
-  ThingType.armorBonus,
-  ThingType.greenArmor,
-  ThingType.blueArmor,
-  ThingType.megasphere,
+  [ThingType.stimpack]: DEFAULT_PICKUP_SCALE,
+  [ThingType.medikit]: DEFAULT_PICKUP_SCALE,
+  [ThingType.soulsphere]: DEFAULT_PICKUP_SCALE,
+  [ThingType.healthBonus]: DEFAULT_PICKUP_SCALE,
+  [ThingType.armorBonus]: DEFAULT_PICKUP_SCALE,
+  [ThingType.greenArmor]: DEFAULT_PICKUP_SCALE,
+  [ThingType.blueArmor]: DEFAULT_PICKUP_SCALE,
+  [ThingType.megasphere]: DEFAULT_PICKUP_SCALE,
 
   // Keys
-  ThingType.blueKeycard,
-  ThingType.blueSkullKey,
-  ThingType.redKeycard,
-  ThingType.redSkullKey,
-  ThingType.yellowKeycard,
-  ThingType.yellowSkullKey,
+  [ThingType.blueKeycard]: DEFAULT_PICKUP_SCALE,
+  [ThingType.blueSkullKey]: DEFAULT_PICKUP_SCALE,
+  [ThingType.redKeycard]: DEFAULT_PICKUP_SCALE,
+  [ThingType.redSkullKey]: DEFAULT_PICKUP_SCALE,
+  [ThingType.yellowKeycard]: DEFAULT_PICKUP_SCALE,
+  [ThingType.yellowSkullKey]: DEFAULT_PICKUP_SCALE,
 
   // Powerups
-  ThingType.invulnerability,
-  ThingType.berserk,
-  ThingType.invisibility,
-  ThingType.radiationSuit,
-  ThingType.lightAmpVisor,
-]);
+  [ThingType.invulnerability]: DEFAULT_PICKUP_SCALE,
+  [ThingType.berserk]: DEFAULT_PICKUP_SCALE,
+  [ThingType.invisibility]: DEFAULT_PICKUP_SCALE,
+  [ThingType.radiationSuit]: DEFAULT_PICKUP_SCALE,
+  [ThingType.lightAmpVisor]: DEFAULT_PICKUP_SCALE,
+};
 
 /**
  * **The WAD set a player sees on their very first start** — nothing stored, no `?wad=` in the URL.

@@ -35,7 +35,7 @@ export interface AttackPose {
    */
   tics: number[];
 }
-import { DOOM_TIC, PICKUP_SCALE, PICKUP_SCALE_TYPES } from '../../constants.ts';
+import { DOOM_TIC, PICKUP_SCALE } from '../../constants.ts';
 
 /**
  * One live map thing. Extends {@link MonsterBody} (`monsters/defs.ts`) rather than re-declaring
@@ -843,9 +843,12 @@ export interface ThingUpdateResult {
 }
 
 /**
- * Whether `type` gets {@link PICKUP_SCALE} — see {@link PICKUP_SCALE_TYPES}'s doc for why this is
- * a whitelist, not "everything but monsters/weapons".
+ * The native-size multiplier `type` draws at — its {@link PICKUP_SCALE} entry, or 1 for a type the
+ * table doesn't list (docs/sprites.md § Pickup scale says why it is a whitelist).
+ *
+ * @param type the thing's doomednum
+ * @returns the factor {@link PosedThing.scale} carries
  */
 export function pickupScaleFor(type: number): number {
-  return PICKUP_SCALE_TYPES.has(type) ? PICKUP_SCALE : 1;
+  return PICKUP_SCALE[type] ?? 1;
 }

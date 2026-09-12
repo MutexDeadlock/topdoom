@@ -608,7 +608,8 @@
   width: auto;
   box-sizing: border-box;
   height: 1lh;
-  padding: 0 4px;
+  padding-block: 0;
+  padding-left: 4px;
 }
 
 /*
@@ -703,13 +704,41 @@
   min-width: 4ch;
 }
 
+/*
+ * The arrow is drawn rather than the platform's, so it stands 10px in from the border in the menu's
+ * own grey (`--fg-muted`'s value: a data: URI reads no custom property). The right padding keeps
+ * the text clear of it; a site that restyles a select sets its other paddings, never this one.
+ */
 #menu select {
+  appearance: none;
   width: 100%;
-  padding: 8px 10px;
+  padding: 8px 28px 8px 10px;
   border: 1px solid var(--border);
-  background: var(--inset-bg);
+  background: var(--inset-bg)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1 5 5 9 1' fill='none' stroke='%238d8781' stroke-width='1.5'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
   color: inherit;
   font: inherit;
+}
+
+/*
+ * A number field's step arrows in the same grey rather than a white platform box: drawn where the
+ * browser has the pseudo-element, the browser's own dark ones where it hasn't.
+ */
+#menu input[type='number'] {
+  color-scheme: dark;
+}
+
+#menu input[type='number']::-webkit-inner-spin-button {
+  appearance: none;
+  /* Shown at rest like the selects' arrows: the browser's own sheet keeps it transparent until hover. */
+  opacity: 1;
+  width: 8px;
+  height: 1lh;
+  margin-left: 6px;
+  cursor: pointer;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='12' viewBox='0 0 8 12'%3E%3Cpath d='M0 5 4 1 8 5z M0 7 4 11 8 7z' fill='%238d8781'/%3E%3C/svg%3E")
+    no-repeat center;
 }
 
 #menu select:focus {

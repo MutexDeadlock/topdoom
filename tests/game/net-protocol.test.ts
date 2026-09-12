@@ -76,6 +76,8 @@ describe('Network · protocol', () => {
       }),
     );
     assert.ok(!isPeerMessage({ type: 'snapshot', restore: { tic: 100, map: 'MAP01', state: {}, slots: [] }, from: 0 }));
+    assert.ok(isPeerMessage({ type: 'color', color: 'red', from: 1 }));
+    assert.ok(!isPeerMessage({ type: 'color', from: 1 }), 'no colour');
     assert.ok(!isPeerMessage({ type: 'teleport', from: 0 }), 'an unknown type');
   });
 

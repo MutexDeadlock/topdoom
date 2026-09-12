@@ -50,6 +50,7 @@ sees it — a malformed one is dropped, never half-applied:
 | `hello {name, color, settings, build, compat}` | joiner | who this is; a `compat` ≠ the host's is refused, a name `nameRefusal` rejects kicked (§ The session) |
 | `lobby {game, session, delay, peers, playing}` | host | the room as it stands, after every change |
 | `ready {refusal}` | joiner | whether its library can play `game`'s set (`main.ts`'s `setRefusal`) |
+| `color {color}` | joiner | its armour colour, picked again in the lobby |
 | `start {slots, session, delay}` | host | the game begins: who holds which slot |
 | `input {slot, tic, row, settings?}` | everyone | one row for `tic`, with the slot's player settings when they changed |
 | `check {tic, cursor, x[], y[]}` | host | the desync sample every `CHECK_INTERVAL` |
@@ -65,7 +66,10 @@ sees it — a malformed one is dropped, never half-applied:
 **A player's `color`** (docs/sprites.md § Player colours) rides `hello`, `LobbyPeer` and
 `SlotAssignment` beside the name, and `NetSeat.bind` hands it to the slot. `isPeerMessage` does not
 check it; the session reads it through `asPlayerColor`, so a build without colours still takes a
-seat, in green.
+seat, in green. **It changes in the lobby** (`NetSession.setColor`): the host's own row takes it, a
+joiner's rides `color`, and the next `lobby` shows the room. A member holding a slot of a running
+game keeps the colour it started with; an unknown colour keeps the old one, and a host on a build
+without the message ignores it.
 
 **A row on the wire is `WireRow`** (`replay/row.ts`, beside the record's own codec): the twelve
 `TicColumns` of one tic as an array — a network game is the replay record, sent live. `typed` is not carried: cheats
@@ -215,9 +219,13 @@ no room for one.
 
 - **Relay URL**, **Your name** and **Color** fields; the relay URL is the `relayUrl` setting
   (docs/menu.md § Persisted settings), the name is `playerName`, the replays' (`setPlayerName`),
-  the colour `playerColor` with its swatch — name and colour read once, at Host or Join. Host and Join
+  the colour `playerColor` with its swatch — the name read once, at Host or Join; the colour also by
+  **Your color** at the room heading's far end while in the lobby (`MultiplayerUi.pickColor`, one
+  setting behind both selects). Host and Join
   refuse a name `nameRefusal` rejects before connecting, in the status line.
-- **Host the New Game tab's level**: `Menu.currentSelection` loaded for its content IDs
+- Under a rule, Host and Join side by side in even halves. **Host a new game** plays the New Game
+  tab's level, which the hint under the button points at: `Menu.currentSelection` loaded for its
+  content IDs
   (`netGameOf`: `wadSetOf`, as `captureSave` reads it), then the room. **Back on the tab, a host
   in the lobby hands the room the New Game tab's pick again** (`announce` → `NetSession.setGame`):
   another set or skill has every peer check it again, a session setting alone is only shown, an
@@ -226,17 +234,19 @@ no room for one.
   want to play it leaves. A game under way keeps what it started with. **Room code** + **Join**.
 - The room: its code, `phaseText`, the facts (level, skill, WADs, rules — deathmatch, its limits,
   friendly fire, pistol start, infinitely tall actors — delay), the peer list —
-  each name after its colour's swatch; in the lobby each peer's `ready`/`checking…`/`not ready`, with the refusal in red in a column of
+  a row for every slot up to `MAX_PLAYERS`, an unfilled one `slot empty`, so it stands as tall with
+  two players as with four; each name after its colour's swatch; in the lobby each peer's `ready`/`checking…`/`not ready`, with the refusal in red in a column of
   its own — for a missing file its label alone (`missingWadLabel`), a Load row's advice left out; in a game the roster, a slot whose
   player left dimmed; the host sees **Kick** on every other player's row — **Rules**, the lobby
   host's alone (hidden for a joiner and during a game, who read them off the facts): the mode (Coop / Deathmatch),
   friendly fire for coop, the frag and time limits for a deathmatch (`game/rules.ts`,
   docs/multiplayer-deathmatch.md § Settings), stored like every setting, each change announced at
-  once (`announce`; a session-only change resets no readiness) — the host's input delay
-  select, **Start** (`canStart`), **Leave** for a peer, status line "Room left.";
-  **Close** for the host, "Room closed.".
-- The hint line: what Start waits on — a second player, a peer's check — or a desync being
-  resynced.
+  once (`announce`; a session-only change resets no readiness) — and the host's input delay, all
+  in one row with **Leave** (a peer, status line "Room left.") or **Close** (the host, "Room
+  closed.") and then **Start** (`canStart`) at its far end.
+- `phaseText` beside the code also says what Start waits on — a second player, a peer's check —
+  or a desync being resynced, in red while it holds anything up: no line of its own, the tab being
+  short of height.
 - **The tab carries a green light while this browser is in a room**, seen from every tab: a ring
   in the lobby (`.net-lobby`), filled while the game loads or runs (`.net-game`). Set in
   `MultiplayerUi.refresh`, which every session change reaches, the menu hidden or not.

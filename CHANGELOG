@@ -13,8 +13,11 @@ Features and improvements
     - Boom's not-in-coop / not-in-deathmatch thing flags are honoured
     - the host needs a second player to start
     - leaving a game, or the host closing the room, ends it and returns to the menu
+    - your colour can be changed in the lobby
+  - menu: 
+    - reworked status messages
+    - select arrows and number steppers in the menu's own colours
   - players gib when a hit leaves them below -100 health, as in vanilla
-  - menu: reworked status messages
 
 Fixed bugs
   - the high death cry (pdiehi) plays in DOOM2 only, as in vanilla

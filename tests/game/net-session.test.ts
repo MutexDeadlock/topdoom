@@ -128,6 +128,35 @@ describe('Network · session', () => {
     assert.equal(host.session.setGame({ ...GAME, skill: 2 }, vanilla), false, 'a game under way keeps its pick');
   });
 
+  test('a colour picked in the lobby reaches the room; a game under way keeps the one it started with', () => {
+    const hub = new Hub();
+    const host = hostSession(hub);
+    const guest = joinSession(hub, 'ROOM1');
+    const colors = (session: NetSession) => session.peers.map((p) => p.color);
+
+    guest.session.setColor('red');
+    host.session.setColor('blue');
+    hub.flush();
+    assert.deepEqual(colors(host.session), ['blue', 'red']);
+    assert.deepEqual(colors(guest.session), ['blue', 'red'], 'mirrored to the guest');
+
+    guest.transport.send({ type: 'color', color: 'mauve' });
+    hub.flush();
+    assert.deepEqual(colors(host.session), ['blue', 'red'], 'a colour this build does not know keeps the old');
+
+    host.session.start();
+    hub.flush();
+    assert.equal(host.session.colorOf(1), 'red', 'the start carries the lobby colour');
+    const sent = guest.transport.sent.length;
+    guest.session.setColor('pink');
+    assert.equal(guest.transport.sent.length, sent, 'nothing goes out during a game');
+    guest.transport.send({ type: 'color', color: 'pink' });
+    host.session.setColor('white');
+    hub.flush();
+    assert.deepEqual(colors(host.session), ['blue', 'red'], 'the host takes no colour from a seated player');
+    assert.deepEqual(host.session.roster().map((r) => r.color), ['blue', 'red']);
+  });
+
   test('a start hands every session the same game and slots, and the run reads the same rows', () => {
     const hub = new Hub();
     const host = hostSession(hub, 'host', 2);

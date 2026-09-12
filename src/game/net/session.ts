@@ -292,6 +292,20 @@ export class NetSession {
     this.broadcastLobby();
   }
 
+  /**
+   * This browser's player picks another armour colour in the lobby: the host's own row takes it, a
+   * joiner's goes to the host, and the room sees it in the next `lobby`. A game under way keeps the
+   * colours it started with. docs/multiplayer-net.md § Protocol.
+   */
+  setColor(color: PlayerColor): void {
+    if (this.phase !== 'lobby' || color === this.me.color) return;
+    this.me = { ...this.me, color };
+    // Not seated by the relay yet: `hello`, or the host's own first row, carries it.
+    if (this.member < 0) return;
+    if (this.host) this.recolor(this.member, color);
+    else this.transport.send({ type: 'color', color } satisfies PeerMessage);
+  }
+
   /** The host starts the game for everyone in the room. */
   start(): void {
     if (!this.canStart) return;
@@ -540,6 +554,9 @@ export class NetSession {
       case 'ready':
         if (this.host) this.ready(message.from, message.refusal);
         return;
+      case 'color':
+        if (this.host) this.recolor(message.from, message.color);
+        return;
       case 'start':
         this.started(message.slots, message.session, message.delay);
         return;
@@ -619,6 +636,22 @@ export class NetSession {
       this.joinQueue.push(member);
       this.processJoinQueue();
     }
+  }
+
+  /**
+   * `member`'s new colour, on the host — read through `asPlayerColor`, so one this build doesn't
+   * know keeps the old. A member seated in the running game keeps the colour it started with.
+   */
+  private recolor(member: number, color: PlayerColor): void {
+    const peer = this.peers.find((p) => p.member === member);
+    if (!peer) return;
+    if (this.playing && this.assignments.some((a) => a.member === member)) {
+      return;
+    }
+    const next = asPlayerColor(color, peer.color);
+    if (next === peer.color) return;
+    peer.color = next;
+    this.broadcastLobby();
   }
 
   private started(slots: SlotAssignment[], session: NetRules, delay: number): void {

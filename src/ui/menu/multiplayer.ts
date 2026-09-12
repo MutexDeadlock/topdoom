@@ -1,8 +1,8 @@
 /**
  * The menu's Multiplayer tab: the relay, name and colour fields, hosting the New Game tab's level
- * or joining a room by code, and the room itself — its code, what is being played, who is in it
- * and whether they can play it, the host's input delay and Start. Pure DOM over a
- * {@link NetSession}; every failure goes to the menu's status line.
+ * or joining a room by code, and the room itself — its code, the lobby's colour pick, what is
+ * being played, who is in it and whether they can play it, the host's input delay and Start.
+ * Pure DOM over a {@link NetSession}; every failure goes to the menu's status line.
  * docs/multiplayer-net.md § The Multiplayer tab.
  */
 import {
@@ -15,6 +15,7 @@ import {
 } from '../../game/net.ts';
 import { getPlayerName, setPlayerName } from '../../game/replay.ts';
 import { wadLabel, type SaveWadSet } from '../../game/savegames.ts';
+import { MAX_PLAYERS } from '../../game/playerstarts.ts';
 import { SKILL_NAMES } from '../../game/skill.ts';
 import {
   DEFAULT_PLAYER_COLOR,
@@ -96,13 +97,19 @@ export class MultiplayerUi {
   private timeLimitInput = el<HTMLInputElement>('net-timelimit');
   private codeEl = el<HTMLSpanElement>('net-room-code');
   private phaseEl = el<HTMLSpanElement>('net-phase');
+  private recolorRow = el<HTMLElement>('net-recolor-row');
+  private recolorSelect = el<HTMLSelectElement>('net-recolor');
+  private recolorSwatch = el<HTMLSpanElement>('net-recolor-swatch');
+  /** The connect form's colour select and the lobby's, each with its swatch: one setting behind both. */
+  private colorPickers: readonly (readonly [HTMLSelectElement, HTMLSpanElement])[] = [
+    [this.colorSelect, this.colorSwatch],
+    [this.recolorSelect, this.recolorSwatch],
+  ];
   private facts = el<HTMLDivElement>('net-facts');
   private peers = el<HTMLDivElement>('net-peers');
   private delaySelect = el<HTMLSelectElement>('net-delay');
-  private delayRow = el<HTMLElement>('net-delay-row');
   private startButton = el<HTMLButtonElement>('net-start');
   private leaveButton = el<HTMLButtonElement>('net-leave');
-  private roomHint = el<HTMLSpanElement>('net-room-hint');
   private tabButton = el<HTMLButtonElement>('tab-button-multiplayer');
 
   private hooks: MultiplayerHooks;
@@ -114,6 +121,9 @@ export class MultiplayerUi {
   /** The New Game tab's pick being read for the room: Start waits for it. */
   private announcing = false;
 
+  /**
+   * @param describe a room's set as the save rows name it — the facts' level
+   */
   constructor(hooks: MultiplayerHooks, setStatus: StatusLine, describe: (set: SaveWadSet) => SaveSetInfo) {
     this.hooks = hooks;
     this.setStatus = setStatus;
@@ -125,19 +135,17 @@ export class MultiplayerUi {
     // Stored as typed, so a Host or a Join only reads them.
     this.relayInput.addEventListener('input', () => writeStorage(RELAY_URL_STORAGE_KEY, this.relayInput.value.trim()));
     this.nameInput.addEventListener('input', () => setPlayerName(this.nameInput.value));
-    for (const color of PLAYER_COLORS) {
-      const option = document.createElement('option');
-      option.value = color;
-      option.textContent = color[0].toUpperCase() + color.slice(1);
-      this.colorSelect.append(option);
+    // The connect form's pick and the lobby's are one setting: either select moves both.
+    for (const [select] of this.colorPickers) {
+      for (const pick of PLAYER_COLORS) {
+        const option = document.createElement('option');
+        option.value = pick;
+        option.textContent = pick[0].toUpperCase() + pick.slice(1);
+        select.append(option);
+      }
+      select.addEventListener('change', () => this.pickColor(select.value));
     }
-    this.colorSelect.value = getPlayerColor();
-    paintSwatch(this.colorSwatch, getPlayerColor());
-    this.colorSelect.addEventListener('change', () => {
-      const color = asPlayerColor(this.colorSelect.value, DEFAULT_PLAYER_COLOR);
-      setPlayerColor(color);
-      paintSwatch(this.colorSwatch, color);
-    });
+    this.showColor(getPlayerColor());
     // Typed as they are read back: a code is five capitals, and a lowercase one is the same room.
     this.codeInput.addEventListener('input', () => {
       this.codeInput.value = this.codeInput.value.toUpperCase();
@@ -197,7 +205,7 @@ export class MultiplayerUi {
    */
   statusHint(): string {
     const session = this.hooks.session();
-    if (!session) return "Host the New Game tab's level, or join a room with the code its host gave you.";
+    if (!session) return "Host a game by opening a new room, or join one with the code its host gave you.";
     // The host leaving takes the room with it, which is why its button is Close.
     if (session.phase === 'ended') return `${session.isHost ? 'Close' : 'Leave'} the room to host or join another.`;
     if (session.phase !== 'lobby') {
@@ -247,6 +255,25 @@ export class MultiplayerUi {
   }
 
   /**
+   * A colour picked in either select: stored, both pickers follow, and a lobby this browser sits in
+   * hears it ({@link NetSession.setColor}).
+   */
+  private pickColor(value: string): void {
+    const color = asPlayerColor(value, DEFAULT_PLAYER_COLOR);
+    setPlayerColor(color);
+    this.showColor(color);
+    this.hooks.session()?.setColor(color);
+  }
+
+  /** Both colour selects and their swatches show `color`. */
+  private showColor(color: PlayerColor): void {
+    for (const [select, swatch] of this.colorPickers) {
+      select.value = color;
+      paintSwatch(swatch, color);
+    }
+  }
+
+  /**
    * Back on the tab, a host's lobby follows whatever the New Game tab was changed to meanwhile.
    * docs/multiplayer-net.md § The Multiplayer tab.
    */
@@ -286,18 +313,25 @@ export class MultiplayerUi {
       return;
     }
     this.codeEl.textContent = session.code ?? '…';
-    this.phaseEl.textContent = phaseText(session);
+    const hosting = session.isHost && session.phase === 'lobby';
+    // The phase carries Start's reason and a desync, in red while either holds anything up: the tab
+    // has no height for a line of its own.
+    const phase = this.announcing ? "reading the New Game tab's pick…" : phaseText(session);
+    this.phaseEl.textContent = phase;
+    this.phaseEl.title = phase;
+    const held = session.desyncedAt !== null || (hosting && !session.canStart);
+    this.phaseEl.classList.toggle('warning', !this.announcing && held);
+    // A game under way keeps the colours it started with (docs/multiplayer-net.md § Protocol).
+    this.recolorRow.classList.toggle('hidden', session.phase !== 'lobby');
     this.renderFacts(session);
     this.renderPeers(session);
-    // The host's three controls are the lobby's; a running game shows the roster and Leave.
-    const hosting = session.isHost && session.phase === 'lobby';
-    this.delayRow.classList.toggle('hidden', !hosting);
+    // Start is the lobby host's, like the rules row the delay stands in; a running game shows the
+    // roster and Leave.
     this.delaySelect.value = String(session.delay);
     this.startButton.classList.toggle('hidden', !hosting);
     this.startButton.disabled = !session.canStart || this.announcing;
     // The host leaving takes the room with it (docs/multiplayer-net.md § Leaving).
     this.leaveButton.textContent = session.isHost ? 'Close' : 'Leave';
-    this.roomHint.textContent = this.announcing ? "reading the New Game tab's pick…" : roomHint(session);
   }
 
   private renderConnect(): void {
@@ -402,18 +436,19 @@ export class MultiplayerUi {
         const kick = session.isHost && index > 0 ? this.kickButton(peer.member, name) : null;
         this.peers.append(peerRow({ name, color: peer.color, note, marks, state, kick }));
       }
-      return;
+    } else {
+      for (const entry of roster) {
+        const marks: HTMLSpanElement[] = [];
+        if (entry.slot === 0) marks.push(markChip('host'));
+        if (entry.local) marks.push(markChip('you'));
+        const state = stateLine(entry.present ? `player ${entry.slot + 1}` : 'left — standing idle');
+        const kick = session.isHost && !entry.local && entry.member !== null ? this.kickButton(entry.member, entry.name) : null;
+        const row = peerRow({ name: entry.name, color: entry.color, note: null, marks, state, kick });
+        row.classList.toggle('disabled', !entry.present);
+        this.peers.append(row);
+      }
     }
-    for (const entry of roster) {
-      const marks: HTMLSpanElement[] = [];
-      if (entry.slot === 0) marks.push(markChip('host'));
-      if (entry.local) marks.push(markChip('you'));
-      const state = stateLine(entry.present ? `player ${entry.slot + 1}` : 'left — standing idle');
-      const kick = session.isHost && !entry.local && entry.member !== null ? this.kickButton(entry.member, entry.name) : null;
-      const row = peerRow({ name: entry.name, color: entry.color, note: null, marks, state, kick });
-      row.classList.toggle('disabled', !entry.present);
-      this.peers.append(row);
-    }
+    this.padSlots();
   }
 
   /** The host's Kick beside a player's row — savegames.css's `.row-actions` shape. */
@@ -427,13 +462,29 @@ export class MultiplayerUi {
     actions.append(button);
     return actions;
   }
+
+  /**
+   * Every slot a room has stands in the list, an unfilled one as `slot empty`: the list is as tall
+   * with two players as with {@link MAX_PLAYERS}.
+   */
+  private padSlots(): void {
+    for (let slot = this.peers.childElementCount; slot < MAX_PLAYERS; slot++) {
+      this.peers.append(emptySlotRow());
+    }
+  }
 }
 
-/** Where the session stands, in the room heading's own words. */
+/**
+ * Where the session stands, in the room heading's own words: for the lobby's host what Start waits
+ * on, and a desync in progress over any phase.
+ */
 function phaseText(session: NetSession): string {
+  if (session.desyncedAt !== null) {
+    return `out of step since tic ${session.desyncedAt} — the host is resyncing`;
+  }
   switch (session.phase) {
     case 'lobby':
-      return session.isHost ? 'lobby — start when everyone is ready' : 'lobby — waiting for the host to start';
+      return session.isHost ? hostLobbyText(session) : 'lobby — waiting for the host to start';
     case 'loading':
       return 'loading the level…';
     case 'playing':
@@ -443,20 +494,13 @@ function phaseText(session: NetSession): string {
   }
 }
 
-/**
- * The one line under the room's controls: what is keeping Start greyed, or a desync in progress.
- */
-function roomHint(session: NetSession): string {
-  if (session.desyncedAt !== null) {
-    return `out of step since tic ${session.desyncedAt} — the host is resyncing`;
-  }
-  if (session.phase !== 'lobby' || !session.isHost) return '';
-  const waiting = session.peers.filter((peer) => peer.ready !== true);
+/** The host's lobby: what is keeping Start greyed, or that nothing is. */
+function hostLobbyText(session: NetSession): string {
   // Start's reason where nobody else is in the room (docs/multiplayer-net.md § The session).
-  if (waiting.length === 0) {
-    return session.peers.length === 1 ? 'alone so far — Start waits for a second player' : '';
-  }
-  return `waiting on ${waiting.map((peer) => peer.name).join(', ')}`;
+  if (session.peers.length === 1) return 'lobby — Start waits for a second player';
+  const waiting = session.peers.filter((peer) => peer.ready !== true);
+  if (waiting.length > 0) return `lobby — waiting on ${waiting.map((peer) => peer.name).join(', ')}`;
+  return 'lobby — everyone is ready';
 }
 
 function ticsLabel(tics: number): string {
@@ -487,11 +531,6 @@ interface PeerRowParts {
 function peerRow({ name, color, note, marks, state, kick }: PeerRowParts): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'row';
-  const label = document.createElement('span');
-  label.className = 'name truncate';
-  const swatch = document.createElement('span');
-  paintSwatch(swatch, color);
-  label.append(swatch, name);
   const why = document.createElement('span');
   why.className = 'note';
   if (note) why.append(note);
@@ -499,8 +538,30 @@ function peerRow({ name, color, note, marks, state, kick }: PeerRowParts): HTMLD
   tags.className = 'marks';
   if (kick) tags.append(kick);
   tags.append(...marks);
-  row.append(label, why, tags, state);
+  row.append(nameCell(name, color), why, tags, state);
   return row;
+}
+
+/** A slot nobody holds: an unfilled swatch and `slot empty` in the name column. */
+function emptySlotRow(): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'row slot-empty';
+  row.append(nameCell('slot empty', null));
+  return row;
+}
+
+/**
+ * A row's name column: the text after its player's swatch.
+ * @param color the swatch's colour, or null for an unfilled one
+ */
+function nameCell(text: string, color: PlayerColor | null): HTMLSpanElement {
+  const label = document.createElement('span');
+  label.className = 'name truncate';
+  const swatch = document.createElement('span');
+  swatch.className = 'swatch';
+  if (color) paintSwatch(swatch, color);
+  label.append(swatch, text);
+  return label;
 }
 
 /** A row's state column: where that player stands, in a word or two. */

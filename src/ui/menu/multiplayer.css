@@ -1,11 +1,11 @@
 /*
- * The Multiplayer tab panel (ui/menu/multiplayer.ts): the relay/name form and the host/join row,
+ * The Multiplayer tab panel (ui/menu/multiplayer.ts): the relay/name form over the host/join split,
  * then the room — code, facts, the peer list, the host's rules group and the controls. The list's
  * rows are the save lists' `.row` laid on shared grid columns, the facts block and the name chips
  * menu.css's shared `.fact-grid` and `.mark`.
  */
 
-/* A form row: fields and buttons side by side, each field labelled above its input. */
+/* A form row: fields side by side, each labelled above its input. */
 #menu .net-form {
   display: flex;
   align-items: flex-end;
@@ -21,12 +21,6 @@
   min-width: 0;
 }
 
-/* The code is five letters; the field stays that wide and the buttons take the rest. */
-#menu .net-field.code {
-  flex: none;
-  width: 10ch;
-}
-
 /* The colour is one of eight short names; its swatch stands before the select. */
 #menu .net-field.color {
   flex: none;
@@ -40,16 +34,22 @@
 }
 
 /*
- * As tall as the text fields beside it — a line, `.net-field input`'s 7px padding and 1px border
- * each side — so the three labels stand on one line.
+ * As tall as the text fields beside them — a line, `.net-field input`'s 7px padding and 1px border
+ * each side — so every label in a form row stands on one line.
  */
+#menu .net-color select,
+#menu .net-field.mode select,
+#menu .net-field.delay select {
+  box-sizing: border-box;
+  height: calc(1lh + 16px);
+  padding-block: 0;
+  padding-left: 8px;
+}
+
 #menu .net-color select {
   flex: 1;
   min-width: 0;
   width: auto;
-  box-sizing: border-box;
-  height: calc(1lh + 16px);
-  padding: 0 8px;
 }
 
 /* A player's colour: beside the pick, and before each name in the room's list. */
@@ -66,14 +66,17 @@
 }
 
 #menu .net-field .label,
-#menu .net-controls .label {
+#menu .net-way .label,
+#menu .net-recolor .label,
+#menu .net-or {
   color: var(--fg-dim);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
 
-#menu .net-field input {
+#menu .net-field input,
+#menu .net-join input {
   font: inherit;
   color: var(--fg);
   background: var(--inset-bg);
@@ -82,30 +85,86 @@
   min-width: 0;
 }
 
-#menu .net-field.code input {
-  text-transform: uppercase;
-  letter-spacing: 3px;
-  font-variant-numeric: tabular-nums;
-}
-
-#menu .net-field input:focus {
+#menu .net-field input:focus,
+#menu .net-join input:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-/* The form's buttons keep their own width beside the fields — not `.ghost`'s full-width kind. */
-#menu .net-form button {
-  flex: none;
+/*
+ * The two ways in, under a rule: even halves of the height the tab has left, each centred, and a
+ * vertical rule between them broken for its "or" — two choices, not one form.
+ */
+#menu #net-connect {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+#menu .net-split {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+#menu .net-way {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 16px;
+  text-align: center;
+}
+
+/* One line each, so both halves stand as tall and their controls level. */
+#menu .net-way .hint {
+  max-width: 100%;
+  font-size: 12px;
+}
+
+#menu .net-way button {
   margin: 0;
-  padding: 8px 16px;
   white-space: nowrap;
 }
 
-/* The word between Host and Join: two ways in, not one form. Level with the buttons' text. */
+#menu .net-join {
+  display: flex;
+  gap: 8px;
+}
+
+/*
+ * The code typed the way the room shows it once in (`#net-room-code`): large and spaced. Five
+ * monospace letters with their spacing and the caret, or a focused field scrolls the first letter
+ * out; the left padding is the right's plus the spacing the last letter carries after it.
+ */
+#menu .net-join input {
+  width: calc(5 * (1ch + 5px) + 2px);
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: 5px;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 0 5px 0 10px;
+}
+
 #menu .net-or {
-  flex: none;
-  padding: 0 6px 9px;
-  color: var(--fg-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+#menu .net-or::before,
+#menu .net-or::after {
+  content: '';
+  flex: 1;
+  width: 1px;
+  background: var(--border);
 }
 
 #menu .net-head {
@@ -117,6 +176,27 @@
 
 #menu .net-head h2 {
   margin: 0;
+}
+
+/* The phase gives way to the colour pick: a long wait ellipsizes (`.truncate`), whole in its tooltip. */
+#menu #net-phase {
+  min-width: 0;
+}
+
+/* The lobby's colour pick at the heading's far end, one line tall so the heading grows no taller. */
+#menu .net-recolor {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#menu .net-recolor select {
+  width: auto;
+  box-sizing: border-box;
+  height: 1lh;
+  padding-block: 0;
+  padding-left: 4px;
 }
 
 /* The code is what a host reads out: large, spaced, in the panel's own colour. */
@@ -168,6 +248,11 @@
   color: var(--fg);
 }
 
+/* A slot nobody holds: its swatch unfilled, its words the faintest the list has. */
+#menu .net-peers .row.slot-empty .name {
+  color: var(--fg-ghost);
+}
+
 #menu .net-peers .row .marks {
   display: flex;
   align-items: center;
@@ -186,9 +271,14 @@
   color: var(--fg-muted);
 }
 
-/* The host's Kick: the save rows' small button, trimmed so a row with one stands no taller than the host's own. */
+/*
+ * The host's Kick: the save rows' small button, trimmed so a row with one stands no taller than the
+ * host's own — the negative margins give back what its box stands beyond the line, more below where
+ * the row's baseline alignment pushes it (measured), or the list grows as a player joins.
+ */
 #menu .net-peers .row-actions button {
   padding: 1px 8px;
+  margin-block: -1px -2px;
 }
 
 /* A refusal wraps rather than ellipsizing: the file it names is the point of it. */
@@ -197,6 +287,10 @@
   white-space: normal;
 }
 
+/*
+ * The room's last row: the host's rules and input delay on the left, Leave (Close) then Start at
+ * the far end, on the fields' baseline — one row for all of it, the tab's height being shared.
+ */
 #menu .net-controls {
   display: flex;
   align-items: flex-end;
@@ -204,34 +298,33 @@
   flex-wrap: wrap;
 }
 
-#menu #net-delay-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+#menu #net-rules {
+  flex: 1;
+  min-width: 0;
 }
 
-#menu #net-delay-row select {
-  width: auto;
-  padding: 6px 8px;
+#menu #net-rules .net-form {
+  margin-bottom: 0;
 }
 
+/* As tall as the fields: a line, 7px padding and a 1px border each side. */
 #menu .net-controls button {
   width: auto;
   margin: 0;
-  padding: 8px 16px;
+  padding: 7px 16px;
   white-space: nowrap;
 }
 
-/* Leave sits apart from Start, on the far side of the row. */
 #menu #net-leave {
   margin-left: auto;
 }
 
-#menu #net-room-hint,
+/* One text line tall even when empty, or the panel shrinks as the hint clears. */
 #menu #net-connect-hint {
   display: block;
   margin-top: 8px;
-  min-height: 1.2em;
+  min-height: 1lh;
+  text-align: center;
 }
 
 /* The host's rules group: the mode select stands like the colour one, the limits are short numbers. */
@@ -240,16 +333,18 @@
   width: 16ch;
 }
 
-#menu .net-field.mode select {
-  box-sizing: border-box;
-  height: calc(1lh + 16px);
-  padding: 0 8px;
+#menu .net-field.delay {
+  flex: none;
 }
 
-/* Wide enough that "Time limit (min)" stays on one line beside the mode's label. */
+#menu .net-field.delay select {
+  width: auto;
+}
+
+/* Wide enough that "Time (min)" stays on one line beside the mode's label. */
 #menu .net-field.limit {
   flex: none;
-  width: 19ch;
+  width: 11ch;
 }
 
 /* The friendly-fire row stands on the fields' baseline, its label beside the box. */

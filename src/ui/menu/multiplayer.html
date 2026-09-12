@@ -1,6 +1,5 @@
 <div class="tab-panel" id="tab-multiplayer">
   <section id="net-connect">
-    <h2>Play together <span class="hint">through a relay — <code>npm run relay</code> starts one</span></h2>
     <div class="net-form">
       <label class="net-field">
         <span class="label">Relay URL</span>
@@ -18,56 +17,66 @@
         </span>
       </label>
     </div>
-    <div class="net-form">
-      <button class="primary" id="net-host">Host the New Game tab's level</button>
-      <span class="net-or">or</span>
-      <label class="net-field code">
-        <span class="label">Room code</span>
-        <input type="text" id="net-code" maxlength="5" placeholder="ABCDE" autocomplete="off" spellcheck="false" />
-      </label>
-      <button id="net-join">Join</button>
+    <div class="net-split">
+      <div class="net-way">
+        <span class="label">New room</span>
+        <button class="primary" id="net-host">Host a new game</button>
+        <span class="hint truncate">Select what will be played in 'New Game'</span>
+      </div>
+      <div class="net-or">or</div>
+      <div class="net-way">
+        <label class="label" for="net-code">Join room with code</label>
+        <div class="net-join">
+          <input type="text" id="net-code" maxlength="5" placeholder="ABCDE" autocomplete="off" spellcheck="false" />
+          <button class="primary" id="net-join">Join</button>
+        </div>
+        <span class="hint truncate">The code its host gave you</span>
+      </div>
     </div>
     <span class="hint warning" id="net-connect-hint"></span>
   </section>
   <section id="net-room" class="hidden">
     <div class="net-head">
       <h2>Room <span class="code" id="net-room-code"></span></h2>
-      <span class="hint" id="net-phase"></span>
+      <span class="hint truncate" id="net-phase"></span>
+      <label class="net-recolor" id="net-recolor-row">
+        <span class="label">Your color</span>
+        <span class="swatch" id="net-recolor-swatch"></span>
+        <select id="net-recolor"></select>
+      </label>
     </div>
     <div class="fact-grid" id="net-facts"></div>
     <div class="list net-peers" id="net-peers"></div>
-    <div id="net-rules" class="hidden">
-      <h2>Rules <span class="hint">yours to set — the room hears each change at once</span></h2>
-      <div class="net-form">
-        <label class="net-field mode">
-          <span class="label">Mode</span>
-          <select id="net-mode">
-            <option value="coop">Coop</option>
-            <option value="deathmatch">Deathmatch</option>
-          </select>
-        </label>
-        <label class="checkbox-row net-rule" id="net-friendlyfire-row">
-          <input type="checkbox" id="net-friendlyfire" />
-          <span>Friendly fire</span>
-        </label>
-        <label class="net-field limit" id="net-fraglimit-row">
-          <span class="label">Kill limit</span>
-          <input type="number" id="net-fraglimit" min="0" step="1" placeholder="none" />
-        </label>
-        <label class="net-field limit" id="net-timelimit-row">
-          <span class="label">Time limit (min)</span>
-          <input type="number" id="net-timelimit" min="0" step="1" placeholder="none" />
-        </label>
-      </div>
-    </div>
     <div class="net-controls">
-      <label id="net-delay-row">
-        <span class="label">Input delay</span>
-        <select id="net-delay"></select>
-      </label>
-      <button class="primary" id="net-start">Start</button>
+      <div id="net-rules" class="hidden">
+        <div class="net-form">
+          <label class="net-field mode">
+            <span class="label">Mode</span>
+            <select id="net-mode">
+              <option value="coop">Coop</option>
+              <option value="deathmatch">Deathmatch</option>
+            </select>
+          </label>
+          <label class="checkbox-row net-rule" id="net-friendlyfire-row">
+            <input type="checkbox" id="net-friendlyfire" />
+            <span>Friendly fire</span>
+          </label>
+          <label class="net-field limit" id="net-fraglimit-row">
+            <span class="label">Kill limit</span>
+            <input type="number" id="net-fraglimit" min="0" step="1" placeholder="none" />
+          </label>
+          <label class="net-field limit" id="net-timelimit-row">
+            <span class="label">Time (min)</span>
+            <input type="number" id="net-timelimit" min="0" step="1" placeholder="none" />
+          </label>
+          <label class="net-field delay">
+            <span class="label">Input delay</span>
+            <select id="net-delay"></select>
+          </label>
+        </div>
+      </div>
       <button id="net-leave">Leave</button>
+      <button class="primary" id="net-start">Start</button>
     </div>
-    <span class="hint warning" id="net-room-hint"></span>
   </section>
 </div>

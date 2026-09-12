@@ -114,6 +114,7 @@ export type PeerMessage =
       playing: boolean;
     }
   | { type: 'ready'; refusal: string | null }
+  | { type: 'color'; color: PlayerColor }
   | { type: 'start'; slots: SlotAssignment[]; session: NetRules; delay: number }
   | { type: 'input'; slot: number; tic: number; row: WireRow; settings?: PlayerSettings }
   | { type: 'check'; tic: number; cursor: number; x: number[]; y: number[] }
@@ -178,6 +179,8 @@ export function isPeerMessage(v: unknown): v is Stamped<PeerMessage> {
       );
     case 'ready':
       return v.refusal === null || typeof v.refusal === 'string';
+    case 'color':
+      return typeof v.color === 'string';
     case 'start':
       return Array.isArray(v.slots) && v.slots.every(isSlotAssignment) && isNetRules(v.session) && isIndex(v.delay);
     case 'input':

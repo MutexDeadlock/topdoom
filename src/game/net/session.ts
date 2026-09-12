@@ -1,8 +1,8 @@
 /**
- * `NetSession`: one browser's seat in a network game — the lobby through the relay, then the
- * lockstep run: every slot's rows served as its input, the local slot's sampled and sent ahead,
- * the host's desync samples, and the snapshot a join or a resync lands on. `game.ts` reads it per
- * tic; `main.ts` builds it and answers its hooks. docs/multiplayer-net.md.
+ * {@link NetSession}: one browser's seat in a network game — the lobby through the relay, then the
+ * lockstep run: every slot's rows served as its input, the local slot's sampled and sent ahead, the
+ * host's desync samples, and the snapshot a join or a resync lands on. `game.ts` reads it per tic;
+ * `main.ts` builds it and answers its hooks. docs/multiplayer-net.md.
  */
 import type { TicInput } from '../input.ts';
 import { CHECK_INTERVAL, checkCoord, type PlayerSettings, type SessionSettings } from '../replay/defs.ts';
@@ -37,7 +37,7 @@ import type { Transport } from './transport.ts';
 
 /**
  * Where a session stands: in the room's lobby, the level building after a start or a join
- * (`loading`), running (`playing`), or over (`ended`, with `endReason`).
+ * (`loading`), running (`playing`), or over (`ended`, with {@link NetSession.endReason}).
  */
 export type NetPhase = 'lobby' | 'loading' | 'playing' | 'ended';
 
@@ -45,7 +45,11 @@ export type NetPhase = 'lobby' | 'loading' | 'playing' | 'ended';
 export interface NetHooks {
   /** Why this browser cannot play `game`'s set, or null — the menu's own WAD gate. */
   setRefusal(game: NetGame): string | null;
-  /** Start the level: fresh at tic 0, or from the host's snapshot for a joiner. */
+  /**
+   * Start the level.
+   *
+   * @param restore  the host's snapshot for a joiner; null starts fresh at tic 0
+   */
   startGame(game: NetGame, restore: NetRestore | null): void;
   /** Something the lobby shows changed. */
   changed(): void;
@@ -91,12 +95,20 @@ export interface RosterEntry {
   /** False for a slot whose player is gone — it stands idle in the level. */
   present: boolean;
   local: boolean;
+  /**
+   * The player's round trip to the relay in milliseconds, as the relay last measured it; null
+   * before its first report, from a relay that sends none, and once the player is gone.
+   */
+  pingMs: number | null;
 }
 
 /** What a slot with no row this tic reads — nothing held, nothing aimed. */
 const IDLE_ROW: TicRow = emptyRow();
 
-/** A resync or a join, landing at `atTic`; `sent` is the host's: the snapshot went out. */
+/**
+ * A resync or a join, landing at {@link PendingSync.atTic}; {@link PendingSync.sent} is the host's:
+ * the snapshot went out.
+ */
 interface PendingSync {
   atTic: number;
   joining: SlotAssignment | null;
@@ -148,6 +160,8 @@ export class NetSession {
   private hostChecks = new Map<number, CheckSample>();
   private ownChecks = new Map<number, CheckSample>();
   private desyncReported = false;
+  /** Each member's last round trip to the relay, in milliseconds — the relay's `latency`. */
+  private latencies = new Map<number, number>();
   private stalledSince: number | null = null;
   private now: () => number;
 
@@ -158,7 +172,7 @@ export class NetSession {
     return session;
   }
 
-  /** Joins the room `code` names on `transport`. */
+  /** Joins the room {@link JoinOptions.code} names on `transport`. */
   static join(transport: Transport, hooks: NetHooks, options: JoinOptions): NetSession {
     const session = new NetSession(transport, hooks, options, null, { infiniteTallActors: false, pistolStart: false }, INPUT_DELAY);
     // The relay reads the code the way it was typed: blank, spaced or lowercase.
@@ -217,6 +231,7 @@ export class NetSession {
       color: a.color,
       present: a.member !== null,
       local: a.slot === this.mySlot,
+      pingMs: a.member === null ? null : (this.latencies.get(a.member) ?? null),
     }));
   }
 
@@ -236,7 +251,9 @@ export class NetSession {
   /**
    * The host's pick, handed to the room again in the lobby: what is played and the session settings
    * it runs under. Another set or skill has every peer check it again — a check, never a vote; an
-   * unchanged pick sends nothing. Whether anything changed.
+   * unchanged pick sends nothing.
+   *
+   * @returns whether anything changed
    */
   setGame(game: NetGame, session: SessionSettings): boolean {
     if (!this.host || this.phase !== 'lobby') return false;
@@ -328,7 +345,7 @@ export class NetSession {
 
   /**
    * Whether the tic about to run has every row it needs. Not: the frame holds, and the host drops
-   * a peer that has sent nothing for `DROP_TIMEOUT_MS`.
+   * a peer that has sent nothing for {@link DROP_TIMEOUT_MS}.
    */
   readyForTic(): boolean {
     const scheduler = this.scheduler;
@@ -360,9 +377,11 @@ export class NetSession {
 
   /**
    * A sync landing on the tic about to run, if one is due: the host captures the level through
-   * `capture` and sends it, everyone restores it — `'wait'` while the snapshot is still on its
-   * way, null when nothing is due and the tic may simply run. A moment the host cannot capture
-   * (an intermission up) moves the sync ahead and lets the tics run on.
+   * `capture` and sends it, everyone restores it. A moment the host cannot capture (an intermission
+   * up) moves the sync ahead and lets the tics run on.
+   *
+   * @returns `'wait'` while the snapshot is still on its way, null when nothing is due and the tic
+   *          may simply run
    */
   pendingRestore(capture: (joining: SlotAssignment | null) => NetCapture | null): NetRestore | 'wait' | null {
     const sync = this.pendingSync;
@@ -384,7 +403,7 @@ export class NetSession {
     return restore && restore.tic === sync.atTic ? restore : 'wait';
   }
 
-  /** The restore `pendingRestore` handed over is in: the run continues from it. */
+  /** The restore {@link NetSession.pendingRestore} handed over is in: the run continues from it. */
   restoreApplied(): void {
     const restore = this.restoreAt;
     if (restore) this.applyAssignments(restore.slots);
@@ -403,7 +422,8 @@ export class NetSession {
    * Ahead of the tic: the local row — sampled by the game from its live input, under the menu's
    * player settings — goes out for `tic + delay` and into the table, the settings events and rows
    * due this tic reach every slot's input, and the desync sample is taken where one is due.
-   * `bodies` is every slot's body, by slot.
+   *
+   * @param bodies  every slot's body, by slot
    */
   beginTic(row: TicRow, settings: PlayerSettings, bodies: readonly Pos2[]): void {
     const scheduler = this.scheduler;
@@ -474,6 +494,9 @@ export class NetSession {
         return;
       case 'refused':
         this.end(m.reason);
+        return;
+      case 'latency':
+        this.latencies.set(m.member, m.ms);
         return;
     }
   }
@@ -640,6 +663,7 @@ export class NetSession {
   private memberLeft(member: number): void {
     this.joinQueue = this.joinQueue.filter((m) => m !== member);
     this.otherRules.delete(member);
+    this.latencies.delete(member);
     if (!this.host) return;
     const slot = this.assignments.findIndex((a) => a.member === member);
     if (this.playing && slot >= 0) {

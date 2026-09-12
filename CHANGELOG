@@ -1,5 +1,9 @@
 v0.19.1 (2026-09-1?)
 
+Features and improvements
+  - multiplayer: hold TAB for the scoreboard, which lists every player's
+    kills and ping. Intermission also shows it above the level's stats.
+
 Fixed bugs
   - bars on a rising lift no longer vanish when the player stands behind them
   - a faded grate or fence now dithers instead of vanishing

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
 import { buildThingSprites, monstersTelefrag } from '../../src/game/things.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
+import { targetOfSlot } from '../../src/game/things/defs.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 import { savedThing } from '../fixtures/snapshot.ts';
@@ -18,7 +19,8 @@ import { savedThing } from '../fixtures/snapshot.ts';
  * stomp reach) that a landing on one cell can't touch the next. Every id below is the thing's
  * index in `map.things`; the player start is the only entry that spawns no body, and comes last.
  */
-function arena() {
+function arena(netgame = false) {
+  const kills: number[] = [];
   const grid = gridMap(['######', '#....#', '######'], { cell: 128 });
   const map = grid.map;
   map.things.push(
@@ -29,8 +31,9 @@ function arena() {
     thingAt(grid, 4, 1, 1),
   );
   const world = new World(map);
-  const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
-  return { layer, pad: grid.centre(1, 1), lamp: grid.centre(2, 1), away: grid.centre(3, 1) };
+  const onKill = (slot: number) => kills.push(slot);
+  const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3, netgame, onKill });
+  return { layer, kills, pad: grid.centre(1, 1), lamp: grid.centre(2, 1), away: grid.centre(3, 1) };
 }
 
 const IMP = 0;
@@ -75,6 +78,13 @@ describe('Death · telefrag', () => {
     assert.equal(layer.telefragAt(pad, IMP_RADIUS, false), false, 'the body on the pad blocks the landing');
     assert.equal(telefragged(layer, IMP), false, 'a refused landing kills nothing');
     assert.equal(telefragged(layer, BARREL), false);
+  });
+
+  test("an arriving player's stomp counts as its kills", () => {
+    const { layer, kills, pad } = arena(true);
+
+    assert.equal(layer.telefragAt(pad, IMP_RADIUS, true, targetOfSlot(1)), true);
+    assert.deepEqual(kills, [1], 'the imp; a barrel is no kill');
   });
 
   test('the arriving body never stomps itself', () => {

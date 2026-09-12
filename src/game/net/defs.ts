@@ -20,7 +20,7 @@ export type { JoinRequest, KickRequest, RelayMessage } from '../../../server/roo
 /**
  * Tics between a key going down and the tic it drives, so every peer's row for a tic has arrived
  * before the tic runs — 86 ms, about one round trip on a decent link. **Tuned by feel**; the lobby
- * lets the host pick another within `MIN_INPUT_DELAY`..`MAX_INPUT_DELAY`.
+ * lets the host pick another within {@link MIN_INPUT_DELAY}..{@link MAX_INPUT_DELAY}.
  * docs/multiplayer-net.md § Lockstep.
  */
 export const INPUT_DELAY = 3;
@@ -56,16 +56,19 @@ export interface LobbyPeer {
   member: number;
   name: string;
   /**
-   * The armour colour the player picked (docs/sprites.md § Player colours). `isPeerMessage` leaves
-   * it unchecked and the session reads it through `asPlayerColor`, so a build without colours still
-   * takes a seat.
+   * The armour colour the player picked (docs/sprites.md § Player colours). {@link isPeerMessage}
+   * leaves it unchecked and the session reads it through `asPlayerColor`, so a build without
+   * colours still takes a seat.
    */
   color: PlayerColor;
   settings: PlayerSettings;
   build: string;
   /** Whether the peer can play the host's set, null while unanswered; the host's own is ready. */
   ready: boolean | null;
-  /** Why it cannot, when `ready` is false — the peer's own sentence, or the host's over `compat`. */
+  /**
+   * Why it cannot, when {@link LobbyPeer.ready} is false — the peer's own sentence, or the host's
+   * over `compat`.
+   */
   refusal: string | null;
 }
 
@@ -75,7 +78,7 @@ export interface SlotAssignment {
   /** The relay member, or null for a slot nobody drives any more. */
   member: number | null;
   name: string;
-  /** As `LobbyPeer.color`. */
+  /** As {@link LobbyPeer.color}. */
   color: PlayerColor;
   settings: PlayerSettings;
 }
@@ -132,6 +135,8 @@ export function isRelayMessage(v: unknown): v is RelayMessage {
       return v.reason === undefined || typeof v.reason === 'string';
     case 'refused':
       return typeof v.reason === 'string';
+    case 'latency':
+      return isIndex(v.member) && isIndex(v.ms);
     default:
       return false;
   }
@@ -185,7 +190,10 @@ export function isPeerMessage(v: unknown): v is Stamped<PeerMessage> {
   }
 }
 
-/** `game` with every WAD entry degraded through `asWad`, so a damaged one names rather than crashes. */
+/**
+ * `game` with every WAD entry degraded through {@link asWad}, so a damaged one names rather than
+ * crashes.
+ */
 export function asNetGame(game: NetGame): NetGame {
   const { map, wads, mapWad, patchWads } = game.set;
   return {
@@ -195,9 +203,11 @@ export function asNetGame(game: NetGame): NetGame {
 }
 
 /**
- * Why `name` cannot sit beside `others` (the names of the room's present players), or null: too
- * short, or already one of theirs — trimmed, case-insensitively. The tab asks it before connecting,
- * the host of every `hello`. docs/multiplayer-net.md § The session.
+ * Why `name` cannot sit beside `others`, or null: too short, or already one of theirs — trimmed,
+ * case-insensitively. The tab asks it before connecting, the host of every `hello`.
+ * docs/multiplayer-net.md § The session.
+ *
+ * @param others  the names of the room's present players
  */
 export function nameRefusal(name: string, others: readonly string[]): string | null {
   const wanted = name.trim();

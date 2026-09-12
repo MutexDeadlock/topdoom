@@ -1,9 +1,9 @@
 /**
- * The savegame state payload: the `GameSnapshot` interface tree every
- * subsystem's `snapshot()`/`restore()` pair speaks, plus the pure encoding
- * helpers that make the awkward corners JSON-safe (Sets, `Infinity`, the fog
- * bitmap). Types and pure functions only — no THREE, no DOM — so the format
- * round-trips in Node tests. docs/savegames.md § The format and its version.
+ * The savegame state payload: the {@link GameSnapshot} interface tree every subsystem's
+ * `snapshot()`/`restore()` pair speaks, plus the pure encoding helpers that make the awkward
+ * corners JSON-safe (Sets, `Infinity`, the fog bitmap). Types and pure functions only — no THREE,
+ * no DOM — so the format round-trips in Node tests.
+ * docs/savegames.md § The format and its version.
  */
 import {
   AMMO_TYPES,
@@ -39,8 +39,8 @@ export interface PlayerSnapshot {
 }
 
 /**
- * `Inventory` with its two Sets as arrays and its `Infinity` powers run
- * through the `-1` sentinel — see `encodeSeconds`.
+ * {@link Inventory} with its two Sets as arrays and its `Infinity` powers run through the `-1`
+ * sentinel — see {@link encodeSeconds}.
  */
 export interface InventorySnapshot {
   health: number;
@@ -49,8 +49,8 @@ export interface InventorySnapshot {
   ammo: Record<AmmoType, number>;
   /**
    * Key *colors*, what saves have always stored. Still written (derived from
-   * `keySlots`) so a save stays readable by builds from before card/skull
-   * tracking; a reader prefers `keySlots` when present.
+   * {@link InventorySnapshot.keySlots}) so a save stays readable by builds from before card/skull
+   * tracking; a reader prefers {@link InventorySnapshot.keySlots} when present.
    */
   keys: KeyColor[];
   /**
@@ -75,10 +75,9 @@ export interface WeaponsSnapshot {
   cooldownTics: number;
   previousWeapon: WeaponId | null;
   /**
-   * The weapon last selected out of each slot, indexed like `WEAPON_SLOTS`.
-   * Optional for the same no-bump reason `reloadTic` is: absent means only the
-   * restored weapon's own slot is remembered, which is what a save from before
-   * it restored to.
+   * The weapon last selected out of each slot, indexed like `WEAPON_SLOTS`. Optional for the same
+   * no-bump reason {@link WeaponsSnapshot.reloadTic} is: absent means only the restored weapon's
+   * own slot is remembered, which is what a save from before it restored to.
    */
   slotWeapon?: (WeaponId | null)[];
   sawIdleTimer: number;
@@ -101,9 +100,9 @@ export interface WeaponsSnapshot {
 }
 
 /**
- * The mutable `Sector` fields specials rewrite at runtime. Applied to the
- * freshly loaded `DoomMap` *before* the mesh build so everything downstream
- * bakes restored geometry — docs/savegames.md § Apply order.
+ * The mutable `Sector` fields specials rewrite at runtime. Applied to the freshly loaded
+ * {@link DoomMap} *before* the mesh build so everything downstream bakes restored geometry —
+ * docs/savegames.md § Apply order.
  */
 export interface SectorSnapshot {
   floorHeight: number;
@@ -136,17 +135,15 @@ export interface SectorEffectsSnapshot {
 
 export interface SpecialsSnapshot {
   /**
-   * `[sectorIndex, mover]` entries for the **floor** slot; `Mover` is plain
-   * data throughout (see its export note). A save written before the
-   * floor/ceiling split holds every kind here, which the reader handles by
-   * sorting on `mover.kind` rather than trusting the field —
+   * `[sectorIndex, mover]` entries for the **floor** slot; {@link Mover} is plain data throughout
+   * (see its export note). A save written before the floor/ceiling split holds every kind here,
+   * which the reader handles by sorting on `mover.kind` rather than trusting the field —
    * docs/specials.md § One mover per sector.
    */
   movers: [number, Mover][];
   /**
-   * The ceiling slot (doors, ceilings, crushers). Optional per the
-   * no-`SAVE_VERSION`-bump rule: absent is a pre-split save, whose ceiling
-   * movers are in `movers` above.
+   * The ceiling slot (doors, ceilings, crushers). Optional per the no-`SAVE_VERSION`-bump rule:
+   * absent is a pre-split save, whose ceiling movers are in {@link SpecialsSnapshot.movers} above.
    */
   ceilingMovers?: [number, Mover][];
   usedOnce: number[];
@@ -166,13 +163,12 @@ export interface SpecialsSnapshot {
 }
 
 /**
- * Which `PosedThing` fields a killable thing's `MonsterFields` block can
- * carry — the one list `snapshotThings` and `restoreThings` both loop over, so
- * a field can't be saved and then not restored. Everything not named here is
- * either re-derived by `pushThing` on restore or deliberately dropped —
- * including `dead` (⟺ `health <= 0`, every death/revive site maintains it) and
- * `deathFrameCount` (recomputed by `enterDeathPose` on a restored corpse)
- * (docs/savegames.md § What is saved and what is deliberately not).
+ * Which {@link PosedThing} fields a killable thing's {@link MonsterFields} block can carry — the
+ * one list `snapshotThings` and `restoreThings` both loop over, so a field can't be saved and then
+ * not restored. Everything not named here is either re-derived by `pushThing` on restore or
+ * deliberately dropped — including {@link PosedThing.dead} (⟺ `health <= 0`, every death/revive
+ * site maintains it) and {@link PosedThing.deathFrameCount} (recomputed by `enterDeathPose` on a
+ * restored corpse) (docs/savegames.md § What is saved and what is deliberately not).
  */
 export const MONSTER_SAVE_KEYS = [
   'health',
@@ -212,12 +208,11 @@ export const MONSTER_SAVE_KEYS = [
 ] as const;
 
 /**
- * The mutable AI/damage state of a killable thing (a monster or a barrel).
- * Present on a `ThingState` exactly when the live thing's `health` was finite;
- * everything here stays at `pushThing`'s spawn defaults for any other thing.
- * `Pick`ed off the live record rather than re-declared, so a renamed or
- * retyped `PosedThing` field is a compile error here instead of a save that
- * silently stores something else.
+ * The mutable AI/damage state of a killable thing (a monster or a barrel). Present on a
+ * {@link ThingState} exactly when the live thing's {@link PosedThing.health} was finite;
+ * everything here stays at `pushThing`'s spawn defaults for any other thing. `Pick`ed off the live
+ * record rather than re-declared, so a renamed or retyped {@link PosedThing} field is a compile
+ * error here instead of a save that silently stores something else.
  */
 export type MonsterFields = Pick<PosedThing, (typeof MONSTER_SAVE_KEYS)[number]>;
 
@@ -225,12 +220,14 @@ export type MonsterFields = Pick<PosedThing, (typeof MONSTER_SAVE_KEYS)[number]>
  * Spawn defaults for the sparse encoding: a field equal to its entry here is omitted from the saved
  * block. `pushThing` spreads this very table into the thing it builds, so the elision baseline *is*
  * the spawn record rather than a copy of it. Mapped over the key tuple, so adding a key to
- * `MONSTER_SAVE_KEYS` without deciding its default is a compile error.
+ * {@link MONSTER_SAVE_KEYS} without deciding its default is a compile error.
  *
- * Six keys have no constant spawn default and are special-cased in `snapshotThings`: `health` (per
- * type), `angle` (already in every `ThingState`), `homingBias` (a random draw, always saved), and
- * the three `spawn*` fields, written only where they no longer match the `x`/`y`/`facingDeg` beside
- * them. docs/savegames.md § The format and its version.
+ * Six keys have no constant spawn default and are special-cased in `snapshotThings`:
+ * {@link PosedThing.health} (per type), {@link PosedThing.angle} (already in every
+ * {@link ThingState}), {@link PosedThing.homingBias} (a random draw, always saved), and the three
+ * `spawn*` fields, written only where they no longer match the
+ * {@link ThingState.x}/{@link ThingState.y}/{@link ThingState.facingDeg} beside them.
+ * docs/savegames.md § The format and its version.
  */
 export const MONSTER_FIELD_DEFAULTS: {
   readonly [K in Exclude<
@@ -243,6 +240,8 @@ export const MONSTER_FIELD_DEFAULTS: {
   // plane has caught — the behavior those saves were written under.
   crushed: false,
   barrelExploded: false,
+  // Also what a block written before a barrel carried its player holds for a player's kill: that
+  // blast's kills count for nobody.
   explodeSource: null,
   velX: 0,
   velY: 0,
@@ -271,20 +270,18 @@ export const MONSTER_FIELD_DEFAULTS: {
 };
 
 /**
- * The keys the sparse loop can decide by table lookup — every `MONSTER_SAVE_KEYS`
- * entry except the three `MONSTER_FIELD_DEFAULTS` deliberately omits, which
- * `snapshotThings` handles on its own.
+ * The keys the sparse loop can decide by table lookup — every {@link MONSTER_SAVE_KEYS} entry
+ * except those {@link MONSTER_FIELD_DEFAULTS} deliberately omits, which `snapshotThings` decides on
+ * its own (that table's doc names them).
  */
 export const MONSTER_KEYS_WITH_DEFAULTS = Object.keys(MONSTER_FIELD_DEFAULTS) as (keyof typeof MONSTER_FIELD_DEFAULTS)[];
 
 /**
- * Copies one `MONSTER_SAVE_KEYS` field, in either direction — a live
- * `PosedThing` is structurally a `MonsterFields`, so this serves both the
- * snapshot and the restore loop, and a key absent from a sparse saved block is
- * a no-op (the `pushThing` spawn default stands). Generic in the key so
- * `to[key]` and `from[key]` are the *same* type at every key rather than the
- * union of all of them, which is what an inline `to[key] = from[key]` can't
- * express.
+ * Copies one {@link MONSTER_SAVE_KEYS} field, in either direction — a live {@link PosedThing} is
+ * structurally a {@link MonsterFields}, so this serves both the snapshot and the restore loop, and
+ * a key absent from a sparse saved block is a no-op (the `pushThing` spawn default stands).
+ * Generic in the key so `to[key]` and `from[key]` are the *same* type at every key rather than the
+ * union of all of them, which is what an inline `to[key] = from[key]` can't express.
  */
 export function copyMonsterField<K extends keyof MonsterFields>(
   to: Partial<MonsterFields>,
@@ -296,13 +293,13 @@ export function copyMonsterField<K extends keyof MonsterFields>(
 }
 
 /**
- * One `PosedThing`, saved in `posed` order so IDs stay implicit — the array
- * index *is* `PosedThing.id`, which is what keeps every saved `targetId`/
- * `sourceId` reference valid. Type-derived fields (`anim`, `scale`,
- * `blockRadius`, the frame tables) are never saved; `pushThing` re-derives
- * them on restore. The flags are present only when true, and the monster
- * block is sparse (`MONSTER_FIELD_DEFAULTS`): a 10k-thing map pays for every
- * byte of this record (docs/savegames.md § Storage).
+ * One {@link PosedThing}, saved in `posed` order so IDs stay implicit — the array index *is*
+ * {@link PosedThing.id}, which is what keeps every saved
+ * {@link PosedThing.targetId}/{@link Projectile.sourceId} reference valid. Type-derived fields
+ * ({@link PosedThing.anim}, {@link PosedThing.scale}, {@link PosedThing.blockRadius}, the frame
+ * tables) are never saved; `pushThing` re-derives them on restore. The flags are present only when
+ * true, and the monster block is sparse ({@link MONSTER_FIELD_DEFAULTS}): a 10k-thing map pays for
+ * every byte of this record (docs/savegames.md § Storage).
  */
 export interface ThingState {
   type: number;
@@ -329,9 +326,9 @@ export interface ThingsSnapshot {
    */
   changed: [number, ThingState][];
   /**
-   * Every monster's `lastlook`, one digit each in `posed` order. Not a field of the monster block:
-   * nearly every monster's turns with its first look, so a block each would carry the whole level.
-   * docs/savegames.md § The format and its version.
+   * Every monster's {@link PosedThing.lastlook}, one digit each in `posed` order. Not a field of
+   * the monster block: nearly every monster's turns with its first look, so a block each would
+   * carry the whole level. docs/savegames.md § The format and its version.
    */
   lastlook: string;
 }
@@ -342,7 +339,8 @@ export interface CubeState {
   z: number;
   angleRad: number;
   /**
-   * Index into `IconSnapshot.targets` — the live cube holds an object reference into that array.
+   * Index into {@link IconSnapshot.targets} — the live cube holds an object reference into that
+   * array.
    */
   targetIndex: number;
   remaining: number;
@@ -361,10 +359,10 @@ export interface IconSnapshot {
 }
 
 /**
- * A `Projectile` minus its animator, which restore rebuilds from `sprite`. Its `sourceId` and
- * homing `targetId` are target ids as the live record holds them, a player slot as
- * `targetOfSlot` (docs/multiplayer.md § Slot addressing). docs/savegames.md § The format and its
- * version.
+ * A {@link Projectile} minus its animator, which restore rebuilds from {@link Projectile.sprite}.
+ * Its {@link Projectile.sourceId} and homing `targetId` are target ids as the live record holds
+ * them, a player slot as `targetOfSlot` (docs/multiplayer.md § Slot addressing).
+ * docs/savegames.md § The format and its version.
  */
 export type ProjectileSnapshot = Omit<Projectile, 'anim'>;
 
@@ -380,20 +378,28 @@ export interface TeleportFogState extends Pos3 {
   elapsed: number;
 }
 
-/** One player slot's share of a `GameSnapshot`. */
+/** One player slot's share of a {@link GameSnapshot}. */
 export interface PlayerSlotSnapshot {
   player: PlayerSnapshot;
   inventory: InventorySnapshot;
   weapons: WeaponsSnapshot;
   /** Where the slot's camera orbit is heading — `PlayerSlot.snapshot`. */
   cameraYawDeg: number;
-  /** A corpse waiting to respawn, lying where `player` says. docs/multiplayer-coop.md § Respawn. */
+  /**
+   * A corpse waiting to respawn, lying where {@link PlayerSlotSnapshot.player} says.
+   * docs/multiplayer-coop.md § Respawn.
+   */
   dead: boolean;
   /**
    * The cheats switched on, written only while one is: an honest slot saves nothing, and absent
    * means neither cheat. docs/cheats.md § Saves and best times.
    */
   cheats?: CheatSnapshot;
+  /**
+   * `PlayerSlot.kills`, written only once there is one: absent is none — a single-player save, a
+   * joiner's fresh slot, a save from before the count. docs/multiplayer-coop.md § Items and kills.
+   */
+  kills?: number;
 }
 
 export interface GameSnapshot {
@@ -406,16 +412,16 @@ export interface GameSnapshot {
   cheated: boolean;
   /**
    * Whether the level runs as a netgame: which things spawn depends on it, so it decides every
-   * thing id in `things` and a restore runs under it. docs/multiplayer-coop.md.
+   * thing id in {@link GameSnapshot.things} and a restore runs under it. docs/multiplayer-coop.md.
    */
   netgame: boolean;
   /** Every player slot, by slot — how many there are is the snapshot's to say. */
   players: PlayerSlotSnapshot[];
-  /** Only the sectors that differ from the freshly loaded map — see `snapshotSectors`. */
+  /** Only the sectors that differ from the freshly loaded map — see {@link snapshotSectors}. */
   sectors: SectorEntry[];
   specials: SpecialsSnapshot;
   sectorEffects: SectorEffectsSnapshot;
-  /** `encodeRuns` of the fog-of-war `explored` bitmap. */
+  /** {@link encodeRuns} of the fog-of-war `explored` bitmap. */
   fog: number[];
   /** `[sectorIndex, slot]` for every sector a noise reached — `World.snapshotSoundAlerted`. */
   soundAlerted: [sector: number, slot: number][];
@@ -531,8 +537,8 @@ export function encodeRuns(data: Uint8Array): number[] {
 }
 
 /**
- * Decodes `encodeRuns` output into a fresh array of `length` bytes; surplus runs past `length` are
- * dropped.
+ * Decodes {@link encodeRuns} output into a fresh array of `length` bytes; surplus runs past
+ * `length` are dropped.
  */
 export function decodeRuns(runs: number[], length: number): Uint8Array {
   const data = new Uint8Array(length);
@@ -546,10 +552,10 @@ export function decodeRuns(runs: number[], length: number): Uint8Array {
 }
 
 /**
- * Every sector's savable fields in index order, taken off a map. `Game` takes
- * one of these per level load, straight out of `loadMap` and before anything
- * has run — that is the baseline `snapshotSectors` diffs against, and it is
- * exactly the state a later restore's `applySectors` writes into.
+ * Every sector's savable fields in index order, taken off a map. `Game` takes one of these per
+ * level load, straight out of `loadMap` and before anything has run — that is the baseline
+ * {@link snapshotSectors} diffs against, and it is exactly the state a later restore's
+ * {@link applySectors} writes into.
  */
 export function sectorBaseline(map: DoomMap): SectorSnapshot[] {
   return map.sectors.map((sector) => ({
@@ -600,10 +606,10 @@ export function snapshotSectors(map: DoomMap, baseline: SectorSnapshot[]): Secto
 }
 
 /**
- * Applies saved sector entries to a freshly loaded `DoomMap` in place; a sector
- * with no entry is left as the WAD authored it, which is what the sparse format
- * means. Must run *before* any geometry or world construction so everything
- * downstream bakes restored heights and lights — docs/savegames.md § Apply order.
+ * Applies saved sector entries to a freshly loaded {@link DoomMap} in place; a sector with no
+ * entry is left as the WAD authored it, which is what the sparse format means. Must run *before*
+ * any geometry or world construction so everything downstream bakes restored heights and lights —
+ * docs/savegames.md § Apply order.
  */
 export function applySectors(map: DoomMap, entries: SectorEntry[]): void {
   for (const entry of entries) {
@@ -637,10 +643,9 @@ export function serializeInventory(inv: Inventory): InventorySnapshot {
 }
 
 /**
- * Rebuilds an `Inventory` from its snapshot, starting from `createInventory`'s
- * defaults so a field a malformed save lacks degrades to the new-game value
- * rather than `undefined` — the same fail-soft stance `besttimes.ts` takes on
- * its own records.
+ * Rebuilds an {@link Inventory} from its snapshot, starting from {@link createInventory}'s
+ * defaults so a field a malformed save lacks degrades to the new-game value rather than
+ * `undefined` — the same fail-soft stance `besttimes.ts` takes on its own records.
  */
 export function deserializeInventory(s: InventorySnapshot): Inventory {
   const inv = createInventory();

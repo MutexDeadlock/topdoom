@@ -24,7 +24,7 @@ import type { SpriteFxLayer } from './spritefx.ts';
 import { stepTouchesBody, turnToward, type Projectile } from './spritefx/defs.ts';
 import { BFG_SPRAY_HIT_FRAMES, IMPACT_EFFECTS, IMPACT_FRAME_SECONDS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_RADIUS_DEFAULT, PROJECTILE_SOUNDS, REVENANT_TRACER_TURN_RATE_RAD, SMOKE_TRAIL_FRAME_SECONDS, SMOKE_TRAIL_FRAMES, SMOKE_TRAIL_INTERVAL, TRACER_COLOR, TRACER_HOMING_Z_OFFSET } from './spritefx/tables.ts';
 import type { Pos3 } from '../types.ts';
-import { slotOfTarget, targetOfSlot, type MonsterRef } from './things/defs.ts';
+import { hitBy, slotOfTarget, targetOfSlot, type MonsterRef } from './things/defs.ts';
 import { vecLength } from '../util/geom.ts';
 import { atan2, cos, sin } from '../util/fdlibm.ts';
 
@@ -404,9 +404,7 @@ export class ProjectileLayer {
           // `struck.id === null` is the same-species fizzle: the body stopped
           // the missile but takes no damage from it (see bodyStruckBy).
           if (struck.id !== null) {
-            const source = fromMonster ? { id: p.sourceId, type: p.sourceType } : undefined;
-            const slot = fromMonster ? undefined : slotOfTarget(p.sourceId);
-            things?.damage(struck.id, p.damage, { source, slot, from: at });
+            things?.damage(struck.id, p.damage, { ...hitBy(p.sourceId, p.sourceType), from: at });
           }
         }
         // A clean miss arrived at the wall `shotPath` found at launch, so its shoot special fires
@@ -421,8 +419,7 @@ export class ProjectileLayer {
             radius: p.splash.radius,
             maxDamage: p.splash.damage,
             hitsPlayer: p.splash.hitsPlayer,
-            source: fromMonster ? { id: p.sourceId, type: p.sourceType } : undefined,
-            slot: fromMonster ? undefined : slotOfTarget(p.sourceId),
+            ...hitBy(p.sourceId, p.sourceType),
             // No `source` means the shot is the player's own, which is the one
             // splash that can kill them without anyone else being involved.
             cause: fromMonster ? p.sourceType : 'self',

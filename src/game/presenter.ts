@@ -1,8 +1,8 @@
 /**
- * `Presenter`: what one rendered frame is — the camera posed `alpha` through the last tic, the
- * sprites, effects and movers drawn there, the fades and animators advanced on real time, the 2D
- * layers over it all, and the render call. Advances no gameplay state. `Game` holds one and hands
- * it what it draws through `PresentHost`. docs/frameloop.md § What runs in a frame.
+ * {@link Presenter}: what one rendered frame is — the camera posed `alpha` through the last tic,
+ * the sprites, effects and movers drawn there, the fades and animators advanced on real time, the
+ * 2D layers over it all, and the render call. Advances no gameplay state. `Game` holds one and
+ * hands it what it draws through {@link PresentHost}. docs/frameloop.md § What runs in a frame.
  */
 import * as THREE from 'three';
 import type { Level } from './level.ts';
@@ -28,6 +28,8 @@ import type { ReplayBar } from '../ui/hud/replaybar.ts';
 import type { CenterMessage } from '../ui/hud/message.ts';
 import type { LevelCard } from '../ui/hud/levelcard.ts';
 import type { DeathOverlay } from '../ui/hud/deathoverlay.ts';
+import type { Intermission } from '../ui/hud/intermission.ts';
+import type { ScoreRow, Scoreboard } from '../ui/hud/scoreboard.ts';
 import { invisibilityOpacity, type ScreenEffects } from '../ui/hud/screeneffects.ts';
 import { getProfilerVisible, ProfilerHud } from '../ui/hud/profiler.ts';
 import { DebugHud } from '../ui/devmode/debughud.ts';
@@ -38,7 +40,10 @@ import { vecLength } from '../util/geom.ts';
 import { atan2, cos, sin } from '../util/fdlibm.ts';
 import type { Pos2 } from '../types.ts';
 
-/** `replayAimNdc`'s projection scratch, so the per-frame reticle placement allocates nothing. */
+/**
+ * {@link Presenter.replayAimNdc}'s projection scratch, so the per-frame reticle placement allocates
+ * nothing.
+ */
 const AIM_SCRATCH = new THREE.Vector3();
 
 /** The 2D layers a frame updates over the level — `Game` builds them, and raises most itself. */
@@ -50,11 +55,13 @@ export interface Overlays {
   readonly levelCard: LevelCard;
   readonly screenEffects: ScreenEffects;
   readonly deathOverlay: DeathOverlay;
+  readonly intermission: Intermission;
+  readonly scoreboard: Scoreboard;
 }
 
 /**
- * What a frame draws, as `Game` hands it over — one object literal; `level` and the two replay
- * reads are getters, since they change under it.
+ * What a frame draws, as `Game` hands it over — one object literal; {@link PresentHost.level} and
+ * the two replay reads are getters, since they change under it.
  */
 export interface PresentHost {
   readonly view: Viewport;
@@ -78,6 +85,18 @@ export interface PresentHost {
   readonly setDrawsPlayer: boolean;
   readonly profiler: FrameProfiler;
   readonly overlays: Overlays;
+  /**
+   * What the board Tab holds up shows this frame. docs/hud.md § Scoreboard.
+   *
+   * @returns null while it is down
+   */
+  scoreboardRows(): readonly ScoreRow[] | null;
+  /**
+   * What the intermission's board shows above its panel this frame.
+   *
+   * @returns null while it is down
+   */
+  intermissionScoreRows(): readonly ScoreRow[] | null;
 }
 
 export class Presenter {
@@ -97,9 +116,10 @@ export class Presenter {
   }
 
   /**
-   * One rendered frame: poses everything `alpha` of the way from the last tic to
-   * the current one, runs the presentation-only animators, and draws. Advances
+   * One rendered frame: poses everything, runs the presentation-only animators, and draws. Advances
    * no gameplay state whatsoever. docs/frameloop.md § What runs in a frame.
+   *
+   * @param alpha  how far everything is posed of the way from the last tic to the current one
    */
   draw(alpha: number, rawDt: number, still: boolean): void {
     const { view, level, lights, profiler, slots } = this.host;
@@ -161,24 +181,27 @@ export class Presenter {
 
   /**
    * The 2D layers over the level: status bar, crosshair, center message, level card,
-   * the screen tints and the death overlay.
+   * the screen tints, the death overlay and the scoreboard.
    */
   private updateOverlays(dt: number, alpha: number): void {
     const { inventory } = this.host.local;
-    const { hud, crosshair, replayBar, screenEffects } = this.host.overlays;
+    const { hud, crosshair, replayBar, screenEffects, intermission, scoreboard } = this.host.overlays;
     hud.update(inventory, this.host.level.stats(), this.host.recording);
     crosshair.update(inventory.health);
     replayBar.update(this.host.playback, this.replayAimNdc(alpha), inventory.health);
     this.tickOverlayClocks(dt);
     screenEffects.update(dt, inventory);
     screenEffects.setColormapTint(this.viewColormap());
+    scoreboard.update(this.host.scoreboardRows());
+    intermission.showScores(this.host.intermissionScoreRows());
   }
 
   /**
    * Where the recording's aim point falls on screen this frame, in NDC: the aim interpolated
-   * `alpha` into the tic being drawn, through the pose `draw` just set from the same `alpha` — what
-   * the replay reticle is placed at. Null with no playback, no aim, or a dead player (nothing aims
-   * then).
+   * `alpha` into the tic being drawn, through the pose {@link Presenter.draw} just set from the
+   * same `alpha` — what the replay reticle is placed at.
+   *
+   * @returns null with no playback, no aim, or a dead player (nothing aims then)
    */
   private replayAimNdc(alpha: number): Pos2 | null {
     const aim = this.host.playback?.aimAt(alpha);
@@ -279,12 +302,13 @@ export class Presenter {
   }
 
   /**
-   * Places the player's own billboard: position, facing, sector light and which
-   * animation is due. Positions are interpolated `alpha` through the last tic;
-   * the animation advances on `dt`, since it is presentation and its own frame
-   * chain is what times it — which is why `draw` hands it 0 on a still frame,
-   * where the real one would walk the sprite on the spot (docs/frameloop.md
-   * § Pausing).
+   * Places the player's own billboard: position, facing, sector light and which animation is due.
+   *
+   * @param alpha  how far through the last tic the positions are interpolated
+   * @param dt     what the animation advances on, since it is presentation and its own frame chain
+   *               is what times it — which is why {@link Presenter.draw} hands it 0 on a still
+   *               frame, where the real one would walk the sprite on the spot
+   *               (docs/frameloop.md § Pausing)
    */
   private posePlayer(slot: PlayerSlot, alpha: number, dt: number, viewAngleDeg: number): void {
     const { playerSkins, setDrawsPlayer, lights } = this.host;
@@ -336,8 +360,10 @@ export class Presenter {
   }
 
   /**
-   * The status text's debug block. Only ever called while it is shown, and with a null `fps` where
-   * the counter beside it is switched off — see `DebugHud.update`, docs/devmode.md § FPS counter.
+   * The status text's debug block. Only ever called while it is shown — see
+   * {@link DebugHud.update}, docs/devmode.md § FPS counter.
+   *
+   * @param fps  null where the counter beside it is switched off
    */
   private debugLines(fps: number | null): string[] {
     const { view, local, level, audio, title } = this.host;
@@ -359,9 +385,9 @@ export class Presenter {
   }
 
   /**
-   * The camera line of `debugLines`. A playback's camera comes from the record, so the auto
-   * camera's dials are standing still and reporting them would be a lie — the view in force is
-   * what there is to say (docs/replays.md § Playback).
+   * The camera line of {@link Presenter.debugLines}. A playback's camera comes from the record, so
+   * the auto camera's dials are standing still and reporting them would be a lie — the view in
+   * force is what there is to say (docs/replays.md § Playback).
    */
   private cameraReadout(): string {
     const { playback, local } = this.host;

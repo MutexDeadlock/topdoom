@@ -58,6 +58,12 @@ export class PlayerSlot {
    */
   dead = false;
   /**
+   * The kills this player made this level — vanilla's `player_t.killcount`, which `P_SetupLevel`
+   * zeroes and `Game.buildLevel` does too. Counted in a netgame only; what the scoreboard shows.
+   * docs/multiplayer-coop.md § Items and kills.
+   */
+  kills = 0;
+  /**
    * The body's cached touched-sector list for the three per-tic force queries — one body, one
    * cache (`World.sectorsTouchingCached`), so carry/push/friction share one sector walk per tic
    * instead of three. Reset per level: the positions it was keyed on are the old map's.
@@ -170,16 +176,18 @@ export class PlayerSlot {
       // Only while one is actually on: an honest slot's save carries nothing.
       // docs/cheats.md § Saves and best times.
       ...(this.cheats.used ? { cheats: this.cheats.snapshot() } : {}),
+      ...(this.kills > 0 ? { kills: this.kills } : {}),
     };
   }
 
   /**
-   * The slot back from its snapshot, at `Game.buildLevel`'s step for it: the cheats, the
-   * inventory, the weapons that read that inventory, and a corpse laid down again. The body and
+   * The slot back from its snapshot, at `Game.buildLevel`'s step for it: the cheats, the kills,
+   * the inventory, the weapons that read that inventory, and a corpse laid down again. The body and
    * the camera yaw are the load's own steps, earlier — docs/savegames.md § Apply order.
    */
   restore(saved: PlayerSlotSnapshot): void {
     this.cheats.restore(saved.cheats);
+    this.kills = saved.kills ?? 0;
     this.inventory = deserializeInventory(saved.inventory);
     // After the line above: `restore` derives `weaponLastFrame` off the
     // inventory it is handed, and `beginLevel` only saw the outgoing one.

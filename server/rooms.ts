@@ -31,7 +31,8 @@ export type RelayMessage =
   | { type: 'left'; member: number }
   | { type: 'closed' }
   | { type: 'kicked'; reason?: string }
-  | { type: 'refused'; reason: string };
+  | { type: 'refused'; reason: string }
+  | { type: 'latency'; member: number; ms: number };
 
 export interface RoomsOptions {
   /** Members a room holds at most — the engine's `MAX_PLAYERS`; `relay.ts` states 4 and the test pins them equal. */
@@ -61,6 +62,11 @@ export interface Rooms {
   kick(member: RoomMember, target: number, reason?: string): void;
   /** `member` is gone: the room hears `left`, and a host leaving closes the whole room. */
   leave(member: RoomMember): void;
+  /**
+   * The round trip `member`'s last ping came back in, in milliseconds, told to every member of its
+   * room — `member` included. Nothing for a connection with no seat.
+   */
+  latency(member: RoomMember, ms: number): void;
   readonly roomCount: number;
 }
 
@@ -166,6 +172,15 @@ export function createRooms(options: RoomsOptions): Rooms {
     if (room.members.size === 0) rooms.delete(room.code);
   }
 
+  function latency(member: RoomMember, ms: number): void {
+    const seat = seats.get(member);
+    if (!seat) return;
+    const message: RelayMessage = { type: 'latency', member: seat.id, ms: Math.max(0, Math.round(ms)) };
+    // Serialized once for the whole room, as `relay` does: every socket's pong lands here.
+    const text = JSON.stringify(message);
+    for (const conn of seat.room.members.values()) conn.send(text);
+  }
+
   function refuse(member: RoomMember, reason: string): JoinResult {
     say(member, { type: 'refused', reason });
     return { refusal: reason };
@@ -183,6 +198,7 @@ export function createRooms(options: RoomsOptions): Rooms {
     relay,
     kick,
     leave,
+    latency,
     get roomCount() {
       return rooms.size;
     },

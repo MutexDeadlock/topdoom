@@ -279,6 +279,24 @@ describe('Network · session', () => {
     for (let tic = 4; tic < 8; tic++) runTic(hub, [host.session], seen);
   });
 
+  test("the relay's round trips reach every roster, and a player who left has none", () => {
+    const hub = new Hub();
+    const host = hostSession(hub, 'host', 2);
+    const guest = joinSession(hub, 'ROOM1');
+    host.session.start();
+    hub.flush();
+    const pings = (session: NetSession) => session.roster().map((r) => r.pingMs);
+    assert.deepEqual(pings(host.session), [null, null], 'nothing measured yet');
+    hub.rooms.latency(host.transport.member, 12.4);
+    hub.rooms.latency(guest.transport.member, 87.6);
+    hub.flush();
+    assert.deepEqual(pings(host.session), [12, 88]);
+    assert.deepEqual(pings(guest.session), [12, 88], 'the same numbers on both browsers');
+    guest.session.leave();
+    hub.flush();
+    assert.deepEqual(pings(host.session), [12, null]);
+  });
+
   test('a desync is reported to the host, which lands a snapshot everyone restores', () => {
     const hub = new Hub();
     const host = hostSession(hub, 'host', 2);

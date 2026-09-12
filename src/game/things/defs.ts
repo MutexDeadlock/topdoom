@@ -1,12 +1,12 @@
 /**
- * The thing layer's record shapes and the constants tied to them: one live map
- * thing (`PosedThing`), the layer's public surface (`ThingLayer`), and the
- * handful of doomednums/tables that only this layer's own logic reads.
+ * The thing layer's record shapes and the constants tied to them: one live map thing
+ * ({@link PosedThing}), the layer's public surface ({@link ThingLayer}), and the handful of
+ * doomednums/tables that only this layer's own logic reads.
  *
- * Distinct from `things/tables.ts`, which holds the *WAD-derived* tables
- * every thing type is looked up in (sprites, health, drops, frame letters);
- * this file is runtime state and the API around it, the same division
- * `monsters/defs.ts` makes for the AI. See docs/items.md and docs/monster-ai.md.
+ * Distinct from `things/tables.ts`, which holds the *WAD-derived* tables every thing type is
+ * looked up in (sprites, health, drops, frame letters); this file is runtime state and the API
+ * around it, the same division `monsters/defs.ts` makes for the AI. See docs/items.md and
+ * docs/monster-ai.md.
  */
 import * as THREE from 'three';
 import type { Sector } from '../../wad/map.ts';
@@ -30,25 +30,23 @@ export interface AttackPose {
    */
   frames: string[];
   /**
-   * Each frame's `info.c` tic count, parallel to `frames`. Zero-tic states are dropped: they never
-   * draw.
+   * Each frame's `info.c` tic count, parallel to {@link AttackPose.frames}. Zero-tic states are
+   * dropped: they never draw.
    */
   tics: number[];
 }
 import { DOOM_TIC, PICKUP_SCALE, PICKUP_SCALE_TYPES } from '../../constants.ts';
 
 /**
- * One live map thing. Extends `MonsterBody` (`monsters/defs.ts`) rather than
- * re-declaring its chase/attack fields: `stepMonsterAI` is handed a
- * `PosedThing` directly, so the two must agree, and inheriting says so where
- * a copied field list only hoped so. Every one of those fields is present and
- * inert on a non-monster thing — see `pushThing`'s zeroed defaults.
+ * One live map thing. Extends {@link MonsterBody} (`monsters/defs.ts`) rather than re-declaring
+ * its chase/attack fields: `stepMonsterAI` is handed a {@link PosedThing} directly, so the two must
+ * agree, and inheriting says so where a copied field list only hoped so. Every one of those fields
+ * is present and inert on a non-monster thing — see `pushThing`'s zeroed defaults.
  */
 export interface PosedThing extends Pos3, MonsterBody {
   /**
-   * Index into the `posed` array itself.
-   * A stable handle callers (game.ts) can hold onto across frames to target
-   * this exact instance with `ThingLayer.damage`.
+   * Index into the `posed` array itself. A stable handle callers (game.ts) can hold onto across
+   * frames to target this exact instance with {@link ThingLayer.damage}.
    */
   id: number;
   /** `WakeCheckBody.lastlook` — drawn for every thing, read only for a monster. */
@@ -60,14 +58,14 @@ export interface PosedThing extends Pos3, MonsterBody {
    * few dozen draw calls rather than ten thousand — see `SpriteBatch`'s doc.
    */
   anim: SpriteAnimator;
-  /** Native-size multiplier (`pickupScaleFor`), handed to the batch each frame. */
+  /** Native-size multiplier ({@link pickupScaleFor}), handed to the batch each frame. */
   scale: number;
   /**
    * Whether auto-aim's pointer may lock onto this thing at all — a monster or a barrel, and not
-   * one of `NO_AUTO_AIM_TYPES`. Resolved once at spawn for the same reason `blockRadius` is: the
-   * answer is fixed by `type`, and `pickMonster` walks every thing on the map each tic, where two
-   * sparse-key `Set` probes per thing measured most of the pick's cost on NUTS.WAD.
-   * docs/combat.md § Auto-aim.
+   * one of `NO_AUTO_AIM_TYPES`. Resolved once at spawn for the same reason
+   * {@link PosedThing.blockRadius} is: the answer is fixed by {@link PosedThing.type}, and
+   * {@link ThingLayer.pickMonster} walks every thing on the map each tic, where two sparse-key
+   * `Set` probes per thing measured most of the pick's cost on NUTS.WAD. docs/combat.md § Auto-aim.
    */
   lockable: boolean;
   /**
@@ -78,31 +76,35 @@ export interface PosedThing extends Pos3, MonsterBody {
   blockRadius: number;
   /**
    * This body's own `mobjinfo.height`, resolved once at spawn exactly as
-   * `blockRadius` is. Every vertical fit test that knows which body it means
-   * reads it: whether a crusher has closed far enough to catch this thing,
-   * whether it fits through an opening, and how tall a target a shot sees.
+   * {@link PosedThing.blockRadius} is. Every vertical fit test that knows which body it means reads
+   * it: whether a crusher has closed far enough to catch this thing, whether it fits through an
+   * opening, and how tall a target a shot sees.
    */
   bodyHeight: number;
   /**
    * This type's stats entry, `undefined` for anything without one, and the two type facts
-   * `update` asks per thing per tic — all resolved once at spawn for the reason `blockRadius` is.
+   * {@link ThingLayer.update} asks per thing per tic — all resolved once at spawn for the reason
+   * {@link PosedThing.blockRadius} is.
    */
   stats: MonsterStats | undefined;
   isMonster: boolean;
   hangHeight: number | undefined;
   /**
    * `MF_SOLID`: a monster, a barrel or a `SOLID_DECORATION_TYPES` prop — what the thing grid files
-   * and what the player walks around. Resolved once at spawn for the reason `blockRadius` is.
+   * and what the player walks around. Resolved once at spawn for the reason
+   * {@link PosedThing.blockRadius} is.
    */
   isSolid: boolean;
   /**
    * A `SOLID_DECORATION_TYPES` prop: filed by the grid because it blocks movement, but skipped by
-   * every shot query because it stops none. Resolved once at spawn for the reason `blockRadius` is.
+   * every shot query because it stops none. Resolved once at spawn for the reason
+   * {@link PosedThing.blockRadius} is.
    */
   isDecoration: boolean;
   /**
    * This type's attack poses per kind (`MONSTER_ATTACK_POSE`) and pain frame letters, resolved once
-   * at spawn for the same reason `blockRadius` is. `undefined` for anything without a table entry.
+   * at spawn for the same reason {@link PosedThing.blockRadius} is. `undefined` for anything
+   * without a table entry.
    */
   attackPose: { melee?: AttackPose; ranged?: AttackPose } | undefined;
   painFrames: string[] | undefined;
@@ -152,22 +154,23 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   pinned: PinnedMemo;
   /**
-   * Feet height (`Pos3.z`). While not an alerted monster: refreshed each frame from
-   * `sector.floorHeight` (the "ride a moving floor for free" trick). Once alerted,
-   * `stepMonsterAI` owns it via `groundFloor` + gravity, the same physics the player uses.
+   * Feet height ({@link Pos3.z}). While not an alerted monster: refreshed each frame from
+   * `sector.floorHeight` (the "ride a moving floor for free" trick). Once alerted, `stepMonsterAI`
+   * owns it via `groundFloor` + gravity, the same physics the player uses.
    */
   z: number;
   /**
-   * Its containing sector — the live reference `z` is read from while
-   * not an alerted monster; reassigned each frame by `update()` once a monster starts moving.
+   * Its containing sector — the live reference {@link PosedThing.z} is read from while not an
+   * alerted monster; reassigned each frame by {@link ThingLayer.update} once a monster starts
+   * moving.
    */
   sector: Sector | undefined;
   facingDeg: number;
   /**
    * Where this thing came into the world and facing which way — vanilla's `mobj->spawnpoint`,
    * read only by nightmare respawning. Set once by `pushThing`, so for anything that never moved
-   * it equals `x`/`y`/`facingDeg` — the condition `snapshotThings` elides it on.
-   * docs/monster-ai.md § Respawning monsters.
+   * it equals {@link PosedThing.x}/{@link PosedThing.y}/{@link PosedThing.facingDeg} — the
+   * condition `snapshotThings` elides it on. docs/monster-ai.md § Respawning monsters.
    */
   spawnX: number;
   spawnY: number;
@@ -176,7 +179,7 @@ export interface PosedThing extends Pos3, MonsterBody {
   type: number;
   /**
    * Set once a pickup consumes this instance; it then stays permanently hidden (see
-   * ThingLayer.update).
+   * {@link ThingLayer.update}).
    */
   picked: boolean;
   /**
@@ -185,20 +188,21 @@ export interface PosedThing extends Pos3, MonsterBody {
    * everything else stays at `Infinity` and can never die.
    */
   health: number;
-  /** Set once `health` reaches 0; see `ThingLayer.damage`. */
+  /** Set once {@link PosedThing.health} reaches 0; see {@link ThingLayer.damage}. */
   dead: boolean;
   /**
-   * Seconds since `dead` was set. Vanilla's `PIT_VileCheck` refuses to raise
-   * a corpse whose own death animation is still playing (`tics != -1`,
-   * "not lying still yet") — `findRaisableCorpse` compares this against
-   * `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS` for the same gate.
+   * Seconds since {@link PosedThing.dead} was set. Vanilla's `PIT_VileCheck` refuses to raise a
+   * corpse whose own death animation is still playing (`tics != -1`, "not lying still yet") —
+   * `findRaisableCorpse` compares this against `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS` for
+   * the same gate.
    */
   deadTime: number;
   /**
    * Frame count of whichever death animation (`MONSTER_DEATH_FRAMES` or the gibbed
-   * `MONSTER_XDEATH_FRAMES`) `ThingLayer.damage` actually played — set at time of death, read back
-   * by `deadTime`'s "still settling" check above. 0 for anything that never died with real death
-   * art (see `damage`'s `hidden` fallback).
+   * `MONSTER_XDEATH_FRAMES`) {@link ThingLayer.damage} actually played — set at time of death,
+   * read back by {@link PosedThing.deadTime}'s "still settling" check above. 0 for anything that
+   * never died with real death art (see {@link ThingLayer.damage}'s {@link PosedThing.hidden}
+   * fallback).
    */
   deathFrameCount: number;
   /**
@@ -208,46 +212,44 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   crushed: boolean;
   /**
-   * This type's resurrection frames (`MONSTER_RAISE_FRAMES`), resolved once
-   * at spawn for the same reason `attackPose`/`painFrames` are — and
-   * doubles as the arch-vile's own eligibility test: `undefined` means this
-   * type has no vanilla `raisestate` and `findRaisableCorpse` skips it
-   * outright, matching vanilla's `raisestate == S_NULL` check.
+   * This type's resurrection frames (`MONSTER_RAISE_FRAMES`), resolved once at spawn for the same
+   * reason {@link PosedThing.attackPose}/{@link PosedThing.painFrames} are — and doubles as the
+   * arch-vile's own eligibility test: `undefined` means this type has no vanilla `raisestate` and
+   * `findRaisableCorpse` skips it outright, matching vanilla's `raisestate == S_NULL` check.
    */
   raiseFrames: string[] | undefined;
   /**
    * Set once a dead barrel's own `A_Explode` has actually fired
-   * (`BARREL_CHAIN.explodeDelaySeconds` after death, not on death itself — see
-   * that constant's doc), so `update()`'s per-frame `deadTime` check doesn't
-   * re-fire it every subsequent frame. Meaningless for anything else.
+   * ({@link BARREL_CHAIN.explodeDelaySeconds} after death, not on death itself — see that
+   * constant's doc), so {@link ThingLayer.update}'s per-frame {@link PosedThing.deadTime} check
+   * doesn't re-fire it every subsequent frame. Meaningless for anything else.
    */
   barrelExploded: boolean;
   /**
-   * Who dealt a barrel's killing blow, captured at the moment it died and
-   * carried forward to its own `A_Explode` — vanilla's `P_RadiusAttack`
-   * passes the exploding barrel's own `target` (whoever damaged it) as the
-   * new blast's `bombsource`, which is how a chain of barrels keeps
-   * attributing every link back to whoever set the first one off rather than
-   * to the previous barrel in the chain. `null` means "the player", the same
-   * convention `ThingLayer.damage`'s own `source` parameter already uses.
-   * Meaningless for anything else.
+   * Who dealt a barrel's killing blow, captured at the moment it died and carried forward to its
+   * own `A_Explode` — vanilla's `P_RadiusAttack` passes the exploding barrel's own `target`
+   * (whoever damaged it) as the new blast's `bombsource`, which is how a chain of barrels keeps
+   * attributing every link back to whoever set the first one off rather than to the previous
+   * barrel in the chain. Held as a projectile holds its shooter (`sourceId`/`sourceType`): a
+   * player as its slot's {@link targetOfSlot} with type 0, so every kill down a chain a player set
+   * off counts as theirs, and {@link hitBy} splits it back. `null` is nobody's — a crusher, a
+   * telefrag. Meaningless for anything else. docs/death.md § Exploding barrels.
    */
   explodeSource: { id: number; type: number } | null;
   /**
-   * Vanilla's `P_DamageMobj` horizontal knockback (`momx`/`momy`), map
-   * units/sec — an impulse `damage` adds to in `ThingLayer.damage` (via
-   * `thrustSpeed`), then `applyKnockback` integrates and decays every frame
-   * on top of whatever movement (AI-driven, for a monster) already happened
-   * this frame, exactly as vanilla's own `P_XYMovement` momentum displaces a
-   * mobj independently of, and before, `A_Chase`'s own walk step in the same
-   * tic. Meaningless for anything `ThingLayer.damage` never touches (every
-   * non-monster, non-barrel thing) — always 0 there.
+   * Vanilla's `P_DamageMobj` horizontal knockback (`momx`/`momy`), map units/sec — an impulse
+   * `damage` adds to in {@link ThingLayer.damage} (via `thrustSpeed`), then `applyKnockback`
+   * integrates and decays every frame on top of whatever movement (AI-driven, for a monster)
+   * already happened this frame, exactly as vanilla's own `P_XYMovement` momentum displaces a mobj
+   * independently of, and before, `A_Chase`'s own walk step in the same tic. Meaningless for
+   * anything {@link ThingLayer.damage} never touches (every non-monster, non-barrel thing) —
+   * always 0 there.
    */
   velX: number;
   velY: number;
   /**
-   * True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than one the map
-   * placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it
+   * True for an item {@link ThingLayer.damage} spawned itself (`MONSTER_DROPS`) rather than one the
+   * map placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it
    * grants.
    */
   dropped: boolean;
@@ -255,47 +257,45 @@ export interface PosedThing extends Pos3, MonsterBody {
   // Monster AI. Everything `MonsterBody` declares is inherited above and inert for a non-monster;
   // these four are the layer's own, which `game/monsters/ai.ts` has no business knowing about.
   /**
-   * True once this monster has spotted the player and started chasing (`update`'s throttled wake
-   * check, LOOK_INTERVAL).
+   * True once this monster has spotted the player and started chasing
+   * ({@link ThingLayer.update}'s throttled wake check, LOOK_INTERVAL).
    */
   alerted: boolean;
   /**
-   * The map thing's "ambush"/deaf flag (`game/skill.ts: isAmbush`) .
-   * Gates whether a sound-alerted sector alone can wake this monster; see `update`'s wake check.
+   * The map thing's "ambush"/deaf flag (`game/skill.ts: isAmbush`) . Gates whether a
+   * sound-alerted sector alone can wake this monster; see {@link ThingLayer.update}'s wake check.
    */
   ambush: boolean;
   /**
-   * Position at the end of the previous tic, so `crossLines` can test the
-   * segment this monster just walked. Mutated in place; never re-allocated.
-   * Maintained only on the alerted-with-a-target path, which is the only one
-   * that can walk over a line — **not** an interpolation source, which is what
-   * `drawPrevX`/`Y`/`Z` are for.
+   * Position at the end of the previous tic, so `crossLines` can test the segment this monster
+   * just walked. Mutated in place; never re-allocated. Maintained only on the alerted-with-a-target
+   * path, which is the only one that can walk over a line — **not** an interpolation source, which
+   * is what {@link PosedThing.drawPrevX}/`Y`/`Z` are for.
    */
   prev: Pos2;
   /**
-   * Where this thing was at the end of the previous tic, for the render layer to
-   * interpolate from. Unlike `prev` this is written for *every* thing on *every*
-   * tic, since knockback, corpse gravity and a ceiling-hung prop riding a closing
-   * door all move a thing that never runs the AI path.
-   * docs/frameloop.md § Interpolation.
+   * Where this thing was at the end of the previous tic, for the render layer to interpolate from.
+   * Unlike {@link PosedThing.prev} this is written for *every* thing on *every* tic, since
+   * knockback, corpse gravity and a ceiling-hung prop riding a closing door all move a thing that
+   * never runs the AI path. docs/frameloop.md § Interpolation.
    */
   drawPrevX: number;
   drawPrevY: number;
   drawPrevZ: number;
   /**
-   * Who this monster is currently hunting: another `PosedThing`'s ID, or a player slot as
-   * `targetOfSlot` encodes one. Set by `damage` when something hurts it (see `shouldRetarget`) —
-   * the mechanism behind infighting — and reset to player 1 once that target dies.
-   * docs/multiplayer.md § Slot addressing.
+   * Who this monster is currently hunting: another {@link PosedThing}'s ID, or a player slot as
+   * {@link targetOfSlot} encodes one. Set by {@link ThingLayer.damage} when something hurts it
+   * (see `shouldRetarget`) — the mechanism behind infighting — and reset to player 1 once that
+   * target dies. docs/multiplayer.md § Slot addressing.
    */
   targetId: number;
 }
 
 /**
- * A player slot as a `targetId`: `-1` for slot 0, `-2` for slot 1, and so on — below every
- * `PosedThing.id`, so one integer compare tells a player from a monster and the field stays a
- * small integer. `slotOfTarget` reads it back; only meaningful where `targetId < 0`.
- * docs/multiplayer.md § Slot addressing.
+ * A player slot as a {@link PosedThing.targetId}: `-1` for slot 0, `-2` for slot 1, and so on —
+ * below every {@link PosedThing.id}, so one integer compare tells a player from a monster and the
+ * field stays a small integer. {@link slotOfTarget} reads it back; only meaningful where
+ * `targetId < 0`. docs/multiplayer.md § Slot addressing.
  */
 export function targetOfSlot(slot: number): number {
   return -1 - slot;
@@ -306,43 +306,54 @@ export function slotOfTarget(targetId: number): number {
 }
 
 /**
- * Where a body stands and how tall it is — `z` its feet, `height` its own
- * `mobjinfo.height` (`PosedThing.bodyHeight`), the real per-species 56-110 unit
- * figure rather than one shared band. The least a caller can be handed and still
- * reason about the *whole* of a body rather than a point in it, which is what an
- * occlusion sightline needs (docs/render-occlusion.md § The target is the billboard) and
- * what `MonsterRef` builds its identity on top of.
+ * The attribution of a {@link DamageHit} for an attacker held as a target ID and a type — a
+ * projectile's `sourceId`/`sourceType`, a barrel's {@link PosedThing.explodeSource}.
+ * docs/multiplayer.md § Slot addressing.
+ *
+ * @returns a monster as the hit's {@link DamageHit.source}, a player as its {@link DamageHit.slot}
+ */
+export function hitBy(id: number, type: number): Pick<DamageHit, 'source' | 'slot'> {
+  return id < 0 ? { slot: slotOfTarget(id) } : { source: { id, type } };
+}
+
+/**
+ * Where a body stands and how tall it is — {@link StandingBody.z} its feet,
+ * {@link StandingBody.height} its own `mobjinfo.height` ({@link PosedThing.bodyHeight}), the real
+ * per-species 56-110 unit figure rather than one shared band. The least a caller can be handed and
+ * still reason about the *whole* of a body rather than a point in it, which is what an occlusion
+ * sightline needs (docs/render-occlusion.md § The target is the billboard) and what
+ * {@link MonsterRef} builds its identity on top of.
  */
 export interface StandingBody extends Pos3 {
   height: number;
 }
 
 /**
- * One monster as the rest of the engine sees it: the stable `id`
- * `ThingLayer.damage` takes, live position and height, doomednum (for the
- * species checks), and current facing — which `game.ts`'s arch-vile flame
- * tracking needs, since `A_Fire` keys off the *target's* facing.
+ * One monster as the rest of the engine sees it: the stable {@link MonsterRef.id}
+ * {@link ThingLayer.damage} takes, live position and height, doomednum (for the species checks),
+ * and current facing — which `game.ts`'s arch-vile flame tracking needs, since `A_Fire` keys off
+ * the *target's* facing.
  */
 export interface MonsterRef extends StandingBody {
   id: number;
   type: number;
   angle: number;
   /**
-   * This body's own `mobjinfo.radius` (`PosedThing.blockRadius`) — the real
-   * per-species 10-128 unit collision half-width, not the one shared
-   * approximation. Carried on the ref because every shot-vs-body test needs it:
-   * a missile's contact distance is `thing->radius + missile->radius`
-   * (`PIT_CheckThing`), so a mancubus really is three times the target an imp
-   * is. See docs/combat.md § How a shot deals damage.
+   * This body's own `mobjinfo.radius` ({@link PosedThing.blockRadius}) — the real per-species
+   * 10-128 unit collision half-width, not the one shared approximation. Carried on the ref because
+   * every shot-vs-body test needs it: a missile's contact distance is
+   * `thing->radius + missile->radius` (`PIT_CheckThing`), so a mancubus really is three times the
+   * target an imp is. See docs/combat.md § How a shot deals damage.
    */
   radius: number;
 }
 
 /**
  * The monster that walked a segment `crossLines` reports: where it now stands, plus what resolving
- * a teleport landing's telefrag needs (`ThingLayer.telefragAt` for every other body, `game.ts` for
- * the player half, whose obituary wants `type`). `PosedThing` satisfies it structurally, so the
- * callback allocates nothing on the once-per-alerted-monster, once-per-tic path it runs on.
+ * a teleport landing's telefrag needs ({@link ThingLayer.telefragAt} for every other body,
+ * `game.ts` for the player half, whose obituary wants {@link CrossingBody.type}).
+ * {@link PosedThing} satisfies it structurally, so the callback allocates nothing on the
+ * once-per-alerted-monster, once-per-tic path it runs on.
  */
 export interface CrossingBody extends Pos2 {
   id: number;
@@ -355,9 +366,9 @@ export interface CrossingBody extends Pos2 {
 /**
  * This tic's conveyor impulse for a body of this radius standing at `pos`, map units/sec, or null
  * where nothing carries it — `specials/forces.ts: Forces.carryForBody`. Named here rather than
- * spelled out at each end so `ThingLayer.update`'s parameter and the field `game.ts` binds it to
- * cannot drift apart. The return is structural (and not `Pos2`, which is a position, nor
- * `forces.ts`'s own `Vec2`) so no import edge into `specials/` forms.
+ * spelled out at each end so {@link ThingLayer.update}'s parameter and the field `game.ts` binds
+ * it to cannot drift apart. The return is structural (and not {@link Pos2}, which is a position,
+ * nor `forces.ts`'s own `Vec2`) so no import edge into `specials/` forms.
  */
 export type CarryQuery = (
   pos: Pos3,
@@ -368,7 +379,8 @@ export type CarryQuery = (
 /**
  * Live kill/item totals for the level, vanilla's own `totalkills`/`killcount` and
  * `totalitems`/`itemcount` — `total*` set once at spawn (`COUNTKILL_TYPES`/`COUNTITEM_TYPES`),
- * `kills`/`items` incremented as the level is played. docs/hud.md § Level stats.
+ * {@link LevelKillItemStats.kills}/{@link LevelKillItemStats.items} incremented as the level is
+ * played. docs/hud.md § Level stats.
  */
 export interface LevelKillItemStats {
   totalKills: number;
@@ -390,8 +402,8 @@ export interface DamageHit {
    */
   slot?: number;
   /**
-   * The arch-vile's `A_VileAttack` launch. Applied inside `damage` because it writes the same
-   * `z`/`velZ` fields gravity integration owns.
+   * The arch-vile's `A_VileAttack` launch. Applied inside {@link ThingLayer.damage} because it
+   * writes the same {@link PosedThing.z}/{@link PosedThing.velZ} fields gravity integration owns.
    */
   knockUpSpeed?: number;
   /**
@@ -413,19 +425,16 @@ export interface ThingLayer {
    * lumps).
    */
   missingArt: readonly string[];
-  /** See `LevelKillItemStats`'s own doc. */
+  /** See {@link LevelKillItemStats}'s own doc. */
   stats: LevelKillItemStats;
-  /**
-   * Every live thing's mutable state in `posed` order for a savegame — the
-   * array index is the ID, which is what keeps saved cross-thing references
-   * (`targetId`, a projectile's `sourceId`) valid on restore. The restore half
-   * is `ThingLayerOptions.restore`, not a method here: things are rebuilt through `pushThing`,
-   * which only exists inside the factory.
-   * docs/savegames.md § What is saved and what is deliberately not.
-   */
   /**
    * Every thing the run has moved on from — the things still exactly as the map spawned it are
    * left out, since a restore re-spawns them. docs/savegames.md § The format and its version.
+   *
+   * A thing's `posed` index is its ID, which is what keeps saved cross-thing references
+   * ({@link PosedThing.targetId}, a projectile's `sourceId`) valid on restore. The restore half is
+   * `ThingLayerOptions.restore`, not a method here: things are rebuilt through `pushThing`, which
+   * only exists inside the factory. docs/savegames.md § What is saved and what is deliberately not.
    */
   snapshot(): ThingsSnapshot;
   /**
@@ -445,59 +454,61 @@ export interface ThingLayer {
    * (docs/monster-ai.md § Movement). Also ticks barrel death clocks, and returns every attack and
    * `A_Explode` due this frame for the caller to apply.
    *
-   * `players` is every player slot's body by index, `null` where that player is dead — with none
-   * alive every monster freezes in place; otherwise `z` refreshes from the sector's live height,
-   * the "ride a mover" trick (docs/movement.md § Solid decorations). `fogVisible` hides things in
-   * an unrevealed subsector; `crossLines` gets each alerted monster and where it stepped from, so
-   * the caller can fire the walk triggers in between and resolve a teleport landing's telefrag
-   * (docs/specials-teleporters.md § Teleporters).
+   * **Advances the world only — it draws nothing.** {@link ThingLayer.draw} is the other half, and
+   * runs on the render clock. docs/frameloop.md § What runs in a tic.
    *
-   * **Advances the world only — it draws nothing.** `draw` is the other half, and runs on the
-   * render clock. docs/frameloop.md § What runs in a tic.
+   * @param players  every player slot's body by index, `null` where that player is dead — with
+   *                 none alive every monster freezes in place; otherwise {@link PosedThing.z}
+   *                 refreshes from the sector's live height, the "ride a mover" trick
+   *                 (docs/movement.md § Solid decorations)
+   * @param fogVisible  hides things in an unrevealed subsector
+   * @param crossLines  gets each alerted monster and where it stepped from, so the caller can fire
+   *                    the walk triggers in between and resolve a teleport landing's telefrag
+   *                    (docs/specials-teleporters.md § Teleporters)
+   * @param useLines  `P_Move`'s `spechit` pass for a monster whose step to `(tryX, tryY)` was
+   *                  refused — the door it walked into, opened (`SpecialsController.useMonster`).
+   *                  Same split as `crossLines`, down to returning a teleport landing for this
+   *                  layer to apply. docs/monster-ai.md § Opening doors.
+   * @param carry  this tic's conveyor impulse for each body — {@link CarryQuery}. A callback rather
+   *               than a `Forces` reference for the same reason `crossLines` is one: this layer
+   *               owns bodies, not specials. `cache` is the body's own {@link PosedThing.touch},
+   *               threaded through so the query can skip its sector walk for a body that hasn't
+   *               moved. **Absent means the level has no conveyor at all**
+   *               (`Forces.carriesAnything`), not merely that this caller declines the query:
+   *               `ThingGrid.rebuild` reads its presence as `mayCarry` and widens every still
+   *               body's move bound by a tic of conveyor push on the strength of it. Passing
+   *               `undefined` on a level that does carry makes the grid's cell skip unsound — a
+   *               body moves further than its bound and a query silently misses it.
+   *               docs/monster-ai.md § Spatial indexing.
    */
   update(
     dt: number,
     players: readonly (Pos3 | null)[],
     fogVisible?: (subsector: number) => boolean,
     crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
-    /**
-     * `P_Move`'s `spechit` pass for a monster whose step to `(tryX, tryY)` was refused — the door
-     * it walked into, opened (`SpecialsController.useMonster`). Same split as `crossLines`, down
-     * to returning a teleport landing for this layer to apply.
-     * docs/monster-ai.md § Opening doors.
-     */
     useLines?: (mover: CrossingBody, tryX: number, tryY: number) => TeleportDest | null,
-    /**
-     * This tic's conveyor impulse for each body — `CarryQuery`. A callback rather than a `Forces`
-     * reference for the same reason `crossLines` is one: this layer owns bodies, not specials.
-     * `cache` is the body's own `PosedThing.touch`, threaded through so the query can skip its
-     * sector walk for a body that hasn't moved.
-     *
-     * **Absent means the level has no conveyor at all** (`Forces.carriesAnything`), not merely
-     * that this caller declines the query: `ThingGrid.rebuild` reads its presence as `mayCarry`
-     * and widens every still body's move bound by a tic of conveyor push on the strength of it.
-     * Passing `undefined` on a level that does carry makes the grid's cell skip unsound — a body
-     * moves further than its bound and a query silently misses it. docs/monster-ai.md § Spatial
-     * indexing.
-     */
     carry?: CarryQuery,
   ): ThingUpdateResult;
   /**
-   * Fills the sprite batches from the state `update` left, with every position
-   * interpolated `alpha` of the way from the previous tic to the current one
-   * (`alpha` 1 draws the tic exactly). Presentation only — nothing the
+   * Fills the sprite batches from the state {@link ThingLayer.update} left, with every position
+   * interpolated from the previous tic to the current one. Presentation only — nothing the
    * simulation reads back. docs/frameloop.md § Interpolation.
+   *
+   * @param alpha  how far of the way from the previous tic to the current one; 1 draws the tic
+   *               exactly
    */
   draw(alpha: number, viewAngleDeg: number): void;
   /**
-   * Consumes every not-yet-picked thing whose `blockdist` box overlaps either end of the move —
-   * `from`, where the collector stands, and `to`, where it was headed — that is within vertical
-   * reach of `from.z` and that `consume` accepts, hiding it permanently. Pass the same point twice
-   * for a collector that attempted no move. This layer owns only which world instance disappears;
-   * `consume` (inventory.ts's `applyPickup`) owns what picking it up means; its second argument
-   * is the instance's `dropped` flag and its third is where it stood, for whatever the caller marks
-   * that spot with (docs/items.md § The pickup puff). Why both ends and why a box — docs/items.md §
-   * Collecting things.
+   * Consumes every not-yet-picked thing whose `blockdist` box overlaps either end of the move, that
+   * is within vertical reach of `from.z` and that `consume` accepts, hiding it permanently. This
+   * layer owns only which world instance disappears. Why both ends and why a box —
+   * docs/items.md § Collecting things.
+   *
+   * @param from  where the collector stands
+   * @param to  where it was headed; the same point as `from` for a collector that attempted no move
+   * @param consume  what picking it up means (inventory.ts's `applyPickup`); its second argument is
+   *                 the instance's {@link PosedThing.dropped} flag and its third is where it stood,
+   *                 for whatever the caller marks that spot with (docs/items.md § The pickup puff)
    */
   tryPickup(
     from: Pos3,
@@ -508,27 +519,31 @@ export interface ThingLayer {
   /**
    * The monster whose body this ray crosses nearest the camera, or null — auto-aim's lock-on, over
    * the `mobjinfo` box a shot collides with and never the drawn sprite. Nothing fog of war hides,
-   * nothing already dead; barrels lock on too. The returned `id` is what `damage` takes, so a shot
-   * fired this frame lands on exactly this instance without re-picking. `aimAt` is the point on the
-   * aim plane the ray was cast toward, and `World.groundReach` bounds how far past it a body may
-   * still be picked. docs/combat.md § Auto-aim.
+   * nothing already dead; barrels lock on too. The returned {@link MonsterRef.id} is what
+   * {@link ThingLayer.damage} takes, so a shot fired this frame lands on exactly this instance
+   * without re-picking. docs/combat.md § Auto-aim.
+   *
+   * @param aimAt  the point on the aim plane the ray was cast toward; `World.groundReach` bounds
+   *               how far past it a body may still be picked
    */
   pickMonster(ray: THREE.Ray, aimAt: Pos3): MonsterRef | null;
   /**
-   * Living monsters within `radius` (2D — matching vanilla's own radius-attack
-   * distance test, which ignores height) of (x, y). Candidates for splash
-   * damage (game.ts); the caller still has to check line-of-sight itself,
-   * since that needs the `World` this layer doesn't otherwise touch.
+   * Living monsters within `radius` of (x, y). Candidates for splash damage (game.ts); the caller
+   * still has to check line-of-sight itself, since that needs the `World` this layer doesn't
+   * otherwise touch.
+   *
+   * @param radius  2D — matching vanilla's own radius-attack distance test, which ignores height
    */
   monstersNear(pos: Pos2, radius: number): MonsterRef[];
   /**
-   * Every living body a projectile could have struck while stepping from
-   * `from` to `to` this frame: `reach` (the missile's own radius) is added to
-   * each candidate's *own* radius and the pair tested against the swept
-   * segment, so both a fat mancubus and a thin imp are hit at their real
-   * widths. **Swept, not sampled at the endpoint**, so a point test at each end
-   * can't miss a body the step passed straight through.
-   * 2D only; the caller applies the height band and line of sight.
+   * Every living body a projectile could have struck while stepping from `from` to `to` this
+   * frame. **Swept, not sampled at the endpoint**, so a point test at each end can't miss a body
+   * the step passed straight through. 2D only; the caller applies the height band and line of
+   * sight.
+   *
+   * @param reach  the missile's own radius, added to each candidate's *own* radius and the pair
+   *               tested against the swept segment, so both a fat mancubus and a thin imp are hit
+   *               at their real widths
    */
   monstersAlongStep(from: Pos3, to: Pos3, reach: number): MonsterRef[];
   /**
@@ -537,21 +552,20 @@ export interface ThingLayer {
    */
   monsterById(id: number): MonsterRef | null;
   /**
-   * The `SPRITE+LETTER` this thing was last *drawn* on (`SpriteAnimator.frameKey`), or '' for a
-   * stale ID. Art, not simulation — deliberately off `MonsterRef` so no tic can read a pose by
-   * accident (CLAUDE.md § A WAD's art never decides what a tic does). The regression tests that
+   * The `SPRITE+LETTER` this thing was last *drawn* on ({@link SpriteAnimator.frameKey}), or '' for
+   * a stale ID. Art, not simulation — deliberately off {@link MonsterRef} so no tic can read a pose
+   * by accident (CLAUDE.md § A WAD's art never decides what a tic does). The regression tests that
    * assert a pose are its readers: the animator asks its bank nothing while a frame holds, so a
    * recording bank sees a pose change rather than the pose each draw stands in
    * (docs/sprites.md § Batching).
    */
   drawnFrameKey(id: number): string;
   /**
-   * Whether a shot landing on this thing splashes blood — vanilla's
-   * `MF_NOBLOOD`, which in all of stock DOOM exactly one thing carries
-   * (`MT_BARREL`; `PTR_ShootTraverse` spawns a puff there instead). Keyed by
-   * ID and deliberately blind to whether the thing is already dead, so the
-   * killing blow still bleeds no matter which side of `damage` the caller
-   * asks from. See docs/combat.md § Blood.
+   * Whether a shot landing on this thing splashes blood — vanilla's `MF_NOBLOOD`, which in all of
+   * stock DOOM exactly one thing carries (`MT_BARREL`; `PTR_ShootTraverse` spawns a puff there
+   * instead). Keyed by ID and deliberately blind to whether the thing is already dead, so the
+   * killing blow still bleeds no matter which side of {@link ThingLayer.damage} the caller asks
+   * from. See docs/combat.md § Blood.
    */
   bleeds(id: number): boolean;
   /**
@@ -560,36 +574,36 @@ export interface ThingLayer {
    */
   awakeMonsterCount(): number;
   /**
-   * Where the alerted monsters `awakeMonsterCount` counts are standing and how
-   * tall each is, narrowed to those actually being rendered — each is an extra
-   * occlusion-fade sightline target alongside the player, and the fade aims at
-   * the whole body, so its own height comes with it (docs/render-occlusion.md § The target
-   * is the billboard). Excluding the unalerted and the fog-hidden is
-   * load-bearing (docs/render-occlusion.md). **Must be called
-   * after `update` has run**, so `visible` reflects this frame's fog.
+   * Where the alerted monsters {@link ThingLayer.awakeMonsterCount} counts are standing and how
+   * tall each is, narrowed to those actually being rendered — each is an extra occlusion-fade
+   * sightline target alongside the player, and the fade aims at the whole body, so its own height
+   * comes with it (docs/render-occlusion.md § The target is the billboard). Excluding the unalerted
+   * and the fog-hidden is load-bearing (docs/render-occlusion.md). **Must be called after
+   * {@link ThingLayer.update} has run**, so {@link PosedThing.visible} reflects this frame's fog.
    */
   awakeMonsters(): StandingBody[];
   /**
-   * Living monsters standing in one of `sectors` — a reference-equality check
-   * against the same mutable `Sector` objects `PosedThing.sector` was seeded
-   * from (see that field's doc), not a sector-index lookup this layer has no
-   * way to perform on its own. Backs the two obstruction checks every
-   * non-crushing mover uses to stop rather than clip through a monster
-   * (`game/specials/moverblocking.ts`), which ask for the moving sector *and its neighbors* —
-   * a body's centre can stand next door while its box reaches into the mover.
+   * Living monsters standing in one of `sectors` — a reference-equality check against the same
+   * mutable {@link Sector} objects {@link PosedThing.sector} was seeded from (see that field's
+   * doc), not a sector-index lookup this layer has no way to perform on its own. Backs the two
+   * obstruction checks every non-crushing mover uses to stop rather than clip through a monster
+   * (`game/specials/moverblocking.ts`), which ask for the moving sector *and its neighbors* — a
+   * body's centre can stand next door while its box reaches into the mover.
    * docs/specials-movers.md § Every other mover stops instead.
    */
   monstersInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
   /**
-   * `monstersInSectors` plus any still-standing barrel. Crush damage
+   * {@link ThingLayer.monstersInSectors} plus any still-standing barrel. Crush damage
    * (`specials/moverblocking.ts: applyCrushDamage`) is the only user; whether a barrel should also
    * stall a closing door is a separate question. docs/specials-crushers.md § Crushers.
    */
   crushablesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
   /**
-   * The monster corpses lying in `sectors` that no plane has crunched yet, over the same sector
-   * set `crushablesInSectors` takes. `height` is each body's living `mobjinfo.height`; a corpse's
-   * own is a quarter of it (`CORPSE_HEIGHT_FRACTION`). docs/specials-crushers.md § Crushed corpses.
+   * The monster corpses lying in `sectors` that no plane has crunched yet, over the same sector set
+   * {@link ThingLayer.crushablesInSectors} takes. docs/specials-crushers.md § Crushed corpses.
+   *
+   * @returns each body with {@link MonsterRef.height} its living `mobjinfo.height`; a corpse's own
+   *          is a quarter of it (`CORPSE_HEIGHT_FRACTION`)
    */
   corpsesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
   /**
@@ -599,51 +613,55 @@ export interface ThingLayer {
    */
   crushCorpse(id: number): void;
   /**
-   * Applies `amount` damage to `id`, switching to the death animation at 0 —
-   * gibbed or plain per `P_KillMobj`'s overkill rule (docs/death.md § Monster
-   * death). A no-op if `id` is stale, already dead, or the amount is
-   * non-positive: a projectile can outlive its target, and splash falloff
+   * Applies `amount` damage to `id`, switching to the death animation at 0 — gibbed or plain per
+   * `P_KillMobj`'s overkill rule (docs/death.md § Monster death). A no-op if `id` is stale, already
+   * dead, or the amount is non-positive: a projectile can outlive its target, and splash falloff
    * reaches 0 at the blast edge.
-   *
-   * Everything beyond the amount is `DamageHit`'s business; an omitted `hit` is the unattributed,
-   * unpositioned call damage floors and crushers make.
    *
    * A barrel takes this same call but follows none of it except the knockback:
    * no pain state, no retarget, and death switches its sprite to `BEXP`.
+   *
+   * @param hit  everything beyond the amount, {@link DamageHit}'s business; omitted, the
+   *             unattributed, unpositioned call damage floors and crushers make
    */
   damage(id: number, amount: number, hit?: DamageHit): void;
   /**
    * `P_TeleportMove`'s stomp for a body arriving at `at` with `radius`: every overlapping shootable
-   * thing takes `TELEFRAG_DAMAGE`, unattributed, so a solid decoration passes straight through.
-   * Returns whether the arrival may go ahead — with `stomps` false the first body in the way ends
-   * the call damaging nothing, the caller's cue to refuse the teleport outright. `moverId` is the
-   * arriving body when it is one of this layer's own, so it can't stomp itself. Only the *thing*
-   * half happens here: this layer holds no player reference, so the caller tests the player against
-   * the same reach itself. 2D and height-blind, matching `PIT_StompThing`.
-   * docs/death.md § Telefrag.
+   * thing takes {@link TELEFRAG_DAMAGE} with no {@link DamageHit.source}, so a solid decoration
+   * passes straight through. Only the *thing* half happens here: this layer holds no player
+   * reference, so the caller tests the player against the same reach itself. 2D and height-blind,
+   * matching `PIT_StompThing`. docs/death.md § Telefrag.
+   *
+   * @param stomps  false ends the call at the first body in the way, damaging nothing
+   * @param arriving  the arriving body as a target ID ({@link targetOfSlot} for a player): one of
+   *                  this layer's own can't stomp itself, and a player's stomp counts as its kills
+   * @returns whether the arrival may go ahead — false is the caller's cue to refuse the teleport
+   *          outright
    */
-  telefragAt(at: Pos2, radius: number, stomps: boolean, moverId?: number): boolean;
+  telefragAt(at: Pos2, radius: number, stomps: boolean, arriving?: number): boolean;
   /**
-   * Creates a fresh, already-awake monster of `type` at `at` and telefrags
-   * whatever was standing there (`TELEFRAG_DAMAGE` to every overlapping body),
-   * returning it — or null if the WAD carries no art for that doomednum.
-   * Vanilla's `A_SpawnFly` tail; the Icon of Sin's spawn cube (`game/monsters/iconofsin.ts`)
-   * is the only caller.
+   * Creates a fresh, already-awake monster of `type` at `at` and telefrags whatever was standing
+   * there ({@link TELEFRAG_DAMAGE} to every overlapping body). Vanilla's `A_SpawnFly` tail; the
+   * Icon of Sin's spawn cube (`game/monsters/iconofsin.ts`) is the only caller.
    *
    * Only the *monster* half of the telefrag happens here: this layer has no player reference, so
-   * the caller tests the returned position against the player itself. docs/monster-iconofsin.md §
-   * The spawn cube.
+   * the caller tests the returned position against the player itself.
+   * docs/monster-iconofsin.md § The spawn cube.
+   *
+   * @returns the monster, or null if the WAD carries no art for that doomednum
    */
   spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null;
   /**
    * Nearest living monster the ray crosses within `maxDist`, or null — the "didn't click anything,
    * but something's in the path anyway" case for a free shot. Tested against each body's own
-   * `MonsterRef.radius` and `.height`, as a slope span at that body's distance rather than a flat
-   * height band (docs/combat.md § The vertical test). `opts.slope` is the trace's own fixed slope,
-   * `PTR_ShootTraverse`'s `aimslope`; omitting it takes `P_AimLineAttack`'s `±AIM_SLOPE_LIMIT`
-   * cone. The rest of `opts` serves a *monster's* own hitscan: `ignoreId` excludes the shooter, and
-   * `includeHidden` skips the fog-of-war filter, since two monsters fighting in a room the player
-   * hasn't seen must still connect.
+   * {@link MonsterRef.radius} and {@link MonsterRef.height}, as a slope span at that body's
+   * distance rather than a flat height band (docs/combat.md § The vertical test).
+   *
+   * @param opts  `slope` is the trace's own fixed slope, `PTR_ShootTraverse`'s `aimslope`; omitting
+   *              it takes `P_AimLineAttack`'s ±{@link AIM_SLOPE_LIMIT} cone. The rest serves a
+   *              *monster's* own hitscan: `ignoreId` excludes the shooter, and `includeHidden`
+   *              skips the fog-of-war filter, since two monsters fighting in a room the player
+   *              hasn't seen must still connect.
    */
   raycastMonster(
     origin: Pos3,
@@ -655,9 +673,9 @@ export interface ThingLayer {
 
 /**
  * The vertical half-angle `P_AimLineAttack` searches, as a slope: its
- * `topslope = 100*FRACUNIT/160` and `bottomslope = -100*FRACUNIT/160`
- * (`p_map.c`). `raycastMonster` takes it as the default span a body's own
- * slope range has to overlap — see docs/combat.md § The vertical test.
+ * `topslope = 100*FRACUNIT/160` and `bottomslope = -100*FRACUNIT/160` (`p_map.c`).
+ * {@link ThingLayer.raycastMonster} takes it as the default span a body's own slope range has to
+ * overlap — see docs/combat.md § The vertical test.
  */
 export const AIM_SLOPE_LIMIT = 100 / 160;
 
@@ -673,8 +691,9 @@ export const BOSS_TYPES: Set<number> = new Set([ThingType.spiderMastermind, Thin
 /**
  * Every type whose death can drive level logic, and so the set `damageThing`'s death branch checks
  * before it's worth scanning `posed` for "any others of this type still alive" at all. Distinct
- * from `BOSS_TYPES` above, which is only about unattenuated sound. Commander Keen (72) and the boss
- * brain (88) are here rather than in `BOSS_DEATH_TYPES` — docs/death.md § Boss death.
+ * from {@link BOSS_TYPES} above, which is only about unattenuated sound. Commander Keen (72) and
+ * the boss brain (88) are here rather than in {@link BOSS_DEATH_TYPES} —
+ * docs/death.md § Boss death.
  */
 export const DEATH_NOTIFY_TYPES: Set<number> = new Set([
   ...Object.values(BOSS_DEATH_TYPES),
@@ -684,8 +703,8 @@ export const DEATH_NOTIFY_TYPES: Set<number> = new Set([
 
 /**
  * Vanilla's own `P_TeleportMove` telefrag damage — the literal `10000` it deals to everything
- * standing where a body lands: a teleporter arrival (`telefragAt`) or the Icon of Sin's spawn cube
- * (`spawnMonster`). See docs/death.md § Telefrag.
+ * standing where a body lands: a teleporter arrival ({@link ThingLayer.telefragAt}) or the Icon of
+ * Sin's spawn cube ({@link ThingLayer.spawnMonster}). See docs/death.md § Telefrag.
  */
 export const TELEFRAG_DAMAGE = 10000;
 
@@ -721,8 +740,9 @@ export const MAX_SKULLS_ON_LEVEL = 20;
 /**
  * Health a barrel spawns with — `MT_BARREL`'s `spawnhealth`, and the first of the four `BARREL_*`
  * stats. A barrel has no AI at all: `MONSTER_STATS` has no entry for it, so it never enters the
- * `if (stats && player)` branch in `update()`, and these four stand in for the stats that branch
- * would otherwise have read. It is a plain solid, shootable prop that deals splash damage on death.
+ * `if (stats && player)` branch in {@link ThingLayer.update}, and these four stand in for the
+ * stats that branch would otherwise have read. It is a plain solid, shootable prop that deals
+ * splash damage on death.
  */
 export const BARREL_HEALTH = 20;
 /**
@@ -748,17 +768,19 @@ export const BARREL_MASS = 100;
  * the barrel's patched states, and `dehacked/apply.ts` snapshots and restores it like any other
  * table.
  *
- * - `idleFrames`: `S_BAR1`/`S_BAR2`, a two-frame sway each held 6 tics.
- * - `deathSprite`: a barrel's death art is a genuinely different sprite lump from its own idle
- *   art (`BEXP`, not `BAR1`) — unlike every stock monster, whose death states reuse the same
- *   sprite name. `SpriteAnimator.die`'s optional third argument exists for this.
- * - `deathFrames`: `S_BEXP1`-`S_BEXP5`.
- * - `deathFrameSeconds`: a flat per-frame rate standing in for vanilla's own uneven per-state tics
- *   (5, 5, 5, 10, 10) — the same "one uniform rate" simplification `MONSTER_DEATH_FRAME_SECONDS`
- *   makes elsewhere, matching the real rate of the first three frames. Not derived from a patch.
- * - `explodeDelaySeconds`: vanilla's `A_Explode` sits on `S_BEXP4` — `info.c` and the walker in
- *   `dehacked/frames.ts` agree on the fourth state — so the blast comes `S_BEXP1`-`3`'s
- *   5 + 5 + 5 tics after the barrel actually died, not instantly on death.
+ * - {@link BARREL_CHAIN.idleFrames}: `S_BAR1`/`S_BAR2`, a two-frame sway each held 6 tics.
+ * - {@link BARREL_CHAIN.deathSprite}: a barrel's death art is a genuinely different sprite lump
+ *   from its own idle art (`BEXP`, not `BAR1`) — unlike every stock monster, whose death states
+ *   reuse the same sprite name. {@link SpriteAnimator.die}'s optional third argument exists for
+ *   this.
+ * - {@link BARREL_CHAIN.deathFrames}: `S_BEXP1`-`S_BEXP5`.
+ * - {@link BARREL_CHAIN.deathFrameSeconds}: a flat per-frame rate standing in for vanilla's own
+ *   uneven per-state tics (5, 5, 5, 10, 10) — the same "one uniform rate" simplification
+ *   `MONSTER_DEATH_FRAME_SECONDS` makes elsewhere, matching the real rate of the first three
+ *   frames. Not derived from a patch.
+ * - {@link BARREL_CHAIN.explodeDelaySeconds}: vanilla's `A_Explode` sits on `S_BEXP4` — `info.c`
+ *   and the walker in `dehacked/frames.ts` agree on the fourth state — so the blast comes
+ *   `S_BEXP1`-`3`'s 5 + 5 + 5 tics after the barrel actually died, not instantly on death.
  */
 export const BARREL_CHAIN = {
   ...barrelFromStates(),
@@ -785,26 +807,26 @@ function barrelFromStates(): {
 }
 
 /**
- * A barrel's `A_Explode` becoming due (`BARREL_CHAIN.explodeDelaySeconds` after
- * it died, not on death itself), for `game.ts` to turn into
- * `applyRadiusDamage`. `source`, when set, is who dealt the killing blow —
- * see `PosedThing.explodeSource`'s doc for why this is what makes a chain of
- * barrels attribute correctly all the way back to whoever set the first one
- * off.
+ * A barrel's `A_Explode` becoming due ({@link BARREL_CHAIN.explodeDelaySeconds} after it died, not
+ * on death itself), for `game.ts` to turn into `applyRadiusDamage`. {@link BarrelExplosion.source},
+ * when set, is who dealt the killing blow, and {@link BarrelExplosion.slot} the player who did —
+ * see {@link PosedThing.explodeSource}'s doc for why this is what makes a chain of barrels
+ * attribute correctly all the way back to whoever set the first one off.
  */
 export interface BarrelExplosion extends Pos3 {
   source?: { id: number; type: number };
+  slot?: number;
 }
 
-/** `ThingLayer.update`'s return value — see that method's doc. */
+/** {@link ThingLayer.update}'s return value — see that method's doc. */
 export interface ThingUpdateResult {
   attacks: MonsterAttackEvent[];
   barrelExplosions: BarrelExplosion[];
 }
 
 /**
- * Whether `type` gets `PICKUP_SCALE` — see `PICKUP_SCALE_TYPES`'s doc for why this is a whitelist,
- * not "everything but monsters/weapons".
+ * Whether `type` gets {@link PICKUP_SCALE} — see {@link PICKUP_SCALE_TYPES}'s doc for why this is
+ * a whitelist, not "everything but monsters/weapons".
  */
 export function pickupScaleFor(type: number): number {
   return PICKUP_SCALE_TYPES.has(type) ? PICKUP_SCALE : 1;

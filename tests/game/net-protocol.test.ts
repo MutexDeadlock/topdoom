@@ -53,6 +53,9 @@ describe('Network · protocol', () => {
     assert.ok(!isRelayMessage({ type: 'kicked', reason: 7 }));
     assert.ok(!isRelayMessage({ type: 'room', code: 'ABCDE', member: -1, host: true, members: [] }));
     assert.ok(!isRelayMessage({ type: 'left' }));
+    assert.ok(isRelayMessage({ type: 'latency', member: 1, ms: 42 }));
+    assert.ok(!isRelayMessage({ type: 'latency', member: 1, ms: 41.5 }), 'the relay rounds');
+    assert.ok(!isRelayMessage({ type: 'latency', member: 1 }));
     assert.ok(!isRelayMessage(null));
   });
 

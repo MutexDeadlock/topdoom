@@ -132,6 +132,20 @@ describe('Relay · rooms', () => {
     assert.deepEqual(r.join(b, 'AAAAA'), { code: 'AAAAA', member: 3, host: false });
   });
 
+  test("a member's round trip is told to its whole room, itself included, rounded", () => {
+    const r = rooms();
+    const host = member();
+    const guest = member();
+    const stranger = member();
+    r.join(host, null);
+    r.join(guest, 'AAAAA');
+    r.latency(guest, 41.6);
+    assert.deepEqual(host.got.at(-1), { type: 'latency', member: 1, ms: 42 });
+    assert.deepEqual(guest.got.at(-1), { type: 'latency', member: 1, ms: 42 });
+    r.latency(stranger, 10);
+    assert.equal(stranger.got.length, 0, 'no seat, nobody to tell');
+  });
+
   test('a fresh room never reuses a code still in use', () => {
     const r = rooms(['AAAAA', 'AAAAA', 'BBBBB']);
     r.join(member(), null);

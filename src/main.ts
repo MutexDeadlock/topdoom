@@ -399,6 +399,14 @@ async function boot(): Promise<void> {
     resumeGame();
   });
 
+  // Tab holds the scoreboard up over a level rather than walking the page's focus; with the menu
+  // open it walks the focus as ever (docs/hud.md § Scoreboard).
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Tab' && game && !menu.isOpen) {
+      e.preventDefault();
+    }
+  });
+
   // F2/F3/F4 open the menu straight on one tab, pausing the level on the way in like ESC
   // does (docs/menu.md § Hotkeys).
   const TAB_KEYS: Record<string, MenuTab> = { F2: 'save', F3: 'load', F4: 'settings' };

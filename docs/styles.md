@@ -26,10 +26,12 @@ src/ui/hud/           everything drawn over the running level (docs/hud.md's own
     screeneffects.*   #screen-tint, #colormap-tint, #pain-flash
     message.*         #hud-message
     levelcard.*       #level-card
-    intermission.*    #intermission
+    intermission.*    #intermission, and the .scoreboard above its panel
     deathoverlay.*    #death-overlay
     replaybar.*       #replay-bar (track, #replay-scrub, #replay-hover, #replay-crosshair),
                       #replay-reticle, #replay-seek, #replay-flash
+    scoreboard.*      #scoreboard, and .scoreboard — the board's look, which #intermission's
+                      own wears too
     profiler.*        #profiler-hud, and its #profiler-cpu/#profiler-rows/#profiler-gpu children
 src/ui/menu/
     menu.css/.html    #menu
@@ -176,7 +178,9 @@ One further documented exception:
 
 `--z-tint: 5` (`#screen-tint`, `#colormap-tint`, `#pain-flash`) → `--z-hud: 10` (`#hud`,
 `#profiler-hud`, `#hud-bar`) → `--z-message: 12` (`#hud-message`, `#level-card`) → `--z-overlay: 15`
-(`#intermission`, `#death-overlay`, which can never be up at the same time) → `--z-menu: 20` →
+(`#intermission`, `#death-overlay`, which can never be up at the same time) → `--z-replaybar: 16`
+(`#replay-bar`) → `--z-scoreboard: 17` (`#scoreboard`, held up over everything on the level) →
+`--z-menu: 20` →
 `--z-loading: 25` (`#loading`, over the menu it covers while a level loads) → `--z-fatal: 30`.
 
 A new overlay picks its rung by reading that one block rather than grepping for `z-index`.

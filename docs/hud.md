@@ -2,7 +2,7 @@
 
 `src/ui/hud/hud.ts`, `src/ui/hud/wadfont.ts`, `src/ui/hud/levelcard.ts`,
 `src/ui/hud/intermission.ts`, `src/ui/hud/message.ts`, `src/ui/hud/crosshair.ts`,
-`src/ui/hud/screeneffects.ts`, `src/game/besttimes.ts`, `src/game.ts`
+`src/ui/hud/screeneffects.ts`, `src/ui/hud/scoreboard.ts`, `src/game/besttimes.ts`, `src/game.ts`
 
 Everything on screen that isn't the world. What the readouts *report* — the inventory, pickups and
 powerups behind them — is docs/items.md. The two other things drawn over a running level are
@@ -255,6 +255,8 @@ centered as **one block**: centering each on its own would stagger the labels an
 column `drawStatLine` lines the numbers up in. The time lines need no such wrapper — sharing both
 columns already makes them the same width.
 
+In a game of more than one player the scoreboard stands above the panel (§ Scoreboard).
+
 The control flow is the part worth knowing:
 
 - `Game.pendingExit` no longer loads the next map. On the frame it is consumed (still right after
@@ -456,6 +458,31 @@ sits over the playfield, so it reads as an overlay rather than competing with wh
 The timeout is ticked from `Game.frame`'s `dt`, so a paused game doesn't burn a message's display
 time behind the menu; `buildLevel` and `dispose` both `clear()` it, since the element is static
 markup that outlives any one `Game` (the same reason `Hud`'s panels `replaceChildren()`).
+
+## Scoreboard
+
+`src/ui/hud/scoreboard.ts`, over two elements wearing `.scoreboard`: `#scoreboard` and the one inside
+`#intermission`. The rows are `Game.scoreRows`, drawn every frame by `Presenter.updateOverlays`.
+
+- **A game with a board** has more than one slot, or runs over the network.
+- **`#scoreboard` is up while Tab is held** (`Game.scoreboardRows`), never behind the menu
+  (`Game.pause` takes it down, `NetSeat.menuUp` keeps it down) and never over the intermission. Tab is read off the live
+  keyboard (`Input.viewerHolds`), never through a `TicInput`, so no replay records it and no tic
+  sees it. `main.ts` keeps Tab from moving the page's focus while a game runs with the menu closed.
+- **The intermission shows its own above its panel**, no key held, for as long as it is up
+  (`Game.intermissionScoreRows`, `Intermission.showScores`); `#intermission` is a column for it.
+- **One row per slot, in slot order**: name, kills, ping. A network game's names and pings are
+  `NetSession.roster`'s; any other slot reads `Player n` with no ping (`—`). A slot whose player left
+  is dimmed, the local player's name bold.
+- **Kills are the slot's own this level**: `PlayerSlot.kills` (docs/multiplayer-coop.md § Items and
+  kills), zeroed by every level start as `P_SetupLevel` zeroes `killcount`. A player joining a
+  running game starts at 0 (`Game.freshSlotSnapshot`).
+- **Ping** is the player's round trip to the relay in milliseconds, as the relay measures it
+  (docs/multiplayer-net.md § The relay).
+- **A name is drawn in its armour colour**: the ramp's sixth shade in the loaded PLAYPAL, the shade
+  the menu's swatch shows, its HSL lightness raised to `NAME_MIN_LIGHTNESS` (tuned by feel) — red's
+  `#7f1b1b` does not read as text on the board.
+- The rows are rebuilt only when they change. `clearOverlays` takes the board down with the rest.
 
 ## `WadFont` and `WadNumbers` (`src/ui/hud/wadfont.ts`)
 

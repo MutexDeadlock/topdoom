@@ -109,10 +109,11 @@ matching `PIT_StompThing`, which never looks at `z`, so a cacodemon hovering ove
 dies. Only the *reach* varies: the cube's player half uses a fixed `PLAYER_TELEFRAG_RADIUS` rather
 than the spawned body's own (see that constant).
 
-The kill is **deliberately unattributed** — no `source` is passed to `damageThing`. A telefrag is
-the teleport's doing, not an attack, and naming the arriving body as the source would start an
-infight it never picked. (Vanilla does pass `tmthing`, but nothing survives 10000 damage to act on
-it.)
+The kill carries **no `source`** — a telefrag is the teleport's doing, not an attack, and naming
+the arriving body as the source would start an infight it never picked. (Vanilla does pass
+`tmthing`, but nothing survives 10000 damage to act on it.) An arriving player is still named, as
+the hit's `slot` (`telefragAt`'s `arriving`, a target ID): its stomp counts as its own kills, as
+`P_KillMobj`'s `source->player` does (docs/multiplayer-coop.md § Items and kills).
 
 Every arrival is split across two files for the usual reason: `ThingLayer` has no player reference,
 so it telefrags every overlapping `PosedThing` itself, and the caller does the player half against
@@ -337,14 +338,17 @@ just isn't a `MONSTER_TYPES` member, so it gets its own copy of the check.
 
 **The blast is `applyRadiusDamage`, exactly the rocket's own splash** — `A_Explode`'s literal call
 is `P_RadiusAttack(thingy, thingy->target, 128)`, identical radius and damage. `source`
-(`PosedThing.explodeSource`, captured in `damage` at the moment the barrel died, `null` meaning the
-player) stands in for `thingy->target` and is what makes a chain attribute correctly: since
+(`PosedThing.explodeSource`, captured in `damage` at the moment the barrel died) stands in for
+`thingy->target` and is what makes a chain attribute correctly: since
 `applyRadiusDamage` walks the now-barrel-inclusive `monstersNear` and calls `damage` on what it
 finds, a second barrel caught in the blast is killed through the same call a monster would be, which
 captures this same `source` onto *it* and queues its own explosion a frame later — propagating the
 original attacker down the whole chain rather than attributing each link to the barrel before it,
-matching vanilla's `bombsource` propagation. The spider mastermind/cyberdemon splash exemption
-applies here for free.
+matching vanilla's `bombsource` propagation. A player who set it off is held in the same field, as
+a projectile holds its shooter (docs/multiplayer.md § Slot addressing), so every kill down a chain a
+player set off counts as theirs (docs/multiplayer-coop.md § Items and kills); `hitBy` splits it
+back into the blast's `source` or `slot`. `null` is nobody's — a crusher, a telefrag. The spider
+mastermind/cyberdemon splash exemption applies here for free.
 
 **A crusher can kill a barrel**, exactly as vanilla's crush damage (real `P_DamageMobj` against
 anything `MF_SHOOTABLE`) allows — `ThingLayer.crushablesInSectors` covers barrels alongside

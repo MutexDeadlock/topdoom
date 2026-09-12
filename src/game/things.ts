@@ -1,6 +1,6 @@
 /**
- * `ThingLayer`: every live map thing — spawning by skill, pickups, damage and death, waking and
- * stepping monster AI, barrels, corpse raising — drawn through the shared sprite batch. The
+ * {@link ThingLayer}: every live map thing — spawning by skill, pickups, damage and death, waking
+ * and stepping monster AI, barrels, corpse raising — drawn through the shared sprite batch. The
  * record shapes and tables live in `things/defs.ts` and `things/tables.ts`. See docs/sprites.md,
  * docs/items.md, docs/monster-ai.md and docs/death.md.
  */
@@ -42,6 +42,7 @@ import {
   type StandingBody,
   type ThingLayer,
   type ThingUpdateResult,
+  hitBy,
   slotOfTarget,
   targetOfSlot,
 } from './things/defs.ts';
@@ -59,6 +60,7 @@ export {
   type MonsterRef,
   type StandingBody,
   type ThingLayer,
+  targetOfSlot,
 } from './things/defs.ts';
 import * as tables from './things/tables.ts';
 import { ThingType } from './things/doomednums.ts';
@@ -122,7 +124,7 @@ import { cos, sin } from '../util/fdlibm.ts';
 
 /**
  * Vanilla's per-tic XY friction, `P_XYMovement`'s `FRICTION = 0xE800/0x10000`. `applyKnockback`
- * spreads it over the tics a step covers (`decayOverTics`) — docs/movement.md § Knockback.
+ * spreads it over the tics a step covers ({@link decayOverTics}) — docs/movement.md § Knockback.
  */
 const FRICTION = 0.90625;
 /** Below this a decaying knockback velocity snaps to 0. docs/movement.md § Knockback. */
@@ -159,15 +161,15 @@ const RESPAWN_ROLL_INTERVAL_TICS = 32;
 
 /**
  * How far off the floor a monster's death drop is *drawn*, and how far it bobs either side of that
- * over `DROP_BOB_SECONDS`. Render-only: nothing in `tryPickup` reads it. All three tuned by feel;
- * docs/items.md § Making monster drops readable.
+ * over {@link DROP_BOB_SECONDS}. Render-only: nothing in `tryPickup` reads it. All three tuned by
+ * feel; docs/items.md § Making monster drops readable.
  */
 const DROP_HOVER = 13;
 const DROP_BOB = 3;
 const DROP_BOB_SECONDS = 1.8;
 
 /**
- * The two opacities a drop fades between over `DROP_PULSE_SECONDS`. Tuned by feel;
+ * The two opacities a drop fades between over {@link DROP_PULSE_SECONDS}. Tuned by feel;
  * docs/items.md § Making monster drops readable.
  */
 const DROP_OPACITY_MIN = 0.45;
@@ -175,53 +177,62 @@ const DROP_OPACITY_MAX = 1;
 const DROP_PULSE_SECONDS = 1.8;
 
 /**
- * Depth-buffer units the drop batch biases itself toward the camera (`SpriteBatch`'s constructor).
+ * Depth-buffer units the drop batch biases itself toward the camera ({@link SpriteBatch}'s
+ * constructor).
  * **Don't raise it** — docs/items.md § Making monster drops readable says what breaks.
  */
 const DROP_DEPTH_BIAS = 16;
 
 /**
  * The collider `applyKnockback` probes with, kept and refilled per body rather than rebuilt: it
- * runs for every thing still carrying velocity, every tic. See `makeCollider`.
+ * runs for every thing still carrying velocity, every tic. See {@link makeCollider}.
  */
 const knockbackCollider = makeCollider({ radius: 0, z: 0, height: 0, forMonster: true });
 
 /**
  * The two walks `applyKnockback` compares — the step it wants and the position it is taking that
- * step from. Module-level for the same reason the collider above is; `checkPosition`'s own scratch
- * would have the second call clobber the first.
+ * step from. Module-level for the same reason the collider above is;
+ * {@link World.checkPosition}'s own scratch would have the second call clobber the first.
  */
 const knockbackDest = makePositionCheck();
 const knockbackStanding = makePositionCheck();
 
-/** Everything `buildThingSprites` needs beyond the `World` it populates. */
+/** Everything {@link buildThingSprites} needs beyond the {@link World} it populates. */
 export interface ThingLayerOptions {
   /** The WAD set's sprite lumps, which decide what a thing can be drawn as at all. */
   bank: SpriteBank;
-  /** The shared per-lump material cache every `SpriteAnimator` here resolves through. */
+  /** The shared per-lump material cache every {@link SpriteAnimator} here resolves through. */
   materials: SpriteMaterialCache;
   /** Which things spawn, how fast the monsters are, and whether corpses come back. */
   skill: Skill;
   sfx?: SoundEmitter;
   /**
-   * Fired from `damage()`'s death branch the instant a monster dies leaving none of its own type
-   * alive — vanilla's `A_BossDeath` gate, see docs/death.md § Boss death. Just the doomednum:
-   * whether/how it matters is entirely `SpecialsController`'s per-map table to decide.
+   * Fired from {@link ThingLayer.damage}'s death branch the instant a monster dies leaving none of
+   * its own type alive — vanilla's `A_BossDeath` gate, see docs/death.md § Boss death. Just the
+   * doomednum: whether/how it matters is entirely `SpecialsController`'s per-map table to decide.
    */
   onBossDeath?: (type: number) => void;
   /**
    * A savegame's saved thing list. When present the map's own spawn loop is skipped entirely and
    * every thing is rebuilt from the save in order — restore lives here rather than as a
-   * `ThingLayer` method because things can only be built through `pushThing`, which exists only
-   * inside this closure. docs/savegames.md § Apply order.
+   * {@link ThingLayer} method because things can only be built through `pushThing`, which exists
+   * only inside this closure. docs/savegames.md § Apply order.
    */
   restore?: ThingsSnapshot;
   /**
    * The two teleport fogs a nightmare respawn leaves behind, at the corpse's spot and at the spawn
    * point it returns to — `P_NightmareRespawn`'s own pair of `MT_TFOG`s, each with its `telept`.
-   * A callback because the fog layer belongs to `game.ts`, exactly as `onBossDeath` above is.
+   * A callback because the fog layer belongs to `game.ts`, exactly as
+   * {@link ThingLayerOptions.onBossDeath} above is.
    */
   onRespawn?: (from: Pos3, to: Pos3) => void;
+  /**
+   * A kill a player made in a netgame, by slot — `P_KillMobj`'s `source->player->killcount++`. A
+   * callback because the count is the slot's own (`PlayerSlot.kills`) and this layer holds no
+   * player, exactly as {@link ThingLayerOptions.onBossDeath} above is one.
+   * docs/multiplayer-coop.md § Items and kills.
+   */
+  onKill?: (slot: number) => void;
   /**
    * The frame's dynamic lights, if any (docs/lights.md). Every drawn thing offers its frame key
    * here — a torch and a firing monster are emitters — and samples the light reaching it back as
@@ -238,7 +249,8 @@ export interface ThingLayerOptions {
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
 export function buildThingSprites(world: World, options: ThingLayerOptions): ThingLayer {
-  const { bank, materials, skill, sfx = SILENT, onBossDeath, restore, onRespawn, lights, netgame = false } = options;
+  const { bank, materials, skill, sfx = SILENT, onBossDeath, restore, onRespawn, onKill, lights, netgame = false } =
+    options;
   // Taken off `World`, never passed beside it — docs/conventions.md § Named arguments.
   const map = world.map;
 
@@ -247,53 +259,53 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * reads it instead of naming `MONSTER_STATS`. docs/monster-ai.md § Fast monsters.
    */
   const monsterStats = monsterStatsFor(fastMonsters(skill));
-  /** Whether killed monsters come back at all — nightmare only, see `respawnCorpse`. */
+  /** Whether killed monsters come back at all — nightmare only, see {@link respawnCorpse}. */
   const respawns = respawnMonsters(skill);
   const batch = new SpriteBatch();
   /**
    * Monster death drops draw through their own batch, which is what lets them carry
-   * `DROP_DEPTH_BIAS` and a batch-wide opacity pulse the rest of the map's things must not get.
-   * docs/items.md § Making monster drops readable.
+   * {@link DROP_DEPTH_BIAS} and a batch-wide opacity pulse the rest of the map's things must not
+   * get. docs/items.md § Making monster drops readable.
    */
   const dropBatch = new SpriteBatch({ depthBias: DROP_DEPTH_BIAS, translucent: true });
   /**
-   * The spectre and nothing else (`FUZZ_TYPES`): the demon's art drawn through vanilla's
-   * `MF_SHADOW` fuzz. docs/sprites.md § The spectre's fuzz.
+   * The spectre and nothing else ({@link tables.FUZZ_TYPES}): the demon's art drawn through
+   * vanilla's `MF_SHADOW` fuzz. docs/sprites.md § The spectre's fuzz.
    */
   const fuzzBatch = new SpriteBatch({ fuzz: true });
   const group = new THREE.Group();
   group.name = 'things';
   group.add(batch.group, dropBatch.group, fuzzBatch.group);
-  /** Level time in seconds, driving the drop bob/pulse (`DROP_HOVER`) and the fuzz shimmer. */
+  /** Level time in seconds, driving the drop bob/pulse ({@link DROP_HOVER}) and the fuzz shimmer. */
   let clock = 0;
   const posed: PosedThing[] = [];
   const stats: LevelKillItemStats = { totalKills: 0, kills: 0, totalItems: 0, items: 0 };
-  /** Scratch for `doomToWorld`, reused across every sprite — this runs per thing per frame. */
+  /** Scratch for {@link doomToWorld}, reused across every sprite — this runs per thing per frame. */
   const worldPos = new THREE.Vector3();
   // A sprite's light is the sector's, which a Boom transfer can source from another sector
   // entirely — docs/specials-transfers.md § Transferred lighting.
   const transfers = transfersOf(map);
 
   /**
-   * Doomednums this WAD *set* has no art for, so `pushThing` dropped them. Reported at level load
-   * rather than left to vanish silently; the sprite name is in there because that is what to grep
-   * the WAD for. docs/wad.md § Art a WAD set doesn't have.
+   * Doomednums this WAD *set* has no art for, so {@link pushThing} dropped them. Reported at level
+   * load rather than left to vanish silently; the sprite name is in there because that is what to
+   * grep the WAD for. docs/wad.md § Art a WAD set doesn't have.
    */
   const missingArt = new Set<string>();
 
-  /** Reused by `crossAfterPush`, which runs for every pushed thing every tic. */
+  /** Reused by {@link crossAfterPush}, which runs for every pushed thing every tic. */
   const pushedFrom: Pos2 = { x: 0, y: 0 };
 
-  /** Who a look can find this tic — `update` refills both halves before any monster looks. */
+  /** Who a look can find this tic — {@link update} refills both halves before any monster looks. */
   const lookSubsectors = new Int32Array(MAX_PLAYERS);
   const look: PlayerLook = { players: [], subsectors: lookSubsectors };
   /** `MonsterStep.retarget`, which only a netgame has. */
   const retarget = netgame ? retargetAllAround : undefined;
 
   /**
-   * Every thing as the map spawned it — what `snapshotThings` elides against and what a restore's
-   * missing entries stand for. Assigned once the spawn loop below has run, which is every level: a
-   * restore is read *over* the map, never instead of it.
+   * Every thing as the map spawned it — what {@link snapshotThings} elides against and what a
+   * restore's missing entries stand for. Assigned once the spawn loop below has run, which is every
+   * level: a restore is read *over* the map, never instead of it.
    */
   let spawnBaseline: ThingState[] = [];
 
@@ -346,7 +358,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     return { clock, stats: { ...stats }, changed, lastlook };
   }
 
-  /** One live thing as it is stored — the sparse rules are in `ThingState`'s own doc. */
+  /** One live thing as it is stored — the sparse rules are in {@link ThingState}'s own doc. */
   function thingStateOf(p: PosedThing): ThingState {
     const s: ThingState = { type: p.type, x: p.x, y: p.y, z: p.z, facingDeg: p.facingDeg };
     // Present only when true — see ThingState's doc.
@@ -449,7 +461,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
           // `BARREL_CHAIN.explodeDelaySeconds`'s doc.
           if (!p.barrelExploded && p.deadTime >= BARREL_CHAIN.explodeDelaySeconds) {
             p.barrelExploded = true;
-            barrelExplosions.push({ x: p.x, y: p.y, z: p.z, source: p.explodeSource ?? undefined });
+            const attacker = p.explodeSource;
+            const hit = attacker ? hitBy(attacker.id, attacker.type) : undefined;
+            barrelExplosions.push({ x: p.x, y: p.y, z: p.z, ...hit });
           }
           // The debris is removed once its explosion animation finishes, not left as a corpse:
           // vanilla's `S_BEXP5` falls through to `S_NULL`. Same rule as `MONSTER_CORPSE_VANISHES`
@@ -818,8 +832,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /**
    * The one `posed` walk the three sector queries below share: every body standing in one of
    * `where` that is `dead` and that `accept` keeps. The predicates are the module-level constants
-   * beside `monsterRef`, so a call allocates no closure and `accept` stays one of three stable
-   * targets.
+   * beside {@link monsterRef}, so a call allocates no closure and `accept` stays one of three
+   * stable targets.
    *
    * `dead` is a parameter rather than part of `accept` because it is the one test cheap and
    * selective enough to be worth making before the sector lookup: most of a level's bodies are on
@@ -871,18 +885,19 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
-   * `P_TeleportMove`'s stomp — contract at `ThingLayer.telefragAt`, rules in docs/death.md §
-   * Telefrag.
+   * `P_TeleportMove`'s stomp — contract at {@link ThingLayer.telefragAt}, rules in
+   * docs/death.md § Telefrag.
    */
-  function telefragAt(at: Pos2, radius: number, stomps: boolean, moverId?: number): boolean {
+  function telefragAt(at: Pos2, radius: number, stomps: boolean, arriving?: number): boolean {
     for (const q of posed) {
-      if (q.id === moverId || q.dead || q.hidden) continue;
+      if (q.id === arriving || q.dead || q.hidden) continue;
       if (!q.isMonster && q.type !== ThingType.barrel) continue;
       if (!bodiesOverlap(at, q, radius + q.blockRadius)) continue;
       if (!stomps) return false;
-      // Deliberately unattributed: a telefrag is the teleport's doing, not an attack, and
-      // naming the arriving body would start an infight it never picked.
-      damageThing(q, TELEFRAG_DAMAGE);
+      // No `source`: a telefrag is the teleport's doing, not an attack, and naming the arriving
+      // body would start an infight it never picked. A player's stomp is still its kill.
+      const byPlayer = arriving !== undefined && arriving < 0;
+      damageThing(q, TELEFRAG_DAMAGE, byPlayer ? { slot: slotOfTarget(arriving) } : undefined);
     }
     return true;
   }
@@ -891,8 +906,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * `A_SpawnFly`'s monster creation: drops a fresh, already-awake `type` at `at` and telefrags
    * whatever stood there. The Icon of Sin's spawn cube is the only caller;
    * `game/monsters/iconofsin.ts` owns the rest of that sequence. A spawn spot is lethal rather
-   * than blocked, which is why there is no `positionBlocked` guard here unlike `spawnLostSoul`.
-   * docs/monster-iconofsin.md § The spawn cube.
+   * than blocked, which is why there is no {@link World.positionBlocked} guard here unlike
+   * {@link spawnLostSoul}. docs/monster-iconofsin.md § The spawn cube.
    */
   function spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null {
     const spawned = pushThing(type, at, (angleRad * 180) / Math.PI, { alerted: true });
@@ -950,12 +965,13 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
-   * Builds and appends one `PosedThing` — the single place that ~60-field literal is written, and
-   * the only way a thing is ever created. Only the fields the four spawn paths disagree on are
+   * Builds and appends one {@link PosedThing} — the single place that ~60-field literal is written,
+   * and the only way a thing is ever created. Only the fields the four spawn paths disagree on are
    * parameters; the rest is fixed for a fresh thing or derivable from `type` and the position.
    *
-   * Returns null when the WAD set carries no art for the type. Deliberately does **not** touch
-   * `stats.totalKills`/`totalItems` — docs/hud.md § Level stats.
+   * Deliberately does **not** touch `stats.totalKills`/`totalItems` — docs/hud.md § Level stats.
+   *
+   * @returns null when the WAD set carries no art for the type
    */
   function pushThing(
     type: number,
@@ -1064,12 +1080,11 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
-   * Rebuilds every saved thing in order through `pushThing`, then overwrites the fields the
+   * Rebuilds every saved thing in order through {@link pushThing}, then overwrites the fields the
    * simulation had mutated. IDs are positional, so missing art is a hard error here rather than
    * the spawn loop's skip: skipping would shift every later ID and desync the saved cross-thing
    * references. docs/savegames.md § What is saved and what is deliberately not.
-   */
-  /**
+   *
    * Read *over* the map's own spawn loop, which has already run: only the things that are no longer
    * as it left them are in the save, and everything it leaves out was just spawned as it should be.
    * An id past the spawn count is a thing the run itself created (a dropped weapon, a nightmare
@@ -1158,8 +1173,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
   /**
    * Re-enters the pose of an attack still mid-chain when the save was taken, fast-forwarded by how
-   * much had already run — `enterDeathPose`'s `deadTime` treatment, for the one transient pose
-   * long enough to be worth it. `burstLeft > 0` identifies it and `swinging` says which kind.
+   * much had already run — {@link enterDeathPose}'s `deadTime` treatment, for the one transient
+   * pose long enough to be worth it. `burstLeft > 0` identifies it and
+   * {@link PosedThing.swinging} says which kind.
    * docs/savegames.md § What is saved and what is deliberately not.
    */
   function restoreAttackPose(p: PosedThing): void {
@@ -1173,8 +1189,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
-   * Spawns a monster's death drop (`MONSTER_DROPS`) at its own position. Always `dropped: true`,
-   * so `tryPickup` grants it at vanilla's halved rate — docs/items.md § Inventory.
+   * Spawns a monster's death drop ({@link tables.MONSTER_DROPS}) at its own position. Always
+   * `dropped: true`, so {@link tryPickup} grants it at vanilla's halved rate —
+   * docs/items.md § Inventory.
    */
   function spawnDrop(at: Pos2, sector: Sector | undefined, facingDeg: number, type: number): void {
     pushThing(type, { x: at.x, y: at.y, z: sector?.floorHeight ?? 0 }, facingDeg, { dropped: true });
@@ -1182,9 +1199,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
   /**
    * The pain elemental's `A_PainShootSkull`: spawns a lost soul in front of `origin` and launches
-   * it at whatever `origin` is targeting. Called from `update`'s live `A_PainAttack` and from
-   * `damageThing`'s death branch (`A_PainDie`, three at once). The skull cap is **level-wide**,
-   * as in vanilla, not per-elemental.
+   * it at whatever `origin` is targeting. Called from {@link update}'s live `A_PainAttack` and from
+   * {@link damageThing}'s death branch (`A_PainDie`, three at once). The skull cap is
+   * **level-wide**, as in vanilla, not per-elemental.
    * docs/monster-ai.md § The pain elemental: spawning a lost soul.
    */
   function spawnLostSoul(origin: PosedThing, angleRad: number): void {
@@ -1215,9 +1232,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
-   * `P_DamageMobj`/`P_KillMobj` for one body — the whole of `ThingLayer.damage`, whose doc has the
-   * parameters. Split out from it so `telefragAt` can kill through the same path rather than
-   * reaching for an ID it would have to look back up.
+   * `P_DamageMobj`/`P_KillMobj` for one body — the whole of {@link ThingLayer.damage}, whose doc
+   * has the parameters. Split out from it so {@link telefragAt} can kill through the same path
+   * rather than reaching for an ID it would have to look back up.
    */
   function damageThing(p: PosedThing, amount: number, hit?: DamageHit): void {
     const source = hit?.source;
@@ -1240,7 +1257,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       }
       p.dead = true;
       p.deadTime = 0;
-      if (countsKill(p, source)) stats.kills++;
+      countKill(p, hit);
       const deathFrames = tables.MONSTER_DEATH_FRAMES[p.type];
       p.deathFrameCount = deathFrames ? deathFrames.length : 0;
       sfx.play(inert.deathSound, inert.unattenuated ? null : p, monsterOrigin(p.id));
@@ -1319,12 +1336,14 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // `P_KillMobj`'s unconditional `if (target->flags & MF_COUNTKILL) killcount++`, with no
     // "already counted" guard. Barrels never match, so this sits before the barrel branch without
     // needing one of its own. docs/hud.md § Level stats.
-    if (countsKill(p, source)) stats.kills++;
+    countKill(p, hit);
     if (isBarrel) {
       // The splash fires later, once `BARREL_CHAIN.explodeDelaySeconds` elapses in `update`, so
-      // `source` is captured now to stay attributable then — see `PosedThing.explodeSource`.
+      // whoever killed it is captured now to stay attributable then — see
+      // `PosedThing.explodeSource`.
       p.barrelExploded = false;
-      p.explodeSource = source ?? null;
+      const killerSlot = hit?.slot;
+      p.explodeSource = source ?? (killerSlot === undefined ? null : { id: targetOfSlot(killerSlot), type: 0 });
       enterDeathPose(p);
       // `MT_BARREL`'s own deathsound. Deliberately on death rather than on `S_BEXP2` where
       // vanilla's `A_Scream` sits: a fifth of a second of silent fireball reads as a bug.
@@ -1360,14 +1379,14 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
   /**
    * Integrates one tic of a knocked-back thing's momentum, additive with this tic's AI movement
-   * as `P_XYMovement` is with `A_Chase`'s: each axis held to `MAX_MOMENTUM_SPEED`, the move
-   * halved until no step exceeds `MOMENTUM_SPLIT_STEP`, and a refused step **stopping dead**
+   * as `P_XYMovement` is with `A_Chase`'s: each axis held to {@link MAX_MOMENTUM_SPEED}, the move
+   * halved until no step exceeds {@link MOMENTUM_SPLIT_STEP}, and a refused step **stopping dead**
    * rather than sliding. The `blockersFor` thing check is deliberately skipped.
    *
    * A step is refused on geometry *and* on the dropoff rule, because `P_XYMovement` reaches the
    * world through the same `P_TryMove` a monster's walk step does — without that half, a hit
-   * shoves a body out over a ledge its own AI would never step onto and `groundFloor` leaves it
-   * standing on air. docs/movement.md § Knockback.
+   * shoves a body out over a ledge its own AI would never step onto and
+   * {@link World.groundFloor} leaves it standing on air. docs/movement.md § Knockback.
    */
   function applyKnockback(p: PosedThing, dt: number): void {
     // This exact state already proved blocked and nothing stamped nearby has changed, so replay
@@ -1438,7 +1457,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /**
    * Puts a thing down where a walk-line teleport sent it, height included: the arrival floor for a
    * loud teleport, the departure height above the floor for a silent one. Momentum follows the two
-   * arrivals — zeroed outright, or rotated by the angle the body turned (`TeleportDest.rotateBy`).
+   * arrivals — zeroed outright, or rotated by the angle the body turned
+   * ({@link TeleportDest.rotateBy}).
    * docs/specials-teleporters.md § Silent and line-to-line teleporters.
    */
   function arriveAt(p: PosedThing, dest: TeleportDest): void {
@@ -1495,7 +1515,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
-   * `applyKnockback` plus its aftermath, for a body with no AI walk of its own: fire whatever
+   * {@link applyKnockback} plus its aftermath, for a body with no AI walk of its own: fire whatever
    * lines the push crossed, then re-derive the sector — but only when the body actually went
    * somewhere, since a blocked push moved nothing and the BSP descent would answer what
    * `p.sector` already says.
@@ -1516,7 +1536,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
   /**
    * Re-derives the sector fields a thing that moved is now standing in. One BSP descent for both:
-   * `sectorAt` would walk the tree again to reach the sector this subsector already names.
+   * {@link World.sectorAt} would walk the tree again to reach the sector this subsector already
+   * names.
    */
   function refreshSector(p: PosedThing): void {
     // A chase step already resolved the leaf it landed on (`adoptStanding`); only a body that
@@ -1530,11 +1551,13 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
-   * Where a monster should currently be heading, or `null` if it has nobody left to want.
-   * `targetId` names a monster only after something other than a player hurt it
-   * (`damageThing` → `shouldRetarget`). A target gone — a dead monster, a dead player — is
-   * `A_Chase`'s case: the threshold drops, and the monster looks all around for a player it can
-   * see (`lookForPlayers`) and goes after the one it finds. docs/monster-ai.md § Infighting.
+   * Where a monster should currently be heading. {@link PosedThing.targetId} names a monster only
+   * after something other than a player hurt it ({@link damageThing} → {@link shouldRetarget}). A
+   * target gone — a dead monster, a dead player — is `A_Chase`'s case: the threshold drops, and the
+   * monster looks all around for a player it can see ({@link lookForPlayers}) and goes after the
+   * one it finds. docs/monster-ai.md § Infighting.
+   *
+   * @returns null if it has nobody left to want
    */
   function resolveTarget(p: PosedThing): Pos3 | null {
     if (p.targetId < 0) {
@@ -1548,7 +1571,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     return retargetAllAround(p) ? look.players[slotOfTarget(p.targetId)] : null;
   }
 
-  /** `MonsterStep.retarget`: the look `resolveTarget` makes, asked while the target still stands. */
+  /**
+   * `MonsterStep.retarget`: the look {@link resolveTarget} makes, asked while the target still
+   * stands.
+   */
   function retargetAllAround(body: MonsterBody): boolean {
     const thing = body as PosedThing;
     const slot = lookForPlayers(thing, true, world, look);
@@ -1558,18 +1584,26 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   }
 
   /**
-   * `P_KillMobj`'s kill count: an `MF_COUNTKILL` death — in a netgame only one no monster dealt,
-   * its `!netgame` gate on the kills monsters make. docs/multiplayer-coop.md § Items and kills.
+   * `P_KillMobj`'s kill count for an `MF_COUNTKILL` death: the level's, in a netgame only where no
+   * monster dealt it (its `!netgame` gate), and in a netgame the killing player's too, through
+   * {@link ThingLayerOptions.onKill} — single player's are all player 1's, which the level's count
+   * already is. docs/multiplayer-coop.md § Items and kills.
    */
-  function countsKill(p: PosedThing, source: DamageHit['source']): boolean {
-    return tables.COUNTKILL_TYPES.has(p.type) && (!netgame || source === undefined);
+  function countKill(p: PosedThing, hit: DamageHit | undefined): void {
+    if (!tables.COUNTKILL_TYPES.has(p.type)) return;
+    if (!netgame || hit?.source === undefined) {
+      stats.kills++;
+    }
+    if (netgame && hit?.slot !== undefined) {
+      onKill?.(hit.slot);
+    }
   }
 
   /**
    * `A_VileChase`'s resurrection branch: restores a corpse to full health and rejoins combat
-   * immediately, with no "coming back to life" delay. `attackPause` is set to the raise
-   * animation's length, so `stepMonsterAI`'s existing "don't walk or attack while `attackPause`
-   * runs" gate holds the monster still until it finishes.
+   * immediately, with no "coming back to life" delay. {@link PosedThing.attackPause} is set to the
+   * raise animation's length, so {@link stepMonsterAI}'s existing "don't walk or attack while
+   * `attackPause` runs" gate holds the monster still until it finishes.
    * docs/monster-archvile.md § Resurrection.
    */
   function reviveCorpse(p: PosedThing): void {
@@ -1617,10 +1651,11 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
   /**
    * `P_NightmareRespawn` (`p_mobj.c`): puts a corpse back at its own spawn point as a fresh,
-   * dormant monster, with a teleport fog at both ends. Returns false and changes nothing when
-   * something already occupies the spawn point. The corpse is *reused* rather than removed and
-   * replaced, so its `id` — and every saved `targetId` pointing at it — survives.
-   * docs/monster-ai.md § Respawning monsters.
+   * dormant monster, with a teleport fog at both ends. The corpse is *reused* rather than removed
+   * and replaced, so its {@link PosedThing.id} — and every saved `targetId` pointing at it —
+   * survives. docs/monster-ai.md § Respawning monsters.
+   *
+   * @returns false, having changed nothing, when something already occupies the spawn point
    */
   function respawnCorpse(p: PosedThing, players: readonly (Pos3 | null)[]): boolean {
     const sector = world.sectorAt(p.spawnX, p.spawnY);
@@ -1690,10 +1725,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 
   /**
    * Whether a killable thing is still in its exact spawn state, in which case the save needs no
-   * `MonsterFields` block at all: the restore's own `pushThing` recreates those defaults. Alerted,
-   * damaged, moving or dead all disqualify; `homingBias` is deliberately ignored.
-   * docs/savegames.md § Storage, and docs/dehacked.md § Savegames and patched tables for why
-   * reading `spawnHealthFor` here stays safe under a patch.
+   * {@link MonsterFields} block at all: the restore's own {@link pushThing} recreates those
+   * defaults. Alerted, damaged, moving or dead all disqualify; {@link PosedThing.homingBias} is
+   * deliberately ignored. docs/savegames.md § Storage, and docs/dehacked.md § Savegames and patched
+   * tables for why reading {@link spawnHealthFor} here stays safe under a patch.
    */
   function isPristine(p: PosedThing): boolean {
     return (
@@ -1738,9 +1773,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
 }
 
 /**
- * A fresh thing's hit points: `MT_BARREL`'s own spawnhealth, this type's `MONSTER_HEALTH`, or
- * `Infinity` for anything that can never be killed. Shared by `pushThing`, which seeds it, and
- * `isPristine`, which asks whether a thing is still sitting on it.
+ * A fresh thing's hit points: `MT_BARREL`'s own spawnhealth, this type's
+ * {@link tables.MONSTER_HEALTH}, or `Infinity` for anything that can never be killed. Shared by
+ * `pushThing`, which seeds it, and `isPristine`, which asks whether a thing is still sitting on it.
  */
 function spawnHealthFor(type: number, dropped: boolean): number {
   if (type === ThingType.barrel) return BARREL_HEALTH;
@@ -1761,12 +1796,14 @@ function sameThingState(a: ThingState, b: ThingState): boolean {
 
 /**
  * Puts `p` into the death pose it should be holding: the barrel's `BEXP` chain, otherwise
- * `P_KillMobj`'s overkill-gib rule off its already-negative `health`, or permanent hiding when the
- * WAD set carries no death art. Sets `deathFrameCount` and returns whether the gib chain played,
- * which is what picks the death sound; `deadTime` fast-forwards a corpse restored from a save.
+ * `P_KillMobj`'s overkill-gib rule off its already-negative {@link PosedThing.health}, or permanent
+ * hiding when the WAD set carries no death art. Sets {@link PosedThing.deathFrameCount}.
  *
  * The single owner of that gib rule — `damageThing` and `restoreThings` both come through here, so
  * a corpse can't look different after a load than before it. docs/death.md § Monster death.
+ *
+ * @param deadTime  fast-forwards a corpse restored from a save
+ * @returns whether the gib chain played, which is what picks the death sound
  */
 function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
   if (p.type === ThingType.barrel) {
@@ -1800,13 +1837,15 @@ function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
 }
 
 /**
- * Puts a monster into the pose for `kind`, spanning `spanSeconds` and optionally fast-forwarded
- * onto the frame `elapsed` seconds in, which is how a savegame taken mid-attack resumes.
- * `enterDeathPose`'s single-owner property too: the live trigger and the restore path must not
- * derive the same pose two ways.
+ * Puts a monster into the pose for `kind`, spanning `spanSeconds`. {@link enterDeathPose}'s
+ * single-owner property too: the live trigger and the restore path must not derive the same pose
+ * two ways.
  *
  * Entered when the attack *starts*, never when its shot lands.
  * docs/sprites.md § Pain, and attack/pain poses.
+ *
+ * @param elapsed  seconds in to fast-forward onto the frame of, which is how a savegame taken
+ *                 mid-attack resumes
  */
 function enterAttackPose(p: PosedThing, kind: 'melee' | 'ranged', spanSeconds: number, elapsed = 0): void {
   // A type with only the other kind of pose lends it: the cacodemon bites from its missile chain.
@@ -1830,16 +1869,17 @@ const isMonsterType = (p: PosedThing): boolean => p.isMonster;
 const isCrushableType = (p: PosedThing): boolean => p.isMonster || p.type === ThingType.barrel;
 
 /**
- * A corpse a plane could still crunch. `hidden` is checked here and in neither predicate above: a
- * corpse that died with no death art is drawn as nothing, so there is nothing to turn into a pool.
- * The only *living* things `hidden` marks are consumed pickups, which both live predicates already
- * exclude by type. docs/specials-crushers.md § Crushed corpses.
+ * A corpse a plane could still crunch. {@link PosedThing.hidden} is checked here and in neither
+ * predicate above: a corpse that died with no death art is drawn as nothing, so there is nothing to
+ * turn into a pool. The only *living* things `hidden` marks are consumed pickups, which both live
+ * predicates already exclude by type. docs/specials-crushers.md § Crushed corpses.
  */
 const isSquashableCorpse = (p: PosedThing): boolean => !p.crushed && !p.hidden && p.isMonster;
 
 /**
- * The `MonsterRef` view of `p` — what every query on `ThingLayer` hands back instead of the
- * `PosedThing` itself, so nothing outside this file can mutate a body it merely looked up.
+ * The {@link MonsterRef} view of `p` — what every query on {@link ThingLayer} hands back instead of
+ * the {@link PosedThing} itself, so nothing outside this file can mutate a body it merely looked
+ * up.
  */
 function monsterRef(p: PosedThing): MonsterRef {
   return {

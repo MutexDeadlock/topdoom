@@ -1,7 +1,7 @@
 /**
- * Resolving a hit into damage: `CombatContext` (the live level every shot, projectile and blast
- * resolves against), damage application to player/monsters/barrels, and splash (radius) damage.
- * See docs/combat.md § How a shot deals damage and § Splash and the BFG.
+ * Resolving a hit into damage: {@link CombatContext} (the live level every shot, projectile and
+ * blast resolves against), damage application to player/monsters/barrels, and splash (radius)
+ * damage. See docs/combat.md § How a shot deals damage and § Splash and the BFG.
  */
 import { type World } from './world.ts';
 import { PLAYER_RADIUS, type Player } from './player.ts';
@@ -41,10 +41,10 @@ export interface PlayerHit {
  * resolution still in `game.ts`) see it: the state they need to read, plus the
  * two effects they raise that belong to somebody else.
  *
- * Every member is a **getter, not a captured value** — `world`, `things` and
- * the player are all replaced on a map load, and `Game` implements this as one
- * object literal that reads its own live level. `things` is nullable for the
- * tests, which stub a context with none.
+ * Every member is a **getter, not a captured value** — {@link CombatContext.world},
+ * {@link CombatContext.things} and the player are all replaced on a map load, and `Game` implements
+ * this as one object literal that reads its own live level. {@link CombatContext.things} is
+ * nullable for the tests, which stub a context with none.
  */
 export interface CombatContext {
   readonly world: World;
@@ -52,22 +52,24 @@ export interface CombatContext {
   /** Every player slot by index — what a `targetOfSlot` id names. docs/multiplayer.md § Player slots. */
   readonly slots: readonly CombatSlot[];
   /**
-   * Armor-mitigated damage to one player, returning whether the hit actually landed (`false`
-   * covers both a corpse hit and invulnerability).
+   * Armor-mitigated damage to one player.
+   *
+   * @returns whether the hit actually landed (`false` covers both a corpse hit and invulnerability)
    */
   damageSlot(slot: number, amount: number, hit?: PlayerHit): boolean;
   /**
    * Fires a shoot-triggered line special, with whatever keys the shooting player is carrying.
-   * `null` is a monster's stray shot, which reproduces vanilla's own hardcoded exception —
-   * docs/combat.md § Shoot-triggered specials.
+   *
+   * @param shooter  `null` is a monster's stray shot, which reproduces vanilla's own hardcoded
+   *                 exception — docs/combat.md § Shoot-triggered specials
    */
   triggerShot(lineIndex: number | null, shooter: number | null): void;
   /**
-   * The same, for a hitscan shot that has just resolved: fires every shoot line
-   * the trace `from`→`to` crossed, and `blocker` — whichever line stopped it, or
-   * null when a body did — last. `PTR_ShootTraverse` fires a line's special on
-   * the way past, not only on the line it stops at; docs/combat.md
-   * § Shoot-triggered specials.
+   * The same, for a hitscan shot that has just resolved: fires every shoot line the trace
+   * `from`→`to` crossed, and `blocker` last. `PTR_ShootTraverse` fires a line's special on the way
+   * past, not only on the line it stops at; docs/combat.md § Shoot-triggered specials.
+   *
+   * @param blocker  whichever line stopped the trace, or null when a body did
    */
   triggerShotPath(from: Pos2, to: Pos2, blocker: number | null, shooter: number | null): void;
 }
@@ -92,7 +94,11 @@ export function fallbackPlayer(ctx: CombatContext, targetId: number): Player {
   return ctx.slots[targetId < 0 ? slotOfTarget(targetId) : 0].player;
 }
 
-/** The monster `targetId` names, or null: a slot's ID, or a monster that can no longer be found. */
+/**
+ * The monster `targetId` names.
+ *
+ * @returns null for a slot's ID, or a monster that can no longer be found
+ */
 export function targetMonster(ctx: CombatContext, targetId: number): MonsterRef | null {
   return targetId < 0 ? null : (ctx.things?.monsterById(targetId) ?? null);
 }
@@ -123,28 +129,28 @@ export function anyPlayerAlive(slots: readonly CombatSlot[]): boolean {
 export interface RadiusBlast {
   radius: number;
   maxDamage: number;
+  /** Gates self-splash ("rocket jump"). */
   hitsPlayer: boolean;
+  /** When given, attributes the hit for {@link ThingLayer.damage}'s retaliation rule. */
   source?: { id: number; type: number };
   /** The player whose blast it is, where a player's — `DamageHit.slot`. */
   slot?: number;
   /**
-   * Who the overlay names for a killing blast, when that is not `source`'s own type: a barrel
-   * blames the barrel rather than whoever set it off, and a shot of the player's has no `source`
-   * at all. Left out entirely to mean `source`'s own type.
+   * Who the overlay names for a killing blast, when that is not {@link RadiusBlast.source}'s own
+   * type: a barrel blames the barrel rather than whoever set it off, and a shot of the player's has
+   * no {@link RadiusBlast.source} at all. Left out entirely to mean {@link RadiusBlast.source}'s
+   * own type.
    */
   cause?: DamageCause;
 }
 
 /**
- * An explosion's blast — vanilla's `P_RadiusAttack`: every living body whose
- * **edge** lies within `radius` of the impact point, with an unobstructed line
- * to it, takes damage falling off linearly to 0 there. Range is
- * `blastDistanceToBox` (Chebyshev, minus that body's own radius), not a
- * centre-to-centre distance — which is what makes a wide monster both catchable
- * from further out and hurt harder at any range. `hitsPlayer` gates self-splash
- * ("rocket jump"); `source`, when given, attributes the hit for
- * `ThingLayer.damage`'s retaliation rule. **2D distance only, no height
- * check**, as in vanilla.
+ * An explosion's blast — vanilla's `P_RadiusAttack`: every living body whose **edge** lies within
+ * {@link RadiusBlast.radius} of the impact point, with an unobstructed line to it, takes damage
+ * falling off linearly to 0 there. Range is {@link blastDistanceToBox} (Chebyshev, minus that
+ * body's own radius), not a centre-to-centre distance — which is what makes a wide monster both
+ * catchable from further out and hurt harder at any range. **2D distance only, no height check**,
+ * as in vanilla.
  * Vanilla carries one number where this takes two — docs/combat.md § Splash and the BFG.
  */
 export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBlast): void {
@@ -171,11 +177,10 @@ export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBla
 }
 
 /**
- * A barrel's `A_Explode` — vanilla's literal `P_RadiusAttack(thingy,
- * thingy->target, 128)`, the same shape as the rocket's splash with
- * `exp.source` standing in for `thingy->target`. Barrels are in
- * `monstersNear`, so a second one caught in the blast chains through the
- * ordinary damage path (docs/death.md § Exploding barrels).
+ * A barrel's `A_Explode` — vanilla's literal `P_RadiusAttack(thingy, thingy->target, 128)`, the
+ * same shape as the rocket's splash with `exp.source` and `exp.slot` standing in for
+ * `thingy->target`. Barrels are in {@link ThingLayer.monstersNear}, so a second one caught in the
+ * blast chains through the ordinary damage path (docs/death.md § Exploding barrels).
  */
 export function applyBarrelExplosion(ctx: CombatContext, exp: BarrelExplosion): void {
   // The barrel, not `exp.source`: retaliation follows whoever set it off,
@@ -185,6 +190,7 @@ export function applyBarrelExplosion(ctx: CombatContext, exp: BarrelExplosion): 
     maxDamage: BARREL_SPLASH_DAMAGE,
     hitsPlayer: true,
     source: exp.source,
+    slot: exp.slot,
     cause: ThingType.barrel,
   });
 }

@@ -1,18 +1,20 @@
 /**
  * The end-of-level popup: kills/items/secrets percentages, a face for how that went, then the
- * level time against best and par. See docs/hud.md § Intermission.
+ * level time against best and par, and above it the scoreboard of a game of more than one player.
+ * See docs/hud.md § Intermission.
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import type { BestTimeResult } from '../../game/besttimes.ts';
 import { drawIcon, drawText, formatClock, percentOf, LEVEL_STATS_GREEN, type LevelStats } from './hud.ts';
 import { WadFont, COLOR_YELLOW } from './wadfont.ts';
+import { Scoreboard, type ScoreRow } from './scoreboard.ts';
 
 /**
- * What the player has to press to leave the popup — see `Game.frame`'s intermission branch. Shared
- * with `ui/hud/endcard.ts`, the other half of that one continue-key flow (docs/hud.md § End card):
- * both popups are dismissed by the same key and must not describe it differently. Left out
- * entirely under a playback, where that key is the record's rather than the viewer's — the death
- * overlay's `R` hint for the same reason (docs/replays.md § Playback).
+ * What the player has to press to leave the popup — see `Game.tic`'s popup branch. Shared with
+ * `ui/hud/endcard.ts`, the other half of that one continue-key flow (docs/hud.md § End card): both
+ * popups are dismissed by the same key and must not describe it differently. Left out entirely
+ * under a playback, where that key is the record's rather than the viewer's — the death overlay's
+ * `R` hint for the same reason (docs/replays.md § Playback).
  */
 export const CONTINUE_HINT = 'Press SPACE to continue';
 
@@ -51,14 +53,17 @@ const FACE_TIERS: readonly { minScore: number; lump: string }[] = [
   { minScore: 0, lump: 'STFOUCH1' },
 ];
 
-/** One `<label>  <value>` line as `Intermission.drawPair` lays it out. */
+/** One `<label>  <value>` line as {@link Intermission.drawPair} lays it out. */
 interface LabelledValue {
   label: string;
   valueText: string;
   valueFont: WadFont;
-  /** Where the value starts — or, with `columnWidth`, where its column does. */
+  /** Where the value starts — or, with {@link LabelledValue.columnWidth}, where its column does. */
   valueX: number;
-  /** Right-aligns the value inside a column this wide instead of starting it at `valueX`. */
+  /**
+   * Right-aligns the value inside a column this wide instead of starting it at
+   * {@link LabelledValue.valueX}.
+   */
   columnWidth?: number;
 }
 
@@ -89,6 +94,8 @@ export class Intermission {
   private redFont: WadFont;
   private yellowFont: WadFont;
   private greenFont: WadFont;
+  /** The board above the panel — {@link Intermission.showScores}. */
+  private scores: Scoreboard;
   private labelColumnWidth: number;
   private percentColumnWidth: number;
   private timeLabelColumnWidth: number;
@@ -99,6 +106,7 @@ export class Intermission {
     this.redFont = new WadFont(gfx);
     this.yellowFont = new WadFont(gfx, COLOR_YELLOW);
     this.greenFont = new WadFont(gfx, LEVEL_STATS_GREEN);
+    this.scores = new Scoreboard(gfx.palette, this.root.querySelector<HTMLElement>('.scoreboard')!);
     this.labelColumnWidth = Math.max(
       this.redFont.measure('Kills  '),
       this.redFont.measure('Items  '),
@@ -121,9 +129,13 @@ export class Intermission {
   }
 
   /**
-   * `cheated` is `game.ts`'s own flag — the same one that already decides
-   * whether a completion may set a record, rather than a second account of what happened this run.
-   * Whether the continue key is offered is `setContinueHint`'s, set beforehand.
+   * Puts the popup up. Whether the continue key is offered is
+   * {@link Intermission.setContinueHint}'s, set beforehand.
+   *
+   * @param record  null for a run that can't set one — {@link Intermission.drawBestLines}
+   * @param parSeconds  null when nothing knows one — {@link Intermission.drawParLine}
+   * @param cheated  `game.ts`'s own flag — the same one that already decides whether a completion
+   *                 may set a record, rather than a second account of what happened this run
    */
   show(stats: LevelStats, record: BestTimeResult | null, parSeconds: number | null, cheated: boolean): void {
     if (cheated) return this.showCheated();
@@ -146,25 +158,36 @@ export class Intermission {
 
   /**
    * Shows or hides the continue hint on a popup already up: taking a replay over hands that key
-   * back to the viewer with the popup on screen. See `CONTINUE_HINT`.
+   * back to the viewer with the popup on screen. See {@link CONTINUE_HINT}.
    */
   setContinueHint(shown: boolean): void {
     this.hintCanvas.classList.toggle('hidden', !shown);
   }
 
   /**
-   * Drops the popup. Like the other overlays, the element outlives any one `Game`, so `dispose`
-   * clears it too.
+   * The scoreboard above the panel, every frame. docs/hud.md § Scoreboard.
+   *
+   * @param rows  one per slot, in slot order; null takes the board down
    */
-  clear(): void {
-    this.root.classList.add('hidden');
+  showScores(rows: readonly ScoreRow[] | null): void {
+    this.scores.update(rows);
   }
 
   /**
-   * A red label with its value starting at `pair.valueX`. Given a `columnWidth`, the value is
-   * instead right-aligned inside that column — which also makes every line that shares one the same
-   * total width, so a run of them lines up on the numbers' right edge. A value wider than the
-   * column (a kill count past 100%) widens it rather than being clipped or pushed over the label.
+   * Drops the popup, its board with it. Like the other overlays, the element outlives any one
+   * `Game`, so `Game.dispose` clears it too.
+   */
+  clear(): void {
+    this.root.classList.add('hidden');
+    this.scores.clear();
+  }
+
+  /**
+   * A red label with its value starting at {@link LabelledValue.valueX}. Given a
+   * {@link LabelledValue.columnWidth}, the value is instead right-aligned inside that column —
+   * which also makes every line that shares one the same total width, so a run of them lines up on
+   * the numbers' right edge. A value wider than the column (a kill count past 100%) widens it
+   * rather than being clipped or pushed over the label.
    */
   private drawPair(canvas: HTMLCanvasElement, pair: LabelledValue): void {
     const { label, valueText, valueFont, valueX, columnWidth } = pair;
@@ -195,12 +218,14 @@ export class Intermission {
   }
 
   /**
-   * The level's par time, hidden when nothing knows one — Ultimate Doom's episode 4, an
-   * unrecognised IWAD, or a PWAD map with no `[PARS]` entry (docs/wad.md § Par times).
+   * The level's par time. Green at or under par and yellow over it. That colouring is this
+   * engine's, not vanilla's: `WI_drawStats` prints par in one font however the run went. Same call
+   * as {@link LEVEL_STATS_GREEN} makes for the stat lines — the popup already speaks in green for
+   * "you got it".
    *
-   * Green at or under par and yellow over it. That colouring is this engine's, not vanilla's:
-   * `WI_drawStats` prints par in one font however the run went. Same call as `LEVEL_STATS_GREEN`
-   * makes for the stat lines — the popup already speaks in green for "you got it".
+   * @param parSeconds  null when nothing knows one — Ultimate Doom's episode 4, an unrecognised
+   *                    IWAD, or a PWAD map with no `[PARS]` entry (docs/wad.md § Par times) — which
+   *                    hides the line
    */
   private drawParLine(parSeconds: number | null, elapsedSeconds: number): void {
     this.parCanvas.classList.toggle('hidden', parSeconds === null);
@@ -228,7 +253,7 @@ export class Intermission {
     this.faceCanvas.classList.toggle('hidden', !drawIcon(this.faceCanvas, this.gfx, lump));
   }
 
-  /** Which face this run earned, by the summed percentages — see `FACE_TIERS`. */
+  /** Which face this run earned, by the summed percentages — see {@link FACE_TIERS}. */
   private faceFor(stats: LevelStats): string {
     const score =
       percentOf(stats.kills, stats.totalKills) +
@@ -239,9 +264,11 @@ export class Intermission {
   }
 
   /**
-   * The time-to-beat block. `record` is null for a run that can't set one (see docs/hud.md
-   * § Best times), and both lines stay hidden then — a player who started somewhere other than the
-   * level's own start is better told nothing than shown a record they can't touch.
+   * The time-to-beat block.
+   *
+   * @param record  null for a run that can't set one (see docs/hud.md § Best times), and both lines
+   *                stay hidden then — a player who started somewhere other than the level's own
+   *                start is better told nothing than shown a record they can't touch
    */
   private drawBestLines(record: BestTimeResult | null): void {
     this.recordCanvas.classList.toggle('hidden', !record?.isNewBest);
@@ -259,10 +286,10 @@ export class Intermission {
   }
 
   /**
-   * The whole popup replaced by one line (see `CHEATED_TEXT`) — every canvas the run's numbers
-   * would have gone on is hidden here, and only here, so each `draw*` below stays the sole owner
-   * of its own line's visibility. The continue hint is `show`'s to place, being about the key
-   * rather than about the run.
+   * The whole popup replaced by one line (see {@link CHEATED_TEXT}) — every canvas the run's
+   * numbers would have gone on is hidden here, and only here, so each `draw*` below stays the sole
+   * owner of its own line's visibility. The continue hint is {@link Intermission.show}'s to place,
+   * being about the key rather than about the run.
    */
   private showCheated(): void {
     this.statsBlock.classList.add('hidden');

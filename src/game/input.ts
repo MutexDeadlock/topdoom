@@ -1,8 +1,8 @@
 /**
- * `Input`: the keyboard and pointer state the game loop samples each frame, latched to the tic
- * cadence the simulation runs on, plus the right mouse button's binding — the one menu setting
- * that belongs here. See docs/frameloop.md § Input runs on the tic and docs/menu.md § Right mouse
- * button.
+ * {@link Input}: the keyboard and pointer state the game loop samples each frame, latched to the
+ * tic cadence the simulation runs on, plus the right mouse button's binding — the one menu setting
+ * that belongs here. See docs/frameloop.md § Input runs on the tic and
+ * docs/menu.md § Right mouse button.
  */
 import type { TopDownCamera } from '../render/camera.ts';
 import type { Pos2 } from '../types.ts';
@@ -12,7 +12,7 @@ import { readStorage, writeStorage } from '../util/storage.ts';
 export type RightMouseAction = 'none' | 'previousweapon' | 'use';
 
 /**
- * Everything a simulation tic may read from the player. `Input` is the live keyboard and
+ * Everything a simulation tic may read from the player. {@link Input} is the live keyboard and
  * pointer; a replay's recorder wraps one and its playback stands in for one, which is why the
  * pointer itself is not here — the tic asks for the *aim point* instead, and never for where the
  * pointer is on screen. docs/replays.md § The TicInput seam.
@@ -25,9 +25,11 @@ export interface TicInput {
   rightMousePressed(action: RightMouseAction): boolean;
   consumeWheel(): number;
   /**
-   * Where the player is aiming on the horizontal plane at `planeZ`, in map space and quantized to
-   * `AIM_QUANTUM`; null when the pointer misses the plane (above the horizon). Asked at most once
-   * per tic, immediately after the camera is posed at alpha 1.
+   * Where the player is aiming on the horizontal plane at `planeZ`. Asked at most once per tic,
+   * immediately after the camera is posed at alpha 1.
+   *
+   * @returns the point in map space, quantized to {@link AIM_QUANTUM}; null when the pointer misses
+   *          the plane (above the horizon)
    */
   aim(camera: TopDownCamera, planeZ: number): Pos2 | null;
   endTic(): void;
@@ -87,14 +89,16 @@ export function setRightMouseAction(action: RightMouseAction): void {
 }
 
 /**
- * A replay's playback pins the binding for the run it replays without touching the stored one;
- * `null` puts the stored value back. docs/replays.md § Settings are frozen per tic.
+ * A replay's playback pins the binding for the run it replays without touching the stored one.
+ * docs/replays.md § Settings are frozen per tic.
+ *
+ * @param action  null puts the stored value back
  */
 export function overrideRightMouseAction(action: RightMouseAction | null): void {
   rightMouseAction = action ?? readStoredRightMouseAction();
 }
 
-/** `point` snapped onto the `AIM_QUANTUM` lattice; null passes through. */
+/** `point` snapped onto the {@link AIM_QUANTUM} lattice; null passes through. */
 export function quantizeAim(point: Pos2 | null): Pos2 | null {
   if (!point) return null;
   return { x: Math.round(point.x / AIM_QUANTUM) * AIM_QUANTUM, y: Math.round(point.y / AIM_QUANTUM) * AIM_QUANTUM };
@@ -109,10 +113,10 @@ const TYPED_LIMIT = 32;
 /**
  * Keyboard and pointer state, sampled by the game loop rather than event-driven.
  *
- * The edge latches (`pressed`, `rightMousePressed`) hold "went down since the
- * last **tic**", not since the last rendered frame, and `endTic` is what clears
- * them. Rendering runs far more often than the simulation, so a frame-cadence
- * clear would drop most presses before a tic ever saw them.
+ * The edge latches ({@link Input.pressed}, {@link Input.rightMousePressed}) hold "went down since
+ * the last **tic**", not since the last rendered frame, and {@link Input.endTic} is what clears
+ * them. Rendering runs far more often than the simulation, so a frame-cadence clear would drop most
+ * presses before a tic ever saw them.
  * docs/frameloop.md § Input runs on the tic.
  */
 export class Input implements TicInput {
@@ -205,6 +209,14 @@ export class Input implements TicInput {
   /** True only on the first tic a key went down. */
   pressed(code: string): boolean {
     return this.pressedThisTic.has(code);
+  }
+
+  /**
+   * Whether `code` is held right now, for what the viewer is shown rather than what a tic does: a
+   * code asked here is in no replay's masks (`BOUND_KEYS`). docs/hud.md § Scoreboard.
+   */
+  viewerHolds(code: string): boolean {
+    return this.down.has(code);
   }
 
   /**

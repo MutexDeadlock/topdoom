@@ -81,9 +81,16 @@ in the tic the press is read rather than at the next `G_Ticker`.
 - **A placed weapon stays forever.** A player who owns it gets nothing, not even ammo; one who
   doesn't gets it with its two clips and is switched to it, `wpnup` plays, and it stays. A dropped
   weapon is taken as in single player.
-- **Kills**: a monster's death counts unless a monster dealt it (`countsKill`, `P_KillMobj`'s
-  `!netgame` gate). **Deviation:** a crusher's or a telefrag's kill still counts — both carry no
-  `source`, which is also what a player's hit carries.
+- **Kills**: a monster's death counts toward the level unless a monster dealt it (`countKill`,
+  `P_KillMobj`'s `!netgame` gate). **Deviation:** a crusher's or a monster's telefrag still counts —
+  both carry no `source`, which is also what a player's hit carries.
+- **A player's own kills** (`PlayerSlot.kills` — `P_KillMobj`'s `source->player->killcount`) are
+  the kills a hit naming its `slot` made: a shot, a splash, a barrel it set off
+  (`PosedThing.explodeSource`), its own telefrag. The thing layer holds no player, so it tells each
+  one by slot (`ThingLayerOptions.onKill`). Single player counts none apart: every kill is player
+  1's (`players[0]`), which the level's count already is. Saved with the slot
+  (`PlayerSlotSnapshot.kills`, absent at 0) and zeroed by every level start, as `P_SetupLevel`
+  does.
 
 ## Collision
 

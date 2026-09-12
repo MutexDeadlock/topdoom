@@ -31,6 +31,7 @@ import {
   buildThingSprites,
   monstersTelefrag,
   TELEFRAG_DAMAGE,
+  targetOfSlot,
   type CarryQuery,
   type CrossingBody,
   type MonsterRef,
@@ -101,6 +102,7 @@ import {
 import { handleHotkeys } from './ui/devmode/debughud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { DeathOverlay, type DeathHint } from './ui/hud/deathoverlay.ts';
+import { Scoreboard, type ScoreRow } from './ui/hud/scoreboard.ts';
 import { FrameProfiler } from './util/profiler.ts';
 import { clearRandom, getRandomCursors, setRandomCursors } from './util/random.ts';
 import {
@@ -494,6 +496,8 @@ export class Game {
   private readonly presenter: Presenter;
   private screenEffects: ScreenEffects;
   private deathOverlay: DeathOverlay;
+  /** The board Tab holds up — {@link Game.scoreboardRows}, docs/hud.md § Scoreboard. */
+  private scoreboard: Scoreboard;
   readonly title: string;
 
   /**
@@ -647,6 +651,7 @@ export class Game {
     this.intermission = new Intermission(gfx);
     this.endCard = new EndCard(gfx);
     this.deathOverlay = new DeathOverlay(gfx);
+    this.scoreboard = new Scoreboard(gfx.palette);
     // Session-scoped like the banks above: which titles apply depends on the loaded file set
     // (its MAPINFO lumps and which IWAD it is), not on the current map.
     this.levelNames = new LevelNames(wad, mapInfo, this.dehacked);
@@ -789,7 +794,11 @@ export class Game {
         levelCard: this.levelCard,
         screenEffects: this.screenEffects,
         deathOverlay: this.deathOverlay,
+        intermission: this.intermission,
+        scoreboard: this.scoreboard,
       },
+      scoreboardRows: () => this.scoreboardRows(),
+      intermissionScoreRows: () => this.intermissionScoreRows(),
     });
 
     const start = this.mapNames.indexOf(startMap.toUpperCase());
@@ -1061,6 +1070,8 @@ export class Game {
     this.replayBar.setKeysActive(false);
     this.stop();
     this.paused = true;
+    // The menu opens over the board Tab may be holding up, and no frame runs to take it down.
+    this.scoreboard.clear();
     // ESC landing in the one frame a parked load waits out: the pause screen is about to show the
     // level behind it, so build that level now rather than leaving the overlay covering the menu.
     this.flushPendingLoad();
@@ -1101,6 +1112,48 @@ export class Game {
     this.levelCard.clear();
     this.intermission.clear();
     this.endCard.clear();
+    this.scoreboard.clear();
+  }
+
+  /**
+   * What the board Tab holds up shows this frame: {@link Game.scoreRows} while the viewer holds Tab
+   * with the menu closed; null otherwise, and over the intermission, which shows its own.
+   * docs/hud.md § Scoreboard.
+   */
+  private scoreboardRows(): ScoreRow[] | null {
+    if (this.paused || this.net?.menuUp || this.popup === 'intermission') return null;
+    return this.view.input.viewerHolds('Tab') ? this.scoreRows() : null;
+  }
+
+  /**
+   * What the intermission's board shows above its panel: {@link Game.scoreRows} while that popup
+   * is up. docs/hud.md § Scoreboard.
+   */
+  private intermissionScoreRows(): ScoreRow[] | null {
+    return this.popup === 'intermission' ? this.scoreRows() : null;
+  }
+
+  /**
+   * Every slot's row on the scoreboard. Names and pings are the network session's roster, where
+   * there is one.
+   *
+   * @returns null for a game of one player, unless over the network — no board shows then
+   */
+  private scoreRows(): ScoreRow[] | null {
+    const net = this.net;
+    if (!net && this.slots.length < 2) return null;
+    const roster = net?.session.roster();
+    return this.slots.map((slot) => {
+      const entry = roster?.find((r) => r.slot === slot.index);
+      return {
+        name: entry?.name ?? `Player ${slot.index + 1}`,
+        color: slot.drawColor(),
+        kills: slot.kills,
+        pingMs: entry?.pingMs ?? null,
+        local: slot.local,
+        present: entry?.present ?? true,
+      };
+    });
   }
 
   /**
@@ -1154,7 +1207,8 @@ export class Game {
 
   /**
    * A player entering a running level, as a snapshot holds one: a fresh body at `G_DoReborn`'s spot
-   * with a fresh inventory, facing the spot's way. docs/multiplayer-net.md § Joining a game.
+   * with a fresh inventory and no kills, facing the spot's way — even in a slot someone left.
+   * docs/multiplayer-net.md § Joining a game.
    */
   private freshSlotSnapshot(index: number): PlayerSlotSnapshot {
     const spot = this.rebornSpotFor(index);
@@ -1205,6 +1259,8 @@ export class Game {
     // A snapshot holding a player this level has no slot for yet: a joiner's, over the network.
     if (restore) this.growSlots(restore.players.length);
     for (const slot of this.slots) finishLevel(slot.inventory);
+    // `P_SetupLevel` zeroes every player's `killcount`; a restore reads the saved count back below.
+    for (const slot of this.slots) slot.kills = 0;
     // Whatever was still ringing belongs to the level being torn down — a door
     // closing, a monster's death cry — and its origins are about to be reused.
     this.audio.stopAll();
@@ -1383,7 +1439,7 @@ export class Game {
         const { player } = slot;
         // Whatever stands on the landing pad is stomped (`P_TeleportMove`); the
         // player always stomps, so this arrival is never refused — docs/death.md § Telefrag.
-        this.level.things.telefragAt(dest, PLAYER_RADIUS, true);
+        this.level.things.telefragAt(dest, PLAYER_RADIUS, true, targetOfSlot(slotIndex));
         // The origin puff's position has to be captured before teleportTo
         // overwrites it; the landing `z` only exists after. See
         // SpriteFxLayer.spawnTeleportPair for the pair itself.
@@ -1446,6 +1502,9 @@ export class Game {
       onRespawn: (from, to) => {
         this.effects.spawnTeleportFog(from);
         this.effects.spawnTeleportFog(to);
+      },
+      onKill: (slot) => {
+        this.slots[slot].kills++;
       },
       lights: this.lights,
       netgame: this.netgame,

@@ -1,0 +1,68 @@
+/*
+ * The board — ui/hud/scoreboard.ts, docs/hud.md § Scoreboard. `.scoreboard` is its look wherever it
+ * stands: #scoreboard below, and the intermission's own in that popup's column (intermission.css).
+ */
+.scoreboard {
+  padding: 10px 18px 12px;
+  background: rgba(13, 13, 16, 0.85);
+  border: 1px solid var(--border);
+}
+
+/*
+ * The one held up with Tab: high in the view, clear of the player the camera holds at its centre,
+ * and over the death overlay and the end card a player checking the score may be looking at; under
+ * the menu.
+ */
+#scoreboard {
+  position: fixed;
+  left: 50%;
+  top: 18%;
+  transform: translateX(-50%);
+  z-index: var(--z-scoreboard);
+  pointer-events: none;
+}
+
+.scoreboard table {
+  border-collapse: collapse;
+}
+
+.scoreboard th {
+  padding: 0 0 6px;
+  color: var(--fg-dim);
+  font-size: 11px;
+  font-weight: normal;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  text-align: right;
+}
+
+.scoreboard td {
+  padding: 2px 0;
+  text-align: right;
+}
+
+.scoreboard th + th,
+.scoreboard td + td {
+  padding-left: 4ch;
+}
+
+.scoreboard .name {
+  min-width: 16ch;
+  text-align: left;
+}
+
+/* A name longer than the column is clipped rather than widening the board. */
+.scoreboard .name .truncate {
+  display: inline-block;
+  max-width: 24ch;
+  vertical-align: bottom;
+}
+
+.scoreboard tr.local .name {
+  font-weight: bold;
+}
+
+/* A network game's slot whose player left, standing idle in the level. */
+.scoreboard tr.gone {
+  opacity: 0.45;
+}

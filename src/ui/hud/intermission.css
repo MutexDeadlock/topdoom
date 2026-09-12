@@ -2,10 +2,13 @@
  * The end-of-level popup: #death-overlay's dimmed full-screen backdrop with #game-hud's own
  * bordered panel inside it, at the same z-index as the death overlay since the two can never be
  * up at once. `pointer-events: none` like every other overlay — it's dismissed by a key, which
- * game.ts reads, not by clicking anything here.
+ * game.ts reads, not by clicking anything here. A column: the scoreboard of a game of more than one
+ * player stands above the panel (docs/hud.md § Scoreboard).
  */
 #intermission {
   z-index: var(--z-overlay);
+  flex-direction: column;
+  gap: 12px;
   pointer-events: none;
   background: rgba(6, 6, 10, 0.45);
 }

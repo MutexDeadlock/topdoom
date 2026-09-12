@@ -59,6 +59,46 @@ describe('Coop · netgame things', () => {
       assert.equal(layer.stats.kills, netgame ? 1 : 2, `netgame ${netgame}: killed by a player`);
     }
   });
+
+  test("a kill counts as its player's own; single player counts none apart", () => {
+    const types = [ThingType.zombieman, ThingType.imp, ThingType.demon];
+    const killAll = (layer: ReturnType<typeof room>['layer'], slot: number) => {
+      layer.damage(0, MONSTER_HEALTH[ThingType.zombieman], { slot });
+      layer.damage(1, MONSTER_HEALTH[ThingType.imp], { source: { id: 2, type: ThingType.demon } });
+      layer.damage(2, MONSTER_HEALTH[ThingType.demon]);
+    };
+    const net = room(true, ...types);
+    killAll(net.layer, 1);
+    assert.deepEqual(net.kills, [1], "the demon's and the crusher's are nobody's");
+
+    const single = room(false, ...types);
+    killAll(single.layer, 0);
+    assert.deepEqual(single.kills, [], "player 1's are the level's own count");
+  });
+
+  test("a barrel's blast carries whoever killed it, player or monster, through a save", () => {
+    const { layer, grid } = room(true, ThingType.barrel, ThingType.barrel);
+    const imp = { id: 7, type: ThingType.imp };
+    layer.damage(0, 10_000, { slot: 1 });
+    layer.damage(1, 10_000, { source: imp });
+    assert.deepEqual(monsterBlock(layer, 0)?.explodeSource, { id: targetOfSlot(1), type: 0 }, 'as a projectile holds its shooter');
+    const restored = buildThingSprites(new World(grid.map), {
+      bank: BANK,
+      materials: MATERIALS,
+      skill: 3,
+      netgame: true,
+      restore: layer.snapshot(),
+    });
+    let blasts: { source?: { id: number; type: number }; slot?: number }[] = [];
+    for (let tic = 0; tic < 70 && blasts.length === 0; tic++) blasts = restored.update(DOOM_TIC, [null]).barrelExplosions;
+    assert.deepEqual(
+      blasts.map(({ source, slot }) => ({ source, slot })),
+      [
+        { source: undefined, slot: 1 },
+        { source: imp, slot: undefined },
+      ],
+    );
+  });
 });
 
 describe('Coop · target choice', () => {

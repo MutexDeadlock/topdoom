@@ -11,8 +11,14 @@ const PORT = Number(process.env.PORT ?? 8765);
 /** `MAX_PLAYERS` (`src/game/playerstarts.ts`); `tests/server/rooms.test.ts` pins the two equal. */
 const MAX_PLAYERS = 4;
 
-/** A socket answering no ping for two of these is dropped — tuned by feel. */
-const PING_MS = 10_000;
+/**
+ * How often every socket is pinged; the round trip of its answer is the player's ping. Tuned by
+ * feel.
+ */
+const PING_MS = 2_000;
+
+/** A socket that has answered no ping for this long is dropped — tuned by feel. */
+const SILENT_MS = 20_000;
 
 /** A level snapshot for a large map is a few megabytes of JSON. */
 const MAX_PAYLOAD = 64 * 1024 * 1024;
@@ -29,18 +35,22 @@ server.on('connection', (socket: WebSocket, req) => {
     },
     close: () => socket.close(),
   };
-  let alive = true;
+  let answeredAt = performance.now();
   const ping = setInterval(() => {
-    if (!alive) {
+    if (performance.now() - answeredAt > SILENT_MS) {
       socket.terminate();
       return;
     }
-    alive = false;
-    socket.ping();
+    // The send time rides the ping and comes back on its pong, so a late answer is never timed
+    // against a later ping.
+    socket.ping(String(performance.now()));
   }, PING_MS);
 
-  socket.on('pong', () => {
-    alive = true;
+  socket.on('pong', (data) => {
+    const now = performance.now();
+    answeredAt = now;
+    const sent = Number(String(data));
+    if (Number.isFinite(sent)) rooms.latency(member, now - sent);
   });
   socket.on('message', (data) => {
     let message: unknown;

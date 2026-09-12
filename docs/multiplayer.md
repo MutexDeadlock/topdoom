@@ -11,7 +11,7 @@ browsers run one together — the relay, lockstep, snapshots — is docs/multipl
 ## Player slots
 
 `PlayerSlot` is one player's whole share of a level: `player`, `inventory`, `weapons`, `cheats`,
-`dead`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
+`dead`, `kills`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
 `consumePickup`. `Game.slots` holds them by index. `localSlot` is the one this browser plays: the
 HUD, crosshair, screen effects, death overlay, center messages, audio listener, `viewColormap`, the
 fade anchor, the fog's drawn island and the view camera read `local`, and nothing else does.
@@ -28,7 +28,7 @@ keys and its auto camera ticks. `'replay'`: posed from the record each tic, the 
 row like a replay's, and the drawn one is driven apart (docs/multiplayer-net.md § What a tic does).
 
 **Saves and replays hold every slot.** `captureSave` writes `GameSnapshot.players`, one
-`PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`);
+`PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`, `kills`);
 `SpecialsController.snapshot` writes every slot's `prev`, `SectorEffects.snapshot` every slot's
 timer; a replay holds one `SlotRecord` and one check column per slot. A restore builds as many
 slots as it holds. docs/savegames.md § What is saved and what is deliberately not, docs/replays.md §
@@ -46,7 +46,9 @@ missile (`playerStruckBy`, the first living slot struck), crushers (`applyCrushD
 `targetId` and `OneShotEffect.followTargetId` are one integer: a monster's `PosedThing.id`
 (`>= 0`), or a player slot as `targetOfSlot(slot) = -1 - slot` (`< 0`; `slotOfTarget` reads it
 back). One compare tells the two apart and the field stays a small integer — the `null` this
-replaced forced the tagged representation onto every hot record.
+replaced forced the tagged representation onto every hot record. A barrel's
+`PosedThing.explodeSource` holds whoever killed it the same way, beside its type as a projectile's
+`sourceType`; `hitBy` turns either pair into a hit's `source` (a monster) or `slot` (a player).
 
 `targetOfSlot(0)` is the spawn default (`MONSTER_FIELD_DEFAULTS.targetId`) and is elided from a
 saved monster block. A saved projectile carries its ids as the live one does.

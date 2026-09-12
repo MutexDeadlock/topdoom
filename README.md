@@ -100,11 +100,12 @@ does (autorun and the right mouse button), so both are there while you play — 
 | `1`–`7` | select weapon; pressing a slot again toggles within it (fist/chainsaw, shotgun/super shotgun) |
 | mouse wheel | cycle through the weapons you own |
 | `Q` / `E` | orbit the camera around the player |
-| `+` / `-` | camera distance *(manual camera mode)* |
-| `[` / `]` | camera tilt *(manual camera mode)* |
 | `R` | reload the level from your save, or from the checkpoint it wrote on the way in (once dead) |
 | `F2` / `F3` / `F4` | menu on Save / Load / Settings |
 | `ESC` | menu / resume |
+| `+` / `-` | camera distance *(manual camera mode)* |
+| `[` / `]` | camera tilt *(manual camera mode)* |
+| `Tab` | hold for the scoreboard — every player's kills this level and ping *(multiplayer)* |
 
 Ceilings are never rendered — from directly above, one would hide everything underneath it.
 

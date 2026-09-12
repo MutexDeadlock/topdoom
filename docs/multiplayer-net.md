@@ -25,7 +25,12 @@ dependency-free so `tests/server/rooms.test.ts` and the client's loopback fixtur
   `kicked {reason?}` (passed on unread), closes it, and the rest hear `left {member}`; from anyone else, or at the host itself, it is
   dropped. The relay enforces it, so a peer ignoring the host cannot stay seated.
 - A member leaving is `left {member}` to the rest; **the host leaving is `closed`** to everyone,
-  and the room is gone. A socket answering no ping for `2 × PING_MS` is dropped.
+  and the room is gone.
+- **Every socket is pinged each `PING_MS`**, its send time riding the ping: the round trip of the
+  answer goes to the whole room, the member included, as `latency {member, ms}` —
+  `RosterEntry.pingMs`, the scoreboard's ping (docs/hud.md § Scoreboard). A socket that has answered
+  nothing for `SILENT_MS` is dropped. A relay without `latency` leaves every ping blank; a client
+  without it drops the message unread.
 - Codes are five of `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` — no `I`/`O`/`0`/`1`.
 
 `server/` is its own package (`ws` is the one dependency), typechecked by its own `tsconfig`, and

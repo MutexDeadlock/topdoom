@@ -145,14 +145,13 @@ export function traceHitsBox(
  *
  * Neither centre-to-centre nor Euclidean: vanilla subtracts the body's own
  * radius and measures on the Chebyshev metric, which together decide how much
- * splash a wide monster takes. Vanilla truncates to whole map units
- * (`>> FRACBITS`); this keeps the fraction, the same precision difference
- * `World.pointOnLineSide` carries. See docs/combat.md § Splash and the BFG.
+ * splash a wide monster takes. Whole map units, floored as vanilla's `>> FRACBITS` leaves them, so
+ * a splash deals whole points. See docs/combat.md § Splash and the BFG.
  */
 export function blastDistanceToBox(px: number, py: number, bx: number, by: number, radius: number): number {
   const dx = Math.abs(bx - px);
   const dy = Math.abs(by - py);
-  const dist = (dx > dy ? dx : dy) - radius;
+  const dist = Math.floor((dx > dy ? dx : dy) - radius);
   return dist < 0 ? 0 : dist;
 }
 

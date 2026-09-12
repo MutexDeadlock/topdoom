@@ -12,6 +12,11 @@ function bankOf(letters: string): SpriteBank {
   } as unknown as SpriteBank;
 }
 
+/** A skin over `letters` whose materials answer tagged `tag`. */
+function skinOf(letters: string, spriteName: string, tag: string, fallback: SpriteSkin | null = null): SpriteSkin {
+  return { bank: bankOf(letters), materials: materialsStub({ tag }), spriteName, fallback };
+}
+
 /** Facing the camera, so every lookup lands on rotation 1 and the digit stays out of the way. */
 const FACING = VIEWER_ANGLE_DEG;
 
@@ -26,7 +31,7 @@ const lumpOf = (cached: unknown): string => (cached as { lump: string }).lump;
 describe('Sprites · a skin', () => {
   test('draws the skin’s lump while frameKey stays the animator’s own', () => {
     const anim = new SpriteAnimator(BANK, MATERIALS, 'PLAY', ['A']);
-    anim.setSkin({ bank: bankOf('ABCDEFG'), materials: materialsStub({ tag: 'skin' }), spriteName: 'PLA3' });
+    anim.setSkin(skinOf('ABCDEFG', 'PLA3', 'skin'));
     const cached = anim.resolve(FACING, VIEWER_ANGLE_DEG);
     assert.equal(lumpOf(cached), 'PLA3A1');
     assert.equal(tagOf(cached), 'skin');
@@ -38,7 +43,7 @@ describe('Sprites · a skin', () => {
     const anim = new SpriteAnimator(BANK, MATERIALS, 'PLAY', ['A']);
     // A skin whose sprite name is `PLAY` too, i.e. the same lump name in two material caches —
     // the case a lump-name-only memo would answer from the wrong cache.
-    anim.setSkin({ bank: bankOf('A'), materials: materialsStub({ tag: 'skin' }), spriteName: 'PLAY' });
+    anim.setSkin(skinOf('A', 'PLAY', 'skin'));
     assert.equal(tagOf(anim.resolve(FACING, VIEWER_ANGLE_DEG)), 'skin');
     anim.setSkin(null);
     const own = anim.resolve(FACING, VIEWER_ANGLE_DEG);
@@ -48,16 +53,30 @@ describe('Sprites · a skin', () => {
 
   test('a frame the skin has no lump for falls back to the animator’s own art', () => {
     const anim = new SpriteAnimator(BANK, MATERIALS, 'PLAY', ['A']);
-    anim.setSkin({ bank: bankOf('A'), materials: materialsStub({ tag: 'skin' }), spriteName: 'PLA3' });
+    anim.setSkin(skinOf('A', 'PLA3', 'skin'));
     anim.playOnce(['G'], 1);
     const cached = anim.resolve(FACING, VIEWER_ANGLE_DEG);
     assert.equal(lumpOf(cached), 'PLAYG1');
     assert.equal(anim.frameKey, 'PLAYG');
   });
 
+  test('a frame the skin lacks is drawn from its fallback first — the gib in the player’s colour', () => {
+    const anim = new SpriteAnimator(BANK, MATERIALS, 'PLAY', ['A']);
+    anim.setSkin(skinOf('AH', 'PLA3', 'skin', skinOf('AHO', 'PLAY', 'colour')));
+    anim.die(['H', 'O', 'P'], 1);
+    assert.equal(tagOf(anim.resolve(FACING, VIEWER_ANGLE_DEG)), 'skin');
+    anim.advance(1.5, false);
+    const gib = anim.resolve(FACING, VIEWER_ANGLE_DEG);
+    assert.deepEqual([lumpOf(gib), tagOf(gib), anim.frameKey], ['PLAYO1', 'colour', 'PLAYO']);
+    // Neither has it: the animator's own art — the same lump name as the fallback's, another cache.
+    anim.advance(1, false);
+    const own = anim.resolve(FACING, VIEWER_ANGLE_DEG);
+    assert.deepEqual([lumpOf(own), tagOf(own)], ['PLAYP1', 'own']);
+  });
+
   test('switching skins mid-death does not restart the death chain', () => {
     const anim = new SpriteAnimator(BANK, MATERIALS, 'PLAY', ['A']);
-    const skin: SpriteSkin = { bank: bankOf('HIJ'), materials: materialsStub({ tag: 'skin' }), spriteName: 'PLA5' };
+    const skin = skinOf('HIJ', 'PLA5', 'skin');
     anim.die(['H', 'I', 'J'], 1);
     anim.advance(1.5, false);
     anim.resolve(FACING, VIEWER_ANGLE_DEG);

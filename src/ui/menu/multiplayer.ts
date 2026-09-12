@@ -65,7 +65,7 @@ export interface MultiplayerHooks {
   kick(member: number): void;
   /** This browser's WADs changed: a peer's answer on the host's set is asked again. */
   recheckWads(): void;
-  /** Leaves the room; a level already running plays on alone. */
+  /** Leaves the room, and ends the level a network game runs — docs/multiplayer-net.md § Leaving. */
   leave(): void;
 }
 
@@ -414,7 +414,8 @@ function roomHint(session: NetSession): string {
   if (session.desyncedAt !== null) return `out of step since tic ${session.desyncedAt} — the host is resyncing`;
   if (session.phase !== 'lobby' || !session.isHost) return '';
   const waiting = session.peers.filter((peer) => peer.ready !== true);
-  if (waiting.length === 0) return session.peers.length === 1 ? 'alone so far — Start works, or wait for the others' : '';
+  // Start's reason where nobody else is in the room (docs/multiplayer-net.md § The session).
+  if (waiting.length === 0) return session.peers.length === 1 ? 'alone so far — Start waits for a second player' : '';
   return `waiting on ${waiting.map((peer) => peer.name).join(', ')}`;
 }
 

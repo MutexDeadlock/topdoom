@@ -54,7 +54,10 @@ export interface NetHooks {
   startGame(game: NetGame, restore: NetRestore | null): void;
   /** Something the lobby shows changed. */
   changed(): void;
-  /** The session is over — the room closed, the connection dropped, a refusal — and why. */
+  /**
+   * The session is over — the room closed, the connection dropped, a refusal — and why. A level
+   * running in it ends with it (docs/multiplayer-net.md § Leaving).
+   */
   ended(reason: string): void;
   /** The clock the stall notice and the drop timeout read; `performance.now` unless a test says. */
   now?(): number;
@@ -226,9 +229,13 @@ export class NetSession {
     return this.scheduler?.tic ?? 0;
   }
 
-  /** Whether the host may start: everyone in the room can play the set. */
+  /**
+   * Whether the host may start: someone besides the host is in the room, and everyone can play the
+   * set. docs/multiplayer-net.md § The session.
+   */
   get canStart(): boolean {
-    return this.host && this.phase === 'lobby' && this.game !== null && this.peers.every((peer) => peer.ready === true);
+    if (!this.host || this.phase !== 'lobby' || this.game === null || this.peers.length < 2) return false;
+    return this.peers.every((peer) => peer.ready === true);
   }
 
   /** The slots of the running game, for the tab's list. */
@@ -313,6 +320,17 @@ export class NetSession {
     this.phase = 'ended';
     this.endReason = null;
     this.transport.close();
+  }
+
+  /**
+   * The session is over for `reason` — the room closed, the connection dropped, a refusal, a
+   * snapshot these WADs cannot play: the room is left and {@link NetHooks.ended} hears why.
+   */
+  end(reason: string): void {
+    if (this.phase === 'ended') return;
+    this.leave();
+    this.endReason = reason;
+    this.hooks.ended(reason);
   }
 
   /** The host puts `member` out of the room; the relay's `left` for it does the rest (§ Leaving). */
@@ -810,13 +828,5 @@ export class NetSession {
 
   private nameOf(slot: number): string {
     return this.assignments[slot]?.name ?? `player ${slot + 1}`;
-  }
-
-  private end(reason: string): void {
-    if (this.phase === 'ended') return;
-    this.phase = 'ended';
-    this.endReason = reason;
-    this.transport.close();
-    this.hooks.ended(reason);
   }
 }

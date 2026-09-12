@@ -190,9 +190,10 @@ On the menu's **Multiplayer** tab the host enters the relay's address and a name
 level picked on the New Game tab; the others enter the five-letter room code and join. A deathmatch
 runs the classic *altdeath* rules: no monsters, every key, items coming back after thirty seconds,
 random deathmatch starts, and no fog of war. Everyone
-needs the same WADs — a row that can't play the set says so in red. The host picks the input delay
-and presses Start. Someone can join a game already running, and a player who leaves stands idle in
-the level. Every browser runs the whole game in lockstep, so a slow or lost connection holds the
+needs the same WADs — a row that can't play the set says so in red. Once someone has joined, the
+host picks the input delay and presses Start. Someone can join a game already running; a player who
+leaves goes back to the menu and their player stands idle in the level, and the host closing the
+room sends everyone back. Every browser runs the whole game in lockstep, so a slow or lost connection holds the
 others rather than desyncing them; cheats are off, and no best time is set. See
 [docs/multiplayer-net.md](docs/multiplayer-net.md) and
 [docs/multiplayer-deathmatch.md](docs/multiplayer-deathmatch.md).

@@ -770,8 +770,8 @@ earlier version wrongly assumed. `A_Explode` really does pass a constant 128/128
 made splash swing with the same small random roll as contact damage.
 
 **Range is measured to a body's *edge*, on the Chebyshev metric** — `util/geom.ts:
-blastDistanceToBox`, vanilla's `PIT_RadiusAttack`: `dist = (max(|dx|, |dy|) - thing->radius)`,
-clamped at 0. Neither half is cosmetic. Subtracting the body's own radius means a wide monster is
+blastDistanceToBox`, vanilla's `PIT_RadiusAttack`: `dist = (max(|dx|, |dy|) - thing->radius) >>
+FRACBITS`, floored to whole map units and clamped at 0. Neither half is cosmetic. Subtracting the body's own radius means a wide monster is
 both caught from further out and hurt harder at any range, and the Chebyshev metric is the same box
 the rest of the engine collides. A 48-radius mancubus 100 units from a barrel takes `128 - 52` = 76;
 measuring centre-to-centre — what this did until the collision model became a box throughout —
@@ -780,8 +780,9 @@ gave it 28, under-damaging exactly the monsters explosions are aimed at by nearl
 Vanilla carries **one** number where `applyRadiusDamage` takes two: `P_RadiusAttack(spot, source,
 damage)` uses `damage` as the range too, so its falloff is a plain `bombdamage - dist`. Every call
 site here passes `radius === maxDamage` (barrel 128/128, cyberdemon rocket 128/128, arch-vile blast
-70/70), which makes `maxDamage * (1 - dist / radius)` exactly that; the pair stays split only so a
-caller could tune them apart.
+70/70), which makes `splashDamage`'s `maxDamage * (radius - dist) / radius` exactly that; the pair
+stays split only so a caller could tune them apart. **A blast deals whole points**: the distance is
+whole, and the division truncates as C's does, so no health or armor carries a fraction.
 
 **A blast names its shooter.** With `RadiusBlast.slot` set, every other player it reaches is told
 `targetOfSlot(slot)` as the cause and `slot` as the credit; the shooter's own stays `'self'`, and a

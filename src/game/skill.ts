@@ -34,11 +34,11 @@ const SKILL_NIGHTMARE: Skill = 5;
  * Damage actually dealt to the player, halved on skill 1: `P_DamageMobj`'s
  * `if (player && gameskill == sk_baby) damage >>= 1;` (`p_inter.c`). Vanilla halves before
  * anything else looks at the number, so the reduced damage is also what knockback, the pain flash
- * and the death cry's overkill test see. Only the *player* gets this — a monster on skill 1 takes
+ * and `playerDeath`'s gib and cry see. Only the *player* gets this — a monster on skill 1 takes
  * what it always took. See docs/items.md § Skill.
  */
 export function playerDamageAtSkill(damage: number, skill: Skill): number {
-  return skill === SKILL_BABY ? damage / 2 : damage;
+  return skill === SKILL_BABY ? damage >> 1 : damage;
 }
 
 /**

@@ -77,14 +77,19 @@ export class PlayerSkins {
   /**
    * The skin the player draws with `weapon` in hand and `color` on, or null for the loaded set's
    * own `PLAY` in green, as its atlas holds it. The setting is read per call rather than captured,
-   * so the menu applies it to the level already running; `setDrawsOwnPlayer` is the loaded set's
-   * own answer, resolved once per session.
+   * so the menu applies it to the level already running. A frame the weapon-matching art does not
+   * draw — the gib chain — comes from `PLAY` in the same colour ({@link SpriteSkin.fallback}).
    *
    * Which of the nine is drawn is `playerSkinWeapon`'s, not `weapon`'s: a DEHACKED patch can move
    * a weapon's shot onto another weapon's, and the art follows the shot.
    *
    * The same record comes back every frame for a given weapon and colour, so a caller handing it
    * straight to `SpriteActor.setSkin` allocates nothing.
+   *
+   * @param weapon             the weapon in hand
+   * @param color              the armour colour drawn
+   * @param setDrawsOwnPlayer  the loaded set's own answer, resolved once per session
+   * @returns the skin to draw through, null for the set's own green `PLAY`
    */
   skinFor(weapon: WeaponId, color: PlayerColor, setDrawsOwnPlayer: boolean): SpriteSkin | null {
     const skins = this.colorSkins(color);
@@ -119,13 +124,17 @@ export class PlayerSkins {
       return cache;
     };
     // Green is the palette itself, and the set's atlas already draws `PLAY` in it.
-    const play = palette === this.palette ? null : { bank: this.setBank, materials: cacheOver(this.set), spriteName: 'PLAY' };
+    const play: SpriteSkin | null =
+      palette === this.palette
+        ? null
+        : { bank: this.setBank, materials: cacheOver(this.set), spriteName: 'PLAY', fallback: null };
     let byWeapon: Record<WeaponId, SpriteSkin> | null = null;
     if (this.skinWad && this.skinBank) {
       const materials = cacheOver(this.skinWad);
       byWeapon = {} as Record<WeaponId, SpriteSkin>;
+      // A frame the pack does not draw — the gib chain — comes from `PLAY` in this colour.
       for (const [weapon, spriteName] of Object.entries(PLAYER_WEAPON_SPRITES) as [WeaponId, string][]) {
-        byWeapon[weapon] = { bank: this.skinBank, materials, spriteName };
+        byWeapon[weapon] = { bank: this.skinBank, materials, spriteName, fallback: play };
       }
     }
     return { play, byWeapon, caches };

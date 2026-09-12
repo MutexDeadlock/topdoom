@@ -40,8 +40,6 @@ import {
   FULLBRIGHT_FRAMES,
   PLAYER_ACTION_FRAME_SECONDS,
   PLAYER_ATTACK_FRAMES,
-  PLAYER_DEATH_FRAME_SECONDS,
-  PLAYER_DEATH_FRAMES,
   PLAYER_PAIN_FRAMES,
   obituary,
 } from './game/things/tables.ts';
@@ -151,7 +149,7 @@ import { ThingType } from './game/things/doomednums.ts';
 import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
 import { playerOrigin } from './audio/sfx.ts';
-import { PlayerSlot, type SlotSource } from './game/playerslot.ts';
+import { PlayerSlot, playerDeath, type SlotSource } from './game/playerslot.ts';
 import { Level, type LevelParts } from './game/level.ts';
 import { Presenter } from './game/presenter.ts';
 import {
@@ -357,10 +355,11 @@ export class Game {
   private readonly localSlot: number;
   /**
    * This browser's seat in the network game the level runs in ({@link GameOptions.net}), or null.
-   * Read through {@link Game.net}, which is null again once the session ends.
-   * docs/multiplayer-net.md § What a tic does.
+   * While set, every slot reads its rows and the local slot's simulation camera is separate from
+   * the drawn one, as under a playback. The session ending ends this `Game` too (`main.ts`).
+   * docs/multiplayer-net.md § What a tic does, docs/multiplayer-net.md § Leaving.
    */
-  private readonly seat: NetSeat | null;
+  private readonly net: NetSeat | null;
   /**
    * {@link Game.slots} as the thing layer reads them, `null` where dead — refilled per tic, never
    * reallocated.
@@ -704,7 +703,7 @@ export class Game {
     const wanted = net ? net.slotCount : Math.min(Math.max(players ?? 1, 1), MAX_PLAYERS);
     this.growSlots(restore ? restore.players.length : wanted);
     // `slots` is handed over as is: the list is only ever grown, never replaced.
-    this.seat = net
+    this.net = net
       ? new NetSeat(net, {
           slots: this.slots,
           local: this.local,
@@ -846,7 +845,7 @@ export class Game {
     // and sectors only make sense on the exact map they were saved on.
     if (restore && start < 0) throw new Error(`the selected WADs have no map ${startMap.toUpperCase()}`);
     this.buildLevel(start >= 0 ? start : 0, restore);
-    this.seat?.bind();
+    this.net?.bind();
     // After the load, which snapped the camera the way a save restore does: the recording's camera
     // was mid-glide, and its settings are the run's. docs/replays.md § Camera state.
     if (playback) {
@@ -889,15 +888,6 @@ export class Game {
   }
 
   /**
-   * The network game this level runs in, or null. While set, every slot reads its rows and the
-   * local slot's simulation camera is separate from the drawn one, as under a playback. Null again
-   * once the session ends — the level plays on alone. docs/multiplayer-net.md § What a tic does.
-   */
-  private get net(): NetSeat | null {
-    return this.seat && !this.seat.released ? this.seat : null;
-  }
-
-  /**
    * What drives `slot` with no replay in charge: the network's rows, the keyboard for the local
    * slot, nothing for any other. {@link ReplayDriver.set} reads it.
    * docs/replays.md § The TicInput seam.
@@ -933,6 +923,14 @@ export class Game {
    */
   get watchingReplay(): boolean {
     return this.playback !== null;
+  }
+
+  /**
+   * Whether this level runs in a network session ({@link GameOptions.net}), which `main.ts` ends
+   * it with. docs/multiplayer-net.md § Leaving.
+   */
+  get networked(): boolean {
+    return this.net !== null;
   }
 
   /**
@@ -1159,6 +1157,7 @@ export class Game {
     this.disposed = true;
     this.stop();
     this.driver.dispose();
+    this.net?.dispose();
     this.crosshair.detach(false);
     this.replayBar.dispose();
     // The engine is session-level and the next Game sets its own bank; this
@@ -1825,17 +1824,19 @@ export class Game {
     const { player, inventory } = slot;
     // Before anything reads it — knockback and the pain flash included, exactly as in vanilla.
     const amount = playerDamageAtSkill(rawAmount, this.skill);
-    const healthBefore = inventory.health;
-    if (!applyDamage(inventory, amount, slot.cheats.god)) return false;
+    // Unclamped — vanilla's `target->health`, which the gib and the death cry read.
+    // docs/death.md § Player death.
+    const health = applyDamage(inventory, amount, slot.cheats.god);
+    if (health === null) return false;
     if (hit.from) player.applyDamageThrust(thrustSpeed(amount, PLAYER_MASS), hit.from.x, hit.from.y);
     // The flash is the local player's own eyes, and the overlay below their own screen.
     if (slot === this.viewed) this.screenEffects.addPain(amount);
-    if (inventory.health <= 0) {
-      slot.dead = true;
-      // Kept on the slot, whoever is drawn: the overlay can go up long after the blow — a view
-      // switched onto the corpse, a snapshot restored with it.
+    if (health <= 0) {
+      const death = playerDeath(health, this.gameMode);
+      // The cause is kept on the slot, whoever is drawn: the overlay can go up long after the
+      // blow — a view switched onto the corpse, a snapshot restored with it.
       // docs/death.md § Who killed the player.
-      slot.deathCause = hit.cause;
+      slot.die(hit.cause, death.gibbed);
       if (this.deathmatch) {
         const killer = fragCredit(slot.index, hit);
         if (killer !== null) this.slots[killer].frags[slot.index]++;
@@ -1851,10 +1852,8 @@ export class Game {
       // somewhere else between the last two live tics. docs/frameloop.md §
       // Interpolation.
       player.syncInterpolation();
-      // `pdiehi` for an overkill past 50, reconstructed from the hit (`applyDamage` clamps at 0) —
       // docs/audio.md § Player and pickups.
-      this.audio.play(amount > healthBefore + 50 ? 'pdiehi' : 'pldeth', player, playerOrigin(slot.index));
-      slot.actor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
+      this.audio.play(death.sound, player, playerOrigin(slot.index));
       // The hint depends on what `R` will actually do — a savegame to reload is
       // known here and now, where a checkpoint is only a store read away, and under a playback `R`
       // is the record's rather than the viewer's, so there is nothing to offer
@@ -1982,7 +1981,8 @@ export class Game {
   private armDeathOverlay(): void {
     const { viewed } = this;
     if (!viewed.dead || this.levelEnding || this.popup !== null) return;
-    this.deathOverlay.show(obituary(viewed.deathCause, (slot) => this.playerName(slot)), this.deathHint());
+    const killer = obituary(viewed.deathCause, (slot) => this.playerName(slot));
+    this.deathOverlay.show(killer, this.deathHint(), viewed.deathFrames);
   }
 
   /**
@@ -2232,7 +2232,8 @@ export class Game {
    * arrival — which adds a slot, and ends a recording, whose record has no room for one.
    * docs/multiplayer-net.md § Snapshots.
    *
-   * @returns false when these WADs have no such map, which ends the seat ({@link NetSeat.ready})
+   * @returns false when these WADs have no such map, which ends the session and this `Game` with
+   *          it ({@link NetSeat.ready})
    */
   private restoreFromNet(restore: NetRestore): boolean {
     const index = this.mapNames.indexOf(restore.map);
@@ -2312,14 +2313,14 @@ export class Game {
       requestAnimationFrame(this.frame);
       return;
     }
-    // A network game whose session ended plays on alone from here.
-    this.net?.endIfOver();
     // A playback banks time at its own speed, and none while paused or spent — the bar's pause
     // is not the menu's, the frame keeps running (docs/replays.md § Playback). A network game
     // banks none while a peer's rows are missing: the wait is not simulation time, so the frame
     // holds rather than owing tics (docs/multiplayer-net.md § Lockstep).
     const playback = this.playback;
     const stalled = this.net !== null && !this.net.ready();
+    // A restore that ended the session has had `main.ts` dispose this `Game` meanwhile.
+    if (this.disposed) return;
     const held = stalled || (playback !== null && (playback.paused || playback.ended));
     this.accumulator += held ? 0 : rawDt * (playback?.speed ?? 1);
     if (this.accumulator > MAX_TICS_PER_FRAME * DOOM_TIC) this.accumulator = MAX_TICS_PER_FRAME * DOOM_TIC;
@@ -2333,6 +2334,7 @@ export class Game {
       }
       // The second and later tics of a frame ask again: each spends a row.
       if (ran > 0 && this.net !== null && !this.net.ready()) {
+        if (this.disposed) return;
         this.accumulator = 0;
         break;
       }

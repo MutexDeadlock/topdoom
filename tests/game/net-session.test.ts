@@ -47,7 +47,7 @@ describe('Network · session', () => {
     const host = hostSession(hub);
     assert.equal(host.session.code, 'ROOM1');
     assert.ok(host.session.isHost);
-    assert.ok(host.session.canStart, 'a host alone can start');
+    assert.ok(!host.session.canStart, 'a host alone cannot start');
 
     const guest = joinSession(hub, 'ROOM1');
     assert.ok(!guest.session.isHost);

@@ -1,5 +1,8 @@
 v0.20.0 (2026-09-1?)
 
+Deathmatch is the last major feature before v1.0, 
+so until that, only polish and fixes.
+
 Features and improvements
   - multiplayer: 
     - deathmatch! the classic altdeath rules: no monsters, all
@@ -8,6 +11,13 @@ Features and improvements
     - friendly fire as a host option for coop
     - a player teleporting onto another player telefrags them
     - Boom's not-in-coop / not-in-deathmatch thing flags are honoured
+    - the host needs a second player to start
+    - leaving a game, or the host closing the room, ends it and returns to the menu
+  - players gib when a hit leaves them below -100 health, as in vanilla
+
+Fixed bugs
+  - the high death cry (pdiehi) plays in DOOM2 only, as in vanilla
+  - health and armor no longer carry fractions
 
 
 ===============================================================================

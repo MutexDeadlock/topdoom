@@ -403,6 +403,12 @@ export interface PlayerSlotSnapshot {
    */
   deathCause?: DamageCause;
   /**
+   * The corpse ({@link PlayerSlotSnapshot.dead}) gibbed, written only then: absent is the plain
+   * death chain, a living slot, a save from before the gib. No tic reads it.
+   * docs/death.md § Player death.
+   */
+  gibbed?: boolean;
+  /**
    * The cheats switched on, written only while one is: an honest slot saves nothing, and absent
    * means neither cheat. docs/cheats.md § Saves and best times.
    */

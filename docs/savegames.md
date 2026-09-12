@@ -112,8 +112,9 @@ the snapshot inside is unchanged.
 ## What is saved and what is deliberately not
 
 **The save holds every player slot** (`players`, by slot): each one's `player`, `inventory`,
-`weapons`, `cameraYawDeg`, `dead`, and optional `cheats` and `deathCause` (what killed a corpse,
-for the death overlay alone — docs/death.md § Who killed the player), beside `netgame` and every slot's
+`weapons`, `cameraYawDeg`, `dead`, and optional `cheats`, `deathCause` (what killed a corpse,
+for the death overlay alone — docs/death.md § Who killed the player) and `gibbed` (a corpse on the
+gib chain — docs/death.md § Player death), beside `netgame` and every slot's
 `SpecialsController.prev` and `SectorEffects` timer. A restore builds as many slots as the save
 holds, whatever the session was started with. docs/multiplayer-coop.md § Exit, death and saves.
 

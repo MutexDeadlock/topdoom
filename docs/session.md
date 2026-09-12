@@ -60,7 +60,8 @@ Rules that hold this together:
   a joiner, the host's snapshot (`restore`): the host's set is verified like a save's and `Game`
   gets the session as `net` (docs/multiplayer-net.md § The session). A start of the player's own
   — New Game, Load, a replay — leaves the room first; the campaign's end hands the room back to
-  its lobby (`endGame`).
+  its lobby (`endGame`). The session ending — left, closed, lost — disposes its level and reopens
+  the menu as a launcher (`leaveNet`, docs/multiplayer-net.md § Leaving).
 - **A load is the same `startLevel`**, given the save (`LevelSource.save`): it verifies the
   assembled set's game WAD and map provider against the save's own IDs (`verifySaveWads`, over
   `wadSetRefusal` — docs/savegames.md § WAD-set identity) and hands `Game` the snapshot instead of

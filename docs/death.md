@@ -125,15 +125,25 @@ to die. A dead player is neither stomped nor in the way: `P_KillMobj` strips the
 ## Player death
 
 **Reuses the exact same mechanism** on the slot's session-scoped `PlayerSlot.actor`:
-`PLAYER_DEATH_FRAMES` (`H`-`N`) is `PLAY`'s own confirmed DIE half, derived the same way as the
-monster tables — and living beside them in `game/things/tables.ts`, not in `game/player.ts`, which
-owns no sprite.
+`PLAYER_DEATH_FRAMES` (`H`-`N`) and `PLAYER_XDEATH_FRAMES` (`O`-`W`) are `PLAY`'s `S_PLAY_DIE` and
+`S_PLAY_XDIE` chains (`info.c`, pinned by `tests/game/dehacked-frames.test.ts`), living beside the
+monster tables in `game/things/tables.ts`, not in `game/player.ts`, which owns no sprite.
+
+**A player gibs as `P_KillMobj` has it: below `-spawnhealth`** (`PLAYER_SPAWN_HEALTH`, 100) after
+the hit. That is `target->health`, which goes negative; the HUD's `player->health` stops at 0, and
+so does `Inventory.health`, so `applyDamage` returns the unclamped value. `playerDeath` (`game/playerslot.ts`) turns it into the
+chain and the cry — `slop` for a gib (`A_XScream`), else `pdiehi` below −50 in a commercial game
+and `pldeth` otherwise (`A_PlayerScream`, docs/audio.md § Player and pickups). `PlayerSlot.die`
+plays the chain, and a snapshot carries the gib (`PlayerSlotSnapshot.gibbed`, optional: absent is
+the plain corpse, and no tic reads it). Both chains run at `PLAYER_DEATH_FRAME_SECONDS`, the flat
+rate the monster tables use; the death overlay waits out the one the corpse plays.
 
 `Inventory.applyDamage` is vanilla's `P_DamageMobj` armor formula — green armor absorbs a third of
-the damage, blue half, spending armor points 1-for-1 with whatever it absorbed and falling back to
+the damage, blue half, in C's integer division (`damage/3`, `damage/2`) so armor and health stay
+whole, spending armor points 1-for-1 with whatever it absorbed and falling back to
 bare once it runs out mid-hit — reused for the player specifically since monsters have no armor. It
-returns whether the hit actually landed, `false` while invulnerability blocked it outright
-(`INVULNERABLE_DAMAGE_LIMIT`); `damageSlot` uses that to skip the pain flash and flinch animation
+returns the body's unclamped health, `null` while invulnerability blocked the hit outright
+(`INVULNERABLE_DAMAGE_LIMIT`); `damageSlot` uses the null to skip the pain flash and flinch animation
 for a hit that did nothing, which a first version didn't check, so an invulnerable player flashed
 red on every hit that was landing on nothing.
 
@@ -158,7 +168,7 @@ The death itself shows `#death-overlay` (`ui/hud/deathoverlay.ts`) — three `Wa
 red, the killer line in `COLOR_YELLOW`, the hint in red dimmed by CSS. A canvas is always `:empty`,
 so the "nothing attributed the blow" case that used to be a `:empty` selector is now a `blank` class
 the drawing code sets. It does not go up immediately: `DeathOverlay.show` only *arms* it, and
-`DeathOverlay.update` raises it `DEATH_OVERLAY_DELAY` later — `PLAY`'s DIE sequence end to end, so
+`DeathOverlay.update` raises it once the corpse's chain (`PlayerSlot.deathFrames`) has played, so
 the text arrives as the corpse settles instead of on the killing frame. Nothing is gated behind the
 delay (`R` answers throughout, since `tic` reads `PlayerSlot.dead`, not the overlay), and a
 `DeathOverlay.clear` inside the window means the overlay is never seen at all, which is what § Dying
@@ -285,7 +295,7 @@ why `damageSlot` queues the exit itself before arming the overlay.
 **The two deaths are usually a few tics apart, not simultaneous**, so cancelling the overlay is not
 enough on its own — MAP10's chain kills the player one blast before the brain, and an overlay raised
 on the killing frame flashes up for those tics before `endingOverCorpse` reaches it.
-`DEATH_OVERLAY_DELAY` (§ Player death) is what closes that: the overlay is armed on death and only
+The overlay's arming delay (§ Player death) is what closes that: the overlay is armed on death and only
 raised once the corpse has finished falling, which is far longer than any barrel chain takes to
 finish, so the disarm always wins.
 

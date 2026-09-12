@@ -269,10 +269,10 @@ the sector's linedefs (`P_GroupLines`), not a polygon centroid — computed lazi
 
 ## Player and pickups
 
-`plpain` on any hit that lands, `pldeth` on death — or `pdiehi` for a death that overkilled by
-more than 50, `A_PlayerScream`'s own split. Vanilla tests post-hit health, which goes negative
-there; `applyDamage` clamps at 0, so the overkill is reconstructed from the hit and is off by
-whatever armor absorbed, which only moves a few borderline deaths between the two cries.
+`plpain` on any hit that lands, `pldeth` on death — or `pdiehi` below −50 health, in a commercial
+game only (`A_PlayerScream`'s `gamemode == commercial`), and `slop` for a gib instead of either
+(`A_XScream`). Vanilla tests the body's post-hit health, which goes negative where the HUD's stops
+at 0 — `applyDamage`'s return, which `playerDeath` reads; docs/death.md § Player death.
 
 `oof` on a landing harder than vanilla's `momz < -8` units/tic (`HARD_LANDING_SPEED`,
 `game/player.ts`), read off `Player.landingSpeed`.

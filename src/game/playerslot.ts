@@ -12,11 +12,17 @@ import type { TicInput } from './input.ts';
 import type { AutoCamera } from './autocamera.ts';
 import { makeTouchCache, type SectorTouchCache } from './world.ts';
 import { deserializeInventory, serializeInventory, type PlayerSlotSnapshot } from './snapshot.ts';
-import { PLAYER_DEATH_FRAME_SECONDS, PLAYER_DEATH_FRAMES } from './things/tables.ts';
+import {
+  PLAYER_DEATH_FRAME_SECONDS,
+  PLAYER_DEATH_FRAMES,
+  PLAYER_SPAWN_HEALTH,
+  PLAYER_XDEATH_FRAMES,
+} from './things/tables.ts';
 import type { TopDownCamera } from '../render/camera.ts';
 import type { SpriteActor } from '../render/sprites.ts';
 import { PlayerShadow } from '../render/playershadow.ts';
-import { playerOrigin } from '../audio/sfx.ts';
+import { playerOrigin, type SfxId } from '../audio/sfx.ts';
+import type { GameMode } from '../wad/campaign/gamemode.ts';
 import type { PlayerSettings } from './replay/defs.ts';
 import { getPlayerColor, slotColor, type PlayerColor } from '../wad/playercolor.ts';
 import type { Pos3 } from '../types.ts';
@@ -48,6 +54,29 @@ export interface PlayerSlotOptions {
   consumePickup: PickupConsumer;
 }
 
+/** How a player's death plays out — {@link playerDeath}'s answer. */
+export interface PlayerDeath {
+  /** `P_KillMobj`'s `xdeathstate`: the gib chain, {@link PLAYER_XDEATH_FRAMES}. */
+  gibbed: boolean;
+  /** The cry: `A_XScream`'s `slop` for a gib, else `A_PlayerScream`'s `pdiehi` or `pldeth`. */
+  sound: SfxId;
+}
+
+/**
+ * How a player dies of a killing hit: below `-spawnhealth` the body gibs (`P_KillMobj`,
+ * `p_inter.c`); otherwise `A_PlayerScream` (`p_enemy.c`) cries `pdiehi` below −50, in a commercial
+ * game only. docs/death.md § Player death.
+ *
+ * @param health    the body's health after the hit, unclamped — vanilla's `target->health`, which
+ *                  goes below 0 where the HUD's `player->health` stops at it
+ * @param gameMode  the loaded set's, which gates `pdiehi`
+ * @returns the chain the corpse plays and the sound it makes
+ */
+export function playerDeath(health: number, gameMode: GameMode): PlayerDeath {
+  if (health < -PLAYER_SPAWN_HEALTH) return { gibbed: true, sound: 'slop' };
+  return { gibbed: false, sound: gameMode === 'commercial' && health < -50 ? 'pdiehi' : 'pldeth' };
+}
+
 export class PlayerSlot {
   readonly index: number;
   /**
@@ -72,6 +101,12 @@ export class PlayerSlot {
    * player.
    */
   deathCause: DamageCause | undefined = undefined;
+  /**
+   * Whether this player's corpse plays the gib chain rather than the plain one, while
+   * {@link PlayerSlot.dead}: what {@link PlayerSlot.deathFrames} picks, and what a snapshot lays
+   * down again. docs/death.md § Player death.
+   */
+  gibbed = false;
   /**
    * The kills this player made this level — vanilla's `player_t.killcount`, which `P_SetupLevel`
    * zeroes and `Game.buildLevel` does too. Counted in a netgame only; what the scoreboard shows.
@@ -144,7 +179,31 @@ export class PlayerSlot {
     this.weapons.beginLevel(this.inventory);
     this.dead = false;
     this.deathCause = undefined;
+    this.gibbed = false;
     this.actor.revive();
+  }
+
+  /**
+   * Down for this life: the killing hit's, and a snapshot's corpse laid down again. The billboard
+   * plays `PLAY`'s plain death chain, or its xdeath one where `gibbed`.
+   *
+   * @param cause   what killed the player, undefined where nothing is blamed
+   * @param gibbed  {@link playerDeath}'s verdict on the killing hit
+   */
+  die(cause: DamageCause | undefined, gibbed: boolean): void {
+    this.dead = true;
+    this.deathCause = cause;
+    this.gibbed = gibbed;
+    this.actor.die(this.deathFrames, PLAYER_DEATH_FRAME_SECONDS);
+  }
+
+  /**
+   * The chain {@link PlayerSlot.die} plays, each frame {@link PLAYER_DEATH_FRAME_SECONDS} long:
+   * `PLAY`'s xdeath where {@link PlayerSlot.gibbed}, its plain death otherwise — what the death
+   * overlay waits out. docs/death.md § Player death.
+   */
+  get deathFrames(): string[] {
+    return this.gibbed ? PLAYER_XDEATH_FRAMES : PLAYER_DEATH_FRAMES;
   }
 
   /** This player's score: everyone else they killed, minus themselves — `WI_fragSum`. */
@@ -208,6 +267,7 @@ export class PlayerSlot {
       ...(this.kills > 0 ? { kills: this.kills } : {}),
       ...(this.frags.some((n) => n !== 0) ? { frags: [...this.frags] } : {}),
       ...(this.deathCause !== undefined ? { deathCause: this.deathCause } : {}),
+      ...(this.gibbed ? { gibbed: true } : {}),
     };
   }
 
@@ -227,10 +287,6 @@ export class PlayerSlot {
     // After the line above: `restore` derives `weaponLastFrame` off the
     // inventory it is handed, and `beginLevel` only saw the outgoing one.
     this.weapons.restore(saved.weapons, this.inventory);
-    if (saved.dead) {
-      this.dead = true;
-      this.deathCause = asDamageCause(saved.deathCause);
-      this.actor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
-    }
+    if (saved.dead) this.die(asDamageCause(saved.deathCause), saved.gibbed === true);
   }
 }

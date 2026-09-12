@@ -487,16 +487,25 @@ export const MONSTER_RAISE_FRAMES: Record<number, string[]> = {};
 /**
  * The player's own frame letters, the `PLAY`-lump counterparts of the `MONSTER_*_FRAMES` tables
  * above — scalars rather than doomednum-keyed records, there being exactly one player, and here
- * rather than in `game/player.ts`, which owns no sprite. Death is confirmed against `PLAY`'s lump
- * names (its rotation-0 tail runs H-W, DIE1-7 then the XDIE gib variant this engine doesn't model);
- * attack and pain come from `info.c` and play via `SpriteAnimator.playOnce`, handing back to the
- * walk cycle when they finish. docs/death.md § Player death.
+ * rather than in `game/player.ts`, which owns no sprite. Death and the gib are `info.c`'s
+ * `S_PLAY_DIE1`-`7` and `S_PLAY_XDIE1`-`9` (`tests/game/dehacked-frames.test.ts` walks both), at
+ * the one flat rate {@link MONSTER_DEATH_FRAME_SECONDS} stands for; attack and pain come from
+ * `info.c` and play via `SpriteAnimator.playOnce`, handing back to the walk cycle when they finish.
+ * docs/death.md § Player death.
  */
 export const PLAYER_DEATH_FRAMES = ['H', 'I', 'J', 'K', 'L', 'M', 'N'];
+export const PLAYER_XDEATH_FRAMES = ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W'];
 export const PLAYER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
 export const PLAYER_ATTACK_FRAMES = ['E', 'F'];
 export const PLAYER_PAIN_FRAMES = ['G'];
 export const PLAYER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
+
+/**
+ * `mobjinfo[MT_PLAYER].spawnhealth` (`info.c`): not the health a player starts with (`Misc`'s
+ * `Initial Health`), but how far below 0 a killing hit must leave the body for it to gib —
+ * `P_KillMobj`. docs/death.md § Player death.
+ */
+export const PLAYER_SPAWN_HEALTH = 100;
 
 /**
  * Item a monster leaves behind on death (doomednum of the pickup to spawn),

@@ -37,10 +37,7 @@ export interface NetHost {
   readonly view: Viewport;
   /** Every slot's body as the fog sweeps from them, refilled for this tic — the check sample's. */
   bodies(): readonly Pos2[];
-  /**
-   * Points every slot's input and source at what drives it now: the seat's rows while bound, the
-   * keyboard and idleness once released.
-   */
+  /** Points every slot's input and source at the seat's rows. */
   rebindInputs(): void;
   /**
    * The level for a sync, or null on a moment no snapshot can carry. A function-valued property,
@@ -57,8 +54,6 @@ export class NetSeat {
   readonly session: NetSession;
   /** The menu is up over the game, which runs on: the local rows are idle ones meanwhile. */
   menuUp = false;
-  /** Whether the session is over and the level plays on alone — `Game.net` reads null then. */
-  released = false;
   private readonly host: NetHost;
   /** The local slot's row being sampled, reused per tic. */
   private readonly row: TicRow = emptyRow();
@@ -93,19 +88,11 @@ export class NetSeat {
   }
 
   /**
-   * The session is over: the level plays on alone, the local slot back on the keyboard and the
-   * viewport's camera, every other slot standing idle. docs/multiplayer-net.md § Leaving.
+   * The level is torn down: the session settings pinned before every tic go back to the menu's.
+   * Nothing plays a network game's level on alone — docs/multiplayer-net.md § Leaving.
    */
-  release(reason: string | null): void {
-    const { local, view } = this.host;
-    // First: `rebindInputs` below reads it back through `Game.net` to pick every slot's input.
-    this.released = true;
-    this.menuUp = false;
+  dispose(): void {
     releaseSessionSettings();
-    local.attachSimCamera(view.camera);
-    local.settings = GLOBAL_PLAYER_SETTINGS;
-    this.host.rebindInputs();
-    if (reason) this.host.say(reason);
   }
 
   /**
@@ -152,14 +139,13 @@ export class NetSeat {
    * Whether the tic about to run may: every row in, and no snapshot due on it still on its way. A
    * sync landing here is carried out first — the host captures and sends, everyone restores — and
    * then the tic runs from the restored level. docs/multiplayer-net.md § Snapshots.
+   *
+   * @returns false as well when a restore ended the session, which tears the level down with it
    */
   ready(): boolean {
     const restore = this.session.pendingRestore(this.host.captureState);
     if (restore === 'wait') return false;
-    if (restore !== null) {
-      this.applyRestore(restore);
-      if (this.released) return true;
-    }
+    if (restore !== null && !this.applyRestore(restore)) return false;
     return this.session.readyForTic();
   }
 
@@ -170,13 +156,6 @@ export class NetSeat {
     if (notice) {
       this.host.say(notice);
       this.stallNoticeAt = now;
-    }
-  }
-
-  /** Releases the seat once its session has ended, with the reason it ended on. */
-  endIfOver(): void {
-    if (!this.released && this.session.phase === 'ended') {
-      this.release(this.session.endReason);
     }
   }
 
@@ -204,16 +183,18 @@ export class NetSeat {
 
   /**
    * The host's snapshot, in place of whatever this browser had run to: a resync, or a joiner's
-   * arrival. A map these WADs do not have ends the seat instead. docs/multiplayer-net.md
-   * § Snapshots.
+   * arrival. A map these WADs do not have ends the session instead, and the level with it.
+   * docs/multiplayer-net.md § Snapshots.
+   *
+   * @returns whether the level was restored
    */
-  private applyRestore(restore: NetRestore): void {
+  private applyRestore(restore: NetRestore): boolean {
     if (!this.host.restoreLevel(restore)) {
-      this.release(`the host is on ${restore.map}, which these WADs do not have`);
-      this.session.leave();
-      return;
+      this.session.end(`the host is on ${restore.map}, which these WADs do not have`);
+      return false;
     }
     this.session.restoreApplied();
     this.bind();
+    return true;
   }
 }

@@ -459,19 +459,26 @@ const INVULNERABLE_DAMAGE_LIMIT = 1000;
 
 /**
  * Reduces health by `amount`, letting worn armor absorb part of it first — vanilla's `P_DamageMobj`
- * armor formula, with invulnerability short-circuiting it where vanilla checks (see
- * `INVULNERABLE_DAMAGE_LIMIT`). `health` clamps at 0, since `game.ts`'s death check is `<= 0`.
- * Returns whether the hit landed. docs/death.md § Player death.
+ * armor formula in its whole points, with invulnerability short-circuiting it where vanilla checks
+ * (see {@link INVULNERABLE_DAMAGE_LIMIT}). `health` clamps at 0, as `player->health` does.
+ * docs/death.md § Player death.
  *
  * `god` is IDDQD's `CF_GODMODE` (docs/cheats.md § IDDQD) — a parameter rather than an inventory
  * field because it is not something the player carries, and required rather than defaulted so a
  * damage path added later has to say which it is.
+ *
+ * @param inv     the player's, whose armor and health the hit spends
+ * @param amount  the damage in whole points
+ * @param god     IDDQD's god mode
+ * @returns the body's health after the hit, unclamped — vanilla's `target->health`, below 0 on a
+ *          killing blow, which the gib and the death cry read — or null where the hit was blocked
  */
-export function applyDamage(inv: Inventory, amount: number, god: boolean): boolean {
-  if ((god || hasPower(inv, 'invulnerability')) && amount < INVULNERABLE_DAMAGE_LIMIT) return false;
+export function applyDamage(inv: Inventory, amount: number, god: boolean): number | null {
+  if ((god || hasPower(inv, 'invulnerability')) && amount < INVULNERABLE_DAMAGE_LIMIT) return null;
   let damage = amount;
   if (inv.armorType > 0 && inv.armor > 0) {
-    let saved = inv.armorType === 1 ? damage / 3 : damage / 2;
+    // C's integer division, as `p_inter.c`'s `saved = damage/3`: armor and health stay whole.
+    let saved = Math.trunc(inv.armorType === 1 ? damage / 3 : damage / 2);
     if (inv.armor <= saved) {
       saved = inv.armor;
       inv.armorType = 0;
@@ -479,8 +486,9 @@ export function applyDamage(inv: Inventory, amount: number, god: boolean): boole
     inv.armor -= saved;
     damage -= saved;
   }
-  inv.health = Math.max(0, inv.health - damage);
-  return true;
+  const health = inv.health - damage;
+  inv.health = Math.max(0, health);
+  return health;
 }
 
 /**

@@ -264,7 +264,7 @@ export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBla
     if (m.type === ThingType.spiderMastermind || m.type === ThingType.cyberdemon) continue;
     const dist = blastDistanceToBox(at.x, at.y, m.x, m.y, m.radius);
     if (dist >= radius || !ctx.world.hasLineOfSight(at, m)) continue;
-    ctx.things?.damage(m.id, maxDamage * (1 - dist / radius), { source, slot, from: at });
+    ctx.things?.damage(m.id, splashDamage(maxDamage, radius, dist), { source, slot, from: at });
   }
 
   if (!hitsPlayer) return;
@@ -276,9 +276,25 @@ export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBla
       // A player's own shot names its shooter to everyone else it reaches, and stays their own
       // to themselves; a barrel keeps blaming the barrel, the credit riding on `slot` or `source`.
       const named = slot !== undefined && slot !== victim && cause === 'self' ? targetOfSlot(slot) : cause;
-      ctx.damageSlot(victim, maxDamage * (1 - pdist / radius), { from: at, cause: named, slot, source });
+      ctx.damageSlot(victim, splashDamage(maxDamage, radius, pdist), { from: at, cause: named, slot, source });
     }
   }
+}
+
+/**
+ * What a blast deals one body, in whole points: vanilla's `bombdamage - dist`, which this is
+ * exactly wherever `radius` equals `maxDamage` — every caller's case. Integer arithmetic, truncated
+ * as C's division is, so no blast leaves a fraction on a body's health or armor.
+ * docs/combat.md § Splash and the BFG.
+ *
+ * @param maxDamage  what a body at range 0 takes
+ * @param radius     the range in map units over which the damage falls off to 0
+ * @param dist       whole map units from the blast to the body's edge ({@link blastDistanceToBox}),
+ *                   below `radius`: a body at or beyond it is skipped before this is asked
+ * @returns the damage, 0 or more
+ */
+export function splashDamage(maxDamage: number, radius: number, dist: number): number {
+  return Math.trunc((maxDamage * (radius - dist)) / radius);
 }
 
 /**

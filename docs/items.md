@@ -396,11 +396,11 @@ next to the spawn filter, since the skill is the only thing they depend on:
   (`P_GiveAmmo(…, 0)`, which is `clipammo/2`) and doubles after, so a dropped clip on skill 1 is
   worth exactly a full one — and the `ammoMax` cap still applies last.
 - **`playerDamageAtSkill`** halves damage on skill 1 only: `P_DamageMobj`'s
-  `if (player && gameskill == sk_baby) damage >>= 1`. It is applied at the top of
-  `game.ts: damageSlot`, before anything else reads the number, which is where vanilla applies it
-  too — so knockback, the pain flash and the death cry's overkill test all see the reduced figure,
-  and armor absorbs its share of that rather than of the original. Only the player gets it; a
-  monster on skill 1 takes exactly what it always took.
+  `if (player && gameskill == sk_baby) damage >>= 1` — a shift, so an odd hit rounds down. It is
+  applied at the top of `game.ts: damageSlot`, before anything else reads the number, which is
+  where vanilla applies it too — so knockback, the pain flash and `playerDeath`'s gib and cry all
+  see the reduced figure, and armor absorbs its share of that rather than of the original. Only the
+  player gets it; a monster on skill 1 takes exactly what it always took.
 
 Everything else the skill decides lives elsewhere: which things spawn at all is `spawnsAtSkill`
 (docs/sprites.md § Which things spawn), and nightmare's fast monsters are

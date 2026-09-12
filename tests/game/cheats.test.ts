@@ -73,10 +73,10 @@ describe('Cheats · IDDQD', () => {
 
   test('an ordinary hit is ignored, a telefrag is not', () => {
     const inv = createInventory();
-    assert.equal(applyDamage(inv, 60, true), false, "P_DamageMobj returns before touching health");
+    assert.equal(applyDamage(inv, 60, true), null, "P_DamageMobj returns before touching health");
     assert.equal(inv.health, 100);
     // The same `damage < 1000` limit the invulnerability sphere is under.
-    assert.equal(applyDamage(inv, TELEFRAG_DAMAGE, true), true);
+    assert.equal(applyDamage(inv, TELEFRAG_DAMAGE, true), 100 - TELEFRAG_DAMAGE);
     assert.equal(inv.health, 0);
   });
 });

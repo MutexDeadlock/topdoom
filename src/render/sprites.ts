@@ -42,6 +42,12 @@ export interface SpriteSkin {
   bank: SpriteBank;
   materials: SpriteMaterialCache;
   spriteName: string;
+  /**
+   * Where a frame this skin has no lump for is looked up next, before the animator's own art — a
+   * weapon-matching skin's is `PLAY` in the player's colour — or null for the animator's own
+   * straight away. Required, so every skin reaches {@link SpriteAnimator.resolve} as one shape.
+   */
+  fallback: SpriteSkin | null;
 }
 
 /**
@@ -138,6 +144,8 @@ export class SpriteAnimator {
   private lastDigit = 0;
   private lastSpriteName = '';
   private lastSkin: SpriteSkin | null = null;
+  /** The material cache `cached` came from: a skin's, a fallback's, or this animator's own. */
+  private lastMaterials: SpriteMaterialCache | null = null;
   private animIndex = 0;
   private animTimer = 0;
   /** The cycle `animIndex` last indexed: `animFrames`, or `stand` while standing. */
@@ -306,22 +314,30 @@ export class SpriteAnimator {
     this.lastDigit = digit;
     this.lastSpriteName = spriteName;
     this.lastSkin = skin;
-    // A skin with no lump for this frame falls through to the animator's own art, so a partial
-    // skin file draws the set's sprite rather than nothing.
-    const skinFound = skin ? skin.bank.lookup(skin.spriteName, letter, digit) : undefined;
-    const found = skinFound ?? this.bank.lookup(spriteName, letter, digit);
+    // A frame the skin has no lump for is looked up along its fallbacks, then in the animator's own
+    // art: a partial skin file draws the player's colour, or the set's sprite, rather than nothing.
+    // docs/sprites.md § Weapon-matching player sprites.
+    let from = skin;
+    let found: ReturnType<SpriteBank['lookup']> = undefined;
+    for (; from !== null; from = from.fallback) {
+      found = from.bank.lookup(from.spriteName, letter, digit);
+      if (found) break;
+    }
+    found ??= this.bank.lookup(spriteName, letter, digit);
     if (!found) {
       this.cached = null;
       this.lastKey = '';
       return null;
     }
 
-    // The `:s` marker is what keeps the memo honest across two material caches: the same lump name
-    // can exist in both, and `lastKey` gates the cached sprite and `frameKey` alike.
-    const key = found.lump + (found.flip ? ':f' : '') + (skinFound ? ':s' : '');
-    if (key !== this.lastKey) {
-      this.cached = (skin && skinFound ? skin.materials : this.materials).get(found.lump, found.flip);
+    // The cache beside the lump name keeps the memo honest: the same name can exist in several
+    // caches, and the pair gates the cached sprite and `frameKey` alike.
+    const materials = from !== null ? from.materials : this.materials;
+    const key = found.lump + (found.flip ? ':f' : '');
+    if (key !== this.lastKey || materials !== this.lastMaterials) {
+      this.cached = materials.get(found.lump, found.flip);
       this.lastKey = key;
+      this.lastMaterials = materials;
       // Logical, never the skin's name: `FULLBRIGHT_FRAMES` holds `PLAYF` and GLDEFS binds the
       // muzzle flash to that key, so both must keep matching while a skin draws the lump.
       this.frameKey = spriteName + letter;

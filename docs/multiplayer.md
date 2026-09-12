@@ -13,7 +13,7 @@ is docs/multiplayer-net.md.
 ## Player slots
 
 `PlayerSlot` is one player's whole share of a level: `player`, `inventory`, `weapons`, `cheats`,
-`dead`, `deathCause`, `kills`, `frags`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
+`dead`, `deathCause`, `gibbed`, `kills`, `frags`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
 `consumePickup`. `Game.slots` holds them by index. `localSlot` is the one this browser plays — its
 keyboard, the menu's settings, its `R`. **`Game.viewed` is the one drawn**: `local`, except under a
 playback, whose camera picker watches any slot (docs/replays.md § Playback). The HUD, crosshair,
@@ -33,7 +33,7 @@ keys and its auto camera ticks. `'replay'`: posed from the record each tic, the 
 row like a replay's, and the drawn one is driven apart (docs/multiplayer-net.md § What a tic does).
 
 **Saves and replays hold every slot.** `captureSave` writes `GameSnapshot.players`, one
-`PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`, `deathCause`, `kills`, `frags`);
+`PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`, `deathCause`, `gibbed`, `kills`, `frags`);
 `SpecialsController.snapshot` writes every slot's `prev`, `SectorEffects.snapshot` every slot's
 timer; a replay holds one `SlotRecord` and one check column per slot. A restore builds as many
 slots as it holds. docs/savegames.md § What is saved and what is deliberately not, docs/replays.md §

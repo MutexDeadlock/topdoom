@@ -569,8 +569,10 @@ The art is the ZDoom **WeaponMatchingPlayerSkin 1.1** pack, converted to
 `assets/playerskins.wad` by `scripts/build-playerskins.ts` — 426 lumps, ~589 KB — and folded into
 the WAD the engine ships (docs/wad.md § The WAD the engine ships) at build time. Only frames
 `A`-`N` are converted: the letters this engine animates (walk `A`-`D`, attack `E`/`F`, pain `G`,
-death `H`-`N`). `O`-`W` is xdeath and the `PL1C`…`PL9C` sets are crouch art, neither of which this
-engine has. The converter fails on a pixel outside PLAYPAL rather than picking a nearest colour, and
+death `H`-`N`). `O`-`W` is the gib chain, which the pack does not draw per weapon — a gibbed
+player draws the loaded set's `PLAY` in its colour, the weapon skin's `fallback` (below) — and the
+`PL1C`…`PL9C` sets are crouch art, which this
+engine has no use for. The converter fails on a pixel outside PLAYPAL rather than picking a nearest colour, and
 re-reads its own output through `SpriteBank`/`GraphicsBank` before writing, asserting every weapon
 resolves at all eight rotations for `A`-`G` and at rotation 0 for `H`-`N`.
 
@@ -586,9 +588,13 @@ own palette recolours the skins along with everything else. Nothing about the sk
 material cache and sprite name a `resolve` looks up, and deliberately leaves the frame key on the
 name the animator was given: `FULLBRIGHT_FRAMES` holds `PLAYF` and GLDEFS binds the muzzle flash to
 that key (docs/lights.md § The frame key), and both stop matching the moment the skin name leaks
-into it. `lastKey` carries a `:s` marker while a skin answered, because the same lump name can live
-in both material caches and that one key gates both the cached sprite and `frameKey`. A frame the
-skin has no lump for falls back to the animator's own art.
+into it. The memo holds the answering material cache beside `lastKey`, because the same lump name
+can live in several caches and that one check gates both the cached sprite and `frameKey`.
+
+**A frame the skin has no lump for is looked up along `SpriteSkin.fallback`, then in the animator's
+own art.** A weapon-matching skin falls back on `PLAY` in the player's colour (§ Player colours), so
+the gib chain — or any frame the pack lacks — keeps the armour colour rather than turning the set's
+green; the colour's own `PLAY` skin, and green, fall back on the set's atlas.
 
 `setSkin` touches no sequence state: a weapon swapped mid-stride must not restart the walk cycle,
 one swapped mid-death must not restart the death chain (§ The animation index must always be valid).

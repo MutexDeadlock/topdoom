@@ -23,6 +23,8 @@ import {
   MONSTER_WALK_FRAMES,
   MONSTER_WALK_FRAMES_OVERRIDE,
   MONSTER_XDEATH_FRAMES,
+  PLAYER_DEATH_FRAMES,
+  PLAYER_XDEATH_FRAMES,
   THING_ANIM_FRAMES,
   THING_SPRITES,
 } from '../../src/game/things/tables.ts';
@@ -318,6 +320,20 @@ describe('DEHACKED · walking patched chains', () => {
     const bexp = stateNamed('S_BEXP');
     const t = deriveFrameTables(patchStates([{ index: bexp, duration: 1 }], []));
     assert.equal(Math.round(t.barrel!.explodeDelaySeconds! * 35), 11);
+  });
+});
+
+/**
+ * The player's two death tables are literals rather than a walk — there is exactly one player, and
+ * no `mobjinfo` row the monster tables key on — so they are pinned to `info.c`'s chains here.
+ * docs/death.md § Player death.
+ */
+describe("DEHACKED · the player's death chains", () => {
+  test("PLAYER_DEATH_FRAMES and PLAYER_XDEATH_FRAMES are S_PLAY_DIE1's and S_PLAY_XDIE1's letters", () => {
+    const letters = (name: string) =>
+      walkChain(STATES, stateNamed(name)).indices.map((index) => frameLetter(STATES[index][1]));
+    assert.deepEqual(letters('S_PLAY_DIE1'), PLAYER_DEATH_FRAMES);
+    assert.deepEqual(letters('S_PLAY_XDIE1'), PLAYER_XDEATH_FRAMES);
   });
 });
 

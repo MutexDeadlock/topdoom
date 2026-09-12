@@ -364,6 +364,13 @@ describe('Geometry · blast range', () => {
   test('a body overlapping the blast point is at range 0, never negative', () => {
     assert.equal(blastDistanceToBox(0, 0, 10, 0, 48), 0);
     assert.equal(blastDistanceToBox(0, 0, 0, 0, 16), 0);
+    // Floored before the clamp, as `>> FRACBITS` is: a sliver inside the edge is still 0.
+    assert.equal(blastDistanceToBox(0, 0, 47.6, 0, 48), 0);
+  });
+
+  test('it is whole map units, floored as `>> FRACBITS` leaves them', () => {
+    assert.equal(blastDistanceToBox(0, 0, 100.9, 0, 48), 52);
+    assert.equal(blastDistanceToBox(0, 0, -100.1, 0.5, 48), 52);
   });
 });
 

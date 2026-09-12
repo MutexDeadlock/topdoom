@@ -89,7 +89,8 @@ the answer differs;
 the host refuses a `compat` mismatch itself, and no later set check lifts that. **A name is checked before a seat**: a `hello` whose
 name is shorter than `MIN_NAME_LENGTH` (3, trimmed) or matches a present player's
 case-insensitively is kicked with `nameRefusal`'s sentence as the reason, and never reaches the
-list. A slot whose player left holds no name: they can come back under it. `canStart` is every peer ready. `start` assigns slots
+list. A slot whose player left holds no name: they can come back under it. `canStart` is a second player
+in the room and every peer ready — a host alone cannot start. `start` assigns slots
 in join order, the host slot 0. A `?coop=`-style idle slot does not exist here: every slot is a
 browser, until one leaves (§ Leaving).
 
@@ -180,11 +181,14 @@ no room for one.
 - **A kicked peer** (`NetSession.kick`, the host's) is a peer leaving: the relay's `left` takes the
   same path — out of the lobby, or dropped from the game — and the peer's own session ends on
   `kicked`, with the host's reason where it gave one. Nothing keeps it from joining again with the code.
-- **The host leaving** closes the room (`closed`): every peer's session ends.
-- **A session ending under a running level** — the room closed, the connection lost, the menu's
-  Leave — leaves the level running alone: `NetSeat.release` puts the local slot back on the
-  keyboard and the viewport's camera, every other slot idle, and says why on screen. A start of
-  the player's own (New Game, Load, a replay) leaves the room first.
+- **The host leaving** closes the room (`closed`): every peer's session ends, and its level with it.
+- **A session ending ends its level** — the menu's Leave or Close, the room closed, a kick, a
+  drop, the connection lost, a snapshot of a map these WADs lack (`NetSession.end`): `main.ts`'s
+  `leaveNet` disposes the `Game` (`Game.networked`) and the menu opens as a launcher; an end the
+  player did not choose lands on the Multiplayer tab, the reason in the status line. Nobody plays
+  a network game's level on alone. A session that ends while its level loads starts none; a level
+  of the player's own behind a lobby is left alone. A start of the player's own (New Game, Load, a
+  replay) leaves the room first.
 - **The campaign's end** reaches every browser on the same tic; the host's `endGame` takes the
   room back to its lobby.
 
@@ -231,7 +235,8 @@ no room for one.
   once (`announce`; a session-only change resets no readiness) — the host's input delay
   select, **Start** (`canStart`), **Leave** for a peer, status line "Room left.";
   **Close** for the host, "Room closed.".
-- The hint line: who Start waits on, or a desync being resynced.
+- The hint line: what Start waits on — a second player, a peer's check — or a desync being
+  resynced.
 - **The tab carries a green light while this browser is in a room**, seen from every tab: a ring
   in the lobby (`.net-lobby`), filled while the game loads or runs (`.net-game`). Set in
   `MultiplayerUi.refresh`, which every session change reaches, the menu hidden or not.

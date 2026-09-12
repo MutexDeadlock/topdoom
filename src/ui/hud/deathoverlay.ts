@@ -3,21 +3,12 @@
  * what `R` will do. See docs/death.md § Player death.
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
-import { PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS } from '../../game/things/tables.ts';
+import { PLAYER_DEATH_FRAME_SECONDS } from '../../game/things/tables.ts';
 import { drawText } from './hud.ts';
 import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 
 /** The heading, which never changes — the two lines under it are what `show` is told. */
 const TITLE = 'You died';
-
-/**
- * How long a death waits before its overlay appears — `PLAY`'s DIE sequence end to end, so the
- * text arrives as the corpse settles rather than on the killing frame. Presentation only: vanilla
- * has no such overlay, and `R` answers throughout the delay, so nothing is gated behind it. It is
- * also what keeps a death the level's own ending is about to overtake from flashing an overlay up
- * for a few tics — see docs/death.md § Dying on the way out.
- */
-const DEATH_OVERLAY_DELAY = PLAYER_DEATH_FRAMES.length * PLAYER_DEATH_FRAME_SECONDS;
 
 /**
  * What the overlay's bottom line says: the two things `R` can do — reload the savegame this level
@@ -47,16 +38,16 @@ export class DeathOverlay {
   private yellowFont: WadFont;
   /** Seconds until the armed overlay is raised; negative once it is up, or when none is armed. */
   private delay = -1;
-  /** The killer line the armed overlay will carry — see `show`. */
+  /** The killer line the armed overlay will carry — see {@link DeathOverlay.show}. */
   private killer = '';
-  /** Which hint the armed overlay will carry — see `show` and `DeathHint`. */
+  /** Which hint the armed overlay will carry — see {@link DeathOverlay.show} and {@link DeathHint}. */
   private hint: DeathHint = 'restart';
 
   /**
    * The IWAD's own `STCFN*` type, the same three-canvas arrangement `EndCard` uses: the heading in
    * the font's native HUD red, the killer line in the yellow this UI reads as "the thing you came
-   * here to know" (`ui/hud/wadfont.ts`'s `COLOR_YELLOW`, as on the intermission's values), the hint
-   * dimmed by `deathoverlay.css`. The title never changes, so it is drawn once here.
+   * here to know" ({@link COLOR_YELLOW}, as on the intermission's values), the hint dimmed by
+   * `deathoverlay.css`. The title never changes, so it is drawn once here.
    */
   constructor(gfx: GraphicsBank) {
     this.redFont = new WadFont(gfx);
@@ -78,23 +69,29 @@ export class DeathOverlay {
   }
 
   /**
-   * Arms the overlay, with `killer` as its middle line — an already-composed
-   * sentence (`things/tables.ts`'s `obituary`), since what killed the player is the
-   * game layer's to know, not this one's. `''` leaves the line out entirely.
-   * `hint` says which bottom line applies (`DeathHint`).
-   * `update` raises it `DEATH_OVERLAY_DELAY` later, so a `clear` inside that
-   * window means it is never seen at all.
+   * Arms the overlay: {@link DeathOverlay.update} raises it once the corpse's chain has played end
+   * to end, so the text arrives as the corpse settles rather than on the killing frame, and a
+   * {@link DeathOverlay.clear} inside that window means it is never seen at all. Presentation only:
+   * vanilla has no such overlay, and `R` answers throughout the delay, so nothing is gated behind
+   * it. It is also what keeps a death the level's own ending is about to overtake from flashing an
+   * overlay up for a few tics — see docs/death.md § Dying on the way out.
+   *
+   * @param killer  the middle line, already composed (`things/tables.ts`'s `obituary`): what killed
+   *                the player is the game layer's to know, not this one's; `''` leaves the line out
+   * @param hint    which bottom line applies
+   * @param chain   the frames the corpse plays (`PlayerSlot.deathFrames`), each
+   *                {@link PLAYER_DEATH_FRAME_SECONDS} long
    */
-  show(killer: string, hint: DeathHint): void {
+  show(killer: string, hint: DeathHint, chain: readonly string[]): void {
     this.killer = killer;
     this.hint = hint;
-    this.delay = DEATH_OVERLAY_DELAY;
+    this.delay = chain.length * PLAYER_DEATH_FRAME_SECONDS;
   }
 
   /**
    * Swaps the hint on an overlay already armed or up: taking a replay over hands `R` back to the
-   * viewer while their corpse is on screen. An armed one is left to `update`, which draws it.
-   * docs/replays.md § Playback.
+   * viewer while their corpse is on screen. An armed one is left to {@link DeathOverlay.update},
+   * which draws it. docs/replays.md § Playback.
    */
   setHint(hint: DeathHint): void {
     if (hint === this.hint) return;

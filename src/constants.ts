@@ -71,7 +71,7 @@ export const PICKUP_SCALE: Partial<Record<number, number>> = {
   [ThingType.stimpack]: DEFAULT_PICKUP_SCALE,
   [ThingType.medikit]: DEFAULT_PICKUP_SCALE,
   [ThingType.soulsphere]: DEFAULT_PICKUP_SCALE,
-  [ThingType.healthBonus]: DEFAULT_PICKUP_SCALE,
+  [ThingType.healthBonus]: 1.1,
   [ThingType.armorBonus]: DEFAULT_PICKUP_SCALE,
   [ThingType.greenArmor]: DEFAULT_PICKUP_SCALE,
   [ThingType.blueArmor]: DEFAULT_PICKUP_SCALE,

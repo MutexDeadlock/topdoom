@@ -80,7 +80,10 @@ export interface ReplayHooks {
   onStopRecording(): void | Promise<void>;
   /** Ends the recording in progress and throws the record away; the level plays on. */
   onCancelRecording(): void | Promise<void>;
-  /** Why a recording can't start now, or null — `Game.recordingRefusal`; null with no game too. */
+  /**
+   * Why a recording can't start now — `Game.recordingRefusal`.
+   * @returns null when one can, and with no game too
+   */
   recordingRefusal(): string | null;
   isRecording(): boolean;
 }
@@ -101,7 +104,7 @@ export class ReplaysUi {
   private session: MenuSession = 'none';
   private visible = false;
   private stale = true;
-  /** Monotonic ticket for `renderVisible` — the `SavegamesUi` rule. */
+  /** Monotonic ticket for {@link ReplaysUi.renderVisible} — the `SavegamesUi` rule. */
   private renderEpoch = 0;
   /** What the last render listed, so a pick can be shown without re-reading the store. */
   private entries: ReplayListEntry[] = [];
@@ -110,7 +113,7 @@ export class ReplaysUi {
    * move what the player is looking at; the newest replay stands in when it names none.
    */
   private selectedId: string | null = null;
-  /** The heading's filter, already trimmed and lowercased — `installFilter`'s hand-off. */
+  /** The heading's filter, already trimmed and lowercased — {@link installFilter}'s hand-off. */
   private filter = '';
 
   constructor(
@@ -130,7 +133,7 @@ export class ReplaysUi {
     // children around a `.label` span, which a later `textContent` would throw away.
     confirmOnHold(this.cancelButton, {
       hint: 'Hold Cancel to throw the recording away.',
-      setStatus: (text) => this.setStatus(text),
+      setStatus: this.setStatus,
       action: () => void this.cancelRecording(),
     });
     el<HTMLButtonElement>('replay-import').addEventListener('click', () => {
@@ -165,7 +168,7 @@ export class ReplaysUi {
         arrived = meta.id;
         this.setStatus(`Imported "${meta.name}".`);
       } catch (err) {
-        this.setStatus(`${file.name}: ${(err as Error).message}`, true);
+        this.setStatus(`${file.name}: ${(err as Error).message}`, 'error');
       }
     }
     // The panel is the answer to "where did it go?", so it shows what just arrived.
@@ -228,7 +231,7 @@ export class ReplaysUi {
       const [stored, stock] = await Promise.all([listReplays(), listStockReplays()]);
       entries = [...stored, ...stock];
     } catch (err) {
-      this.setStatus((err as Error).message, true);
+      this.setStatus((err as Error).message, 'error');
       return;
     }
     if (epoch !== this.renderEpoch || !this.visible) return;
@@ -240,8 +243,9 @@ export class ReplaysUi {
   /**
    * Builds the list from the cached listing, minus what the filter hides, and re-aims the panel:
    * the pick has to be one of the rows on screen, or the panel would be showing a replay the
-   * filter says isn't there. `fromFilter` is a keystroke rather than a re-list — the rows are a
-   * different set now, so the offset goes back to the top.
+   * filter says isn't there.
+   * @param fromFilter  a keystroke rather than a re-list — the rows are a different set now, so the
+   *                    offset goes back to the top
    */
   private renderList(fromFilter = false): void {
     const shown = this.entries.filter((entry) => this.matches(entry));
@@ -265,7 +269,7 @@ export class ReplaysUi {
   /**
    * What the filter looks through: everything about a replay the player wrote themselves, plus the
    * level it was recorded on — the one thing worth searching for that they didn't. The level costs
-   * a `describe` per row, so an empty filter never asks for it.
+   * a {@link ReplaysUi.describe} per row, so an empty filter never asks for it.
    */
   private matches(entry: ReplayListEntry): boolean {
     if (this.filter === '') return true;
@@ -411,7 +415,7 @@ export class ReplaysUi {
     play.title = this.session === 'game' ? 'Hold to abandon the game you are running' : '';
     confirmOnHold(play, {
       hint: 'Hold Play to abandon the game you are running.',
-      setStatus: (t) => this.setStatus(t),
+      setStatus: this.setStatus,
       action: () => this.play(meta.id),
       required: () => this.session === 'game',
     });
@@ -494,7 +498,7 @@ export class ReplaysUi {
     const button = iconButton('delete', 'Hold to delete this replay');
     confirmOnHold(button, {
       hint: 'Hold the trash button to delete that replay.',
-      setStatus: (t) => this.setStatus(t),
+      setStatus: this.setStatus,
       action: () => {
         void attempt(this.setStatus, async () => {
           await deleteReplay(meta.id);
@@ -531,7 +535,10 @@ function stockMark(): HTMLSpanElement {
   return markChip('included', STOCK_HINT);
 }
 
-/** A panel line that only reads: `makeField`'s shape with the input replaced by its value. */
+/**
+ * A panel line that only reads: {@link ReplaysUi.makeField}'s shape with the input replaced by its
+ * value.
+ */
 function readOnlyField(label: string, value: string, mark?: HTMLElement): HTMLDivElement {
   const field = document.createElement('div');
   field.className = 'field';

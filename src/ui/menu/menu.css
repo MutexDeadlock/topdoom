@@ -474,9 +474,9 @@
  * a file with no text file, which is what keeps the verdict behind it in the same place on every
  * row.
  *
- * Blue, and a literal rather than a token: it is the one blue on the page, and it is deliberately
- * *not* a rung of the accent family — the accent means "this won't work" here
- * (docs/styles.md § Tokens), and an aside the player may open is the opposite of that.
+ * Blue, the status family's and deliberately *not* a rung of the accent's — the accent means "this
+ * won't work" here (docs/styles.md § Tokens), and an aside the player may open is the opposite of
+ * that. `--info` on hover; at rest a darker literal, having only this one site.
  */
 #menu .row .meta.info {
   width: 3ch;
@@ -489,7 +489,7 @@
 }
 
 #menu .row .meta.info:hover {
-  color: #8fb8e0;
+  color: var(--info);
 }
 
 /*
@@ -795,13 +795,17 @@
   line-clamp: 2;
   overflow: hidden;
   line-height: 1.35;
-  /* Amber, not the dim grey the rest of the footer is: what lands here just happened, and is read
-     once or not at all. `--caution` is the status family's text-weight notice (docs/styles.md §
-     Tokens); red stays what actually failed. */
+  /* Coloured by what the message is (`data-kind`, docs/menu-wads.md § The status line) rather than
+     the dim grey the rest of the footer is: what lands here just happened, and is read once or not
+     at all. The base colour is `info`'s. */
+  color: var(--info);
+}
+
+#menu-status[data-kind='caution'] {
   color: var(--caution);
 }
 
-#menu-status.error {
+#menu-status[data-kind='error'] {
   color: var(--accent-text-hover);
 }
 

@@ -268,29 +268,29 @@ describe('Menu · the WAD Library tree', () => {
  */
 describe('WAD library · what a scan reports', () => {
   test('an empty folder says so, as an error — the player asked for WADs and got none', () => {
-    assert.deepEqual(scanResult(0, []), ['No WADs found in that folder.', true]);
+    assert.deepEqual(scanResult(0, []), ['No WADs found in that folder.', 'error']);
   });
 
   test('nothing readable quotes the first reason rather than only counting', () => {
-    const [text, isError] = scanResult(0, [
+    const [text, kind] = scanResult(0, [
       { path: 'mega/broken.wad', reason: 'not a WAD file' },
       { path: 'mega/other.wad', reason: 'unreadable' },
     ]);
-    assert.equal(isError, true);
+    assert.equal(kind, 'error');
     assert.match(text, /2 skipped/);
     assert.match(text, /mega\/broken\.wad: not a WAD file/);
   });
 
-  test('a partial scan reports both halves and is not an error', () => {
-    const [text, isError] = scanResult(7, [{ path: 'junk.wad', reason: 'not a WAD file' }]);
-    assert.equal(isError, false);
+  test('a partial scan reports both halves, as a caution rather than an error', () => {
+    const [text, kind] = scanResult(7, [{ path: 'junk.wad', reason: 'not a WAD file' }]);
+    assert.equal(kind, 'caution');
     assert.match(text, /Found 7 WADs/);
     assert.match(text, /skipped 1/);
   });
 
   test('a clean scan is just the count, singular when there is one', () => {
-    assert.deepEqual(scanResult(1, []), ['Found 1 WAD.', false]);
-    assert.deepEqual(scanResult(12, []), ['Found 12 WADs.', false]);
+    assert.deepEqual(scanResult(1, []), ['Found 1 WAD.', 'info']);
+    assert.deepEqual(scanResult(12, []), ['Found 12 WADs.', 'info']);
   });
 });
 

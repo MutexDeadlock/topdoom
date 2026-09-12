@@ -20,7 +20,16 @@ import {
 } from '../../game/savegames.ts';
 import { SKILL_NAMES } from '../../game/skill.ts';
 import { formatClock } from '../hud/hud.ts';
-import { attempt, downloadJson, emptyLine, iconButton, installFilter, matchesFilter, noteLine } from './actions.ts';
+import {
+  attempt,
+  downloadJson,
+  emptyLine,
+  iconButton,
+  installFilter,
+  matchesFilter,
+  noteLine,
+  type StatusLine,
+} from './actions.ts';
 import { confirmOnHold } from './hold.ts';
 import type { MenuSession } from './menu.ts';
 
@@ -39,10 +48,11 @@ export interface SaveHooks {
   /** Tears down the current session and starts one from `save` — the load-side `onStart`. */
   onLoad(save: SaveGame): void | Promise<void>;
   /**
-   * Why the current moment can't be saved, or null when it can — the same
-   * sentence `onSave`/`onOverwrite` would throw, asked ahead of the click so
-   * the buttons can be disabled rather than failing when pressed. Null with no
-   * game running too: `session` is the gate for that, not this.
+   * Why the current moment can't be saved — the same sentence
+   * {@link SaveHooks.onSave}/{@link SaveHooks.onOverwrite} would throw, asked ahead of the click so
+   * the buttons can be disabled rather than failing when pressed.
+   * @returns null when it can, and with no game running too: {@link SavegamesUi.session} is the
+   *          gate for that, not this
    */
   saveRefusal(): string | null;
 }
@@ -69,7 +79,10 @@ export interface SaveSetInfo {
  * line. docs/menu-saves.md § Save and Load tabs.
  */
 export class SavegamesUi {
-  /** The two list containers, keyed like `stale` and `filters` — everything per tab indexes alike. */
+  /**
+   * The two list containers, keyed like {@link SavegamesUi.stale} and {@link SavegamesUi.filters} —
+   * everything per tab indexes alike.
+   */
   private lists = { save: el<HTMLDivElement>('save-list'), load: el<HTMLDivElement>('load-list') };
   private nameInput = el<HTMLInputElement>('save-name');
   private saveButton = el<HTMLButtonElement>('save-button');
@@ -77,7 +90,7 @@ export class SavegamesUi {
   private fileInput = el<HTMLInputElement>('save-file-input');
 
   private hooks: SaveHooks;
-  private setStatus: (text: string, isError?: boolean) => void;
+  private setStatus: StatusLine;
   private describe: (meta: SaveMeta) => SaveSetInfo;
   private session: MenuSession = 'none';
   /**
@@ -89,8 +102,8 @@ export class SavegamesUi {
   private visible: 'save' | 'load' | null = null;
   private stale = { save: true, load: true };
   /**
-   * Monotonic ticket for `renderVisible`: a render that finds a newer one started while it awaited
-   * discards itself.
+   * Monotonic ticket for {@link SavegamesUi.renderVisible}: a render that finds a newer one started
+   * while it awaited discards itself.
    */
   private renderEpoch = 0;
   /**
@@ -106,7 +119,7 @@ export class SavegamesUi {
 
   constructor(
     hooks: SaveHooks,
-    setStatus: (text: string, isError?: boolean) => void,
+    setStatus: StatusLine,
     describe: (meta: SaveMeta) => SaveSetInfo,
   ) {
     this.hooks = hooks;
@@ -136,10 +149,10 @@ export class SavegamesUi {
   }
 
   /**
-   * Marks both lists stale and rebuilds whichever is on screen; called on every
-   * menu open and after each store mutation. `session` defaults to the last
-   * value `Menu.open` gave, so a refresh from elsewhere (an upload) doesn't
-   * have to carry it.
+   * Marks both lists stale and rebuilds whichever is on screen; called on every menu open and after
+   * each store mutation.
+   * @param session  defaults to the last value `Menu.open` gave, so a refresh from elsewhere (an
+   *                 upload) doesn't have to carry it
    */
   refresh(session = this.session): void {
     this.session = session;
@@ -151,7 +164,10 @@ export class SavegamesUi {
     void this.renderVisible();
   }
 
-  /** Which tab is showing, `null` for one of the menu's others — `Menu.setTab`'s hand-off. */
+  /**
+   * Which tab is showing — `Menu.setTab`'s hand-off.
+   * @param tab  null for one of the menu's others
+   */
   setVisible(tab: 'save' | 'load' | null): void {
     this.visible = tab;
     void this.renderVisible();
@@ -167,7 +183,7 @@ export class SavegamesUi {
         const meta = await importSave(await file.text());
         this.setStatus(`Imported "${meta.name}".`);
       } catch (err) {
-        this.setStatus(`${file.name}: ${(err as Error).message}`, true);
+        this.setStatus(`${file.name}: ${(err as Error).message}`, 'error');
       }
     }
     this.refresh();
@@ -184,11 +200,11 @@ export class SavegamesUi {
   }
 
   /**
-   * Rebuilds the visible list from the store, if it's stale. Async, so two
-   * hazards need the epoch ticket: a `refresh` or tab switch while the listing
-   * is in flight starts a newer render, and the older one must discard rather
-   * than paint over it — `stale` is only cleared by the render that actually
-   * painted, so a discarded one leaves the tab marked for the next look.
+   * Rebuilds the visible list from the store, if it's stale. Async, so two hazards need the epoch
+   * ticket: a {@link SavegamesUi.refresh} or tab switch while the listing is in flight starts a
+   * newer render, and the older one must discard rather than paint over it —
+   * {@link SavegamesUi.stale} is only cleared by the render that actually painted, so a discarded
+   * one leaves the tab marked for the next look.
    */
   private async renderVisible(): Promise<void> {
     const tab = this.visible;
@@ -198,7 +214,7 @@ export class SavegamesUi {
     try {
       entries = await listSaves();
     } catch (err) {
-      this.setStatus((err as Error).message, true);
+      this.setStatus((err as Error).message, 'error');
       return;
     }
     if (epoch !== this.renderEpoch || this.visible !== tab) return;
@@ -220,9 +236,10 @@ export class SavegamesUi {
   }
 
   /**
-   * Builds one tab's list from the cached listing, minus what its filter hides. `fromFilter` is a
-   * keystroke rather than a re-list: the rows are a different set now, so the offset goes back to
-   * the top instead of leaving the player in the middle of fresh results.
+   * Builds one tab's list from the cached listing, minus what its filter hides.
+   * @param fromFilter  a keystroke rather than a re-list: the rows are a different set now, so the
+   *                    offset goes back to the top instead of leaving the player in the middle of
+   *                    fresh results
    */
   private renderList(tab: 'save' | 'load', fromFilter = false): void {
     const container = this.lists[tab];
@@ -304,7 +321,7 @@ export class SavegamesUi {
       load.title = this.session === 'game' ? 'Hold to abandon the game you are running' : '';
       confirmOnHold(load, {
         hint: 'Hold Load to abandon the game you are running.',
-        setStatus: (t) => this.setStatus(t),
+        setStatus: this.setStatus,
         action: () => this.load(meta.id),
         required: () => this.session === 'game',
       });
@@ -321,7 +338,7 @@ export class SavegamesUi {
       overwrite.disabled = !this.canSave;
       confirmOnHold(overwrite, {
         hint: 'Hold Overwrite to replace that save.',
-        setStatus: (t) => this.setStatus(t),
+        setStatus: this.setStatus,
         action: () => void this.overwrite(meta.id),
       });
       actions.append(overwrite);
@@ -397,7 +414,7 @@ export class SavegamesUi {
     const button = iconButton('delete', 'Hold to delete this save');
     confirmOnHold(button, {
       hint: 'Hold the trash button to delete that save.',
-      setStatus: (t) => this.setStatus(t),
+      setStatus: this.setStatus,
       action: () => {
         void attempt(this.setStatus, async () => {
           await deleteSave(meta.id);

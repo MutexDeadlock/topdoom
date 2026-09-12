@@ -37,9 +37,11 @@
   --accent-hover: #d84937;
   --accent-text-hover: #e06c5a;
 
-  /* Caution, at text weight. Deliberately *not* a rung of the accent family: a warning colour must
-     not move when the accent is retuned (docs/styles.md § Tokens). Read by the save row's missing
-     add-on, the WAD Library's support column and the two status lines. */
+  /* Status colours, at text weight. Deliberately *not* rungs of the accent family: a status colour
+     must not move when the accent is retuned (docs/styles.md § Tokens). Info is read by the two
+     status lines and the info column's hover; caution by the status lines, the save row's missing
+     add-on and the WAD Library's support column. */
+  --info: #8fb8e0;
   --caution: #cfa23c;
 }
 

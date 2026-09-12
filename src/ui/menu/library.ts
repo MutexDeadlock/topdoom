@@ -3,12 +3,13 @@
  * ships, a folder the player nominates from their own disk, and anything dropped on the menu — with
  * the picking done in place. The picks are **staged**: ticking a row edits a draft, `Apply` hands
  * the whole set to the menu and `Close` discards it. Owned by `Menu`, which it reaches only through
- * `LibraryHooks`. See docs/menu-wads.md § WAD Library.
+ * {@link LibraryHooks}. See docs/menu-wads.md § WAD Library.
  */
 import * as wadlib from '../../wad/library.ts';
 import type { WadSource } from '../../wad/library.ts';
 import { nothingLoads } from '../../wad/support.ts';
 import { confirmOnHold } from './hold.ts';
+import type { StatusKind } from './actions.ts';
 import { OverlayShell, type MenuOverlay } from './overlay.ts';
 import { badge, mapStyleLabel, sourceColumnSpans } from './labels.ts';
 
@@ -33,8 +34,8 @@ export interface LibraryHooks {
   setLibrarySources(sources: WadSource[]): void;
   /**
    * Opens the plain multi-file picker, for loose WADs that sit in no library folder. What it reads
-   * comes back through `stage`, not from here: the menu routes files added while the overlay is up
-   * into the draft rather than adopting them behind it.
+   * comes back through {@link LibraryUi.stage}, not from here: the menu routes files added while
+   * the overlay is up into the draft rather than adopting them behind it.
    */
   pickFiles(): void;
   /**
@@ -47,9 +48,10 @@ export interface LibraryHooks {
 }
 
 /**
- * One row of the left-hand tree. The two counts answer different questions: `sources` is the
- * folder's own WADs, what the file pane lists; `total` is every WAD at or below it, the row's count
- * and what decides whether the row is drawn at all. See docs/menu-wads.md § WAD Library.
+ * One row of the left-hand tree. The two counts answer different questions:
+ * {@link FolderNode.sources} is the folder's own WADs, what the file pane lists;
+ * {@link FolderNode.total} is every WAD at or below it, the row's count and what decides whether
+ * the row is drawn at all. See docs/menu-wads.md § WAD Library.
  */
 export interface FolderNode {
   id: string;
@@ -95,15 +97,18 @@ const PICKER_TIMEOUT = 30_000;
 /** Every row that is a root of its own subtree — the ones that start unfolded. */
 const TOP_LEVEL_FOLDERS = [SERVER_IWADS, SERVER_PWADS, LIBRARY_ROOT, UPLOADS];
 
-/** The badge on a row refused for `unplayable`. The support column's tooltip carries the detail. */
+/**
+ * The badge on a row refused for {@link unplayable}. The support column's tooltip carries the
+ * detail.
+ */
 const REFUSED = "won't load";
 
 /**
  * The tree, flattened to rows carrying their own depth: the server's two folders and whatever
  * subfolders they hold, the player's library the same way, and anything dropped on the menu. A
  * folder with no WAD beneath it is not a row, the one exception being a library root the player has
- * set — which then reports that the folder held none. Pure, and separate from `LibraryUi` so it can
- * be tested without a DOM — docs/menu-wads.md § WAD Library.
+ * set — which then reports that the folder held none. Pure, and separate from {@link LibraryUi} so
+ * it can be tested without a DOM — docs/menu-wads.md § WAD Library.
  */
 export function buildFolderTree(
   sources: readonly WadSource[],
@@ -133,8 +138,8 @@ export function buildFolderTree(
 /**
  * Applies the header's filter to the tree: a row survives if its own name matches, if a folder
  * above it matched, or if it holds a matching WAD at or below it. The game WADs are exempt and stay
- * listed in full whatever the filter says. Pure, and separate from `LibraryUi` so it can be tested
- * without a DOM — docs/menu-wads.md § WAD Library.
+ * listed in full whatever the filter says. Pure, and separate from {@link LibraryUi} so it can be
+ * tested without a DOM — docs/menu-wads.md § WAD Library.
  */
 export function filterTree(nodes: readonly FolderNode[], filter: string): FilterMatch {
   const rows = new Set<string>();
@@ -181,22 +186,22 @@ export function filterTree(nodes: readonly FolderNode[], filter: string): Filter
 }
 
 /**
- * What a finished scan says, as `say`'s two arguments — quoting the first skipped file's own reason
- * rather than only counting, since "no WADs here" and "every WAD here was unreadable" call for
- * completely different things from the player. Pure, so the wording is testable without a DOM —
- * docs/menu-wads.md § WAD Library.
+ * What a finished scan says, as {@link LibraryUi.showStatus}'s two arguments — quoting the first
+ * skipped file's own reason rather than only counting, since "no WADs here" and "every WAD here was
+ * unreadable" call for completely different things from the player. Pure, so the wording is
+ * testable without a DOM — docs/menu-wads.md § WAD Library.
  */
-export function scanResult(found: number, skipped: readonly wadlib.LibrarySkip[]): [string, boolean] {
+export function scanResult(found: number, skipped: readonly wadlib.LibrarySkip[]): [string, StatusKind] {
   const first = skipped[0];
   if (found === 0) {
     return first
-      ? [`No readable WADs — ${skipped.length} skipped, e.g. ${first.path}: ${first.reason}`, true]
-      : ['No WADs found in that folder.', true];
+      ? [`No readable WADs — ${skipped.length} skipped, e.g. ${first.path}: ${first.reason}`, 'error']
+      : ['No WADs found in that folder.', 'error'];
   }
   const wads = found === 1 ? '1 WAD' : `${found} WADs`;
   return first
-    ? [`Found ${wads}; skipped ${skipped.length} (e.g. ${first.path}: ${first.reason}).`, false]
-    : [`Found ${wads}.`, false];
+    ? [`Found ${wads}; skipped ${skipped.length} (e.g. ${first.path}: ${first.reason}).`, 'caution']
+    : [`Found ${wads}.`, 'info'];
 }
 
 export class LibraryUi implements MenuOverlay {
@@ -223,7 +228,7 @@ export class LibraryUi implements MenuOverlay {
   /**
    * The pick being assembled, **not the menu's**: every tick in here edits this pair and nothing
    * else, `Apply` hands it over and every other way out throws it away. Snapshotted from the menu
-   * on every `open`. docs/menu-wads.md § WAD Library.
+   * on every {@link LibraryUi.open}. docs/menu-wads.md § WAD Library.
    */
   private draftIwad: WadSource | null = null;
   private draftPwads: WadSource[] = [];
@@ -235,7 +240,7 @@ export class LibraryUi implements MenuOverlay {
   private expanded = new Set<string>(TOP_LEVEL_FOLDERS);
   /** True while a scan is running, so a second click can't start an overlapping walk. */
   private scanning = false;
-  /** The `PICKER_TIMEOUT` watchdog on an open fallback dialog; 0 when none is pending. */
+  /** The {@link PICKER_TIMEOUT} watchdog on an open fallback dialog; 0 when none is pending. */
   private pickTimer = 0;
 
   constructor(hooks: LibraryHooks) {
@@ -266,10 +271,10 @@ export class LibraryUi implements MenuOverlay {
   }
 
   /**
-   * Closes the overlay **without applying anything**, reporting whether it *was* open — `main.ts`'s
-   * ESC handler asks this first, so one ESC dismisses the overlay and leaves the menu (and a paused
-   * level) alone. The same explicit hand-off `AboutUi.close` gets, rather than two listeners
-   * racing over one key.
+   * Closes the overlay **without applying anything** — `main.ts`'s ESC handler asks this first, so
+   * one ESC dismisses the overlay and leaves the menu (and a paused level) alone. The same explicit
+   * hand-off `AboutUi.close` gets, rather than two listeners racing over one key.
+   * @returns whether it *was* open
    */
   close(): boolean {
     return this.shell.hide();
@@ -282,8 +287,8 @@ export class LibraryUi implements MenuOverlay {
   /**
    * Redraws if it's up. `Menu.render` calls this, so a source list that moved under the overlay —
    * an upload, a scan — is on screen at once, and it is the one place the draft is re-bound to
-   * those sources. What the draft *means* is never touched here: only `open` fills it from the
-   * menu, and only `Apply` sends it back.
+   * those sources. What the draft *means* is never touched here: only {@link LibraryUi.open} fills
+   * it from the menu, and only `Apply` sends it back.
    */
   refresh(): void {
     if (!this.isOpen) return;
@@ -305,20 +310,21 @@ export class LibraryUi implements MenuOverlay {
   /**
    * The overlay's footer line, and the only place anything raised while the overlay is up is
    * reported — it covers `#menu` completely. Public because it works the other way too:
-   * `Menu.setStatus` routes here while `isOpen`. docs/menu-wads.md § WAD Library.
+   * `Menu.setStatus` routes here while {@link LibraryUi.isOpen}. docs/menu-wads.md § WAD Library.
+   * @param kind  what the message is, and so its colour — docs/menu-wads.md § The status line
    */
-  showStatus(text: string, isError = false): void {
+  showStatus(text: string, kind: StatusKind = 'info'): void {
     this.statusEl.textContent = text;
     // The line is clamped to two (library.css), so the full text has to stay reachable somewhere —
     // a message long enough to be clipped is a message that was explaining something.
     this.statusEl.title = text;
-    this.statusEl.classList.toggle('error', isError);
+    this.statusEl.dataset.kind = kind;
   }
 
   /**
    * Commits the draft and closes — the one path out that changes anything the menu holds. Closed
-   * *first*, since applying redraws the menu and with it this overlay. docs/menu-wads.md § WAD
-   * Library.
+   * *first*, since applying redraws the menu and with it this overlay.
+   * docs/menu-wads.md § WAD Library.
    */
   private async apply(): Promise<void> {
     this.close();
@@ -526,7 +532,7 @@ export class LibraryUi implements MenuOverlay {
     button.title = 'Hold to forget your WAD folder';
     confirmOnHold(button, {
       hint: 'Hold Forget to drop your WAD folder.',
-      setStatus: (text) => this.showStatus(text),
+      setStatus: (text, kind) => this.showStatus(text, kind),
       action: () => void this.forget(),
     });
     return button;
@@ -573,9 +579,10 @@ export class LibraryUi implements MenuOverlay {
   }
 
   /**
-   * What one folder's file pane shows under the current filter. `wholeFolder` is the filter having
-   * matched the folder's *name*: it was asked for by name, so it lists entire rather than having
-   * its contents filtered down a second time.
+   * What one folder's file pane shows under the current filter.
+   * @param wholeFolder  the filter having matched the folder's *name*: it was asked for by name,
+   *                     so it lists entire rather than having its contents filtered down a second
+   *                     time
    */
   private visibleSources(node: FolderNode, wholeFolder: boolean): WadSource[] {
     return node.sources.filter((s) => wholeFolder || s.label.toLowerCase().includes(this.filter));
@@ -638,13 +645,14 @@ export class LibraryUi implements MenuOverlay {
     return row;
   }
 
-   /**
+  /**
    * Name, badge, detail. The badge leads the fixed-width block because what it carries is the
    * *reason a row can't be picked*, which has to be read before the file's stats rather than after
-   * them. A row with no reason renders **no badge at all** rather than an empty one: the badge
-   * leads the fixed-width block, so dropping it only widens the flexing name and nothing behind it
-   * moves. `labels.ts: infoColumn` is the opposite case — it has a column behind it, so an empty
-   * one there stays a spacer.
+   * them.
+   * @param mark  null for a row with no reason, which renders **no badge at all** rather than an
+   *              empty one: the badge leads the fixed-width block, so dropping it only widens the
+   *              flexing name and nothing behind it moves. `labels.ts: infoColumn` is the opposite
+   *              case — it has a column behind it, so an empty one there stays a spacer
    */
   private baseRow(
     source: WadSource,
@@ -687,7 +695,7 @@ export class LibraryUi implements MenuOverlay {
    * Takes one source into the draft the way its type asks — a game WAD replaces the pick, anything
    * else joins the add-ons, and a game WAD the picked add-ons don't suit drops none of them
    * (docs/menu-wads.md § Picking a WAD set). No redraw of its own, so a batch draws once, and
-   * membership is by **key**, not identity — see `carryDraft`.
+   * membership is by **key**, not identity — see {@link LibraryUi.carryDraft}.
    */
   private draftTake(source: WadSource): void {
     // The one place a file can reach the draft without going through a row: `stage`, for a file
@@ -702,9 +710,9 @@ export class LibraryUi implements MenuOverlay {
 
   /**
    * Re-resolves the draft against the sources the menu now holds, by key — a rescan builds fresh
-   * `WadSource` objects for the same files, and a file the folder no longer has drops out. Called
-   * from `refresh` alone, which is every path by which the sources can move under the overlay.
-   * docs/menu-wads.md § WAD Library.
+   * {@link WadSource} objects for the same files, and a file the folder no longer has drops out.
+   * Called from {@link LibraryUi.refresh} alone, which is every path by which the sources can move
+   * under the overlay. docs/menu-wads.md § WAD Library.
    */
   private carryDraft(): void {
     const byKey = new Map(this.hooks.sources().map((s) => [s.key, s]));
@@ -745,6 +753,7 @@ export class LibraryUi implements MenuOverlay {
         block === 'framed'
           ? "This window can't open a folder picker — asking for a one-off folder, forgotten on reload."
           : 'This browser has no folder picker — asking for a one-off folder, forgotten on reload.',
+        'caution',
       );
       this.chooseWithoutPicker();
       return;
@@ -757,7 +766,7 @@ export class LibraryUi implements MenuOverlay {
       // The picker exists but refused — a permissions policy, or an embedding `pickerBlock` did not
       // catch. The plain input still works, so fall through to it rather than leaving the button
       // dead, but say what happened: an unexplained fallback is itself a thing to debug.
-      this.showStatus(`The folder picker refused (${(err as Error).message}).`, true);
+      this.showStatus(`The folder picker refused (${(err as Error).message}).`, 'error');
       this.chooseWithoutPicker();
       return;
     }
@@ -767,7 +776,7 @@ export class LibraryUi implements MenuOverlay {
       // (Chromium blocks system and home directories outright). So the line covers both.
       this.showStatus(
         'No folder came back. If you picked one, the browser refused it.',
-        true,
+        'error',
       );
       return;
     }
@@ -785,7 +794,7 @@ export class LibraryUi implements MenuOverlay {
     this.pickTimer = window.setTimeout(() => {
       this.showStatus(
         `No answer from the folder picker after ${PICKER_TIMEOUT / 1000}s — if no dialog opened, this window is blocking it.`,
-        true,
+        'error',
       );
     }, PICKER_TIMEOUT);
     this.folderInput.click();
@@ -800,7 +809,7 @@ export class LibraryUi implements MenuOverlay {
     window.clearTimeout(this.pickTimer);
     this.showStatus(
       'No folder came back. If you picked one, this window blocked it — open the game in its own tab.',
-      true,
+      'error',
     );
   }
 
@@ -813,7 +822,7 @@ export class LibraryUi implements MenuOverlay {
     window.clearTimeout(this.pickTimer);
     const files = [...(this.folderInput.files ?? [])];
     if (files.length === 0) {
-      this.showStatus('The browser handed back no files for that folder.', true);
+      this.showStatus('The browser handed back no files for that folder.', 'error');
       return;
     }
 
@@ -821,7 +830,7 @@ export class LibraryUi implements MenuOverlay {
     // are all too deep to be taken must not be told that they are about to be read.
     const wads = wadlib.acceptableWads(files);
     if (wads.length === 0) {
-      this.showStatus(`No usable .wad files in that folder — it held ${files.length} other file${files.length === 1 ? '' : 's'}.`, true);
+      this.showStatus(`No usable .wad files in that folder — it held ${files.length} other file${files.length === 1 ? '' : 's'}.`, 'error');
       return;
     }
 
@@ -830,7 +839,7 @@ export class LibraryUi implements MenuOverlay {
 
   private async rescan(): Promise<void> {
     if (!(await wadlib.ensureLibraryAccess())) {
-      this.showStatus('Permission to read your WAD folder was refused.', true);
+      this.showStatus('Permission to read your WAD folder was refused.', 'error');
       return;
     }
     await this.withScan('Scanning your WAD folder …', (progress) => wadlib.rescanLibrary(progress));
@@ -866,7 +875,7 @@ export class LibraryUi implements MenuOverlay {
       this.showStatus(...scanResult(found.length, wadlib.librarySkips()));
       this.selectedFolder = LIBRARY_ROOT;
     } catch (err) {
-      this.showStatus(`Could not read that folder: ${(err as Error).message}`, true);
+      this.showStatus(`Could not read that folder: ${(err as Error).message}`, 'error');
     } finally {
       this.scanning = false;
       this.render();
@@ -896,9 +905,9 @@ function indexTree(nodes: readonly FolderNode[]): TreeIndex {
 }
 
 /**
- * The chain of rows from `id` upwards, nearest first. Walked by `parent`, never by ID prefix:
- * `library:mega` is a prefix of `library:megawads` without being its parent, so a prefix test would
- * take a sibling for an ancestor.
+ * The chain of rows from `id` upwards, nearest first. Walked by {@link FolderNode.parent}, never by
+ * ID prefix: `library:mega` is a prefix of `library:megawads` without being its parent, so a prefix
+ * test would take a sibling for an ancestor.
  */
 function* ancestors(tree: TreeIndex, id: string | undefined): Generator<string> {
   for (let at = id; at !== undefined; at = tree.byId.get(at)?.parent) yield at;
@@ -989,7 +998,7 @@ function header(el: HTMLHeadingElement, label: string, count: number): void {
 /**
  * A file this engine cannot run at all — no map in it will load, so there is nothing to pick it
  * for. The verdict and the rule are `wad/support.ts`'s (docs/wad.md § Will it run?); the overlay's
- * part is refusing the row. A file only *partly* broken stays pickable: see `nothingLoads`.
+ * part is refusing the row. A file only *partly* broken stays pickable: see {@link nothingLoads}.
  */
 function unplayable(source: WadSource): boolean {
   return source.support !== undefined && nothingLoads(source.support, source.maps.length);

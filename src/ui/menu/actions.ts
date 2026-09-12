@@ -8,19 +8,30 @@
  * docs/menu-saves.md § Save and Load tabs.
  */
 
-/** The menu's status line, as the tabs are handed it. */
-export type StatusLine = (text: string, isError?: boolean) => void;
+/**
+ * What a status line message is, which is its colour: `info` for what happened as asked, `caution`
+ * for a notice that blocks nothing, `error` for what failed. docs/menu-wads.md § The status line.
+ */
+export type StatusKind = 'info' | 'caution' | 'error';
+
+/**
+ * The menu's status line, as the tabs are handed it; a message given no {@link StatusKind} is
+ * `info`.
+ */
+export type StatusLine = (text: string, kind?: StatusKind) => void;
 
 /**
  * Runs one store or hook call under the tabs' single refusal contract: anything thrown becomes the
- * status line, and the caller learns whether to go on — the store's calls all being async, the
- * action is awaited and so is the verdict.
+ * status line's error, and the caller learns whether to go on — the store's calls all being async,
+ * the action is awaited and so is the verdict.
+ * @param done  what the status line says once `action` has succeeded; omitted, nothing
+ * @returns whether `action` succeeded
  */
 export async function attempt(setStatus: StatusLine, action: () => void | Promise<void>, done?: string): Promise<boolean> {
   try {
     await action();
   } catch (err) {
-    setStatus((err as Error).message, true);
+    setStatus((err as Error).message, 'error');
     return false;
   }
   if (done !== undefined) setStatus(done);
@@ -28,8 +39,8 @@ export async function attempt(setStatus: StatusLine, action: () => void | Promis
 }
 
 /**
- * One reason a row is not what it should be: red for fatal, amber for a cosmetic loss. `full` is
- * the tooltip where `label` is the short form of it.
+ * One reason a row is not what it should be: red for fatal, amber for a cosmetic loss.
+ * @param full  the tooltip where `label` is the short form of it
  */
 export function noteLine(kind: 'warning' | 'caution', label: string, full?: string): HTMLSpanElement {
   const line = document.createElement('span');
@@ -40,10 +51,11 @@ export function noteLine(kind: 'warning' | 'caution', label: string, full?: stri
 }
 
 /**
- * Wires a list heading's filter field: every keystroke hands over the text already trimmed and
- * lowercased, so the comparison below is done once per keystroke rather than once per row. ESC
- * clears a filter that has something in it and stops there; an already empty field lets the key
- * through to `main.ts`, which closes the menu with it.
+ * Wires a list heading's filter field. ESC clears a filter that has something in it and stops
+ * there; an already empty field lets the key through to `main.ts`, which closes the menu with it.
+ * @param onChange  handed the text on every keystroke, already trimmed and lowercased, so the
+ *                  comparison {@link matchesFilter} makes is done once per keystroke rather than
+ *                  once per row
  */
 export function installFilter(input: HTMLInputElement, onChange: (filter: string) => void): void {
   input.addEventListener('input', () => onChange(input.value.trim().toLowerCase()));
@@ -55,8 +67,11 @@ export function installFilter(input: HTMLInputElement, onChange: (filter: string
   });
 }
 
-/** Whether a row survives the filter above its list: a plain substring over the fields that tab
-    decided are worth searching. `filter` is what `installFilter` handed over. */
+/**
+ * Whether a row survives the filter above its list: a plain substring over the fields that tab
+ * decided are worth searching.
+ * @param filter  what {@link installFilter} handed over
+ */
 export function matchesFilter(filter: string, fields: readonly string[]): boolean {
   return filter === '' || fields.some((field) => field.toLowerCase().includes(filter));
 }
@@ -91,7 +106,9 @@ export function fillFacts(block: HTMLElement, facts: readonly [label: string, va
   }
 }
 
-/** A quiet chip beside a name — menu.css's `.mark`: a stock replay's `included`, a room's `host`. */
+/**
+ * A quiet chip beside a name — menu.css's `.mark`: a stock replay's `included`, a room's `host`.
+ */
 export function markChip(text: string, title = ''): HTMLSpanElement {
   const chip = document.createElement('span');
   chip.className = 'mark';

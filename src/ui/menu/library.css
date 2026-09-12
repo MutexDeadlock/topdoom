@@ -334,11 +334,15 @@
   line-clamp: 2;
   overflow: hidden;
   line-height: 1.35;
-  /* `#menu-status`'s amber, and for its reason: the same message reaches whichever line is up. */
+  /* `#menu-status`'s colours, and for its reason: the same message reaches whichever line is up. */
+  color: var(--info);
+}
+
+#wadlibrary-status[data-kind='caution'] {
   color: var(--caution);
 }
 
-#wadlibrary-status.error {
+#wadlibrary-status[data-kind='error'] {
   color: var(--accent-text-hover);
 }
 

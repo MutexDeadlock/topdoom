@@ -1,9 +1,10 @@
 /**
- * Press-and-hold confirm: a destructive button that fills over `HOLD_MS` and only acts when the
- * fill lands. Shared by the save list's Delete and Overwrite, the WAD Library's Forget folder, and
- * Start new game, Load and a replay's Play while a run of the player's own is going.
+ * Press-and-hold confirm: a destructive button that fills over {@link HOLD_MS} and only acts when
+ * the fill lands. Shared by the save list's Delete and Overwrite, the WAD Library's Forget folder,
+ * and Start new game, Load and a replay's Play while a run of the player's own is going.
  * See docs/menu-saves.md § Save and Load tabs.
  */
+import type { StatusLine } from './actions.ts';
 
 /**
  * How long a destructive button has to be held. Tuned by feel: long enough that a stray click can't
@@ -15,8 +16,8 @@ const HOLD_MS = 500;
 export interface HoldConfirm {
   /** What the status line says when the press was let go early. */
   hint: string;
-  /** The status line to say it in. */
-  setStatus: (text: string) => void;
+  /** The status line to say it in — as `caution`, since what it warns of can't be undone. */
+  setStatus: StatusLine;
   /** What a landed hold does. */
   action: () => void;
   /**
@@ -29,9 +30,10 @@ export interface HoldConfirm {
 
 /**
  * Turns `button` into a press-and-hold confirm. The action fires when the fill lands; letting go
- * early cancels it and puts `hint` in the status line. An inline confirm, so About stays the
- * menu's only reader popup (docs/menu.md § About). Where `required` says no hold is wanted, a
- * plain click acts instead and nothing sweeps.
+ * early cancels it and puts {@link HoldConfirm.hint} in the status line. An inline confirm, so
+ * About stays the menu's only reader popup (docs/menu.md § About). Where
+ * {@link HoldConfirm.required} says no hold is wanted, a plain click acts instead and nothing
+ * sweeps.
  *
  * The label moves into a `.label` span so the `.fill` bar can sit behind it, and the fill's own
  * duration is handed to CSS as `--hold-time` — one number, so the bar can't finish at a different
@@ -57,7 +59,7 @@ export function confirmOnHold(button: HTMLButtonElement, confirm: HoldConfirm): 
     window.clearTimeout(timer);
     timer = 0;
     button.classList.remove('holding');
-    setStatus(hint);
+    setStatus(hint, 'caution');
   };
   const start = () => {
     // Not every browser suppresses pointer events on a disabled control, and a press that got

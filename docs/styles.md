@@ -156,18 +156,19 @@ Everything else stays a literal. Values used two or three times inside a single 
 `#6f6a65`, `#1b1b21`, the `rgba()` scrims), are deliberately not folded in: collapsing them into the
 nearest token would be a visual change wearing a cleanup's clothes.
 
-**Status colours are their own family**, and never rungs of the accent: a warning must not move when
-the menu accent is retuned. `--caution` (the text-weight amber) is a token because two stylesheets
-read it — the save row's missing-add-on note and the WAD Library's support column — and it is what
-the menu's and the Library's status lines are, red being kept for what actually failed. Its neighbours in
-that scale are not, and each says why at the site: the support column's green has one site, and the
-profiler's green/gold/red bar fills are at fill weight rather than text weight (its red happens to
-be the accent's hex and stays literal anyway, precisely so the two can't be retuned together). Where
-a status colour *is* the accent it says so — the support column's red reads `--accent-text-hover`,
-because `#menu .warning` already made that the menu's one red for "this won't work" and a second
-would only be a near-miss. The info column's blue (`#menu .row .meta.info`) is a literal on the same
-terms and for the opposite reason: it is the page's one blue, and an aside the player may open must
-not be a rung of the family that means "this won't work".
+**Status colours are their own family**, and never rungs of the accent: a status colour must not
+move when the menu accent is retuned. Two are tokens, each read by more than one stylesheet:
+`--info` (the text-weight blue) and `--caution` (the text-weight amber). The status lines use both,
+red being kept for what actually failed (docs/menu-wads.md § The status line); `--caution` is also
+the save row's missing-add-on note and the WAD Library's support column, `--info` the info column's
+hover. Their neighbours in that scale are not tokens, and each says why at the site: the support
+column's green and the info column's darker resting blue have one site each, and the profiler's
+green/gold/red bar fills are at fill weight rather than text weight (its red happens to be the
+accent's hex and stays literal anyway, precisely so the two can't be retuned together). Where a
+status colour *is* the accent it says so — the support column's red and the status lines' errors
+read `--accent-text-hover`, because `#menu .warning` already made that the menu's one red for "this
+won't work" and a second would only be a near-miss. Blue is the opposite of that red: an aside the
+player may open, or a message about something that went as asked.
 
 One further documented exception:
 

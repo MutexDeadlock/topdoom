@@ -8,6 +8,7 @@ import { badge, describeMap, describeSource, mapStyleLabel, rowButton, sourceCol
 import { AboutUi } from './about.ts';
 import { WelcomeUi } from './welcome.ts';
 import { confirmOnHold } from './hold.ts';
+import type { StatusKind } from './actions.ts';
 import { LibraryUi } from './library.ts';
 import { WadInfoUi } from './wadinfo.ts';
 import type { MenuOverlay } from './overlay.ts';
@@ -76,17 +77,17 @@ export interface MenuDefaults {
  */
 export interface MenuHooks {
   /**
-   * Starts a level from the New Game tab's selection — Start new game and `submit`. A thrown or
-   * rejected start is shown on the status line.
+   * Starts a level from the New Game tab's selection — Start new game and {@link Menu.submit}. A
+   * thrown or rejected start is shown on the status line.
    */
   onStart(selection: Selection): void | Promise<void>;
   /** "Return to game": closes the menu onto the level paused behind it. */
   onResume(): void;
-  /** The Save and Load tabs' requests (`SavegamesUi`). */
+  /** The Save and Load tabs' requests ({@link SavegamesUi}). */
   saves: SaveHooks;
-  /** The Replays tab's (`ReplaysUi`). */
+  /** The Replays tab's ({@link ReplaysUi}). */
   replays: ReplayHooks;
-  /** The Multiplayer tab's (`MultiplayerUi`). */
+  /** The Multiplayer tab's ({@link MultiplayerUi}). */
   multiplayer: MultiplayerHooks;
 }
 
@@ -96,9 +97,9 @@ const el =<T extends HTMLElement>(id: string) => document.getElementById(id) as 
 export type MenuTab = 'newgame' | 'save' | 'load' | 'multiplayer' | 'replays' | 'settings';
 
 /**
- * What is running behind the menu, as `main.ts` tells `open` and the tabs it. `'replay'` is a level
- * like `'game'` in every way but one: a replay can be watched again, so nothing that replaces it is
- * held to confirm. docs/menu.md § One screen, two jobs.
+ * What is running behind the menu, as `main.ts` tells {@link Menu.open} and the tabs it. `'replay'`
+ * is a level like `'game'` in every way but one: a replay can be watched again, so nothing that
+ * replaces it is held to confirm. docs/menu.md § One screen, two jobs.
  */
 export type MenuSession = 'none' | 'game' | 'replay';
 
@@ -108,7 +109,24 @@ type SettingsTab = 'general' | 'controls' | 'visuals' | 'audio';
 const SKILL_STORAGE_KEY = 'skill';
 const SELECTION_STORAGE_KEY = 'selection';
 
-/** What `saveSelection` writes: `WadSource.key`s plus the level, for every source but an upload. */
+/**
+ * What an otherwise empty status line says on each tab: what the player can do there, always as
+ * `info`. None on New Game, whose footer always holds Start new game. The Multiplayer tab's
+ * follows the room, so {@link MultiplayerUi.statusHint} says it —
+ * docs/menu-wads.md § The status line.
+ */
+const TAB_HINTS: Record<Exclude<MenuTab, 'multiplayer'>, string> = {
+  newgame: '',
+  save: 'Create a new savegame, or overwrite a previous one.',
+  load: 'Select a game to load, or import one from your disk.',
+  replays: 'Pick a replay to watch, or import one from your disk. Record from here while a game runs.',
+  settings: 'Changes made here take effect immediately, unless otherwise specified.',
+};
+
+/**
+ * What {@link Menu.saveSelection} writes: {@link WadSource.key}s plus the level, for every source
+ * but an upload.
+ */
 interface StoredSelection {
   iwad: string;
   pwads: string[];
@@ -118,11 +136,10 @@ interface StoredSelection {
 }
 
 /**
- * The start screen: pick a game WAD, stack any add-ons on top, choose a level.
- * WADs come from public/game/, from the player's own library folder, or straight
- * off their disk — all three list and behave identically (`LibraryUi`,
- * docs/menu-wads.md § WAD Library). It doubles as the pause screen once a level is
- * running — see `open` and docs/menu.md.
+ * The start screen: pick a game WAD, stack any add-ons on top, choose a level. WADs come from
+ * public/game/, from the player's own library folder, or straight off their disk — all three list
+ * and behave identically ({@link LibraryUi}, docs/menu-wads.md § WAD Library). It doubles as the
+ * pause screen once a level is running — see {@link Menu.open} and docs/menu.md.
  */
 export class Menu {
   private root = el<HTMLDivElement>('menu');
@@ -193,7 +210,10 @@ export class Menu {
   private replays: ReplaysUi;
   private multiplayer: MultiplayerUi;
   private recordToggle = el<HTMLButtonElement>('record-toggle');
-  /** Whether the next game starts recording; session-only, so it can't outlive the tab it was set in. */
+  /**
+   * Whether the next game starts recording; session-only, so it can't outlive the tab it was set
+   * in.
+   */
   private recordArmed = false;
   private library: LibraryUi;
   private about = new AboutUi();
@@ -201,19 +221,19 @@ export class Menu {
   private wadinfo = new WadInfoUi();
   /**
    * Every popup that can sit over the menu, **topmost first** — the one statement of that order,
-   * which `close`, `closeTopOverlay` and `hasOverlay` all derive from rather than each listing them
-   * again. The reader leads because it opens from a row *inside* the WAD Library, the same relation
-   * its `z-index` rung states in CSS (docs/styles.md § Tokens). Filled in the constructor:
-   * `library` is not built until then.
+   * which {@link Menu.close}, {@link Menu.closeTopOverlay} and {@link Menu.hasOverlay} all derive
+   * from rather than each listing them again. The reader leads because it opens from a row *inside*
+   * the WAD Library, the same relation its `z-index` rung states in CSS (docs/styles.md § Tokens).
+   * Filled in the constructor: {@link Menu.library} is not built until then.
    */
   private overlays: MenuOverlay[] = [];
 
   private sources: WadSource[] = [];
   /**
-   * `mergedMaps` per WAD set, for `describeSave`: building one merges every
-   * lump directory in the set and titles every map in it, and a save list is a
-   * page of rows all asking about the same handful of sets. Dropped whenever
-   * `sources` changes, since an upload can complete a set that was short a file.
+   * {@link wadlib.mergedMaps} per WAD set, for {@link Menu.describeSave}: building one merges every
+   * lump directory in the set and titles every map in it, and a save list is a page of rows all
+   * asking about the same handful of sets. Dropped whenever {@link Menu.sources} changes, since an
+   * upload can complete a set that was short a file.
    */
   private mapCache = new Map<string, ReturnType<typeof wadlib.mergedMaps>>();
   private selectedIwad: WadSource | null = null;
@@ -235,17 +255,17 @@ export class Menu {
     this.hooks = hooks;
     this.savegames = new SavegamesUi(
       hooks.saves,
-      (text, isError) => this.setStatus(text, isError),
+      (text, kind) => this.setStatus(text, kind),
       (meta) => this.describeSave(meta),
     );
     this.replays = new ReplaysUi(
       hooks.replays,
-      (text, isError) => this.setStatus(text, isError),
+      (text, kind) => this.setStatus(text, kind),
       (meta) => this.describeSave(meta),
     );
     this.multiplayer = new MultiplayerUi(
       hooks.multiplayer,
-      (text, isError) => this.setStatus(text, isError),
+      (text, kind) => this.setStatus(text, kind),
       (meta) => this.describeSave(meta),
     );
 
@@ -268,7 +288,7 @@ export class Menu {
     });
     confirmOnHold(this.startButton, {
       hint: 'Hold Start new game to abandon the game you are running.',
-      setStatus: (text) => this.setStatus(text),
+      setStatus: (text, kind) => this.setStatus(text, kind),
       action: () => void this.startWithSkill(this.currentSkill()),
       // Only a start that throws a running level away is worth confirming; from the launcher —
       // and over a replay, which costs nothing to leave — it stays an ordinary button.
@@ -320,8 +340,8 @@ export class Menu {
 
   /**
    * Reads the server library, then resolves the selection: the URL wins, the stored selection is
-   * next, then the first-run set (`FIRST_RUN_WADS`) for a player who has none, and failing all
-   * three the first game WAD on offer.
+   * next, then the first-run set ({@link FIRST_RUN_WADS}) for a player who has none, and failing
+   * all three the first game WAD on offer.
    */
   async init(defaults: MenuDefaults): Promise<void> {
     this.setStatus('Scanning public/game/ …');
@@ -372,7 +392,7 @@ export class Menu {
     const wantedMap = defaults.map ?? stored?.map ?? null;
     if (wantedMap) this.selectLevel(wantedMap);
 
-    this.setStatus(this.sources.length === 0 ? 'No WADs found on the server — open the WAD Library to add your own.' : '');
+    this.setStatus(this.sources.length === 0 ? 'No WADs found on the server — open the WAD Library to add your own.' : '', 'caution');
   }
 
   /**
@@ -402,15 +422,18 @@ export class Menu {
     this.refreshButtons();
   }
 
-  /** The Multiplayer tab redrawn from its session — what the session reports every change through. */
+  /**
+   * The Multiplayer tab redrawn from its session — what the session reports every change through.
+   */
   refreshMultiplayer(): void {
     this.multiplayer.refresh();
   }
 
   /**
-   * What the New Game tab would start right now, or null while it can't: the set, the level and
-   * the skill — what a network game's host hands its room (docs/multiplayer-net.md § The
-   * Multiplayer tab). `record` is the tab's toggle, as a start reads it.
+   * What the New Game tab would start right now: the set, the level and the skill — what a network
+   * game's host hands its room (docs/multiplayer-net.md § The Multiplayer tab).
+   * {@link Selection.record} is the tab's toggle, as a start reads it.
+   * @returns null while it can't
    */
   currentSelection(): Selection | null {
     if (!this.selectedIwad || !this.isReady) return null;
@@ -425,8 +448,8 @@ export class Menu {
 
   /**
    * Brings the welcome popup up over the launcher, unless the player has muted it — `main.ts`'s
-   * boot, once the menu is open (docs/menu.md § Welcome popup). Not part of `open`, which is also
-   * the pause screen: a run interrupted by ESC is nobody's first look at the game.
+   * boot, once the menu is open (docs/menu.md § Welcome popup). Not part of {@link Menu.open},
+   * which is also the pause screen: a run interrupted by ESC is nobody's first look at the game.
    */
   showWelcome(): void {
     this.welcome.open();
@@ -450,10 +473,12 @@ export class Menu {
   }
 
   /**
-   * Brings one tab to the front, opening the menu first if it is closed — what the
-   * F2/F3/F4 hotkeys do (docs/menu.md § Hotkeys). `session` is `open`'s and gates Save
-   * the same way: with no level loaded there is nothing to save, so the key does
-   * nothing rather than opening the menu on a hidden tab. Reports whether the tab is up.
+   * Brings one tab to the front, opening the menu first if it is closed — what the F2/F3/F4 hotkeys
+   * do (docs/menu.md § Hotkeys).
+   * @param session  {@link Menu.open}'s, and gates Save the same way: with no level loaded there
+   *                 is nothing to save, so the key does nothing rather than opening the menu on a
+   *                 hidden tab
+   * @returns whether the tab is up
    */
   showTab(tab: MenuTab, session: MenuSession): boolean {
     if (tab === 'save' && session === 'none') return false;
@@ -463,16 +488,16 @@ export class Menu {
   }
 
   /**
-   * Dismisses whichever overlay is up, topmost first, and reports whether there was one — the
-   * hand-off `main.ts` gives ESC before it acts on the menu itself. The order is `overlays`' and
-   * lives here rather than in the caller, so another overlay is one edit and never changes what ESC
-   * does elsewhere.
+   * Dismisses whichever overlay is up, topmost first — the hand-off `main.ts` gives ESC before it
+   * acts on the menu itself. The order is {@link Menu.overlays}' and lives here rather than in the
+   * caller, so another overlay is one edit and never changes what ESC does elsewhere.
+   * @returns whether there was one
    */
   closeTopOverlay(): boolean {
     return this.overlays.some((overlay) => overlay.close());
   }
 
-  /** Whether any of them is up — the same list `closeTopOverlay` walks. */
+  /** Whether any of them is up — the same list {@link Menu.closeTopOverlay} walks. */
   get hasOverlay(): boolean {
     return this.overlays.some((overlay) => overlay.isOpen);
   }
@@ -483,10 +508,10 @@ export class Menu {
   }
 
   /**
-   * Resolves a stored `WadSource.key` — `init`'s restored selection — against
-   * the current library, uploads included, since `addFiles` unshifts a
-   * re-uploaded file under the same key. A savegame's set does *not* come
-   * through here: it resolves by content ID (`resolveSaveWads`).
+   * Resolves a stored {@link WadSource.key} — {@link Menu.init}'s restored selection — against the
+   * current library, uploads included, since {@link Menu.addFiles} unshifts a re-uploaded file
+   * under the same key. A savegame's set does *not* come through here: it resolves by content ID
+   * ({@link Menu.resolveSaveWads}).
    */
   findSource(key: string): WadSource | undefined {
     return this.sources.find((s) => s.key.toLowerCase() === key.toLowerCase());
@@ -496,7 +521,7 @@ export class Menu {
    * Resolves a savegame's whole WAD set against the current library, in load order — the one place
    * that rule lives, so the save row and the load path can't disagree about which files a save can
    * be played with. Matching is by content ID; the name is only the fallback *diagnosis*, and
-   * `wads[0]` is the game WAD, so a file's role is its position. `requiredWads` decides which
+   * `wads[0]` is the game WAD, so a file's role is its position. {@link requiredWads} decides which
    * missing file stops a load, and a stand-in taken here is the one thing that releases `wads[0]`
    * from that (docs/savegames.md § A stand-in game WAD, § WAD-set identity).
    */
@@ -536,10 +561,10 @@ export class Menu {
   }
 
   /**
-   * What a save row shows beyond its own stored meta: the level named exactly as
-   * the level select names it (`describeMap` — a save stores only the lump name,
-   * which alone can't name a level, docs/wad.md § Level names), and whatever
-   * `resolveSaveWads` reports as unavailable.
+   * What a save row shows beyond its own stored meta: the level named exactly as the level select
+   * names it ({@link describeMap} — a save stores only the lump name, which alone can't name a
+   * level, docs/wad.md § Level names), and whatever {@link Menu.resolveSaveWads} reports as
+   * unavailable.
    */
   describeSave(meta: SaveWadSet): SaveSetInfo {
     const { iwad, pwads, missing } = this.resolveSaveWads(meta);
@@ -556,31 +581,35 @@ export class Menu {
    * loaded, a WAD that wouldn't parse) would otherwise be reported to a line nobody can see, and
    * would then surface on the New Game tab once the overlay closed, out of the context that
    * explains it. docs/menu-wads.md § WAD Library.
+   * @param text  '' for the tab's own hint ({@link TAB_HINTS}) rather than a blank line
+   * @param kind  what the message is, and so its colour — docs/menu-wads.md § The status line
    */
-  setStatus(text: string, isError = false): void {
+  setStatus(text: string, kind: StatusKind = 'info'): void {
     if (this.library.isOpen) {
-      this.library.showStatus(text, isError);
+      this.library.showStatus(text, kind);
       return;
     }
-    this.statusEl.textContent = text;
+    const shown = text || this.tabHint();
+    this.statusEl.textContent = shown;
     // Clamped to two lines (menu.css), so the whole of a long one lives in the tooltip.
-    this.statusEl.title = text;
-    this.statusEl.classList.toggle('error', isError);
+    this.statusEl.title = shown;
+    // The hint is `info` whatever kind came along with nothing to say.
+    this.statusEl.dataset.kind = text ? kind : 'info';
   }
 
   /**
-   * Starts with whatever is currently selected — used by ?map= deep links,
-   * which skip the menu entirely and so run at the last skill picked. Settled
-   * either way when the start is over, which is how `main.ts` knows a
-   * deep-linked level has taken the screen (docs/session.md § Session lifecycle).
+   * Starts with whatever is currently selected — used by ?map= deep links, which skip the menu
+   * entirely and so run at the last skill picked.
+   * @returns settled either way when the start is over, which is how `main.ts` knows a deep-linked
+   *          level has taken the screen (docs/session.md § Session lifecycle)
    */
   submit(): Promise<void> {
     return this.startWithSkill(this.currentSkill());
   }
 
   /**
-   * What is running behind the menu. `open`'s own argument, read back off the classes it sets
-   * rather than mirrored in a field — one owner for the state, so the two can't disagree about
+   * What is running behind the menu. {@link Menu.open}'s own argument, read back off the classes it
+   * sets rather than mirrored in a field — one owner for the state, so the two can't disagree about
    * what the backdrop is showing.
    */
   private get session(): MenuSession {
@@ -590,7 +619,8 @@ export class Menu {
 
   private setTab(tab: MenuTab): void {
     this.activeTab = tab;
-    // A message explains the tab it was raised on; carried onto the next one it explains nothing.
+    // A message explains the tab it was raised on; carried onto the next one it explains nothing,
+    // so the line goes back to the new tab's hint.
     this.setStatus('');
     for (const key of Object.keys(this.tabButtons) as MenuTab[]) {
       this.tabButtons[key].classList.toggle('active', key === tab);
@@ -603,6 +633,11 @@ export class Menu {
     this.savegames.setVisible(tab === 'save' || tab === 'load' ? tab : null);
     this.replays.setVisible(tab === 'replays');
     this.multiplayer.setVisible(tab === 'multiplayer');
+  }
+
+  /** What {@link Menu.setStatus} shows in place of nothing, on the tab in front. */
+  private tabHint(): string {
+    return this.activeTab === 'multiplayer' ? this.multiplayer.statusHint() : TAB_HINTS[this.activeTab];
   }
 
   /**
@@ -651,10 +686,9 @@ export class Menu {
   }
 
   /**
-   * Autorun defaults to on (`getAutorun`'s own default). It shares the `Shift`
-   * row, whose description is *what that key does* — so the word has to follow
-   * the checkbox rather than state one of the two cases and leave the other
-   * to be inferred.
+   * Autorun defaults to on ({@link getAutorun}'s own default). It shares the `Shift` row, whose
+   * description is *what that key does* — so the word has to follow the checkbox rather than state
+   * one of the two cases and leave the other to be inferred.
    */
   private installAutorun(): void {
     const show = (on: boolean) => {
@@ -669,9 +703,9 @@ export class Menu {
   }
 
   /**
-   * What the right mouse button does — it has no fixed job since the camera
-   * turns with Q/E rather than by dragging. Defaults to `previousweapon` (`getRightMouseAction`).
-   * The `<option>` values are the `RightMouseAction` strings themselves.
+   * What the right mouse button does — it has no fixed job since the camera turns with Q/E rather
+   * than by dragging. Defaults to `previousweapon` ({@link getRightMouseAction}). The `<option>`
+   * values are the {@link RightMouseAction} strings themselves.
    */
   private installRightMouse(): void {
     this.rightMouseSelect.value = getRightMouseAction();
@@ -681,10 +715,9 @@ export class Menu {
   }
 
   /**
-   * Whether the camera frames itself from the openness around the player
-   * (`auto`, the default) or stays on the manual `+ - [ ]` keys — applied to
-   * the level already running, read per tic. The `<option>` values are the
-   * `CameraMode` strings themselves. docs/camera.md § Auto camera.
+   * Whether the camera frames itself from the openness around the player (`auto`, the default) or
+   * stays on the manual `+ - [ ]` keys — applied to the level already running, read per tic. The
+   * `<option>` values are the {@link CameraMode} strings themselves. docs/camera.md § Auto camera.
    */
   private installCameraMode(): void {
     this.cameraModeSelect.value = getCameraMode();
@@ -694,10 +727,9 @@ export class Menu {
   }
 
   /**
-   * The frame rate limit, `0` (unlimited) by default (`getFpsCap`). The running
-   * level reads the setting per frame, so a change here applies without a
-   * restart — same as volume and autorun. The `<option>` values are the capped
-   * rates themselves.
+   * The frame rate limit, `0` (unlimited) by default ({@link getFpsCap}). The running level reads
+   * the setting per frame, so a change here applies without a restart — same as volume and autorun.
+   * The `<option>` values are the capped rates themselves.
    */
   private installFpsCap(): void {
     this.fpsCapSelect.value = String(getFpsCap());
@@ -796,9 +828,9 @@ export class Menu {
   }
 
   /**
-   * The top-left status text's on/off switch, beside the profiler's in the
-   * Debug / Dev section. Like it, `setFpsVisible` applies to `#hud` itself, so
-   * it takes effect on the running level — see docs/devmode.md § FPS counter.
+   * The top-left status text's on/off switch, beside the profiler's in the Debug / Dev section.
+   * Like it, {@link setFpsVisible} applies to `#hud` itself, so it takes effect on the running
+   * level — see docs/devmode.md § FPS counter.
    */
   private installFps(): void {
     this.fpsCheckbox.checked = getFpsVisible();
@@ -808,10 +840,10 @@ export class Menu {
   }
 
   /**
-   * The profiling overlay's on/off switch, in the Debug / Dev section of the
-   * General sub-tab. `setProfilerVisible` applies it to `#profiler-hud` itself,
-   * so it takes effect on the running level like volume and the fps cap — the
-   * point of the checkbox being to get the panel out of the way mid-play.
+   * The profiling overlay's on/off switch, in the Debug / Dev section of the General sub-tab.
+   * {@link setProfilerVisible} applies it to `#profiler-hud` itself, so it takes effect on the
+   * running level like volume and the fps cap — the point of the checkbox being to get the panel
+   * out of the way mid-play.
    */
   private installProfiler(): void {
     this.profilerCheckbox.checked = getProfilerVisible();
@@ -821,9 +853,9 @@ export class Menu {
   }
 
   /**
-   * The two header links, each opening `AboutUi` on its own tab — see docs/menu.md § About. The
-   * popup handles its own dismissal; `Menu` only decides when it comes up, and closes it with the
-   * menu (`close`, `closeTopOverlay`).
+   * The two header links, each opening {@link AboutUi} on its own tab — see docs/menu.md § About.
+   * The popup handles its own dismissal; {@link Menu} only decides when it comes up, and closes it
+   * with the menu ({@link Menu.close}, {@link Menu.closeTopOverlay}).
    */
   private installAbout(): void {
     el<HTMLButtonElement>('about-button').addEventListener('click', () => this.about.open('about'));
@@ -835,10 +867,10 @@ export class Menu {
   /**
    * A game WAD that may stand in for the one a save's set names, when the library no longer has
    * it — the first loaded IWAD whose own maps follow the same scheme as the saved map name
-   * (`mapNameStyle`), since a DOOM II map needs a DOOM II asset set and a DOOM one a DOOM one.
-   * `substitutableIwad` has already said whether a stand-in is admissible at all; this only picks
-   * which. A candidate needs no content ID: nothing matches it by identity, which is the point.
-   * docs/savegames.md § A stand-in game WAD.
+   * ({@link wadlib.mapNameStyle}), since a DOOM II map needs a DOOM II asset set and a DOOM one a
+   * DOOM one. {@link substitutableIwad} has already said whether a stand-in is admissible at all;
+   * this only picks which. A candidate needs no content ID: nothing matches it by identity, which
+   * is the point. docs/savegames.md § A stand-in game WAD.
    */
   private substituteIwad(
     save: SaveWadSet,
@@ -874,14 +906,15 @@ export class Menu {
   /**
    * The library's file under a save's stored *name*, which is what a save falls back to where a
    * content ID matches nothing: the same file in another version. Both readings of that fallback
-   * ask here — `resolveSaveWads` for `wrongVersion`, `substituteIwad` for the candidate a stand-in
-   * prefers — so the row and the pick cannot disagree about which file the player still means.
+   * ask here — {@link Menu.resolveSaveWads} for {@link MissingWad.wrongVersion},
+   * {@link Menu.substituteIwad} for the candidate a stand-in prefers — so the row and the pick
+   * cannot disagree about which file the player still means.
    */
   private sourceNamed(name: string): WadSource | undefined {
     return this.sources.find((s) => s.label.toLowerCase() === name.toLowerCase());
   }
 
-  /** `mergedMaps` for a set, from `mapCache` — see that field's doc. */
+  /** {@link wadlib.mergedMaps} for a set, from {@link Menu.mapCache} — see that field's doc. */
   private mapsFor(iwad: WadSource, pwads: WadSource[]): ReturnType<typeof wadlib.mergedMaps> {
     const key = [iwad.key, ...pwads.map((p) => p.key)].join('\n');
     let maps = this.mapCache.get(key);
@@ -935,8 +968,8 @@ export class Menu {
 
   /**
    * Adopts a source as the game WAD: the New Game tab's select, which picks one file at a time.
-   * The WAD Library commits a whole set instead (`applyPicks`); both prune through `pwadsFor`, so
-   * the two can't drift on what picking a game WAD does to the add-ons.
+   * The WAD Library commits a whole set instead ({@link Menu.applyPicks}); both prune through
+   * {@link wadlib.pwadsFor}, so the two can't drift on what picking a game WAD does to the add-ons.
    */
   private async adoptIwad(source: WadSource): Promise<void> {
     await this.identify(source);
@@ -947,7 +980,8 @@ export class Menu {
 
   /**
    * Drops one add-on from the set — the `×` on its own row, the only way a pick leaves the New Game
-   * tab. Adding is the WAD Library's job (`applyPicks`), so this half needs no `identify`.
+   * tab. Adding is the WAD Library's job ({@link Menu.applyPicks}), so this half needs no
+   * {@link Menu.identify}.
    */
   private removePwad(source: WadSource): void {
     const index = this.selectedPwads.indexOf(source);
@@ -982,9 +1016,10 @@ export class Menu {
   }
 
   /**
-   * What picking actually does to the selection, with no redraw of its own — so `addFiles`, which
-   * adopts a whole drop before drawing once, applies the identical rules rather than restating
-   * them. The redraw and the save stay with the callers above, which pick one file at a time.
+   * What picking actually does to the selection, with no redraw of its own — so
+   * {@link Menu.addFiles}, which adopts a whole drop before drawing once, applies the identical
+   * rules rather than restating them. The redraw and the save stay with the callers above, which
+   * pick one file at a time.
    */
   private takeAsIwad(source: WadSource): void {
     // Nothing is dropped from the add-ons here: one a new game WAD can't take goes quiet in the
@@ -1014,7 +1049,7 @@ export class Menu {
     } catch (err) {
       // A file that can't be read still selects: the failure to *load* it is the level start's to
       // report, with the WAD set in hand, rather than this one's on a tick.
-      this.setStatus(`${source.label}: ${(err as Error).message}`, true);
+      this.setStatus(`${source.label}: ${(err as Error).message}`, 'error');
     }
   }
 
@@ -1102,10 +1137,11 @@ export class Menu {
   }
 
   /**
-   * Why the selected game WAD can't merge one of the picks, as the badge its row carries — '' when
-   * it can. The rule is `library.ts: fitsGameWad`'s, the same one `pwadsFor` and the WAD Library's
+   * Why the selected game WAD can't merge one of the picks, as the badge its row carries. The rule
+   * is `library.ts: fitsGameWad`'s, the same one {@link wadlib.pwadsFor} and the WAD Library's
    * greying read, and the wording is `labels.ts: mapStyleLabel`'s, the same one the overlay's rows
    * carry. See docs/menu-wads.md § Picking a WAD set.
+   * @returns '' when it can
    */
   private mismatchReason(source: WadSource): string {
     if (this.selectedIwad && source.key === this.selectedIwad.key) return 'game WAD';
@@ -1115,10 +1151,11 @@ export class Menu {
 
   /**
    * The add-ons a start would actually merge: picked, still ticked, *and* mergeable with the game
-   * WAD in front of them (`pwadsFor`). Everything that resolves a WAD set — the level list, the
-   * start, the stored selection's ordering — reads this rather than `selectedPwads`, so neither an
-   * unticked row nor one the game WAD can't take can leak into a loaded game. That guard is what
-   * lets a mismatched pick keep its row instead of being pruned out of the list.
+   * WAD in front of them ({@link wadlib.pwadsFor}). Everything that resolves a WAD set — the level
+   * list, the start, the stored selection's ordering — reads this rather than
+   * {@link Menu.selectedPwads}, so neither an unticked row nor one the game WAD can't take can leak
+   * into a loaded game. That guard is what lets a mismatched pick keep its row instead of being
+   * pruned out of the list.
    */
   private activePwads(): WadSource[] {
     return wadlib.pwadsFor(
@@ -1128,7 +1165,8 @@ export class Menu {
   }
 
   /**
-   * Ticks or unticks one add-on. It keeps its place in the list either way — see `disabledPwads`.
+   * Ticks or unticks one add-on. It keeps its place in the list either way — see
+   * {@link Menu.disabledPwads}.
    */
   private setPwadEnabled(source: WadSource, enabled: boolean): void {
     if (enabled) this.disabledPwads.delete(source.key);
@@ -1221,9 +1259,9 @@ export class Menu {
   }
 
   /**
-   * What a start runs at: the select, which `installSkillSelect` seeded from
-   * storage. Reading the control rather than storage keeps the pick working
-   * where `localStorage` is unavailable and the write silently went nowhere.
+   * What a start runs at: the select, which {@link Menu.installSkillSelect} seeded from storage.
+   * Reading the control rather than storage keeps the pick working where `localStorage` is
+   * unavailable and the write silently went nowhere.
    */
   private currentSkill(): Skill {
     const value = Number(this.skillSelect.value);
@@ -1232,12 +1270,13 @@ export class Menu {
 
   /**
    * Remembers the WAD set and level for the next visit. Called from the places the *player* changes
-   * something, never from `render`: `init` renders while restoring, and would write back a level
-   * select that hasn't caught up with the stored map yet.
+   * something, never from {@link Menu.render}: {@link Menu.init} renders while restoring, and would
+   * write back a level select that hasn't caught up with the stored map yet.
    *
    * Uploads are never stored — their bytes are gone after a reload, so a stored key would restore a
    * selection that can never load. That also keeps a missing manifest (every source gone,
-   * `selectedIwad` null) from wiping a good stored value. docs/menu.md § Persisted settings.
+   * {@link Menu.selectedIwad} null) from wiping a good stored value.
+   * docs/menu.md § Persisted settings.
    */
   private saveSelection(): void {
     if (!this.selectedIwad || this.selectedIwad.origin === 'upload') return;
@@ -1251,9 +1290,9 @@ export class Menu {
   }
 
   /**
-   * The stored selection, or null where nothing is stored or what is stored names no IWAD. The keys
-   * themselves aren't validated here — `init` resolves each against the current library and drops
-   * whatever no longer exists.
+   * The stored selection. The keys themselves aren't validated here — {@link Menu.init} resolves
+   * each against the current library and drops whatever no longer exists.
+   * @returns null where nothing is stored or what is stored names no IWAD
    */
   private loadSelection(): StoredSelection | null {
     const parsed = readStorageObject(SELECTION_STORAGE_KEY) as Partial<StoredSelection> | null;
@@ -1297,7 +1336,7 @@ export class Menu {
     // Reported rather than dropped, for the reason every folder-pick path is (docs/menu-wads.md §
     // WAD Library): a picker that answers nothing at all is indistinguishable from a broken button.
     if (files.length === 0) {
-      this.setStatus('No files chosen.');
+      this.setStatus('No files chosen.', 'caution');
       return;
     }
     await this.addFiles(files);
@@ -1306,13 +1345,13 @@ export class Menu {
   /**
    * Adds files from disk — the multi-file picker and the menu's drop target. A file that declares
    * itself an IWAD is adopted as the game WAD; everything else joins the add-ons. Drawn once at the
-   * end rather than per file, which is why this routes through `takeAsIwad`/`takeAsPwad` instead of
-   * the single-pick handlers.
+   * end rather than per file, which is why this routes through
+   * {@link Menu.takeAsIwad}/{@link Menu.takeAsPwad} instead of the single-pick handlers.
    *
    * **Where the picks land depends on what is on top.** With the WAD Library up they are ticked
-   * into its draft instead, which applies on Apply — the same routing `setStatus` does, and for the
-   * same reason: the overlay covers `#menu`, so a selection made behind it is one the player never
-   * saw happen and `Close` would not undo (docs/menu-wads.md § WAD Library).
+   * into its draft instead, which applies on Apply — the same routing {@link Menu.setStatus} does,
+   * and for the same reason: the overlay covers `#menu`, so a selection made behind it is one the
+   * player never saw happen and `Close` would not undo (docs/menu-wads.md § WAD Library).
    */
   private async addFiles(files: File[]): Promise<void> {
     const added: WadSource[] = [];
@@ -1346,7 +1385,7 @@ export class Menu {
     if (added.length === 0) {
       const nothing =
         texts.size > 0 ? 'Only text files there — a .txt is read beside its WAD, never on its own.' : 'Nothing to add.';
-      this.setStatus(failed.join('; ') || nothing, true);
+      this.setStatus(failed.join('; ') || nothing, 'error');
       return;
     }
     if (staged) this.library.stage(added);
@@ -1361,7 +1400,7 @@ export class Menu {
     this.multiplayer.wadsChanged();
     this.saveSelection();
     const skipped = failed.length > 0 ? ` — skipped ${failed.join('; ')}` : '';
-    this.setStatus(`Added ${added.map((s) => `${s.label} (${s.type})`).join(', ')}${skipped}`, failed.length > 0);
+    this.setStatus(`Added ${added.map((s) => `${s.label} (${s.type})`).join(', ')}${skipped}`, failed.length > 0 ? 'caution' : 'info');
   }
 
   private installDropTarget(): void {
@@ -1407,7 +1446,7 @@ export class Menu {
         }
         return this.hooks.onStart({ ...selection, skill });
       })
-      .catch((err: Error) => this.setStatus(err.message, true))
+      .catch((err: Error) => this.setStatus(err.message, 'error'))
       .finally(() => this.refreshButtons());
   }
 

@@ -14,6 +14,7 @@ Features and improvements
     - the host needs a second player to start
     - leaving a game, or the host closing the room, ends it and returns to the menu
   - players gib when a hit leaves them below -100 health, as in vanilla
+  - menu: reworked status messages
 
 Fixed bugs
   - the high death cry (pdiehi) plays in DOOM2 only, as in vanilla

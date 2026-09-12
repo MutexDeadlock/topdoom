@@ -170,7 +170,7 @@ async function boot(): Promise<void> {
       // The level's music starts before its map is built; a build that threw leaves it playing
       // with no `Game` to dispose it (docs/music.md § Which track a level plays).
       audio.music.stop();
-      menu.setStatus((err as Error).message, true);
+      menu.setStatus((err as Error).message, 'error');
       // The previous level is gone by now, so re-sync the menu: with nothing
       // left to return to, it must stop offering it.
       menu.open(session());
@@ -197,7 +197,7 @@ async function boot(): Promise<void> {
       if (!iwad) throw new Error(`this ${noun} does not name a game WAD`);
       await start(iwad, pwads);
     } catch (err) {
-      menu.setStatus((err as Error).message, true);
+      menu.setStatus((err as Error).message, 'error');
       console.error(err);
     }
   };
@@ -285,7 +285,7 @@ async function boot(): Promise<void> {
         menu.open(session());
         menu.showTab('multiplayer', session());
       }
-      menu.setStatus(reason, true);
+      menu.setStatus(reason, 'error');
     },
   };
 
@@ -312,7 +312,7 @@ async function boot(): Promise<void> {
       .then((meta) => menu.setStatus(`Replay "${meta.name}" stored.`))
       .catch((err: unknown) => {
         console.warn('replay not stored:', err);
-        menu.setStatus(`replay not stored: ${(err as Error).message}`, true);
+        menu.setStatus(`replay not stored: ${(err as Error).message}`, 'error');
       });
   };
 

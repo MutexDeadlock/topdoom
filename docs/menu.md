@@ -45,8 +45,8 @@ a `MenuSession` of `'none'`, `'game'` or `'replay'` — `main.ts` reads it off t
 - **The status line is the footer's only elastic item.** Both buttons are `flex: none` and
   `#menu-status` takes the space left over; letting them shrink instead wraps their labels over
   three lines and grows the footer inside the panel. What the two clamped lines then cut is in the
-  line's own `title` (`setStatus`). **Switching tabs clears it** (`setTab`): a message explains the
-  tab it was raised on.
+  line's own `title` (`setStatus`). **Switching tabs clears it** (`setTab`) back to the tab's hint:
+  a message explains the tab it was raised on (docs/menu-wads.md § The status line).
 - The active tab is *not* reset on open — it's whichever the player last clicked (`newgame` on the
   first open, set in the constructor). Reopening mid-level to change one setting must not throw away
   the tab they were on.

@@ -1,8 +1,9 @@
 /**
  * The menu's Multiplayer tab: the relay, name and colour fields, hosting the New Game tab's level
  * or joining a room by code, and the room itself — its code, what is being played, who is in it
- * and whether they can play it, the host's input delay and Start. Pure DOM over a `NetSession`;
- * every failure goes to the menu's status line. docs/multiplayer-net.md § The Multiplayer tab.
+ * and whether they can play it, the host's input delay and Start. Pure DOM over a
+ * {@link NetSession}; every failure goes to the menu's status line.
+ * docs/multiplayer-net.md § The Multiplayer tab.
  */
 import {
   DEFAULT_RELAY_URL,
@@ -57,7 +58,10 @@ export interface MultiplayerHooks {
   host(url: string, name: string): Promise<void>;
   /** Joins the room `code` names on the relay at `url`. */
   join(url: string, code: string, name: string): Promise<void>;
-  /** The host's lobby takes the New Game tab's current pick; whether anything changed. */
+  /**
+   * The host's lobby takes the New Game tab's current pick.
+   * @returns whether anything changed
+   */
   announce(): Promise<boolean>;
   /** The host starts the game. */
   start(): void;
@@ -65,7 +69,9 @@ export interface MultiplayerHooks {
   kick(member: number): void;
   /** This browser's WADs changed: a peer's answer on the host's set is asked again. */
   recheckWads(): void;
-  /** Leaves the room, and ends the level a network game runs — docs/multiplayer-net.md § Leaving. */
+  /**
+   * Leaves the room, and ends the level a network game runs — docs/multiplayer-net.md § Leaving.
+   */
   leave(): void;
 }
 
@@ -161,7 +167,9 @@ export class MultiplayerUi {
     });
   }
 
-  /** Redraws from the session as it stands — every menu open, and every change the session reports. */
+  /**
+   * Redraws from the session as it stands — every menu open, and every change the session reports.
+   */
   refresh(): void {
     this.refreshTabLight();
     if (!this.visible) return;
@@ -176,9 +184,30 @@ export class MultiplayerUi {
     void this.announce();
   }
 
-  /** A WAD was added or the library rescanned — the menu's hand-off, beside the save rows' refresh. */
+  /**
+   * A WAD was added or the library rescanned — the menu's hand-off, beside the save rows' refresh.
+   */
   wadsChanged(): void {
     this.hooks.recheckWads();
+  }
+
+  /**
+   * What the menu's status line says on this tab when nothing else is: what the player can do with
+   * the room as it stands. docs/menu-wads.md § The status line.
+   */
+  statusHint(): string {
+    const session = this.hooks.session();
+    if (!session) return "Host the New Game tab's level, or join a room with the code its host gave you.";
+    // The host leaving takes the room with it, which is why its button is Close.
+    if (session.phase === 'ended') return `${session.isHost ? 'Close' : 'Leave'} the room to host or join another.`;
+    if (session.phase !== 'lobby') {
+      return session.isHost
+        ? 'Close ends the network game for everyone.'
+        : 'Leave takes you out of the network game; your player stands idle.';
+    }
+    return session.isHost
+      ? 'Hand the room code to the others, set the rules, and Start once everyone is ready.'
+      : 'The host starts the game once everyone is ready. Leave takes you out of the room.';
   }
 
   private host(): Promise<void> {
@@ -188,13 +217,16 @@ export class MultiplayerUi {
   private join(): Promise<void> {
     const code = this.codeInput.value.trim().toUpperCase();
     if (code === '') {
-      this.setStatus('Enter the room code the host gave you.', true);
+      this.setStatus('Enter the room code the host gave you.', 'error');
       return Promise.resolve();
     }
     return this.enter((url, name) => this.hooks.join(url, code, name), `Joined room ${code}.`);
   }
 
-  /** A Host or a Join: one connect at a time, both buttons waiting on it, the outcome in the status line. */
+  /**
+   * A Host or a Join: one connect at a time, both buttons waiting on it, the outcome in the status
+   * line.
+   */
   private async enter(request: (url: string, name: string) => Promise<void>, done: string): Promise<void> {
     if (this.connecting) return;
     const url = this.relayInput.value.trim() || DEFAULT_RELAY_URL;
@@ -202,7 +234,7 @@ export class MultiplayerUi {
     // Said before connecting; the host asks the same of the name against the room's.
     const unnamed = nameRefusal(name, []);
     if (unnamed) {
-      this.setStatus(unnamed, true);
+      this.setStatus(unnamed, 'error');
       this.nameInput.focus();
       return;
     }
@@ -312,7 +344,9 @@ export class MultiplayerUi {
     void this.announce('The room now plays these rules.');
   }
 
-  /** Whether the group shows, and which rows the mode has — see {@link MultiplayerUi.installRules}. */
+  /**
+   * Whether the group shows, and which rows the mode has — see {@link MultiplayerUi.installRules}.
+   */
   private renderRules(): void {
     const session = this.hooks.session();
     this.rules.classList.toggle('hidden', !(session?.isHost && session.phase === 'lobby'));
@@ -409,13 +443,19 @@ function phaseText(session: NetSession): string {
   }
 }
 
-/** The one line under the room's controls: what is keeping Start greyed, or a desync in progress. */
+/**
+ * The one line under the room's controls: what is keeping Start greyed, or a desync in progress.
+ */
 function roomHint(session: NetSession): string {
-  if (session.desyncedAt !== null) return `out of step since tic ${session.desyncedAt} — the host is resyncing`;
+  if (session.desyncedAt !== null) {
+    return `out of step since tic ${session.desyncedAt} — the host is resyncing`;
+  }
   if (session.phase !== 'lobby' || !session.isHost) return '';
   const waiting = session.peers.filter((peer) => peer.ready !== true);
   // Start's reason where nobody else is in the room (docs/multiplayer-net.md § The session).
-  if (waiting.length === 0) return session.peers.length === 1 ? 'alone so far — Start waits for a second player' : '';
+  if (waiting.length === 0) {
+    return session.peers.length === 1 ? 'alone so far — Start waits for a second player' : '';
+  }
   return `waiting on ${waiting.map((peer) => peer.name).join(', ')}`;
 }
 
@@ -423,7 +463,10 @@ function ticsLabel(tics: number): string {
   return `${tics} tic${tics === 1 ? '' : 's'}`;
 }
 
-/** What one line of the room's list shows; `note` and `kick` are null where the row has none. */
+/**
+ * What one line of the room's list shows; {@link PeerRowParts.note} and {@link PeerRowParts.kick}
+ * are null where the row has none.
+ */
 interface PeerRowParts {
   name: string;
   /** The armour colour that player draws in, as a swatch before the name. */

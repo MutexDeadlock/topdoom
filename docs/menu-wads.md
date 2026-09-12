@@ -318,6 +318,15 @@ the filter, choosing a folder, and the one status line.
   `Add single WADs…` runs through `Menu.addFiles` — and a message that outlives the overlay turns up
   on the New Game tab out of the context that explains it, which is how the press-and-hold coaching
   ended up telling that tab to hold a button it doesn't have. One surface, whichever is on top.
+- **The colour says what the message is** (`StatusKind`, the caller's to pass): `info` blue for
+  what went as asked — a save stored, a room opened, a scan's progress; `caution` amber for a notice
+  that blocks nothing — a hold's hint, an add or a scan that skipped files, no WADs on the server, a
+  one-off folder; `error` red for what failed. No kind is `info`; `attempt` reports a throw as
+  `error`.
+- **The menu's empty line is a hint, never blank**: `setStatus('')` — a tab switch, a hold that
+  landed, a level start — shows what the player can do on that tab instead, always `info`.
+  `TAB_HINTS` holds one per tab, none on New Game (its footer always holds Start new game);
+  `MultiplayerUi.statusHint` follows the room. The overlay's line has no hint.
 
 ### The Add-ons list on the New Game tab
 

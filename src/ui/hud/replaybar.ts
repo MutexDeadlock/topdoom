@@ -1,9 +1,9 @@
 /**
- * `ReplayBar`: the playback bar under the HUD — a position track with level markers that is also
- * what a jump is dragged on, and on hover the pause, speed, camera and "take over" controls —
+ * {@link ReplayBar}: the playback bar under the HUD — a position track with level markers that is
+ * also what a jump is dragged on, and on hover the pause, speed, camera and "take over" controls —
  * plus the reticle drawn where the recording aimed and the marker over a jump's frozen frame. Pure
- * DOM over a `ReplayPlayback`; `Game` owns what the two buttons do, and whether the viewer's
- * `Space` reaches it.
+ * DOM over a {@link ReplayPlayback}; `Game` owns what the take-over, the camera picker and the
+ * track do, and whether the viewer's `Space` reaches it.
  * docs/replays.md § Playback and § Seeking.
  */
 import {
@@ -22,10 +22,12 @@ import { formatClock } from './hud.ts';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-/** What the bar's one action needs from the session — the same port shape as `SaveHooks`. */
+/** What the bar's actions need from the session — the same port shape as `SaveHooks`. */
 export interface ReplayBarHooks {
   /** Ends the playback and hands the level to the player, which also stores a savegame. */
   takeOver(): void;
+  /** The camera picker's player entries: watch slot `slot`'s player. docs/replays.md § Playback. */
+  watch(slot: number): void;
   /** Jumps the playback to a tic — the track's click and drag. */
   seek(tic: number): void;
   /** The level card's name for a map, for the track's markers and the hover label. */
@@ -58,7 +60,12 @@ export class ReplayBar {
   private speed = el<HTMLInputElement>('replay-speed');
   private speedValue = el<HTMLSpanElement>('replay-speed-value');
   private crosshairButton = el<HTMLButtonElement>('replay-crosshair');
+  private cameraPicker = el<HTMLDivElement>('replay-camera-picker');
   private cameraButton = el<HTMLButtonElement>('replay-camera');
+  private cameraLabel = el<HTMLSpanElement>('replay-camera-label');
+  private cameraMenu = el<HTMLDivElement>('replay-camera-menu');
+  private cameraPlayers = el<HTMLDivElement>('replay-camera-players');
+  private manualItem = el<HTMLButtonElement>('replay-camera-manual');
   private takeOverButton = el<HTMLButtonElement>('replay-takeover');
   private status = el<HTMLSpanElement>('replay-status');
   private reticle = el<HTMLDivElement>('replay-reticle');
@@ -70,9 +77,13 @@ export class ReplayBar {
   private shown: ReplayPlayback | null = null;
   /** The replay's level markers with their names resolved, in tic order — built once per replay. */
   private levels: { tic: number; name: string }[] = [];
+  /** The camera picker's entry for every player, by slot — built once per replay. */
+  private playerItems: HTMLButtonElement[] = [];
   private notes: string[] = [];
   private reticleHealth: number | null = null;
-  /** Whether the reticle is drawn at all — the panel's own toggle, on for as long as the session. */
+  /**
+   * Whether the reticle is drawn at all — the panel's own toggle, on for as long as the session.
+   */
   private reticleShown = true;
   /** Where the track is being dragged, 0..1; null when it isn't. The jump lands on release. */
   private dragging: number | null = null;
@@ -82,49 +93,89 @@ export class ReplayBar {
   private alertedDesync: number | null = null;
   /** When the desync alert stops holding the panel open, on `performance.now()`'s clock. */
   private alertUntil = 0;
+  /** What every listener of this bar is registered under, aborted by {@link ReplayBar.dispose}. */
+  private readonly listening = new AbortController();
 
   constructor(hooks: ReplayBarHooks) {
     this.hooks = hooks;
+    // Every listener is registered under `listening`: a bar is built per `Game` over the same
+    // elements, and a disposed one's must not stay on them.
+    const { signal } = this.listening;
     this.speed.max = String(SPEED_STEPS.length - 1);
-    this.pauseButton.addEventListener('click', () => this.pauseOrRestart());
-    this.speed.addEventListener('input', () => {
-      if (this.shown) this.shown.speedIndex = Number(this.speed.value);
-    });
-    this.crosshairButton.addEventListener('click', () => {
-      this.reticleShown = !this.reticleShown;
-    });
-    this.cameraButton.addEventListener('click', () => {
-      if (this.shown) this.shown.cameraView = this.shown.cameraView === 'recording' ? 'manual' : 'recording';
-    });
-    this.takeOverButton.addEventListener('click', () => this.hooks.takeOver());
+    this.pauseButton.addEventListener('click', () => this.pauseOrRestart(), { signal });
+    this.speed.addEventListener(
+      'input',
+      () => {
+        if (this.shown) this.shown.speedIndex = Number(this.speed.value);
+      },
+      { signal },
+    );
+    this.crosshairButton.addEventListener(
+      'click',
+      () => {
+        this.reticleShown = !this.reticleShown;
+      },
+      { signal },
+    );
+    this.cameraButton.addEventListener(
+      'click',
+      () => this.openCameraMenu(this.cameraMenu.classList.contains('hidden')),
+      { signal },
+    );
+    this.manualItem.addEventListener(
+      'click',
+      () => {
+        if (!this.shown) return;
+        this.shown.cameraView = this.shown.cameraView === 'recording' ? 'manual' : 'recording';
+        this.openCameraMenu(false);
+      },
+      { signal },
+    );
+    this.takeOverButton.addEventListener('click', () => this.hooks.takeOver(), { signal });
     // Pressed, dragged, released: the jump is made once, on release. Seeking on every move would
     // reload and re-run the level under the pointer. docs/replays.md § Seeking.
-    this.track.addEventListener('pointerdown', (e) => {
-      this.track.setPointerCapture(e.pointerId);
-      this.dragging = this.fractionAt(e);
-      this.showAt(this.dragging);
-    });
-    this.track.addEventListener('pointermove', (e) => {
-      const at = this.fractionAt(e);
-      if (this.dragging !== null) this.dragging = at;
-      this.showAt(at);
-    });
+    this.track.addEventListener(
+      'pointerdown',
+      (e) => {
+        this.track.setPointerCapture(e.pointerId);
+        this.dragging = this.fractionAt(e);
+        this.showAt(this.dragging);
+      },
+      { signal },
+    );
+    this.track.addEventListener(
+      'pointermove',
+      (e) => {
+        const at = this.fractionAt(e);
+        if (this.dragging !== null) this.dragging = at;
+        this.showAt(at);
+      },
+      { signal },
+    );
     // Not while a drag is under way: the pointer may leave the track's few pixels and come back,
     // and the press still owns the jump until it is let go.
-    this.track.addEventListener('pointerleave', () => {
-      if (this.dragging === null) this.hideMark();
-    });
+    this.track.addEventListener(
+      'pointerleave',
+      () => {
+        if (this.dragging === null) this.hideMark();
+      },
+      { signal },
+    );
     for (const type of ['pointerup', 'pointercancel']) {
-      this.track.addEventListener(type, () => {
-        const at = this.dragging;
-        this.dragging = null;
-        if (at !== null && this.shown) {
-          this.hooks.seek(ticAtFraction(at, this.shown.ticCount));
-        }
-      });
+      this.track.addEventListener(
+        type,
+        () => {
+          const at = this.dragging;
+          this.dragging = null;
+          if (at !== null && this.shown) {
+            this.hooks.seek(ticAtFraction(at, this.shown.ticCount));
+          }
+        },
+        { signal },
+      );
     }
-    window.addEventListener('keydown', this.onKeyDown);
-    window.addEventListener('pointerdown', this.onPointerDown);
+    window.addEventListener('keydown', this.onKeyDown, { signal });
+    window.addEventListener('pointerdown', this.onPointerDown, { signal });
   }
 
   /**
@@ -150,22 +201,31 @@ export class ReplayBar {
    * bar has its own controls, and the menu and the overlays over a replay have theirs.
    */
   private onPointerDown = (e: PointerEvent): void => {
-    if (!this.keysActive || !this.shown || !(e.target instanceof HTMLCanvasElement)) return;
+    if (!this.keysActive || !this.shown) return;
+    // A press anywhere else closes an open camera picker, and on the level that is all it does.
+    if (!this.cameraMenu.classList.contains('hidden') && !this.cameraPicker.contains(e.target as Node)) {
+      this.openCameraMenu(false);
+      return;
+    }
+    if (!(e.target instanceof HTMLCanvasElement)) return;
     this.pauseOrRestart();
   };
 
-  /** Hides the bar and lets go of `window` — a bar is built per `Game`, the listeners are not. */
+  /**
+   * Hides the bar and lets go of every listener — a bar is built per `Game`, the elements and
+   * `window` are not.
+   */
   dispose(): void {
     this.hide();
-    window.removeEventListener('keydown', this.onKeyDown);
-    window.removeEventListener('pointerdown', this.onPointerDown);
+    this.listening.abort();
   }
 
   /**
    * Once per frame: the track, the clock, the controls' state, the seek marker and the reticle.
-   * `aim` is the recording's aim point in NDC for this frame, null while nothing is aimed (a
-   * catching-up seek passes null: the standing picture keeps no live reticle); `health` colours it
-   * the way the pointer's own would be.
+   *
+   * @param aim     the recording's aim point in NDC for this frame, null while nothing is aimed (a
+   *                catching-up seek passes null: the standing picture keeps no live reticle)
+   * @param health  what colours the reticle, the way the pointer's own would be
    */
   update(playback: ReplayPlayback | null, aim: Pos2 | null, health: number): void {
     if (!playback) {
@@ -190,10 +250,19 @@ export class ReplayBar {
     // Both named for the state in force, not for what pressing them would do — the record toggle's
     // rule, and both marked when that state is not the one a replay opens in.
     setText(this.crosshairButton, `Crosshair: ${this.reticleShown ? 'on' : 'off'}`);
-    setPressed(this.crosshairButton, !this.reticleShown);
+    setAria(this.crosshairButton, 'aria-pressed', !this.reticleShown);
+    // The recorded view is named for the player it watches; the viewer's own names that player too
+    // only where there is more than one to follow.
     const manual = playback.cameraView === 'manual';
-    setText(this.cameraButton, manual ? 'Camera: manual' : 'Camera: recording');
-    setPressed(this.cameraButton, manual);
+    const name = playback.slotNames[playback.viewSlot];
+    let view = name;
+    if (manual) view = playback.slotNames.length > 1 ? `manual (${name})` : 'manual';
+    setText(this.cameraLabel, `Camera: ${view}`);
+    this.cameraButton.classList.toggle('marked', manual || playback.viewSlot !== 0);
+    for (let slot = 0; slot < this.playerItems.length; slot++) {
+      setAria(this.playerItems[slot], 'aria-checked', slot === playback.viewSlot);
+    }
+    setAria(this.manualItem, 'aria-checked', manual);
     // Spent, the panel stays open with nothing to hover for; a jump backwards out of the end puts
     // the bar back to its ordinary hover behaviour. The `body` class the HUD lifts itself by is
     // read off the same three conditions the panel's own CSS is, every frame rather than from
@@ -207,6 +276,8 @@ export class ReplayBar {
     this.root.classList.toggle('alerting', alerting);
     const expanded = playback.ended || alerting || this.root.matches(':hover, :focus-within');
     document.body.classList.toggle(EXPANDED_CLASS, expanded);
+    // A picker left open under a panel that closed would be standing open when it next expands.
+    if (!expanded) this.openCameraMenu(false);
     const status = this.statusText(playback);
     setText(this.status, status);
     setTitle(this.status, status);
@@ -222,6 +293,7 @@ export class ReplayBar {
     this.seekMark.classList.add('hidden');
     this.flashMark.classList.add('hidden');
     this.hideMark();
+    this.openCameraMenu(false);
     document.body.classList.remove(EXPANDED_CLASS);
   }
 
@@ -240,6 +312,19 @@ export class ReplayBar {
       tick.title = level.name;
       this.markers.append(tick);
     }
+    // Who is in a recording never changes, so the picker's player entries are built once for it.
+    this.playerItems = playback.slotNames.map((name, slot) => {
+      const item = document.createElement('button');
+      item.setAttribute('role', 'menuitemradio');
+      item.textContent = name;
+      item.addEventListener('click', () => {
+        this.hooks.watch(slot);
+        this.openCameraMenu(false);
+      });
+      return item;
+    });
+    this.cameraPlayers.replaceChildren(...this.playerItems);
+    this.openCameraMenu(false);
     // The one standing note, about *this* playback being at risk rather than about which release
     // wrote it: the simulation epoch. Neither the build number nor the recording engine is one —
     // both differ on most kept replays and neither says the run will diverge, where `compat` does
@@ -289,6 +374,12 @@ export class ReplayBar {
    */
   setKeysActive(on: boolean): void {
     this.keysActive = on;
+  }
+
+  /** Opens or closes the camera picker, its button saying which. */
+  private openCameraMenu(open: boolean): void {
+    this.cameraMenu.classList.toggle('hidden', !open);
+    setAria(this.cameraButton, 'aria-expanded', open);
   }
 
   /** The pointer's position along the track as a 0..1 fraction. */
@@ -377,7 +468,8 @@ function setTitle(node: HTMLElement, text: string): void {
   if (node.title !== text) node.title = text;
 }
 
-function setPressed(button: HTMLButtonElement, on: boolean): void {
+/** A boolean ARIA state (`aria-pressed`, `aria-checked`, `aria-expanded`), written only on a change. */
+function setAria(node: HTMLElement, name: string, on: boolean): void {
   const value = String(on);
-  if (button.getAttribute('aria-pressed') !== value) button.setAttribute('aria-pressed', value);
+  if (node.getAttribute(name) !== value) node.setAttribute(name, value);
 }

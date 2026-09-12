@@ -129,6 +129,21 @@ describe('Replays · the row codec', () => {
     assert.deepEqual(new ReplayPlayback(replayCapture(1) as Replay).slotColors, ['green'], 'a record with none');
   });
 
+  test("a slot's name is written only where one is known, and read back as the number where none is", () => {
+    const recorder = new ReplayRecorder([scriptedInput([{}]), scriptedInput([{}])], {
+      ...recordingStart(),
+      poses: [START_POSE, START_POSE],
+      players: [...recordingStart().players, ...recordingStart().players],
+      colors: ['green', 'red'],
+      names: [null, 'Bob'],
+    });
+    const capture = recorder.finish();
+    assert.ok(!('name' in capture.data.slots[0]), 'no name for a slot nobody named');
+    assert.equal(capture.data.slots[1].name, 'Bob');
+    const playback = new ReplayPlayback({ ...capture, player: 'Fauler' } as Replay);
+    assert.deepEqual(playback.slotNames, ['Player 1', 'Bob'], "the replay's credit names no slot");
+  });
+
   test('the recorder writes, byte for byte, the one-player record reshaped as one slot', () => {
     const other = { players: [{ player: { x: 1 } }], rng: { p: 5, m: 0 } } as unknown as GameSnapshot;
     const recorder = new ReplayRecorder([scriptedInput(ORACLE_ROWS)], recordingStart());

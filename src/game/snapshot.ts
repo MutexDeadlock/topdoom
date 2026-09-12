@@ -19,6 +19,7 @@ import {
   type PowerId,
   type WeaponId,
 } from './inventory.ts';
+import type { DamageCause } from './combat.ts';
 import { DI_NODIR } from './monsters/defs.ts';
 import type { Mover, LightState } from './specials.ts';
 import type { LevelKillItemStats, PosedThing } from './things/defs.ts';
@@ -137,7 +138,7 @@ export interface SpecialsSnapshot {
   /**
    * `[sectorIndex, mover]` entries for the **floor** slot; {@link Mover} is plain data throughout
    * (see its export note). A save written before the floor/ceiling split holds every kind here,
-   * which the reader handles by sorting on `mover.kind` rather than trusting the field —
+   * which the reader handles by sorting on {@link Mover.kind} rather than trusting the field —
    * docs/specials.md § One mover per sector.
    */
   movers: [number, Mover][];
@@ -390,6 +391,12 @@ export interface PlayerSlotSnapshot {
    * docs/multiplayer-coop.md § Respawn.
    */
   dead: boolean;
+  /**
+   * What killed the corpse ({@link PlayerSlotSnapshot.dead}), written only where something is
+   * blamed: absent is an unattributed death, a living slot, a save from before the field. No tic
+   * reads it — it is the death overlay's killer line. docs/death.md § Who killed the player.
+   */
+  deathCause?: DamageCause;
   /**
    * The cheats switched on, written only while one is: an honest slot saves nothing, and absent
    * means neither cheat. docs/cheats.md § Saves and best times.

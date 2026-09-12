@@ -1,7 +1,7 @@
 /**
- * `ReplayRecorder`: every slot's input wrapped so that everything a tic reads through it is
+ * {@link ReplayRecorder}: every slot's input wrapped so that everything a tic reads through it is
  * written down — each slot's per-tic rows (the codec in `replay/row.ts`), the settings changes and
- * the death restarts `Game` reports. What it hands over at the end is a `ReplayCapture`.
+ * the death restarts `Game` reports. What it hands over at the end is a {@link ReplayCapture}.
  * docs/replays.md § Recording.
  */
 import type { RightMouseAction, TicInput } from '../input.ts';
@@ -26,7 +26,9 @@ import {
 import { appendRow, emptyColumns, emptyRow, sampleInput, writeRowAim, writeRowPose, writeRowWheel } from './row.ts';
 import { samePlayerSettings, sameSessionSettings } from './settings.ts';
 
-/** What a recording starts from: the level as a save would capture it, and where every slot stands. */
+/**
+ * What a recording starts from: the level as a save would capture it, and where every slot stands.
+ */
 export interface RecordingStart {
   capture: SaveCapture;
   /** Each slot's camera for its first tic, by slot, already snapped — `Game.startRecording`. */
@@ -35,6 +37,8 @@ export interface RecordingStart {
   players: PlayerSettings[];
   /** Each slot's armour colour, by slot. */
   colors: PlayerColor[];
+  /** Each slot's player name, by slot, null where none is known — a network game's roster. */
+  names: (string | null)[];
   session: SessionSettings;
 }
 
@@ -42,12 +46,14 @@ export class ReplayRecorder {
   private data: ReplayData;
   private start: RecordingStart;
   private levels: LevelMarker[];
-  /** Restore events reference a snapshot by index; the same object restored twice is stored once. */
+  /**
+   * Restore events reference a snapshot by index; the same object restored twice is stored once.
+   */
   private snapshotIndex = new Map<GameSnapshot, number>();
   /** Each slot's settings as last written down, by slot — an event is a change from these. */
   private lastPlayers: PlayerSettings[];
   private lastSession: SessionSettings;
-  /** Each slot's input as the tic reads it — see `input`. */
+  /** Each slot's input as the tic reads it — see {@link ReplayRecorder.input}. */
   private taps: SlotTap[];
 
   constructor(inputs: readonly TicInput[], start: RecordingStart) {
@@ -55,11 +61,12 @@ export class ReplayRecorder {
     this.lastPlayers = start.players.map((settings) => ({ ...settings }));
     this.lastSession = { ...start.session };
     this.levels = [{ tic: 0, map: start.capture.map }];
-    // A colour the slot would draw in anyway is left out, so a record of defaults is the one a
-    // build before colours wrote. docs/replays.md § The record.
+    // A colour the slot would draw in anyway is left out, and a name nobody gave, so a record of
+    // defaults is the one a build before either wrote. docs/replays.md § The record.
     const slots: SlotRecord[] = this.lastPlayers.map((settings, slot) => ({
       settings,
       ...(start.colors[slot] !== slotColor(slot) ? { color: start.colors[slot] } : {}),
+      ...(start.names[slot] ? { name: start.names[slot] } : {}),
       tics: emptyColumns(),
       typed: [],
     }));
@@ -88,9 +95,12 @@ export class ReplayRecorder {
   }
 
   /**
-   * Called by `Game` ahead of every tic with every slot's position, player settings and camera the
-   * tic will be read at (omitted: the last ones), and the session's settings: stamps a change made
-   * since the last tic as an event for this one, and takes the desync sample when one is due.
+   * Called by `Game` ahead of every tic: stamps a player or session settings change made since the
+   * last tic as an event for this one, and takes the desync sample when one is due.
+   *
+   * @param bodies   every slot's position, by slot
+   * @param players  every slot's player settings the tic will be read at, by slot
+   * @param poses    every slot's camera the tic will be read at; omitted, the last ones
    */
   beginTic(
     bodies: readonly Pos2[],
@@ -120,8 +130,10 @@ export class ReplayRecorder {
   }
 
   /**
-   * A death restart landing: the level is about to be rebuilt from `state` (null: a plain reload
-   * with a fresh inventory) before the next tic. docs/replays.md § Restore events.
+   * A death restart landing: the level is about to be rebuilt from `state` before the next tic.
+   * docs/replays.md § Restore events.
+   *
+   * @param state  null for a plain reload with a fresh inventory
    */
   restore(map: string, state: GameSnapshot | null): void {
     const snapshot = state === null ? null : this.snapshotAt(state);
@@ -139,7 +151,7 @@ export class ReplayRecorder {
     return this.ticCount >= keyframes[keyframes.length - 1].tic + KEYFRAME_INTERVAL;
   }
 
-  /** The anchor `keyframeDue` asked for, at the tic about to run. */
+  /** The anchor {@link ReplayRecorder.keyframeDue} asked for, at the tic about to run. */
   keyframe(map: string, state: GameSnapshot): void {
     this.data.keyframes.push({ tic: this.ticCount, map, snapshot: this.snapshotAt(state) });
   }
@@ -168,7 +180,10 @@ export class ReplayRecorder {
     return this.data.slots[0].tics.held.length;
   }
 
-  /** Where `state` sits in `snapshots`, appending it the first time it is asked for. */
+  /**
+   * Where `state` sits in {@link ReplayData.snapshots}, appending it the first time it is asked
+   * for.
+   */
   private snapshotAt(state: GameSnapshot): number {
     const known = this.snapshotIndex.get(state);
     if (known !== undefined) return known;
@@ -181,10 +196,14 @@ export class ReplayRecorder {
 
 /**
  * One slot's live input, wrapped: every read answered by it, the wheel and the aim point written
- * into the tic's row as the tic saw them, and the row closed onto the slot's record by `endTic`.
+ * into the tic's row as the tic saw them, and the row closed onto the slot's record by
+ * {@link SlotTap.endTic}.
  */
 class SlotTap implements TicInput {
-  /** The tic being recorded: the pose `beginTic` handed over, the wheel and aim as they were read. */
+  /**
+   * The tic being recorded: the pose {@link ReplayRecorder.beginTic} handed over, the wheel and aim
+   * as they were read.
+   */
   readonly row = emptyRow();
   private live: TicInput;
   private record: SlotRecord;

@@ -1,8 +1,8 @@
 /**
- * `PlayerSlot`: one player's whole share of a level — body, inventory, weapons, cheats, the camera
- * the simulation reads for them, the input that drives them, and the billboard and shadow they are
- * drawn as. `game.ts` holds one per player; which one is the local player is `local`.
- * docs/multiplayer.md § Player slots.
+ * {@link PlayerSlot}: one player's whole share of a level — body, inventory, weapons, cheats, the
+ * camera the simulation reads for them, the input that drives them, and the billboard and shadow
+ * they are drawn as. `game.ts` holds one per player; which one is the local player is
+ * {@link PlayerSlot.local}. docs/multiplayer.md § Player slots.
  */
 import type { Player } from './player.ts';
 import type { Inventory } from './inventory.ts';
@@ -20,6 +20,7 @@ import { playerOrigin } from '../audio/sfx.ts';
 import type { PlayerSettings } from './replay/defs.ts';
 import { getPlayerColor, slotColor, type PlayerColor } from '../wad/playercolor.ts';
 import type { Pos3 } from '../types.ts';
+import { asDamageCause, type DamageCause } from './combat.ts';
 
 /**
  * What drives a slot's input: the live `Input`, a replay's record, a network game's row, or
@@ -32,9 +33,11 @@ export type PickupConsumer = (type: number, dropped: boolean, at: Pos3) => boole
 
 export interface PlayerSlotOptions {
   index: number;
-  /** Whether this is the slot the browser plays and draws for. */
+  /** Whether this is the slot the browser plays. */
   local: boolean;
-  /** Built after the DEHACKED patch, never before — docs/dehacked.md § Applying: reset, then patch. */
+  /**
+   * Built after the DEHACKED patch, never before — docs/dehacked.md § Applying: reset, then patch.
+   */
   inventory: Inventory;
   simCamera: TopDownCamera;
   input: TicInput;
@@ -45,18 +48,28 @@ export interface PlayerSlotOptions {
 
 export class PlayerSlot {
   readonly index: number;
-  /** The slot this browser plays and draws for: the HUD, the audio listener, the view camera. */
+  /**
+   * The slot this browser plays: its keyboard, the menu's settings and colour. What is drawn is
+   * `Game.viewed`'s. docs/multiplayer.md § Player slots.
+   */
   readonly local: boolean;
   /** The body, rebuilt by every level load. */
   player!: Player;
   inventory: Inventory;
-  /** The slot's weapons, sounding on its own `playerOrigin`. */
+  /** The slot's weapons, sounding on its own {@link playerOrigin}. */
   readonly weapons: WeaponSystem;
   /**
    * True once this player's health has hit 0 — freezes their movement, aim, firing and pickups
    * until the level is reloaded. docs/death.md § Player death.
    */
   dead = false;
+  /**
+   * What killed this player, while {@link PlayerSlot.dead}: the killing hit's cause, kept for every
+   * slot so the death overlay can go up over the corpse later — a replay's view switched onto it, a
+   * snapshot restored with it. Undefined for an unattributed death. docs/death.md § Who killed the
+   * player.
+   */
+  deathCause: DamageCause | undefined = undefined;
   /**
    * The kills this player made this level — vanilla's `player_t.killcount`, which `P_SetupLevel`
    * zeroes and `Game.buildLevel` does too. Counted in a netgame only; what the scoreboard shows.
@@ -82,19 +95,19 @@ export class PlayerSlot {
    * by the session rather than the level: an exit carries them into the next map. docs/cheats.md.
    */
   readonly cheats = new Cheats();
-  /** What this slot's tic reads its input through — see `source`. */
+  /** What this slot's tic reads its input through — see {@link PlayerSlot.source}. */
   input: TicInput;
   source: SlotSource = 'live';
   /**
    * The settings this player runs under: `GLOBAL_PLAYER_SETTINGS` for the local slot, a record of
-   * its own for any other. Pushed onto the body and the weapons every tic, like `cheats.noclip`.
-   * docs/multiplayer.md § Player settings.
+   * its own for any other. Pushed onto the body and the weapons every tic, like
+   * {@link Cheats.noclip}. docs/multiplayer.md § Player settings.
    */
   settings: PlayerSettings;
   /**
    * The armour colour this player picked, where it came with the slot — a network game's
-   * assignment, a replay's record — or null for `drawColor`'s default. docs/sprites.md § Player
-   * colours.
+   * assignment, a replay's record — or null for {@link PlayerSlot.drawColor}'s default.
+   * docs/sprites.md § Player colours.
    */
   color: PlayerColor | null = null;
   /** The billboard this player is drawn as, and the disc under its feet. Session-scoped. */
@@ -122,6 +135,7 @@ export class PlayerSlot {
   standUp(): void {
     this.weapons.beginLevel(this.inventory);
     this.dead = false;
+    this.deathCause = undefined;
     this.actor.revive();
   }
 
@@ -141,13 +155,15 @@ export class PlayerSlot {
   }
 
   /**
-   * `apply` on every camera of this slot: its own, and `viewCamera` where a playback or a network
-   * game has separated it from the local slot's. For the discontinuities both must take — a level
-   * load, a teleport, a keyframe restore — since neither may be left gliding in from where it was.
+   * `apply` on every camera of this slot: its own, and the drawn one where a playback or a network
+   * game has separated the two. For the discontinuities both must take — a level load, a teleport,
+   * a keyframe restore — since neither may be left gliding in from where it was.
+   *
+   * @param viewCamera  the drawn camera where this slot is the one drawn, null for any other
    */
-  eachCamera(viewCamera: TopDownCamera, apply: (camera: TopDownCamera) => void): void {
+  eachCamera(viewCamera: TopDownCamera | null, apply: (camera: TopDownCamera) => void): void {
     apply(this.simCamera);
-    if (this.local && viewCamera !== this.simCamera) {
+    if (viewCamera && viewCamera !== this.simCamera) {
       apply(viewCamera);
     }
   }
@@ -177,6 +193,7 @@ export class PlayerSlot {
       // docs/cheats.md § Saves and best times.
       ...(this.cheats.used ? { cheats: this.cheats.snapshot() } : {}),
       ...(this.kills > 0 ? { kills: this.kills } : {}),
+      ...(this.deathCause !== undefined ? { deathCause: this.deathCause } : {}),
     };
   }
 
@@ -194,6 +211,7 @@ export class PlayerSlot {
     this.weapons.restore(saved.weapons, this.inventory);
     if (saved.dead) {
       this.dead = true;
+      this.deathCause = asDamageCause(saved.deathCause);
       this.actor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
     }
   }

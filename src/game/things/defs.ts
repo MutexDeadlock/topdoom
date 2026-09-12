@@ -262,7 +262,7 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   alerted: boolean;
   /**
-   * The map thing's "ambush"/deaf flag (`game/skill.ts: isAmbush`) . Gates whether a
+   * The map thing's "ambush"/deaf flag (`game/skill.ts: isAmbush`). Gates whether a
    * sound-alerted sector alone can wake this monster; see {@link ThingLayer.update}'s wake check.
    */
   ambush: boolean;
@@ -270,7 +270,8 @@ export interface PosedThing extends Pos3, MonsterBody {
    * Position at the end of the previous tic, so `crossLines` can test the segment this monster
    * just walked. Mutated in place; never re-allocated. Maintained only on the alerted-with-a-target
    * path, which is the only one that can walk over a line — **not** an interpolation source, which
-   * is what {@link PosedThing.drawPrevX}/`Y`/`Z` are for.
+   * is what {@link PosedThing.drawPrevX}/{@link PosedThing.drawPrevY}/{@link PosedThing.drawPrevZ}
+   * are for.
    */
   prev: Pos2;
   /**
@@ -378,7 +379,8 @@ export type CarryQuery = (
 
 /**
  * Live kill/item totals for the level, vanilla's own `totalkills`/`killcount` and
- * `totalitems`/`itemcount` — `total*` set once at spawn (`COUNTKILL_TYPES`/`COUNTITEM_TYPES`),
+ * `totalitems`/`itemcount` — {@link LevelKillItemStats.totalKills}/
+ * {@link LevelKillItemStats.totalItems} set once at spawn (`COUNTKILL_TYPES`/`COUNTITEM_TYPES`),
  * {@link LevelKillItemStats.kills}/{@link LevelKillItemStats.items} incremented as the level is
  * played. docs/hud.md § Level stats.
  */
@@ -494,10 +496,12 @@ export interface ThingLayer {
    * interpolated from the previous tic to the current one. Presentation only — nothing the
    * simulation reads back. docs/frameloop.md § Interpolation.
    *
-   * @param alpha  how far of the way from the previous tic to the current one; 1 draws the tic
-   *               exactly
+   * @param alpha     how far of the way from the previous tic to the current one; 1 draws the tic
+   *                  exactly
+   * @param fogDrawn  whether a subsector is drawn (`FogOfWar.isDrawn`), on top of the tic's own
+   *                  gate; absent draws everything the tic left visible. docs/fogofwar.md § Islands
    */
-  draw(alpha: number, viewAngleDeg: number): void;
+  draw(alpha: number, viewAngleDeg: number, fogDrawn?: (subsector: number) => boolean): void;
   /**
    * Consumes every not-yet-picked thing whose `blockdist` box overlaps either end of the move, that
    * is within vertical reach of `from.z` and that `consume` accepts, hiding it permanently. This

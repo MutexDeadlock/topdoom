@@ -8,7 +8,15 @@
       <span id="replay-speed-value"></span>
     </label>
     <button id="replay-crosshair" title="Show or hide the reticle where the recording aimed"></button>
-    <button id="replay-camera" title="Watch through the recording's camera, or move your own"></button>
+    <div id="replay-camera-picker">
+      <button id="replay-camera" aria-haspopup="menu" aria-expanded="false" title="Whose camera to watch, or move your own">
+        <span id="replay-camera-label"></span>
+      </button>
+      <div id="replay-camera-menu" class="hidden" role="menu">
+        <div id="replay-camera-players"></div>
+        <button id="replay-camera-manual" role="menuitemcheckbox" aria-checked="false">Manual camera</button>
+      </div>
+    </div>
     <button id="replay-takeover" title="Stop the playback and play on from here">Take over</button>
   </div>
   <div id="replay-track" title="Click or drag to jump to a moment">

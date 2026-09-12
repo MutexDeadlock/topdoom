@@ -148,27 +148,86 @@
 }
 
 /*
- * Wide enough for the longer of its two labels ("Camera: recording", 17 monospace characters),
- * so the buttons beside it don't shift as the view is toggled — the box includes this button's
- * own padding and border, hence the room above the 17.
+ * The camera picker: whose recorded camera is drawn, and whether the framing is the viewer's own.
+ * Its menu opens upward, over the level — the panel sits on the screen's bottom edge, with no room
+ * below. docs/replays.md § Playback.
  */
-#replay-camera {
-  min-width: 20ch;
-  text-align: center;
+#replay-camera-picker {
+  position: relative;
 }
 
-/* Wide enough for the longer of its two labels ("Crosshair: off"), as the camera button is. */
+/*
+ * Its label carries a player's name, so it has no one width to hold: wide enough that a short name
+ * and "Camera: manual" don't shift the buttons beside it, and the name cut off with an ellipsis
+ * before a long one can push the take-over button off the panel. The caret stays outside the cut.
+ */
+#replay-camera {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 20ch;
+  max-width: 40ch;
+}
+
+#replay-camera-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#replay-camera::after {
+  content: '▴';
+}
+
+#replay-camera-menu {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  min-width: 100%;
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  background: rgba(13, 13, 16, 0.95);
+  border: 1px solid var(--border-strong);
+}
+
+/* The players, set apart from the manual camera below them. */
+#replay-camera-players {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+#replay-panel #replay-camera-menu button {
+  border: none;
+  background: none;
+  text-align: left;
+  white-space: nowrap;
+  padding: 4px 14px;
+}
+
+/* The entries in force, marked on their edge so every name keeps one alignment. */
+#replay-panel #replay-camera-menu button[aria-checked='true'] {
+  color: var(--fg);
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+/* Wide enough for the longer of its two labels ("Crosshair: off"). */
 #replay-crosshair {
   min-width: 16ch;
   text-align: center;
 }
 
 /*
- * Marked while the view is the viewer's own, so it is clear the framing is no longer the record's,
- * and while the reticle is off, so a missing one reads as switched off rather than as a replay
+ * Marked while the view is the viewer's own or on a player other than the first, so it is clear the
+ * picture is not the one a replay opens on, and while the reticle is off, so a missing one reads as switched off rather than as a replay
  * that aimed nowhere.
  */
-#replay-camera[aria-pressed='true'],
+#replay-camera.marked,
 #replay-crosshair[aria-pressed='true'] {
   color: var(--fg);
   border-color: var(--accent);

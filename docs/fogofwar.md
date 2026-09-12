@@ -296,10 +296,21 @@ whole cap of a block at once, so lighting part of it is the same hole this secti
 
 ## Islands
 
-**Only the region the player is standing in is drawn.** `explored` is ANDed with the island gate
-everywhere it is read — `isVisible` and `updateFade`'s target — so a place reachable only through a
-teleporter is hidden while the player is somewhere else. The partition is
-`bsp.ts: buildIslands`, docs/render-bsp.md § Islands.
+**Only the region the drawn player is standing in is drawn.** `explored` is ANDed with an island
+gate everywhere it is read, so a place reachable only through a teleporter is hidden while the
+player is somewhere else. The partition is `bsp.ts: buildIslands`, docs/render-bsp.md § Islands.
+
+**Every slot stands in an island of its own** (`SweepAnchor.island`, moved by that slot's sweep),
+and the two readers gate on different ones:
+
+- `isVisible`, the gameplay gate (§ What gameplay reads), admits a leaf in **any** slot's island.
+  Gated on the drawn slot's, two browsers of one network game — each drawing its own player —
+  disagree about what auto-aim may lock onto once the players stand apart, and a replay's camera
+  picker changes the run.
+- `isDrawn`, `updateFade`'s target and the sprites (`ThingLayer.draw`'s `fogDrawn`, the effects'
+  `fogVisible`) admit only the **drawn** slot's: `setDrawn`, the local slot or the player a
+  playback watches (docs/replays.md § Playback). A thing another player's island makes shootable
+  is not drawn over the void beside the view.
 
 Reveal is sticky and the camera reaches `VIEW_DISTANCE` in every direction, so without this a
 detached region stays lit beside the level once visited. BOOMEDIT MAP01 is the reported case: the
@@ -312,13 +323,14 @@ screen next to the level.
 gate sits on top of it and the island comes from geometry, which a save does not carry.
 
 **The island being left cuts to black rather than fading out** (`enterIsland` snaps every alpha to
-its new target, as the spawn seed does), and whatever is already explored in the one being entered
-is lit at once; leaves the sweep reveals after arriving fade in as they always do. Arriving in an
+its new target, as the spawn seed does, and so does `setDrawn`), and whatever is already explored in
+the one being entered is lit at once; leaves the sweep reveals after arriving fade in as they always do. Arriving in an
 island means a teleport, which the camera cuts for too — docs/specials-teleporters.md § Silent and
 line-to-line teleporters.
 
-**A sample ray that reveals a leaf in another island merges the two** (`mergeIsland`), and that is
-the only merge rule. A ray cannot cross a one-sided wall, so reaching one is proof the partition was
+**A sample ray that reveals a leaf in another island merges the two** (`mergeIsland`, into the
+island of the slot that cast it; every slot standing in the other follows), and that is the only
+merge rule. A ray cannot cross a one-sided wall, so reaching one is proof the partition was
 wrong. It costs nothing: the sweep already tests every unexplored leaf in range, and an explored one
 is never re-tested for this. It is also enough — a wrongly split *connected* region is in sight from
 its own boundary, so it merges before the player walks through, and what is left is at worst
@@ -416,7 +428,8 @@ of an unexplored room is the warning that something is shooting from there.
 is damped on the render clock (`updateFade`) while `explored` is set by the reveal scan on the tic
 clock (`tick`), and `PosedThing.visible` — which decides what can be shot, meleed and auto-aimed at,
 not merely what is drawn — must not depend on how many frames a fade has had. `isVisible` is the
-accessor gameplay uses; `alphaOf`/`wallAlpha` stay for the faders.
+accessor gameplay uses, `isDrawn` the sprites' (§ Islands); `alphaOf`/`wallAlpha` stay for the
+faders.
 
 The gate used to be `alphaOf(subsector) > 0.5`. Since `alpha` only ever damps upward toward a
 permanent `explored` flag, the behavioural difference is small and one-directional: a monster

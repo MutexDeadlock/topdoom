@@ -102,8 +102,9 @@ player's bullets and missiles pass through another player; a blast hurts every p
 
 One `FogOfWar` for everyone. `tick(points)` sweeps from every slot's body, the per-tic caps split
 between them over one `SweepAnchor` each (docs/fogofwar.md § Sweep order), and the constructor seeds
-every slot's start. The drawn island is the local
-slot's. Another player's reveal can let a monster be seen sooner — `isVisible` also gates auto-aim.
+every slot's start. Each slot stands in an island of its own: `isVisible`, which also gates
+auto-aim, admits any slot's, so every browser answers it alike, and only the drawn slot's island is
+drawn (docs/fogofwar.md § Islands). Another player's reveal can let a monster be seen sooner.
 
 ## Exit, death and saves
 

@@ -1,5 +1,5 @@
 /**
- * `SpriteFxLayer`: the transient sprite effects in flight — blood, bullet puffs, explosions,
+ * {@link SpriteFxLayer}: the transient sprite effects in flight — blood, bullet puffs, explosions,
  * teleport fog, smoke trails, flames — batched like map things, plus hitscan tracer lines.
  * See docs/combat.md § Effects and their batching.
  */
@@ -46,8 +46,8 @@ export function setPickupPuff(on: boolean): void {
 export type VileFlameResolver = (vileId: number, targetId: number) => Pos3 | null;
 
 /**
- * Whether a subsector has been revealed — `FogOfWar.isVisible`, handed in so this layer needn't
- * know the fog exists.
+ * Whether a subsector is drawn — `FogOfWar.isDrawn`, handed in so this layer needn't know the fog
+ * exists.
  */
 export type FogVisibility = (subsector: number) => boolean;
 
@@ -75,9 +75,10 @@ export interface SpriteFxLayerOptions {
 /**
  * One lifecycle for every transient visual: spawned by some other system, animated for a fixed
  * time, dropped on finish, cleared wholesale on level change. Every effect is animated wherever it
- * was spawned but only *drawn* where the player has already seen (`fogVisible`). The player itself
- * is deliberately not in this batch — docs/combat.md § Effects and their batching. Only the
- * teleport fog is saved — docs/savegames.md § What is saved and what is deliberately not.
+ * was spawned but only *drawn* where the player has already seen
+ * ({@link SpriteFxLayer.fogVisible}). The player itself is deliberately not in this batch —
+ * docs/combat.md § Effects and their batching. Only the teleport fog is saved — docs/savegames.md
+ * § What is saved and what is deliberately not.
  */
 export class SpriteFxLayer {
   private scene: THREE.Scene;
@@ -88,7 +89,7 @@ export class SpriteFxLayer {
   private fogVisible: FogVisibility;
   /**
    * The current level's world, for the sector-light and subsector lookups a spawn does — swapped by
-   * `beginLevel`.
+   * {@link SpriteFxLayer.beginLevel}.
    */
   private world!: World;
   /** The level's render transfers, resolved once per level rather than per effect per tic. */
@@ -96,9 +97,9 @@ export class SpriteFxLayer {
 
   private batch = new SpriteBatch();
   /**
-   * The pickup puffs' own batch, for the one thing a `SpriteBatch` can only do batch-wide: draw
-   * translucent (`setOpacity`, see there). Same arrangement as `ThingLayer`'s drop batch.
-   * docs/items.md § The pickup puff.
+   * The pickup puffs' own batch, for the one thing a {@link SpriteBatch} can only do batch-wide:
+   * draw translucent ({@link SpriteBatch.setOpacity}, see there). Same arrangement as
+   * `ThingLayer`'s drop batch. docs/items.md § The pickup puff.
    */
   private pickupBatch = new SpriteBatch({ translucent: true });
   /** The two styles this layer draws in, built once rather than per list per frame. */
@@ -109,24 +110,30 @@ export class SpriteFxLayer {
     lightScale: PICKUP_FOG_LIGHT,
   };
   /**
-   * Scratch for `doomToWorld`, reused across every batched sprite — same reason `game/things.ts`
-   * keeps one.
+   * Scratch for {@link doomToWorld}, reused across every batched sprite — same reason
+   * `game/things.ts` keeps one.
    */
   private batchPos = new THREE.Vector3();
-  /** `drawList`'s interpolated position, reused per effect so drawing allocates nothing. */
+  /**
+   * {@link SpriteFxLayer.drawList}'s interpolated position, reused per effect so drawing allocates
+   * nothing.
+   */
   private drawAt: Pos3 = { x: 0, y: 0, z: 0 };
   private teleportFogs: OneShotEffect[] = [];
   private pickupFogs: OneShotEffect[] = [];
   private impacts: OneShotEffect[] = [];
   private tracers: Tracer[] = [];
-  /** Fixed by `beginFrame` so the per-sprite calls in between don't each have to be handed it. */
+  /**
+   * Fixed by {@link SpriteFxLayer.beginFrame} so the per-sprite calls in between don't each have to
+   * be handed it.
+   */
   private viewerAngleDeg = VIEWER_ANGLE_DEG;
 
   /** The frame's dynamic lights, or null when the session runs without them (docs/lights.md). */
   private lights: DynamicLights | null = null;
   /**
    * A stable emitter ID per drawn effect, for the light's flicker phase and its `dontlightself`.
-   * Keyed on the `SpriteAnimator` rather than stored on the effect: an animator is owned by
+   * Keyed on the {@link SpriteAnimator} rather than stored on the effect: an animator is owned by
    * exactly one effect/projectile/cube for its whole life, so this needs no field on any of those
    * record shapes — and so nothing here reaches a savegame. IDs are negative to stay clear of
    * `PosedThing.id`, which is a plain array index.
@@ -179,7 +186,7 @@ export class SpriteFxLayer {
   /**
    * Spawns a one-shot sprite animation and returns it, or null if the sprite has no art — resolved
    * once here so no update pass has to carry a missing-lump case per frame. The caller decides
-   * which list it joins; `spawnImpact` is the spawn-and-forget case.
+   * which list it joins; {@link SpriteFxLayer.spawnImpact} is the spawn-and-forget case.
    */
   spawn(sprite: string, frames: string[], frameSeconds: number, at: Pos3): OneShotEffect | null {
     const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
@@ -212,7 +219,10 @@ export class SpriteFxLayer {
     this.impacts.push(effect);
   }
 
-  /** `spawn` plus `addImpact`, for the callers that just want the explosion drawn. */
+  /**
+   * {@link SpriteFxLayer.spawn} plus {@link SpriteFxLayer.addImpact}, for the callers that just
+   * want the explosion drawn.
+   */
   spawnImpact(sprite: string, frames: string[], frameSeconds: number, at: Pos3): void {
     const effect = this.spawn(sprite, frames, frameSeconds, at);
     if (effect) this.impacts.push(effect);
@@ -228,9 +238,10 @@ export class SpriteFxLayer {
   }
 
   /**
-   * The spray a crushing mover wrings out of a body every damage pulse — thrown from `at`, the
-   * body's middle, rather than placed, and starting at `S_BLOOD1` whatever the damage.
-   * See docs/specials-crushers.md § Crushers.
+   * The spray a crushing mover wrings out of a body every damage pulse — thrown rather than placed,
+   * and starting at `S_BLOOD1` whatever the damage. See docs/specials-crushers.md § Crushers.
+   *
+   * @param at  the body's middle, which the spray is thrown from
    */
   spawnCrushBlood(at: Pos3): void {
     const effect = this.spawn('BLUD', BLOOD_FRAMES, BLOOD_FRAME_SECONDS, at);
@@ -245,9 +256,10 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Vanilla's `P_SpawnPuff`: the little cloud a bullet leaves where it stopped. `sparkless` is the
-   * punch's own case, starting two frames in. Silent, and the caller places it — nothing here knows
-   * what was hit. See docs/combat.md § Bullet puffs.
+   * Vanilla's `P_SpawnPuff`: the little cloud a bullet leaves where it stopped. Silent, and the
+   * caller places it — nothing here knows what was hit. See docs/combat.md § Bullet puffs.
+   *
+   * @param sparkless  the punch's own case, starting two frames in
    */
   spawnPuff(at: Pos3, sparkless = false): void {
     const frames = sparkless ? PUFF_MELEE_FRAMES : PUFF_FRAMES;
@@ -278,9 +290,10 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Rebuilds them on the freshly loaded level through the ordinary `spawn`, so everything but
-   * `elapsed` is re-derived rather than restored, then fast-forwards the animator to it. Silent,
-   * unlike `spawnTeleportFog`: a load is not a second teleport.
+   * Rebuilds them on the freshly loaded level through the ordinary {@link SpriteFxLayer.spawn}, so
+   * everything but {@link OneShotEffect.elapsed} is re-derived rather than restored, then
+   * fast-forwards the animator to it. Silent, unlike {@link SpriteFxLayer.spawnTeleportFog}: a load
+   * is not a second teleport.
    */
   restoreTeleportFogs(states: TeleportFogState[]): void {
     for (const s of states) {
@@ -303,8 +316,9 @@ export class SpriteFxLayer {
 
   /**
    * Vanilla `P_Teleport`'s pair, for anything that teleports: a puff where the thing stood and
-   * another ahead of where it lands. `destZ` is the landing floor, which only the caller can
-   * resolve. See docs/specials-teleporters.md § Teleporters.
+   * another ahead of where it lands. See docs/specials-teleporters.md § Teleporters.
+   *
+   * @param destZ  the landing floor, which only the caller can resolve
    */
   spawnTeleportPair(from: Pos3, dest: Placement, destZ: number): void {
     this.spawnTeleportFog(from);
@@ -312,8 +326,10 @@ export class SpriteFxLayer {
   }
 
   /**
-   * The pair's landing half alone, ahead of `dest` along its facing on floor `z` — also
-   * `G_CheckSpot`'s fog for a coop respawn (docs/multiplayer-coop.md § Respawn).
+   * The pair's landing half alone, ahead of `dest` along its facing — also `G_CheckSpot`'s fog for
+   * a coop respawn (docs/multiplayer-coop.md § Respawn).
+   *
+   * @param z  the landing floor
    */
   spawnArrivalFog(dest: Placement, z: number): void {
     this.spawnTeleportFog({
@@ -334,8 +350,8 @@ export class SpriteFxLayer {
   }
 
   /**
-   * `shooterRadius` only sets how far short of the shooter the line starts — see `MUZZLE_GAP`
-   * (render/tracer.ts).
+   * @param shooterRadius  only how far short of the shooter the line starts — see `MUZZLE_GAP`
+   *                       (render/tracer.ts)
    */
   addTracer(from: Pos3, to: Pos3, color: number, shooterRadius: number): void {
     const tracer = new Tracer(from, to, color, shooterRadius);
@@ -344,9 +360,9 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Starts a frame's batch. Everything drawn through `batchSprite` — including
-   * the projectiles game.ts advances between the update calls below — has to
-   * sit between this and `endFrame`.
+   * Starts a frame's batch. Everything drawn through {@link SpriteFxLayer.batchSprite} — including
+   * the projectiles game.ts advances between the update calls below — has to sit between this and
+   * {@link SpriteFxLayer.endFrame}.
    */
   beginFrame(viewerAngleDeg: number): void {
     this.viewerAngleDeg = viewerAngleDeg;
@@ -360,9 +376,7 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Queues one already-advanced sprite into the batch at a DOOM-space point. A fullbright frame
-   * ignores `light`. `subsector` is the sprite's own leaf where the caller has one, so a dynamic
-   * light behind a wall can be told from one in the room; -1 leaves `DynamicLights` to resolve it.
+   * Queues one already-advanced sprite into the batch at a DOOM-space point.
    *
    * **Everything drawn here hangs from its patch's own offset** (`CachedSprite.bottomOffset`), the
    * placement vanilla gives it: what this layer draws is in mid-air and belongs straddling its
@@ -370,6 +384,11 @@ export class SpriteFxLayer {
    * draw keeps this engine's own bottom anchor. The light below is offered at the *unshifted*
    * point: where the thing is, not where its art hangs.
    * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
+   *
+   * @param light      ignored by a fullbright frame
+   * @param subsector  the sprite's own leaf where the caller has one, so a dynamic light behind a
+   *                   wall can be told from one in the room; -1 leaves {@link DynamicLights} to
+   *                   resolve it
    */
   batchSprite(anim: SpriteAnimator, at: Pos3, facingDeg: number, light: number, subsector = -1): void {
     this.queue(this.plain, anim, at, facingDeg, light, subsector);
@@ -384,8 +403,8 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Ticked *after* the projectiles so an explosion or smoke puff spawned by an
-   * arrival this frame is already drawn on it, rather than a frame late.
+   * Ticked *after* the projectiles so an explosion or smoke puff spawned by an arrival this frame
+   * is already drawn on it, rather than a frame late.
    */
   updateImpacts(dt: number): void {
     this.impacts = this.advance(this.impacts, dt);
@@ -407,9 +426,11 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Draws every one-shot list, interpolated `alpha` of the way through the last
-   * tic. Runs inside the caller's `beginFrame`/`endFrame` pair alongside
+   * Draws every one-shot list. Runs inside the caller's
+   * {@link SpriteFxLayer.beginFrame}/{@link SpriteFxLayer.endFrame} pair alongside
    * `ProjectileLayer.draw`. docs/frameloop.md § Interpolation.
+   *
+   * @param alpha  how far of the way through the last tic the effects are interpolated
    */
   draw(alpha: number): void {
     this.drawList(this.teleportFogs, alpha, this.plain);
@@ -418,7 +439,10 @@ export class SpriteFxLayer {
     this.drawList(this.impacts, alpha, this.plain);
   }
 
-  /** `batchSprite` in a given `DrawStyle` — see there for everything else this does. */
+  /**
+   * {@link SpriteFxLayer.batchSprite} in a given {@link DrawStyle} — see there for everything else
+   * this does.
+   */
   private queue(
     style: DrawStyle,
     anim: SpriteAnimator,
@@ -461,8 +485,10 @@ export class SpriteFxLayer {
 
   /**
    * Re-reads where a moved effect now is: the leaf its fog gate reads and the sector light it
-   * draws at. Returns that sector's floor height, which is what a falling effect lands on — one
-   * BSP descent answering both. Null where the point resolved to no real sector at all.
+   * draws at.
+   *
+   * @returns that sector's floor height, which is what a falling effect lands on — one BSP descent
+   *          answering both; null where the point resolved to no real sector at all
    */
   private resettle(e: OneShotEffect): number | null {
     e.subsector = this.world.subsectorAt(e.x, e.y);
@@ -475,8 +501,8 @@ export class SpriteFxLayer {
 
   /**
    * One tic of an effect thrown with momentum — the crusher's blood. Flies at its own speed, falls
-   * under `GRAVITY`, and sticks where it lands rather than sliding on. docs/specials-crushers.md §
-   * Crushers.
+   * under {@link GRAVITY}, and sticks where it lands rather than sliding on.
+   * docs/specials-crushers.md § Crushers.
    */
   private fly(e: OneShotEffect, dt: number): void {
     const motion = e.motion;

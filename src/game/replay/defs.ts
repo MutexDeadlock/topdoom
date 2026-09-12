@@ -23,15 +23,18 @@ export const REPLAY_VERSION = 1;
  * whenever a change to what a *tic* does could make an old recording run differently — movement,
  * collision, the specials tables, `mobjinfo`, weapon rates and damage, monster AI, who draws from
  * the random table and in what order. Never bumped for a release, for rendering, for the HUD or for
- * the menu: none of those reach the tic. A replay whose `compat` differs from this **still plays**;
- * it only says it may desync (`compatDrift`), where a `REPLAY_VERSION` mismatch refuses outright.
- * docs/replays.md § Compatibility, CLAUDE.md § Project-wide rules.
+ * the menu: none of those reach the tic. A replay whose {@link ReplayMeta.compat} differs from this
+ * **still plays**; it only says it may desync ({@link compatDrift}), where a {@link REPLAY_VERSION}
+ * mismatch refuses outright. docs/replays.md § Compatibility, CLAUDE.md § Project-wide rules.
  */
 export const COMPAT = 1;
 
 /**
- * How a replay's simulation epoch stands against this build's, or null when they agree. `0` is a
- * replay written before the field existed, which is by definition older.
+ * How a replay's simulation epoch stands against this build's.
+ *
+ * @param compat  the replay's epoch; `0` is a replay written before the field existed, which is by
+ *                definition older
+ * @returns null when they agree
  */
 export function compatDrift(compat: number): 'older' | 'newer' | null {
   if (compat === COMPAT) return null;
@@ -61,7 +64,7 @@ export const NORMAL_SPEED_INDEX = 3;
  */
 export const POSE_QUANTUM = 1 / 64;
 
-/** `pose` snapped onto the `POSE_QUANTUM` lattice. */
+/** `pose` snapped onto the {@link POSE_QUANTUM} lattice. */
 export function quantizePose(pose: CameraPose): CameraPose {
   return {
     yaw: snapToLattice(pose.yaw),
@@ -71,7 +74,10 @@ export function quantizePose(pose: CameraPose): CameraPose {
   };
 }
 
-/** The tic count `buttons` bit for the left button being down, and for the right button's edge. */
+/**
+ * The tic count {@link TicColumns.buttons} bit for the left button being down, and for the right
+ * button's edge.
+ */
 export const BUTTON_FIRE = 1;
 export const BUTTON_RIGHT_EDGE = 2;
 
@@ -104,8 +110,8 @@ export interface LevelMarker {
 /**
  * Something that reached the simulation between two tics and was not input: a settings change
  * made in the menu — one slot's player settings, or the session's — or a death restart's reload
- * landing. Applied *before* tic `tic` runs. `snapshot` indexes `ReplayData.snapshots`; null is the
- * plain reload with a fresh inventory. docs/replays.md § Restore events.
+ * landing. Applied *before* tic `tic` runs. `snapshot` indexes {@link ReplayData.snapshots}; null
+ * is the plain reload with a fresh inventory. docs/replays.md § Restore events.
  */
 export type ReplayEvent =
   | { tic: number; kind: 'settings'; slot: number; settings: PlayerSettings }
@@ -113,9 +119,11 @@ export type ReplayEvent =
   | { tic: number; kind: 'restore'; map: string; snapshot: number | null };
 
 /**
- * The per-tic record, one column per field so the JSON stays short and gzips well. `held` and
- * `pressed` are `BOUND_KEYS` masks; `wheel` is the sign of the tic's scroll; `aimX`/`aimY` are
- * the aim point in `AIM_QUANTUM` units, null where the pointer missed the plane.
+ * The per-tic record, one column per field so the JSON stays short and gzips well.
+ * {@link TicColumns.held} and {@link TicColumns.pressed} are `BOUND_KEYS` masks;
+ * {@link TicColumns.wheel} is the sign of the tic's scroll; {@link TicColumns.aimX} and
+ * {@link TicColumns.aimY} are the aim point in `AIM_QUANTUM` units, null where the pointer missed
+ * the plane.
  */
 export interface TicColumns {
   held: number[];
@@ -125,9 +133,9 @@ export interface TicColumns {
   aimX: (number | null)[];
   aimY: (number | null)[];
   /**
-   * The camera the tic was read at, in `POSE_QUANTUM` units: orbit, follow point (the camera's own
-   * `THREE` triple), distance, tilt. Recorded rather than recomputed, so a later change to how the
-   * camera behaves cannot move an old recording. docs/replays.md § Camera state.
+   * The camera the tic was read at, in {@link POSE_QUANTUM} units: orbit, follow point (the
+   * camera's own `THREE` triple), distance, tilt. Recorded rather than recomputed, so a later
+   * change to how the camera behaves cannot move an old recording. docs/replays.md § Camera state.
    */
   poseYaw: number[];
   poseX: number[];
@@ -151,7 +159,7 @@ export function packTics(tics: TicColumns): TicColumns {
   return walkColumns(tics, true);
 }
 
-/** `packTics` undone — what everything above the store reads. */
+/** {@link packTics} undone — what everything above the store reads. */
 export function unpackTics(tics: TicColumns): TicColumns {
   return walkColumns(tics, false);
 }
@@ -169,13 +177,13 @@ export function poseAt(tics: TicColumns, tic: number): CameraPose | null {
 }
 
 /**
- * The desync samples as columns, one entry per `CHECK_INTERVAL` tics from tic 0 — `checkTic` is
- * the tic an index stands for, so no tic column is stored. Every slot's position is **rounded to
- * whole map units**: the cursor beside it is exact, and it is the cursor that moves on every
- * diverging random draw, so what rounding can hide is a drift below half a unit that has not yet
- * drawn — which the next sample a second later no longer hides. Rounded rather than hashed because
- * a hash costs the same bytes and answers only yes/no, where these still say where the run was and
- * by how much it drifted. docs/replays.md § The record.
+ * The desync samples as columns, one entry per {@link CHECK_INTERVAL} tics from tic 0 —
+ * {@link checkTic} is the tic an index stands for, so no tic column is stored. Every slot's
+ * position is **rounded to whole map units**: the cursor beside it is exact, and it is the cursor
+ * that moves on every diverging random draw, so what rounding can hide is a drift below half a
+ * unit that has not yet drawn — which the next sample a second later no longer hides. Rounded
+ * rather than hashed because a hash costs the same bytes and answers only yes/no, where these
+ * still say where the run was and by how much it drifted. docs/replays.md § The record.
  */
 export interface CheckColumns {
   /** Each slot's `player.x`, rounded — by slot, then by sample. */
@@ -206,7 +214,7 @@ export interface Keyframe {
   tic: number;
   /** The map this state belongs to — a recording that advanced spans several. */
   map: string;
-  /** Index into `ReplayData.snapshots`. */
+  /** Index into {@link ReplayData.snapshots}. */
   snapshot: number;
 }
 
@@ -219,6 +227,11 @@ export interface SlotRecord {
    * (`slotColor`), as in every record written before colours. docs/sprites.md § Player colours.
    */
   color?: PlayerColor;
+  /**
+   * The player's name where the recording knew one — a network game's roster; absent otherwise, as
+   * in every record written before names. docs/replays.md § The record.
+   */
+  name?: string;
   tics: TicColumns;
   /** The characters typed in a tic, for the tics that typed any — cheat codes. */
   typed: [tic: number, text: string][];
@@ -235,7 +248,7 @@ export interface ReplayData {
   /** Every slot's record, by slot — as many as `snapshots[0].players`. docs/multiplayer-coop.md. */
   slots: SlotRecord[];
   events: ReplayEvent[];
-  /** The desync samples, one per `CHECK_INTERVAL` tics — § `CheckColumns`. */
+  /** The desync samples, one per {@link CHECK_INTERVAL} tics — {@link CheckColumns}. */
   checks: CheckColumns;
 }
 
@@ -252,18 +265,18 @@ export interface ReplayMeta {
   /** `VERSION` of the build that recorded it. */
   build: string;
   /**
-   * `COMPAT` of the build that recorded it — what says whether this build's simulation is the one
-   * that ran. `0` for a replay written before the field existed, which reads as older.
+   * {@link COMPAT} of the build that recorded it — what says whether this build's simulation is
+   * the one that ran. `0` for a replay written before the field existed, which reads as older.
    */
   compat: number;
-  /** `describeEngine` of the recording browser. */
+  /** {@link describeEngine} of the recording browser. */
   engine: string;
   skill: Skill;
   wads: SaveWad[];
   mapWad: string;
   patchWads?: string[];
   ticCount: number;
-  /** Never empty: `[0]` is the map recording began on, which is what `replayMap` reads. */
+  /** Never empty: `[0]` is the map recording began on, which is what {@link replayMap} reads. */
   levels: LevelMarker[];
 }
 
@@ -293,9 +306,9 @@ export function replayMap(meta: Pick<ReplayMeta, 'levels'>): string {
 }
 
 /**
- * A replay's identity for the savegame WAD gate — `wadSetRefusal` and friends. `maps` is what a
- * replay adds over a save: a run that advanced played levels beyond the one it started on, and a
- * stand-in game WAD must not be what supplies any of them
+ * A replay's identity for the savegame WAD gate — `wadSetRefusal` and friends.
+ * {@link SaveWadSet.maps} is what a replay adds over a save: a run that advanced played levels
+ * beyond the one it started on, and a stand-in game WAD must not be what supplies any of them
  * (docs/savegames.md § A stand-in game WAD).
  */
 export function replayWadSet(meta: ReplayMeta): SaveWadSet {
@@ -361,9 +374,10 @@ function snapToLattice(v: number): number {
 }
 
 /**
- * `DELTA_COLUMNS` against a linear prediction from the two values before (`pack`), or that undone.
- * The prediction is `2 * p1 - p2`, so a column moving at a constant rate stores zeros; both
- * directions carry the same two-value state, which is what makes the round trip exact in integers.
+ * {@link DELTA_COLUMNS} against a linear prediction from the two values before (`pack`), or that
+ * undone. The prediction is `2 * p1 - p2`, so a column moving at a constant rate stores zeros;
+ * both directions carry the same two-value state, which is what makes the round trip exact in
+ * integers.
  * A null — the tics the pointer missed the aim plane — carries no value and leaves the prediction
  * where it was.
  */

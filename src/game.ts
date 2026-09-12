@@ -333,7 +333,10 @@ export class Game {
    * per-level *inside* each. docs/multiplayer.md § Player slots.
    */
   private slots: PlayerSlot[] = [];
-  /** Which slot this browser plays and draws for: the HUD, the audio listener, the view camera. */
+  /**
+   * Which slot this browser plays: its keyboard, the menu's settings, its `R`. What is drawn is
+   * {@link Game.viewed}'s.
+   */
   private readonly localSlot: number;
   /**
    * This browser's seat in the network game the level runs in ({@link GameOptions.net}), or null.
@@ -659,6 +662,7 @@ export class Game {
     this.autoSave = autoSave;
     this.replayBar = new ReplayBar({
       takeOver: () => this.driver.takeOver(),
+      watch: (slot) => this.driver.watch(slot),
       seek: (tic) => this.driver.seekTo(tic),
       levelName: (map) => this.levelNames.nameFor(map),
     });
@@ -691,10 +695,16 @@ export class Game {
     this.driver = new ReplayDriver({
       slots: this.slots,
       local: this.local,
+      get viewed() {
+        return game.viewed;
+      },
       view,
       get level() {
         return game.level;
       },
+      nameOf: (slot) => this.net?.session.roster().find((entry) => entry.slot === slot.index)?.name ?? null,
+      viewSwitched: () => this.viewSwitched(),
+      drawnCamera: (slot) => this.drawnCamera(slot),
       ownInput: (slot) => this.ownInput(slot),
       ownSource: (slot) => this.ownSource(slot),
       blockedMoment: () => this.blockedMoment(),
@@ -729,7 +739,7 @@ export class Game {
       spriteMaterials: this.spriteMaterials,
       audio,
       resolveVileFlame: (vileId, targetId) => this.monsterAttacks.vileFlameFor(vileId, targetId),
-      fogVisible: (subsector) => this.level.fogOfWar.isVisible(subsector),
+      fogVisible: (subsector) => this.level.fogOfWar.isDrawn(subsector),
       lights: this.lights,
     });
     // The level is replaced on a map load, so the context reads it off this instance every time
@@ -767,7 +777,9 @@ export class Game {
       view,
       scene: this.scene,
       slots: this.slots,
-      local: this.local,
+      get viewed() {
+        return game.viewed;
+      },
       get level() {
         return game.level;
       },
@@ -827,6 +839,25 @@ export class Game {
   /** The slot this browser plays — {@link Game.localSlot}'s. */
   private get local(): PlayerSlot {
     return this.slots[this.localSlot];
+  }
+
+  /**
+   * The slot the view is drawn for: the HUD and the overlays, the audio listener, the fog's drawn
+   * island, the drawn camera. {@link Game.local} but under a playback, whose camera picker watches
+   * any player ({@link ReplayPlayback.viewSlot}). No tic reads it. docs/multiplayer.md § Player
+   * slots.
+   */
+  private get viewed(): PlayerSlot {
+    const playback = this.playback;
+    return playback ? this.slots[playback.viewSlot] : this.local;
+  }
+
+  /**
+   * The drawn camera where `slot` is the one drawn, null for any other — what
+   * {@link PlayerSlot.eachCamera} applies a discontinuity to beside the slot's own.
+   */
+  private drawnCamera(slot: PlayerSlot): TopDownCamera | null {
+    return slot === this.viewed ? this.view.camera : null;
   }
 
   /**
@@ -941,6 +972,23 @@ export class Game {
     this.intermission.setContinueHint(this.viewerContinues);
     this.endCard.setContinueHint(this.viewerContinues);
     void this.saveTakeOver();
+  }
+
+  /**
+   * The view brought onto {@link Game.viewed} once it moved — a playback's camera picker onto
+   * another player, a take-over back to the local one: the fog draws that player's island, the
+   * drawn camera cuts to their pose, the damage flash and center message raised for the player
+   * before are dropped, and the death overlay is the new player's — up over a corpse, killer and
+   * all. docs/replays.md § Playback.
+   */
+  private viewSwitched(): void {
+    const { viewed } = this;
+    this.level.fogOfWar.setDrawn(viewed.index);
+    if (this.view.camera !== viewed.simCamera) this.view.camera.copyFrom(viewed.simCamera);
+    this.screenEffects.clearPain();
+    this.message.clear();
+    this.deathOverlay.clear();
+    this.armDeathOverlay();
   }
 
   /**
@@ -1172,7 +1220,7 @@ export class Game {
    * start ending calls it unconditionally. docs/death.md § Dying on the way out.
    */
   private endingOverCorpse(): void {
-    if (!this.local.dead || !this.levelEnding) return;
+    if (!this.viewed.dead || !this.levelEnding) return;
     this.deathOverlay.clear();
     this.screenEffects.clearPain();
   }
@@ -1391,7 +1439,7 @@ export class Game {
         // `latticeYaw`: a save written by a build that took a playback over mid-glide carries an
         // off-lattice yaw, and nothing downstream would ever bring it back.
         // docs/camera.md § Camera orbit.
-        slot.eachCamera(this.view.camera, (camera) => (camera.yawDeg = latticeYaw(saved.cameraYawDeg)));
+        slot.eachCamera(this.drawnCamera(slot), (camera) => (camera.yawDeg = latticeYaw(saved.cameraYawDeg)));
       }
     } else {
       // Applied before fog of war is seeded, so an explicit start position reveals
@@ -1404,7 +1452,7 @@ export class Game {
       // spawns facing, instead of always defaulting to due-north regardless of
       // the map's own player-start angle.
       for (const slot of this.slots) {
-        slot.eachCamera(this.view.camera, (camera) => camera.faceHeading(slot.player.angle));
+        slot.eachCamera(this.drawnCamera(slot), (camera) => camera.faceHeading(slot.player.angle));
       }
     }
     // After both branches, and after the yaw each sets: a camera belongs to
@@ -1420,10 +1468,10 @@ export class Game {
     }
     // A level change re-seeds the viewer's own camera from the simulation's: it is a hard reset of
     // the framing, and gliding in from the outgoing level is exactly what `snapTo` exists to stop.
-    if (this.view.camera !== this.local.simCamera) this.view.camera.copyFrom(this.local.simCamera);
+    if (this.view.camera !== this.viewed.simCamera) this.view.camera.copyFrom(this.viewed.simCamera);
     // One fog for everyone: every player's start is revealed at once.
     const bodies = this.slots.map((slot) => slot.player);
-    const fogOfWar = new FogOfWar(world, built.occluders, bodies, this.localSlot, movableSectors);
+    const fogOfWar = new FogOfWar(world, built.occluders, bodies, this.viewed.index, movableSectors);
     if (restore) fogOfWar.restoreExplored(restore.fog);
     const specials = new SpecialsController(world, {
       bank: this.materials,
@@ -1456,7 +1504,7 @@ export class Game {
         // Both of the slot's cameras: a replay's viewer must not be left gliding across the map
         // either, and the operations are applied rather than the state copied, so a manual view
         // keeps its zoom.
-        slot.eachCamera(this.view.camera, (camera) => {
+        slot.eachCamera(this.drawnCamera(slot), (camera) => {
           if (dest.rotateBy === undefined) camera.faceHeading(dest.angle);
           else camera.turnYaw((dest.rotateBy * 180) / Math.PI);
           camera.snapTo(player.followPoint());
@@ -1550,6 +1598,9 @@ export class Game {
       icon.restore(restore.icon);
       this.projectiles.restore(restore.projectiles);
       for (const slot of this.slots) slot.restore(restore.players[slot.index]);
+      // A corpse restored — a keyframe's, a network sync's — is a death already under way: its
+      // overlay goes back up, killer and all.
+      this.armDeathOverlay();
     }
 
     // Raised last: this method clears every overlay at its top, so a card shown any earlier than
@@ -1694,9 +1745,13 @@ export class Game {
     if (!applyDamage(inventory, amount, slot.cheats.god)) return false;
     if (hit.from) player.applyDamageThrust(thrustSpeed(amount, PLAYER_MASS), hit.from.x, hit.from.y);
     // The flash is the local player's own eyes, and the overlay below their own screen.
-    if (slot === this.local) this.screenEffects.addPain(amount);
+    if (slot === this.viewed) this.screenEffects.addPain(amount);
     if (inventory.health <= 0) {
       slot.dead = true;
+      // Kept on the slot, whoever is drawn: the overlay can go up long after the blow — a view
+      // switched onto the corpse, a snapshot restored with it.
+      // docs/death.md § Who killed the player.
+      slot.deathCause = hit.cause;
       // Dying on an `exitBelowHealth` floor ends the level whatever killed the player, not only
       // when that floor's own damage did it — E1M8's pit is the ending, and a baron finishing the
       // job there must not leave the episode unwon. Set before the overlay below, which
@@ -1716,9 +1771,7 @@ export class Game {
       // known here and now, where a checkpoint is only a store read away, and under a playback `R`
       // is the record's rather than the viewer's, so there is nothing to offer
       // (docs/death.md § Player death).
-      if (!this.levelEnding && slot === this.local) {
-        this.deathOverlay.show(obituary(hit.cause), this.deathHint());
-      }
+      if (slot === this.viewed) this.armDeathOverlay();
       return true;
     }
     this.audio.play('plpain', player, playerOrigin(slot.index));
@@ -1742,12 +1795,12 @@ export class Game {
     this.level.specials.reseatSlot(slot.index, spot);
     this.effects.spawnArrivalFog(spot, this.level.world.floorAt(spot.x, spot.y));
     // Every camera of the slot faces the way the new body does and cuts to it, as a teleport does.
-    slot.eachCamera(this.view.camera, (camera) => {
+    slot.eachCamera(this.drawnCamera(slot), (camera) => {
       camera.faceHeading(spot.angle);
       camera.snapTo(slot.player.followPoint());
     });
     slot.autoCamera.seed(slot.player, slot.simCamera);
-    if (slot === this.local) {
+    if (slot === this.viewed) {
       this.deathOverlay.clear();
       this.screenEffects.clearPain();
     }
@@ -1817,6 +1870,18 @@ export class Game {
   }
 
   /**
+   * Arms the death overlay over {@link Game.viewed}'s corpse, naming what killed them
+   * ({@link PlayerSlot.deathCause}) — nothing while that player lives, once the level is on its way
+   * out, or over an end-of-level popup, which outlives that window (docs/death.md § Dying on the
+   * way out).
+   */
+  private armDeathOverlay(): void {
+    const { viewed } = this;
+    if (!viewed.dead || this.levelEnding || this.popup !== null) return;
+    this.deathOverlay.show(obituary(viewed.deathCause), this.deathHint());
+  }
+
+  /**
    * Whatever was typed this tic, the one response a completed code prints, and the level an
    * IDCLEV asked for.
    *
@@ -1828,7 +1893,7 @@ export class Game {
     if (!typed) return;
     const response = slot.cheats.type(typed, slot.inventory, this.gameMode);
     if (response) {
-      if (slot === this.local) this.message.show(response);
+      if (slot === this.viewed) this.message.show(response);
       this.cheated = true;
     }
     const warp = slot.cheats.takeWarp();
@@ -2254,7 +2319,7 @@ export class Game {
     // sounds during the update below. The camera's yaw is last tic's (it
     // settles in `camera.tick`, at the end) — a tic of smoothing lag on the
     // pan axis, which is inaudible. The drawn camera's: the one the player is looking through.
-    this.audio.setListener(local.player, this.view.camera.viewerAngleDeg + 180);
+    this.audio.setListener(this.viewed.player, this.view.camera.viewerAngleDeg + 180);
     // A live slot's camera turns on its own keys; a replay's is posed from the record
     // (`beginTic`) and left alone here.
     for (const slot of this.slots) {
@@ -2298,7 +2363,7 @@ export class Game {
     // player's own screen.
     for (const slot of this.slots) {
       const locked = this.level.specials.consumeLockedLine(slot.index);
-      if (locked && slot === local) {
+      if (locked && slot === this.viewed) {
         this.message.show(...lockedLineMessage(locked.lock, locked.kind));
       }
     }
@@ -2536,7 +2601,7 @@ export class Game {
     // player alone, `P_TouchSpecialThing`'s own `player == &players[consoleplayer]` gate. An item
     // left lying puffs nothing, and a key left lying is silent too: `P_TouchSpecialThing` returns
     // before its sound, where a weapon's `wpnup` is `P_GiveWeapon`'s own.
-    if (taken && slot === this.local) {
+    if (taken && slot === this.viewed) {
       const sound = pickupSound(type);
       if (!left || sound === 'wpnup') {
         this.audio.play(sound);
@@ -2563,7 +2628,7 @@ export class Game {
       slot.index,
     );
     // The count is the level's; the announcement is the local player's own screen.
-    if (sectorEffect.secretFound && slot === this.local) {
+    if (sectorEffect.secretFound && slot === this.viewed) {
       this.message.show(SECRET_MESSAGE);
       // Unattenuated, like a pickup: it's an announcement to the player, not a sound in the world.
       this.audio.playAsset('secret');

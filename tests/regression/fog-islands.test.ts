@@ -90,6 +90,30 @@ describe('Regressions · fog of war and detached regions', () => {
     assert.equal(fog.isVisible(sector92), false);
   });
 
+  test('two players apart: what a tic may shoot is the same whichever of them is drawn', () => {
+    // Two browsers of one network game each draw their own player, and a replay's camera picker
+    // draws either: neither may move what auto-aim can lock onto.
+    const home = at(start.x, start.y);
+    const pool = { x: 1240, y: -1060 };
+    for (const drawn of [0, 1]) {
+      const fog = new FogOfWar(world, [], [start, pool], drawn);
+      assert.equal(fog.isVisible(home), true, `drawing player ${drawn + 1}`);
+      assert.equal(fog.isVisible(poolRoom), true, `drawing player ${drawn + 1}`);
+      assert.equal(fog.isDrawn(home), drawn === 0, 'only the drawn player’s island is drawn');
+      assert.equal(fog.isDrawn(poolRoom), drawn === 1, 'only the drawn player’s island is drawn');
+    }
+  });
+
+  test('drawing the other player cuts to their island', () => {
+    const home = at(start.x, start.y);
+    const fog = new FogOfWar(world, [], [start, { x: 1240, y: -1060 }], 0);
+    assert.equal(fog.alphaOf(home), 1);
+    assert.equal(fog.alphaOf(poolRoom), 0);
+    fog.setDrawn(1);
+    assert.equal(fog.alphaOf(home), 0, 'no fade out of the island left');
+    assert.equal(fog.alphaOf(poolRoom), 1, 'no fade into the one arrived in');
+  });
+
   test('the computer area map reveals the island the player is in, not the pool room', () => {
     const fog = new FogOfWar(world, [], [start], 0);
     fog.revealAll();

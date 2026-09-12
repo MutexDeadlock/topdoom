@@ -57,9 +57,10 @@ column moving at a constant rate stores zeros. The mask columns are left alone �
 measured *worse* on those. A null leaves the prediction where it was. The wheel is handed to the
 live tic as its sign too, so the recording sees what the playback will.
 
-`slots` holds one `SlotRecord` per slot — its own `settings`, `tics` and `typed`, and `color` only
-where it is not the slot's default (docs/sprites.md § Player colours), so a record of defaults is
-byte for byte the one written before colours — as many as
+`slots` holds one `SlotRecord` per slot — its own `settings`, `tics` and `typed`, `color` only
+where it is not the slot's default (docs/sprites.md § Player colours) and `name` only where the
+recording knew one (a network game's roster), so a record of defaults is byte for byte the one
+written before either — as many as
 `snapshots[0].players`. Around them: `snapshots` (`[0]` the start, the rest restore and seek
 targets), `keyframes` (§ Seeking), `session`, `events`, `checks`. A record from before slot records
 is damaged to this build (`isPlayableData`). `ReplayMeta` carries the WAD set plus the build, the JS engine, the
@@ -241,12 +242,28 @@ the same reason — the auto camera is not driving, so its dials would be a froz
 The camera is simulation state — `viewerAngleDeg` is the movement basis and the camera's position
 is the pick ray's origin — so a viewer moving the camera would change what auto-aim locks onto.
 A playback therefore evolves a private `TopDownCamera` from the record and `ReplayDriver.syncViewCamera` brings
-the drawn one up to it each tic: mirrored outright in the **recording** view, and in the **manual**
+the drawn one up to the watched player's each tic: mirrored outright in the **recording** view, and in the **manual**
 one driven by the viewer's own Q/E orbit and framing keys (`applyFramingKeys`, whatever camera mode
 the replay was recorded under) around the same follow point and aim lead. Nothing in the manual
 path reaches the simulation, so looking around cannot desync a run. A level load re-seeds the
 viewer's camera from the simulation's; a teleport snaps both without touching a manual zoom; and
 taking over hands the simulation back to the viewport's camera at the pose being drawn.
+
+**The camera button opens a picker upward** (`#replay-camera-menu`, over the level — the panel sits
+on the screen's bottom edge): one entry per player, and **Manual camera**, the viewer's own framing
+around whoever is watched. A player's entry is the slot's name (`ReplayPlayback.slotNames`: the
+record's `name`, else `Player n` — never the replay's credit, which names whoever stored it). The
+button names the view in force: the player, or `manual`, with the followed player's name where
+there is more than one. A press anywhere else closes the picker, and one on the level does nothing
+more — it does not also pause.
+
+Watching another player (`ReplayDriver.watch`, `ReplayPlayback.viewSlot`, `Game.viewed`) moves
+only what is drawn — the HUD and overlays, the reticle, the audio listener, the fog's drawn island
+(docs/fogofwar.md § Islands), the camera — so it cannot desync the run. A switch cuts
+(`Game.viewSwitched`): the camera snaps to that player's pose, the fog to their island, the damage
+flash and center message raised for the one before are dropped, and a corpse gets its death overlay
+back, killer and all (docs/death.md § Who killed the player). **Take over is slot 0's alone**: a
+view on another player comes back to slot 0 first.
 
 **`Space` pauses and resumes a playback**, and so does a press on the level itself — the canvas
 only, since the bar, the menu and the overlays over a replay have their own controls. Either way
@@ -260,7 +277,7 @@ the viewer. Once the stream is spent, `Space` and the pause button **start the r
 seek to tic 0): there is nothing left to pause, and the run is right there to watch again.
 
 The bar (`#replay-bar`, `--z-replaybar`): a track with one marker per level advanced into; on
-hover the pause, the speed steps (`SPEED_STEPS`, 0.25×–5×), the crosshair and camera toggles, and **Take
+hover the pause, the speed steps (`SPEED_STEPS`, 0.25×–5×), the crosshair toggle, the camera picker, and **Take
 over** (`ReplayDriver.takeOver`): live input from the next tic, the orbit glided back onto the 45° lattice
 (the pose it inherits is wherever the recording's own Q/E step had got to —
 docs/camera.md § Camera orbit), the settings released, `cheated`
@@ -280,7 +297,7 @@ holds one point per tic, and a reticle stepping 35 times a second under a camera
 refresh rate reads as stutter. The camera's aim lead still takes the tic's own `lastAim`, being a
 per-tic reader. It is drawn at **half opacity**: it is where someone else aimed, not
 where the viewer is pointing. The panel's **Crosshair** toggle takes it away entirely — named for
-the state in force like the camera toggle beside it, marked while off so a missing reticle reads as
+the state in force like the camera button beside it, marked while off so a missing reticle reads as
 switched off rather than as a replay that aimed nowhere. It lasts the session, not the replay.
 
 ## Storage

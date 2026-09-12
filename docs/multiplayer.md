@@ -11,10 +11,13 @@ browsers run one together — the relay, lockstep, snapshots — is docs/multipl
 ## Player slots
 
 `PlayerSlot` is one player's whole share of a level: `player`, `inventory`, `weapons`, `cheats`,
-`dead`, `kills`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
-`consumePickup`. `Game.slots` holds them by index. `localSlot` is the one this browser plays: the
-HUD, crosshair, screen effects, death overlay, center messages, audio listener, `viewColormap`, the
-fade anchor, the fog's drawn island and the view camera read `local`, and nothing else does.
+`dead`, `deathCause`, `kills`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
+`consumePickup`. `Game.slots` holds them by index. `localSlot` is the one this browser plays — its
+keyboard, the menu's settings, its `R`. **`Game.viewed` is the one drawn**: `local`, except under a
+playback, whose camera picker watches any slot (docs/replays.md § Playback). The HUD, crosshair,
+screen effects, death overlay, center messages, pickup and secret sounds, audio listener,
+`viewColormap`, the fade anchor, the fog's drawn island and the view camera read `viewed`, and no
+tic does.
 
 Level-global: on `Game`, `netgame`, `cheated` (any slot's cheat taints the run) and `replay` (every
 slot's recorder or playback); on `Level`, `starts`, `fogOfWar` (one shared reveal), `time` (runs
@@ -28,7 +31,7 @@ keys and its auto camera ticks. `'replay'`: posed from the record each tic, the 
 row like a replay's, and the drawn one is driven apart (docs/multiplayer-net.md § What a tic does).
 
 **Saves and replays hold every slot.** `captureSave` writes `GameSnapshot.players`, one
-`PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`, `kills`);
+`PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`, `deathCause`, `kills`);
 `SpecialsController.snapshot` writes every slot's `prev`, `SectorEffects.snapshot` every slot's
 timer; a replay holds one `SlotRecord` and one check column per slot. A restore builds as many
 slots as it holds. docs/savegames.md § What is saved and what is deliberately not, docs/replays.md §

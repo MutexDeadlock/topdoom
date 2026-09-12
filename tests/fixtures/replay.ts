@@ -68,6 +68,7 @@ export function recordingStart(): RecordingStart {
     poses: [START_POSE],
     players: [{ ...GLOBAL_PLAYER_SETTINGS }],
     colors: ['green'],
+    names: [null],
     session: captureSessionSettings(),
   };
 }

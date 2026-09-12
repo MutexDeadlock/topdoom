@@ -276,11 +276,15 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   const group = new THREE.Group();
   group.name = 'things';
   group.add(batch.group, dropBatch.group, fuzzBatch.group);
-  /** Level time in seconds, driving the drop bob/pulse ({@link DROP_HOVER}) and the fuzz shimmer. */
+  /**
+   * Level time in seconds, driving the drop bob/pulse ({@link DROP_HOVER}) and the fuzz shimmer.
+   */
   let clock = 0;
   const posed: PosedThing[] = [];
   const stats: LevelKillItemStats = { totalKills: 0, kills: 0, totalItems: 0, items: 0 };
-  /** Scratch for {@link doomToWorld}, reused across every sprite — this runs per thing per frame. */
+  /**
+   * Scratch for {@link doomToWorld}, reused across every sprite — this runs per thing per frame.
+   */
   const worldPos = new THREE.Vector3();
   // A sprite's light is the sector's, which a Boom transfer can source from another sector
   // entirely — docs/specials-transfers.md § Transferred lighting.
@@ -648,7 +652,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     return { attacks, barrelExplosions };
   }
 
-  function draw(alpha: number, viewAngleDeg: number): void {
+  function draw(alpha: number, viewAngleDeg: number, fogDrawn?: (subsector: number) => boolean): void {
     batch.begin(viewAngleDeg);
     dropBatch.begin(viewAngleDeg);
     fuzzBatch.begin(viewAngleDeg);
@@ -657,8 +661,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     dropBatch.setOpacity(DROP_OPACITY_MIN + (DROP_OPACITY_MAX - DROP_OPACITY_MIN) * pulse);
     for (const p of posed) {
       // Resolving the lump is only worth doing for something actually drawn: on a map like
-      // NUTS.WAD this skips thousands of `SpriteBank` lookups a frame.
-      if (!p.visible) continue;
+      // NUTS.WAD this skips thousands of `SpriteBank` lookups a frame. `visible` is the tic's gate,
+      // over every player's island; only the drawn player's is shown. docs/fogofwar.md § Islands.
+      if (!p.visible || (fogDrawn && !fogDrawn(p.subsector))) continue;
       const cached = p.anim.resolve(p.facingDeg, viewAngleDeg);
       if (!cached) continue;
       const x = p.drawPrevX + (p.x - p.drawPrevX) * alpha;
@@ -969,7 +974,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * and the only way a thing is ever created. Only the fields the four spawn paths disagree on are
    * parameters; the rest is fixed for a fresh thing or derivable from `type` and the position.
    *
-   * Deliberately does **not** touch `stats.totalKills`/`totalItems` — docs/hud.md § Level stats.
+   * Deliberately does **not** touch {@link LevelKillItemStats.totalKills}/
+   * {@link LevelKillItemStats.totalItems} — docs/hud.md § Level stats.
    *
    * @returns null when the WAD set carries no art for the type
    */
@@ -1603,7 +1609,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * `A_VileChase`'s resurrection branch: restores a corpse to full health and rejoins combat
    * immediately, with no "coming back to life" delay. {@link PosedThing.attackPause} is set to the
    * raise animation's length, so {@link stepMonsterAI}'s existing "don't walk or attack while
-   * `attackPause` runs" gate holds the monster still until it finishes.
+   * {@link PosedThing.attackPause} runs" gate holds the monster still until it finishes.
    * docs/monster-archvile.md § Resurrection.
    */
   function reviveCorpse(p: PosedThing): void {
@@ -1652,8 +1658,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /**
    * `P_NightmareRespawn` (`p_mobj.c`): puts a corpse back at its own spawn point as a fresh,
    * dormant monster, with a teleport fog at both ends. The corpse is *reused* rather than removed
-   * and replaced, so its {@link PosedThing.id} — and every saved `targetId` pointing at it —
-   * survives. docs/monster-ai.md § Respawning monsters.
+   * and replaced, so its {@link PosedThing.id} — and every saved {@link PosedThing.targetId}
+   * pointing at it — survives. docs/monster-ai.md § Respawning monsters.
    *
    * @returns false, having changed nothing, when something already occupies the spawn point
    */
@@ -1871,8 +1877,8 @@ const isCrushableType = (p: PosedThing): boolean => p.isMonster || p.type === Th
 /**
  * A corpse a plane could still crunch. {@link PosedThing.hidden} is checked here and in neither
  * predicate above: a corpse that died with no death art is drawn as nothing, so there is nothing to
- * turn into a pool. The only *living* things `hidden` marks are consumed pickups, which both live
- * predicates already exclude by type. docs/specials-crushers.md § Crushed corpses.
+ * turn into a pool. The only *living* things {@link PosedThing.hidden} marks are consumed pickups,
+ * which both live predicates already exclude by type. docs/specials-crushers.md § Crushed corpses.
  */
 const isSquashableCorpse = (p: PosedThing): boolean => !p.crushed && !p.hidden && p.isMonster;
 

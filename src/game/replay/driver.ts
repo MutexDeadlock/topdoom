@@ -1,8 +1,8 @@
 /**
- * `ReplayDriver`: the recorder or playback behind the tic's input, as the level runs it — which
- * one is in charge and what every slot reads through it, a recording's start and end, a playback's
- * take-over, its camera, its seek. `Game` holds one and answers for it through `ReplayHost`.
- * docs/replays.md § The TicInput seam.
+ * {@link ReplayDriver}: the recorder or playback behind the tic's input, as the level runs it —
+ * which one is in charge and what every slot reads through it, a recording's start and end, a
+ * playback's take-over, its camera, its seek. `Game` holds one and answers for it through
+ * {@link ReplayHost}. docs/replays.md § The TicInput seam.
  */
 import { ReplayRecorder } from './recorder.ts';
 import { ReplayPlayback } from './playback.ts';
@@ -33,18 +33,40 @@ export interface ReplayHost {
   readonly slots: readonly PlayerSlot[];
   /** The slot this browser plays. */
   readonly local: PlayerSlot;
+  /** The slot the view is drawn for — `Game.viewed`: the local one, or the watched player. */
+  readonly viewed: PlayerSlot;
   readonly view: Viewport;
   readonly level: Level;
+  /** The name a network game's roster gives `slot`'s player, or null outside one. */
+  nameOf(slot: PlayerSlot): string | null;
+  /** The view brought onto {@link ReplayHost.viewed} once that changed — `Game.viewSwitched`. */
+  viewSwitched(): void;
+  /**
+   * The drawn camera where `slot` is {@link ReplayHost.viewed}, null for any other — what
+   * {@link PlayerSlot.eachCamera} takes. `Game.drawnCamera`.
+   */
+  drawnCamera(slot: PlayerSlot): TopDownCamera | null;
   /** What drives a slot with no replay in charge: the network's rows, the keyboard, nothing. */
   ownInput(slot: PlayerSlot): TicInput;
   ownSource(slot: PlayerSlot): SlotSource;
   /** The moment a state capture is refused at, as a clause, or null — `Game.blockedMoment`. */
   blockedMoment(): string | null;
-  /** The moment as a save holds it, without a thumbnail. Throws where `blockedMoment` refuses. */
+  /**
+   * The moment as a save holds it, without a thumbnail. Throws where
+   * {@link ReplayHost.blockedMoment} refuses.
+   */
   capture(): SaveCapture;
-  /** The level again, from `state` or (null) fresh — `Game.reloadLevel`. */
+  /**
+   * The level again — `Game.reloadLevel`.
+   *
+   * @param state  null for the level fresh
+   */
   reloadLevel(state: GameSnapshot | null): void;
-  /** The level `map` at `state`, for a keyframe — the map this one when the set has no such map. */
+  /**
+   * The level `map` at `state`, for a keyframe.
+   *
+   * @param map  the level to restore — this one when the set has no such map
+   */
   restoreKeyframe(map: string, state: GameSnapshot): void;
   /** Every slot's body as the fog sweeps from them, refilled for this tic — the check sample's. */
   bodies(): readonly Pos2[];
@@ -54,7 +76,11 @@ export interface ReplayHost {
   takenOver(): void;
   /** The playback bar redrawn for the seek in progress. */
   drawBar(): void;
-  /** One tic, `beginTic` included; true when it swapped the level. */
+  /**
+   * One tic, `beginTic` included.
+   *
+   * @returns true when it swapped the level
+   */
   runTic(): boolean;
   /** The timed overlays' clocks, which run on frames a seek draws none of. */
   tickOverlays(dt: number): void;
@@ -83,7 +109,9 @@ export class ReplayDriver {
     this.host = host;
   }
 
-  /** The recorder in charge, if a replay is being recorded. Routed through a getter — see CLAUDE.md. */
+  /**
+   * The recorder in charge, if a replay is being recorded. Routed through a getter — see CLAUDE.md.
+   */
   get recorder(): ReplayRecorder | null {
     return this.replay instanceof ReplayRecorder ? this.replay : null;
   }
@@ -98,9 +126,12 @@ export class ReplayDriver {
   }
 
   /**
-   * Puts `replay` in charge, or nothing, and points every slot's `input` and `source` at it in the
-   * same step — the one place either is switched. With none, each slot reads what the host's
-   * `ownInput` says drives it. docs/replays.md § The TicInput seam.
+   * Puts `replay` in charge and points every slot's {@link PlayerSlot.input} and
+   * {@link PlayerSlot.source} at it in the same step — the one place either is switched.
+   * docs/replays.md § The TicInput seam.
+   *
+   * @param replay  null for nothing: each slot reads what the host's {@link ReplayHost.ownInput}
+   *                says drives it
    */
   set(replay: ReplayRecorder | ReplayPlayback | null): void {
     this.replay = replay;
@@ -111,7 +142,10 @@ export class ReplayDriver {
     }
   }
 
-  /** `set` again with what is in charge: every slot's own input may have changed underneath. */
+  /**
+   * {@link ReplayDriver.set} again with what is in charge: every slot's own input may have changed
+   * underneath.
+   */
   rebind(): void {
     this.set(this.replay);
   }
@@ -151,8 +185,8 @@ export class ReplayDriver {
   /**
    * Starts recording from this moment. The level is **reloaded from the capture** first, so the
    * run being recorded is exactly what a playback restores, transients and all — and the camera
-   * is put back mid-glide afterwards, since the reload snapped it. Throws `recordingRefusal`.
-   * docs/replays.md § Recording.
+   * is put back mid-glide afterwards, since the reload snapped it. Throws
+   * {@link ReplayDriver.recordingRefusal}. docs/replays.md § Recording.
    */
   startRecording(): void {
     const refusal = this.recordingRefusal();
@@ -178,6 +212,7 @@ export class ReplayDriver {
           poses: slots.map((slot) => quantizePose(slot.simCamera.pose())),
           players: slots.map((slot) => slot.settings),
           colors: slots.map((slot) => slot.drawColor()),
+          names: slots.map((slot) => this.host.nameOf(slot)),
           session: captureSessionSettings(),
         },
       ),
@@ -198,10 +233,14 @@ export class ReplayDriver {
    * docs/replays.md § Playback.
    */
   takeOver(): void {
-    if (!this.playback) return;
+    const playback = this.playback;
+    if (!playback) return;
     releaseSimSettings();
     this.set(null);
     const { local, view } = this.host;
+    // Only the local slot is taken over: a view on another player comes back to it first, so the
+    // pose the viewport's camera hands the simulation is its own. docs/replays.md § Playback.
+    if (playback.viewSlot !== local.index) this.host.viewSwitched();
     const camera = view.camera;
     // The pose came from the record, so the orbit can be anywhere a Q/E step passed through; from
     // here on only whole steps move it, so it is glided back onto the lattice first — before the
@@ -216,10 +255,21 @@ export class ReplayDriver {
   }
 
   /**
+   * The camera picker's player entries: watches slot `slot`'s player
+   * ({@link ReplayPlayback.viewSlot}) and brings the view over to them. docs/replays.md § Playback.
+   */
+  watch(slot: number): void {
+    const playback = this.playback;
+    if (!playback || slot === playback.viewSlot || !this.host.slots[slot]) return;
+    playback.viewSlot = slot;
+    this.host.viewSwitched();
+  }
+
+  /**
    * Jumps the playback to `tic`. The state comes from the last keyframe at or before it and the
-   * tics from there to the target are then run, which `runSeek` does over the frames that follow —
-   * a jump that stays ahead of the current position and passes no keyframe needs no restore and
-   * runs on from here. docs/replays.md § Seeking.
+   * tics from there to the target are then run, which {@link ReplayDriver.runSeek} does over the
+   * frames that follow — a jump that stays ahead of the current position and passes no keyframe
+   * needs no restore and runs on from here. docs/replays.md § Seeking.
    */
   seekTo(tic: number): void {
     const playback = this.playback;
@@ -263,24 +313,24 @@ export class ReplayDriver {
   }
 
   /**
-   * Brings the drawn camera up to the simulation's, once per tic of a playback: mirrored outright
-   * in the recording view, and in the manual one driven by the viewer's own orbit and framing keys
-   * around the same follow point. Nothing here reaches the simulation.
+   * Brings the drawn camera up to the watched player's simulation camera, once per tic of a
+   * playback: mirrored outright in the recording view, and in the manual one driven by the viewer's
+   * own orbit and framing keys around the same follow point. Nothing here reaches the simulation.
    * docs/replays.md § Playback.
    */
   syncViewCamera(dt: number): void {
     const playback = this.playback;
-    const { local, view } = this.host;
+    const { viewed, view } = this.host;
     const camera = view.camera;
-    if (!playback || camera === local.simCamera) return;
+    if (!playback || camera === viewed.simCamera) return;
     if (playback.cameraView === 'recording') {
-      camera.copyFrom(local.simCamera);
+      camera.copyFrom(viewed.simCamera);
       return;
     }
     const input = view.input;
     camera.applyYawInput(input, dt);
     camera.applyFramingKeys(input);
-    camera.tick(dt, local.player.followPoint(), playback.lastAim);
+    camera.tick(dt, viewed.player.followPoint(), playback.lastAim);
     // The live input is read by nothing else while a replay plays, and its edges have to be
     // cleared by someone or a press would latch for the rest of the playback.
     input.endTic();
@@ -379,9 +429,11 @@ export class ReplayDriver {
   }
 
   /**
-   * One frame's share of a seek's catch-up: tics run as fast as they will inside `SEEK_BUDGET_MS`,
-   * with sound off. True when a tic swapped the level, which ends the slice and the frame with it —
-   * everything the draw would touch has just been rebuilt. docs/replays.md § Seeking.
+   * One frame's share of a seek's catch-up: tics run as fast as they will inside
+   * {@link SEEK_BUDGET_MS}, with sound off. docs/replays.md § Seeking.
+   *
+   * @returns true when a tic swapped the level, which ends the slice and the frame with it —
+   *          everything the draw would touch has just been rebuilt
    */
   private advanceSeek(playback: ReplayPlayback): boolean {
     const target = playback.seekTarget;
@@ -419,10 +471,10 @@ export class ReplayDriver {
    * discontinuities: a playback opening, a keyframe landing. docs/replays.md § Camera state.
    */
   private snapToTic(playback: ReplayPlayback, tic: number): void {
-    const { slots, view } = this.host;
+    const { slots } = this.host;
     for (const slot of slots) {
       const pose = playback.poseAt(tic, slot.index);
-      if (pose) slot.eachCamera(view.camera, (camera) => camera.snapPose(pose));
+      if (pose) slot.eachCamera(this.host.drawnCamera(slot), (camera) => camera.snapPose(pose));
     }
     this.pinSettings(playback);
   }

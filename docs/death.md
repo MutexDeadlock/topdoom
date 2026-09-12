@@ -222,6 +222,12 @@ takes a `DamageCause` (`game/combat.ts`) alongside the hit and only the killing 
 layer composes nothing. An unattributed cause renders as `''` and the overlay looks exactly as it
 did before the line existed.
 
+**The cause outlives the killing tic.** `damageSlot` keeps it on every dying slot, drawn or not
+(`PlayerSlot.deathCause`), and a snapshot carries it (`PlayerSlotSnapshot.deathCause`, optional:
+absent is an unattributed death, and no tic reads it). The overlay can go up over a corpse long
+after the blow — a replay's view switched onto it (docs/replays.md § Playback), a keyframe or a
+network sync restoring one — and `Game.armDeathOverlay` is the one place any of them raises it.
+
 A cause is either a doomednum or one of three strings for the killers with no attacker behind them:
 `'self'` (the player's own splash), `'crush'`, `'slime'`. Either way it keys straight into
 `OBITUARIES`, which holds each line **whole** rather than a name to interpolate — a DEH patch's
@@ -259,8 +265,11 @@ is now notified over a corpse and the exit fires either way.
 **The overlay must not appear in front of the exit.** `Game.levelEnding` — a queued `pendingExit`,
 or `IconOfSin.exiting` while the `BRAIN_DEATH_TO_EXIT` death cascade runs — is the window in which
 the level is over but hasn't finished saying so, and it is several seconds wide for the icon.
-`damageSlot` arms no overlay inside it, and a death that got in first is taken back down by
-`endingOverCorpse`, which every site that can open the window calls unconditionally. `R` is refused
+`Game.armDeathOverlay` arms none inside it, and a death that got in first is taken back down by
+`endingOverCorpse`, which every site that can open the window calls unconditionally. The window
+closes once the exit is handled, but the corpse stays under the intermission and the end card, so
+`armDeathOverlay` also arms none while a popup is up — a replay's view switched onto a corpse
+there, or a take-over coming back to one. `R` is refused
 there too, which is the real hazard: an overlay offering "press R" over a level the player has just
 *finished* would restart it. `saveRefusal` is deliberately **not** widened to `levelEnding` — a save
 taken mid-cascade restores mid-cascade, since `IconSnapshot` carries `exitTimer`.

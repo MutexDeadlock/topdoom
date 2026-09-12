@@ -102,7 +102,8 @@ if (keyframes.length > 0) {
 for (const [index, slot] of data.slots.entries()) {
   const { tics } = slot;
   const color = asPlayerColor(slot.color, slotColor(index));
-  console.log(`\nplayer ${index + 1}: ${describePlayer(slot.settings)}, color ${color}`);
+  const name = slot.name ? ` (${slot.name})` : '';
+  console.log(`\nplayer ${index + 1}${name}: ${describePlayer(slot.settings)}, color ${color}`);
   const camera = poseAt(tics, 0);
   if (camera) {
     console.log(

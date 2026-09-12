@@ -23,7 +23,12 @@ import { blastDistanceToBox } from '../util/geom.ts';
  * off in); the three strings are the causes with no attacker behind them —
  * `'self'` is the player's own splash. See docs/death.md § Player death.
  */
-export type DamageCause = number | 'self' | 'crush' | 'slime';
+export type DamageCause = number | (typeof DAMAGE_CAUSE_NAMES)[number];
+
+/** `v` where it is a {@link DamageCause}, else undefined — how a file's is read. */
+export function asDamageCause(v: unknown): DamageCause | undefined {
+  return typeof v === 'number' ? v : DAMAGE_CAUSE_NAMES.find((cause) => cause === v);
+}
 
 /**
  * Everything about a hit on a player except how hard it lands — `DamageHit` for a slot. Every field
@@ -194,3 +199,6 @@ export function applyBarrelExplosion(ctx: CombatContext, exp: BarrelExplosion): 
     cause: ThingType.barrel,
   });
 }
+
+/** {@link DamageCause}'s strings: the causes with no attacker behind them. */
+const DAMAGE_CAUSE_NAMES = ['self', 'crush', 'slime'] as const;

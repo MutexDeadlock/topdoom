@@ -68,8 +68,8 @@ export interface PresentHost {
   readonly scene: THREE.Scene;
   /** Every player slot; the list is never replaced, only grown. */
   readonly slots: readonly PlayerSlot[];
-  /** The slot this browser plays and draws for. */
-  readonly local: PlayerSlot;
+  /** The slot the frame is drawn for: the local one, or the player a playback watches. */
+  readonly viewed: PlayerSlot;
   readonly level: Level;
   readonly playback: ReplayPlayback | null;
   readonly recording: boolean;
@@ -105,11 +105,13 @@ export class Presenter {
   private readonly debugHud = new DebugHud();
   /**
    * The fade's opening lookup, at the heights the movers were drawn at this frame
-   * (`SpecialsController.drawnOpeningInto`). A field so the frame allocates none; it reads the level
-   * per call, so a level change needs no rebind.
+   * (`SpecialsController.drawnOpeningInto`). A field so the frame allocates none; it reads the
+   * level per call, so a level change needs no rebind.
    */
   private readonly openingInto = (line: number, out: Opening) =>
     this.host.level.specials.drawnOpeningInto(line, out);
+  /** `FogOfWar.isDrawn` for the sprites, bound once for the same reason. */
+  private readonly fogDrawn = (subsector: number) => this.host.level.fogOfWar.isDrawn(subsector);
 
   constructor(host: PresentHost) {
     this.host = host;
@@ -133,7 +135,7 @@ export class Presenter {
     // Opened before anything draws: each draw pass below offers its sprites as emitters as it goes,
     // and `commit` closes the set once they all have (docs/lights.md § What reaches the shader).
     lights.beginFrame(rawDt, camera.followX, camera.followY, camera.viewFrustum);
-    profiler.time('Sprites', () => level.things.draw(alpha, camera.viewAngleDeg));
+    profiler.time('Sprites', () => level.things.draw(alpha, camera.viewAngleDeg, this.fogDrawn));
     this.drawEffects(alpha, camera.viewAngleDeg);
     // Moving planes are drawn `alpha` through the last tic like everything else. Must land before
     // the fade pass below: the refresh rewrites the mover buffers its commits write into.
@@ -176,15 +178,15 @@ export class Presenter {
 
   /** The playback bar alone, with no reticle — what a seek draws on the frames it owns. */
   drawBar(): void {
-    this.host.overlays.replayBar.update(this.host.playback, null, this.host.local.inventory.health);
+    this.host.overlays.replayBar.update(this.host.playback, null, this.host.viewed.inventory.health);
   }
 
   /**
-   * The 2D layers over the level: status bar, crosshair, center message, level card,
-   * the screen tints, the death overlay and the scoreboard.
+   * The 2D layers over the level: status bar, crosshair, center message, level card, the screen
+   * tints, the death overlay and the scoreboard.
    */
   private updateOverlays(dt: number, alpha: number): void {
-    const { inventory } = this.host.local;
+    const { inventory } = this.host.viewed;
     const { hud, crosshair, replayBar, screenEffects, intermission, scoreboard } = this.host.overlays;
     hud.update(inventory, this.host.level.stats(), this.host.recording);
     crosshair.update(inventory.health);
@@ -205,22 +207,21 @@ export class Presenter {
    */
   private replayAimNdc(alpha: number): Pos2 | null {
     const aim = this.host.playback?.aimAt(alpha);
-    if (!aim || this.host.local.dead) return null;
+    if (!aim || this.host.viewed.dead) return null;
     const projected = AIM_SCRATCH.set(aim.x, aim.z, -aim.y).project(this.host.view.camera.camera);
     return { x: projected.x, y: projected.y };
   }
 
   /**
-   * The colour cast the whole view draws under, or null for none: the colormap
-   * of the 242 control sector the player is standing in, chosen by eye height
-   * against that sector's floor and ceiling as `R_SetupFrame` does — except
-   * that the underwater (bottom) colormap is deliberately not applied here.
-   * docs/specials-transfers.md § Deep water.
+   * The colour cast the whole view draws under, or null for none: the colormap of the 242 control
+   * sector the player is standing in, chosen by eye height against that sector's floor and ceiling
+   * as `R_SetupFrame` does — except that the underwater (bottom) colormap is deliberately not
+   * applied here. docs/specials-transfers.md § Deep water.
    */
   private viewColormap(): ColorTint | null {
     const { colormapTints, transfers, world } = this.host.level;
     if (colormapTints.size === 0) return null;
-    const { player } = this.host.local;
+    const { player } = this.host.viewed;
     const control = transfers.heightSec(world.sectorIndexAt(player.x, player.y));
     const tints = control < 0 ? undefined : colormapTints.get(control);
     if (!tints) return null;
@@ -254,7 +255,7 @@ export class Presenter {
    * the scrollers, the texture animators and the void floor's drift. See render/occlusion.ts.
    */
   private updatePresentation(dt: number, camera: TopDownCamera): void {
-    const { level, local, profiler } = this.host;
+    const { level, viewed, profiler } = this.host;
     profiler.time('Fading', () => {
       // Door/lift geometry lives in its own meshes (game/specials.ts) and so
       // carries its own faders; the pass runs them alongside the static batches
@@ -266,7 +267,7 @@ export class Presenter {
           camX: camera.eyeX,
           camY: camera.eyeY,
           camZ: camera.eyeHeight,
-          targets: collectFadeTargets(local.player, this.fadeBodies()),
+          targets: collectFadeTargets(viewed.player, this.fadeBodies()),
           openingInto: this.openingInto,
         },
         level.fogOfWar,
@@ -289,12 +290,14 @@ export class Presenter {
     });
   }
 
-  /** What walls fade for besides the local player: the awake monsters and every other living slot. */
+  /**
+   * What walls fade for besides the drawn player: the awake monsters and every other living slot.
+   */
   private fadeBodies(): StandingBody[] {
-    const { level, slots, local } = this.host;
+    const { level, slots, viewed } = this.host;
     const bodies = level.things.awakeMonsters();
     for (const slot of slots) {
-      if (slot === local || slot.dead) continue;
+      if (slot === viewed || slot.dead) continue;
       const { x, y, z } = slot.player;
       bodies.push({ x, y, z, height: PLAYER_HEIGHT });
     }
@@ -366,9 +369,9 @@ export class Presenter {
    * @param fps  null where the counter beside it is switched off
    */
   private debugLines(fps: number | null): string[] {
-    const { view, local, level, audio, title } = this.host;
+    const { view, viewed, level, audio, title } = this.host;
     const { camera } = view;
-    const { player } = local;
+    const { player } = viewed;
     const sector = level.world.sectorIndexAt(player.x, player.y);
     const channels = audio.channelUsage;
     const cameraDeg = ((Math.round(camera.yawDeg) % 360) + 360) % 360;
@@ -390,8 +393,8 @@ export class Presenter {
    * force is what there is to say (docs/replays.md § Playback).
    */
   private cameraReadout(): string {
-    const { playback, local } = this.host;
+    const { playback, viewed } = this.host;
     if (playback) return `replay camera: ${playback.cameraView}`;
-    return getCameraMode() === 'auto' ? local.autoCamera.readout() : 'manual';
+    return getCameraMode() === 'auto' ? viewed.autoCamera.readout() : 'manual';
   }
 }

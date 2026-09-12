@@ -28,7 +28,8 @@ src/ui/hud/           everything drawn over the running level (docs/hud.md's own
     levelcard.*       #level-card
     intermission.*    #intermission, and the .scoreboard above its panel
     deathoverlay.*    #death-overlay
-    replaybar.*       #replay-bar (track, #replay-scrub, #replay-hover, #replay-crosshair),
+    replaybar.*       #replay-bar (track, #replay-scrub, #replay-hover, #replay-crosshair,
+                      #replay-camera-picker),
                       #replay-reticle, #replay-seek, #replay-flash
     scoreboard.*      #scoreboard, and .scoreboard — the board's look, which #intermission's
                       own wears too

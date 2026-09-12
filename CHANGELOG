@@ -1,5 +1,8 @@
 v0.19.1 (2026-09-12)
 
+Replays break, but I am quiet confident everything is in it's right place now.
+Next: Deathmatch
+
 Features and improvements
   - multiplayer: hold TAB for the scoreboard, which lists every player's
     kills and ping. Intermission also shows it above the level's stats.

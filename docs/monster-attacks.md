@@ -191,24 +191,19 @@ velocity). A dead or missing target (`!dest || dest->health<=0`) leaves the miss
 heading — it doesn't stop, retarget or fall. Because its path isn't the fixed ray every other
 projectile uses, `Projectile.homing` carries its own live `x`/`y`/`z`/`headingRad`.
 
-**A homing missile has no flight-distance budget**, unlike every straight projectile here. A
-straight shot's whole flight lies on the ray `shotPath` traced at launch, so `maxDist` is a correct
-stopping point known up front. A curving one leaves that ray almost immediately — looping back
-toward a target that sidestepped, which *is* the mechanic — so the wall the launch ray found says
-nothing about where it ends up; spending its distance against that budget detonated it mid-air,
-typically mid-turn on the way back around. Vanilla puts no lifetime or range limit on a missile
-either (`P_TryMove` tests each move against the lines it actually crosses), so
-`advanceHoming` checks each frame's step against the geometry that step really crossed
-(`world.ts: projectileStepBlocker`, the per-step counterpart to `shotPath`'s launch-time trace,
-reusing the identical `blocksShot` predicate at the height the step is at) and stops there, updating
-`Projectile.lineIndex` so a shoot-triggered special still fires on the right line. No safety cap
-stands behind that: every real map is enclosed, and capping it would reintroduce the mid-air
-detonation this removes.
+**A homing missile has no flight-distance budget.** It leaves its launch ray almost immediately —
+looping back toward a target that sidestepped, which *is* the mechanic — so `advanceHoming` checks
+each tic's curving step against the geometry that step really crossed
+(`world.ts: projectileStepBlocker`, the same per-step test a straight missile takes,
+docs/combat.md § Where an impact sits) and stops there, updating `Projectile.lineIndex` so a
+shoot-triggered special still fires on the right line. Vanilla puts no lifetime or range limit on a
+missile either (`P_TryMove` tests each move against the lines it actually crosses). No safety cap
+stands behind that: every real map is enclosed, and a cap would detonate the missile in mid-air.
 
 `P_ZMovement`'s floor/ceiling hit is **not** decided here — it is `ProjectileLayer.update`'s
 `hitGround`, applied uniformly to every monster missile (see below). A homing one needs it most: its
 height *eases* toward a target that can sit on a very different floor while its `x`/`y` curves over
-terrain `shotPath` never re-checked, so easing toward a lower target while passing over higher
+terrain its launch slope never saw, so easing toward a lower target while passing over higher
 ground would sink the sprite into that floor. It used to be decided twice, once here and once there,
 and the copies disagreed on whether the far wall's shoot special still fires — it must not, since a
 missile stopped by the floor never reached that wall. Since this branch never accumulates `traveled`
@@ -251,9 +246,8 @@ collide too loosely" was: fireballs detonating a body-width away and reading as 
 **The target sets the missile's slope and nothing else; the flight ends at a wall.**
 `P_SpawnMissile` fixes `momx`/`momy`/`momz` at launch — from `(dest->z - source->z)` over the launch
 distance — and the thing then flies on under its own momentum until `P_XYMovement`, `P_ZMovement` or
-`PIT_CheckThing` stops it. So `spawnMonsterShot` passes the target to `shotPath` for the slope and
-`World.mapSpan` for the distance — the two are separate parameters precisely so this can be said
-(see docs/combat.md § shotPath).
+`PIT_CheckThing` stops it. So `spawnMonsterShot` takes only the slope from the target
+(`World.aimSlope`) and flies `World.mapSpan` (docs/combat.md § Range).
 
 **Both ends of that slope are feet, and the launch sits `MISSILE_HEIGHT_OFFSET` above the
 shooter's** — so the flight runs *parallel* to the feet-to-feet line and passes the target that
@@ -270,8 +264,8 @@ homing, and as rockets going off in empty floor space, which is precisely what i
 the revenant's `MT_TRACER` actually homes (`AttackStats.projectile.homing`, `advanceHoming`).
 
 **The player's own missiles follow the same rule now**, for the same reason and out of the same
-`P_SpawnMissile` reading: `spawnPlayerShot` sets `maxDist` from `shotPath`'s wall, never from the
-locked-on target's distance. Ending a rocket or a BFG ball at where a monster stood at launch is
+`P_SpawnMissile` reading: `spawnPlayerShot` takes only the slope from the locked-on target
+(`World.aimSlope`), never its distance. Ending a rocket or a BFG ball at where a monster stood at launch is
 what had them bursting in empty air a body-length short of a monster that had walked on.
 
 Because the slope now outlives the aim that set it, a monster missile also explodes on meeting the
@@ -287,7 +281,7 @@ deflects only the heading, since `A_FatAttack1/2/3` rewrite `momx`/`momy` from t
 
 **Both live arrival tests are gated on `hasLineOfSight`, and that gate is load-bearing.** Contact
 still reaches tens of units past the missile's own centre, and a projectile's flight *ends* at
-whatever wall `shotPath` found — so on the last frames before it bursts, anyone within contact range
+whatever wall its step met — so on the last frames before it bursts, anyone within contact range
 on the **far** side of that wall took a full direct hit through it. The trace runs **from the
 player/monster toward the projectile**, not the other way round: by then the impact point sits
 essentially *on* the wall, and `hasLineOfSight`'s own `SELF_HIT_MARGIN` would discard that crossing

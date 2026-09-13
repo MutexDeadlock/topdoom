@@ -29,6 +29,7 @@ const CYBER_HALF = MONSTER_STATS[ThingType.cyberdemon].height / 2;
 const EAST = 0;
 
 interface Scene {
+  world: World;
   origin: Pos3;
   /** The aim point `game.ts` builds: the body's centre. */
   target: Pos3;
@@ -52,6 +53,7 @@ function scene(half: number, art = '.=..'): Scene {
   const origin: Pos3 = { x: from.x, y: from.y, z: AIM_HEIGHT_OFFSET };
   const target: Pos3 = { x: at.x, y: at.y, z: half };
   return {
+    world,
     origin,
     target,
     toStep: grid.cell / 2,
@@ -77,7 +79,7 @@ describe('Regressions · a locked-on shot fires the slope the wedge cleared', ()
     const path = fire();
 
     assert.equal(path.lineIndex, null, 'nothing stopped it short of the target');
-    assert.equal(path.dist, toTarget, 'it stops at the target, as a locked shot does');
+    assert.equal(path.dist, toTarget, 'given no range, it stops at the target');
     assert.ok(heightAt(origin, path, toStep) >= STEP, 'the fired slope clears the step it was cleared over');
     assert.ok(path.z > target.z, 'aimed at the half of the body the step leaves visible');
     assert.ok(path.z <= target.z + CYBER_HALF, 'and not over its head');
@@ -110,5 +112,20 @@ describe('Regressions · a locked-on shot fires the slope the wedge cleared', ()
     // is free to scatter back into the step the aim itself had to clear.
     const dropped = fire().z - jitter * toTarget;
     assert.ok(Math.abs(fire(-jitter).z - dropped) < 1e-9, 'the offset applies after the clamp');
+  });
+
+  test('a missile on the same lock aims on the slope the shot fires', () => {
+    // `aimSlope` is pass one alone, traced no further than the target: narrowed by the step,
+    // collapsed on it and open, it is the slope `shotPath` fires, jitter included.
+    const jitter = 0.02;
+    for (const [half, art] of [
+      [CYBER_HALF, '.=..'],
+      [IMP_HALF, '.=..'],
+      [CYBER_HALF, '....'],
+    ] as const) {
+      const { world, origin, target, fire } = scene(half, art);
+      const aimed = world.aimSlope(origin, EAST, target, { halfHeight: half, slopeOffset: jitter });
+      assert.equal(aimed, fire(jitter).slope, `half ${half} over '${art}'`);
+    }
   });
 });

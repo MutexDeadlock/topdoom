@@ -1,12 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  playerShotRange,
-  PLAYER_WEAPON_RANGE,
-  WEAPON_RANGE,
-} from '../../src/game/world.ts';
+import { PLAYER_WEAPON_RANGE, WEAPON_RANGE } from '../../src/game/world.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 import { loadCorridor } from '../fixtures/corridor.ts';
-import type { Pos3 } from '../../src/types.ts';
+import { shotRig } from '../fixtures/shotrig.ts';
 
 /**
  * A player's free hitscan used to be bounded by vanilla's 2048 `MISSILERANGE`,
@@ -37,23 +35,18 @@ describe('Regressions · player hitscan range', () => {
     assert.ok(world.hasLineOfSight(player, monster), 'nothing stands between them');
   });
 
-  test('playerShotRange bounds a free bullet, a free missile and a locked-on shot differently', () => {
-    const mapSpan = 12345;
-    const target: Pos3 = { x: 0, y: 100, z: 0 };
+  test('a fired player bullet hits the chaingunner, locked on or not', () => {
+    const { world, player, monster } = loadCorridor();
+    const { radius, height } = MONSTER_STATS[ThingType.heavyWeaponDude];
+    const chaingunner = { id: 1, type: ThingType.heavyWeaponDude, ...monster, height, angle: 0, radius };
+    const { damaged, fire } = shotRig(world, player, [chaingunner]);
+    const toward = Math.atan2(monster.y - player.y, monster.x - player.x);
 
-    // Free: no auto-aim lock, so each kind needs its own bound.
-    assert.equal(playerShotRange('hitscan', null, mapSpan), PLAYER_WEAPON_RANGE);
-    assert.equal(playerShotRange('projectile', null, mapSpan), mapSpan);
-
-    // Locked on, and the two kinds part company. A bullet is instant, so it ends at the target
-    // (`undefined` lets shotPath stop there). A *missile* keeps the whole map either way:
-    // `P_SpawnMissile` hands it momentum and nothing else, so bounding it at the launch-time
-    // distance to the target made it burst in mid-air wherever that target had been standing.
-    assert.equal(playerShotRange('hitscan', target, mapSpan), undefined);
-    assert.equal(playerShotRange('projectile', target, mapSpan), mapSpan);
-
-    // The regression itself: a free player bullet must not fall back to the
-    // monster bound, which is what shotPath uses when no range is passed.
-    assert.ok(PLAYER_WEAPON_RANGE > WEAPON_RANGE);
+    // The regression itself, through `spawnPlayerShot`: a player bullet must not fall back to the
+    // monster bound, which is what shotPath uses when no range is passed — and a lock gives it a
+    // slope, never a range.
+    fire(toward, null);
+    fire(toward, chaingunner);
+    assert.deepEqual(damaged, [1, 1]);
   });
 });

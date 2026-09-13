@@ -213,7 +213,7 @@ states: **switching away**, and **`A_CheckReload` 14 tics in** finding fewer tha
 which is why a shot fired with the last shells reloads silently. Pinned by
 `tests/game/weapons.test.ts` § Game rules · super shotgun reload sounds.
 
-A missile's impact plays its `deathsound`, wherever `shotPath` says the flight ended. Two
+A missile's impact plays its `deathsound`, wherever the flight ended. Two
 oddities in that table are vanilla's and are kept: every fireball bursts with `firxpl` while
 the rocket and the revenant's tracer use the **barrel** explosion, and the BFG ball's
 `rxplod` is a sound nothing else in the game reaches.

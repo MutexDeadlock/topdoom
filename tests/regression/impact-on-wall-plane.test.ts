@@ -15,19 +15,18 @@ import type { MonsterAttackEvent } from '../../src/game/monsters/defs.ts';
 import { targetOfSlot } from '../../src/game/things/defs.ts';
 
 /**
- * `shotPath` ends a missile *on* the wall plane, and a one-shot effect spawned there resolves its
- * subsector by which side of the BSP splitter the point falls on — the far one, for half the walls
- * on a map. Fog of war then skips the explosion outright, so a rocket, plasma bolt or BFG ball
- * fired at that wall detonated invisibly (DOOM2 MAP01, the start room's north wall: every impact
- * along it lands in subsector 184, behind the wall, which the player has never seen). The flight
- * ends a radius short of the plane instead, which is where vanilla's `P_XYMovement` stops one: its
- * `P_TryMove` is atomic and `PIT_CheckLine` refuses the line as soon as the radius-inflated
- * `tmbbox` crosses it. See docs/combat.md § Where an impact sits.
+ * A missile's flight used to end *on* the wall plane, and a one-shot effect spawned there resolves
+ * its subsector by which side of the BSP splitter the point falls on — the far one, for half the
+ * walls on a map. Fog of war then skips the explosion outright, so a rocket, plasma bolt or BFG
+ * ball fired at that wall detonated invisibly (DOOM2 MAP01, the start room's north wall: every
+ * impact along it lands in subsector 184, behind the wall, which the player has never seen). The
+ * flight ends a radius short of the plane instead, which is where vanilla's `P_XYMovement` stops
+ * one: its `P_TryMove` is atomic and `PIT_CheckLine` refuses the line as soon as the
+ * radius-inflated `tmbbox` crosses it. See docs/combat.md § Where an impact sits.
  *
- * Both flights have to do it, and they resolve their wall in different places: a straight shot gets
- * the standoff at launch (`missileFlight`), a revenant's tracer when `projectileStepBlocker`
- * reports the plane mid-flight (`advanceHoming`). Only the straight one was covered when the
- * standoff moved out of a shared post-hoc correction, and the homing one silently went back to
+ * Both flights have to do it, and they meet their wall in different places: a straight shot in
+ * `stepStraight`, a revenant's tracer in `advanceHoming`. Only the straight one was covered when
+ * the standoff moved out of a shared post-hoc correction, and the homing one silently went back to
  * exploding on the plane. docs/monster-attacks.md § The revenant's homing missile.
  */
 

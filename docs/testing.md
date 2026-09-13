@@ -92,9 +92,9 @@ a note is keyed on and the rendered samples are measured, which is how "a releas
   that properly means extracting the per-mover tick into `(state, dt) → state`, which nothing has
   needed yet.
 - **`ProjectileLayer` / `SpriteFxLayer`** — every `spawn*` short-circuits on
-  `SpriteAnimator.resolve`, so a stubbed run would test the stubs. Test at `shotPath` level instead;
-  `playerShotRange` exists as a separate exported function precisely so the range selection is
-  reachable without the layer.
+  `SpriteAnimator.resolve`, so a stubbed run would test the stubs. Test at `shotPath`/`aimSlope`
+  level, or through `tests/fixtures/shotrig.ts` (§ Shared helpers), whose stub bank resolves the
+  sprites it fires.
 - **`src/render/` (anything that needs a GL context), `src/ui/`, `main.ts`, `game.ts`,
   `audio/audio.ts`, `audio/music.ts`** — need a DOM or a renderer. Three carve-outs: `render/bsp.ts`
   *is* covered, being pure geometry despite where it lives; so is any pure helper a DOM module
@@ -271,6 +271,14 @@ restored to 0. It returns `grid`, `world` and `layer`.
 `tests/fixtures/tics.ts` runs it: `stepFor(seconds, step, done?)` calls `step` once per whole tic
 (`ticsIn(seconds)`, rounded) and stops early once `done` holds, returning the seconds run. Every
 "run the simulation for N seconds" loop goes through it rather than rounding its own.
+
+`tests/fixtures/shotrig.ts`'s `shotRig(level, at, bodies)` — `level` a `gridMap` or a loaded
+map's `World` — fires a player's hitscan (`fire`) or
+missile (`launch`, then `fly` a tic at a time until `inFlight()` is 0) at hand-placed `MonsterRef`s
+with no thing layer — the bodies answer for `ThingLayer.raycastMonster` through the same
+`traceHitsBox` diagonal, with no vertical test — and records every hit with its amount and origin,
+blood splash, tracer end and explosion. `impBody(id, at)` is an imp's `MonsterRef`, `rocket(splash?)`
+a rocket fired east, and `SHOT_ROOM` the open room a pellet test fires across.
 
 `tests/fixtures/snapshot.ts` reads a `ThingsSnapshot`, which carries only what the run changed
 (docs/savegames.md § The format and its version): `savedThing(things, id)` is undefined where the

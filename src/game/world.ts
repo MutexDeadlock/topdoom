@@ -1,7 +1,8 @@
 /**
- * `World`: the loaded map's shared spatial queries — subsector/sector lookup, floor heights,
- * collision (`positionBlocked`, `slideMove`), line of sight, vertical openings and shot tracing
- * (`shotPath`). Every layer reads the level through this. See docs/world.md and docs/movement.md.
+ * {@link World}: the loaded map's shared spatial queries — subsector/sector lookup, floor heights,
+ * collision ({@link World.positionBlocked}, {@link World.slideMove}), line of sight, vertical
+ * openings and shot tracing ({@link World.shotPath}). Every layer reads the level through this.
+ * See docs/world.md and docs/movement.md.
  */
 import { LF, NO_SIDE, SKY_FLAT, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { buildSubSectorPolys } from '../render/bsp.ts';
@@ -18,9 +19,9 @@ import { cos, sin } from '../util/fdlibm.ts';
 export const MAX_STEP_UP = 24;
 
 /**
- * A feet height that vacates both of `checkPosition`'s z-relative gates, so
- * only the line's own geometry is tested — vanilla's pre-`floatok` subset of
- * `P_TryMove`. `monsters/ai.ts: testStep` is the only caller that wants it.
+ * A feet height that vacates both of {@link World.checkPosition}'s z-relative gates, so only the
+ * line's own geometry is tested — vanilla's pre-`floatok` subset of `P_TryMove`.
+ * `monsters/ai.ts: testStep` is the only caller that wants it.
  */
 export const ANY_HEIGHT = Infinity;
 
@@ -29,7 +30,7 @@ export const ANY_HEIGHT = Infinity;
  * Two walls meeting at a shared vertex otherwise let a ray aimed right at that point pass outside
  * the end of both and hit neither — one constant for every trace that has the problem: shots and
  * projectiles here, sight blockers in `game/fogofwar.ts`. The extended endpoints themselves are
- * precomputed in `lineOverlapEnds`.
+ * precomputed in {@link World.lineOverlapEnds}.
  */
 const WALL_OVERLAP = 0.25;
 
@@ -39,9 +40,10 @@ export interface Opening {
 }
 
 /**
- * One body's cached `sectorsTouching` result — see `World.sectorsTouchingCached`.
- * `x`/`y`/`radius` are the query the list was computed for; NaN (the
- * `makeTouchCache` seed) matches nothing, so the first call always fills it.
+ * One body's cached {@link World.sectorsTouching} result — see {@link World.sectorsTouchingCached}.
+ * {@link SectorTouchCache.x}/{@link SectorTouchCache.y}/{@link SectorTouchCache.radius} are the
+ * query the list was computed for; NaN (the {@link makeTouchCache} seed) matches nothing, so the
+ * first call always fills it.
  */
 export interface SectorTouchCache {
   x: number;
@@ -54,7 +56,7 @@ export function makeTouchCache(): SectorTouchCache {
   return { x: NaN, y: NaN, radius: NaN, sectors: [] };
 }
 
-/** One body's captured neighborhood heights — see `World.captureHeights`. */
+/** One body's captured neighborhood heights — see {@link World.captureHeights}. */
 export interface HeightsStamp {
   sectors: number[];
   /** floorHeight, ceilHeight per stamped sector, interleaved. */
@@ -62,12 +64,12 @@ export interface HeightsStamp {
 }
 
 /**
- * One body's pinned-body memo: a proven "this exact position under this exact
- * push goes nowhere" outcome, valid until any stamped nearby sector height
- * changes (`World.capturePin`/`pinMatches`). `velX`/`velY` are whatever push
- * the caller proved the outcome under — a knockback velocity, a tic's summed
- * impulse. Allocated once per body and refilled in place, never per capture;
- * `active` gates whether the rest means anything.
+ * One body's pinned-body memo: a proven "this exact position under this exact push goes nowhere"
+ * outcome, valid until any stamped nearby sector height changes
+ * ({@link World.capturePin}/{@link World.pinMatches}).
+ * {@link PinnedMemo.velX}/{@link PinnedMemo.velY} are whatever push the caller proved the outcome
+ * under — a knockback velocity, a tic's summed impulse. Allocated once per body and refilled in
+ * place, never per capture; {@link PinnedMemo.active} gates whether the rest means anything.
  * docs/movement.md § Pinned-body memo.
  */
 export interface PinnedMemo {
@@ -85,17 +87,16 @@ export function makePinnedMemo(): PinnedMemo {
 }
 
 /**
- * A body (monster or player) that other bodies physically bump into —
- * vanilla's `MF_SOLID` things, tested by `PIT_CheckThing`. Callers pass the
- * set of *other* bodies; nothing here filters out the mover itself.
+ * A body (monster or player) that other bodies physically bump into — vanilla's `MF_SOLID` things,
+ * tested by `PIT_CheckThing`. Callers pass the set of *other* bodies; nothing here filters out the
+ * mover itself.
  *
- * `z`/`height` are the body's own vertical extent, read only while infinite-tall
- * actors is off (`getInfiniteTallActors`) — vanilla compares neither.
+ * {@link ThingBlocker.z}/{@link ThingBlocker.height} are the body's own vertical extent, read only
+ * while infinite-tall actors is off ({@link getInfiniteTallActors}) — vanilla compares neither.
  *
- * Every literal of this shape — `blockersFor`'s pool, `solidBodies`,
- * `things.ts`'s hand-built player blocker, the fixtures — writes these five
- * keys **in this order**: the two loops below are hot enough that one site
- * spelled differently would make them polymorphic.
+ * Every literal of this shape — `blockersFor`'s pool, `solidBodies`, `things.ts`'s hand-built
+ * player blocker, the fixtures — writes these five keys **in this order**: the two loops below are
+ * hot enough that one site spelled differently would make them polymorphic.
  */
 export interface ThingBlocker extends Pos3 {
   radius: number;
@@ -108,42 +109,44 @@ export interface ThingBlocker extends Pos3 {
  * positions for one body, so the positions stay scalar and the body is built once and reused
  * (docs/conventions.md § Named arguments).
  *
- * **Every field is required, and every one is built by `makeCollider`** — never as a literal at a
- * call site. `checkPosition` reads them in the engine's hottest loop, so all of them have to reach
- * it as one hidden class; feeding that loop two object shapes measured ~10% slower on the monster
- * path. docs/world.md § The collider.
+ * **Every field is required, and every one is built by {@link makeCollider}** — never as a literal
+ * at a call site. {@link World.checkPosition} reads them in the engine's hottest loop, so all of
+ * them have to reach it as one hidden class; feeding that loop two object shapes measured ~10%
+ * slower on the monster path. docs/world.md § The collider.
  */
 export interface Collider {
   radius: number;
   /**
-   * Feet height. `ANY_HEIGHT` vacates both z-relative gates, leaving the line's own geometry —
-   * `monsters/ai.ts: testStep` is the only caller that wants that.
+   * Feet height. {@link ANY_HEIGHT} vacates both z-relative gates, leaving the line's own geometry
+   * — `monsters/ai.ts: testStep` is the only caller that wants that.
    */
   z: number;
   /**
-   * The body's own height, which reaches `blockedByThings` alone: the opening gates measure
-   * against `PLAYER_HEIGHT` whoever is asking (`openingRefuses`), and a monster's real height is
-   * applied separately by `monsters/ai.ts: testStep`. Unread once `z` is `ANY_HEIGHT`.
+   * The body's own height, which reaches {@link blockedByThings} alone: the opening gates measure
+   * against {@link PLAYER_HEIGHT} whoever is asking ({@link openingRefuses}), and a monster's real
+   * height is applied separately by `monsters/ai.ts: testStep`. Unread once {@link Collider.z} is
+   * {@link ANY_HEIGHT}.
    */
   height: number;
   /**
-   * See `World.isSolidWall`. `PositionCheck.dropoffZ` deliberately ignores it: a `BLOCK_MONSTERS`
-   * line fences a monster's *movement*, but its far side is still real floor.
+   * See {@link World.isSolidWall}. {@link PositionCheck.dropoffZ} deliberately ignores it: a
+   * {@link LF.BLOCK_MONSTERS} line fences a monster's *movement*, but its far side is still real
+   * floor.
    */
   forMonster: boolean;
   /** The other solid bodies in the way; undefined means only geometry blocks. */
   blockers: readonly ThingBlocker[] | undefined;
   /**
    * Where the mover currently stands, so a body already overlapping a blocker can still work free
-   * of it — see `blockedByThings`.
+   * of it — see {@link blockedByThings}.
    */
   from: Pos2 | undefined;
 }
 
 /**
- * The one place a `Collider` is built, so every one of them has the same shape — see there. A
- * caller that probes repeatedly keeps the record and rewrites the fields that move (`Chase`'s in
- * `monsters/ai.ts`, `standingCollider` here) rather than making a fresh one per probe.
+ * The one place a {@link Collider} is built, so every one of them has the same shape — see there.
+ * A caller that probes repeatedly keeps the record and rewrites the fields that move (`Chase`'s in
+ * `monsters/ai.ts`, {@link standingCollider} here) rather than making a fresh one per probe.
  */
 export function makeCollider(body: {
   radius: number;
@@ -164,12 +167,11 @@ export function makeCollider(body: {
 }
 
 /**
- * Everything one `P_CheckPosition` pass reports about a candidate position: is
- * it refused, and the three heights `PIT_CheckLine` accumulates on the way —
- * `tmfloorz`, `tmceilingz`, `tmdropoffz`.
+ * Everything one `P_CheckPosition` pass reports about a candidate position: is it refused, and the
+ * three heights `PIT_CheckLine` accumulates on the way — `tmfloorz`, `tmceilingz`, `tmdropoffz`.
  *
- * Reused in place rather than returned fresh (see `checkPosition`), so read the
- * fields before the next call.
+ * Reused in place rather than returned fresh (see {@link World.checkPosition}), so read the fields
+ * before the next call.
  */
 export interface PositionCheck {
   blocked: boolean;
@@ -177,10 +179,10 @@ export interface PositionCheck {
   ceilingZ: number;
   dropoffZ: number;
   /**
-   * The floor under (x, y) alone, before the box walk raises `floorZ` — i.e.
-   * `floorAt(x, y)`, off the descent this walk already made. Kept so a caller
-   * comparing centre floors (`dropoffRefuses` below) needn't re-descend
-   * the BSP at a point this call just resolved.
+   * The floor under (x, y) alone, before the box walk raises {@link PositionCheck.floorZ} — i.e.
+   * `floorAt(x, y)`, off the descent this walk already made. Kept so a caller comparing centre
+   * floors ({@link dropoffRefuses} below) needn't re-descend the BSP at a point this call just
+   * resolved.
    */
   centreFloorZ: number;
   /**
@@ -192,24 +194,23 @@ export interface PositionCheck {
 }
 
 /**
- * A zeroed `PositionCheck` for a caller keeping its own scratch record. Built in one place so
- * every such record shares one hidden class and a new field reaches all of them —
- * docs/conventions.md § Named arguments, the same reason `makeCollider` exists.
+ * A zeroed {@link PositionCheck} for a caller keeping its own scratch record. Built in one place
+ * so every such record shares one hidden class and a new field reaches all of them —
+ * docs/conventions.md § Named arguments, the same reason {@link makeCollider} exists.
  */
 export function makePositionCheck(): PositionCheck {
   return { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0, subsector: -1 };
 }
 
 /**
- * The highest solid body a mover of `radius` at (x, y) with its feet at `z` is
- * standing on — `-Infinity` when none is, which is what a caller `Math.max`es
- * against the sector's own `groundFloor`. Always `-Infinity` while infinite-tall
- * actors is on, where a body is a wall rather than a surface.
+ * The highest solid body a mover of `radius` at (x, y) with its feet at `z` is standing on —
+ * `-Infinity` when none is, which is what a caller `Math.max`es against the sector's own
+ * {@link World.groundFloor}. Always `-Infinity` while infinite-tall actors is on, where a body is a
+ * wall rather than a surface.
  *
- * Only a body already below the mover counts (`top <= z`). Vanilla has no
- * equivalent at all, and bodies are ground for the player alone — the rule and
- * why it is shaped this way are docs/movement.md § Vertical physics: stairs,
- * falling, gap-crossing.
+ * Only a body already below the mover counts (`top <= z`). Vanilla has no equivalent at all, and
+ * bodies are ground for the player alone — the rule and why it is shaped this way are
+ * docs/movement.md § Vertical physics: stairs, falling, gap-crossing.
  */
 export function bodyFloor(
   x: number,
@@ -233,9 +234,9 @@ export function bodyFloor(
 
 /**
  * Whether the dropoff rule refuses a step from `standing` to `dest`: no height the destination walk
- * reports may sit more than `MAX_STEP_UP` below the same height where the body stands. Relative
- * rather than vanilla's destination-only test, and carrying a third comparison of its own —
- * docs/monster-ai.md § The dropoff rule for both.
+ * reports may sit more than {@link MAX_STEP_UP} below the same height where the body stands.
+ * Relative rather than vanilla's destination-only test, and carrying a third comparison of its
+ * own — docs/monster-ai.md § The dropoff rule for both.
  *
  * **The one home of this rule.** Every mover vanilla routes through `P_TryMove` shares it: the
  * monster walk step (`monsters/ai.ts: testStep`) and knockback and conveyor momentum
@@ -252,19 +253,19 @@ export function dropoffRefuses(standing: PositionCheck, dest: PositionCheck): bo
 }
 
 /**
- * Cheap necessary condition for `dropoffRefuses`, off the destination walk a caller already has:
- * no comparison there can fire unless the destination sits more than a step under the body's feet,
- * so a step taken away from any ledge never pays for the standing walk. Why it is sufficient:
- * docs/monster-ai.md § The dropoff rule.
+ * Cheap necessary condition for {@link dropoffRefuses}, off the destination walk a caller already
+ * has: no comparison there can fire unless the destination sits more than a step under the body's
+ * feet, so a step taken away from any ledge never pays for the standing walk. Why it is
+ * sufficient: docs/monster-ai.md § The dropoff rule.
  */
 export function mayHitDropoff(z: number, dest: PositionCheck): boolean {
   return z - dest.floorZ > MAX_STEP_UP || z - dest.dropoffZ > MAX_STEP_UP;
 }
 
 /**
- * The lock a player's shot was fired under: the target's own body for the wedge
- * to start from, and this pellet's jitter. Passing one is what puts `shotPath`
- * on its locked-on branch at all. See docs/combat.md § shotPath.
+ * The lock a player's shot was fired under: the target's own body for the wedge to start from, and
+ * this pellet's jitter. Passing one is what puts {@link World.shotPath} and {@link World.aimSlope}
+ * on the slope wedge at all. See docs/combat.md § shotPath.
  */
 export interface ShotLock {
   /** Half the target's real `mobjinfo.height` (`MonsterRef.height`); `target.z` is its centre. */
@@ -286,7 +287,7 @@ export interface ShotPath extends Pos3 {
    * The slope it was actually fired on — `PTR_AimTraverse`'s `aimslope` once the wedge has closed,
    * or the caller's own when there was no lock. Returned rather than left to be recovered as
    * `(z - origin.z) / dist`, which loses it outright on a zero-length path and silently assumes
-   * this `z` came from that slope.
+   * this {@link ShotPath.z} came from that slope.
    */
   slope: number;
   /**
@@ -310,23 +311,6 @@ export const WEAPON_RANGE = 2048;
 export const PLAYER_WEAPON_RANGE = 8192;
 
 /**
- * How far one of the *player's* shots flies. **A missile always crosses the whole map**, locked on
- * or not: `P_SpawnMissile` gives it momentum and nothing else, and it flies until a wall, the floor
- * or a body stops it. A *bullet* is instant, so it ends wherever aim put it: at its locked target
- * (`undefined` lets `shotPath` stop there), and failing that at `PLAYER_WEAPON_RANGE`. Neither kind
- * takes `shotPath`'s `WEAPON_RANGE` default — that is a *monster's* bullet.
- * See docs/combat.md § Range.
- */
-export function playerShotRange(
-  kind: 'hitscan' | 'projectile',
-  target: Pos3 | null,
-  mapSpan: number,
-): number | undefined {
-  if (kind === 'projectile') return mapSpan;
-  return target !== null ? undefined : PLAYER_WEAPON_RANGE;
-}
-
-/**
  * `P_SlideMove`'s `0x800` fudge, as a fraction of the traced move: it stops the
  * mover a thirty-second of a step short of the wall a trace found, so the
  * position it commits to is reliably clear of that wall rather than exactly on
@@ -334,7 +318,7 @@ export function playerShotRange(
  */
 export const SLIDE_FUDGE = 1 / 32;
 
-/** The linedefs bordering `sectorIndex` — see `sectorLineIndexes`. */
+/** The linedefs bordering `sectorIndex` — see {@link sectorLineIndexes}. */
 export function sectorLines(map: DoomMap, sectorIndex: number): readonly number[] {
   let index = sectorLineIndexes.get(map);
   if (!index) {
@@ -344,12 +328,12 @@ export function sectorLines(map: DoomMap, sectorIndex: number): readonly number[
   return index[sectorIndex] ?? NO_LINES;
 }
 
-/** The sectors carrying `tag`, ascending — `P_FindSectorFromLineTag`. See `tagIndexes`. */
+/** The sectors carrying `tag`, ascending — `P_FindSectorFromLineTag`. See {@link tagIndexes}. */
 export function sectorsByTag(map: DoomMap, tag: number): readonly number[] {
   return tagIndex(map).sectors.get(tag) ?? NO_MATCHES;
 }
 
-/** The linedefs carrying `tag`, ascending — `P_FindLineFromLineTag`. See `tagIndexes`. */
+/** The linedefs carrying `tag`, ascending — `P_FindLineFromLineTag`. See {@link tagIndexes}. */
 export function linesByTag(map: DoomMap, tag: number): readonly number[] {
   return tagIndex(map).lines.get(tag) ?? NO_MATCHES;
 }
@@ -357,9 +341,9 @@ export function linesByTag(map: DoomMap, tag: number): readonly number[] {
 /**
  * Every two-sided line's *other-side* sector index, in `map.linedefs` order — which is the order
  * vanilla's own `P_GroupLines` would enumerate a sector's bordering lines in. Plain adjacency, so
- * a **self-referencing** line yields its own sector; `nextSectorIndices` is the `getNextSector`
- * form that does not. Used wherever a special's vanilla source walks `sec->lines[i]` directly.
- * docs/world.md § Self-referencing lines.
+ * a **self-referencing** line yields its own sector; {@link nextSectorIndices} is the
+ * `getNextSector` form that does not. Used wherever a special's vanilla source walks
+ * `sec->lines[i]` directly. docs/world.md § Self-referencing lines.
  */
 export function neighborSectorIndices(map: DoomMap, sectorIndex: number): number[] {
   const out: number[] = [];
@@ -405,7 +389,11 @@ export function setInfiniteTallActors(enabled: boolean): void {
   writeStorage(INFINITE_TALL_STORAGE_KEY, enabled);
 }
 
-/** A replay's pin on the setting, without touching the stored one; `null` puts that back. */
+/**
+ * A replay's pin on the setting, without touching the stored one.
+ *
+ * @param enabled  `null` puts the stored one back
+ */
 export function overrideInfiniteTallActors(enabled: boolean | null): void {
   infiniteTallActors = enabled ?? readStorage(INFINITE_TALL_STORAGE_KEY, false);
 }
@@ -413,9 +401,9 @@ export function overrideInfiniteTallActors(enabled: boolean | null): void {
 const GRID_CELL = 128;
 
 /**
- * Vanilla's `slopetype_t` (`p_local.h`), assigned per linedef by
- * `P_LoadLineDefs` (`p_setup.c`) and read only by `boxOnLineSide`, which picks
- * which pair of box corners to test from it.
+ * Vanilla's `slopetype_t` (`p_local.h`), assigned per linedef by `P_LoadLineDefs` (`p_setup.c`)
+ * and read only by {@link World.boxOnLineSide}, which picks which pair of box corners to test from
+ * it.
  */
 const ST_HORIZONTAL = 0;
 const ST_VERTICAL = 1;
@@ -424,8 +412,8 @@ const ST_POSITIVE = 2;
 const ST_NEGATIVE = 3;
 
 /**
- * Vanilla's `BOXTOP`…`BOXRIGHT` (`p_local.h`), the order `World.lineBox` packs each linedef's
- * bounds in.
+ * Vanilla's `BOXTOP`…`BOXRIGHT` (`p_local.h`), the order {@link World.lineBox} packs each
+ * linedef's bounds in.
  */
 const BOX_TOP = 0;
 const BOX_BOTTOM = 1;
@@ -440,10 +428,9 @@ const BOX_RIGHT = 3;
 const PIN_STAMP_SLOP = 4;
 
 /**
- * A ray whose origin sits essentially *on* a wall (a rocket exploding against
- * one) would otherwise register a self-intersection with it at t≈0 and report
- * every direction blocked. Crossings closer than this to the ray's start are
- * skipped — the near-end counterpart to `WALL_OVERLAP`.
+ * A ray whose origin sits essentially *on* a wall (a rocket exploding against one) would otherwise
+ * register a self-intersection with it at t≈0 and report every direction blocked. Crossings closer
+ * than this to the ray's start are skipped — the near-end counterpart to {@link WALL_OVERLAP}.
  */
 const SELF_HIT_MARGIN = 1;
 
@@ -451,16 +438,16 @@ const SELF_HIT_MARGIN = 1;
 const SIGHT_HEIGHT_SAMPLE_STEP = 64;
 
 /**
- * Cap on floor/ceiling samples per sightline, whatever its length — the step
- * stretches instead of the count growing. 32 keeps full precision within
- * `WEAPON_RANGE` (2048/64 = 32) so nothing that can end in a monster's shot
- * changes; a player's longer shot never consults this function at all.
- * See docs/world.md § hasLineOfSight.
+ * Cap on floor/ceiling samples per sightline, whatever its length — the step stretches instead of
+ * the count growing. 32 keeps full precision within {@link WEAPON_RANGE} (2048/64 = 32) so nothing
+ * that can end in a monster's shot changes; a player's longer shot never consults this function at
+ * all. See docs/world.md § hasLineOfSight.
  */
 const SIGHT_MAX_HEIGHT_SAMPLES = 32;
 
 /**
- * How many walls one `slideMove` projects against before giving up — vanilla's own `hitcount == 3`.
+ * How many walls one {@link World.slideMove} projects against before giving up — vanilla's own
+ * `hitcount == 3`.
  */
 const SLIDE_ATTEMPTS = 3;
 
@@ -471,8 +458,8 @@ const INFINITE_TALL_STORAGE_KEY = 'infiniteTallActors';
 
 /**
  * Vanilla's `P_GroupLines` `sec->lines[]`: every linedef bordering a sector, in ascending linedef
- * order — the order several specials react to. Memoized against the `DoomMap` rather than held on
- * `World`, since the load-time scans and the renderer reach it without one.
+ * order — the order several specials react to. Memoized against the {@link DoomMap} rather than
+ * held on {@link World}, since the load-time scans and the renderer reach it without one.
  * docs/world.md § The sector→lines index.
  */
 const sectorLineIndexes = new WeakMap<DoomMap, number[][]>();
@@ -480,16 +467,15 @@ const sectorLineIndexes = new WeakMap<DoomMap, number[][]>();
 /**
  * Sectors and linedefs grouped by tag — vanilla's `P_FindSectorFromLineTag` and
  * `P_FindLineFromLineTag`, in the ascending index order those scans produce, since "the first
- * match" is behavior. **Tag 0 is deliberately not indexed.** Memoized like `sectorLineIndexes`
- * and safe for the same reason. docs/world.md § The tag indexes.
+ * match" is behavior. **Tag 0 is deliberately not indexed.** Memoized like
+ * {@link sectorLineIndexes} and safe for the same reason. docs/world.md § The tag indexes.
  */
 const tagIndexes = new WeakMap<DoomMap, { sectors: Map<number, number[]>; lines: Map<number, number[]> }>();
 
 /**
- * Whether solid bodies block over their entire vertical extent, vanilla's
- * "infinitely tall actors". Off by default, a deliberate deviation —
- * docs/movement.md § Collision has the rule and its sources. Read by
- * `blockedByThings` and `bodyFloor`, the two functions it changes.
+ * Whether solid bodies block over their entire vertical extent, vanilla's "infinitely tall
+ * actors". Off by default, a deliberate deviation — docs/movement.md § Collision has the rule and
+ * its sources. Read by {@link blockedByThings} and {@link bodyFloor}, the two functions it changes.
  * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
 let infiniteTallActors = readStorage(INFINITE_TALL_STORAGE_KEY, false);
@@ -497,26 +483,25 @@ let infiniteTallActors = readStorage(INFINITE_TALL_STORAGE_KEY, false);
 const positionScratch = makePositionCheck();
 
 /**
- * The candidate lists `checkPosition`, `sectorsTouching` and `captureHeights` each own — see
- * `linesNearInto`.
+ * The candidate lists {@link World.checkPosition}, {@link World.sectorsTouching} and
+ * {@link World.captureHeights} each own — see {@link World.linesNearInto}.
  */
 const checkLines: number[] = [];
 const touchLines: number[] = [];
 const heightLines: number[] = [];
 
 /**
- * `World.standingAt`'s own collider, refilled per call: the walk it wants has no *height* in it,
- * only the feet its caller passed, and it runs per body per frame through
- * `groundFloor`/`groundCeiling`/`headroom`.
+ * {@link World.standingAt}'s own collider, refilled per call: the walk it wants has no *height* in
+ * it, only the feet its caller passed, and it runs per body per frame through
+ * {@link World.groundFloor}/{@link World.groundCeiling}/{@link World.headroom}.
  */
 const standingCollider = makeCollider({ radius: 0, z: ANY_HEIGHT, height: ANY_HEIGHT });
 
 /**
- * Where a slide trace ran into a wall — vanilla's `bestslidefrac`/`bestslideline`,
- * as the smallest fraction along the traced move and the line that produced it.
- * Module-level and overwritten in place rather than returned: `slideMove` runs
- * three traces per attempt per moving body per tic, and this is the one
- * allocation that would show up.
+ * Where a slide trace ran into a wall — vanilla's `bestslidefrac`/`bestslideline`, as the smallest
+ * fraction along the traced move and the line that produced it. Module-level and overwritten in
+ * place rather than returned: {@link World.slideMove} runs three traces per attempt per moving body
+ * per tic, and this is the one allocation that would show up.
  */
 const slideHit = { frac: Infinity, line: -1 };
 
@@ -536,34 +521,32 @@ export class World {
   private gridCols: number;
   private gridRows: number;
   /**
-   * Adjacency list for `noiseAlert`'s flood, precomputed once instead of rescanning every linedef
-   * per visited sector.
+   * Adjacency list for {@link World.noiseAlert}'s flood, precomputed once instead of rescanning
+   * every linedef per visited sector.
    */
   private sectorNeighbors: { neighbor: number; lineIndex: number }[][] = [];
   /**
-   * Sectors a noise has ever reached (`noiseAlert`), each with the slot whose shot it was —
-   * vanilla's `sector->soundtarget`: never cleared, and a later noise through the sector overwrites
-   * it.
+   * Sectors a noise has ever reached ({@link World.noiseAlert}), each with the slot whose shot it
+   * was — vanilla's `sector->soundtarget`: never cleared, and a later noise through the sector
+   * overwrites it.
    */
   private soundTargets = new Map<Sector, number>();
   /**
    * Per-linedef "last query that already visited this line" stamps, so
-   * `forEachLineAlongSegment` can dedupe a line that spans several of the
-   * cells it walks without allocating a `Set` per call. `linesNear` allocates
-   * one every time, which is fine at its call rate but not at a sightline
-   * check's — see `hasLineOfSight`.
+   * {@link World.forEachLineAlongSegment} can dedupe a line that spans several of the cells it
+   * walks without allocating a `Set` per call. {@link World.linesNear} allocates one every time,
+   * which is fine at its call rate but not at a sightline check's — see
+   * {@link World.hasLineOfSight}.
    */
   private lineStamp: Int32Array;
   private queryId = 0;
 
   /**
-   * The per-linedef geometry vanilla precomputes in `P_LoadLineDefs` and its
-   * collision reads on every probe: each line's own bounding box (packed four
-   * to a line in `BOX_*` order), its `dx`/`dy`, its first vertex, and its
-   * `slopetype`. Parallel typed arrays indexed by linedef index, the same
-   * discipline `lineStamp` uses — this is read once per candidate line per
-   * movement probe, which is the hottest query in the engine.
-   * See docs/movement.md § Collision.
+   * The per-linedef geometry vanilla precomputes in `P_LoadLineDefs` and its collision reads on
+   * every probe: each line's own bounding box (packed four to a line in `BOX_*` order), its
+   * `dx`/`dy`, its first vertex, and its `slopetype`. Parallel typed arrays indexed by linedef
+   * index, the same discipline {@link World.lineStamp} uses — this is read once per candidate line
+   * per movement probe, which is the hottest query in the engine. See docs/movement.md § Collision.
    */
   private lineBox: Float64Array;
   /**
@@ -577,28 +560,28 @@ export class World {
   private lineSlope: Int8Array;
 
   /**
-   * Every linedef's endpoints extended `WALL_OVERLAP` past both ends, packed x1,y1,x2,y2 per line:
-   * what every ray-vs-wall crossing test in the engine actually tests against. Precomputed with
-   * the rest because vertexes never move: normalizing and extending at the test site would repeat
-   * the same work per candidate line, per shot, per projectile step and per fog sight ray.
+   * Every linedef's endpoints extended {@link WALL_OVERLAP} past both ends, packed x1,y1,x2,y2 per
+   * line: what every ray-vs-wall crossing test in the engine actually tests against. Precomputed
+   * with the rest because vertexes never move: normalizing and extending at the test site would
+   * repeat the same work per candidate line, per shot, per projectile step and per fog sight ray.
    */
   readonly lineOverlapEnds: Float64Array;
 
   /**
-   * Subsector index -> its sector index (vanilla's `subsector->sector`), built
-   * once at load so every sector lookup — `sectorIndexAt`, `sectorAt` and the
-   * heights over them, the REJECT probe — costs one typed-array read rather
-   * than the seg -> linedef -> sidedef walk `sectorOfSubSector` does. Taken
-   * from `SubSectorPoly.physicalSector`, so a leaf a node builder misfiled
-   * under its neighbour answers the sector it really lies in.
+   * Subsector index -> its sector index (vanilla's `subsector->sector`), built once at load so
+   * every sector lookup — {@link World.sectorIndexAt}, {@link World.sectorAt} and the heights over
+   * them, the REJECT probe — costs one typed-array read rather than the seg -> linedef -> sidedef
+   * walk `sectorOfSubSector` does. Taken from `SubSectorPoly.physicalSector`, so a leaf a node
+   * builder misfiled under its neighbour answers the sector it really lies in.
    * See docs/world.md § Point-to-sector lookups.
    */
   private subsectorSector: Int32Array;
 
   /**
-   * Scratch `Opening` records for `openingInto`'s two callers in this file. Two rather than
-   * one because `openingOf` hands its copy out while `blocksSight` runs per candidate line inside
-   * traces that `openingOf` itself appears in. Callers elsewhere bring their own record.
+   * Scratch {@link Opening} records for {@link World.openingInto}'s two callers in this file. Two
+   * rather than one because {@link World.openingOf} hands its copy out while
+   * {@link World.blocksSight} runs per candidate line inside traces that {@link World.openingOf}
+   * itself appears in. Callers elsewhere bring their own record.
    */
   private openingScratch: Opening = { top: 0, bottom: 0 };
   private sightScratch: Opening = { top: 0, bottom: 0 };
@@ -606,10 +589,10 @@ export class World {
   readonly map: DoomMap;
 
   /**
-   * The map's bounding-box diagonal: the longest straight line that fits inside
-   * it, and so a trace length no in-map flight can be cut short by. What a
-   * missile passes to `shotPath`, which needs *some* finite range for a thing
-   * vanilla gives no range budget at all — see docs/combat.md § shotPath.
+   * The map's bounding-box diagonal: the longest straight line that fits inside it, and so a flight
+   * length no in-map flight can be cut short by. A missile's `Projectile.maxDist` at launch —
+   * *some* finite length for a thing vanilla gives no range budget at all — and
+   * {@link World.groundReach}'s trace. docs/combat.md § Range.
    */
   readonly mapSpan: number;
 
@@ -704,10 +687,10 @@ export class World {
   }
 
   /**
-   * True if a box overlaps linedef `lineIndex`'s own bounding box —
-   * `PIT_CheckLine`'s cheap reject, run before `boxOnLineSide`. Exactly flush
-   * is deliberately *not* an overlap, matching vanilla's `<=`/`>=` and the
-   * strict `< radius²` boundary the circle test it replaced also had.
+   * True if a box overlaps linedef `lineIndex`'s own bounding box — `PIT_CheckLine`'s cheap reject,
+   * run before {@link World.boxOnLineSide}. Exactly flush is deliberately *not* an overlap,
+   * matching vanilla's `<=`/`>=` and the strict `< radius²` boundary the circle test it replaced
+   * also had.
    */
   boxOverlapsLine(left: number, bottom: number, right: number, top: number, lineIndex: number): boolean {
     const base = lineIndex * 4;
@@ -721,8 +704,8 @@ export class World {
 
   /**
    * The sound targets as `[sectorIndex, slot]` in sector order, for a savegame — the live map holds
-   * `Sector` object references into `map.sectors`, which is also why `restoreSoundAlerted` must
-   * resolve through the *current* map's array.
+   * {@link Sector} object references into `map.sectors`, which is also why
+   * {@link World.restoreSoundAlerted} must resolve through the *current* map's array.
    */
   snapshotSoundAlerted(): [sector: number, slot: number][] {
     const pairs: [number, number][] = [];
@@ -749,10 +732,10 @@ export class World {
   }
 
   /**
-   * `linesNear` into a caller-owned list, deduped through the per-linedef stamp array rather than
-   * a `Set`, and neither a callback nor a spread: the collision walks run per body per tic, and
-   * this shape — unlike the callback form docs/world.md § hasLineOfSight records — measured
-   * faster. Each caller owns its list, so a walk inside another's loop cannot clobber it.
+   * {@link World.linesNear} into a caller-owned list, deduped through the per-linedef stamp array
+   * rather than a `Set`, and neither a callback nor a spread: the collision walks run per body per
+   * tic, and this shape — unlike the callback form docs/world.md § hasLineOfSight records —
+   * measured faster. Each caller owns its list, so a walk inside another's loop cannot clobber it.
    */
   linesNearInto(x: number, y: number, radius: number, out: number[]): void {
     out.length = 0;
@@ -776,17 +759,23 @@ export class World {
   }
 
   /**
-   * Every linedef bucketed into a grid cell the segment (x1, y1)-(x2, y2)
-   * passes through, each visited at most once. The visitor may return `true`
-   * to stop the walk early, the way a `break` would.
+   * Every linedef bucketed into a grid cell the segment (x1, y1)-(x2, y2) passes through, each
+   * visited at most once.
    *
    * The query a **sightline** wants, and allocation-free by design (stamp array, callback) since
    * it runs thousands of times per frame — docs/world.md § hasLineOfSight for why this rather than
-   * `linesNear`'s radius box.
+   * {@link World.linesNear}'s radius box.
    *
-   * Returns what the walk cost — cells stepped plus lines visited — so a caller that budgets its
-   * traces charges the real figure rather than estimating one from the cell size
-   * (docs/fogofwar.md § Sight testing). Callers that don't budget ignore it.
+   * @param visit          may return `true` to stop the walk early, the way a `break` would
+   * @param doneAfterCell  asked after each cell's lines with the `t` the walk entered that cell
+   *                       at; `true` ends the walk. Every unvisited line crosses at or past that
+   *                       `t` — a line is filed in every cell it spans, and {@link WALL_OVERLAP}
+   *                       reaches at most into the cell just walked, never the one before — so a
+   *                       caller holding a nearer answer can stop without losing one.
+   *                       docs/combat.md § shotPath.
+   * @returns what the walk cost — cells stepped plus lines visited — so a caller that budgets its
+   *          traces charges the real figure rather than estimating one from the cell size
+   *          (docs/fogofwar.md § Sight testing). Callers that don't budget ignore it.
    */
   forEachLineAlongSegment(
     x1: number,
@@ -794,12 +783,6 @@ export class World {
     x2: number,
     y2: number,
     visit: (lineIndex: number) => boolean | void,
-    /**
-     * Asked after each cell's lines with the `t` the walk entered that cell at; `true` ends the
-     * walk. Every unvisited line crosses at or past that `t` — a line is filed in every cell it
-     * spans, and `WALL_OVERLAP` reaches at most into the cell just walked, never the one before
-     * — so a caller holding a nearer answer can stop without losing one. docs/combat.md § shotPath.
-     */
     doneAfterCell?: (tEntry: number) => boolean,
   ): number {
     const stamp = ++this.queryId;
@@ -868,14 +851,14 @@ export class World {
   }
 
   /**
-   * The segment form of `subsectorAt`: appends to `out` a `t0, t1, subsector` triple per BSP leaf
-   * the segment (x1, y1) -> (x2, y2) passes through, in order, `t` being the fraction along it.
-   * Adjacent runs naming the same leaf are merged.
+   * The segment form of {@link World.subsectorAt}: appends to `out` a `t0, t1, subsector` triple
+   * per BSP leaf the segment (x1, y1) -> (x2, y2) passes through, in order, `t` being the fraction
+   * along it. Adjacent runs naming the same leaf are merged.
    *
-   * Here rather than in its one caller so the BSP stays behind this class's seam. The walk
-   * repeats `subsectorAt`'s side test rather than sharing it — that one is a per-sprite per-frame
-   * path and a helper call measured no faster, so **a sign fix has to land in both**. What needs
-   * this is `LightVisibility` (docs/lights.md § The adjacency graph); see also
+   * Here rather than in its one caller so the BSP stays behind this class's seam. The walk repeats
+   * {@link World.subsectorAt}'s side test rather than sharing it — that one is a per-sprite
+   * per-frame path and a helper call measured no faster, so **a sign fix has to land in both**.
+   * What needs this is `LightVisibility` (docs/lights.md § The adjacency graph); see also
    * docs/world.md § Point-to-sector lookups.
    */
   subsectorsAlongSegment(x1: number, y1: number, x2: number, y2: number, out: number[]): void {
@@ -901,9 +884,11 @@ export class World {
 
   /**
    * Vanilla's trivial sight rejection (`p_sight.c: P_CheckSight`): the REJECT bit at
-   * `s1 * numsectors + s2`, false whenever the map ships no usable table. The two subsector
-   * arguments are `hasLineOfSight`'s hints — anything below zero is resolved here, so a map
-   * without a table never pays the descent. docs/world.md § REJECT.
+   * `s1 * numsectors + s2`, false whenever the map ships no usable table. docs/world.md § REJECT.
+   *
+   * @param fromSubsector  {@link World.hasLineOfSight}'s hint — anything below zero is resolved
+   *                       here, so a map without a table never pays the descent
+   * @param toSubsector    likewise
    */
   sightRejected(from: Pos2, to: Pos2, fromSubsector: number, toSubsector: number): boolean {
     const reject = this.map.reject;
@@ -919,8 +904,8 @@ export class World {
   }
 
   /**
-   * The sector a subsector belongs to, for a caller that already has the subsector `sectorAt` would
-   * descend the BSP to find.
+   * The sector a subsector belongs to, for a caller that already has the subsector
+   * {@link World.sectorAt} would descend the BSP to find.
    */
   sectorOfSubsector(subsector: number): Sector | undefined {
     return this.map.sectors[this.sectorIndexOfSubsector(subsector)];
@@ -960,10 +945,10 @@ export class World {
   }
 
   /**
-   * `sectorsTouching` through a per-body cache, valid for as long as the body stands still: the
-   * list is a pure function of (x, y, radius) over *static* line geometry. The cache belongs to
-   * **one body** — sharing one across bodies re-derives the list every call and silently loses the
-   * point. docs/world.md § Sectors under a body.
+   * {@link World.sectorsTouching} through a per-body cache, valid for as long as the body stands
+   * still: the list is a pure function of (x, y, radius) over *static* line geometry. The cache
+   * belongs to **one body** — sharing one across bodies re-derives the list every call and silently
+   * loses the point. docs/world.md § Sectors under a body.
    */
   sectorsTouchingCached(x: number, y: number, radius: number, cache: SectorTouchCache): readonly number[] {
     if (cache.x !== x || cache.y !== y || cache.radius !== radius) {
@@ -977,9 +962,9 @@ export class World {
 
   /**
    * Fills `stamp` with every sector adjacent to a line within `radius` of (x, y) — plus the one
-   * under the point itself — and their current floor/ceiling heights; `heightsMatch` then answers
-   * whether any has moved. Together they invalidate the "this body's blocked move is a proven
-   * no-op" memo. docs/movement.md § Pinned-body memo.
+   * under the point itself — and their current floor/ceiling heights; {@link World.heightsMatch}
+   * then answers whether any has moved. Together they invalidate the "this body's blocked move is a
+   * proven no-op" memo. docs/movement.md § Pinned-body memo.
    */
   captureHeights(x: number, y: number, radius: number, stamp: HeightsStamp): void {
     const sectors = stamp.sectors;
@@ -1000,11 +985,10 @@ export class World {
   }
 
   /**
-   * Whether `memo` still proves the caller's blocked state a no-op: same
-   * position, same push, and no stamped nearby sector height has changed.
-   * `capturePin`'s other half — anything the caller's outcome additionally
-   * depends on (a doll's residual momentum, a teleport) stays a gate at the
-   * call site. docs/movement.md § Pinned-body memo.
+   * Whether `memo` still proves the caller's blocked state a no-op: same position, same push, and
+   * no stamped nearby sector height has changed. {@link World.capturePin}'s other half — anything
+   * the caller's outcome additionally depends on (a doll's residual momentum, a teleport) stays a
+   * gate at the call site. docs/movement.md § Pinned-body memo.
    */
   pinMatches(memo: PinnedMemo, x: number, y: number, z: number, velX: number, velY: number): boolean {
     return (
@@ -1019,11 +1003,10 @@ export class World {
   }
 
   /**
-   * Records a proven no-op into `memo`: this position under this push went
-   * nowhere. The stamp's radius covers everything the blocked move could have
-   * read — the body box plus the attempted step, plus `PIN_STAMP_SLOP` — so
-   * `pinMatches` holds exactly until a height inside that box changes. Refills
-   * the caller-owned memo in place; nothing is allocated.
+   * Records a proven no-op into `memo`: this position under this push went nowhere. The stamp's
+   * radius covers everything the blocked move could have read — the body box plus the attempted
+   * step, plus {@link PIN_STAMP_SLOP} — so {@link World.pinMatches} holds exactly until a height
+   * inside that box changes. Refills the caller-owned memo in place; nothing is allocated.
    */
   capturePin(memo: PinnedMemo, x: number, y: number, z: number, velX: number, velY: number, radius: number, dt: number): void {
     this.captureHeights(x, y, radius + vecLength(velX, velY) * dt + PIN_STAMP_SLOP, memo.stamp);
@@ -1035,7 +1018,9 @@ export class World {
     memo.velY = velY;
   }
 
-  /** Whether every sector `captureHeights` stamped still has the heights it had then. */
+  /**
+   * Whether every sector {@link World.captureHeights} stamped still has the heights it had then.
+   */
   heightsMatch(stamp: HeightsStamp): boolean {
     const { sectors, heights } = stamp;
     for (let k = 0; k < sectors.length; k++) {
@@ -1143,7 +1128,7 @@ export class World {
 
   /**
    * Boom `P_FindNextHighestCeiling` — the generalized ceilings' `CtoNnC` with the direction bit up.
-   * Same no-candidate fallback shape as `nextHigherFloor`.
+   * Same no-candidate fallback shape as {@link World.nextHigherFloor}.
    */
   nextHigherCeiling(sectorIndex: number): number {
     const sector = this.map.sectors[sectorIndex];
@@ -1206,7 +1191,18 @@ export class World {
     // The sky-hack wall, narrowed to the band actually drawn as sky — Boom's
     // "fix bullet-eaters" (`p_map.c`, killough 1/18/98), which vanilla applies
     // to the whole face. See docs/combat.md § Bullet puffs.
-    if (line.left === NO_SIDE) return false;
+    return this.missileHitsSky(lineIndex, z);
+  }
+
+  /**
+   * Whether a missile stopped by this line at height `z` flew into the sky rather than into
+   * something it can burst against — `P_XYMovement`'s sky hack (`p_mobj.c`), keyed off the line's
+   * *back* sector as `ceilingline->backsector` is, with Boom's narrowing to a missile above that
+   * sector's ceiling (killough, prboom-plus `p_mobj.c`). docs/combat.md § Where an impact sits.
+   */
+  missileHitsSky(lineIndex: number, z: number): boolean {
+    const line = this.map.linedefs[lineIndex];
+    if (!line || line.left === NO_SIDE) return false;
     const back = this.map.sectors[this.map.sidedefs[line.left]?.sector];
     return back?.ceilTex === SKY_FLAT && z > back.ceilHeight;
   }
@@ -1217,10 +1213,11 @@ export class World {
   }
 
   /**
-   * `openingOf` without the record: writes vanilla's `P_LineOpening` pair into a caller-owned
-   * `Opening` and answers whether the line has one at all. The predicates that run per candidate
-   * line — `blocksSight` above all — call this so the allocation stays with the callers that
-   * actually want a record. See docs/world.md § Point-to-sector lookups.
+   * {@link World.openingOf} without the record: writes vanilla's `P_LineOpening` pair into a
+   * caller-owned {@link Opening} and answers whether the line has one at all. The predicates that
+   * run per candidate line — {@link World.blocksSight} above all — call this so the allocation
+   * stays with the callers that actually want a record.
+   * See docs/world.md § Point-to-sector lookups.
    */
   openingInto(lineIndex: number, out: Opening): boolean {
     const line = this.map.linedefs[lineIndex];
@@ -1235,28 +1232,28 @@ export class World {
   }
 
   /**
-   * The height a body of this radius should rest at, standing here: the local
-   * sector's floor, raised to the bottom of any two-sided opening its box
-   * currently spans — vanilla's `thing->floorz` in `P_TryMove`, which
-   * keeps a mover pinned to a ledge's high side while its box still spans
-   * that ledge's line. Point-sampling the floor instead deadlocks a fall off a
-   * ledge; see docs/movement.md § Collision.
+   * The height a body of this radius should rest at, standing here: the local sector's floor,
+   * raised to the bottom of any two-sided opening its box currently spans — vanilla's
+   * `thing->floorz` in `P_TryMove`, which keeps a mover pinned to a ledge's high side while its box
+   * still spans that ledge's line. Point-sampling the floor instead deadlocks a fall off a ledge;
+   * see docs/movement.md § Collision.
    *
-   * `feet` is the body's own `z` where the caller has one, and it bounds which ledge may hold the
-   * body up: an opening more than `MAX_STEP_UP` above the feet is one no `P_TryMove` could have
-   * put them on. `ANY_HEIGHT` asks the geometry alone, which is what a fresh placement wants.
+   * @param feet  the body's own `z` where the caller has one, and it bounds which ledge may hold
+   *              the body up: an opening more than {@link MAX_STEP_UP} above the feet is one no
+   *              `P_TryMove` could have put them on. {@link ANY_HEIGHT} asks the geometry alone,
+   *              which is what a fresh placement wants.
    */
   groundFloor(x: number, y: number, radius: number, forMonster = false, feet: number = ANY_HEIGHT): number {
     return this.standingAt(x, y, radius, forMonster, feet).floorZ;
   }
 
   /**
-   * The lowest ceiling a body of this radius must clear, standing here — the
-   * mirror of `groundFloor`: the local sector's ceiling, lowered to the top
-   * of any two-sided opening its box currently spans. Exists so a
-   * rising floor's headroom check (`specials/moverblocking.ts: blocksFloorRise`) can see a
-   * lower-ceilinged neighbor sector the player's box still overlaps, not
-   * just the rising sector's own ceiling — see docs/movement.md § Collision.
+   * The lowest ceiling a body of this radius must clear, standing here — the mirror of
+   * {@link World.groundFloor}: the local sector's ceiling, lowered to the top of any two-sided
+   * opening its box currently spans. Exists so a rising floor's headroom check
+   * (`specials/moverblocking.ts: blocksFloorRise`) can see a lower-ceilinged neighbor sector the
+   * player's box still overlaps, not just the rising sector's own ceiling — see
+   * docs/movement.md § Collision.
    */
   groundCeiling(x: number, y: number, radius: number, forMonster = false): number {
     return this.standingAt(x, y, radius, forMonster).ceilingZ;
@@ -1264,11 +1261,10 @@ export class World {
 
   /**
    * The vertical room a body of this radius actually has standing here —
-   * `groundCeiling` minus `groundFloor` from a single box walk, which is what
-   * `P_ThingHeightClip` compares against `thing->height` to decide a body no
-   * longer fits. Crush damage is that comparison
-   * (`specials/moverblocking.ts: applyCrushDamage`), so it must see the
-   * openings the body's box spans and not just its own sector's gap.
+   * {@link World.groundCeiling} minus {@link World.groundFloor} from a single box walk, which is
+   * what `P_ThingHeightClip` compares against `thing->height` to decide a body no longer fits.
+   * Crush damage is that comparison (`specials/moverblocking.ts: applyCrushDamage`), so it must see
+   * the openings the body's box spans and not just its own sector's gap.
    */
   headroom(x: number, y: number, radius: number, forMonster = false): number {
     const at = this.standingAt(x, y, radius, forMonster);
@@ -1276,12 +1272,13 @@ export class World {
   }
 
   /**
-   * True if this line is a hard wall regardless of height — no opening to
-   * test. `forMonster` additionally treats an `LF.BLOCK_MONSTERS` line as
-   * solid — vanilla's own `ML_BLOCKMONSTERS`, a line that fences monsters
-   * out of an area (or off a ledge) while leaving the player free to walk
-   * through; the player's own movement never passes `forMonster: true`, so
-   * this only ever narrows what a monster can cross, never the player.
+   * True if this line is a hard wall regardless of height — no opening to test.
+   *
+   * @param forMonster  additionally treats an {@link LF.BLOCK_MONSTERS} line as solid — vanilla's
+   *                    own `ML_BLOCKMONSTERS`, a line that fences monsters out of an area (or off a
+   *                    ledge) while leaving the player free to walk through; the player's own
+   *                    movement never passes `forMonster: true`, so this only ever narrows what a
+   *                    monster can cross, never the player
    */
   isSolidWall(lineIndex: number, forMonster = false): boolean {
     const line = this.map.linedefs[lineIndex];
@@ -1294,10 +1291,9 @@ export class World {
   /**
    * True if this line stops a line of sight through it (game/fogofwar.ts).
    *
-   * The test is the vertical opening, what vanilla's `P_CheckSight` keys off —
-   * deliberately *not* `isSolidWall`, which is wrong in both directions here
-   * (a closed door isn't `BLOCKING`; a window/railing is). docs/fogofwar.md
-   * has both cases.
+   * The test is the vertical opening, what vanilla's `P_CheckSight` keys off — deliberately *not*
+   * {@link World.isSolidWall}, which is wrong in both directions here (a closed door isn't
+   * {@link LF.BLOCKING}; a window/railing is). docs/fogofwar.md has both cases.
    */
   blocksSight(lineIndex: number): boolean {
     const o = this.sightScratch;
@@ -1333,15 +1329,16 @@ export class World {
   }
 
   /**
-   * Floods a noise outward from the sector at (x, y) through every two-sided
-   * line — vanilla's `P_NoiseAlert`/`P_RecursiveSound`. Marked sectors stay
-   * marked for the rest of the level (`sector->soundtarget` is never cleared
-   * either). See docs/monster-ai.md § Waking up for the propagation rules.
+   * Floods a noise outward from the sector at (x, y) through every two-sided line — vanilla's
+   * `P_NoiseAlert`/`P_RecursiveSound`. Marked sectors stay marked for the rest of the level
+   * (`sector->soundtarget` is never cleared either). See docs/monster-ai.md § Waking up for the
+   * propagation rules.
    *
    * The search state is a `(sector, hasCrossedABlockLine)` pair rather than a sector, so one
    * reached first through a sound-blocked path can still be re-entered by a later unblocked one —
-   * vanilla's `soundtraversed <= soundblocks+1` guard. `slot` is the player who fired, and what a
-   * monster woken by it goes after.
+   * vanilla's `soundtraversed <= soundblocks+1` guard.
+   *
+   * @param slot  the player who fired, and what a monster woken by it goes after
    */
   noiseAlert(x: number, y: number, slot: number): void {
     const start = this.sectorIndexAt(x, y);
@@ -1369,23 +1366,28 @@ export class World {
     }
   }
 
-  /** The slot whose noise (`noiseAlert`) last reached this sector this level, or -1 for none. */
+  /**
+   * The slot whose noise ({@link World.noiseAlert}) last reached this sector this level, or -1 for
+   * none.
+   */
   soundTargetOf(sector: Sector): number {
     return this.soundTargets.get(sector) ?? -1;
   }
 
   /**
    * True if a straight 3D line between two points is crossed by no sight-blocking line
-   * (`World.blocksSight`) **and** keeps an unbroken sight wedge through the floor/ceiling of every
-   * sector along the way, from a fixed eye height (`SIGHT_EYE_HEIGHT`) rather than interpolating
-   * toward `z2`. docs/world.md § hasLineOfSight.
+   * ({@link World.blocksSight}) **and** keeps an unbroken sight wedge through the floor/ceiling of
+   * every sector along the way, from a fixed eye height ({@link SIGHT_EYE_HEIGHT}) rather than
+   * interpolating toward `z2`. docs/world.md § hasLineOfSight.
    *
-   * `PLAYER_HEIGHT` is read *inside* this body, like every other `player.ts` value in this file:
-   * the two modules import from each other, so hoisting one to module scope hits the cycle's
+   * {@link PLAYER_HEIGHT} is read *inside* this body, like every other `player.ts` value in this
+   * file: the two modules import from each other, so hoisting one to module scope hits the cycle's
    * initialization order.
    *
-   * The two subsector arguments are hints for `sightRejected` — a caller already holding its own
-   * (`PosedThing.subsector`) passes it rather than paying a BSP descent, and `-1` means "look up".
+   * @param fromSubsector  a hint for {@link World.sightRejected} — a caller already holding its own
+   *                       (`PosedThing.subsector`) passes it rather than paying a BSP descent, and
+   *                       `-1` means "look up"
+   * @param toSubsector    likewise
    */
   hasLineOfSight(
     from: Pos3,
@@ -1466,9 +1468,10 @@ export class World {
    * with no vertical opening at all — a shut door, or the sides of a crate whose sector has its
    * floor at its ceiling.
    *
-   * `blocksSight`'s test rather than `positionBlocked`'s, and the difference is the whole point: a
-   * ledge too high to climb or a gap too low to fit through refuses a *move* but is not closed, and
-   * the pickup reach this gates still passes it. docs/items.md § Collecting things.
+   * {@link World.blocksSight}'s test rather than {@link World.positionBlocked}'s, and the
+   * difference is the whole point: a ledge too high to climb or a gap too low to fit through
+   * refuses a *move* but is not closed, and the pickup reach this gates still passes it.
+   * docs/items.md § Collecting things.
    */
   sealedBetween(from: Pos2, to: Pos2): boolean {
     let sealed = false;
@@ -1489,10 +1492,11 @@ export class World {
    * verdict and all three accumulated heights at once — vanilla accumulates them in a single
    * `PIT_CheckLine` walk, and so does this.
    *
-   * `stopOnBlock` returns on the first refusing line, as `P_CheckPosition` does; the heights are
-   * then only partly accumulated, which is safe for a caller that wants nothing but the verdict.
-   * A caller needing the heights *and* the verdict (`monsters/ai.ts: testStep`, and the dropoff
-   * test below) passes `false` and gets both from the same walk.
+   * @param stopOnBlock  returns on the first refusing line, as `P_CheckPosition` does; the heights
+   *                     are then only partly accumulated, which is safe for a caller that wants
+   *                     nothing but the verdict. A caller needing the heights *and* the verdict
+   *                     (`monsters/ai.ts: testStep`, and the dropoff test below) passes `false` and
+   *                     gets both from the same walk.
    */
   checkPosition(
     x: number,
@@ -1571,10 +1575,10 @@ export class World {
   }
 
   /**
-   * True if `body`'s collision **box** at (x, y) — half-width `Collider.radius`, vanilla's own
-   * `mobjinfo.radius` — overlaps anything that blocks it. This is `P_CheckPosition`'s line half,
-   * and each line goes through `PIT_CheckLine`'s two gates in vanilla's order: the line's own
-   * bounding box, then `boxOnLineSide`.
+   * True if `body`'s collision **box** at (x, y) — half-width {@link Collider.radius}, vanilla's
+   * own `mobjinfo.radius` — overlaps anything that blocks it. This is `P_CheckPosition`'s line
+   * half, and each line goes through `PIT_CheckLine`'s two gates in vanilla's order: the line's own
+   * bounding box, then {@link World.boxOnLineSide}.
    *
    * A solid wall is refused on the *same* straddle test as a two-sided opening, not on mere
    * proximity — docs/movement.md § Collision for why that keeps a body off a wall's endpoint.
@@ -1593,8 +1597,8 @@ export class World {
    * monster gets `P_Move`'s all-or-nothing step instead.
    *
    * Three of the box's four corners are traced, the move commits to just short of the nearest
-   * wall, and the remainder is projected onto it and retried, `SLIDE_ATTEMPTS` deep. With no wall
-   * found — which includes a solid *body* refusing the move, since a thing produces no line
+   * wall, and the remainder is projected onto it and retried, {@link SLIDE_ATTEMPTS} deep. With no
+   * wall found — which includes a solid *body* refusing the move, since a thing produces no line
    * intercept — it falls to vanilla's `stairstep`. docs/movement.md § slideMove.
    */
   slideMove(
@@ -1673,14 +1677,13 @@ export class World {
   }
 
   /**
-   * True if this line stops a shot passing through it at height `z` — wherever
-   * *this* shot's (possibly sloped) line is when it crosses, not one height for
-   * the whole flight. The **single-ray** form, for a shot whose slope is already
-   * fixed; a locked-on shot gets `shotPath`'s wedge instead.
+   * True if this line stops a shot passing through it at height `z` — wherever *this* shot's
+   * (possibly sloped) line is when it crosses, not one height for the whole flight. The
+   * **single-ray** form, for a shot whose slope is already fixed; a locked-on shot gets
+   * {@link World.shotPath}'s wedge instead.
    *
-   * Deliberately **not** `isSolidWall` — `PTR_ShootTraverse` never reads
-   * `ML_BLOCKING`, so a shot passes through bars it can't walk through. See
-   * docs/combat.md § shotPath.
+   * Deliberately **not** {@link World.isSolidWall} — `PTR_ShootTraverse` never reads `ML_BLOCKING`,
+   * so a shot passes through bars it can't walk through. See docs/combat.md § shotPath.
    */
   blocksShot(lineIndex: number, z: number): boolean {
     const line = this.map.linedefs[lineIndex];
@@ -1692,9 +1695,10 @@ export class World {
 
   /**
    * How far the ray from `from` through `through` gets before it passes **into the ground**, as a
-   * distance from `from`, or `Infinity` where nothing along `mapSpan` puts it under one — the
-   * bound on auto-aim's two picks. Only floors stop it, the stretch up to `through` is not tested,
-   * and the stop is the line after the flat rather than the flat: docs/world.md § groundReach.
+   * distance from `from`, or `Infinity` where nothing along {@link World.mapSpan} puts it under one
+   * — the bound on auto-aim's two picks. Only floors stop it, the stretch up to `through` is not
+   * tested, and the stop is the line after the flat rather than the flat:
+   * docs/world.md § groundReach.
    */
   groundReach(from: Pos3, through: Pos3): number {
     const span = this.mapSpan;
@@ -1723,14 +1727,14 @@ export class World {
   }
 
   /**
-   * Where one frame of a *curving* projectile's flight ran into geometry, or null if the step is
-   * clear — the per-step counterpart to `shotPath`'s launch-time trace, for the one projectile
-   * whose stopping point cannot be resolved up front: the revenant's homing missile
-   * (docs/monster-attacks.md § The revenant's homing missile).
+   * Where one tic of a projectile's flight ran into geometry, or null if the step is clear —
+   * against the lines as they stand this tic, since a door can open or shut under a missile in
+   * flight. docs/combat.md § Where an impact sits.
    *
-   * Blocking is `blocksShot` at the height the step is at where it crosses each line. A crossing
-   * within `SELF_HIT_MARGIN` of the start is skipped for the reason `hasLineOfSight` skips one: a
-   * missile that just cleared an opening starts the next step sitting essentially on it.
+   * Blocking is {@link World.blocksShot} at the height the step is at where it crosses each line.
+   * A crossing within {@link SELF_HIT_MARGIN} of the start is skipped for the reason
+   * {@link World.hasLineOfSight} skips one: a missile that just cleared an opening starts the next
+   * step sitting essentially on it.
    */
   projectileStepBlocker(
     from: Pos3,
@@ -1759,12 +1763,32 @@ export class World {
   }
 
   /**
+   * The slope a shot from `origin` along `angleRad` at `target` goes out on, traced no further
+   * than the target — what a missile takes, since `P_SpawnMissile` hands one that and its momentum
+   * and nothing else. Straight at `target` with no `lock`, and pass one of
+   * {@link World.shotPath}'s wedge with one: the slope that shot would fire.
+   * docs/combat.md § shotPath, § Range.
+   */
+  aimSlope(origin: Pos3, angleRad: number, target: Pos3 | null, lock: ShotLock | null): number {
+    const toTarget = target ? vecLength(target.x - origin.x, target.y - origin.y) : 0;
+    const slope = target && toTarget > 0 ? (target.z - origin.z) / toTarget : 0;
+    if (!lock) return slope;
+    // A target on the shooter's own spot leaves no segment to trace and nothing to narrow.
+    if (toTarget <= 0) return lock.slopeOffset;
+    const tx = origin.x + cos(angleRad) * toTarget;
+    const ty = origin.y + sin(angleRad) * toTarget;
+    return this.wedgeSlope(this.sortedCrossings(origin.x, origin.y, tx, ty), toTarget, origin.z, slope, toTarget, lock);
+  }
+
+  /**
    * Traces a shot fired from `origin` along `angleRad` and returns where it ends up, stopped at
-   * the nearest line that blocks it — a hitscan weapon's tracer endpoint, and how far a projectile
-   * may fly. `target` supplies the **slope** and `range` the distance, deliberately separate; a
-   * `lock` switches blocking to vanilla's `P_AimLineAttack` slope wedge and re-aims at the wedge it
-   * cleared, which a monster's own shot never passes.
+   * the nearest line that blocks it — a hitscan weapon's tracer endpoint. A missile takes only the
+   * slope, from {@link World.aimSlope}.
    * docs/combat.md § shotPath, § Range, docs/monster-attacks.md § Hitscan vs. projectile.
+   *
+   * @param target  supplies the **slope**, and `range` the distance — deliberately separate
+   * @param lock    switches blocking to vanilla's `P_AimLineAttack` slope wedge and re-aims at the
+   *                wedge it cleared, which a monster's own shot never passes
    */
   shotPath(
     origin: Pos3,
@@ -1789,8 +1813,8 @@ export class World {
     let blockingLine: number | null = null;
 
     /**
-     * This line's crossing point along the shot, or null — off `World.lineOverlapEnds`, which
-     * carries the corner-leak extension documented on `WALL_OVERLAP`.
+     * This line's crossing point along the shot, or null — off {@link World.lineOverlapEnds},
+     * which carries the corner-leak extension documented on {@link WALL_OVERLAP}.
      */
     const crossingT = (i: number): number | null => {
       const e = i * 4;
@@ -1802,8 +1826,8 @@ export class World {
     if (!lock) {
       // The free shot's whole test: the nearest line along the trace that refuses it at the aim
       // slope. Walked along the trace, not gathered from a radius box around its start — a
-      // missile's `range` is the whole map (see `World.mapSpan`), and `linesNear` is O(range²) in
-      // cells for what is one thin line.
+      // player's bullet reaches `PLAYER_WEAPON_RANGE`, and `linesNear` is O(range²) in cells for
+      // what is one thin line.
       // Ends once the refusing line found so far crosses before the cell just walked: nothing
       // unvisited can cross nearer (`doneAfterCell`), and a shot toward a wall would otherwise
       // walk its whole range past it.
@@ -1827,55 +1851,15 @@ export class World {
       // to be walked nearest-first for the narrowing to mean anything, so unlike
       // the single-ray branch above (which can early-out on `nearestT` in any
       // order) this one collects and sorts first.
-      const crossings: { t: number; i: number }[] = [];
-      this.forEachLineAlongSegment(x, y, tx, ty, (i) => {
-        const t = crossingT(i);
-        if (t !== null) crossings.push({ t, i });
-      });
-      crossings.sort((p, q) => p.t - q.t);
+      const crossings = this.sortedCrossings(x, y, tx, ty);
 
       // **Two passes, as vanilla is two calls.** `P_AimLineAttack` finds a slope and stops at the
       // thing it found; `P_LineAttack`/`P_SpawnPlayerMissile` then send the shot out on that slope,
       // over a distance of their own. Narrowing over the whole flight instead lets geometry *past*
-      // the target bend the aim, which a missile crossing the map made plainly wrong.
+      // the target bend the aim.
 
-      // Pass one, the aim. The target's own silhouette opens the wedge —
-      // `PTR_AimTraverse`'s `thingtopslope`/`thingbottomslope`, `target.z` being the body's centre,
-      // so the pair spans `[z, z + height]`. Measured at the target's *own* distance, which is
-      // where its half-height subtends that angle.
-      const spread = toTarget > 0 ? lock.halfHeight / toTarget : 0;
-      let bottomSlope = slope - spread;
-      let topSlope = slope + spread;
-      let reachedTarget = true;
-      for (const { t, i } of crossings) {
-        const d = maxRange * t;
-        // Past the target: the aim traverse has found what it was looking for and ends here.
-        if (d > toTarget) break;
-        // A genuinely solid wall or a shut door stops any shot outright, the
-        // same two cases `blocksShot` leads with.
-        const line = this.map.linedefs[i];
-        const twoSided = line.left !== NO_SIDE && line.right !== NO_SIDE;
-        const opening = twoSided ? this.openingOf(i) : null;
-        if (!opening || opening.top <= opening.bottom) {
-          reachedTarget = false;
-          break;
-        }
-        if (d <= 0) continue; // a line the shot starts on contributes no constraint
-        const bottom = (opening.bottom - z) / d;
-        const topOfGap = (opening.top - z) / d;
-        if (bottom > bottomSlope) bottomSlope = bottom;
-        if (topOfGap < topSlope) topSlope = topOfGap;
-        if (topSlope <= bottomSlope) {
-          reachedTarget = false;
-          break;
-        }
-      }
-      // `PTR_AimTraverse`'s `aimslope`, the middle of what survived, plus the pellet's own jitter —
-      // docs/combat.md § shotPath for why the shot is aimed at the wedge rather than at the target,
-      // and why the jitter comes after. Geometry that stopped the wedge short is `P_AimLineAttack`
-      // with no `linetarget`, which returns 0 rather than `aimslope` (`p_map.c`), so the shot goes
-      // out flat.
-      aimSlope = reachedTarget ? (bottomSlope + topSlope) / 2 + lock.slopeOffset : lock.slopeOffset;
+      // Pass one, the aim — the one `World.aimSlope` runs alone.
+      aimSlope = this.wedgeSlope(crossings, maxRange, z, slope, toTarget, lock);
 
       // Pass two, the shot itself, on the slope pass one settled — so it also *ends* where a shot
       // on that slope ends, rather than where the wedge happened to collapse. Re-traced over the
@@ -1903,11 +1887,10 @@ export class World {
   }
 
   /**
-   * Fills the per-linedef geometry tables — `P_LoadLineDefs`'s own derivation
-   * (`p_setup.c`): `dx`/`dy` off the two vertexes, the bbox as their min/max,
-   * and the slopetype from `!dx` first (so a degenerate zero-length line lands
-   * on `ST_VERTICAL`, exactly as vanilla's ordering has it), then `!dy`, then
-   * the sign of `dy/dx`.
+   * Fills the per-linedef geometry tables — `P_LoadLineDefs`'s own derivation (`p_setup.c`):
+   * `dx`/`dy` off the two vertexes, the bbox as their min/max, and the slopetype from `!dx` first
+   * (so a degenerate zero-length line lands on {@link ST_VERTICAL}, exactly as vanilla's ordering
+   * has it), then `!dy`, then the sign of `dy/dx`.
    */
   private buildLineData(): void {
     for (let i = 0; i < this.map.linedefs.length; i++) {
@@ -1939,8 +1922,8 @@ export class World {
   }
 
   /**
-   * Every sector's two-sided-line neighbors, for `noiseAlert`'s flood — built once rather than
-   * rescanning all linedefs per visited sector.
+   * Every sector's two-sided-line neighbors, for {@link World.noiseAlert}'s flood — built once
+   * rather than rescanning all linedefs per visited sector.
    */
   private buildSectorNeighbors(): void {
     this.sectorNeighbors = this.map.sectors.map(() => []);
@@ -1988,11 +1971,12 @@ export class World {
   }
 
   /**
-   * One subtree's share of `subsectorsAlongSegment`. The near half of a split recurses; the far
-   * half continues in the loop, so the recursion depth is the tree's and not the segment's.
+   * One subtree's share of {@link World.subsectorsAlongSegment}. The near half of a split recurses;
+   * the far half continues in the loop, so the recursion depth is the tree's and not the segment's.
    *
-   * The endpoints stay **scalars**, the coordinate-pair exception in docs/conventions.md § Named
-   * arguments: this recurses once per BSP node crossed, on the sight and shot paths.
+   * The endpoints stay **scalars**, the coordinate-pair exception in
+   * docs/conventions.md § Named arguments: this recurses once per BSP node crossed, on the sight
+   * and shot paths.
    */
   private walkSegmentLeaves(
     child: number,
@@ -2034,7 +2018,10 @@ export class World {
     }
   }
 
-  /** `sectorsTouching`'s accumulator: the sector behind one sidedef, if it isn't already listed. */
+  /**
+   * {@link World.sectorsTouching}'s accumulator: the sector behind one sidedef, if it isn't already
+   * listed.
+   */
   private addTouchedSector(out: number[], side: number): void {
     if (side === NO_SIDE) return;
     const sector = this.map.sidedefs[side]?.sector;
@@ -2047,7 +2034,7 @@ export class World {
 
   /**
    * The ground a line stands on — the higher of the two floors it separates, `P_LineOpening`'s own
-   * `max`, or its one side's floor where it has only one. `groundReach`'s test.
+   * `max`, or its one side's floor where it has only one. {@link World.groundReach}'s test.
    */
   private groundOf(lineIndex: number): number {
     const line = this.map.linedefs[lineIndex];
@@ -2062,7 +2049,76 @@ export class World {
   }
 
   /**
-   * `nextSectorIndices` as the `Sector` objects themselves, which the neighbor queries below want.
+   * Every line the segment (x1, y1)-(x2, y2) crosses, nearest first, with the fraction along it
+   * each crossing sits at — off {@link World.lineOverlapEnds}, which carries the corner-leak
+   * extension documented on {@link WALL_OVERLAP}. The order {@link World.wedgeSlope} narrows in.
+   */
+  private sortedCrossings(x1: number, y1: number, x2: number, y2: number): { t: number; i: number }[] {
+    const ends = this.lineOverlapEnds;
+    const crossings: { t: number; i: number }[] = [];
+    this.forEachLineAlongSegment(x1, y1, x2, y2, (i) => {
+      const e = i * 4;
+      const t = segmentCrossT(x1, y1, x2, y2, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
+      if (t >= 0) crossings.push({ t, i });
+    });
+    crossings.sort((p, q) => p.t - q.t);
+    return crossings;
+  }
+
+  /**
+   * Pass one of a locked-on shot, vanilla's `P_AimLineAttack`: the slope wedge narrowed against
+   * every opening among `crossings` up to the target's distance, and the slope it fires —
+   * `PTR_AimTraverse`'s `aimslope`, the middle of what survived, plus the pellet's own jitter.
+   * docs/combat.md § shotPath for why the shot is aimed at the wedge rather than at the target,
+   * and why the jitter comes after.
+   *
+   * @param crossings  nearest first, as {@link World.sortedCrossings} gathers them
+   * @param span       the length of the segment their `t` are fractions of
+   * @param z          the fire height
+   * @param slope      the raw line from the fire height to the target's centre
+   */
+  private wedgeSlope(
+    crossings: readonly { t: number; i: number }[],
+    span: number,
+    z: number,
+    slope: number,
+    toTarget: number,
+    lock: ShotLock,
+  ): number {
+    // The target's own silhouette opens the wedge — `PTR_AimTraverse`'s
+    // `thingtopslope`/`thingbottomslope`, `slope` aiming at the body's centre, so the pair spans
+    // `[z, z + height]`. Measured at the target's *own* distance, which is where its half-height
+    // subtends that angle.
+    const spread = toTarget > 0 ? lock.halfHeight / toTarget : 0;
+    let bottomSlope = slope - spread;
+    let topSlope = slope + spread;
+    for (const { t, i } of crossings) {
+      const d = span * t;
+      // Past the target: the aim traverse has found what it was looking for and ends here.
+      if (d > toTarget) break;
+      // A genuinely solid wall or a shut door stops any shot outright, the same two cases
+      // `blocksShot` leads with. Geometry that stops the wedge short is `P_AimLineAttack` with no
+      // `linetarget`, which returns 0 rather than `aimslope` (`p_map.c`), so the shot goes out
+      // flat.
+      const line = this.map.linedefs[i];
+      const twoSided = line.left !== NO_SIDE && line.right !== NO_SIDE;
+      const opening = twoSided ? this.openingOf(i) : null;
+      if (!opening || opening.top <= opening.bottom) {
+        return lock.slopeOffset;
+      }
+      if (d <= 0) continue; // a line the shot starts on contributes no constraint
+      const bottom = (opening.bottom - z) / d;
+      const topOfGap = (opening.top - z) / d;
+      if (bottom > bottomSlope) bottomSlope = bottom;
+      if (topOfGap < topSlope) topSlope = topOfGap;
+      if (topSlope <= bottomSlope) return lock.slopeOffset;
+    }
+    return (bottomSlope + topSlope) / 2 + lock.slopeOffset;
+  }
+
+  /**
+   * {@link nextSectorIndices} as the {@link Sector} objects themselves, which the neighbor queries
+   * below want.
    */
   private neighborSectors(sectorIndex: number): Sector[] {
     const out: Sector[] = [];
@@ -2075,9 +2131,11 @@ export class World {
 
   /**
    * The one box walk the three queries below share: a body of this radius standing here, its own
-   * height ignored (`ANY_HEIGHT`) so the walk reports the opening rather than testing a fit. Its
-   * `feet` still count, and only against the step a ledge would be (`stepsTooHigh`). The
-   * result is `checkPosition`'s shared scratch — read the fields out before the next call.
+   * height ignored ({@link ANY_HEIGHT}) so the walk reports the opening rather than testing a fit.
+   * The result is {@link World.checkPosition}'s shared scratch — read the fields out before the
+   * next call.
+   *
+   * @param feet  still count, and only against the step a ledge would be ({@link stepsTooHigh})
    */
   private standingAt(
     x: number,
@@ -2093,16 +2151,14 @@ export class World {
   }
 
   /**
-   * `PTR_SlideTraverse`: walks one corner's path from (cornerX, cornerY) along
-   * (mx, my) and keeps the nearest blocking line along it in `slideHit`. A
-   * one-sided line blocks unless the mover already stands behind it; a two-sided
-   * one blocks on `openingRefuses`, the same predicate that decides whether a
-   * position is refused. `PLAYER_HEIGHT` throughout, since `P_SlideMove` is the
-   * player's alone.
+   * `PTR_SlideTraverse`: walks one corner's path from (cornerX, cornerY) along (mx, my) and keeps
+   * the nearest blocking line along it in {@link slideHit}. A one-sided line blocks unless the
+   * mover already stands behind it; a two-sided one blocks on {@link openingRefuses}, the same
+   * predicate that decides whether a position is refused. {@link PLAYER_HEIGHT} throughout, since
+   * `P_SlideMove` is the player's alone.
    *
-   * No sort is needed, and it carries two deliberate deviations from vanilla —
-   * one of them the fix for a real dead-stop bug. All three are
-   * docs/movement.md § slideMove.
+   * No sort is needed, and it carries two deliberate deviations from vanilla — one of them the fix
+   * for a real dead-stop bug. All three are docs/movement.md § slideMove.
    */
   private slideTraverse(
     moverX: number,
@@ -2187,11 +2243,12 @@ function tagIndex(map: DoomMap): { sectors: Map<number, number[]>; lines: Map<nu
  * `PIT_CheckThing` overlap test, an axis-aligned **box** check on the summed radii, the same shape
  * the line tests use (docs/monster-ai.md § Movement).
  *
- * `Collider.from`, when given, is where the mover currently stands: a blocker already overlapped
- * there only refuses the move if it presses further in. Unless infinite-tall actors is on, the
- * mover's own `z`/`height` span additionally passes a blocker it clears entirely; a span of
- * `ANY_HEIGHT` at either end has nothing to clear with, so one `Number.isFinite` over the sum
- * keeps vanilla's blocking whatever the setting says. Both rules: docs/movement.md § Collision.
+ * {@link Collider.from}, when given, is where the mover currently stands: a blocker already
+ * overlapped there only refuses the move if it presses further in. Unless infinite-tall actors is
+ * on, the mover's own {@link Collider.z}/{@link Collider.height} span additionally passes a blocker
+ * it clears entirely; a span of {@link ANY_HEIGHT} at either end has nothing to clear with, so one
+ * `Number.isFinite` over the sum keeps vanilla's blocking whatever the setting says. Both rules:
+ * docs/movement.md § Collision.
  */
 function blockedByThings(x: number, y: number, body: Collider): boolean {
   const { radius, z, height, blockers, from } = body;
@@ -2210,15 +2267,16 @@ function blockedByThings(x: number, y: number, body: Collider): boolean {
 }
 
 /**
- * `P_TryMove`'s three height gates against a `P_LineOpening`, in vanilla's
- * order: too short to stand in at all, too big a step up, or the top too low
- * for this body's own `z`. `zFinite` false (`ANY_HEIGHT`) drops the two
- * feet-relative gates and tests the opening's own height alone.
+ * `P_TryMove`'s three height gates against a `P_LineOpening`, in vanilla's order: too short to
+ * stand in at all, too big a step up, or the top too low for this body's own `z`.
  *
- * **The one home of this rule.** `checkPosition` decides whether a position is
- * refused and `slideTraverse` decides which wall to slide along; they must
- * agree on what "refused" means, and stating it twice in opposite polarity is
- * exactly how the two drift apart. See docs/movement.md § Collision.
+ * **The one home of this rule.** {@link World.checkPosition} decides whether a position is refused
+ * and {@link World.slideTraverse} decides which wall to slide along; they must agree on what
+ * "refused" means, and stating it twice in opposite polarity is exactly how the two drift apart.
+ * See docs/movement.md § Collision.
+ *
+ * @param zFinite  false ({@link ANY_HEIGHT}) drops the two feet-relative gates and tests the
+ *                 opening's own height alone
  */
 function openingRefuses(openTop: number, openBottom: number, z: number, zFinite: boolean): boolean {
   if (openTop - openBottom < PLAYER_HEIGHT) return true;
@@ -2228,10 +2286,11 @@ function openingRefuses(openTop: number, openBottom: number, z: number, zFinite:
 
 /**
  * `P_TryMove`'s "too big a step up" on its own, asked of one opening twice: it refuses the move
- * above, and it keeps `checkPosition`'s `floorZ` off an opening bottom a body at `z` could not
- * have climbed onto. `zFinite` false (`ANY_HEIGHT`) is the walk that asks about the geometry
- * rather than about a body, and no step is too high for it.
- * See docs/movement.md § Collision.
+ * above, and it keeps {@link World.checkPosition}'s {@link PositionCheck.floorZ} off an opening
+ * bottom a body at `z` could not have climbed onto. See docs/movement.md § Collision.
+ *
+ * @param zFinite  false ({@link ANY_HEIGHT}) is the walk that asks about the geometry rather than
+ *                 about a body, and no step is too high for it
  */
 function stepsTooHigh(openBottom: number, z: number, zFinite: boolean): boolean {
   return zFinite && openBottom - z > MAX_STEP_UP;

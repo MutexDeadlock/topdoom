@@ -1,10 +1,10 @@
-v0.20.0 (2026-09-1?)
+v0.20.0 (2026-09-13)
 
 Deathmatch is the last major feature before v1.0, 
 so until that, only polish and fixes.
 
 And yes: Replays broke again. BUT you can now record hours of gameplay in
-slaughter-maps without fear that the replays become too big in memory :)
+slaughter-maps without fear that the replay become too big in memory :)
 
 Features and improvements
   - multiplayer: 
@@ -27,7 +27,7 @@ Features and improvements
     where the item stood, and for every player's pickups in a network game
     - the item fog and the pickup puff cast a blue light
       (TopDOOM's own GLDEFS addition)
-  - players gib when a hit leaves them below -100 health, as in vanilla
+  - players gib when a hit leaves them below -100 health
   - DEHACKED: 
     - Frame records retime or redraw the teleport and item fogs, and the
       pickup puff with the item fog
@@ -37,11 +37,13 @@ Fixed bugs
   - the teleport fog plays vanilla's full chain: the opening A,B,A,B flicker
     was missing, so it ran 60 tics instead of 72
   - a respawning ceiling-hung item's fog sits on the floor, as in vanilla
-  - the high death cry (pdiehi) plays in DOOM2 only, as in vanilla
+  - the high death cry (pdiehi) plays in DOOM2 only
   - health and armor no longer carry fractions
   - R after a death no longer reloads a level-entry another tab wrote
   - R after taking over a replay that jumped to another level reloads the 
     right level
+  - fixed bugs regarding tracers and projectiles 
+    (I thought we fiexd long ago -.-)
 
 
 ===============================================================================

@@ -30,8 +30,8 @@ export interface EffectMotion {
  */
 export interface OneShotEffect extends Pos3 {
   /**
-   * A bare `SpriteAnimator` drawn through `SpriteFxLayer`'s own batch, no `THREE.Object3D` of its
-   * own — same arrangement as `PosedThing`.
+   * A bare {@link SpriteAnimator} drawn through `SpriteFxLayer`'s own batch, no `THREE.Object3D`
+   * of its own — same arrangement as `PosedThing`.
    */
   anim: SpriteAnimator;
   light: number;
@@ -53,7 +53,7 @@ export interface OneShotEffect extends Pos3 {
   followTargetId?: number;
   /**
    * The arch-vile that spawned this flame — sight from it is re-checked before repositioning
-   * (`A_Fire`'s `P_CheckSight` gate). Always set alongside `followTargetId`.
+   * (`A_Fire`'s `P_CheckSight` gate). Always set alongside {@link OneShotEffect.followTargetId}.
    */
   vileSourceId?: number;
   /**
@@ -77,7 +77,8 @@ export interface OneShotEffect extends Pos3 {
 
 export interface Projectile {
   /**
-   * Drawn through `SpriteFxLayer`'s own batch, same as `OneShotEffect.anim` — see that field's doc.
+   * Drawn through `SpriteFxLayer`'s own batch, same as {@link OneShotEffect.anim} — see that
+   * field's doc.
    */
   anim: SpriteAnimator;
   originX: number;
@@ -88,13 +89,16 @@ export interface Projectile {
    */
   startZ: number;
   /**
-   * shotPath's actual stopping height — the target's height if unobstructed, or wherever it got
-   * blocked short of that.
+   * The flight's height {@link Projectile.maxDist} along it — with {@link Projectile.startZ}, the
+   * slope the launch fixed.
    */
   endZ: number;
   angleRad: number;
   speed: number;
-  /** Distance (map units) to where shotPath says this shot's flight ends. */
+  /**
+   * How far the flight may run (map units): `World.mapSpan` at launch, cut to where a wall stopped
+   * it once one has. docs/combat.md § Where an impact sits.
+   */
   maxDist: number;
   traveled: number;
   /**
@@ -133,28 +137,26 @@ export interface Projectile {
    */
   sourceType: number;
   /**
-   * The wall `shotPath` found blocking this flight at launch, or null. Carried
-   * through so a shoot-triggered special fires on *arrival*, and only if the
-   * flight really got to that wall — a missile stopped by a body or by the
-   * floor never reached it. A hitscan pellet triggers immediately in
-   * `spawnPlayerShot` instead. See docs/combat.md § Shoot-triggered specials.
+   * The wall that stopped this flight, or null while none has — so a shoot-triggered special fires
+   * on *arrival*, and only if the flight really got to that wall: a missile stopped by a body or by
+   * the floor never reached it. A hitscan pellet triggers immediately in `spawnPlayerShot` instead.
+   * See docs/combat.md § Shoot-triggered specials.
    */
   lineIndex: number | null;
   /**
-   * Present only for the revenant's missile (`MT_TRACER`/`A_Tracer`), whose
-   * path isn't the fixed origin+angle+distance line every other projectile
-   * flies, so it carries its own live position/heading. `targetId` is what it chases, as
-   * `PosedThing.targetId` encodes one. A `homing` object existing at all means this shot won its
-   * `homingBias` roll. See docs/monster-attacks.md § The revenant's homing missile.
+   * Present only for the revenant's missile (`MT_TRACER`/`A_Tracer`), whose path isn't the fixed
+   * origin+angle+distance line every other projectile flies, so it carries its own live
+   * position/heading. `targetId` is what it chases, as `PosedThing.targetId` encodes one. A
+   * {@link Projectile.homing} object existing at all means this shot won its `homingBias` roll.
+   * See docs/monster-attacks.md § The revenant's homing missile.
    */
   homing?: { targetId: number; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
   /**
-   * Where this missile is now and where it was one tic ago, written by
-   * `ProjectileLayer.update` so `draw` can interpolate between them. Held as
-   * plain coordinates rather than recomputed from `traveled`, because a homing
-   * missile has no scalar to recompute from — it carries its own position.
-   * A missile is the fastest thing on screen, so this is the interpolation that
-   * matters most. docs/frameloop.md § Interpolation.
+   * Where this missile is now and where it was one tic ago, written by `ProjectileLayer.update` so
+   * `draw` can interpolate between them. Held as plain coordinates rather than recomputed from
+   * {@link Projectile.traveled}, because a homing missile has no scalar to recompute from — it
+   * carries its own position. A missile is the fastest thing on screen, so this is the
+   * interpolation that matters most. docs/frameloop.md § Interpolation.
    */
   drawX: number;
   drawY: number;
@@ -178,9 +180,11 @@ export interface Projectile {
 const PROJECTILE_HEIGHT = 8;
 
 /**
- * Turns `from` toward `to` (radians) by at most `maxDelta`, the short way
- * around — the continuous equivalent of `A_Tracer`'s own clamped per-call
- * turn (see `REVENANT_TRACER_TURN_RATE_RAD`).
+ * Turns `from` toward `to` by at most `maxDelta`, the short way around — the continuous equivalent
+ * of `A_Tracer`'s own clamped per-call turn (see `REVENANT_TRACER_TURN_RATE_RAD`).
+ *
+ * @param from  radians
+ * @param to    radians
  */
 export function turnToward(from: number, to: number, maxDelta: number): number {
   const diff = atan2(sin(to - from), cos(to - from));
@@ -188,15 +192,15 @@ export function turnToward(from: number, to: number, maxDelta: number): number {
 }
 
 /**
- * Vanilla's `PIT_CheckThing` for a missile, as one frame's worth of flight:
- * where along the step `from`→`to` the projectile **first touches** `body`, or
- * null if it passed it. Both halves are the real vanilla test rather than a
- * tolerance — laterally the axis-aligned `thing->radius + tmthing->radius` box
- * (`segmentEntersBox`, swept along the step), vertically the asymmetric
- * overhead/underneath pair, evaluated at the moment of contact. `bodyHeight` is
- * the target's own `mobjinfo.height` (`MonsterRef.height`) or `PLAYER_HEIGHT`,
- * per-species like the radius.
+ * Vanilla's `PIT_CheckThing` for a missile, as one frame's worth of flight: where along the step
+ * `from`→`to` the projectile **first touches** `body`, or null if it passed it. Both halves are the
+ * real vanilla test rather than a tolerance — laterally the axis-aligned
+ * `thing->radius + tmthing->radius` box ({@link segmentEntersBox}, swept along the step),
+ * vertically the asymmetric overhead/underneath pair, evaluated at the moment of contact.
  * See docs/monster-attacks.md § Monster projectiles in flight.
+ *
+ * @param bodyHeight  the target's own `mobjinfo.height` (`MonsterRef.height`) or `PLAYER_HEIGHT`,
+ *                    per-species like the radius
  */
 export function stepTouchesBody(
   from: Pos3,

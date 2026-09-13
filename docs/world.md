@@ -9,14 +9,14 @@ subsystem owns — each is called from combat, AI, fog of war and the specials a
 
 **What is a method and what stays a free function is a rule, not an accident.** Anything that reads
 the level *through* a `World` is a method on it — `hasLineOfSight`, `checkPosition`,
-`positionBlocked`, `slideMove`, `shotPath`, `projectileStepBlocker`, `groundReach`,
+`positionBlocked`, `slideMove`, `shotPath`, `aimSlope`, `projectileStepBlocker`, `groundReach`,
 `sealedBetween`, the neighbour-height family.
 Two kinds of thing stay free, and neither can be folded in:
 
 - **Map-keyed static topology** — `sectorLines`, `sectorsByTag`, `linesByTag`,
   `neighborSectorIndices`, `nextSectorIndices`. `render/` reaches these without a `World`
   (§ Neighbor-height queries has the argument), so they are memoized against the `DoomMap`.
-- **Pure helpers that never touch a `World`** — `bodyFloor`, `playerShotRange`, `openingRefuses`,
+- **Pure helpers that never touch a `World`** — `bodyFloor`, `openingRefuses`,
   `blockedByThings`. They take scalars and blocker lists, and a `this` would only obscure that.
 
 Converting the first group to methods was measured, not assumed: `positionBlocked`,

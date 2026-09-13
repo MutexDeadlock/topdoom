@@ -14,8 +14,8 @@ import { pristineFrameTables, type OneShotFrames } from '../dehacked/frames.ts';
  * The teleport fog (`MT_TFOG`): a one-shot animation, not a real thing, so it lives outside
  * `ThingLayer`. **Walked out of vanilla's own state table** rather than transcribed — `S_TFOG`'s
  * `A,B,A,B,C`…`J` at 6 tics each — and mutable for the same reason `CORPSE_GIB` is: a DEHACKED
- * patch re-derives it and `dehacked/apply.ts` restores it (docs/dehacked.md § Frames). `frames` is
- * empty only where a patch left the chain drawing nothing.
+ * patch re-derives it and `dehacked/apply.ts` restores it (docs/dehacked.md § Frames).
+ * {@link OneShotFrames.frames} is empty only where a patch left the chain drawing nothing.
  */
 export const TELEPORT_FOG: OneShotFrames = structuredClone(pristineFrameTables().teleportFog!);
 /**
@@ -79,16 +79,14 @@ export const IMPACT_FRAME_SECONDS = 4 * DOOM_TIC;
  * A projectile's impact explosion, keyed by its flight sprite — each missile's `mobjinfo` death
  * chain, walked out of vanilla's state table (docs/dehacked.md § Frames). `MANF` exploding into the
  * *rocket's* `MISL` frames is a genuine vanilla oddity, not a simplification here
- * (docs/monster-attacks.md § Hitscan vs. projectile). Purely cosmetic: this plays where a shot
- * reached `shotPath`'s distance; what it actually damaged is resolved separately.
+ * (docs/monster-attacks.md § Hitscan vs. projectile). Purely cosmetic: this plays where a missile's
+ * flight ended; what it actually damaged is resolved separately.
  */
 export const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {};
 
-/**
- * Fills the two tables above from the walker's reading of vanilla's own missile chains. Runs at
- * import, before `dehacked/apply.ts` snapshots them for `resetDehacked`; a patch that retimes a
- * missile re-derives the same way (docs/dehacked.md § Frames).
- */
+// Fills the two tables above from the walker's reading of vanilla's own missile chains. Runs at
+// import, before `dehacked/apply.ts` snapshots them for `resetDehacked`; a patch that retimes a
+// missile re-derives the same way (docs/dehacked.md § Frames).
 for (const [sprite, missile] of Object.entries(pristineFrameTables().missiles)) {
   if (missile.flight) PROJECTILE_FRAMES[sprite] = missile.flight;
   if (missile.impact) IMPACT_EFFECTS[sprite] = missile.impact;
@@ -232,8 +230,8 @@ export const SMOKE_TRAIL_INTERVAL = 4 * DOOM_TIC;
 /**
  * The puff left where a collected item stood — this engine's own effect rather than a vanilla one,
  * played off {@link ITEM_FOG} so a patch that redraws or retimes the fog moves the puff with it.
- * `PICKUP_FOG_SPEEDUP` is how many times faster than the fog it runs. What each of the three is
- * for: docs/items.md § The pickup puff. All three tuned by feel.
+ * {@link PICKUP_FOG_SPEEDUP} is how many times faster than the fog it runs. What each of the three
+ * is for: docs/items.md § The pickup puff. All three tuned by feel.
  */
 export const PICKUP_FOG_SPEEDUP = 2;
 export const PICKUP_FOG_SCALE = 0.5;

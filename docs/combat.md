@@ -10,17 +10,19 @@ the hit looks like — is here. `hasLineOfSight`, which several of these use, is
 
 ## shotPath
 
-**`shotPath` decides where a shot ends up**, for both tracer endpoints and how far a projectile may
-fly. It has two modes, and the difference is the whole reason it takes a `target` rather than just
-an angle.
+**`shotPath` decides where a hitscan shot ends up**, its tracer endpoint. It has two modes, and the
+difference is the whole reason it takes a `target` rather than just an angle. **A missile takes the
+slope alone**, from `World.aimSlope` — the same aim traced no further than the target — and meets
+its walls a tic at a time (§ Where an impact sits).
 
 **`target` supplies the slope; `range` supplies the distance, and the two are separate parameters
-on purpose.** `range` defaults to stopping at the target, which is what a player's locked-on shot
-wants — its target cannot move mid-flight. Anything else keeps going down the aimed slope whether or
-not the target is still standing there. Folding the two together (deriving range from the target) is
-what made every monster shot detonate on the spot the player had been standing at launch; both call
-sites then had to fake a far-away aim point to undo it, which is the shape this parameter replaces.
-See docs/monster-attacks.md § Hitscan vs. projectile.
+on purpose.** `range` defaults to stopping at the target, which is what an aim pass wants — a
+monster's hitscan finding its slope, as `P_AimLineAttack` ends at the thing it found. A shot keeps
+going down the aimed slope over its own range whether or not the target is still standing there, a
+player's locked-on pellet included (§ Range). Folding the two together (deriving range from the
+target) is what made every monster shot detonate on the spot the player had been standing at
+launch; both call sites then had to fake a far-away aim point to undo it, which is the shape this
+parameter replaces. See docs/monster-attacks.md § Hitscan vs. projectile.
 
 What each caller actually passes is § Range below.
 
@@ -39,8 +41,8 @@ movement does. DOOM2 MAP01's east imp closet (sector 38) has exactly this kind o
 blocked both the player's shots at the imp and the imp's fireballs back through it.
 
 **Locked-on shot** (a player's auto-aim target, or a monster's aim pass at what it is shooting at):
-slopes from the shooter's fire height to the target's over exactly the distance between them, and
-stops *at* the target. A `ShotLock` switches the blocking test from the single fixed ray to a
+slopes from the shooter's fire height to the target's over exactly the distance between them. A
+`ShotLock` switches the blocking test from the single fixed ray to a
 **slope wedge** — vanilla's `P_AimLineAttack`: start from the span of slopes reaching any part of
 the target, narrow `[bottomSlope, topSlope]` against every opening crossed in increasing distance
 order, and stop at the first line where the wedge collapses.
@@ -49,7 +51,8 @@ order, and stop at the first line where the wedge collapses.
 slope and stops at the thing it found; `P_LineAttack`/`P_SpawnPlayerMissile` then send the shot out
 on that slope over a distance of their own. So pass one narrows the wedge only over openings crossed
 **up to the target's distance**, and pass two re-traces the whole flight with `blocksShot` at the
-slope pass one settled on. Running one walk for both let geometry *past* the target bend the aim,
+slope pass one settled on. `World.aimSlope` is pass one alone, over the lines up to the target
+(`wedgeSlope`, shared with `shotPath`). Running one walk for both let geometry *past* the target bend the aim,
 which was invisible while a locked shot always stopped at its target and plainly wrong the moment a
 locked missile flew on across the map (§ Range). The wedge's own opening angle is the target's
 half-height over the distance **to the target**, for the same reason: that is where its silhouette
@@ -129,25 +132,25 @@ spans, and `WALL_OVERLAP` reaches into the cell just walked at most — so a sho
 there instead of walking its whole range past it, and off the map to the step bound.
 
 Candidates come from `World.forEachLineAlongSegment`, not `linesNear`, for the reason spelled out
-under `hasLineOfSight` below — and here it is load-bearing rather than merely faster: a missile's
-range is the whole map, and `linesNear`'s radius box would gather every line in it on every shot.
-Measured on NUTS.WAD MAP01: a full-span walk beats even the old 2048-radius box (7 candidate lines
-vs 19), while a box at map span costs 17× the walk.
+under `hasLineOfSight` below — and here it is load-bearing rather than merely faster: a player's
+bullet reaches `PLAYER_WEAPON_RANGE`, and `linesNear`'s radius box would gather every line within
+it on every shot. Measured on NUTS.WAD MAP01: a map-span walk beats even a 2048-radius box (7
+candidate lines vs 19), while a box at map span costs 17× the walk.
 
 ## Range
 
-Three different bounds reach `shotPath`'s `range`, and which one a shot gets depends on who fired it
-and what kind of shot it is.
+Which bound a shot flies depends on who fired it and what kind of shot it is.
 
-**A missile passes `World.mapSpan` — it has no range budget in vanilla at all.** `MISSILERANGE`
+**A missile flies `World.mapSpan` — it has no range budget in vanilla at all.** `MISSILERANGE`
 appears in `linuxdoom-1.10` exactly three times, all of them `P_AimLineAttack`/`P_LineAttack` calls
 in `p_enemy.c`; `P_SpawnMissile` gives a missile momentum and nothing else, and it flies until
 `P_XYMovement`, `P_ZMovement` or `PIT_CheckThing` stops it. Capping a missile at 2048 made every
 rocket, fireball and plasma ball burst harmlessly in mid-air on any map with sightlines longer than
 that: on NUTS.WAD MAP01, 21 of 36 directions traced from the player start ran out at exactly 2048
 with no wall in front of them (the walls are 2764–8563 units out), which is why the arachnotrons'
-plasma appeared to have a range. `mapSpan` — the map's bounding-box diagonal — is the shortest trace
-length that can never itself be what ends a flight; the engine needs *some* finite number, and any
+plasma appeared to have a range. `mapSpan` — the map's bounding-box diagonal, a missile's
+`Projectile.maxDist` at launch — is the shortest flight length that can never itself be what ends a
+flight; the engine needs *some* finite number, and any
 in-map wall is nearer than that.
 
 **A monster's bullet passes `WEAPON_RANGE` (`MISSILERANGE`, 2048), a player's free bullet the longer
@@ -163,22 +166,20 @@ Repro: a 3,648-unit corridor with a chaingunner at the far end (3,584 units out)
 2048 and plays correctly at 8192, matching GZDoom, where the asymmetry is the point — the
 chaingunner's own bullets still expire at 2048, so it cannot shoot back.
 
-**A locked-on *bullet* ignores all three and stops at its target**, which is `range`'s default
-whenever `target` is given — see § shotPath for why aim and distance are separate parameters at all.
-Note this makes the lock, not `PLAYER_WEAPON_RANGE`, the real bound on a clicked shot; the cursor
-can only lock what the camera draws, so it never reaches further than the player can see.
+**A lock changes neither bound: it gives a shot its slope, never its range.** A locked-on bullet
+takes `PLAYER_WEAPON_RANGE` like a free one, as `P_GunShot` and `A_FireShotgun2` (`p_pspr.c`) send
+every bullet `MISSILERANGE` whatever `P_BulletSlope` found. Stopping it at the target left every
+pellet the spread threw off the body **in mid-air beside it**: a shotgun blast's tracers and puffs
+all ended at the clicked monster, and nothing behind it could be hit.
+`tests/regression/locked-pellet-range.test.ts` pins it.
 
-**A locked-on missile does not.** It takes `mapSpan` like any other missile, because
-`P_SpawnMissile` hands one momentum and nothing else. Bounding it at the launch-time distance to the
-target is what made a rocket **burst in mid-air on the spot a monster had been standing**: the
-flight ended at `maxDist` with the monster elsewhere, since a rocket takes about a third of a second
-to cross 200 units and an imp covers 160 in that time. The lock gives a missile its slope and
-nothing more (§ How a shot deals damage).
+A locked-on missile flies `mapSpan` for the same reason. Bounding it at the launch-time distance to
+the target made a rocket **burst in mid-air on the spot a monster had been standing**, since a
+rocket takes about a third of a second to cross 200 units and an imp covers 160 in that time
+(§ How a shot deals damage).
 
-Which of the three a player's shot gets is `world.ts: playerShotRange` — its own function rather
-than an expression inside `ProjectileLayer.spawnPlayerShot` so that the choice is testable without
-the layer's five collaborators. `tests/regression/player-shot-range.test.ts` guards both it and the
-2048/8192 split, on the corridor from the repro above.
+`tests/regression/player-shot-range.test.ts` guards the 2048/8192 split on the corridor from the
+repro above, through `spawnPlayerShot` itself (`tests/fixtures/shotrig.ts`), locked on and free.
 
 ## Shoot-triggered specials
 
@@ -211,9 +212,8 @@ only a body to find), so a fist against a switch does nothing here. A known gap,
 `P_ShootSpecialLine` is called from `PTR_ShootTraverse` and nowhere else — in `linuxdoom-1.10` and
 in PrBoom alike — so in vanilla a **missile fires no impact special at all**: `PIT_CheckLine` never
 calls it, and a rocket detonating on a 46 line does nothing. This engine fires it anyway, when the
-missile reaches the wall (`ProjectileLayer.update`, off `Projectile.lineIndex`, which carries the
-line found at launch forward — safe to resolve early, same as `maxDist`: static geometry doesn't
-move mid-flight). Kept on purpose: the pointer makes a switch something the player *aims at* (§
+missile reaches the wall (`ProjectileLayer.update`, off `Projectile.lineIndex`, the line its own
+step stopped against). Kept on purpose: the pointer makes a switch something the player *aims at* (§
 Auto-aim), and the one weapon whose shot they can watch fly refusing to work on it reads as a bug
 rather than as fidelity. The same "nothing closer absorbed it" rule applies — `reachedPlayer` and
 `struck` take priority, as does a missile stopped by the floor, which never got there either.
@@ -456,16 +456,18 @@ leaves with no target at all** and re-tests live bodies every frame in `Projecti
 `P_XYMovement` then re-running `PIT_CheckThing` per move. Everything in the rest of this section is
 about the hitscan half.
 
-**A hitscan pellet resolves two different ways, depending on whether one was locked on.** A
-locked-on pellet resolves hit-or-miss against that exact target, and needs **both** halves:
-`spawnPlayerShot` compares `shotPath`'s returned distance against the distance to the target to know
-whether a wall cut the shot short, *and* tests this pellet's own line against the target's body —
-perpendicular offset within `MONSTER_HIT_RADIUS` and, for a pellet carrying a `slopeOffset`,
-vertical miss within half of `MONSTER_LOCK_HEIGHT` at the body's distance. A *free* pellet instead
-tests its straight flight path against every monster's body (`ThingLayer.raycastMonster`), the way
-any real hitscan trace would, so a monster standing between the player and the wall they're shooting
-at still gets hit even though it was never clicked; only the nearer of "a wall/step" (`shotPath`)
-and "a monster in the way" (`raycastMonster`) stops the shot. Under `CombatContext.pvp` the other
+**Every hitscan pellet is traced against every body on its line, and the nearest one takes it**
+(`ThingLayer.raycastMonster`, as `PTR_ShootTraverse` walks intercepts nearest-first), so a monster
+standing between the player and the wall they're shooting at gets hit though it was never clicked;
+only the nearer of "a wall/step" (`shotPath`) and "a body in the way" stops the shot.
+
+**A lock adds a candidate and never removes one.** A locked-on pellet also tests its own line
+against the target — perpendicular offset within `MONSTER_HIT_RADIUS` and, for a pellet carrying a
+`slopeOffset`, vertical miss within half of `MONSTER_LOCK_HEIGHT` at the body's distance, with
+`shotPath`'s distance saying whether a wall cut the shot short — and a body nearer than the target
+on that line still takes the pellet first. Counting a pellet that passed the lock test as a hit
+without the trace let a click shoot straight through whatever stood in front of the target.
+`tests/regression/locked-pellet-body-in-front.test.ts` pins it. Under `CombatContext.pvp` the other
 players' bodies are in that trace too (`raycastPlayers`, `combat.ts`), for a free pellet, a swing
 and each BFG ray alike; a lock on a player is tested at the player's own box
 (docs/multiplayer-deathmatch.md § Player versus player).
@@ -476,8 +478,9 @@ carry the same `target`/`targetId`. Without the lateral test a distance comparis
 "connected" for every one of them, so firing either shotgun at a monster dealt all 7 (or 20)
 pellets' damage no matter how wide the spread threw them. This is vanilla's own split:
 `P_BulletSlope` finds the aim slope once and `A_FireShotgun` then traces each pellet at its own
-angle, so the auto-aim decides the *slope* and never the hit. A pellet that fails the test falls
-through to the free-shot branch above and can still hit whatever it did fly through. Zero-spread
+angle, so the auto-aim decides the *slope* and never the hit. A pellet that fails the test is left
+to the body trace above, which can still hit whatever it did fly through — the target included, at
+its real width. Zero-spread
 weapons are unaffected — `player.angle` is set from the same lock (`Math.atan2` toward `aim`, at the
 end of `Player.update`, after the frame's movement), so their perpendicular offset is exactly 0.
 
@@ -534,6 +537,10 @@ For a hitscan pellet damage is applied immediately (an instant line has no trave
 projectile it is carried on the `Projectile` and applied wherever `ProjectileLayer.update` finds it
 connecting.
 
+**A pellet a body stops ends at the fired slope's height where it struck** — `ShotPath.slope` over
+the hit distance, never `ShotPath.z`, which is the height where the whole trace ends, past the body:
+a sloped pellet's blood and tracer end would sit at the far wall's height instead.
+
 ## The vertical test
 
 **`raycastMonster` gates a body vertically on a slope span at that body's own distance, never on a
@@ -550,15 +557,18 @@ Which callers get which follows vanilla: the BFG spray (`A_BFGSpray` calls `P_Ai
 player's fist and chainsaw (`A_Punch`/`A_Saw`) and a free player pellet (`P_BulletSlope`) are all
 aims and take the cone; a monster's bullet already carries the slope `shotPath` sloped it to
 (`monsters/attacks.ts: resolveBullet`) and passes that, so another monster blocks the bolt only
-where the bolt genuinely crosses its body.
+where the bolt genuinely crosses its body. **A player is tested on the same span**
+(`raycastPlayers`): `PTR_ShootTraverse` makes no exception for `MT_PLAYER`, and a box-only test let
+a bolt hit a player it passed far over or under — a gunner on a ledge shooting across the room hit
+the player standing at the ledge's foot. `tests/regression/monster-bullet-over-player.test.ts`.
 
-**A pellet the spread threw off a *locked* target passes its slope too**, and that is the one thing
-here that is not simply vanilla's split. Such a pellet falls through to this same trace
-(§ How a shot deals damage) carrying the slope the lock resolved — `ShotPath.slope`, returned by
-`shotPath` rather than recovered from `(z - origin.z) / dist`, which a zero-length path loses
-outright — so a body blocks it only where the line genuinely crosses one — which is what lets the super shotgun's vertical spread miss. Given the
-cone instead, the trace re-admitted the very body the lock's own vertical gate had just rejected, so
-`slopeSpread` could never throw a pellet off a target at all.
+**A *locked* pellet passes its slope too**, and that is the one thing here that is not simply
+vanilla's split. Its body trace (§ How a shot deals damage) carries the slope the lock resolved —
+`ShotPath.slope`, returned by `shotPath` rather than recovered from `(z - origin.z) / dist`, which a
+zero-length path loses outright — so a body blocks it only where the line genuinely crosses one,
+which is what lets the super shotgun's vertical spread miss. Given the cone instead, the trace
+re-admitted the very body the lock's own vertical gate had just rejected, so `slopeSpread` could
+never throw a pellet off a target at all.
 
 **The flat band this replaced made a monster standing below or above the shooter unhittable.** The
 old gate rejected any body whose feet were more than its own height from the fire height, which is a
@@ -573,7 +583,7 @@ of them.
 **A projectile has no target — it has a flight, and finds whatever is in it.** Every shot in the
 air, the player's own included, re-tests live bodies each frame in `ProjectileLayer.update`
 (`playerStruckBy`, `bodyStruckBy`, both over `spritefx/defs.ts`'s `stepTouchesBody`). What
-`spawnPlayerShot` fixes at launch is the slope and the wall (`shotPath`), never who gets hit.
+`spawnPlayerShot` fixes at launch is the slope (`World.aimSlope`), never who gets hit.
 
 Resolving that at launch instead is what made **BFG balls pass through monsters**. The ball flies at
 875 units/sec, so over a 512-unit shot a target has half a second to walk out of a launch-time ray —
@@ -600,7 +610,17 @@ at 0.05s and the fastest missiles fly 875 units/sec, so one frame can carry a sh
 further than a body is wide. Sampling endpoints silently drops every graze whose closest approach
 falls between two frames, which gets worse the lower the frame rate. `stepTouchesBody` returns
 *where along the step* contact happened, which is also what orders multiple candidates: first along
-the flight wins, the swept equivalent of vanilla's blockmap traversal order.
+the flight wins, the swept equivalent of vanilla's blockmap traversal order — a player and a monster
+on the same footing.
+
+**A missile that strikes a body bursts short of it**, where it stood before the move that touched
+it: `P_TryMove` refuses that move and `P_ExplodeMissile` goes off at the missile's last position. A
+move longer than `MAXMOVE/2` along either axis is tried in two halves (MBF's symmetric
+`comp_moveblock` check), so a rocket or plasma bolt may get the first half in
+(`ProjectileLayer`'s `burstShortOf`). The direct hit's origin, the splash and the explosion all sit
+there. Bursting where the step ended put the blast up to a whole step past the contact, inside the
+body, so the struck monster took splash measured from inside its own box.
+`tests/regression/missile-burst-short-of-body.test.ts` pins it.
 
 A struck body ends the flight, so it fires no shoot-triggered special — the missile never reached
 the wall whose `lineIndex` it carries.
@@ -632,9 +652,9 @@ never shows you your own body, resolves the slope from `shootz` and launches fou
 **Every missile is then moved half a tic of its own momentum forward before anything draws or tests
 it** — `ProjectileLayer.checkMissileSpawn`, vanilla's `P_CheckMissileSpawn` (`th->x += th->momx>>1`,
 `p_mobj.c`). That is 12.5 map units for a plasma bolt or a BFG ball (`mobjinfo` speed 25) and 10 for
-a rocket (20). The nudge is clamped to the flight `shotPath` resolved, which stands in for vanilla's
-`P_TryMove` failing there: a missile launched at a wall a few units off arrives on its first step
-and explodes against it. The gap it skips is never swept for bodies, exactly as vanilla's own
+a rocket (20). The nudge is tested against the walls like any step, which stands in for vanilla's
+`P_TryMove` failing there: a missile launched at a wall a few units off stops right there and
+explodes against it on its first tic. The gap it skips is never swept for bodies, exactly as vanilla's own
 `P_TryMove` tests only the destination.
 
 Both rules are invisible in vanilla and not here: this view draws the shooter's own body, so a
@@ -653,17 +673,31 @@ splash and its sound all sit there together. The hitscan counterpart is `PUFF_WA
 Approximate in two ways vanilla is not: vanilla's box is axis-aligned, so a diagonal wall stops the
 centre further out than `radius`, and its movement step quantises the stop point.
 
-**The standoff belongs to the flight, not to a correction applied where the flight is read.** Each
-kind resolves its own wall and applies it there: a straight shot at launch (`missileFlight` shortens
-`maxDist`, and takes the height from `ShotPath.slope` — shortening the distance alone would steepen
-the flight), a revenant's tracer mid-flight, where `projectileStepBlocker` reports the plane
-(`advanceHoming`). It was one shared pull-back on the arrival point instead, which left the missile
-standing *on* the plane for everything else that read it — and `sectorIndexAt` there answers with
-the solid sector behind the wall (floor == ceiling), which then had to be gated out of the
-floor/ceiling test separately. Two patches on one bad point.
+**A missile meets its walls a tic at a time, as the lines stand that tic.** `World.aimSlope` fixes
+only the launch slope; every step is tested with `World.projectileStepBlocker` (`blocksShot` at the
+height the step crosses each line), as `P_XYMovement` tries every move against the geometry of its
+own tic. A wall resolved at launch is wrong the moment a door or lift moves: a rocket fired at a
+shut door that then opened burst in mid-air where the door had been, and one fired through an open
+16-unit door that then shut flew through it whenever a 20-unit step jumped the door's sector,
+which is all the floor/ceiling test (`hitGround`, sampled where a step ends) ever saw of it.
+`tests/regression/missile-moving-door.test.ts` pins both.
 
-`shotPath` still returns the exact plane crossing, and an effect spawned there resolves its
-subsector to whichever side of the BSP splitter the point falls on. A far-side leaf the player has
+**The standoff belongs to the flight, not to a correction applied where the flight is read.** A
+straight step is probed a radius further than it moves and stops that radius short of the plane it
+finds, never back past where it began (`ProjectileLayer.stepStraight`, which cuts `maxDist` and
+`endZ` together so the slope holds); a revenant's tracer backs off the plane `advanceHoming` meets.
+A shared pull-back on the arrival point instead leaves the missile standing *on* the plane for
+everything else that reads it — and `sectorIndexAt` there answers with the solid sector behind the
+wall (floor == ceiling).
+
+**A missile that flies into the sky vanishes**, with no explosion, sound or splash: the line that
+stopped it has a sky ceiling on its back side and the missile is above that ceiling
+(`World.missileHitsSky`) — `P_XYMovement`'s sky hack on `ceilingline->backsector`, with Boom's
+narrowing to a missile above the ceiling (killough), so one that meets the lower wall of a sky
+sector still bursts. No shoot special fires either. `tests/regression/missile-sky-hack.test.ts`.
+
+`projectileStepBlocker` still reports the exact plane crossing, and an effect spawned there
+resolves its subsector to whichever side of the BSP splitter the point falls on. A far-side leaf the player has
 never seen is skipped by the fog gate (§ Effects and their batching), so without the standoff the
 rocket, plasma and BFG explosions were **not drawn at all** against those walls. Repro: DOOM2
 MAP01's start room, whose north wall (lines 22-25) puts every impact in subsector 184 behind it.

@@ -13,6 +13,7 @@ import {
   GRAVITY,
   MAX_MOMENTUM_SPEED,
   MISSILE_HEIGHT_OFFSET,
+  MOMENTUM_SPLIT_STEP,
   PLAYER_HEIGHT,
   PLAYER_RADIUS,
   playerBlocker,
@@ -141,13 +142,6 @@ import { cos, sin } from '../util/fdlibm.ts';
 const FRICTION = 0.90625;
 /** Below this a decaying knockback velocity snaps to 0. docs/movement.md § Knockback. */
 const KNOCKBACK_STOP_SPEED = 1;
-/**
- * `P_XYMovement`'s `MAXMOVE/2`, the longest single step a momentum move takes before
- * `applyKnockback` halves it — MBF's symmetric check (`comp_moveblock`), where vanilla splits a
- * positive move only. docs/movement.md § Knockback.
- */
-const MOMENTUM_SPLIT_STEP = MAX_MOMENTUM_SPEED / 35 / 2;
-
 /**
  * How often an unalerted monster re-checks line of sight to the player — vanilla's idle `A_Look`
  * runs every 10 tics, not every tic. Counted off the level clock for the whole layer rather than
@@ -899,9 +893,9 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
    * beside {@link monsterRef}, so a call allocates no closure and `accept` stays one of three
    * stable targets.
    *
-   * `dead` is a parameter rather than part of `accept` because it is the one test cheap and
-   * selective enough to be worth making before the sector lookup: most of a level's bodies are on
-   * the wrong side of it, and rejecting them costs one boolean compare instead of a `Set` probe.
+   * @param dead  apart from `accept` because it is the one test cheap and selective enough to be
+   *              worth making before the sector lookup: most of a level's bodies are on the wrong
+   *              side of it, and rejecting them costs one boolean compare instead of a `Set` probe
    */
   function refsIn(
     where: ReadonlySet<Sector>,

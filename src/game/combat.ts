@@ -67,7 +67,10 @@ export interface PlayerHit {
 export interface CombatContext {
   readonly world: World;
   readonly things: ThingLayer | null;
-  /** Every player slot by index — what a `targetOfSlot` id names. docs/multiplayer.md § Player slots. */
+  /**
+   * Every player slot by index — what a {@link targetOfSlot} id names.
+   * docs/multiplayer.md § Player slots.
+   */
   readonly slots: readonly CombatSlot[];
   /**
    * Whether a player's shots and missiles hit the other players: a deathmatch, or coop with
@@ -109,9 +112,9 @@ export interface CombatSlot {
 
 /**
  * The player a monster's attack falls back on when what it aimed at is not a monster it can still
- * find: the named slot's for a `targetOfSlot` id, and player 1's otherwise — the monster it chose
- * can have died to an earlier attack of the same tic, and its shot has always gone at the player
- * then.
+ * find: the named slot's for a {@link targetOfSlot} id, and player 1's otherwise — the monster it
+ * chose can have died to an earlier attack of the same tic, and its shot has always gone at the
+ * player then.
  */
 export function fallbackPlayer(ctx: CombatContext, targetId: number): Player {
   return ctx.slots[targetId < 0 ? slotOfTarget(targetId) : 0].player;
@@ -146,9 +149,9 @@ export function anyPlayerAlive(slots: readonly CombatSlot[]): boolean {
 }
 
 /**
- * The nearest body along a player's shot: `ThingLayer.raycastMonster`, and — where a player can be
- * shot ({@link CombatContext.pvp}) — {@link raycastPlayers}, a monster winning a tie. The one place
- * a player's trace asks for both. docs/multiplayer-deathmatch.md § Player versus player.
+ * The nearest body along a player's shot: {@link ThingLayer.raycastMonster}, and — where a player
+ * can be shot ({@link CombatContext.pvp}) — {@link raycastPlayers}, a monster winning a tie. The
+ * one place a player's trace asks for both. docs/multiplayer-deathmatch.md § Player versus player.
  *
  * @param shooter  the firing slot, which its own shot never hits
  * @param slope  the slope a locked shot flies at; absent, `P_AimLineAttack`'s cone
@@ -168,13 +171,14 @@ export function raycastBody(
 }
 
 /**
- * The nearest other living player along a shot — `PTR_ShootTraverse` over the players' bodies,
- * which are not in the thing layer: `ThingLayer.raycastMonster`'s box and vertical test over
- * `PLAYER_RADIUS`/`PLAYER_HEIGHT`, at most three bodies, each as {@link playerRef}.
- * docs/multiplayer-deathmatch.md § Player versus player.
+ * The nearest living player along a shot — `PTR_ShootTraverse` over the players' bodies, which are
+ * not in the thing layer: {@link ThingLayer.raycastMonster}'s box and vertical test over
+ * {@link PLAYER_RADIUS}/{@link PLAYER_HEIGHT}, each body as {@link playerRef}. A player's shot
+ * under {@link CombatContext.pvp} and every monster bolt (`monsters/attacks.ts`) trace through it.
+ * docs/multiplayer-deathmatch.md § Player versus player, docs/combat.md § The vertical test.
  *
- * @param shooter  the firing slot, which its own shot never hits
- * @param slope  the slope a locked shot flies at; absent, `P_AimLineAttack`'s cone
+ * @param shooter  the firing slot, which its own shot never hits; -1 for a monster's bolt
+ * @param slope    the slope a fixed shot flies at; absent, `P_AimLineAttack`'s cone
  */
 export function raycastPlayers(
   ctx: CombatContext,
@@ -204,7 +208,7 @@ export function raycastPlayers(
 
 /**
  * Slot `slot`'s player as a {@link MonsterRef} a shot or an aim pick resolves the way it resolves
- * a monster: `targetOfSlot`'s id, the player's own box, and `MT_PLAYER`'s doomednum, -1
+ * a monster: {@link targetOfSlot}'s id, the player's own box, and `MT_PLAYER`'s doomednum, -1
  * (`info.c`), for the type.
  *
  * @param x  where the ray met the body, as `y` is

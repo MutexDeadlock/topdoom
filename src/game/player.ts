@@ -20,7 +20,7 @@ export const PLAYER_RADIUS = 16;
 export const PLAYER_HEIGHT = 56;
 /**
  * Vanilla `MT_PLAYER`'s own `mobjinfo.mass` — feeds `game.ts`'s use of
- * `game/monsters/defs.ts: thrustSpeed` for the knockback `Player.applyKnockback` receives.
+ * `game/monsters/defs.ts: thrustSpeed` for the knockback {@link Player.applyKnockback} receives.
  */
 export const PLAYER_MASS = 100;
 
@@ -44,11 +44,11 @@ export const AIM_HEIGHT_OFFSET = PLAYER_HEIGHT / 2 + 8;
 export const MISSILE_HEIGHT_OFFSET = 32;
 
 /**
- * Vanilla's own ticcmd move tables (`g_game.c`'s `forwardmove`/`sidemove`),
- * indexed `[walk, run]`, and its `MAXPLMOVE` clamp. Everything below is
- * expressed in these units and scaled once by `MOVE_UNIT_SPEED`, rather than
- * as a pair of hand-picked map-units/sec constants, because the *ratios*
- * between them are what makes DOOM's movement feel like DOOM — see `update`.
+ * Vanilla's own ticcmd move tables (`g_game.c`'s `forwardmove`/`sidemove`), indexed
+ * `[walk, run]`, and its `MAXPLMOVE` clamp. Everything below is expressed in these units and scaled
+ * once by {@link MOVE_UNIT_SPEED}, rather than as a pair of hand-picked map-units/sec constants,
+ * because the *ratios* between them are what makes DOOM's movement feel like DOOM — see
+ * {@link Player.update}.
  */
 const FORWARD_MOVE = [25, 50] as const;
 const SIDE_MOVE = [24, 40] as const;
@@ -70,19 +70,20 @@ const MOVE_UNIT_SPEED = 10;
  */
 const ACCELERATION = 12;
 /**
- * Vanilla's `VIEWHEIGHT`: where the player *views* from, and what `Player.eyeZ` hands the camera.
+ * Vanilla's `VIEWHEIGHT`: where the player *views* from, and what {@link Player.eyeZ} hands the
+ * camera.
  */
 export const EYE_HEIGHT = 41;
 /**
  * Where a **sight trace** starts above the feet — `P_CheckSight`'s `sightzstart`
- * (`z + height - (height>>2)`). `world.ts`'s `hasLineOfSight` lifts every actor it is
- * handed by this one, player-sized or not (docs/world.md § hasLineOfSight), which is why
+ * (`z + height - (height>>2)`). {@link World.hasLineOfSight} lifts every actor it is handed by
+ * this one, player-sized or not (docs/world.md § hasLineOfSight), which is why
  * `monsters/iconofsin.ts` has to subtract it back off for a 32-tall eye.
  *
- * A unit off `EYE_HEIGHT` above and **not** interchangeable with it: this is a vanilla
- * citation, that is the view height. It lives here, not in `world.ts`, because a
- * module-level const derived from `PLAYER_HEIGHT` over there is read during the
- * `world.ts`/`player.ts` cycle's initialization — see `hasLineOfSight`'s declaration.
+ * A unit off {@link EYE_HEIGHT} above and **not** interchangeable with it: this is a vanilla
+ * citation, that is the view height. It lives here, not in `world.ts`, because a module-level
+ * const derived from {@link PLAYER_HEIGHT} over there is read during the `world.ts`/`player.ts`
+ * cycle's initialization — see {@link World.hasLineOfSight}'s declaration.
  */
 export const SIGHT_EYE_HEIGHT = PLAYER_HEIGHT * 0.75;
 /**
@@ -94,31 +95,39 @@ export const SIGHT_EYE_HEIGHT = PLAYER_HEIGHT * 0.75;
 export const GRAVITY = 1600;
 
 /**
- * How fast a fall has to end to knock the wind out of the player (`landingSpeed`
- * above it plays `oof`). Vanilla's `P_ZMovement` grunts below `momz < -8`
- * units/tic, which under *its* gravity of 1 unit/tic² is reached by a drop of 32
- * units — so the threshold is derived from that drop height under this engine's
- * own (feel-tuned, stronger) `GRAVITY` rather than copying the speed. Matching
- * the speed instead would make shallower ledges grunt than vanilla's do, and 24
- * units — DOOM's most common step height — sits right at that boundary.
+ * How fast a fall has to end to knock the wind out of the player ({@link Player.landingSpeed}
+ * above it plays `oof`). Vanilla's `P_ZMovement` grunts below `momz < -8` units/tic, which under
+ * *its* gravity of 1 unit/tic² is reached by a drop of 32 units — so the threshold is derived from
+ * that drop height under this engine's own (feel-tuned, stronger) {@link GRAVITY} rather than
+ * copying the speed. Matching the speed instead would make shallower ledges grunt than vanilla's
+ * do, and 24 units — DOOM's most common step height — sits right at that boundary.
  */
 export const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
 
 /**
- * Below this, `momX`/`momY` snap to exactly 0 rather than crawling on forever — see
- * `game/things.ts`'s identical constant, and `applyForce` for the one case exempt from it.
- * `game/specials/voodoo.ts` shares it, a doll's channel being a copy of this one.
+ * Below this, {@link Player.momX}/{@link Player.momY} snap to exactly 0 rather than crawling on
+ * forever — see `game/things.ts`'s identical constant, and {@link Player.applyForce} for the one
+ * case exempt from it. `game/specials/voodoo.ts` shares it, a doll's channel being a copy of this
+ * one.
  */
 export const MOMENTUM_STOP_SPEED = 1;
 
 /**
- * `P_XYMovement`'s `MAXMOVE` (`p_local.h`, 30 units/tic) in units/sec: what `clampMomentum` holds
- * each axis of the momentum channel to before it moves anything — here, in
+ * `P_XYMovement`'s `MAXMOVE` (`p_local.h`, 30 units/tic) in units/sec: what {@link clampMomentum}
+ * holds each axis of the momentum channel to before it moves anything — here, in
  * `game/specials/voodoo.ts` and in `game/things.ts: applyKnockback`. docs/movement.md § Knockback.
  */
 export const MAX_MOMENTUM_SPEED = 30 * 35;
 
-/** One axis of a momentum vector held to ±`MAX_MOMENTUM_SPEED`. */
+/**
+ * `P_XYMovement`'s `MAXMOVE/2` in units/tic, the longest single step a momentum move takes before
+ * it is tried in halves — MBF's symmetric check (`comp_moveblock`), where vanilla splits a positive
+ * move only. `game/things.ts: applyKnockback` and a missile's burst point (`game/projectiles.ts`).
+ * docs/movement.md § Knockback.
+ */
+export const MOMENTUM_SPLIT_STEP = MAX_MOMENTUM_SPEED / 35 / 2;
+
+/** One axis of a momentum vector held to ±{@link MAX_MOMENTUM_SPEED}. */
 export function clampMomentum(v: number): number {
   return v > MAX_MOMENTUM_SPEED ? MAX_MOMENTUM_SPEED : v < -MAX_MOMENTUM_SPEED ? -MAX_MOMENTUM_SPEED : v;
 }
@@ -156,7 +165,11 @@ export function setAutorun(enabled: boolean): void {
   writeStorage(AUTORUN_STORAGE_KEY, enabled);
 }
 
-/** A replay's pin on the setting, without touching the stored one; `null` puts that back. */
+/**
+ * A replay's pin on the setting, without touching the stored one.
+ *
+ * @param enabled  `null` puts the stored one back
+ */
 export function overrideAutorun(enabled: boolean | null): void {
   autorunEnabled = enabled ?? readStorage(AUTORUN_STORAGE_KEY, true);
 }
@@ -173,53 +186,54 @@ export class Player implements Pos3 {
   velY = 0;
   /**
    * Vertical velocity, map units/sec. Otherwise only ever negative — there's no jump input, only
-   * gravity once a step drops out from under the player — except `launchUpward`'s arch-vile
-   * knockback, the one thing that ever sets it positive.
+   * gravity once a step drops out from under the player — except {@link Player.launchUpward}'s
+   * arch-vile knockback, the one thing that ever sets it positive.
    */
   private velZ = 0;
   /**
-   * Vanilla's `momx`/`momy` for everything that is **not** the player's own
-   * held-key input, map units/sec: damage knockback (`P_DamageMobj`), and the
-   * forces the world applies — conveyors, wind and current
-   * (`applyForce`, docs/specials-forces.md § Scrollers and conveyors).
+   * Vanilla's `momx`/`momy` for everything that is **not** the player's own held-key input, map
+   * units/sec: damage knockback (`P_DamageMobj`), and the forces the world applies — conveyors,
+   * wind and current ({@link Player.applyForce}, docs/specials-forces.md § Scrollers and
+   * conveyors).
    *
-   * Kept entirely separate from `velX`/`velY` above rather than added into them, and integrated
-   * and decayed (`ORIG_FRICTION`) on its own as a displacement additive to ordinary movement —
-   * docs/movement.md § External momentum has why the input model forces the split.
+   * Kept entirely separate from {@link Player.velX}/{@link Player.velY} above rather than added
+   * into them, and integrated and decayed (`ORIG_FRICTION`) on its own as a displacement additive
+   * to ordinary movement — docs/movement.md § External momentum has why the input model forces the
+   * split.
    *
-   * `PlayerSnapshot` calls the pair `knockVelX`/`knockVelY`: that is the saved wire format the
-   * channel was named by before it widened, and renaming it would orphan every existing save.
+   * {@link PlayerSnapshot} calls the pair {@link PlayerSnapshot.knockVelX}/
+   * {@link PlayerSnapshot.knockVelY}: that is the saved wire format the channel was named by
+   * before it widened, and renaming it would orphan every existing save.
    */
   private momX = 0;
   private momY = 0;
   /**
-   * Whether a world force fed the channel this tic — see `applyForce`. Set by
-   * it, cleared at the end of `update`.
+   * Whether a world force fed the channel this tic — see {@link Player.applyForce}. Set by it,
+   * cleared at the end of {@link Player.update}.
    */
   private forced = false;
   /**
-   * How fast the player was falling (map units/sec, positive) at the moment
-   * this frame's fall ended, or 0 if it didn't end in one. Vanilla's
-   * `P_ZMovement` grunts and dips the view for a landing harder than 8
-   * units/tic; the grunt's own threshold is `HARD_LANDING_SPEED` above.
-   * Reset at the top of every `update`, so it only ever describes this frame.
+   * How fast the player was falling (map units/sec, positive) at the moment this frame's fall
+   * ended, or 0 if it didn't end in one. Vanilla's `P_ZMovement` grunts and dips the view for a
+   * landing harder than 8 units/tic; the grunt's own threshold is {@link HARD_LANDING_SPEED}
+   * above. Reset at the top of every {@link Player.update}, so it only ever describes this frame.
    */
   landingSpeed = 0;
 
   /**
-   * The ground the player is resting on or falling toward, as of this tic — what `update` already
-   * asked `groundFloor` for. Kept because the render layer casts the blob shadow on it and
-   * `checkPosition` is far too hot to ask a second time per drawn frame.
-   * docs/render.md § The player's shadow.
+   * The ground the player is resting on or falling toward, as of this tic — what
+   * {@link Player.update} already asked {@link World.groundFloor} for. Kept because the render
+   * layer casts the blob shadow on it and {@link World.checkPosition} is far too hot to ask a
+   * second time per drawn frame. docs/render.md § The player's shadow.
    */
   groundZ = 0;
 
   /**
-   * Where the player was at the end of the previous tic, for the render layer to
-   * interpolate from — `game.ts: posePlayer` and the camera's follow point both
-   * read it. Written at the top of `update`, and re-synced by every teleport-like
-   * jump (`moveTo`) so an instant relocation is not smeared into a glide across
-   * the map. docs/frameloop.md § Interpolation.
+   * Where the player was at the end of the previous tic, for the render layer to interpolate from —
+   * `game.ts: posePlayer` and the camera's follow point both read it. Written at the top of
+   * {@link Player.update}, and re-synced by every teleport-like jump ({@link Player.moveTo}) so an
+   * instant relocation is not smeared into a glide across the map.
+   * docs/frameloop.md § Interpolation.
    */
   prevX: number;
   prevY: number;
@@ -227,33 +241,35 @@ export class Player implements Pos3 {
   prevAngle: number;
 
   /**
-   * Where this tic's *unclipped* move would have put the player — vanilla's
-   * `P_TryMove` destination, before a wall or a ledge rejected it. Written by
-   * `update` and reset by `syncInterpolation`; `tryPickup` is the only reader,
-   * and only for the tic it was written in. docs/items.md § Collecting things.
+   * Where this tic's *unclipped* move would have put the player — vanilla's `P_TryMove`
+   * destination, before a wall or a ledge rejected it. Written by {@link Player.update} and reset
+   * by {@link Player.syncInterpolation}; `tryPickup` is the only reader, and only for the tic it
+   * was written in. docs/items.md § Collecting things.
    *
-   * A live object, rewritten in place, so that reader passes a `Pos2` per tic
-   * without allocating one.
+   * A live object, rewritten in place, so that reader passes a {@link Pos2} per tic without
+   * allocating one.
    */
   readonly attempted: Pos2 = { x: 0, y: 0 };
 
   /**
    * IDCLIP: vanilla's `MF_NOCLIP` on the player mobj. Walls and bodies stop being tested at all,
-   * and the floor underfoot becomes the plain sector one — see `moveBy` and `update`'s ground.
-   * Pushed here from `game.ts`'s `Cheats` every tic, since a `Player` is rebuilt per level.
-   * docs/cheats.md § IDCLIP.
+   * and the floor underfoot becomes the plain sector one — see {@link Player.moveBy} and
+   * {@link Player.update}'s ground. Pushed here from `game.ts`'s `Cheats` every tic, since a
+   * {@link Player} is rebuilt per level. docs/cheats.md § IDCLIP.
    */
   noclip = false;
   /**
    * Whether Shift walks rather than runs — the slot's `PlayerSettings.autorun`, pushed here every
-   * tic like `noclip`, so every slot moves under its own.
+   * tic like {@link Player.noclip}, so every slot moves under its own.
    * docs/multiplayer.md § Player settings.
    */
   autorun = true;
 
   private world: World;
 
-  /** `start` is where this body spawns: the map's own player start unless a coop start is given. */
+  /**
+   * @param start  where this body spawns: the map's own player start unless a coop start is given
+   */
   constructor(world: World, start: Placement = world.playerStart()) {
     this.world = world;
     this.x = start.x;
@@ -287,7 +303,10 @@ export class Player implements Pos3 {
     };
   }
 
-  /** The restore twin of `snapshot`; a discontinuous move, so it ends on `syncInterpolation`. */
+  /**
+   * The restore twin of {@link Player.snapshot}; a discontinuous move, so it ends on
+   * {@link Player.syncInterpolation}.
+   */
   restore(s: PlayerSnapshot): void {
     this.x = s.x;
     this.y = s.y;
@@ -302,10 +321,9 @@ export class Player implements Pos3 {
   }
 
   /**
-   * Collapses the interpolation window onto the current position, so the next
-   * frame draws the player where they now are instead of gliding there from
-   * where they were, and clears `attempted` with it. Every discontinuous move
-   * has to call this.
+   * Collapses the interpolation window onto the current position, so the next frame draws the
+   * player where they now are instead of gliding there from where they were, and clears
+   * {@link Player.attempted} with it. Every discontinuous move has to call this.
    */
   syncInterpolation(): void {
     // A discontinuous move lands the player on whatever is there, so this tic's ground is where
@@ -324,7 +342,10 @@ export class Player implements Pos3 {
     return this.z + EYE_HEIGHT;
   }
 
-  /** Where a camera follows this player — the eyes, in map space; what `snapTo` and `tick` take. */
+  /**
+   * Where a camera follows this player — the eyes, in map space; what
+   * {@link TopDownCamera.snapTo} and {@link TopDownCamera.tick} take.
+   */
   followPoint(): Pos3 {
     return { x: this.x, y: this.y, z: this.eyeZ };
   }
@@ -364,11 +385,12 @@ export class Player implements Pos3 {
    * Teleporter landing: drops the player at the destination facing
    * `dest.angle`, matching vanilla's own view-angle snap on arrival.
    *
-   * **Boom's silent teleports arrive differently**, on two axes: `TeleportDest.rotateBy` turns the
-   * player's momentum through the angle the facing turned, and `TeleportDest.silent` preserves the
-   * height above ground for a body that was mid-air. That offset is measured *here* because the
-   * specials controller is never told the player's height; absent, the landing is vanilla's
-   * exactly. See docs/specials-teleporters.md § Silent and line-to-line teleporters.
+   * **Boom's silent teleports arrive differently**, on two axes: {@link TeleportDest.rotateBy}
+   * turns the player's momentum through the angle the facing turned, and
+   * {@link TeleportDest.silent} preserves the height above ground for a body that was mid-air. That
+   * offset is measured *here* because the specials controller is never told the player's height;
+   * absent, the landing is vanilla's exactly.
+   * See docs/specials-teleporters.md § Silent and line-to-line teleporters.
    */
   teleportTo(dest: TeleportDest): void {
     // Read before `moveTo` overwrites them, reapplied after — the four velocity
@@ -400,14 +422,13 @@ export class Player implements Pos3 {
   }
 
   /**
-   * The arch-vile's knockback (`game/monsters/defs.ts`'s `AttackStats.blast`,
-   * vanilla's `A_VileAttack` momz launch) — the one way `velZ` ever goes
-   * positive. A bare velocity set wouldn't be enough: `update`'s airborne
-   * branch only integrates gravity while `z > groundFloor`, and immediately
-   * after this call `z` still sits exactly on the floor, so the very next
-   * frame would fall into the ground-snap branch and zero the launch right
-   * back out before it ever moved anything. The `+1` nudge is what makes
-   * `update` see the player as already airborne.
+   * The arch-vile's knockback (`game/monsters/defs.ts`'s `AttackStats.blast`, vanilla's
+   * `A_VileAttack` momz launch) — the one way {@link Player.velZ} ever goes positive. A bare
+   * velocity set wouldn't be enough: {@link Player.update}'s airborne branch only integrates
+   * gravity while `z > groundFloor`, and immediately after this call {@link Player.z} still sits
+   * exactly on the floor, so the very next frame would fall into the ground-snap branch and zero
+   * the launch right back out before it ever moved anything. The `+1` nudge is what makes
+   * {@link Player.update} see the player as already airborne.
    */
   launchUpward(speed: number): void {
     this.velZ = speed;
@@ -415,11 +436,12 @@ export class Player implements Pos3 {
   }
 
   /**
-   * Vanilla's `P_DamageMobj` horizontal knockback: adds an impulse (`vx, vy`,
-   * already pointed away from whatever dealt the hit) onto `momX`/`momY`
-   * rather than setting them, so a quick follow-up hit stacks on top of a
-   * knockback still playing out instead of replacing it, matching vanilla's own
-   * `momx += ...`. `update` integrates and decays the result every frame.
+   * Vanilla's `P_DamageMobj` horizontal knockback: adds an impulse onto
+   * {@link Player.momX}/{@link Player.momY} rather than setting them, so a quick follow-up hit
+   * stacks on top of a knockback still playing out instead of replacing it, matching vanilla's own
+   * `momx += ...`. {@link Player.update} integrates and decays the result every frame.
+   *
+   * @param vx  already pointed away from whatever dealt the hit, as `vy` is
    */
   applyKnockback(vx: number, vy: number): void {
     this.momX += vx;
@@ -427,15 +449,14 @@ export class Player implements Pos3 {
   }
 
   /**
-   * A world force — a conveyor's carry, wind, a current — pushed onto the same
-   * momentum channel, in map units/sec, **once per tic**. Sustained against the
-   * channel's own friction decay this settles at vanilla's own equilibrium
-   * (`v* = a·f/(1−f)`), which is exact rather than approximate because the
-   * simulation runs a fixed tic (docs/frameloop.md § What runs in a tic).
+   * A world force — a conveyor's carry, wind, a current — pushed onto the same momentum channel, in
+   * map units/sec, **once per tic**. Sustained against the channel's own friction decay this
+   * settles at vanilla's own equilibrium (`v* = a·f/(1−f)`), which is exact rather than approximate
+   * because the simulation runs a fixed tic (docs/frameloop.md § What runs in a tic).
    *
-   * Separate from `applyKnockback` only so the stop-speed snap can tell them
-   * apart: a slow belt's equilibrium can sit below `MOMENTUM_STOP_SPEED`, and
-   * snapping it to zero every tic would stall the belt outright. See `update`.
+   * Separate from {@link Player.applyKnockback} only so the stop-speed snap can tell them apart: a
+   * slow belt's equilibrium can sit below {@link MOMENTUM_STOP_SPEED}, and snapping it to zero
+   * every tic would stall the belt outright. See {@link Player.update}.
    */
   applyForce(vx: number, vy: number): void {
     this.momX += vx;
@@ -444,12 +465,11 @@ export class Player implements Pos3 {
   }
 
   /**
-   * `applyKnockback`'s direction half: points `speed` away from (`fromX`,
-   * `fromY`) and applies it. The caller supplies the magnitude, since that
-   * comes from `monsters/defs.ts: thrustSpeed` against a per-victim `mass` this
-   * class has no business knowing — `ThingLayer.damage` is the monster/barrel
-   * twin of this, doing the identical arithmetic for its own bodies. See
-   * docs/movement.md § Knockback.
+   * {@link Player.applyKnockback}'s direction half: points `speed` away from (`fromX`, `fromY`)
+   * and applies it. The caller supplies the magnitude, since that comes from
+   * `monsters/defs.ts: thrustSpeed` against a per-victim `mass` this class has no business
+   * knowing — `ThingLayer.damage` is the monster/barrel twin of this, doing the identical
+   * arithmetic for its own bodies. See docs/movement.md § Knockback.
    */
   applyDamageThrust(speed: number, fromX: number, fromY: number): void {
     let dx = this.x - fromX;
@@ -472,12 +492,15 @@ export class Player implements Pos3 {
 
   /**
    * Movement is camera-relative: W always moves the player away from the camera on screen,
-   * whatever they are aiming at. `forwardDeg` is the DOOM-space bearing the camera looks along
-   * (`TopDownCamera.viewerAngleDeg`, docs/camera.md § Camera orbit). `blockers` are the solid
-   * bodies the player slides along rather than walks through (`slideMove`). Forward and sideways
-   * are separate, differently-sized thrusts that are never renormalized, and `ground` is what an
-   * icy or muddy Boom floor does to all of it — omitted, the identity.
+   * whatever they are aiming at. Forward and sideways are separate, differently-sized thrusts that
+   * are never renormalized.
    * docs/movement.md § Collision, § Movement speed and straferunning, § Friction.
+   *
+   * @param forwardDeg  the DOOM-space bearing the camera looks along
+   *                    ({@link TopDownCamera.viewerAngleDeg}, docs/camera.md § Camera orbit)
+   * @param blockers    the solid bodies the player slides along rather than walks through
+   *                    ({@link World.slideMove})
+   * @param ground      what an icy or muddy Boom floor does to all of it; omitted, the identity
    */
   update(
     dt: number,
@@ -628,10 +651,10 @@ export class Player implements Pos3 {
   }
 
   /**
-   * One displacement, clipped against walls and solid bodies — or taken raw while `noclip` is on,
-   * where `P_TryMove`'s every check is skipped and the move always lands whole. The velocity each
-   * caller reads back off the result is then simply what it asked for, which is exactly right: a
-   * noclipped run into a wall keeps its speed.
+   * One displacement, clipped against walls and solid bodies — or taken raw while
+   * {@link Player.noclip} is on, where `P_TryMove`'s every check is skipped and the move always
+   * lands whole. The velocity each caller reads back off the result is then simply what it asked
+   * for, which is exactly right: a noclipped run into a wall keeps its speed.
    */
   private moveBy(dx: number, dy: number, blockers?: readonly ThingBlocker[]): Pos2 {
     if (this.noclip) return { x: this.x + dx, y: this.y + dy };

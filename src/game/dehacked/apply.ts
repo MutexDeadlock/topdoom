@@ -13,7 +13,14 @@ import {
 import * as things from '../things/tables.ts';
 import { BARREL_CHAIN, type AttackPose } from '../things/defs.ts';
 import { MELEE_RANGE, type AttackStats, type MonsterSounds } from '../monsters/defs.ts';
-import { IMPACT_EFFECTS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_SOUNDS } from '../spritefx/tables.ts';
+import {
+  IMPACT_EFFECTS,
+  ITEM_FOG,
+  PROJECTILE_FRAMES,
+  PROJECTILE_RADIUS,
+  PROJECTILE_SOUNDS,
+  TELEPORT_FOG,
+} from '../spritefx/tables.ts';
 import { LOCKED_LINES } from '../specials/tables.ts';
 import { CHEAT_MESSAGES } from '../cheats.ts';
 import {
@@ -35,6 +42,7 @@ import {
   deriveFrameTables,
   type MissileFrames,
   type MonsterFrames,
+  type OneShotFrames,
   patchStates,
   pristineFrameTables,
 } from './frames.ts';
@@ -55,8 +63,8 @@ import {
  * The five flag `Set`s a `Bits` mask can add a doomednum to or remove it from — this engine has no
  * flags bitfield, so every `MF_*` with a sink is a membership edit somewhere. Each row carries the
  * predicate over the mask that decides membership, because one of them is not a single bit
- * (`isSolidDecoration`). The one list both `applyBits` and the pristine snapshot walk, so a `Set`
- * can never be patched without being restored.
+ * ({@link isSolidDecoration}). The one list both {@link applyBits} and the pristine snapshot walk,
+ * so a `Set` can never be patched without being restored.
  */
 const FLAG_SETS: readonly (readonly [Set<number>, (mask: number) => boolean])[] = [
   [things.COUNTKILL_TYPES, (mask) => Boolean(mask & MF_FLAGS.COUNTKILL.bit)],
@@ -67,9 +75,9 @@ const FLAG_SETS: readonly (readonly [Set<number>, (mask: number) => boolean])[] 
 ];
 
 /**
- * Every patchable record table, as the one list `resetDehacked` walks — the shape `FLAG_SETS` has
- * for the `Set`s, and for the same reason: registering a table here is the only edit needed, so a
- * table can never be patched without being restored.
+ * Every patchable record table, as the one list {@link resetDehacked} walks — the shape
+ * {@link FLAG_SETS} has for the `Set`s, and for the same reason: registering a table here is the
+ * only edit needed, so a table can never be patched without being restored.
  */
 const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(MONSTER_STATS),
@@ -102,6 +110,8 @@ const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(PROJECTILE_SOUNDS),
   patchable(BARREL_CHAIN),
   patchable(things.CORPSE_GIB),
+  patchable(TELEPORT_FOG),
+  patchable(ITEM_FOG),
 ];
 
 /**
@@ -112,13 +122,14 @@ const PATCHED_SETS: readonly Set<number>[] = [...FLAG_SETS.map(([set]) => set), 
 const PRISTINE_SETS = PATCHED_SETS.map((set) => [...set]);
 
 /**
- * Whether the session applied any `Thing` record — that is, whether `MONSTER_HEALTH` and the stat
- * tables still read as vanilla left them.
+ * Whether the session applied any `Thing` record — that is, whether {@link things.MONSTER_HEALTH}
+ * and the stat tables still read as vanilla left them.
  *
  * `snapshotThings` asks, because it elides a monster's `health` against `spawnHealthFor`, which
- * reads `MONSTER_HEALTH`. With a patch loaded that baseline is a patched value, so an elided
- * `health` would restore differently under a set without the patch; writing it unconditionally
- * makes the baseline stop mattering. docs/dehacked.md § Savegames and patched tables.
+ * reads {@link things.MONSTER_HEALTH}. With a patch loaded that baseline is a patched value, so an
+ * elided `health` would restore differently under a set without the patch; writing it
+ * unconditionally makes the baseline stop mattering. docs/dehacked.md § Savegames and patched
+ * tables.
  */
 export function thingStatsPatched(): boolean {
   return patchedThings;
@@ -129,9 +140,9 @@ let patchedThings = false;
 /**
  * Puts every patchable table back to vanilla's values.
  *
- * Called immediately **before** `applyDehacked`, not after a session ends: a `Game` that throws
- * mid-construction would otherwise leave the tables patched, and resetting on the way in makes a
- * session read the same tables whatever the previous one loaded. That is the failure mode
+ * Called immediately **before** {@link applyDehacked}, not after a session ends: a `Game` that
+ * throws mid-construction would otherwise leave the tables patched, and resetting on the way in
+ * makes a session read the same tables whatever the previous one loaded. That is the failure mode
  * mutating shared tables is most exposed to, so it is closed by ordering rather than by cleanup.
  */
 export function resetDehacked(): void {
@@ -181,14 +192,15 @@ export function applyDehacked(patch: DehPatch): void {
 
 /**
  * Pairs one patchable record table with its pristine clone, taken at import — before any `Game`
- * exists, so it can only ever capture the vanilla values — and returns the function that puts it
- * back.
+ * exists, so it can only ever capture the vanilla values.
  *
  * `structuredClone` rather than a shallow copy because `MonsterStats` nests three levels deep
  * (`ranged.projectile.pairOffsetsRad` is an array of arrays, `sounds.walk.sounds` an array); a
  * shallow copy would hand a patched sub-object straight back on reset.
+ *
+ * @returns the function that puts the table back
  */
-function patchable<T>(table: Record<number | string, T>): () => void {
+function patchable<T extends object>(table: T): () => void {
   const pristine = structuredClone(table);
   return () => restore(table, pristine);
 }
@@ -196,8 +208,9 @@ function patchable<T>(table: Record<number | string, T>): () => void {
 /**
  * Empties a record and refills it from a clone, so the pristine copy is never handed to a mutator.
  */
-function restore<T>(table: Record<number | string, T>, from: Record<number | string, T>): void {
-  for (const key of Object.keys(table)) delete table[key];
+function restore<T extends object>(table: T, from: T): void {
+  const keyed = table as Record<string, unknown>;
+  for (const key of Object.keys(keyed)) delete keyed[key];
   Object.assign(table, structuredClone(from));
 }
 
@@ -249,9 +262,10 @@ function applyThing(edit: DehThingEdit): void {
 }
 
 /**
- * A `Thing` record's sound fields, onto `MonsterSounds` and — for the two types that carry their
- * own pain/death sounds outside the stat table — `INERT_SHOOTABLE`. A `null` is `sfx_None`, and
- * deletes the field rather than setting it, which is what makes the monster silent there.
+ * A `Thing` record's sound fields, onto {@link MonsterSounds} and — for the two types that carry
+ * their own pain/death sounds outside the stat table — {@link INERT_SHOOTABLE}. A `null` is
+ * `sfx_None`, and deletes the field rather than setting it, which is what makes the monster silent
+ * there.
  */
 function applySounds(
   stats: (typeof MONSTER_STATS)[number] | undefined,
@@ -279,8 +293,8 @@ function applySounds(
 
 /**
  * A missile's edits, onto every table keyed by its flight sprite. In vanilla one `mobjinfo` is the
- * imp's fireball wherever it comes from, so every `MONSTER_STATS` entry naming that sprite moves
- * together — which is the faithful answer, not an approximation.
+ * imp's fireball wherever it comes from, so every {@link MONSTER_STATS} entry naming that sprite
+ * moves together — which is the faithful answer, not an approximation.
  */
 function applyMissile(sink: (typeof MISSILE_SINKS)[string], edit: DehThingEdit): void {
   if (edit.radius !== undefined) PROJECTILE_RADIUS[sink.sprite] = edit.radius;
@@ -325,20 +339,21 @@ function applyBits(dn: number, mask: number, height: number | undefined): void {
 }
 
 /**
- * Whether a mask makes its type a member of `SOLID_DECORATION_TYPES`, which is `MF_SOLID` **and not
- * `MF_SHOOTABLE`** — a prop that blocks movement but that a shot passes through, not vanilla's
- * `MF_SOLID` alone (docs/movement.md § Solid decorations). Every monster in `info.c` carries
- * `MF_SOLID` too, so keying membership on that bit by itself would put any patched monster in the
- * set and `things.ts` would then skip it in the hitscan, projectile and splash paths.
+ * Whether a mask makes its type a member of {@link things.SOLID_DECORATION_TYPES}, which is
+ * `MF_SOLID` **and not `MF_SHOOTABLE`** — a prop that blocks movement but that a shot passes
+ * through, not vanilla's `MF_SOLID` alone (docs/movement.md § Solid decorations). Every monster in
+ * `info.c` carries `MF_SOLID` too, so keying membership on that bit by itself would put any patched
+ * monster in the set and `things.ts` would then skip it in the hitscan, projectile and splash
+ * paths.
  */
 function isSolidDecoration(mask: number): boolean {
   return Boolean(mask & MF_FLAGS.SOLID.bit) && !(mask & MF_FLAGS.SHOOTABLE.bit);
 }
 
 /**
- * `Misc`'s values, each routed to whatever `MISC_SINKS` says it writes: an `InventoryLimits` field
- * for all but one, and `weaponinfo[wp_bfg].ammopershot` for `BFG Cells/Shot`.
- * docs/dehacked.md § Weapon, Ammo and Misc.
+ * `Misc`'s values, each routed to whatever {@link MISC_SINKS} says it writes: an
+ * {@link InventoryLimits} field for all but one, and `weaponinfo[wp_bfg].ammopershot` for
+ * `BFG Cells/Shot`. docs/dehacked.md § Weapon, Ammo and Misc.
  */
 function applyMisc(misc: Readonly<Record<string, number>>): void {
   const limits: Partial<InventoryLimits> = {};
@@ -368,7 +383,8 @@ const OBITUARY_TOKENS: Record<string, string> = {
 
 /**
  * Every `OB_*` string the patch set, onto the `DamageCause` line each one replaces. Whole lines,
- * not names: `OBITUARIES` is shaped that way precisely so a patch has something to replace.
+ * not names: {@link things.OBITUARIES} is shaped that way precisely so a patch has something to
+ * replace.
  *
  * The text is written about a third-person victim (ZDoom's `%o was squished.`) and this overlay
  * has one player and speaks to them, so the tokens go to second person and the line is capitalised
@@ -417,11 +433,12 @@ function applyAmmo(edit: DehAmmoEdit): void {
  * this engine keys the grant by doomednum in a table of its own.
  * docs/items.md § Ammo counts, and what a patch can move.
  *
- * Its five state pointers are applied by `applyFrames` instead, which walks the repointed fire
- * chain — docs/dehacked.md § Weapon, Ammo and Misc.
+ * Its five state pointers are applied by {@link applyFrames} instead, which walks the repointed
+ * fire chain — docs/dehacked.md § Weapon, Ammo and Misc.
  *
- * An index of -1 is "the record wrote no `Ammo type` line" and leaves the weapon's own class alone;
- * without that guard a record that only repoints frames would disarm the weapon.
+ * @param ammoIndex  -1 when the record wrote no `Ammo type` line, which leaves the weapon's own
+ *                   class alone; without that guard a record that only repoints frames would
+ *                   disarm the weapon
  */
 function applyWeapon(index: number, ammoIndex: number): void {
   const id = WEAPON_ORDER[index];
@@ -458,10 +475,11 @@ function put<T>(table: Record<number | string, T>, key: number | string, value: 
  * the walker reads differently (docs/dehacked.md § Frames lists them) and every unpatched type
  * exactly as they were.
  *
- * A patch with no frame edits at all returns before cloning the frame table: `resetDehacked` runs
- * immediately before this and has already refilled every sink from vanilla. `stateCount` is how far
- * the patch grew that table (docs/dehacked.md § Extended states); growth on its own moves nothing,
- * so it is not itself a reason to walk.
+ * A patch with no frame edits at all returns before cloning the frame table: {@link resetDehacked}
+ * runs immediately before this and has already refilled every sink from vanilla.
+ *
+ * @param stateCount  how far the patch grew the frame table (docs/dehacked.md § Extended states);
+ *                    growth on its own moves nothing, so it is not itself a reason to walk
  */
 function applyFrames(
   frameEdits: readonly DehFrameEdit[],
@@ -512,6 +530,9 @@ function applyFrames(
     things.CORPSE_GIB.sprite = after.gibs.sprite;
     things.CORPSE_GIB.frames = after.gibs.frames;
   }
+  // The two fogs, whose rows no placeable doomednum reaches. docs/dehacked.md § Frames.
+  if (!same(before.teleportFog, after.teleportFog)) writeOneShot(TELEPORT_FOG, after.teleportFog);
+  if (!same(before.itemFog, after.itemFog)) writeOneShot(ITEM_FOG, after.itemFog);
   if (after.barrel && !same(before.barrel, after.barrel)) {
     BARREL_CHAIN.idleFrames = after.barrel.idleFrames;
     BARREL_CHAIN.idleFrameSeconds = after.barrel.idleFrameSeconds;
@@ -634,7 +655,10 @@ function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
   }
 }
 
-/** One `S_sfx[]` index onto a `MonsterSounds` field; index 0 is `sfx_None`, which means silence. */
+/**
+ * One `S_sfx[]` index onto a {@link MonsterSounds} field; index 0 is `sfx_None`, which means
+ * silence.
+ */
 function putSound(sounds: MonsterSounds, slot: 'melee' | 'attack' | 'pain' | 'death', index: number): void {
   const name = SFX_ORDER[index];
   if (name === undefined) return;
@@ -644,9 +668,9 @@ function putSound(sounds: MonsterSounds, slot: 'melee' | 'attack' | 'pain' | 'de
 
 /**
  * The per-shot attacks of a volley whose firing actions don't all belong to the same monster —
- * `AttackStats.shotAttacks`. Each entry borrows its roll and its projectile from whoever owns that
- * action in vanilla, exactly as a whole-chain repoint does; the chain's own attack still supplies
- * the timings and the pose, and stands in wherever the bridge names nobody.
+ * {@link AttackStats.shotAttacks}. Each entry borrows its roll and its projectile from whoever owns
+ * that action in vanilla, exactly as a whole-chain repoint does; the chain's own attack still
+ * supplies the timings and the pose, and stands in wherever the bridge names nobody.
  *
  * Undefined unless the *owners* differ, not merely the action names: the mancubus's chain carries
  * three distinct `A_FatAttack*` that are one attack fanned by `pairOffsetsRad`, and all three name
@@ -668,13 +692,13 @@ function shotAttacksFor(chain: AttackStats, actions: readonly string[]): AttackS
 }
 
 /**
- * The `AttackStats` a repointed chain carries: a copy of the attack the action's own type fires in
- * vanilla (`ATTACK_ACTION_SOURCES`), or null where the chain fires nothing at all. Two deliberate
- * fallbacks — an action this bridge doesn't name leaves the type's existing attack alone rather
- * than clearing it, and where the owning type has no attack in *this* slot the other one is taken,
- * since vanilla's actions don't care which chain they sit in. The copy is taken **after**
- * `applyThing`, so a patch that retunes the imp and then repoints something at `A_TroopAttack` gets
- * the retuned figures. docs/dehacked.md § Action pointers.
+ * The {@link AttackStats} a repointed chain carries: a copy of the attack the action's own type
+ * fires in vanilla ({@link ATTACK_ACTION_SOURCES}), or null where the chain fires nothing at all.
+ * Two deliberate fallbacks — an action this bridge doesn't name leaves the type's existing attack
+ * alone rather than clearing it, and where the owning type has no attack in *this* slot the other
+ * one is taken, since vanilla's actions don't care which chain they sit in. The copy is taken
+ * **after** {@link applyThing}, so a patch that retunes the imp and then repoints something at
+ * `A_TroopAttack` gets the retuned figures. docs/dehacked.md § Action pointers.
  */
 function attackFor(
   action: string | null,
@@ -699,26 +723,27 @@ function attackFor(
 }
 
 /**
- * The `WeaponDef` fields a repointed fire chain does **not** borrow: `ammoType` is the `Weapon`
- * record's own line, `cooldown` is walked off the chain itself, and `iconLump` is the pickup's art
- * rather than anything the shot does. Everything else is what the weapon fires, so it is stated as
- * the exclusion — a field added to `WeaponDef` later describes the shot until it says otherwise.
+ * The {@link WeaponDef} fields a repointed fire chain does **not** borrow:
+ * {@link WeaponDef.ammoType} is the `Weapon` record's own line, {@link WeaponDef.cooldown} is
+ * walked off the chain itself, and {@link WeaponDef.iconLump} is the pickup's art rather than
+ * anything the shot does. Everything else is what the weapon fires, so it is stated as the
+ * exclusion — a field added to {@link WeaponDef} later describes the shot until it says otherwise.
  */
 const WEAPON_OWN_FIELDS: readonly (keyof WeaponDef)[] = ['ammoType', 'cooldown', 'iconLump'];
 
 /**
- * What a repointed fire chain now *fires*: the `WeaponDef` of the weapon whose firing action it
- * took, copied bar `WEAPON_OWN_FIELDS`. The chain still supplies its own rate, and an action the
- * bridge doesn't name leaves the weapon's shot alone — the two fallbacks `attackFor` makes on the
- * monster side, for the same reasons.
+ * What a repointed fire chain now *fires*: the {@link WeaponDef} of the weapon whose firing action
+ * it took, copied bar {@link WEAPON_OWN_FIELDS}. The chain still supplies its own rate, and an
+ * action the bridge doesn't name leaves the weapon's shot alone — the two fallbacks
+ * {@link attackFor} makes on the monster side, for the same reasons.
  *
- * The copy is taken **after** `applyWeapon` and `applyMisc`, so a patch that retunes the BFG's
- * cells/shot and then points something else at `A_FireBFG` gets the retuned figure.
+ * The copy is taken **after** {@link applyWeapon} and {@link applyMisc}, so a patch that retunes
+ * the BFG's cells/shot and then points something else at `A_FireBFG` gets the retuned figure.
  * docs/dehacked.md § Action pointers.
  *
- * `skinWeapon` rides along with the shot, which is what draws the patched weapon in the player's
- * hands as the one it now fires; a shot that resolves to no weapon at all clears it, and
- * `playerSkinWeapon` takes the whole shipped set out of use.
+ * {@link WeaponDef.skinWeapon} rides along with the shot, which is what draws the patched weapon in
+ * the player's hands as the one it now fires; a shot that resolves to no weapon at all clears it,
+ * and `playerSkinWeapon` takes the whole shipped set out of use.
  */
 function borrowWeapon(id: WeaponId, before: string | null, after: string | null): void {
   if (after === before) return;
@@ -735,8 +760,9 @@ function borrowWeapon(id: WeaponId, before: string | null, after: string | null)
 
 /**
  * One missile's changed art. A patched flight sprite moves the missile to a new key in every
- * sprite-keyed table — `applyMissile`'s fan-out, plus the two tables the walker doesn't derive
- * (`PROJECTILE_RADIUS`, `PROJECTILE_SOUNDS`), which carry over under the new name.
+ * sprite-keyed table — {@link applyMissile}'s fan-out, plus the two tables the walker doesn't
+ * derive ({@link PROJECTILE_RADIUS}, {@link PROJECTILE_SOUNDS}), which carry over under the new
+ * name.
  */
 function writeMissile(sprite: string, a: MissileFrames | undefined, b: MissileFrames): void {
   let key = sprite;
@@ -756,4 +782,12 @@ function writeMissile(sprite: string, a: MissileFrames | undefined, b: MissileFr
   }
   if (!same(a?.flight, b.flight)) put(PROJECTILE_FRAMES, key, b.flight);
   if (!same(a?.impact, b.impact)) put(IMPACT_EFFECTS, key, b.impact);
+}
+
+/**
+ * One fog's changed chain onto its record. A chain that draws nothing empties the record rather
+ * than leaving vanilla's art standing, and the effect layer then spawns nothing for it.
+ */
+function writeOneShot(record: OneShotFrames, chain: OneShotFrames | null): void {
+  Object.assign(record, chain ?? { sprite: '', frames: [], frameSeconds: 0 });
 }

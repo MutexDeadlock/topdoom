@@ -190,19 +190,33 @@ lowered.
 ## The pickup puff
 
 An item vanishes the frame it is collected, which on its own reads as a dropped frame.
-`SpriteFxLayer.spawnPickupFog` leaves a puff where it stood: the teleport fog's `TFOG` art, frames
-`B`-`E` (`PICKUP_FOG_FRAMES`) at 3 tics each — half the teleport fog's own frame time — with
-`PICKUP_FOG_SCALE`, `PICKUP_FOG_OPACITY`, and `PICKUP_FOG_LIGHT` scaling the GLDEFS light those
-frames carry — colour *and* radius (docs/lights.md § Dimming one offer). `DTFOG*` is a pool written
-for a full teleport fog: at this size it read as a lamp switching on under the player, and it left
-the puff paying a full-size light's reach flood and shadow cast for a sprite a fraction of that.
-Deliberate deviation: vanilla removes a pickup with no visual at all. All five values are tuned by
-feel, and it is silent — the pickup's own sound already plays (docs/audio.md).
+`SpriteFxLayer.spawnPickupFog` leaves a puff where it stood, played off `ITEM_FOG` — the fog a
+deathmatch item comes *back* in (docs/multiplayer-deathmatch.md § Item respawn), so an item leaves
+in the art it returns in, patched or not: its sprite, `pickupFogFrames` of its chain, at
+`PICKUP_FOG_SPEEDUP` times its rate (3 tics a frame in vanilla), drawn at `PICKUP_FOG_SCALE` and
+`PICKUP_FOG_OPACITY`. A patch that leaves the item fog drawing nothing leaves no puff. Deliberate
+deviation: vanilla removes a pickup with no visual at all. All three values are tuned by feel, and
+it is silent — the pickup's own sound already plays (docs/audio.md).
 
-**`B`-`E` because those are the frames that shrink.** `TFOG`'s lumps are 41x56 (`A`), 42x45 (`B`),
-40x37 (`C`), 30x34 (`D`), 17x16 (`E`), then 9x8, 3x3 and 7x7 — so `B`-`E` collapse inward, which is
-what the puff has to say, and anything past `E` is a few pixels that `PICKUP_FOG_SCALE` shrinks to
-nothing.
+**The frames that shrink.** `pickupFogFrames` keeps each letter once and drops the closing one:
+vanilla's `A,B,A,B,C,D,E` gives `A`-`D`. `IFOG`'s lumps are 40x37 (`A`), 34x30 (`B`), 17x16 (`C`),
+9x8 (`D`), then 3x4 — so `A`-`D` collapse inward, which is what the puff has to say, and `E` is a
+few pixels that `PICKUP_FOG_SCALE` shrinks to nothing. The flicker's repeats go because a puff this
+short has no room for them. A one-letter chain keeps its letter.
+
+**The draw scale scales the hang and the light with it.** A one-shot hangs from its patch's own
+offset (docs/sprites.md § Why upright planes, not `THREE.Sprite`); `SpriteFxLayer.queue` multiplies
+that offset by the list's scale, so the puff shrinks *around* where the item stood rather than
+sinking a full-size hang under a fraction-size sprite. The same scale is the GLDEFS light's
+`intensity` (docs/lights.md § Dimming one offer): `IFOG`'s light is the engine's own blue copy of
+the teleport fog's pool (docs/lights.md § Where the definitions come from), and at full size it
+would read as a lamp switching on under the player.
+
+**Everyone's pickups, not the viewed player's alone.** `Game.consumePickup` spawns the puff for
+whichever slot took the item; only the sound and the feed line are gated on the viewed slot
+(`P_TouchSpecialThing`'s `consoleplayer` test is about the sound). In coop or a deathmatch an item
+another player takes vanishes from the screen the same frame, which is exactly what the puff is
+for. An item left lying for the others (a key, a weapon under `weaponsStay`) puffs nothing.
 
 **Settings -> Visuals -> Top-down extras -> "Puff where an item is collected"** switches it off
 (`getPickupPuff`/`setPickupPuff` in `game/spritefx.ts`, on by default). Read at the spawn, so it
@@ -215,11 +229,10 @@ puff needs no second seam of its own. A voodoo doll's collection shows it too, b
 handing over the same callback.
 
 Translucency is batch-wide, so these draw through `SpriteFxLayer`'s own `pickupBatch`
-(`translucent: true`) — the same reason drops have their own batch, below. The batch, the draw scale
-and the light dimming travel together as the list's `DrawStyle` rather than as fields on each
-effect: every puff in the list carries the same three. Not saved and not restored, like every
-transient but the teleport fog (docs/savegames.md § What is saved and what is deliberately not);
-nothing in a tic reads it.
+(`translucent: true`) — the same reason drops have their own batch, below. The batch and the draw
+scale travel together as the list's `DrawStyle` rather than as fields on each effect: every puff in
+the list carries the same two. Not saved and not restored, like every transient but the teleport
+fog (docs/savegames.md § What is saved and what is deliberately not); nothing in a tic reads it.
 
 ## Making monster drops readable
 

@@ -704,6 +704,15 @@ export const GOLDEN_BARREL = { idleFrames: ["A","B"], idleTics: 6, deathSprite: 
 export const GOLDEN_GIBS = { sprite: "POL5", frames: ["A"] };
 
 /**
+ * `S_TFOG`..`S_TFOG10` and `S_IFOG`..`S_IFOG5` as `info.c` writes them: every state 6 tics, frame
+ * words `32768, 32769, 32768, 32769, 32770` and on — so the teleport fog flickers `A,B,A,B` before
+ * running `C`-`J`, and the item fog before `C`-`E`. `MT_TFOG`'s and `MT_IFOG`'s spawn chains,
+ * reached by type name — docs/dehacked.md § Frames.
+ */
+export const GOLDEN_TELEPORT_FOG = { sprite: "TFOG", frames: ["A","B","A","B","C","D","E","F","G","H","I","J"], tics: 6 };
+export const GOLDEN_ITEM_FOG = { sprite: "IFOG", frames: ["A","B","A","B","C","D","E"], tics: 6 };
+
+/**
  * Each weapon's fire rate as read by hand off `info.c`'s psprite chains, in `weapontype_t` order —
  * the states summed named beside each. `shots` is how many firing actions one pass carries: the
  * chainsaw and chaingun call theirs twice, so their rate is one state's tics rather than the

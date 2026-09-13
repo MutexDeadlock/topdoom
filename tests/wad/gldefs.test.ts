@@ -208,7 +208,16 @@ describe('GLDEFS · the stock file', () => {
 
   test('the shipped definitions parse, and spot checks land on the right light', () => {
     const g = parseGldefs(readFileSync(STOCK, 'latin1'));
-    assert.equal(g.lights.size, 104);
+    assert.equal(g.lights.size, 107);
+
+    // TopDOOM's own block at the end: the item fog in the teleport fog's pool, blue for green.
+    const itemFog = lightForFrame(g, 'IFOGA')!;
+    const teleportFog = lightForFrame(g, 'TFOGB')!;
+    assert.deepEqual(
+      [itemFog.size, itemFog.secondarySize, itemFog.r, itemFog.g, itemFog.b],
+      [teleportFog.size, teleportFog.secondarySize, teleportFog.r, teleportFog.b, teleportFog.g],
+    );
+    assert.ok(lightForFrame(g, 'IFOGE'), 'every item fog frame is lit');
 
     // A rocket in flight: a plain point light.
     const rocket = lightForFrame(g, 'MISLA')!;

@@ -1,6 +1,6 @@
 /**
  * {@link SpriteFxLayer}: the transient sprite effects in flight — blood, bullet puffs, explosions,
- * teleport fog, smoke trails, flames — batched like map things, plus hitscan tracer lines.
+ * teleport and item fog, smoke trails, flames — batched like map things, plus hitscan tracer lines.
  * See docs/combat.md § Effects and their batching.
  */
 import * as THREE from 'three';
@@ -17,8 +17,9 @@ import { GRAVITY } from './player.ts';
 import { transfersOf, type Transfers } from './specials/transfers.ts';
 import { triangularDraw } from '../util/random.ts';
 import { type OneShotEffect } from './spritefx/defs.ts';
+import type { OneShotFrames } from './dehacked/frames.ts';
 import { FULLBRIGHT_FRAMES } from './things/tables.ts';
-import { BLOOD_FRAME_SECONDS, BLOOD_FRAMES, bloodFrames, CRUSH_BLOOD_SPEED, HIT_Z_JITTER, IFOG_FRAME_SECONDS, IFOG_FRAMES, PICKUP_FOG_FRAME_SECONDS, PICKUP_FOG_FRAMES, PICKUP_FOG_LIGHT, PICKUP_FOG_OPACITY, PICKUP_FOG_SCALE, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
+import { BLOOD_FRAME_SECONDS, BLOOD_FRAMES, bloodFrames, CRUSH_BLOOD_SPEED, HIT_Z_JITTER, ITEM_FOG, PICKUP_FOG_OPACITY, PICKUP_FOG_SCALE, PICKUP_FOG_SPEEDUP, pickupFogFrames, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TELEPORT_FOG, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
 import type { TeleportFogState } from './snapshot.ts';
 import type { Placement, Pos3 } from '../types.ts';
 import { cos, sin } from '../util/fdlibm.ts';
@@ -52,14 +53,13 @@ export type VileFlameResolver = (vileId: number, targetId: number) => Pos3 | nul
 export type FogVisibility = (subsector: number) => boolean;
 
 /**
- * How one list is drawn: which batch it lands in, at what draw scale, and how far the frames' own
- * GLDEFS lights are dimmed with it. Per **list**, not per effect — every puff in a list carries the
- * same three. docs/items.md § The pickup puff.
+ * How one list is drawn: which batch it lands in, and at what scale — which the art's hang below
+ * its point and the frames' own GLDEFS lights both shrink with. Per **list**, not per effect: every
+ * puff in a list carries the same two. docs/items.md § The pickup puff.
  */
 interface DrawStyle {
   batch: SpriteBatch;
   scale: number;
-  lightScale: number;
 }
 
 /** What the layer is built with: the banks it draws through, and the two questions above. */
@@ -103,12 +103,8 @@ export class SpriteFxLayer {
    */
   private pickupBatch = new SpriteBatch({ translucent: true });
   /** The two styles this layer draws in, built once rather than per list per frame. */
-  private plain: DrawStyle = { batch: this.batch, scale: 1, lightScale: 1 };
-  private pickupStyle: DrawStyle = {
-    batch: this.pickupBatch,
-    scale: PICKUP_FOG_SCALE,
-    lightScale: PICKUP_FOG_LIGHT,
-  };
+  private plain: DrawStyle = { batch: this.batch, scale: 1 };
+  private pickupStyle: DrawStyle = { batch: this.pickupBatch, scale: PICKUP_FOG_SCALE };
   /**
    * Scratch for {@link doomToWorld}, reused across every batched sprite — same reason
    * `game/things.ts` keeps one.
@@ -184,11 +180,13 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Spawns a one-shot sprite animation and returns it, or null if the sprite has no art — resolved
-   * once here so no update pass has to carry a missing-lump case per frame. The caller decides
-   * which list it joins; {@link SpriteFxLayer.spawnImpact} is the spawn-and-forget case.
+   * Spawns a one-shot sprite animation and returns it, or null where there is nothing to draw — no
+   * frames (a patch that emptied the chain), or a sprite the set has no art for — resolved once
+   * here so no update pass has to carry a missing-lump case per frame. The caller decides which
+   * list it joins; {@link SpriteFxLayer.spawnImpact} is the spawn-and-forget case.
    */
   spawn(sprite: string, frames: string[], frameSeconds: number, at: Pos3): OneShotEffect | null {
+    if (frames.length === 0) return null;
     const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
     if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return null;
     // drawPrev seeded to the spawn point: a one-shot's first drawn frame must
@@ -297,7 +295,7 @@ export class SpriteFxLayer {
    */
   restoreTeleportFogs(states: TeleportFogState[]): void {
     for (const s of states) {
-      const effect = this.spawn('TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS, s);
+      const effect = this.spawnFog(TELEPORT_FOG, s);
       if (!effect) continue;
       effect.elapsed = s.elapsed;
       effect.anim.advance(s.elapsed, true);
@@ -310,7 +308,7 @@ export class SpriteFxLayer {
     // teleport is heard at both ends — and this is the one place both are
     // created, for the player's own trip and a monster's alike.
     this.audio.play('telept', at);
-    const effect = this.spawn('TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS, at);
+    const effect = this.spawnFog(TELEPORT_FOG, at);
     if (effect) this.teleportFogs.push(effect);
   }
 
@@ -340,21 +338,32 @@ export class SpriteFxLayer {
   }
 
   /**
-   * The fog an item comes back in — `P_RespawnSpecials`' `MT_IFOG` at the spawn point with
-   * `itmbk` on it (`p_mobj.c`). docs/multiplayer-deathmatch.md § Item respawn.
+   * The fog an item comes back in — `P_RespawnSpecials`' {@link ITEM_FOG} with `itmbk` on it
+   * (`p_mobj.c`). docs/multiplayer-deathmatch.md § Item respawn.
+   *
+   * @param at  the spawn point, on its floor
    */
   spawnItemFog(at: Pos3): void {
     this.audio.play('itmbk', at);
-    this.spawnImpact('IFOG', IFOG_FRAMES, IFOG_FRAME_SECONDS, at);
+    const effect = this.spawnFog(ITEM_FOG, at);
+    if (effect) this.addImpact(effect);
   }
 
   /**
-   * The puff left where a collected item stood. Silent — the caller has just played the pickup's
-   * own sound. See docs/items.md § The pickup puff.
+   * The puff left where a collected item stood: {@link ITEM_FOG}'s art, patched or not —
+   * {@link pickupFogFrames} of its chain at {@link PICKUP_FOG_SPEEDUP} times its rate, drawn at
+   * {@link PICKUP_FOG_SCALE}. Silent — the pickup's own sound is the caller's. See
+   * docs/items.md § The pickup puff.
    */
   spawnPickupFog(at: Pos3): void {
     if (!pickupPuffEnabled) return;
-    const effect = this.spawn('TFOG', PICKUP_FOG_FRAMES, PICKUP_FOG_FRAME_SECONDS, at);
+
+    const effect = this.spawn(
+      ITEM_FOG.sprite, 
+      pickupFogFrames(ITEM_FOG), 
+      ITEM_FOG.frameSeconds / PICKUP_FOG_SPEEDUP,
+      at
+    );
     if (effect) this.pickupFogs.push(effect);
   }
 
@@ -462,14 +471,17 @@ export class SpriteFxLayer {
   ): void {
     const cached = anim.resolve(facingDeg, this.viewerAngleDeg);
     if (!cached) return;
-    doomToWorld(at.x, at.y, at.z + cached.bottomOffset, this.batchPos);
+    // The hang scales with the art, so a shrunk sprite shrinks around its point.
+    // docs/sprites.md § Why upright planes, not `THREE.Sprite`.
+    doomToWorld(at.x, at.y, at.z + cached.bottomOffset * style.scale, this.batchPos);
     const bright = FULLBRIGHT_FRAMES.has(anim.frameKey);
     const lit = bright ? 255 : light;
     // What flies over a courtyard takes the outdoor tint too, off the leaf it was offered at.
     // docs/render-lighting.md § Outdoor sky tint.
     const sky = !bright && subsector >= 0 && skyLitSector(this.world.sectorOfSubsector(subsector));
     // This is the single funnel for projectiles in flight, every one-shot effect and the Icon of
-    // Sin's cubes — so one hook here covers every moving light the game has (docs/lights.md).
+    // Sin's cubes — so one hook here covers every moving light the game has (docs/lights.md). A
+    // light shrinks with its sprite: docs/lights.md § Dimming one offer.
     let tint: Tint | undefined;
     if (this.lights) {
       let id = this.emitterIds.get(anim);
@@ -477,11 +489,21 @@ export class SpriteFxLayer {
         id = effectEmitterId(this.nextEmitterId++);
         this.emitterIds.set(anim, id);
       }
-      tint = this.lights.offerAndTint(anim.frameKey, at.x, at.y, at.z, id, subsector, style.lightScale);
+      tint = this.lights.offerAndTint(anim.frameKey, at.x, at.y, at.z, id, subsector, style.scale);
     }
     const p = this.batchPos;
     const c = litColor(lit, 0, viewDepthAt(p.x, p.y, p.z));
     style.batch.add(cached, p.x, p.y, p.z, style.scale, c, tint, sky);
+  }
+
+  /**
+   * {@link SpriteFxLayer.spawn} off one of the walked fog records ({@link TELEPORT_FOG},
+   * {@link ITEM_FOG}), so no caller pairs one record's frames with another's rate.
+   *
+   * @returns the effect, or null where the record draws nothing
+   */
+  private spawnFog(fog: OneShotFrames, at: Pos3): OneShotEffect | null {
+    return this.spawn(fog.sprite, fog.frames, fog.frameSeconds, at);
   }
 
   /**

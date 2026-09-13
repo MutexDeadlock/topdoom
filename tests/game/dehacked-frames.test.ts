@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   deriveFrameTables,
+  type OneShotFrames,
   patchStates,
   pristineFrameTables,
   walkChain,
@@ -30,20 +31,23 @@ import {
 } from '../../src/game/things/tables.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { BARREL_CHAIN } from '../../src/game/things/defs.ts';
-import { IMPACT_EFFECTS, PROJECTILE_FRAMES } from '../../src/game/spritefx/tables.ts';
+import { IMPACT_EFFECTS, ITEM_FOG, PROJECTILE_FRAMES, TELEPORT_FOG } from '../../src/game/spritefx/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import {
   GOLDEN_ANIMS,
   GOLDEN_BARREL,
   GOLDEN_GIBS,
+  GOLDEN_ITEM_FOG,
   GOLDEN_MISSILES,
   GOLDEN_MONSTERS,
   GOLDEN_SPRITES,
+  GOLDEN_TELEPORT_FOG,
   GOLDEN_WEAPONS,
 } from '../fixtures/frametables.ts';
 
 const round3 = (n: number | null) => (n === null ? null : Math.round(n * 1000) / 1000);
 const inTics = (seconds: number | null | undefined) => (seconds === null || seconds === undefined ? null : Math.round(seconds * 35));
+const oneShot = (o: OneShotFrames | null) => o && { sprite: o.sprite, frames: o.frames, tics: inTics(o.frameSeconds) };
 const rowSpeed = (dn: number) => MOBJ_INFO.find((r) => r.doomednum === dn)!.speed;
 const stateNamed = (name: string) => STATES.findIndex((row) => row[5] === name);
 const rowOf = (type: string) => MOBJ_INFO.findIndex((row) => row.type === type);
@@ -149,6 +153,9 @@ describe('DEHACKED · the frame walker reproduces the shipped tables', () => {
 
     assert.ok(t.gibs, 'S_GIBS was reached, though no mobjinfo chain points at it');
     cmp('gibs', GOLDEN_GIBS, t.gibs);
+
+    cmp('teleport fog', GOLDEN_TELEPORT_FOG, oneShot(t.teleportFog));
+    cmp('item fog', GOLDEN_ITEM_FOG, oneShot(t.itemFog));
 
     const unexpected = [...mismatches].filter(([label]) => !EXCEPTIONS.has(label));
     assert.deepEqual(unexpected, [], 'the walker and the shipped tables disagree somewhere not in EXCEPTIONS');
@@ -395,6 +402,8 @@ describe('DEHACKED · the derived tables the engine uses are the shipped reading
     }
 
     cmp('gibs', GOLDEN_GIBS, { sprite: CORPSE_GIB.sprite, frames: CORPSE_GIB.frames });
+    cmp('teleport fog', GOLDEN_TELEPORT_FOG, oneShot(TELEPORT_FOG));
+    cmp('item fog', GOLDEN_ITEM_FOG, oneShot(ITEM_FOG));
     cmp('barrel', GOLDEN_BARREL, {
       idleFrames: BARREL_CHAIN.idleFrames,
       idleTics: inTics(BARREL_CHAIN.idleFrameSeconds),

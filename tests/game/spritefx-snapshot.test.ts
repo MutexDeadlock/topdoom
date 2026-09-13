@@ -2,19 +2,20 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SpriteFxLayer } from '../../src/game/spritefx.ts';
 import { World } from '../../src/game/world.ts';
-import { TFOG_FRAME_SECONDS, TFOG_FRAMES } from '../../src/game/spritefx/tables.ts';
+import { TELEPORT_FOG } from '../../src/game/spritefx/tables.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { drawnLumps, fxLayer } from '../fixtures/spritestubs.ts';
+import { drawnLumps, fxLayer, teleportFogLump } from '../fixtures/spritestubs.ts';
 
 /**
- * The teleport fog is the one `SpriteFxLayer` transient a save carries: at 10
- * frames of 6 tics it runs ~1.7 s, long enough to save inside, where every
+ * The teleport fog is the one `SpriteFxLayer` transient a save carries: at 12
+ * states of 6 tics it runs ~2 s, long enough to save inside, where every
  * other effect here is gone in a fraction of that. What this pins is that a
  * restore resumes the *same frame* rather than restarting the animation — the
  * fast-forward is the whole point. See docs/savegames.md § What is saved and
  * what is deliberately not.
  */
 
+const FRAME = TELEPORT_FOG.frameSeconds;
 
 function layerOn(): { layer: SpriteFxLayer; world: World } {
   const world = new World(gridMap(['######', '#....#', '#....#', '######'], { cell: 128 }).map);
@@ -30,12 +31,12 @@ describe('Savegames · teleport fogs round-trip', () => {
     const { layer } = layerOn();
     layer.spawnTeleportFog({ x: 100, y: 200, z: 8 });
     // Mid-frame rather than on a boundary (4.5 frames in): far enough that a
-    // restart would be obvious, well short of the ~1.7 s lifetime, and clear of
+    // restart would be obvious, well short of the ~2 s lifetime, and clear of
     // the float-rounding edge where the frame a boundary lands on is a coin toss.
-    const elapsed = TFOG_FRAME_SECONDS * 4.5;
+    const elapsed = FRAME * 4.5;
     layer.updateTeleportFogs(elapsed);
     const before = drawnLumps(layer);
-    assert.deepEqual(before, [`TFOG${TFOG_FRAMES[4]}0`], 'frame E, four and a half frames in');
+    assert.deepEqual(before, [teleportFogLump(4)], 'the fifth frame, four and a half frames in');
 
     const saved = layer.snapshotTeleportFogs();
     assert.deepEqual(saved, [{ x: 100, y: 200, z: 8, elapsed }]);
@@ -49,13 +50,13 @@ describe('Savegames · teleport fogs round-trip', () => {
   test('a restored fog finishes on time instead of running the full length again', () => {
     const { layer } = layerOn();
     layer.spawnTeleportFog({ x: 0, y: 0, z: 0 });
-    layer.updateTeleportFogs(TFOG_FRAME_SECONDS * 9);
+    layer.updateTeleportFogs(FRAME * (TELEPORT_FOG.frames.length - 1));
 
     const restored = layerOn().layer;
     restored.restoreTeleportFogs(layer.snapshotTeleportFogs());
     assert.equal(drawnLumps(restored).length, 1, 'still playing, one frame left');
 
-    restored.updateTeleportFogs(TFOG_FRAME_SECONDS * 1.5);
+    restored.updateTeleportFogs(FRAME * 1.5);
     assert.deepEqual(drawnLumps(restored), [], 'expired on its own schedule');
   });
 

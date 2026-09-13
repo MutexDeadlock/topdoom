@@ -3,6 +3,7 @@ import { VIEWER_ANGLE_DEG } from '../../src/render/sprites.ts';
 import type { SpriteBank } from '../../src/wad/sprites.ts';
 import type { SpriteMaterialCache } from '../../src/render/sprites.ts';
 import { SpriteFxLayer, type FogVisibility } from '../../src/game/spritefx.ts';
+import { TELEPORT_FOG } from '../../src/game/spritefx/tables.ts';
 import { SILENT } from '../../src/audio/sfx.ts';
 import type { DynamicLights } from '../../src/render/lights.ts';
 
@@ -50,6 +51,15 @@ export const ROT0_BANK = {
   lookup: (sprite: string, frame: string) => ({ lump: `${sprite}${frame}0`, flip: false }),
 } as unknown as SpriteBank;
 
+/**
+ * The lump {@link ROT0_BANK} names for the teleport fog's `frame`th state.
+ *
+ * @param frame  an index into {@link TELEPORT_FOG}'s `frames`, flicker repeats included
+ */
+export function teleportFogLump(frame: number): string {
+  return `${TELEPORT_FOG.sprite}${TELEPORT_FOG.frames[frame]}0`;
+}
+
 /** One `batch.add` a frame made: the lump, and the three.js point it was placed at. */
 export interface DrawnSprite {
   lump: string;
@@ -60,22 +70,24 @@ export interface DrawnSprite {
 }
 
 /**
- * What one frame of a `SpriteFxLayer` actually draws. Reached through the layer's
- * own `draw` with its batch stubbed to record instead of paint, because that is
- * the only place the animator's current frame surfaces — nothing the layer
- * exposes names it.
+ * What one frame of a `SpriteFxLayer` actually draws, in draw order. Reached through
+ * the layer's own `draw` with both its batches — the plain one and the pickup puffs'
+ * — stubbed to record instead of paint, because that is the only place the
+ * animator's current frame surfaces — nothing the layer exposes names it.
  */
 export function drawnSprites(layer: SpriteFxLayer, alpha = 1): DrawnSprite[] {
   const drawn: DrawnSprite[] = [];
-  const batch = (layer as unknown as {
-    batch: { add: (cached: { lump: string }, x: number, y: number, z: number) => void };
-  }).batch;
-  const realAdd = batch.add;
-  batch.add = (cached, x, y, z) => void drawn.push({ lump: cached.lump, x, y, z });
+  type Recording = { add: (cached: { lump: string }, x: number, y: number, z: number) => void };
+  const { batch, pickupBatch } = layer as unknown as { batch: Recording; pickupBatch: Recording };
+  const batches = [batch, pickupBatch];
+  const realAdds = batches.map((b) => b.add);
+  for (const b of batches) b.add = (cached, x, y, z) => void drawn.push({ lump: cached.lump, x, y, z });
   layer.beginFrame(VIEWER_ANGLE_DEG);
   layer.draw(alpha);
   layer.endFrame();
-  batch.add = realAdd;
+  batches.forEach((b, i) => {
+    b.add = realAdds[i];
+  });
   return drawn;
 }
 

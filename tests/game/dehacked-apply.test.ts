@@ -32,7 +32,15 @@ import {
   obituary,
 } from '../../src/game/things/tables.ts';
 import { BARREL_CHAIN } from '../../src/game/things/defs.ts';
-import { IMPACT_EFFECTS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_SOUNDS } from '../../src/game/spritefx/tables.ts';
+import {
+  IMPACT_EFFECTS,
+  ITEM_FOG,
+  pickupFogFrames,
+  PROJECTILE_FRAMES,
+  PROJECTILE_RADIUS,
+  PROJECTILE_SOUNDS,
+  TELEPORT_FOG,
+} from '../../src/game/spritefx/tables.ts';
 import { STATES } from '../../src/game/dehacked/states.ts';
 import { SpriteBank } from '../../src/wad/sprites.ts';
 import { Wad } from '../../src/wad/wad.ts';
@@ -533,6 +541,29 @@ describe('DEHACKED · applying', () => {
     assert.equal(MONSTER_STATS[ThingType.imp].ranged!.projectile!.sprite, 'BAL1');
     assert.equal('TFOG' in PROJECTILE_FRAMES, false);
     assert.equal('TFOG' in PROJECTILE_RADIUS, false);
+  });
+
+  test('a Frame record reshapes the two fogs and the pickup puff, and a reset puts them back', () => {
+    assert.deepEqual(pickupFogFrames(ITEM_FOG), ['A', 'B', 'C', 'D']);
+    // The teleport fog cut off after its opening flicker; the item fog redrawn as TFOG (sprite 26)
+    // and cut off after its C.
+    apply(
+      `Frame ${stateNamed('S_TFOG02')}\nNext frame = 0\n` +
+        `Frame ${stateNamed('S_IFOG')}\nSprite number = 26\nFrame ${stateNamed('S_IFOG3')}\nNext frame = 0\n`,
+    );
+    assert.deepEqual(TELEPORT_FOG.frames, ['A', 'B', 'A']);
+    assert.equal(ITEM_FOG.sprite, 'TFOG');
+    assert.deepEqual(pickupFogFrames(ITEM_FOG), ['A', 'B'], 'the puff follows the patched chain');
+    resetDehacked();
+    assert.equal(TELEPORT_FOG.frames.length, 12);
+    assert.equal(ITEM_FOG.sprite, 'IFOG');
+    assert.deepEqual(pickupFogFrames(ITEM_FOG), ['A', 'B', 'C', 'D']);
+  });
+
+  test('a pickup puff off a one-state item fog keeps that one frame', () => {
+    apply(`Frame ${stateNamed('S_IFOG')}\nNext frame = 0\n`);
+    assert.deepEqual(pickupFogFrames(ITEM_FOG), ['A']);
+    resetDehacked();
   });
 
   test('a Sprite subnumber edit adds or clears a fullbright frame', () => {

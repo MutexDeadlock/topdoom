@@ -1,5 +1,6 @@
 // GZDoom's stock DOOM light definitions: wadsrc_lights/static/filter/doom.id/gldefs.txt
-// from github.com/ZDoom/gzdoom (GPL-3.0), verbatim bar the trailing ID24 block.
+// from github.com/ZDoom/gzdoom (GPL-3.0), verbatim bar the trailing ID24 block,
+// followed by one block of TopDOOM's own lights at the end, marked as such.
 
 // ------------------------------------------------------
 // ------------------ DOOM GAME LIGHTS ------------------
@@ -1384,4 +1385,47 @@ object TeleportFog
     frame TFOGF { light DTFOG4 }
     frame TFOGI { light DTFOG4 }
     frame TFOGJ { light DTFOG3 }
+}
+
+
+// Added by TopDOOM:
+// GZDoom leaves the item fog unlit;
+// this is the teleport fog's DTFOG2-4 pool in blue,
+// bound to IFOG's shrinking frames the way TFOG's are.
+
+// Item fog
+flickerlight DIFOG1
+{
+    color 0.4 0.4 1.0
+    size 60
+    secondarySize 72
+    chance 0.4
+	attenuate 1
+}
+
+flickerlight DIFOG2
+{
+    color 0.4 0.4 1.0
+    size 36
+    secondarySize 48
+    chance 0.4
+	attenuate 1
+}
+
+flickerlight DIFOG3
+{
+    color 0.4 0.4 1.0
+    size 15
+    secondarySize 24
+    chance 0.4
+	attenuate 1
+}
+
+object ItemFog
+{
+    frame IFOGA { light DIFOG1 }
+    frame IFOGB { light DIFOG1 }
+    frame IFOGC { light DIFOG1 }
+    frame IFOGD { light DIFOG2 }
+    frame IFOGE { light DIFOG3 }
 }

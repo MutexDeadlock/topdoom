@@ -132,7 +132,10 @@ friendly fire reaches no board.
   (30 × 35): the same thing put back at its spawn point (`spawnX`/`spawnY`, ceiling-hung height or
   the floor), facing its spawn angle, `picked`/`hidden` off — `respawnItem`, the corpse-reuse shape
   of `respawnCorpse`, so ids and saves naming them hold. `onItemRespawn` raises the effect layer's
-  `spawnItemFog`: `MT_IFOG` (`IFOG_FRAMES`, `info.c`'s `S_IFOG`..`S_IFOG5`) with `itmbk` on it.
+  `spawnItemFog`: `ITEM_FOG` (`MT_IFOG`'s chain, `S_IFOG`..`S_IFOG5` walked — docs/dehacked.md
+  § Frames) with `itmbk` on it, **on the sector's floor** whatever the item's own height —
+  `P_RespawnSpecials` spawns it at `ss->sector->floorheight`, so a ceiling-hung item's fog is on the
+  floor beneath it.
 - The item counts again when taken again, as vanilla's `itemcount` does; nothing is unspawned, so
   the level's total holds.
 - Saved as `ThingsSnapshot.itemRespawn`, absent when empty; a coop snapshot is unchanged.

@@ -127,8 +127,10 @@ cull, the reach flood and the cast all shrink with the light rather than staying
 emitter that isn't there.
 
 For a caller drawing a frame at something other than the size GZDoom's definition was written for.
-The pickup puff is the only one (`PICKUP_FOG_LIGHT`, docs/items.md § The pickup puff): it reuses
-`TFOG`'s art at a fraction of its size, and `DTFOG*`'s pool is written for the whole teleport fog.
+`SpriteFxLayer.queue` passes its list's draw scale, so a one-shot drawn small offers a light that
+small: the pickup puff is the one such list (`PICKUP_FOG_SCALE`, docs/items.md § The pickup puff),
+and a GLDEFS pool written for the whole sprite would otherwise read as a lamp switching on under the
+player and pay a full-size light's reach flood and shadow cast for it.
 
 **One dial, not two.** Splitting colour and radius would let a puff be small and bright or wide and
 faint; neither is a thing a shrunk emitter should be able to say, and the second dial would have to
@@ -663,7 +665,12 @@ immediately with no reload. Turned off, `commit` uploads a count of zero and `ti
 
 `assets/gldefs.txt` is GZDoom's stock Doom lights — `wadsrc_lights/static/filter/doom.id/gldefs.txt`
 from its `lights.pk3`, verbatim bar the trailing ID24 block, credited on the About screen and in
-README.md § What it does not cover. It is the `GLDEFS` lump of the WAD the engine ships
+README.md § What it does not cover. **One block at its end is this engine's own** and its comment
+says so: the item fog (`IFOG`), which GZDoom leaves unlit, takes the teleport fog's `DTFOG2`-`4`
+pool in blue as `DIFOG1`-`3` — `A`-`C` at `DTFOG2`'s size, `D` at `DTFOG3`'s, `E` at `DTFOG4`'s,
+sized to the frames as `TFOG`'s are. It lights the deathmatch respawn fog at full size and the pickup
+puff at its draw scale (§ Dimming one offer). Kept at the end so the stock part stays a prefix to
+re-sync against. It is the `GLDEFS` lump of the WAD the engine ships
 (docs/wad.md § The WAD the engine ships), fetched once per session by `main.ts` and parsed as the
 base. Every `GLDEFS` and `DOOMDEFS` lump in the loaded WAD set then layers over it in
 lump order, a later definition of the same light name or frame binding replacing the earlier —

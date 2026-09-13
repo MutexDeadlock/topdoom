@@ -358,7 +358,7 @@ export class Game {
   /**
    * This browser's seat in the network game the level runs in ({@link GameOptions.net}), or null.
    * While set, every slot reads its rows and the local slot's simulation camera is separate from
-   * the drawn one, as under a playback. The session ending ends this `Game` too (`main.ts`).
+   * the drawn one, as under a playback. The session ending ends this {@link Game} too (`main.ts`).
    * docs/multiplayer-net.md § What a tic does, docs/multiplayer-net.md § Leaving.
    */
   private readonly net: NetSeat | null;
@@ -500,8 +500,8 @@ export class Game {
   /** The campaign-over card the popup hands over to — see ui/hud/endcard.ts and {@link Game.popup}. */
   private endCard: EndCard;
   /**
-   * The set's DEHACKED/BEX patch, or null for a set with none. Read once per `Game` like the banks
-   * beside it: which patch applies depends on the file set, not on the current map.
+   * The set's DEHACKED/BEX patch, or null for a set with none. Read once per {@link Game} like the
+   * banks beside it: which patch applies depends on the file set, not on the current map.
    * docs/dehacked.md.
    */
   private dehacked: LoadedDehacked | null;
@@ -2698,8 +2698,9 @@ export class Game {
   /**
    * What the cursor's ray locks onto: the thing layer's pick, and — where a player can be shot
    * ({@link Game.pvp}) — the other living players' own body boxes, tested exactly as a monster's is
-   * (`rayEntersBox` over `PLAYER_RADIUS`/`PLAYER_HEIGHT`, bounded by `World.groundReach`); the
-   * nearer entry wins. Body boxes only, never art. docs/combat.md § Auto-aim.
+   * ({@link rayEntersBox} over {@link PLAYER_RADIUS}/{@link PLAYER_HEIGHT}, bounded by
+   * {@link World.groundReach}); the nearer entry wins. Body boxes only, never art.
+   * docs/combat.md § Auto-aim.
    */
   private pickAimTarget(ray: THREE.Ray, aimAt: Pos3, shooter: PlayerSlot): (MonsterRef & { dist: number }) | null {
     const { things, world } = this.level;
@@ -2745,16 +2746,20 @@ export class Game {
     if (taken && type === ThingType.computerMap) {
       this.level.fogOfWar.revealAll();
     }
+    // Whichever slot took it, not the viewed one's alone: the puff covers an item vanishing, which
+    // every player sees. An item left lying puffs nothing. docs/items.md § The pickup puff.
+    if (taken && !left) {
+      this.effects.spawnPickupFog(at);
+    }
     // Unattenuated, as vanilla plays every pickup: you're standing on it — and for the local
-    // player alone, `P_TouchSpecialThing`'s own `player == &players[consoleplayer]` gate. An item
-    // left lying puffs nothing, and a key left lying is silent too: `P_TouchSpecialThing` returns
-    // before its sound, where a weapon's `wpnup` is `P_GiveWeapon`'s own.
+    // player alone, `P_TouchSpecialThing`'s own `player == &players[consoleplayer]` gate. A key
+    // left lying is silent: `P_TouchSpecialThing` returns before its sound, where a weapon's
+    // `wpnup` is `P_GiveWeapon`'s own.
     if (taken && slot === this.viewed) {
       const sound = pickupSound(type);
       if (!left || sound === 'wpnup') {
         this.audio.play(sound);
       }
-      if (!left) this.effects.spawnPickupFog(at);
       // After `applyPickup`, which the medikit's line reads the health left by.
       const line = pickupLine(type, slot.inventory);
       if (line !== null) this.messages.show(line);

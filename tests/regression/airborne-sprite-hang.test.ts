@@ -2,7 +2,8 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SpriteFxLayer } from '../../src/game/spritefx.ts';
 import { World } from '../../src/game/world.ts';
-import { drawnSprites, fxLayer, materialsStub } from '../fixtures/spritestubs.ts';
+import { PICKUP_FOG_SCALE } from '../../src/game/spritefx/tables.ts';
+import { drawnLumps, drawnSprites, fxLayer, materialsStub } from '../fixtures/spritestubs.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 
 /**
@@ -16,6 +17,9 @@ import { gridMap } from '../fixtures/gridmap.ts';
 
 /** `MISLB0`'s own numbers in DOOM2.WAD: 60 tall, `topoffset` 29. */
 const BLAST_BOTTOM = 29 - 60;
+
+/** `IFOGA0`'s own numbers in DOOM2.WAD: 37 tall, `topoffset` 33. */
+const ITEM_FOG_BOTTOM = 33 - 37;
 
 const GRID = gridMap(['.', '.'], { cell: 128 });
 
@@ -35,5 +39,15 @@ describe('Regressions · an airborne sprite hangs from its own offset', () => {
     const at = { ...GRID.centre(0, 0), z: 40 };
     effects.spawnImpact('MISL', ['B'], 0.1, at);
     assert.deepEqual(drawnZ(effects), [at.z + BLAST_BOTTOM]);
+  });
+
+  test('a pickup puff hangs at its own draw scale, so it shrinks around where the item stood', () => {
+    // At full length the item fog's first frame would sink its whole hang into the floor under a
+    // sprite drawn at a fraction of that size. docs/items.md § The pickup puff.
+    const effects = rig(ITEM_FOG_BOTTOM);
+    const at = { ...GRID.centre(0, 0), z: 0 };
+    effects.spawnPickupFog(at);
+    assert.deepEqual(drawnLumps(effects), ['IFOGA0']);
+    assert.deepEqual(drawnZ(effects), [at.z + ITEM_FOG_BOTTOM * PICKUP_FOG_SCALE]);
   });
 });

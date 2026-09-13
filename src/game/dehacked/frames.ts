@@ -1,9 +1,10 @@
 /**
  * Walks vanilla's frame table — `dehacked/states.ts` as written, or a copy a patch has edited — and
  * derives the letter-list, pose and duration tables this engine animates from. **Pure**: it reads
- * `states.ts` and `MOBJ_INFO` and touches no game table, which is what lets `things/tables.ts`,
- * `monsters/tables.ts` and `spritefx/tables.ts` build themselves from it at import while
- * `dehacked/apply.ts` re-runs it against a patched copy. See docs/dehacked.md § Frames.
+ * `states.ts` and {@link MOBJ_INFO} and touches no game table, which is what lets
+ * `things/tables.ts`, `monsters/tables.ts` and `spritefx/tables.ts` build themselves from it at
+ * import while `dehacked/apply.ts` re-runs it against a patched copy.
+ * See docs/dehacked.md § Frames.
  */
 import { DOOM_TIC } from '../../constants.ts';
 import type { AttackPose } from '../things/defs.ts';
@@ -23,9 +24,9 @@ export interface PatchedStates {
   weaponStates: readonly WeaponStates[];
   /**
    * `misc1`/`misc2` per state, and only for the states a patch wrote them on. A side map rather
-   * than two more columns on `StateRow` because **`linuxdoom-1.10` has no such fields at all** —
-   * DeHackEd invented them and MBF gave them meanings, so vanilla's reading is "absent", not
-   * "zero in 967 rows". docs/dehacked.md § Action pointers.
+   * than two more columns on {@link StateRow} because **`linuxdoom-1.10` has no such fields at
+   * all** — DeHackEd invented them and MBF gave them meanings, so vanilla's reading is "absent",
+   * not "zero in 967 rows". docs/dehacked.md § Action pointers.
    */
   args: ReadonlyMap<number, readonly number[]>;
   /**
@@ -36,7 +37,7 @@ export interface PatchedStates {
   written: ReadonlySet<number>;
 }
 
-/** One walk of `states[]` from an entry point — see `walkChain`. */
+/** One walk of `states[]` from an entry point — see {@link walkChain}. */
 interface Chain {
   /** The states visited, in order, `start` first. Empty when `start` is `S_NULL`. */
   indices: number[];
@@ -50,8 +51,9 @@ interface Chain {
 
 /**
  * Follows `next` from `start` until the chain loops, steps to `S_NULL`, reaches a state that holds
- * forever, or re-enters a state in `stop` — the walk loop, for a pain or attack chain, which is how
- * those chains end in `info.c`. Bounded by the visited set.
+ * forever, or re-enters a state in `stop`. Bounded by the visited set.
+ *
+ * @param stop  the walk loop, for a pain or attack chain, which is how those chains end in `info.c`
  */
 export function walkChain(states: readonly StateRow[], start: number, stop?: ReadonlySet<number>): Chain {
   const indices: number[] = [];
@@ -124,8 +126,8 @@ export interface MonsterFrames {
   idle: string[] | null;
   /**
    * The spawn loop a dormant monster stands in, where the spawn chain cycles rather than holding
-   * one frame (`idle`) — `A_Look`'s `S_*_STND` states, at one flat rate. Null for a loop of a lone
-   * `A`, which the held walk frame already draws.
+   * one frame ({@link MonsterFrames.idle}) — `A_Look`'s `S_*_STND` states, at one flat rate. Null
+   * for a loop of a lone `A`, which the held walk frame already draws.
    */
   stand: { frames: string[]; frameSeconds: number } | null;
   death: string[] | null;
@@ -162,10 +164,10 @@ export interface MonsterFrames {
   rangedAction: string | null;
   /**
    * Every damaging action the *ranged* chain carries, in firing order — one entry per
-   * `rangedShots`. Where they are not all the same attack, each shot of the volley is its own
-   * (`AttackStats.shotAttacks`); the melee chain gets no counterpart because a swing that lands
-   * more than once is not something this engine's melee model has. docs/dehacked.md § Action
-   * pointers.
+   * {@link MonsterFrames.rangedShots}. Where they are not all the same attack, each shot of the
+   * volley is its own (`AttackStats.shotAttacks`); the melee chain gets no counterpart because a
+   * swing that lands more than once is not something this engine's melee model has.
+   * docs/dehacked.md § Action pointers.
    */
   rangedActions: readonly string[];
   /**
@@ -209,8 +211,8 @@ export interface WeaponFrames {
    * patch that repoints one is asking for a different shot, not a retimed one, and
    * `WEAPON_ACTION_SOURCES` is where the applier looks the new one's roll and projectile up. Only
    * the first counts: a `WeaponDef` holds one shot shape and not a per-shot schedule, the same
-   * reason `cooldown` is a mean over `shots`. Null for a chain that fires nothing.
-   * docs/dehacked.md § Action pointers.
+   * reason {@link WeaponFrames.cooldown} is a mean over {@link WeaponFrames.shots}. Null for a
+   * chain that fires nothing. docs/dehacked.md § Action pointers.
    */
   action: string | null;
 }
@@ -220,6 +222,13 @@ export interface MissileFrames {
   flightSprite: string | undefined;
   flight: string[] | null;
   impact: { sprite: string; frames: string[] } | null;
+}
+
+/** What the walker derives for a one-shot effect: its art, played once at one flat rate. */
+export interface OneShotFrames {
+  sprite: string;
+  frames: string[];
+  frameSeconds: number;
 }
 
 /** Everything the walker derives, in the shapes the engine's tables hold — one record per table. */
@@ -246,22 +255,31 @@ export interface FrameTables {
    * corpses.
    */
   gibs: { sprite: string; frames: string[] } | null;
+  /**
+   * The teleport fog's spawn chain (`MT_TFOG`), and the fog an item respawns in (`MT_IFOG`). Null
+   * where the chain draws nothing, which is a patch's doing as for {@link FrameTables.gibs}.
+   * docs/dehacked.md § Frames.
+   */
+  teleportFog: OneShotFrames | null;
+  itemFog: OneShotFrames | null;
 }
 
-/** A `StateRow` a patch can write into. */
+/** A {@link StateRow} a patch can write into. */
 type MutableStateRow = [sprite: number, frame: number, tics: number, action: string, next: number, name: string];
 
 /**
- * `STATES` and `MOBJ_STATES` with a patch's edits written in. Neither original is touched.
+ * {@link STATES} and {@link MOBJ_STATES} with a patch's edits written in. Neither original is
+ * touched.
  *
  * **A repointed action is written into the same copy the walk then reads**, which is the whole of
  * how an action pointer reaches this engine: the derivations already key off the action column, so
  * moving `A_CPosAttack` onto a chain changes that chain's shot count and windup for free.
  * docs/dehacked.md § Action pointers.
  *
- * `stateCount` is how far the patch grew the table (`DehPatch.stateCount`); the rows past `STATES`
- * start out fresh and every one a patch cares about is written by a `Frame` record of its own.
- * docs/dehacked.md § Extended states.
+ * The rows past {@link STATES} start out fresh, and every one a patch cares about is written by a
+ * `Frame` record of its own. docs/dehacked.md § Extended states.
+ *
+ * @param stateCount  how far the patch grew the table (`DehPatch.stateCount`)
  */
 export function patchStates(
   frameEdits: readonly DehFrameEdit[],
@@ -338,9 +356,9 @@ function buildChainIndex(): Map<number, ChainKind[]> {
  * One `mobjinfo` row's eight chains, walked once. The boundary is the load-bearing part and lives
  * only here: a pain, attack or raise chain ends where it steps back into the walk loop — or, for a
  * type with no `seestate` (Keen, the brain), back on its held stand frame — so those states are the
- * walk loop's and not the chain's. `deriveMonster` derives a type's tables from these and
- * `chainKindsOf` indexes which state belongs to which, and the two must agree on where a chain
- * stops or a repoint reports one thing and applies another.
+ * walk loop's and not the chain's. {@link deriveMonster} derives a type's tables from these and
+ * {@link chainKindsOf} indexes which state belongs to which, and the two must agree on where a
+ * chain stops or a repoint reports one thing and applies another.
  */
 function chainsOf(states: readonly StateRow[], ms: MobjStates): Record<ChainKind, Chain> {
   const spawn = walkChain(states, ms.spawn);
@@ -377,7 +395,15 @@ const NOT_DRAWN = new Set([14, 87, 89]);
 /** Every table the walker can derive, off one frame table and one set of state pointers. */
 export function deriveFrameTables({ states, mobjStates, weaponStates, args }: PatchedStates): FrameTables {
   const tables: FrameTables = {
-    monsters: {}, weapons: {}, sprites: {}, anims: {}, missiles: {}, barrel: null, gibs: deriveGibs(states),
+    monsters: {},
+    weapons: {},
+    sprites: {},
+    anims: {},
+    missiles: {},
+    barrel: null,
+    gibs: deriveGibs(states),
+    teleportFog: deriveOneShot(states, mobjStates[TELEPORT_FOG_ROW]),
+    itemFog: deriveOneShot(states, mobjStates[ITEM_FOG_ROW]),
   };
   for (let i = 0; i < weaponStates.length; i++) tables.weapons[i] = deriveWeapon(states, weaponStates[i]);
   for (let i = 0; i < MOBJ_INFO.length; i++) {
@@ -430,11 +456,11 @@ export function pristineFrameTables(): FrameTables {
 }
 
 /**
- * `S_GIBS`' index, resolved by **name** off pristine `STATES`: no `mobjinfo` chain points at that
- * state, so `deriveFrameTables`' walk over `MOBJ_INFO` never reaches it the way it reaches every
- * other pose. The index is stable under a patch — `patchStates` rewrites a row's columns, never
- * its name, and a `Frame` record addresses rows by number. -1 only if the table itself lost the
- * state.
+ * `S_GIBS`' index, resolved by **name** off pristine {@link STATES}: no `mobjinfo` chain points at
+ * that state, so {@link deriveFrameTables}' walk over {@link MOBJ_INFO} never reaches it the way it
+ * reaches every other pose. The index is stable under a patch — {@link patchStates} rewrites a
+ * row's columns, never its name, and a `Frame` record addresses rows by number. -1 only if the
+ * table itself lost the state.
  */
 const GIBS_STATE = STATES.findIndex((row) => row[5] === 'S_GIBS');
 
@@ -448,6 +474,28 @@ function deriveGibs(states: readonly StateRow[]): FrameTables['gibs'] {
   const chain = walkChain(states, GIBS_STATE);
   const sprite = spriteOf(states, chain.indices);
   return sprite === undefined ? null : { sprite, frames: distinctLetters(states, chain.indices) };
+}
+
+/**
+ * The two fogs' rows in {@link MOBJ_INFO}, resolved by **type name**: neither has a doomednum, so
+ * {@link deriveFrameTables}' walk over the placeable rows skips both.
+ */
+const TELEPORT_FOG_ROW = MOBJ_INFO.findIndex((row) => row.type === 'MT_TFOG');
+const ITEM_FOG_ROW = MOBJ_INFO.findIndex((row) => row.type === 'MT_IFOG');
+
+/**
+ * A one-shot effect's spawn chain, played once: the letters **as written** — `S_TFOG`'s opening
+ * `A,B,A,B` is a real flicker, as the evil eye's wobble is — at one flat rate ({@link flatTics}).
+ * Only states with a duration count: a zero-tic state never draws, and a one-shot has no hold.
+ *
+ * @param ms  undefined only if the table itself lost the row
+ */
+function deriveOneShot(states: readonly StateRow[], ms: MobjStates | undefined): OneShotFrames | null {
+  if (!ms) return null;
+  const span = walkChain(states, ms.spawn).indices.filter((i) => states[i][2] > 0);
+  const sprite = spriteOf(states, span);
+  if (sprite === undefined) return null;
+  return { sprite, frames: lettersOf(states, span), frameSeconds: flatTics(states, span) * DOOM_TIC };
 }
 
 /**
@@ -502,12 +550,12 @@ function deriveMissile(states: readonly StateRow[], ms: MobjStates): MissileFram
 }
 
 /**
- * Which `MOBJ_INFO` rows are monsters here — a row with both a pain and a death chain, which in
- * `info.c` is exactly the twenty types `MONSTER_STATS` and `INERT_SHOOTABLE` cover between them.
+ * Which {@link MOBJ_INFO} rows are monsters here — a row with both a pain and a death chain, which
+ * in `info.c` is exactly the twenty types `MONSTER_STATS` and `INERT_SHOOTABLE` cover between them.
  *
- * Read off **pristine** `MOBJ_STATES`, never the patched copy: a row's kind decides which tables it
- * derives into, so a patch that clears a monster's `painstate` must still derive as a monster
- * rather than silently becoming a decoration.
+ * Read off **pristine** {@link MOBJ_STATES}, never the patched copy: a row's kind decides which
+ * tables it derives into, so a patch that clears a monster's `painstate` must still derive as a
+ * monster rather than silently becoming a decoration.
  */
 function isMonsterRow(i: number): boolean {
   return MOBJ_STATES[i].pain !== 0 && MOBJ_STATES[i].death !== 0;
@@ -611,14 +659,15 @@ function spanOf(states: readonly StateRow[], chain: Chain): number[] {
   return refiresOf(states, chain) ? cycleOf(chain) : chain.indices;
 }
 
-/** Whether a chain loops back through an `A_*Refire` — `MonsterFrames.rangedRefires`. */
+/** Whether a chain loops back through an `A_*Refire` — {@link MonsterFrames.rangedRefires}. */
 function refiresOf(states: readonly StateRow[], chain: Chain): boolean {
   return chain.cycleAt >= 0 && cycleOf(chain).some((i) => actionRole(states[i][3]) === 'refire');
 }
 
 /**
- * One attack chain's pose: the states of the span `durationOf` measures, letters **undeduped** and
- * each with its own tic count, with zero-tic states dropped because they never draw.
+ * One attack chain's pose: the states of the span {@link durationOf} measures, letters
+ * **undeduped** and each with its own tic count, with zero-tic states dropped because they never
+ * draw.
  */
 function poseOf(states: readonly StateRow[], chain: Chain): AttackPose | null {
   const span = spanOf(states, chain).filter((i) => states[i][2] > 0);
@@ -639,8 +688,8 @@ function argsOf(
 
 /**
  * `A_PlaySound`'s `misc1` on a chain, or null where it carries none — see
- * `MonsterFrames.meleeSound`. Index 0 is `sfx_None`, which reads as "no sound written" rather than
- * as silence, so the type keeps whatever its own table gave it.
+ * {@link MonsterFrames.meleeSound}. Index 0 is `sfx_None`, which reads as "no sound written" rather
+ * than as silence, so the type keeps whatever its own table gave it.
  */
 function chainSound(
   states: readonly StateRow[],
@@ -672,7 +721,7 @@ function firingOf(
 
 /**
  * Every damaging action of a chain's span, in order — what each shot of a volley *is*, where
- * `firingOf` gives only the first. A chain whose firing actions differ fires a sequence of
+ * {@link firingOf} gives only the first. A chain whose firing actions differ fires a sequence of
  * different attacks rather than the same one repeated: NoSp2.wad's cybruiser opens its missile
  * chain with `A_CyberAttack` and closes it with `A_BruisAttack`, a rocket and then a green `BAL7`
  * ball. docs/dehacked.md § Action pointers.
@@ -686,7 +735,7 @@ function firingActionsOf(states: readonly StateRow[], chain: Chain): string[] {
 /**
  * MBF's `A_Scratch` carries the swing's sound in its own `misc2`, so a chain that fires one has a
  * melee sound even without an `A_PlaySound` beside it. Read here rather than at the write site so
- * `MonsterFrames.meleeSound` means one thing — docs/dehacked.md § Action pointers.
+ * {@link MonsterFrames.meleeSound} means one thing — docs/dehacked.md § Action pointers.
  */
 function scratchSound(firing: FiringState): number | null {
   return firing.action === 'A_Scratch' ? firing.args?.[1] || null : null;
@@ -725,10 +774,9 @@ function firingIntervalOf(offsets: readonly number[]): number | null {
 
 /**
  * A decoration's idle animation, or a monster's stand loop, off its spawn chain: the loop's letters
- * as written (the evil eye's
- * `A,B,C,B` wobble is a real repeat), at one flat rate (`flatTics`). A single held frame that isn't
- * `A` is a one-letter entry (the dead-monster props spawn mid-death-chain); a held `A` needs no
- * entry.
+ * as written (the evil eye's `A,B,C,B` wobble is a real repeat), at one flat rate
+ * ({@link flatTics}). A single held frame that isn't `A` is a one-letter entry (the dead-monster
+ * props spawn mid-death-chain); a held `A` needs no entry.
  */
 function deriveAnim(states: readonly StateRow[], spawn: Chain): { frames: string[]; frameSeconds: number } | null {
   if (spawn.indices.length === 0) return null;

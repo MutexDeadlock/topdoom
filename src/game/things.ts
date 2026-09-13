@@ -1799,7 +1799,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     p.picked = false;
     p.hidden = false;
     p.visible = true;
-    onItemRespawn?.({ x: p.x, y: p.y, z: p.z });
+    // On the floor even under a ceiling-hung item. docs/multiplayer-deathmatch.md § Item respawn.
+    onItemRespawn?.({ x: p.x, y: p.y, z: sector?.floorHeight ?? 0 });
   }
 
   /**

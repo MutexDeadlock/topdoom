@@ -288,6 +288,14 @@ spawn shooter) are skipped by number.
   `S_GIBS`, so the walk over the thing rows never reaches it. The index is stable under a patch —
   a `Frame` record addresses rows by number and `patchStates` never rewrites a row's name — so
   repointing the state moves the pool. docs/specials-crushers.md § Crushed corpses.
+- **The two fogs** are `TELEPORT_FOG` and `ITEM_FOG` (`spritefx/tables.ts`), one record each:
+  sprite, letters **as written** (`S_TFOG`'s `A,B,A,B,C…J`, `S_IFOG`'s `A,B,A,B,C,D,E` — a fog's
+  flicker is a real repeat, as a decoration's is) and one flat rate, zero-tic states dropped. Their
+  rows are resolved by **type name** (`MT_TFOG`, `MT_IFOG`): neither has a doomednum, so the walk
+  over the placeable rows skips both. A chain a patch leaves drawing nothing empties the record, and
+  `SpriteFxLayer.spawn` then spawns nothing for it. The pickup puff plays off `ITEM_FOG` too.
+  docs/specials-teleporters.md § Teleporters, docs/multiplayer-deathmatch.md § Item respawn,
+  docs/items.md § The pickup puff.
 
 **The four overrides.** Where the walker's rule and the hand transcription genuinely disagree, the
 shipped reading wins and says so at its declaration — `FRAME_OVERRIDES` in `monsters/tables.ts` plus

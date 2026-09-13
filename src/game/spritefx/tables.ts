@@ -1,22 +1,23 @@
 /**
  * The sprite, sound and timing tables behind everything drawn that isn't a map
  * `Thing`: projectiles in flight, their impact explosions, blood splashes,
- * bullet puffs, teleport-fog puffs, the revenant's smoke trail and the
+ * bullet puffs, the teleport and item fogs, the revenant's smoke trail and the
  * arch-vile's flame. Data and pure helpers only, confirmed against `info.c`
  * and the WADs' own lump names; the record shapes it all hangs off are
  * `spritefx/defs.ts`. See docs/combat.md § Effects and their batching.
  */
 import type { SfxId } from '../../audio/sfx.ts';
 import { DOOM_TIC } from '../../constants.ts';
-import { pristineFrameTables } from '../dehacked/frames.ts';
+import { pristineFrameTables, type OneShotFrames } from '../dehacked/frames.ts';
 
 /**
- * Teleport-fog puff (vanilla's `MT_TFOG`): a one-shot animation, not a real
- * thing, so it lives outside `ThingLayer`. Rotation-0 only, confirmed against
- * DOOM2.WAD's lump names (TFOGA0..TFOGJ0).
+ * The teleport fog (`MT_TFOG`): a one-shot animation, not a real thing, so it lives outside
+ * `ThingLayer`. **Walked out of vanilla's own state table** rather than transcribed — `S_TFOG`'s
+ * `A,B,A,B,C`…`J` at 6 tics each — and mutable for the same reason `CORPSE_GIB` is: a DEHACKED
+ * patch re-derives it and `dehacked/apply.ts` restores it (docs/dehacked.md § Frames). `frames` is
+ * empty only where a patch left the chain drawing nothing.
  */
-export const TFOG_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-export const TFOG_FRAME_SECONDS = 6 * DOOM_TIC; // vanilla's S_TFOG* states hold each frame 6 tics
+export const TELEPORT_FOG: OneShotFrames = structuredClone(pristineFrameTables().teleportFog!);
 /**
  * Vanilla spawns the destination fog 20 units ahead of the landing spot, along the direction it
  * faces.
@@ -24,12 +25,10 @@ export const TFOG_FRAME_SECONDS = 6 * DOOM_TIC; // vanilla's S_TFOG* states hold
 export const TFOG_SPAWN_OFFSET = 20;
 
 /**
- * The item-respawn fog (vanilla's `MT_IFOG`), a one-shot like the teleport fog's: `info.c`'s
- * `S_IFOG`..`S_IFOG5` show frames A, B, A, B, C, D, E for 6 tics each.
- * docs/multiplayer-deathmatch.md § Item respawn.
+ * The fog an item respawns in (`MT_IFOG`) — `S_IFOG`'s `A,B,A,B,C,D,E` at 6 tics each, walked and
+ * patched as {@link TELEPORT_FOG} is. docs/multiplayer-deathmatch.md § Item respawn.
  */
-export const IFOG_FRAMES = ['A', 'B', 'A', 'B', 'C', 'D', 'E'];
-export const IFOG_FRAME_SECONDS = 6 * DOOM_TIC;
+export const ITEM_FOG: OneShotFrames = structuredClone(pristineFrameTables().itemFog!);
 
 /**
  * Color of a hitscan tracer line (render/tracer.ts) — a hot yellow-white, like a vanilla muzzle
@@ -51,7 +50,7 @@ export const MONSTER_TRACER_COLOR = 0xff4433;
 export const PROJECTILE_FRAMES: Record<string, string[]> = {};
 /**
  * Each missile's own `mobjinfo.radius`, keyed by flight sprite the same way
- * `IMPACT_EFFECTS` is. Half of `PIT_CheckThing`'s `blockdist = thing->radius +
+ * {@link IMPACT_EFFECTS} is. Half of `PIT_CheckThing`'s `blockdist = thing->radius +
  * tmthing->radius` — the other half is the body it's testing against
  * (`MonsterRef.radius`) — so this is what makes an arachnotron's fat plasma
  * ball a wider threat than an imp's fireball. From `info.c`: `MT_TROOPSHOT`,
@@ -70,7 +69,7 @@ export const PROJECTILE_RADIUS: Record<string, number> = {
   FATB: 11, // MT_TRACER
 };
 
-/** Fallback for a sprite `PROJECTILE_RADIUS` doesn't list — vanilla's smallest missile. */
+/** Fallback for a sprite {@link PROJECTILE_RADIUS} doesn't list — vanilla's smallest missile. */
 export const PROJECTILE_RADIUS_DEFAULT = 6;
 
 /** Vanilla's own explosion states run at 4 tics/frame. */
@@ -96,7 +95,7 @@ for (const [sprite, missile] of Object.entries(pristineFrameTables().missiles)) 
 }
 /**
  * Each projectile's launch and impact sound, keyed by flight sprite the same
- * way `IMPACT_EFFECTS` is, and from the same source: the missile type's own
+ * way {@link IMPACT_EFFECTS} is, and from the same source: the missile type's own
  * `mobjinfo.seesound` and `deathsound`. This is why the rocket launcher and
  * plasma rifle have no `WeaponDef.fireSound` of their own — what you hear is
  * the missile. See docs/audio.md § Weapons and projectiles for the `BFS1` launch
@@ -231,14 +230,23 @@ export const SMOKE_TRAIL_FRAME_SECONDS = 4 * DOOM_TIC;
 export const SMOKE_TRAIL_INTERVAL = 4 * DOOM_TIC;
 
 /**
- * The puff left where a collected item stood — the teleport fog's own `TFOG` art reused, and this
- * engine's own effect rather than a vanilla one. `B`-`E` are the frames that shrink (42x45, 40x37,
- * 30x34, 17x16 in `DOOM.WAD`, against 9x8 and smaller past them). Why those, and what each of the
- * five is for: docs/items.md § The pickup puff. All five tuned by feel.
+ * The puff left where a collected item stood — this engine's own effect rather than a vanilla one,
+ * played off {@link ITEM_FOG} so a patch that redraws or retimes the fog moves the puff with it.
+ * `PICKUP_FOG_SPEEDUP` is how many times faster than the fog it runs. What each of the three is
+ * for: docs/items.md § The pickup puff. All three tuned by feel.
  */
-export const PICKUP_FOG_FRAMES = ['B', 'C', 'D', 'E'];
-export const PICKUP_FOG_FRAME_SECONDS = 3 * DOOM_TIC;
-export const PICKUP_FOG_SCALE = 0.4;
+export const PICKUP_FOG_SPEEDUP = 2;
+export const PICKUP_FOG_SCALE = 0.5;
 export const PICKUP_FOG_OPACITY = 0.3;
-/** How far the GLDEFS light these frames carry is dimmed — docs/lights.md § Dimming one offer. */
-export const PICKUP_FOG_LIGHT = 0.6;
+
+/**
+ * The frames a pickup puff plays off a fog's chain: each letter once, and the closing one dropped
+ * where more than one is left — vanilla's `IFOG` `A,B,A,B,C,D,E` gives `A`-`D`, the frames that
+ * shrink. docs/items.md § The pickup puff.
+ *
+ * @returns empty where the fog draws nothing, which spawns no puff
+ */
+export function pickupFogFrames(fog: OneShotFrames): string[] {
+  const letters = [...new Set(fog.frames)];
+  return letters.length > 1 ? letters.slice(0, -1) : letters;
+}

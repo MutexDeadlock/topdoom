@@ -262,4 +262,4 @@ is covered:**
   credited on the About screen. Same footing as the shareware data above.
 - **`assets/gldefs.txt`**, the dynamic-light definitions, is GZDoom's stock DOOM `GLDEFS`
   (`wadsrc_lights/static/filter/doom.id/gldefs.txt`), GPL-3.0 like the rest of GZDoom, credited on
-  the About screen.
+  the About screen. The one block at its end, the item fog's blue light, is TopDOOM's own.

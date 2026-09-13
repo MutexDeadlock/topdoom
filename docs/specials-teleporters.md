@@ -91,8 +91,9 @@ ahead of the landing spot along its facing). That isn't a real map `Thing`, so i
 through `ThingLayer` — the pair comes from `SpriteFxLayer.spawnTeleportPair` (game/spritefx.ts),
 which owns the 20-unit offset so the player's trip and a monster's can't drift apart; only the
 landing `z` differs between the two callers, and each passes its own. Each puff is a transient
-`OneShotEffect` playing through the `TFOG` sprite's frames (`A`-`J`, confirmed against the actual
-lump names, all rotation-0 so no facing logic is needed) once before removing itself. Map
+`OneShotEffect` playing `TELEPORT_FOG` once before removing itself — `MT_TFOG`'s spawn chain walked
+out of vanilla's state table, `S_TFOG`'s `A,B,A,B` flicker and then `C`-`J`, 6 tics each
+(docs/dehacked.md § Frames); rotation-0 lumps, so no facing logic is needed. Map
 transitions clear any still-active puffs explicitly, since a teleport onto an exit line could
 otherwise leave one animating over the next level.
 

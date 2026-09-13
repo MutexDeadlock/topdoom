@@ -4,6 +4,7 @@ import { World } from '../../src/game/world.ts';
 import { buildThingSprites } from '../../src/game/things.ts';
 import { ITEM_RESPAWN_QUEUE, ITEM_RESPAWN_TICS } from '../../src/game/things/defs.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
+import { CEILING_HUNG_HEIGHT } from '../../src/game/things/tables.ts';
 import { applyPickup, createInventory, giveAllKeys } from '../../src/game/inventory.ts';
 import { KEY_SLOTS } from '../../src/game/inventory/defs.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
@@ -103,6 +104,21 @@ describe('Deathmatch · item respawn', () => {
     assert.deepEqual(returned[0], { ...grid.centre(1, 1), z: 0 });
     assert.equal(savedThing(layer.snapshot(), 0), undefined, 'as the map spawned it again');
     assert.equal(layer.snapshot().itemRespawn, undefined, 'the queue is elided when empty');
+  });
+
+  test("a ceiling-hung item's fog stands on the floor, as P_RespawnSpecials spawns it", () => {
+    CEILING_HUNG_HEIGHT[ThingType.stimpack] = 16;
+    try {
+      // Hung 16 below the room's 128 ceiling at spawn (`CEILING_HUNG_HEIGHT`'s spawn rule), so the
+      // fog's z below tells the floor from the item's own height.
+      const { layer, returned, take, tics, grid } = rig();
+      take(0);
+      assert.equal(savedThing(layer.snapshot(), 0)?.picked, true);
+      tics(ITEM_RESPAWN_TICS);
+      assert.deepEqual(returned, [{ ...grid.centre(1, 1), z: 0 }]);
+    } finally {
+      delete CEILING_HUNG_HEIGHT[ThingType.stimpack];
+    }
   });
 
   test('one item a tic, oldest first; the two spheres never queue; coop queues nothing', () => {

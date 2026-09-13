@@ -188,7 +188,7 @@ nearly so:
 - **`SpriteFxLayer` except the teleport fogs** — impact puffs, blood, bullet puffs, the revenant's
   smoke trail, tracer lines and the arch-vile flame are all dropped. The vile's *attack state* rides
   in its thing's `attackPause`/AI fields; only the flame visual is lost. The **teleport fog is the
-  exception, and the reason is its length**: 10 frames of 6 tics is ~1.7 s, long enough to save
+  exception, and the reason is its length**: 12 frames of 6 tics is ~2 s, long enough to save
   inside and notice the puffs vanish, where every other effect here is gone in a fraction of that.
   `snapshotTeleportFogs` saves a position and `elapsed` per puff; `restoreTeleportFogs` respawns
   through the ordinary `spawn` — so the animator, the sector light and `drawPrev*` are re-derived

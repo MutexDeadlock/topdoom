@@ -363,7 +363,7 @@ unreachable, or the lock would carry the shot over geometry that should have sto
 
 ## Effects and their batching
 
-Impact explosions, blood splashes, bullet puffs and the teleport-fog puff share one mechanism,
+Impact explosions, blood splashes, bullet puffs and the teleport and item fogs share one mechanism,
 `SpriteFxLayer` (`game/spritefx.ts`, `OneShotEffect`/`spawn`/`spawnImpact`): a transient sprite
 animation playing once at a fixed spot, outside `ThingLayer` since none of them is a real map
 `Thing`. `IMPACT_EFFECTS` maps a projectile's flight sprite to its explosion — vanilla reuses `MISL`

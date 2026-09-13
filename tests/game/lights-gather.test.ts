@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
 import { buildThingSprites } from '../../src/game/things.ts';
-import { TFOG_FRAMES, TFOG_FRAME_SECONDS } from '../../src/game/spritefx/tables.ts';
+import { TELEPORT_FOG } from '../../src/game/spritefx/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { THING_SPRITES } from '../../src/game/things/tables.ts';
 import { DynamicLights } from '../../src/render/lights.ts';
@@ -99,7 +99,7 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
 
     assert.deepEqual(
       lights.offers.map((o) => o.key),
-      [`TFOG${TFOG_FRAMES[0]}`],
+      [`${TELEPORT_FOG.sprite}${TELEPORT_FOG.frames[0]}`],
     );
     // Effect ids are negative, so they can never collide with a thing's array index.
     assert.ok(lights.offers[0].id < 0, `expected a negative effect id, got ${lights.offers[0].id}`);
@@ -118,7 +118,7 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
 
     const drawFrame = (): number[] => {
       lights.offers.length = 0;
-      lights.beginFrame(TFOG_FRAME_SECONDS, 0, 0);
+      lights.beginFrame(TELEPORT_FOG.frameSeconds, 0, 0);
       layer.beginFrame(0);
       layer.draw(1);
       layer.endFrame();
@@ -129,7 +129,7 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
     const first = drawFrame();
     assert.equal(first.length, 2);
     assert.notEqual(first[0], first[1], 'two effects must not share an id');
-    layer.updateTeleportFogs(TFOG_FRAME_SECONDS);
+    layer.updateTeleportFogs(TELEPORT_FOG.frameSeconds);
     assert.deepEqual(drawFrame(), first, 'an effect keeps its id across frames');
   });
 

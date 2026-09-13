@@ -2,8 +2,8 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SpriteFxLayer } from '../../src/game/spritefx.ts';
 import { World } from '../../src/game/world.ts';
-import { TFOG_FRAMES, TFOG_FRAME_SECONDS } from '../../src/game/spritefx/tables.ts';
-import { drawnLumps, fxLayer } from '../fixtures/spritestubs.ts';
+import { TELEPORT_FOG } from '../../src/game/spritefx/tables.ts';
+import { drawnLumps, fxLayer, teleportFogLump } from '../fixtures/spritestubs.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 
 /**
@@ -36,7 +36,7 @@ describe('Regressions · effects in rooms the player has not seen', () => {
     const layer = layerOn(new Set([GRID.index(ROOM.col, ROOM.row)]));
     fogAt(layer, CLOSET);
     fogAt(layer, ROOM);
-    assert.deepEqual(drawnLumps(layer), [`TFOG${TFOG_FRAMES[0]}0`], 'one puff drawn, not two');
+    assert.deepEqual(drawnLumps(layer), [teleportFogLump(0)], 'one puff drawn, not two');
   });
 
   test('it is skipped rather than dropped: revealing the room mid-animation shows it on the right frame', () => {
@@ -45,18 +45,19 @@ describe('Regressions · effects in rooms the player has not seen', () => {
     fogAt(layer, CLOSET);
     // Mid-frame (3.5 in) rather than on a boundary, where float rounding makes
     // the frame a coin toss — the same reason `spritefx-snapshot.test.ts` picks 4.5.
-    layer.updateTeleportFogs(TFOG_FRAME_SECONDS * 3.5);
+    layer.updateTeleportFogs(TELEPORT_FOG.frameSeconds * 3.5);
     assert.deepEqual(drawnLumps(layer), [], 'still hidden');
 
     revealed.add(GRID.index(CLOSET.col, CLOSET.row));
-    assert.deepEqual(drawnLumps(layer), [`TFOG${TFOG_FRAMES[3]}0`], 'resumes three frames in, not restarted');
+    assert.notEqual(teleportFogLump(3), teleportFogLump(0), 'the frame it resumes on is not the one a restart shows');
+    assert.deepEqual(drawnLumps(layer), [teleportFogLump(3)], 'resumes three frames in, not restarted');
   });
 
   test('an effect still expires on schedule while hidden', () => {
     const revealed = new Set<number>();
     const layer = layerOn(revealed);
     fogAt(layer, CLOSET);
-    layer.updateTeleportFogs(TFOG_FRAME_SECONDS * TFOG_FRAMES.length);
+    layer.updateTeleportFogs(TELEPORT_FOG.frameSeconds * TELEPORT_FOG.frames.length);
     revealed.add(GRID.index(CLOSET.col, CLOSET.row));
     assert.deepEqual(drawnLumps(layer), [], 'ran out unseen, nothing pops in late');
   });

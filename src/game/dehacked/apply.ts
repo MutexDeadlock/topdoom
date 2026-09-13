@@ -28,7 +28,7 @@ import {
 import { resetSoundLumps, setSoundLump, type SfxId } from '../../audio/sfx.ts';
 import { resetMusicLumps, setMusicLump } from '../../audio/music/tables.ts';
 import { resetSpriteLumps, setSpriteLump } from '../../wad/sprites.ts';
-import { WEAPON_PICKUPS } from '../inventory/tables.ts';
+import { PICKUP_LINES, WEAPON_PICKUPS } from '../inventory/tables.ts';
 import { WEAPONS, type WeaponDef } from '../weapons.ts';
 import type { DehAmmoEdit, DehFrameEdit, DehPatch, DehPointerEdit, DehThingEdit, DehWeaponEdit } from './defs.ts';
 import {
@@ -84,6 +84,7 @@ const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(things.OBITUARIES),
   patchable(LOCKED_LINES),
   patchable(CHEAT_MESSAGES),
+  patchable(PICKUP_LINES),
   // What a `Frame` record or a repointed `Thing` re-derives — docs/dehacked.md § Frames.
   patchable(things.THING_SPRITES),
   patchable(things.THING_ANIM_FRAMES),
@@ -167,6 +168,7 @@ export function applyDehacked(patch: DehPatch): void {
   applyObituaries(patch.strings);
   replaceByMnemonic(LOCKED_LINES, patch.strings); // PD_*
   replaceByMnemonic(CHEAT_MESSAGES, patch.strings); // STSTR_*
+  replaceByMnemonic(PICKUP_LINES, patch.strings); // GOT*
   for (const [name, lump] of patch.soundLumps) setSoundLump(name, lump);
   for (const [mnemonic, lump] of patch.musicLumps) setMusicLump(mnemonic, lump);
   for (const [name, to] of patch.spriteRenames) setSpriteLump(name, to);

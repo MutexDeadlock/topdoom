@@ -147,6 +147,12 @@ export class NetSession {
   delay: number;
   /** The tic the first check sample disagreed at since the last snapshot, or null. */
   desyncedAt: number | null = null;
+  /**
+   * Hears a line for the level's feed — a player joining or leaving the running game — while a
+   * `NetSeat` sits on this session; null between levels, when there is no feed to tell.
+   * docs/multiplayer-net.md § Joining a game, § Leaving.
+   */
+  onNotice: ((text: string) => void) | null = null;
 
   private transport: Transport;
   private hooks: NetHooks;
@@ -678,7 +684,10 @@ export class NetSession {
       this.hooks.changed();
       return;
     }
-    if (joining) this.scheduler?.ensureSlot(joining.slot, atTic + this.delay);
+    if (joining) {
+      this.scheduler?.ensureSlot(joining.slot, atTic + this.delay);
+      this.onNotice?.(`${joining.name} joined the game`);
+    }
   }
 
   private snapshot(restore: NetRestore): void {
@@ -707,6 +716,7 @@ export class NetSession {
       this.end('dropped from the game: nothing you pressed reached the others for too long');
       return;
     }
+    if (this.playing) this.onNotice?.(`${this.nameOf(slot)} left the game`);
     this.hooks.changed();
   }
 

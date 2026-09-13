@@ -116,3 +116,93 @@ export const WEAPON_PICKUPS: Record<
   [ThingType.plasmaRifle]: { weapon: 'plasmaRifle', ammoType: 'cells', clips: 2 },
   [ThingType.bfg9000]: { weapon: 'bfg', ammoType: 'cells', clips: 2 },
 };
+
+/**
+ * What the feed prints for each pickup, keyed by `d_englsh.h`'s own `GOT*` mnemonic and verbatim
+ * from it — `P_TouchSpecialThing`'s `player->message` per sprite. Keyed by mnemonic so a BEX
+ * `[STRINGS]` patch replaces one by name (`dehacked/apply.ts`'s `replaceByMnemonic`), whole lines
+ * rather than names to interpolate; `GOTSHELLS`' literal 4 is vanilla's own and does not follow
+ * `CLIP_AMMO`. docs/hud.md § HUD messages, docs/dehacked.md § Pickup messages.
+ */
+export const PICKUP_LINES: Record<string, string> = {
+  GOTARMOR: 'Picked up the armor.',
+  GOTMEGA: 'Picked up the MegaArmor!',
+  GOTHTHBONUS: 'Picked up a health bonus.',
+  GOTARMBONUS: 'Picked up an armor bonus.',
+  GOTSTIM: 'Picked up a stimpack.',
+  GOTMEDINEED: 'Picked up a medikit that you REALLY need!',
+  GOTMEDIKIT: 'Picked up a medikit.',
+  GOTSUPER: 'Supercharge!',
+  GOTBLUECARD: 'Picked up a blue keycard.',
+  GOTYELWCARD: 'Picked up a yellow keycard.',
+  GOTREDCARD: 'Picked up a red keycard.',
+  GOTBLUESKUL: 'Picked up a blue skull key.',
+  GOTYELWSKUL: 'Picked up a yellow skull key.',
+  GOTREDSKULL: 'Picked up a red skull key.',
+  GOTINVUL: 'Invulnerability!',
+  GOTBERSERK: 'Berserk!',
+  GOTINVIS: 'Partial Invisibility',
+  GOTSUIT: 'Radiation Shielding Suit',
+  GOTMAP: 'Computer Area Map',
+  GOTVISOR: 'Light Amplification Visor',
+  GOTMSPHERE: 'MegaSphere!',
+  GOTCLIP: 'Picked up a clip.',
+  GOTCLIPBOX: 'Picked up a box of bullets.',
+  GOTROCKET: 'Picked up a rocket.',
+  GOTROCKBOX: 'Picked up a box of rockets.',
+  GOTCELL: 'Picked up an energy cell.',
+  GOTCELLBOX: 'Picked up an energy cell pack.',
+  GOTSHELLS: 'Picked up 4 shotgun shells.',
+  GOTSHELLBOX: 'Picked up a box of shotgun shells.',
+  GOTBACKPACK: 'Picked up a backpack full of ammo!',
+  GOTBFG9000: 'You got the BFG9000!  Oh, yes.',
+  GOTCHAINGUN: 'You got the chaingun!',
+  GOTCHAINSAW: 'A chainsaw!  Find some meat!',
+  GOTLAUNCHER: 'You got the rocket launcher!',
+  GOTPLASMA: 'You got the plasma gun!',
+  GOTSHOTGUN: 'You got the shotgun!',
+  GOTSHOTGUN2: 'You got the super shotgun!',
+};
+
+/**
+ * Which `PICKUP_LINES` mnemonic each pickup prints, `P_TouchSpecialThing`'s sprite cases by
+ * doomednum. The medikit is absent: it picks between `GOTMEDINEED` and `GOTMEDIKIT` by the health
+ * it leaves, which `pickupLine` decides.
+ */
+export const PICKUP_LINE_OF: Record<number, string> = {
+  [ThingType.greenArmor]: 'GOTARMOR',
+  [ThingType.blueArmor]: 'GOTMEGA',
+  [ThingType.healthBonus]: 'GOTHTHBONUS',
+  [ThingType.armorBonus]: 'GOTARMBONUS',
+  [ThingType.stimpack]: 'GOTSTIM',
+  [ThingType.soulsphere]: 'GOTSUPER',
+  [ThingType.megasphere]: 'GOTMSPHERE',
+  [ThingType.blueKeycard]: 'GOTBLUECARD',
+  [ThingType.yellowKeycard]: 'GOTYELWCARD',
+  [ThingType.redKeycard]: 'GOTREDCARD',
+  [ThingType.blueSkullKey]: 'GOTBLUESKUL',
+  [ThingType.yellowSkullKey]: 'GOTYELWSKUL',
+  [ThingType.redSkullKey]: 'GOTREDSKULL',
+  [ThingType.invulnerability]: 'GOTINVUL',
+  [ThingType.berserk]: 'GOTBERSERK',
+  [ThingType.invisibility]: 'GOTINVIS',
+  [ThingType.radiationSuit]: 'GOTSUIT',
+  [ThingType.computerMap]: 'GOTMAP',
+  [ThingType.lightAmpVisor]: 'GOTVISOR',
+  [ThingType.clip]: 'GOTCLIP',
+  [ThingType.boxOfBullets]: 'GOTCLIPBOX',
+  [ThingType.rocket]: 'GOTROCKET',
+  [ThingType.boxOfRockets]: 'GOTROCKBOX',
+  [ThingType.cellCharge]: 'GOTCELL',
+  [ThingType.cellChargePack]: 'GOTCELLBOX',
+  [ThingType.shells]: 'GOTSHELLS',
+  [ThingType.boxOfShells]: 'GOTSHELLBOX',
+  [ThingType.backpack]: 'GOTBACKPACK',
+  [ThingType.bfg9000]: 'GOTBFG9000',
+  [ThingType.chaingun]: 'GOTCHAINGUN',
+  [ThingType.chainsaw]: 'GOTCHAINSAW',
+  [ThingType.rocketLauncher]: 'GOTLAUNCHER',
+  [ThingType.plasmaRifle]: 'GOTPLASMA',
+  [ThingType.shotgun]: 'GOTSHOTGUN',
+  [ThingType.superShotgun]: 'GOTSHOTGUN2',
+};

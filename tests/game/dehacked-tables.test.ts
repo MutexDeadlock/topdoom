@@ -203,7 +203,10 @@ describe('DEHACKED · classification', () => {
     assert.equal(classifyDehackedString('PHUSTR_5'), 'applied');
     // `HUSTR_PLRRED` must not be swept up by the `HUSTR_` title rule.
     assert.equal(classifyDehackedString('HUSTR_PLRRED'), 'noTarget');
-    assert.equal(classifyDehackedString('GOTARMOR'), 'noTarget');
+    // Every `GOT*` has a line and is a whole key; the family has no prefix row, so an invented one
+    // is honestly unknown.
+    assert.equal(classifyDehackedString('GOTARMOR'), 'applied');
+    assert.equal(classifyDehackedString('GOTNOTHING'), 'unknown');
     assert.equal(classifyDehackedString('E1TEXT'), 'noTarget');
     // A mnemonic with a sink is a whole key and applies; the rest of its family falls to the
     // prefix row, which is what marks it recognised-and-homeless so nothing reports it.

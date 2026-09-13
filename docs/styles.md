@@ -160,8 +160,9 @@ nearest token would be a visual change wearing a cleanup's clothes.
 move when the menu accent is retuned. Two are tokens, each read by more than one stylesheet:
 `--info` (the text-weight blue) and `--caution` (the text-weight amber). The status lines use both,
 red being kept for what actually failed (docs/menu-wads.md § The status line); `--caution` is also
-the save row's missing-add-on note and the WAD Library's support column, `--info` the info column's
-hover. Their neighbours in that scale are not tokens, and each says why at the site: the support
+the save row's missing-add-on note, the WAD Library's support column and the HUD feed's repeat
+count — the one token JS reads, off the computed style, because that count is drawn on a canvas
+(docs/hud.md § HUD messages) — `--info` the info column's hover. Their neighbours in that scale are not tokens, and each says why at the site: the support
 column's green and the info column's darker resting blue have one site each, and the profiler's
 green/gold/red bar fills are at fill weight rather than text weight (its red happens to be the
 accent's hex and stays literal anyway, precisely so the two can't be retuned together). Where a
@@ -179,7 +180,7 @@ One further documented exception:
 ### The stacking ladder
 
 `--z-tint: 5` (`#screen-tint`, `#colormap-tint`, `#pain-flash`) → `--z-hud: 10` (`#hud`,
-`#profiler-hud`, `#hud-bar`) → `--z-message: 12` (`#hud-message`, `#level-card`) → `--z-overlay: 15`
+`#profiler-hud`, `#hud-bar`, `#hud-messages`) → `--z-message: 12` (`#hud-message`, `#level-card`) → `--z-overlay: 15`
 (`#intermission`, `#death-overlay`, which can never be up at the same time) → `--z-replaybar: 16`
 (`#replay-bar`) → `--z-scoreboard: 17` (`#scoreboard`, held up over everything on the level) →
 `--z-menu: 20` →

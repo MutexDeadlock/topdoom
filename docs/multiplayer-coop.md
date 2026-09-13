@@ -80,7 +80,9 @@ in the tic the press is read rather than at the next `G_Ticker`.
 
 `p_inter.c` in a netgame:
 
-- **A key stays** for everyone (`leftInNetgame`): given, not removed, silent.
+- **A key stays** for everyone (`leftInNetgame`): given, not removed, silent; one already held is
+  not a pickup at all (`applyPickup` returns false — `P_GiveCard`'s no-op and the case's `return`),
+  so its feed line prints once (docs/items.md § Collecting things).
 - **A placed weapon stays forever** — `Game.weaponsStay` (`P_GiveWeapon`'s
   `netgame && deathmatch != 2`), handed to `applyPickup` and `leftInNetgame`. A player who owns it
   gets nothing, not even ammo; one who doesn't gets it with its two clips and is switched to it, `wpnup` plays, and it stays. A dropped

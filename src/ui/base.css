@@ -7,7 +7,7 @@
 :root {
   /* Stacking ladder. The full list, so a new overlay can be placed by reading one block. */
   --z-tint: 5; /* #screen-tint, #pain-flash */
-  --z-hud: 10; /* #hud, #profiler-hud, #hud-bar */
+  --z-hud: 10; /* #hud, #profiler-hud, #hud-bar, #hud-messages */
   --z-message: 12; /* #hud-message, #level-card */
   --z-overlay: 15; /* #intermission, #death-overlay — never up at the same time */
   --z-replaybar: 16; /* #replay-bar — usable over the two above, under the menu */
@@ -40,7 +40,8 @@
   /* Status colours, at text weight. Deliberately *not* rungs of the accent family: a status colour
      must not move when the accent is retuned (docs/styles.md § Tokens). Info is read by the two
      status lines and the info column's hover; caution by the status lines, the save row's missing
-     add-on and the WAD Library's support column. */
+     add-on, the WAD Library's support column and the HUD feed's repeat count, which
+     ui/hud/messages.ts reads off the token for its canvas. */
   --info: #8fb8e0;
   --caution: #cfa23c;
 }

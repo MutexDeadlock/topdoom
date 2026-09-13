@@ -292,8 +292,9 @@ entered through an exit is (docs/hud.md § Best times) — and **a savegame writ
 in** (`GameOptions.autoSave`, named after the replay and the level clock). That save is the reason there
 is no separate "save here" button: a player who wants this moment takes it over and has it. It also
 moves `savedState`, so `R` after a death returns to the take-over point rather than to the replay's
-last restore. The outcome goes to the center message, not the bar, which is gone by then; a moment
-the capture refuses (an intermission, a corpse) says so there and stops nothing else.
+last restore. `game saved` goes on the feed (docs/hud.md § HUD messages), not the bar, which is gone
+by then; a moment the capture refuses (an intermission, a corpse) says so in the center message,
+which no setting hides, and stops nothing else.
 
 The reticle is drawn where the recording aimed, projected through the interpolated camera each
 frame; the pointer keeps the ordinary arrow meanwhile (`Crosshair.detach`), since the bar's

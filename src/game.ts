@@ -98,6 +98,7 @@ import {
   missingArtMessage,
   SECRET_MESSAGE,
 } from './ui/hud/message.ts';
+import { HudMessages, deathLine } from './ui/hud/messages.ts';
 import { handleHotkeys } from './ui/devmode/debughud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { DeathOverlay, type DeathHint } from './ui/hud/deathoverlay.ts';
@@ -131,6 +132,7 @@ import { playerDamageAtSkill, type Skill } from './game/skill.ts';
 import {
   applyDamage,
   applyPickup,
+  pickupLine,
   createInventory,
   finishLevel,
   getPistolStart,
@@ -489,6 +491,8 @@ export class Game {
   private autoSave: (() => Promise<unknown>) | null;
   /** Center-screen text — docs/hud.md § Center messages. */
   private message: CenterMessage;
+  /** The feed over the bar: pickups, joins, deaths — docs/hud.md § HUD messages. */
+  private messages: HudMessages;
   /** The "Entering / <level name>" card every map load raises — see ui/hud/levelcard.ts. */
   private levelCard: LevelCard;
   /** The end-of-level popup — see ui/hud/intermission.ts and {@link Game.popup}. */
@@ -674,6 +678,7 @@ export class Game {
     });
     this.hud = new Hud(gfx);
     this.message = new CenterMessage(gfx);
+    this.messages = new HudMessages(gfx, this.netgame);
     this.levelCard = new LevelCard(gfx);
     this.intermission = new Intermission(gfx);
     this.endCard = new EndCard(gfx);
@@ -713,6 +718,7 @@ export class Game {
           captureState: (joining) => this.captureState(joining),
           restoreLevel: (restore) => this.restoreFromNet(restore),
           say: (text) => this.message.show(text),
+          notice: (text) => this.messages.show(text),
         })
       : null;
     const game = this;
@@ -830,6 +836,7 @@ export class Game {
         crosshair: this.crosshair,
         replayBar: this.replayBar,
         message: this.message,
+        messages: this.messages,
         levelCard: this.levelCard,
         screenEffects: this.screenEffects,
         deathOverlay: this.deathOverlay,
@@ -1013,22 +1020,23 @@ export class Game {
     if (this.view.camera !== viewed.simCamera) this.view.camera.copyFrom(viewed.simCamera);
     this.screenEffects.clearPain();
     this.message.clear();
+    this.messages.clear();
     this.deathOverlay.clear();
     this.armDeathOverlay();
   }
 
   /**
    * The savegame taking over writes, so the handed-over level is one the player can come back to —
-   * and, through {@link Game.saveVia}, what `R` reloads from here on. Reported in the center
-   * message rather than on the bar, which is gone by the time it lands; a refused moment (an
-   * intermission, a corpse) says so there and takes nothing else down with it.
-   * docs/replays.md § Playback.
+   * and, through {@link Game.saveVia}, what `R` reloads from here on. Reported on the feed rather
+   * than on the bar, which is gone by the time it lands; a refused moment (an intermission, a
+   * corpse) says so in the center message instead, which no setting hides, and takes nothing else
+   * down with it. docs/replays.md § Playback, docs/hud.md § HUD messages.
    */
   private async saveTakeOver(): Promise<void> {
     if (!this.autoSave) return;
     try {
       await this.autoSave();
-      this.message.show('game saved');
+      this.messages.show('game saved');
     } catch (err) {
       this.message.show((err as Error).message);
     }
@@ -1184,6 +1192,7 @@ export class Game {
   private clearOverlays(): void {
     this.deathOverlay.clear();
     this.message.clear();
+    this.messages.clear();
     this.levelCard.clear();
     this.intermission.clear();
     this.endCard.clear();
@@ -1841,6 +1850,11 @@ export class Game {
         const killer = fragCredit(slot.index, hit);
         if (killer !== null) this.slots[killer].frags[slot.index]++;
       }
+      // Everyone's feed, in a game with someone else to read it; the overlay below is the victim's.
+      if (this.netgame) {
+        const killer = hit.slot !== undefined && hit.slot !== slot.index ? this.playerName(hit.slot) : null;
+        this.messages.show(deathLine(this.playerName(slot.index), killer));
+      }
       // Dying on an `exitBelowHealth` floor ends the level whatever killed the player, not only
       // when that floor's own damage did it — E1M8's pit is the ending, and a baron finishing the
       // job there must not leave the episode unwon. Set before the overlay below, which
@@ -2238,13 +2252,13 @@ export class Game {
   private restoreFromNet(restore: NetRestore): boolean {
     const index = this.mapNames.indexOf(restore.map);
     if (index < 0) return false;
-    if (this.recorder && restore.state.players.length > this.slots.length) {
-      this.finishRecording();
-      this.message.show('recording ended: a player joined');
-    }
+    const joinEndsRecording = this.recorder !== null && restore.state.players.length > this.slots.length;
+    if (joinEndsRecording) this.finishRecording();
     this.recorder?.restore(restore.map, restore.state);
     this.buildLevel(index, restore.state);
     this.cheated = restore.state.cheated;
+    // After the build, whose `clearOverlays` would take it straight down again.
+    if (joinEndsRecording) this.messages.show('recording ended: a player joined');
     return true;
   }
 
@@ -2741,6 +2755,9 @@ export class Game {
         this.audio.play(sound);
       }
       if (!left) this.effects.spawnPickupFog(at);
+      // After `applyPickup`, which the medikit's line reads the health left by.
+      const line = pickupLine(type, slot.inventory);
+      if (line !== null) this.messages.show(line);
     }
     return taken && !left;
   }

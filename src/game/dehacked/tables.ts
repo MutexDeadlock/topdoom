@@ -614,6 +614,21 @@ const LOCK_LINE_MNEMONICS: readonly string[] = [
 ];
 
 /**
+ * The `GOT*` mnemonics this engine prints — `game/inventory/tables.ts`'s `PICKUP_LINES`, all 37 of
+ * `d_englsh.h`'s pickup messages. Spelled out here for the same read-side reason
+ * `LOCK_LINE_MNEMONICS` is, and cross-checked by the same test.
+ */
+const PICKUP_LINE_MNEMONICS: readonly string[] = [
+  'GOTARMOR', 'GOTMEGA', 'GOTHTHBONUS', 'GOTARMBONUS',
+  'GOTSTIM', 'GOTMEDINEED', 'GOTMEDIKIT', 'GOTSUPER', 'GOTMSPHERE',
+  'GOTBLUECARD', 'GOTYELWCARD', 'GOTREDCARD', 'GOTBLUESKUL', 'GOTYELWSKUL', 'GOTREDSKULL',
+  'GOTINVUL', 'GOTBERSERK', 'GOTINVIS', 'GOTSUIT', 'GOTMAP', 'GOTVISOR',
+  'GOTCLIP', 'GOTCLIPBOX', 'GOTROCKET', 'GOTROCKBOX', 'GOTCELL', 'GOTCELLBOX',
+  'GOTSHELLS', 'GOTSHELLBOX', 'GOTBACKPACK',
+  'GOTBFG9000', 'GOTCHAINGUN', 'GOTCHAINSAW', 'GOTLAUNCHER', 'GOTPLASMA', 'GOTSHOTGUN', 'GOTSHOTGUN2',
+];
+
+/**
  * The `STSTR_*` mnemonics this engine has a response for — `game/cheats.ts`'s `CHEAT_MESSAGES`,
  * the five `d_englsh.h` strings this engine's cheats print. Spelled out here rather than
  * imported for the same read-side reason `LOCK_LINE_MNEMONICS` is, and cross-checked by the same
@@ -640,7 +655,6 @@ const STRING_PREFIXES: readonly (readonly [string, DehSupport])[] = [
   ['HUSTR_', 'applied'], // level titles, and the two mission-specific sets below
   ['PHUSTR_', 'applied'],
   ['THUSTR_', 'applied'],
-  ['GOT', 'noTarget'], // pickup messages
   ['PD_', 'noTarget'], // locked-door lines with no lock rule here
   ['OB_', 'noTarget'], // obituaries with no killer here to name
   ['CC_', 'noTarget'], // cast-call names
@@ -660,6 +674,9 @@ const STRING_KEYS: Record<string, DehSupport> = {
   ...Object.fromEntries(Object.keys(OBITUARY_SINKS).map((key) => [key, 'applied'])),
   ...Object.fromEntries(LOCK_LINE_MNEMONICS.map((key) => [key, 'applied'])),
   ...Object.fromEntries(CHEAT_MESSAGE_MNEMONICS.map((key) => [key, 'applied'])),
+  // The whole `GOT*` family has a line; there is no prefix row, so a `GOT` this engine has no
+  // pickup for reports `unknown`, honestly.
+  ...Object.fromEntries(PICKUP_LINE_MNEMONICS.map((key) => [key, 'applied'])),
 
   NIGHTMARE: 'noTarget', // a skill name
   DOSY: 'noTarget', // a quit message

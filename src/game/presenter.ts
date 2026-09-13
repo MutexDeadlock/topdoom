@@ -26,6 +26,7 @@ import type { Hud } from '../ui/hud/hud.ts';
 import type { Crosshair } from '../ui/hud/crosshair.ts';
 import type { ReplayBar } from '../ui/hud/replaybar.ts';
 import type { CenterMessage } from '../ui/hud/message.ts';
+import type { HudMessages } from '../ui/hud/messages.ts';
 import type { LevelCard } from '../ui/hud/levelcard.ts';
 import type { DeathOverlay } from '../ui/hud/deathoverlay.ts';
 import type { Intermission } from '../ui/hud/intermission.ts';
@@ -52,6 +53,7 @@ export interface Overlays {
   readonly crosshair: Crosshair;
   readonly replayBar: ReplayBar;
   readonly message: CenterMessage;
+  readonly messages: HudMessages;
   readonly levelCard: LevelCard;
   readonly screenEffects: ScreenEffects;
   readonly deathOverlay: DeathOverlay;
@@ -166,12 +168,14 @@ export class Presenter {
   }
 
   /**
-   * The timed overlays' clocks: the center message, the level card and the death overlay. Every
-   * frame's, and a seek's catch-up tics', which draw no frame. docs/replays.md § Seeking.
+   * The timed overlays' clocks: the center message, the feed, the level card and the death
+   * overlay. Every frame's, and a seek's catch-up tics', which draw no frame.
+   * docs/replays.md § Seeking.
    */
   tickOverlayClocks(dt: number): void {
-    const { message, levelCard, deathOverlay } = this.host.overlays;
+    const { message, messages, levelCard, deathOverlay } = this.host.overlays;
     message.update(dt);
+    messages.update(dt);
     levelCard.update(dt);
     deathOverlay.update(dt);
   }

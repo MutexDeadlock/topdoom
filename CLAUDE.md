@@ -82,7 +82,8 @@ src/audio/     vanilla's sound table, the emitter game systems raise sounds thro
                playback (channels, attenuation, pan, volume), the level's music
 src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens);
                hud/ the in-game overlays (status bar, crosshair, level card, intermission, end
-               card, death overlay, center message, screen effects, the replay bar), menu/ the
+               card, death overlay, center message, the message feed, screen effects, the replay
+               bar), menu/ the
                launcher and pause screen (WAD Library, Save/Load, Replays, settings), devmode/ the
                status text and debug hotkeys
 src/util/      helpers shared across layers: 2D geometry plus the aim ray's box test (geom), the

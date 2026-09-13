@@ -51,6 +51,7 @@ import {
   type StandInBlocker,
 } from '../../game/savegames.ts';
 import { getProfilerVisible, setProfilerVisible } from '../hud/profiler.ts';
+import { getHudMessageMode, setHudMessageMode, type HudMessageMode } from '../hud/messages.ts';
 import { getDebugInfo, getFpsVisible, setDebugInfo, setFpsVisible } from '../devmode/debughud.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import { FIRST_RUN_WADS, VERSION } from '../../constants.ts';
@@ -163,6 +164,7 @@ export class Menu {
   private cameraModeSelect = el<HTMLSelectElement>('cameramode-select');
   private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
   private playerSpritesSelect = el<HTMLSelectElement>('playersprites-select');
+  private hudMessagesSelect = el<HTMLSelectElement>('hudmessages-select');
   private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private dynLightsCheckbox = el<HTMLInputElement>('dynlights-checkbox');
   private voidFogCheckbox = el<HTMLInputElement>('voidfog-checkbox');
@@ -325,6 +327,7 @@ export class Menu {
     this.installToggle(this.pickupPuffCheckbox, getPickupPuff, setPickupPuff);
     this.installToggle(this.bloomCheckbox, getBloom, setBloom);
     this.installPlayerSprites();
+    this.installHudMessages();
     this.installPistolStart();
     this.installAutoSwitch();
     this.installFps();
@@ -780,6 +783,17 @@ export class Menu {
     this.playerSpritesSelect.value = getPlayerSpriteMode();
     this.playerSpritesSelect.addEventListener('change', () => {
       setPlayerSpriteMode(this.playerSpritesSelect.value as PlayerSpriteMode);
+    });
+  }
+
+  /**
+   * Which games show the message feed over the bar — every game by default — read per message, so
+   * a change applies to the level already running. docs/hud.md § HUD messages.
+   */
+  private installHudMessages(): void {
+    this.hudMessagesSelect.value = getHudMessageMode();
+    this.hudMessagesSelect.addEventListener('change', () => {
+      setHudMessageMode(this.hudMessagesSelect.value as HudMessageMode);
     });
   }
 

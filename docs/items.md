@@ -167,6 +167,15 @@ standing still stays put. One deliberate simplification: it is gated on the play
 standing in for vanilla's per-mobj `toucher->health` check, which a doll has no separate health for
 here. See docs/specials-forces.md § Voodoo dolls.
 
+**Every pickup taken prints its `GOT*` line on the feed** (docs/hud.md § HUD messages) —
+`pickupLine(type, inventory)`, read after `applyPickup` because the medikit picks between
+`GOTMEDINEED` and `GOTMEDIKIT` by the health it left: below 50, following prboom-plus's fix
+("25 + the 25 just added") rather than vanilla's `< 25`, which tests the health *after* the 25 were
+added and so never prints the line. **A key already held is not a pickup**: `applyPickup` returns
+false for it, `P_GiveCard`'s `if (player->cards[card]) return;` plus the netgame case's own
+`return` — so a key left lying (docs/multiplayer-coop.md § Items and kills) prints once, the first
+time, and is silent after.
+
 **`tryPickup`'s `z` check** exists because 2D distance alone lets a player standing at the *base* of
 a not-yet-lowered pillar collect an item still on top of it — DOOM2 MAP04's blue key does exactly
 this. Matching `PIT_CheckThing`'s overhead gate, a pickup more than `PLAYER_HEIGHT` above or below

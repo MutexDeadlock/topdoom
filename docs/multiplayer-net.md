@@ -172,15 +172,18 @@ that slot (`Game.freshSlotSnapshot`: `G_DoReborn`'s spot, a fresh inventory, fac
 way). The joiner builds the level from the snapshot (`startGame` with `restore`), a `Game` with
 `localSlot` its own; every other browser restores it, `growSlots` adding the slot. The joiner's
 first row is for `atTic + delay`; until then its slot is idle, and the others wait for it at
-`atTic + delay` — "X is joining…". A recording running when a slot is added ends: its record has
-no room for one.
+`atTic + delay` — "X is joining…" (the center message, redrawn while the wait lasts). The `sync`
+itself puts "X joined the game" on everyone else's feed (`NetSession.onNotice`, docs/hud.md § HUD
+messages). A recording running when a slot is added ends — its record has no room for one — and
+the feed says so once the level is rebuilt.
 
 ## Leaving
 
 - **A peer leaving** (`left`, or the host's `DROP_TIMEOUT_MS`) is a `drop {slot, atTic}` from
   the host, `atTic` one past the last row that arrived (`dropTicFor`): the slot's rows are idle
   from there and nobody waits for it. The player stands idle in the level, as under `?coop=` —
-  monsters may go after it, and it can die. A dropped browser that is still there hears its own
+  monsters may go after it, and it can die. "X left the game" goes on the feed of every browser
+  still in the game (`NetSession.onNotice`). A dropped browser that is still there hears its own
   drop and ends.
 - **A kicked peer** (`NetSession.kick`, the host's) is a peer leaving: the relay's `left` takes the
   same path — out of the lobby, or dropped from the game — and the peer's own session ends on

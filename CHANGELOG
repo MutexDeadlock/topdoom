@@ -18,6 +18,10 @@ Features and improvements
     - reworked status messages
     - select arrows and number steppers in the menu's own colours
   - players gib when a hit leaves them below -100 health, as in vanilla
+  - HUD messages over the status bar: vanilla's pickup lines, who joined or
+    left a network game, who killed whom, a take-over's save; a repeated line
+    counts up (x2); Settings > Visuals > Messages picks all / MP only / off
+    - DEHACKED: GOT* pickup strings apply
 
 Fixed bugs
   - the high death cry (pdiehi) plays in DOOM2 only, as in vanilla

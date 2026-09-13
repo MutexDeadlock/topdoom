@@ -42,6 +42,8 @@ import {
   ARMOR_PICKUP_CLASS,
   HEALTH_PICKUPS,
   KEY_PICKUPS,
+  PICKUP_LINES,
+  PICKUP_LINE_OF,
   POWERUP_PICKUPS,
   POWER_SECONDS,
   WEAPON_PICKUPS,
@@ -373,6 +375,10 @@ export function applyPickup(inv: Inventory, type: number, options: PickupOptions
 
   const key = KEY_PICKUPS[type];
   if (key) {
+    // A key already held is nothing: `P_GiveCard`'s `if (player->cards[card]) return;`, and in a
+    // netgame — the only place a key is touched twice, being left lying — the case's own `return`
+    // before the sound and the message. docs/multiplayer-coop.md § Items and kills.
+    if (inv.keys.has(key)) return false;
     inv.keys.add(key);
     return true;
   }
@@ -419,6 +425,23 @@ export function applyPickup(inv: Inventory, type: number, options: PickupOptions
  */
 export function leftInNetgame(type: number, dropped: boolean, weaponsStay: boolean): boolean {
   return !!KEY_PICKUPS[type] || (weaponsStay && !!WEAPON_PICKUPS[type] && !dropped);
+}
+
+/**
+ * The feed's line for a pickup just applied, `P_TouchSpecialThing`'s `player->message` — read
+ * **after** {@link applyPickup}, since the medikit's line depends on the health it left: below 50,
+ * the player "REALLY" needed it. That threshold is prboom-plus's (`p_inter.c`, "25 + the 25 just
+ * added"), a deliberate departure from vanilla's own `< 25`, which tests the health after the 25
+ * were added and so never prints the line at all. docs/hud.md § HUD messages.
+ *
+ * @returns null for a thing with no line — a pickup type a patch invented
+ */
+export function pickupLine(type: number, inv: Inventory): string | null {
+  if (type === ThingType.medikit) {
+    return PICKUP_LINES[inv.health < 50 ? 'GOTMEDINEED' : 'GOTMEDIKIT'];
+  }
+  const mnemonic = PICKUP_LINE_OF[type];
+  return mnemonic === undefined ? null : PICKUP_LINES[mnemonic];
 }
 
 /**

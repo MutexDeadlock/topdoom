@@ -46,8 +46,10 @@ export interface NetHost {
   readonly captureState: (joining: SlotAssignment | null) => NetCapture | null;
   /** The level rebuilt from the host's snapshot; false when these WADs have no such map. */
   restoreLevel(restore: NetRestore): boolean;
-  /** Center-screen text. */
+  /** Center-screen text: the stall notice, redrawn while the wait lasts. */
   say(text: string): void;
+  /** A line for the feed: who joined, who left. docs/hud.md § HUD messages. */
+  notice(text: string): void;
 }
 
 export class NetSeat {
@@ -65,6 +67,7 @@ export class NetSeat {
   constructor(session: NetSession, host: NetHost) {
     this.session = session;
     this.host = host;
+    session.onNotice = (text) => host.notice(text);
   }
 
   /**
@@ -92,6 +95,7 @@ export class NetSeat {
    * Nothing plays a network game's level on alone — docs/multiplayer-net.md § Leaving.
    */
   dispose(): void {
+    this.session.onNotice = null;
     releaseSessionSettings();
   }
 

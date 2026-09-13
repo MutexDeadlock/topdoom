@@ -1,7 +1,7 @@
 # The HUD, level card, intermission and screen effects
 
 `src/ui/hud/hud.ts`, `src/ui/hud/wadfont.ts`, `src/ui/hud/levelcard.ts`,
-`src/ui/hud/intermission.ts`, `src/ui/hud/message.ts`, `src/ui/hud/crosshair.ts`,
+`src/ui/hud/intermission.ts`, `src/ui/hud/message.ts`, `src/ui/hud/messages.ts`, `src/ui/hud/crosshair.ts`,
 `src/ui/hud/screeneffects.ts`, `src/ui/hud/scoreboard.ts`, `src/game/besttimes.ts`, `src/game.ts`
 
 Everything on screen that isn't the world. What the readouts *report* — the inventory, pickups and
@@ -409,6 +409,50 @@ safe:
 
 A blob that is unparseable, of the wrong shape, or entirely malformed migrates nothing and is
 dropped like any other — there is nothing in it to keep.
+
+## HUD messages
+
+`src/ui/hud/messages.ts`'s `HudMessages` is the feed over the bar (`#hud-messages`, centred over
+`#game-hud`): up to three lines of STCFN text in the font's own red, newest at the bottom, each held
+3 s and faded out over the 1 s after — together vanilla's `HU_MSGTIMEOUT` of four seconds
+(`hu_stuff.h`); vanilla shows one line, top-left, and the three, the placement and the split
+between hold and fade are **tuned by feel**. A fourth line pushes the oldest out.
+
+**A line still up is never printed twice**: the same text moves to the bottom, counts up —
+`Picked up a health bonus. (x3)`, the count (`countSuffix`) in the status amber, `base.css`'s
+`--caution`, read off the computed style so canvas and stylesheet share one value — and starts its
+clock again. The count dies with
+the line: once it has faded, the next one is `x1` again. What it prints:
+
+- **every pickup the viewed player takes** — `pickupLine(type, inventory)` (`game/inventory.ts`),
+  `P_TouchSpecialThing`'s `player->message` per sprite, verbatim from `d_englsh.h` in
+  `inventory/tables.ts`'s `PICKUP_LINES` and keyed by its `GOT*` mnemonic, so a BEX `[STRINGS]`
+  patch replaces one by name (docs/dehacked.md § Pickup messages). Read after `applyPickup`: the
+  medikit's line depends on the health it left (docs/items.md § Collecting things). A key already
+  held prints nothing, as vanilla's `P_GiveCard` gives nothing.
+- **a player's death, in a game with more than one player** — `deathLine(victim, killer)`, the
+  feed's own third-person line ("A killed B", "B died"), raised by `Game.damageSlot` for every
+  slot; the death overlay stays the victim's own (docs/death.md § Who killed the player).
+- **who joined or left a network game** — `NetSession.onNotice`, which `NetSeat` routes here
+  through `NetHost.notice` (docs/multiplayer-net.md § Joining a game, § Leaving). The stall notice
+  stays a center message: it is redrawn every second for as long as the wait lasts.
+- **`game saved`** once a replay's take-over has written its save (`Game.saveTakeOver`,
+  docs/replays.md § Playback). A refused save stays a center message: a reason why something did
+  not happen is not a setting's to hide.
+- **`recording ended: a player joined`** (`Game.restoreFromNet`), shown after the level is rebuilt
+  from the snapshot, whose `clearOverlays` would take it straight down
+  (docs/multiplayer-net.md § Joining a game).
+
+**Which games show it is a setting**: `getHudMessageMode` (`ui/hud/messages.ts`, field
+`hudMessages`) — `all`, the default, `multiplayer` (a game with more than one player,
+`Game.netgame`) or `off`; the menu's Messages select on Visuals (docs/menu.md § Settings tab). Read per message,
+so a change applies to the level already running, and `update` takes the lines up down once the
+mode no longer shows them.
+
+The clocks tick from `Presenter.tickOverlayClocks` like the center message's, so a paused game
+doesn't burn a line's time behind the menu; `clearOverlays` and a view switch clear the feed.
+Same rung as the bar (`--z-hud`): it is part of the bar, not a message over the view. Its
+`bottom` pair tracks `#hud-bar`'s, so it lifts with the bar over the replay bar's expanded panel.
 
 ## Center messages
 

@@ -754,6 +754,16 @@ line (docs/cheats.md § IDCLEV). The `STSTR_` prefix row in `dehacked/tables.ts`
 and the five above are whole keys ahead of it — the same prefix-plus-exceptions shape the `PD_*`
 mnemonics use, spelled out on the read side for the same reason and cross-checked by the same test.
 
+## Pickup messages
+
+`GOT*` replaces the line the feed prints for a pickup (docs/hud.md § HUD messages) — all 37 of
+`d_englsh.h`'s, `P_TouchSpecialThing`'s `player->message` per sprite, held verbatim in
+`game/inventory/tables.ts`'s `PICKUP_LINES` keyed by mnemonic and replaced by `replaceByMnemonic`,
+whole lines like the `PD_*` and `STSTR_*` ones. There is no `GOT` prefix row: every mnemonic of the
+family has a line, so each is a whole key spelled out on the read side (`PICKUP_LINE_MNEMONICS`,
+cross-checked by the same test as the lock lines), and a `GOT` this engine has no pickup for
+reports `unknown`.
+
 ## Par times
 
 `[PARS]` is read in both forms the format allows — `par <map> <secs>` and
@@ -792,10 +802,10 @@ ignores EPIC.WAD's `Radius = 2` line for the same reason this does.
 **`Reaction time`.** `monsters/ai.ts` seeds one shared `REACTION_CHASES`, and vanilla's
 `reactiontime` is 8 for every monster, so there is no per-type table to write into.
 
-**Strings with no home.** `GOT*` pickup messages have nowhere to go because this engine shows
-nothing on pickup; `E1TEXT`–`C6TEXT` because there is no finale screen; `AMSTR_*` because there is
-no automap; `CC_*` because there is no cast call; `OB_MP*` and the deathmatch weapon obituaries
-because there is no deathmatch. **This paragraph and the `noTarget` rows of `STRING_PREFIXES` are
+**Strings with no home.** `E1TEXT`–`C6TEXT` have nowhere to go because there is no finale screen;
+`AMSTR_*` because there is no automap; `CC_*` because there is no cast call; `OB_MP*` and the
+deathmatch weapon obituaries because the feed's death line is this engine's own, not a per-weapon
+obituary (docs/hud.md § HUD messages). **This paragraph and the `noTarget` rows of `STRING_PREFIXES` are
 where that list lives** — the reader is told once, here, rather than on every run (§ The coverage
 report).
 
@@ -903,7 +913,7 @@ one record word can land differently by index — a `Frame` on a muzzle flash ha
 the table is unknown — and a row says one thing.
 
 **A `[STRINGS]` shortfall is reported only when it is `unknown`.** A recognised mnemonic this engine
-has no home for — `GOT*`, `CC_*`, `AMSTR_*`, the deathmatch obituaries — is passed over in silence.
+has no home for — `CC_*`, `AMSTR_*`, the deathmatch obituaries — is passed over in silence.
 It went the other way first, one grouped row per family, and that was wrong twice over. It was
 **noise**: freedoom2's patch produced sixteen rows whose entire content was a restatement of the
 scope this document already fixes, burying the one `Frame` row a reader can act on. And once a

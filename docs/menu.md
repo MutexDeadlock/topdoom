@@ -214,7 +214,7 @@ not move to General with the rest.
 stacked full width, with `Debug / Dev` following them. Level start leads because it is the one of
 the two a player picks *before* a run rather than sets once and forgets.
 
-**Visuals is Camera, Frame rate, Lighting, Top-down extras, Player sprites** — everything that
+**Visuals is Camera, Frame rate, Lighting, Top-down extras, Messages, Player sprites** — everything that
 changes what the running level *looks* like, in that order: the camera first, being the one a player
 actually goes looking for. Camera and Frame rate **share one `.columns even` row**: both are a
 heading over a single select, and stacked they cost two rows of the tab's height for one line of
@@ -243,7 +243,11 @@ docs/render-lighting.md § It has no setting.
 **Player sprites** is `#playersprites-select`, whose `<option>` values are the `PlayerSpriteMode`
 strings themselves (`auto` — the default — `always`, `never`); it is owned by `wad/playerskin.ts`
 and read per drawn frame, so it too applies to the running level. What each mode decides is
-docs/sprites.md § When the skins apply.
+docs/sprites.md § When the skins apply. It shares a `.columns even` row behind **Messages**,
+`#hudmessages-select`, whose `<option>` values are the `HudMessageMode` strings — `all` (the
+default, so first), `multiplayer` (labelled `MP only`), `off`; owned by `ui/hud/messages.ts` and
+read per message, so it applies to the level already running. It sits on Visuals rather than General because it changes
+what is drawn over the level, not how the game plays. docs/hud.md § HUD messages.
 
 **Audio is one Volume section of three sliders** — `General` (`#master-volume-slider`, the master),
 `Effects` (`#volume-slider`) and `Music` (`#music-volume-slider`) — each with a `.label` wide enough
@@ -360,6 +364,7 @@ a setting touches one module.
 | `fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
 | `fps` | `ui/devmode/debughud.ts` (`getFpsVisible`/`setFpsVisible`) | docs/devmode.md § FPS counter |
 | `profiler` | `ui/hud/profiler.ts` (`getProfilerVisible`/`setProfilerVisible`) | docs/devmode.md § Profiling overlay |
+| `hudMessages` | `ui/hud/messages.ts` (`getHudMessageMode`/`setHudMessageMode`) | docs/hud.md § HUD messages |
 | `dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
 | `voidFog` | `render/voidfloor.ts` (`getVoidFog`/`setVoidFog`) | docs/render.md § The toggle |
 | `solidCaps` | `render/solids.ts` (`getSolidCaps`/`setSolidCaps`) | docs/render-solids.md |

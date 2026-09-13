@@ -39,7 +39,8 @@ import { Wad } from '../../src/wad/wad.ts';
 import { wadFile } from '../fixtures/wadfile.ts';
 import { WEAPONS, playerSkinWeapon } from '../../src/game/weapons.ts';
 import { SFX_ORDER, WEAPON_ORDER } from '../../src/game/dehacked/tables.ts';
-import { applyPickup, ammoMax, createInventory } from '../../src/game/inventory.ts';
+import { applyPickup, ammoMax, createInventory, pickupLine } from '../../src/game/inventory.ts';
+import { PICKUP_LINES } from '../../src/game/inventory/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { soundLumpName } from '../../src/audio/sfx.ts';
 import { finaleMusicFor, intermissionMusicFor, vanillaMusicFor } from '../../src/audio/music/tables.ts';
@@ -326,6 +327,23 @@ describe('DEHACKED · applying', () => {
     apply('[STRINGS]\nSTSTR_DQDON = Nice try\n');
     assert.equal(CHEAT_MESSAGES.STSTR_DQDON, 'Nice try');
     assert.equal(CHEAT_MESSAGES.STSTR_DQDOFF, 'Degreelessness Mode Off', 'the other half of the toggle is untouched');
+  });
+
+  test('[STRINGS] GOT* replaces a pickup line, verbatim, and the medikit keeps its two', () => {
+    // docs/dehacked.md § Pickup messages.
+    apply('[STRINGS]\nGOTCLIP = Bullets!\nGOTMEDINEED = Close one.\n');
+    assert.equal(pickupLine(ThingType.clip, createInventory()), 'Bullets!');
+    const low = createInventory();
+    low.health = 40;
+    assert.equal(pickupLine(ThingType.medikit, low), 'Close one.');
+    assert.equal(pickupLine(ThingType.medikit, createInventory()), 'Picked up a medikit.', 'the other line is untouched');
+  });
+
+  test("the classifier's GOT* list is exactly the set of lines that exist", () => {
+    for (const mnemonic of Object.keys(PICKUP_LINES)) {
+      assert.equal(classifyDehackedString(mnemonic), 'applied', `${mnemonic} has a line but is not applied`);
+    }
+    assert.equal(Object.keys(PICKUP_LINES).length, 37, "d_englsh.h's whole family");
   });
 
   test("the classifier's PD_* list is exactly the set of lines that exist", () => {
@@ -695,6 +713,7 @@ describe('DEHACKED · reset restores every table it can write', () => {
       obituaries: { ...OBITUARIES },
       lockedLines: { ...LOCKED_LINES },
       cheatMessages: { ...CHEAT_MESSAGES },
+      pickupLines: { ...PICKUP_LINES },
       sprites: { ...THING_SPRITES },
       anims: structuredClone(THING_ANIM_FRAMES),
       walk: structuredClone(MONSTER_WALK_FRAMES_OVERRIDE),
@@ -722,7 +741,7 @@ describe('DEHACKED · reset restores every table it can write', () => {
         'Ammo 0\nMax ammo = 1\nPer ammo = 2',
         'Weapon 1\nAmmo type = 2',
         'Misc 0\nInitial Health = 3\nInitial Bullets = 4\nGreen Armor Class = 2\nMax Armor = 7',
-        '[STRINGS]\nOB_CRUSH = %o was squished.\nPD_BLUEK = Locked, obviously\nSTSTR_NCON = Through walls now',
+        '[STRINGS]\nOB_CRUSH = %o was squished.\nPD_BLUEK = Locked, obviously\nSTSTR_NCON = Through walls now\nGOTCLIP = Bullets!',
         '[SOUNDS]\npistol = DSNEWGUN',
         '[MUSIC]\nrunnin = D_OTHER',
         // The frame walker's sinks: a repointed death, a retimed pain, a shortened death chain that
@@ -756,6 +775,7 @@ describe('DEHACKED · reset restores every table it can write', () => {
     assert.deepEqual(OBITUARIES, before.obituaries);
     assert.deepEqual(LOCKED_LINES, before.lockedLines);
     assert.deepEqual(CHEAT_MESSAGES, before.cheatMessages);
+    assert.deepEqual(PICKUP_LINES, before.pickupLines);
     assert.deepEqual(THING_SPRITES, before.sprites);
     assert.deepEqual(THING_ANIM_FRAMES, before.anims);
     assert.deepEqual(MONSTER_WALK_FRAMES_OVERRIDE, before.walk);

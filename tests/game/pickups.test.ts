@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyPickup, createInventory, type Inventory, type WeaponId } from '../../src/game/inventory.ts';
+import { applyPickup, createInventory, pickupLine, type Inventory, type WeaponId } from '../../src/game/inventory.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 
 /**
@@ -134,5 +134,41 @@ describe('Game rules · ammo raises the weapon', () => {
     assert.equal(pickingUp(ThingType.backpack, 'fist', ['rocketLauncher'], {}, false), 'fist');
     // Ungated, being vanilla's own "what you picked up is what you hold".
     assert.equal(pickingUp(ThingType.shotgun, 'fist', [], {}, false), 'shotgun');
+  });
+});
+
+/**
+ * The feed's line for a pickup — `P_TouchSpecialThing`'s `player->message` — and the one rule that
+ * makes a key print once. docs/hud.md § HUD messages, docs/items.md § Collecting things.
+ */
+describe('Game rules · pickup messages', () => {
+  test("every pickup type has d_englsh.h's line, verbatim", () => {
+    const inv = createInventory();
+    assert.equal(pickupLine(ThingType.clip, inv), 'Picked up a clip.');
+    assert.equal(pickupLine(ThingType.shells, inv), 'Picked up 4 shotgun shells.', "vanilla's literal 4");
+    assert.equal(pickupLine(ThingType.bfg9000, inv), 'You got the BFG9000!  Oh, yes.');
+    assert.equal(pickupLine(ThingType.megasphere, inv), 'MegaSphere!');
+    assert.equal(pickupLine(ThingType.blueSkullKey, inv), 'Picked up a blue skull key.');
+    assert.equal(pickupLine(ThingType.imp, inv), null, 'not a pickup');
+  });
+
+  test('the medikit says you REALLY needed it below 50 health after the 25 it gave', () => {
+    // prboom-plus's threshold ("25 + the 25 just added"), not vanilla's unreachable `< 25`.
+    const inv = createInventory();
+    inv.health = 20;
+    applyPickup(inv, ThingType.medikit);
+    assert.equal(inv.health, 45);
+    assert.equal(pickupLine(ThingType.medikit, inv), 'Picked up a medikit that you REALLY need!');
+    inv.health = 25;
+    applyPickup(inv, ThingType.medikit);
+    assert.equal(pickupLine(ThingType.medikit, inv), 'Picked up a medikit.');
+  });
+
+  test('a key already held is not a pickup, so a key left lying in a netgame prints once', () => {
+    // `P_GiveCard`'s `if (player->cards[card]) return;` plus the netgame case's own `return`.
+    const inv = createInventory();
+    assert.equal(applyPickup(inv, ThingType.redKeycard), true);
+    assert.equal(applyPickup(inv, ThingType.redKeycard), false);
+    assert.ok(inv.keys.has('redCard'));
   });
 });

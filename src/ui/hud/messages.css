@@ -1,0 +1,29 @@
+/*
+ * The message feed, a column of canvases ui/hud/messages.ts sizes to each line's own pixel width
+ * and this scales (`height`, width follows). Centred over #game-hud, `bottom` clearing the bar's
+ * height plus its own offset — the two `bottom`s here track #hud-bar's pair in hud.css, so the
+ * feed lifts with the bar over the replay bar's expanded panel. Newest line at the bottom, which
+ * is the DOM order. On the HUD's own rung: it is part of the bar, not a message over the view.
+ */
+#hud-messages {
+  position: fixed;
+  left: 50%;
+  bottom: 74px;
+  transform: translateX(-50%);
+  z-index: var(--z-hud);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px #000);
+}
+
+body.replay-expanded #hud-messages {
+  bottom: 134px;
+}
+
+/* The same glyph height as #hud-message; the fade is each line's own inline opacity. */
+#hud-messages canvas {
+  height: 13px;
+}

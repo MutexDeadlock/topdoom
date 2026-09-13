@@ -157,8 +157,9 @@ a player's bullets and missiles pass through the other players (docs/multiplayer
 
 The board's `Kills` column counts each slot's `netFrags` in a deathmatch (docs/hud.md
 § Scoreboard); the death overlay names the player who fragged you by their roster name, `Player n`
-without one (docs/death.md § Who killed the player). No frag counter on the HUD, no frag matrix on
-the intermission, no kill feed.
+without one (docs/death.md § Who killed the player); every player's feed gets the third-person line
+("A killed B", docs/hud.md § HUD messages). No frag counter on the HUD, no frag matrix on the
+intermission.
 
 ## Testing locally
 

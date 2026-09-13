@@ -9,9 +9,10 @@
 import { asPromise, idbOpener, txDone } from '../util/idb.ts';
 
 /**
- * How a state's stored bytes are encoded. `1` = gzip-compressed JSON. Versioned
- * separately from `SAVE_VERSION`, which governs the snapshot's *content* — the
- * two evolve independently, and an exported file carries both.
+ * How a record's stored bytes are encoded. `1` = gzip-compressed text: a save's state one JSON
+ * document ({@link compressText}), a replay's record one JSON document a line
+ * ({@link compressLines}). Versioned separately from `SAVE_VERSION`, which governs the snapshot's
+ * *content* — the two evolve independently, and an exported file carries both.
  */
 export const STATE_ENCODING = 1;
 
@@ -48,16 +49,14 @@ export interface SaveStoreBackend {
 const DB_VERSION = 1;
 
 /**
- * The real backend: one database, two object stores keyed by record ID —
- * `<prefix>-meta` holds plain meta objects so listing never touches a
- * snapshot, `<prefix>-state` the compressed bytes. The savegames live in
- * `topdoom`; a replay's record has the same two halves and takes the same
- * backend over its own database, kept separate so an upgrade that fails for
- * one can't take the other down (docs/replays.md § Storage). An IndexedDB
- * transaction auto-commits as soon as control returns to the event loop with
- * no request pending, so nothing here may `await` between opening a
- * transaction and issuing its requests — which is why `putSave` takes finished
- * bytes and the compression happens before it is called.
+ * The real backend: one database, two object stores keyed by record ID — `<prefix>-meta` holds
+ * plain meta objects so listing never touches a snapshot, `<prefix>-state` the compressed bytes.
+ * The savegames live in `topdoom`; a replay's record has the same two halves and takes the same
+ * backend over its own database, kept separate so an upgrade that fails for one can't take the
+ * other down (docs/replays.md § Storage). An IndexedDB transaction auto-commits as soon as control
+ * returns to the event loop with no request pending, so nothing here may `await` between opening a
+ * transaction and issuing its requests — which is why {@link SaveStoreBackend.putSave} takes
+ * finished bytes and the compression happens before it is called.
  */
 export function idbBackend(names: { database: string; prefix: string }): SaveStoreBackend {
   const META_STORE = `${names.prefix}-meta`;
@@ -142,18 +141,63 @@ export async function freshId(backend: SaveStoreBackend): Promise<string> {
  * Gzips a string. Gzip rather than `deflate-raw`: the 18-byte header is noise
  * against a save's size, the magic bytes make a stray stored blob identifiable
  * (and recoverable with any external gunzip), and the trailing CRC makes a
- * corrupted state fail loudly in `decompressText` instead of yielding garbage
+ * corrupted state fail loudly in {@link decompressText} instead of yielding garbage
  * JSON. `CompressionStream`/`Blob`/`Response` are global in every supported
  * browser and in Node, so the round-trip runs unchanged in tests.
  */
-export async function compressText(text: string): Promise<Uint8Array<ArrayBuffer>> {
-  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+export function compressText(text: string): Promise<Uint8Array<ArrayBuffer>> {
+  return gzip(new Blob([text]).stream());
 }
 
-export async function decompressText(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-  return new Response(stream).text();
+export function decompressText(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  return new Response(gunzip(bytes)).text();
+}
+
+/**
+ * Gzips `lines` as one newline-separated stream, pulling each line only as the compressor wants
+ * it — so no string larger than one line is ever built, where joining them first would hit the
+ * engine's string-length limit on a record of hours. A JSON document can be a line because
+ * `JSON.stringify` escapes every newline it writes. docs/replays.md § Storage.
+ */
+export async function compressLines(lines: Iterable<string>): Promise<Uint8Array<ArrayBuffer>> {
+  const iterator = lines[Symbol.iterator]();
+  const text = new ReadableStream<string>({
+    pull(controller) {
+      const next = iterator.next();
+      if (next.done) controller.close();
+      else controller.enqueue(`${next.value}\n`);
+    },
+  });
+  return gzip(text.pipeThrough(new TextEncoderStream()));
+}
+
+/**
+ * {@link compressLines} undone, a line at a time. Throws where the bytes are not gzip; bytes that
+ * hold no newline at all come back as one line.
+ */
+export async function* decompressLines(bytes: Uint8Array<ArrayBuffer>): AsyncGenerator<string> {
+  const reader = gunzip(bytes).pipeThrough(new TextDecoderStream()).getReader();
+  try {
+    // A line's pieces are kept apart until its newline arrives: appending chunks to one string and
+    // searching it would flatten the whole line again for every chunk.
+    let pieces: string[] = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      let start = 0;
+      for (let end = value.indexOf('\n'); end >= 0; end = value.indexOf('\n', start)) {
+        pieces.push(value.slice(start, end));
+        yield pieces.join('');
+        pieces = [];
+        start = end + 1;
+      }
+      if (start < value.length) pieces.push(value.slice(start));
+    }
+    if (pieces.length > 0) yield pieces.join('');
+  } finally {
+    // A reader that stops early — a record that frames wrong — leaves nothing decompressing.
+    await reader.cancel();
+  }
 }
 
 /**
@@ -181,4 +225,14 @@ export function base64ToBytes(text: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+/** `stream` gzipped and collected — both compressors' tail. */
+async function gzip(stream: ReadableStream<Uint8Array<ArrayBuffer>>): Promise<Uint8Array<ArrayBuffer>> {
+  return new Uint8Array(await new Response(stream.pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+}
+
+/** Stored bytes as a stream of what they gzipped — both decompressors' head. */
+function gunzip(bytes: Uint8Array<ArrayBuffer>): ReadableStream<Uint8Array<ArrayBuffer>> {
+  return new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
 }

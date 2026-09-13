@@ -29,14 +29,14 @@ Rules that hold this together:
   on `Loading …` forever, which reads as "hung" rather than "your browser can't run this". The
   GPU-specific message is only shown when the error actually looks like a WebGL failure, so an
   unrelated bug isn't misreported as a GPU problem.
-- **A finished campaign ends the session.** `Game` takes an `onCampaignEnd` port beside its
-  checkpoint store, called when the end card's continue key has nowhere left to go (docs/hud.md
+- **A finished campaign ends the session.** `Game` takes an `onCampaignEnd` port, called when
+  the end card's continue key has nowhere left to go (docs/hud.md
   § End card). The handler nulls `game` *before* disposing it — the call arrives from inside that
   very `Game`'s tic — and reopens the menu with `open('none')`, as a launcher: there is no returning
   to a run that is over.
 - **A reload over a run of the player's own is confirmed** (`beforeunload`, armed only while
   `session()` is `'game'`): nothing in a running level survives it — the checkpoint is
-  session-local and never offered at boot, and a recording sits in its recorder until a teardown
+  kept in memory, and a recording sits in its recorder until a teardown
   stores it (docs/replays.md § Recording). The browser owns the dialog and its text; F5 itself
   cannot be swallowed. A playback reproduces from the store and the menu alone holds nothing, so
   neither arms it.
@@ -104,7 +104,7 @@ the same `Promise.all` and is not counted — 651 KB against a 14 MB IWAD would 
 lie in the other direction.
 
 **A level load shows nothing unless it is predicted to be slow.** `Game.loadLevel` is the one
-decision point — an exit, `R` after death, a checkpoint reload and IDCLEV's warp all go
+decision point — an exit, `R` after death and IDCLEV's warp all go
 through it — and it estimates the build from the map's `LINEDEFS` lump size (`mapLinedefBytes`, a
 directory lookup; a UDMF map's `TEXTMAP` size scaled to the same unit) times `buildMsPerKb`. Only
 above `SLOW_LOAD_MS` does the overlay go up. An ordinary level change is a few frames, and an

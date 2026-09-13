@@ -53,7 +53,8 @@ src/ui/devmode/
 ```
 
 The one thing that doesn't live in a module's own file is a **shared class** — `.hidden`,
-`.overlay`, `.panel`, `.truncate`, all in `base.css` (§ Shared classes below). Ownership still
+`.overlay`, `.panel`, `.truncate`, `.hide-on-replay-seek`, all in `base.css` (§ Shared classes
+below). Ownership still
 holds: a module's file keeps every rule that makes its element *itself*, and takes the shared class
 for the part it has in common with seven others.
 
@@ -190,11 +191,12 @@ A new overlay picks its rung by reading that one block rather than grepping for 
 
 ## Shared classes
 
-`.hidden`, `.overlay`, `.panel` and `.truncate` live in `base.css`, and a class earns a place there
-the way a token does: **the thing it names is shared by six or more elements across as many files.**
-Nothing lands there for being short or for recurring within one module.
+`.hidden`, `.overlay`, `.panel`, `.truncate` and `.hide-on-replay-seek` live in `base.css`, and a
+class earns a place there the way a token does: **the thing it names is shared by six or more
+elements across as many files.** Nothing lands there for being short or for recurring within one
+module.
 
-`.hidden` is the odd one, below. The other three are *bases* — an ID rule outscoring them is how an
+`.hidden` and `.hide-on-replay-seek` are the odd ones, § Hiding an element. The other three are *bases* — an ID rule outscoring them is how an
 element refines the shared start (`#death-overlay` turns `.overlay`'s row into a column), so none of
 them takes `!important` and none should.
 
@@ -214,6 +216,11 @@ state must not be `display: none` needs a different class**, not a scoped `.hidd
 share one grid cell and an inactive one has to keep reserving it or the menu's height jumps on a tab
 switch — docs/menu.md § One screen, two jobs. `menu.ts` toggles `inactive` on both the tab panels
 and the Settings sub-panels; every other element in the tree toggles `hidden`.
+
+**`.hide-on-replay-seek` hides by page state, not by a toggle**: the six overlays a tic raises wear
+it in their markup, and `base.css` hides it under `body.replay-seeking`, which `ReplayBar.update`
+sets while a seek catches up (docs/replays.md § Seeking). It is `visibility`, so it composes with an
+element's own `.hidden` instead of contending with it.
 
 An element that leaves a *row* is the other case, and `visibility` is the wrong tool for it: it
 holds the height but goes on reserving the width, leaving what follows stranded mid-row. The row

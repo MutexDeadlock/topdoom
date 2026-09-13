@@ -37,6 +37,13 @@ export interface ReplayBarHooks {
 /** The `body` class the HUD bar reads to lift itself clear of the expanded panel. */
 const EXPANDED_CLASS = 'replay-expanded';
 
+/**
+ * The `body` class under which `.hide-on-replay-seek` (`base.css`) hides the overlays a tic raises
+ * while a seek catches up: the picture stands still until the jump lands.
+ * docs/replays.md § Seeking.
+ */
+const SEEKING_CLASS = 'replay-seeking';
+
 /** How far the arrow keys jump, in seconds — the media-player step, tuned by feel. */
 const SKIP_SECONDS = 5;
 
@@ -234,10 +241,12 @@ export class ReplayBar {
     }
     if (playback !== this.shown) this.show(playback);
     // A jump leaves the level's picture standing, so this is what says the position is moving at
-    // all — `Game` draws nothing until it lands. docs/replays.md § Seeking.
+    // all — `Game` draws nothing until it lands, and the overlays a tic raises stay hidden with it.
+    // docs/replays.md § Seeking.
     const seeking = playback.seekTarget !== null;
     this.seekMark.classList.toggle('hidden', !seeking);
     this.seekMark.classList.toggle('back', seeking && playback.seekBack);
+    document.body.classList.toggle(SEEKING_CLASS, seeking);
     this.fill.style.width = `${positionFraction(playback.cursor, playback.ticCount) * 100}%`;
     // Every text below is written only when it changed: an assignment of the same string still
     // rebuilds the text node, and this runs every frame.
@@ -294,7 +303,7 @@ export class ReplayBar {
     this.flashMark.classList.add('hidden');
     this.hideMark();
     this.openCameraMenu(false);
-    document.body.classList.remove(EXPANDED_CLASS);
+    document.body.classList.remove(EXPANDED_CLASS, SEEKING_CLASS);
   }
 
   private show(playback: ReplayPlayback): void {
@@ -302,7 +311,7 @@ export class ReplayBar {
     this.alertedDesync = null;
     this.alertUntil = 0;
     this.root.classList.remove('hidden', 'ended', 'alerting');
-    document.body.classList.remove(EXPANDED_CLASS);
+    document.body.classList.remove(EXPANDED_CLASS, SEEKING_CLASS);
     this.levels = playback.replay.levels.map((level) => ({ tic: level.tic, name: this.hooks.levelName(level.map) }));
     this.markers.replaceChildren();
     for (const level of this.levels) {

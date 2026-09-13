@@ -1389,7 +1389,6 @@ object TeleportFog
 
 
 // Added by TopDOOM:
-// GZDoom leaves the item fog unlit;
 // this is the teleport fog's DTFOG2-4 pool in blue,
 // bound to IFOG's shrinking frames the way TFOG's are.
 

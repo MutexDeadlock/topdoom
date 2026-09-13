@@ -123,6 +123,17 @@ canvas {
   display: none !important;
 }
 
+/*
+ * What a tic raises over the view — #hud-message, #hud-messages, #level-card, #death-overlay,
+ * #intermission, #end-card — kept off screen while a replay's seek catches up: they are DOM, shown
+ * whether or not a frame is drawn, and the picture stands still until the jump lands. `ReplayBar`
+ * sets the body class off `seekTarget`. `visibility`, so it never contends with `.hidden`.
+ * docs/replays.md § Seeking.
+ */
+body.replay-seeking .hide-on-replay-seek {
+  visibility: hidden;
+}
+
 /* Scrollbars, styled once for the whole page */
 html {
   scrollbar-width: thin;

@@ -47,11 +47,10 @@ moved into `players`, § What is saved and what is deliberately not), deliberate
 there are no saves worth a version, and the number is being kept for the first break that costs
 real players something. A save written before either simply does not load — `isLoadableState`
 refuses it as damaged — and nothing was added to explain it: the only such saves were made by
-development builds. Everything else added since is still the
-optional-field rule: absence means the old behaviour, the `teleportFogs` pattern. Breaking saves at
-`GameSnapshot.deathmatch`, `PlayerSlotSnapshot.frags` and `ThingsSnapshot.itemRespawn` are that
-pattern's (docs/multiplayer-deathmatch.md).
-all is the user's decision, not a free move (CLAUDE.md § Project-wide rules).
+development builds. Everything else added since follows the optional-field rule: absence means the
+old behaviour, the `teleportFogs` pattern — `GameSnapshot.deathmatch`, `PlayerSlotSnapshot.frags`
+and `ThingsSnapshot.itemRespawn` among them (docs/multiplayer-deathmatch.md). Breaking saves at all
+is the user's decision, not a free move (CLAUDE.md § Project-wide rules).
 
 A killable thing's AI block is the one part not written out field by field: `MONSTER_SAVE_KEYS`
 names the `PosedThing` fields it can carry, `MonsterFields` is `Pick`ed off `PosedThing` with that
@@ -374,42 +373,28 @@ NUTS.WAD with all 10k monsters wounded ~3 MB.
 
 ## The checkpoint
 
-Advancing into a level writes a **checkpoint**: an ordinary save, under the reserved ID
-`AUTOSAVE_ID` (`'auto'`), taken by `Game.enterLevel` immediately *after* `buildLevel` has built
-the new level. Dying and pressing `R` reloads it, so a death costs the level and not the run's
-inventory (docs/death.md § Player death) — unless the level has a savegame of its own, which `R`
-prefers: `Game.savedState` holds the snapshot the level was loaded from plus any manual save
-`saveVia` has since stored, and only a level with neither falls back to the checkpoint.
-Both ways of arriving at the next level go through
-`enterLevel` — the exit the player took, and IDCLEV's warp, which would otherwise leave
-a level with no checkpoint to restart from. The session's *first* level is deliberately not one of
-them: nothing was advanced into, so `R` there restarts as it always did.
+Advancing into a level takes a **checkpoint**: the level's snapshot, captured by
+`Game.runEnterLevel` immediately *after* `buildLevel` has built it and kept as `Game.checkpoint` —
+the same object a recording files as the level's keyframe, so a recorded reload of it stores no
+second copy. Dying and pressing `R` reloads it where the level has no savegame of its own, so a
+death costs the level and not the run's inventory (the order `R` picks in: docs/death.md § Player
+death). Both ways of arriving at
+the next level go through `enterLevel` — the exit the player took, and IDCLEV's warp, which would
+otherwise leave a level with no checkpoint to restart from. The session's *first* level is
+deliberately not one of them: nothing was advanced into, so `R` there restarts as it always did.
 
-The reserved ID is the whole mechanism, and that is deliberate: hiding a save by *ID* needs no
-`SaveMeta` field, so the format is unchanged and `SAVE_VERSION` did not move. The ID is also what
-makes it self-overwriting — the same key replaces both records, so there is only ever one — and
-`freshId` (`savestore.ts`: a base-36 timestamp plus a counter, shared with the replays) can never
-collide with it. Two consequences the code has to honor, both in `savegames.ts`:
+**It lives in memory, never in the store.** Only the `Game` that took it may reload it — a run
+started on a map some earlier run advanced into must not inherit that run's inventory — so a stored
+copy could never be read back, and two tabs could overwrite each other's. It is no save: no meta, no
+thumbnail, no WAD match, nothing lists it, and every route `R` takes is synchronous.
 
-- `listSaves` filters the row out. It is the engine's save, not the player's, and both tabs list
-  through that one function, so one filter keeps it out of Save and Load alike.
-- `readAutosave` collapses every refusal `readSave` can throw — missing, damaged, or written by a
-  build with a different `SAVE_VERSION` — to `null`. None of them is worth a message, because the
-  caller's fallback (a plain restart) is a perfectly good outcome.
-
-The capture skips the thumbnail (`captureSave(false)`): nothing ever lists it, so the extra render
-would be for a JPEG no one sees. Writing is fire-and-forget, and `Game.hasCheckpoint` only goes up
-once the bytes are actually stored — a refused write (a full quota) must not take the level change
-down with it, and must not leave a checkpoint that isn't there readable.
-
-`hasCheckpoint` is *also* what scopes the checkpoint to the session. A `Game` spans every level of
-a run, so the flag means "this run has advanced at least once"; without it, a run started on a map
-that some earlier run happened to checkpoint would restore that run's inventory. `matchesSession`
-then re-checks map, skill and the WAD set by content on top of it.
-
-`Game` reaches the store through the injected `CheckpointStore` port, never directly — the same
-split as `SaveHooks`: `main.ts` owns the library and the database, `Game` owns which moment is
-worth capturing.
+**A keyframe restore sets it, and `savedState` with it, to what playing through to the landing
+leaves** (`ReplayPlayback.reloadsAt`): on the record's first level `savedState` is the record's
+start, on a level entered since the checkpoint is that level's entry keyframe (docs/replays.md §
+Seeking), null where that anchor was refused. A seek must not change what a take-over's `R`
+reloads, and keeping the pair the playback left would restore another map's snapshot after a jump
+across levels. An IDCLEV warp onto the map already playing lays down no track marker, so a jump
+past one finds the map's earlier entry.
 
 ## Naming
 
@@ -529,9 +514,7 @@ rather than a `Wad` — the save, `wadSetId`'s list for the set in hand, and a l
 set's provider for a map (a lookup, not one provider, because a replay's stand-in gate asks about
 every level it visited — § A stand-in game WAD) — so the rule lives in the format module with the
 field it reads, and returns the refusal message or null. `verifySaveWads` (`main.ts`, on the shared `startLevel` path — see
-docs/session.md § Session lifecycle) throws what it returns; `Game.matchesSession`, the checkpoint's
-fit test, compares it to null, so a checkpoint cannot refuse where a manual load would work. Both
-feed it freshly re-hashed bytes (`wadSetId`, `mapProvider` in `wad/checksum.ts`) even though
+docs/session.md § Session lifecycle) throws what it returns, feeding it freshly re-hashed bytes (`wadSetId`, `mapProvider` in `wad/checksum.ts`) even though
 resolution already matched IDs: a manifest ID is a build-time claim, and re-hashing what is
 actually in hand is what catches a manifest left stale by a changed file.
 
@@ -556,9 +539,7 @@ name* — `mapNameStyle` (`wad/library/defs.ts`), the one spelling of `E<n>M<n>`
 `mapStyle` also reads. Among those, **a file under the saved name wins**: the same IWAD in another
 version is what the player still means by it, where anything else is a guess. A candidate needs no
 content ID: nothing matches it by identity, which is the point. `wadSetRefusal` sees content hashes only and so accepts *any* file at
-index 0 in this regime — the compatibility question is settled where the set was resolved, and
-`Game.matchesSession` inherits the same answer, so a checkpoint cannot refuse where a manual load
-would work.
+index 0 in this regime — the compatibility question is settled where the set was resolved.
 
 **The stand-in is never silent.** `MissingWad.substitute` carries the file standing in, which makes
 the row's line `Stand-in for DOOM2.WAD: freedoom2.wad` in amber (`required` is false — the load

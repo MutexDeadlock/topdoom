@@ -21,8 +21,8 @@ import {
   STATE_ENCODING,
   base64ToBytes,
   bytesToBase64,
-  compressText,
-  decompressText,
+  compressLines,
+  decompressLines,
   freshId as freshStoredId,
   idbBackend,
   putStored,
@@ -89,7 +89,7 @@ export {
   ticAtFraction,
 } from './replay/defs.ts';
 export { BOUND_KEYS, maskHas } from './replay/keys.ts';
-export { ReplayPlayback } from './replay/playback.ts';
+export { ReplayPlayback, type ReloadStates } from './replay/playback.ts';
 export { ReplayRecorder, type RecordingStart } from './replay/recorder.ts';
 export { ReplayDriver, type ReplayHost } from './replay/driver.ts';
 export {
@@ -110,7 +110,7 @@ const PLAYER_NAME_STORAGE_KEY = 'playerName';
 
 /**
  * The name a new recording is credited to: whatever a replay's Player field was last filled in
- * with (`describeReplay`), so it is entered once and inherited afterwards. Shaped like every
+ * with ({@link describeReplay}), so it is entered once and inherited afterwards. Shaped like every
  * persisted setting — docs/menu.md § Persisted settings.
  */
 let playerName = readStorage(PLAYER_NAME_STORAGE_KEY, '');
@@ -157,7 +157,8 @@ export async function listStockReplays(): Promise<ReplayListEntry[]> {
 
 /**
  * Why this build cannot read a replay written in `version` — one sentence, shown wherever an
- * unplayable replay is: `readReplay`'s refusal, `importReplay`'s, and the list's own red line.
+ * unplayable replay is: {@link readReplay}'s refusal, {@link importReplay}'s, and the list's own
+ * red line.
  */
 export function versionRefusal(version: unknown): string {
   return `this replay uses format version ${String(version)}; this build plays version ${REPLAY_VERSION}`;
@@ -177,7 +178,7 @@ export async function readReplay(id: string): Promise<Replay> {
   if (!record || record.encoding !== STATE_ENCODING) throw damaged();
   let data: unknown;
   try {
-    data = JSON.parse(await decompressText(record.bytes));
+    data = await decodeRecord(record.bytes);
   } catch {
     throw damaged();
   }
@@ -188,8 +189,8 @@ export async function readReplay(id: string): Promise<Replay> {
 
 /**
  * Stores a finished recording under a fresh ID, stamping what only the storing moment knows: the
- * date, this build, this browser's engine and the player name. A blank name gets `defaultName`'s,
- * the saves' own.
+ * date, this build, this browser's engine and the player name. A blank name gets
+ * {@link defaultName}'s, the saves' own.
  */
 export async function writeReplay(capture: ReplayCapture, name: string): Promise<ReplayMeta> {
   const { data, ...rest } = capture;
@@ -211,9 +212,9 @@ export async function writeReplay(capture: ReplayCapture, name: string): Promise
 
 /**
  * Patches the editable fields, meta only — the record's bytes are never rewritten. Serialized
- * against every other call (`patchQueue`): a row has three fields, and leaving one is enough to
- * start a second read-modify-write while the first is still in flight, where both would read the
- * same stored meta and the later write would drop the earlier field.
+ * against every other call ({@link patchQueue}): a row has three fields, and leaving one is enough
+ * to start a second read-modify-write while the first is still in flight, where both would read
+ * the same stored meta and the later write would drop the earlier field.
  */
 export async function describeReplay(id: string, fields: ReplayDescription): Promise<void> {
   if (isStockReplay(id)) throw new Error(stockText);
@@ -275,6 +276,35 @@ export function unpackData(data: ReplayData): ReplayData {
     ),
     slots: data.slots.map((slot) => ({ ...slot, tics: unpackTics(slot.tics) })),
   };
+}
+
+/**
+ * A stored record's bytes back as the record they frame, read a line at a time — still in the
+ * stored form, its smooth columns packed ({@link unpackData} undoes that) — or null where the lines
+ * frame none, a record in an earlier layout included. Throws where the bytes are not gzip or a line
+ * is not JSON. docs/replays.md § Storage.
+ */
+export async function decodeRecord(bytes: Uint8Array<ArrayBuffer>): Promise<Record<string, unknown> | null> {
+  let head: RecordHead | null = null;
+  const slots: unknown[] = [];
+  const snapshots: unknown[] = [];
+  for await (const line of decompressLines(bytes)) {
+    const value: unknown = JSON.parse(line);
+    if (head === null) {
+      if (!isRecord(value) || !Number.isInteger(value.slots) || !Number.isInteger(value.snapshots)) {
+        return null;
+      }
+      head = value as unknown as RecordHead;
+    } else if (slots.length < head.slots) {
+      slots.push(value);
+    } else if (snapshots.length < head.snapshots) {
+      snapshots.push(value);
+    } else {
+      return null;
+    }
+  }
+  if (head === null || slots.length < head.slots || snapshots.length < head.snapshots) return null;
+  return { ...head, slots, snapshots };
 }
 
 /**
@@ -340,7 +370,7 @@ async function decodeFile(
   let data: unknown;
   try {
     bytes = base64ToBytes(record.data);
-    data = JSON.parse(await decompressText(bytes));
+    data = await decodeRecord(bytes);
   } catch {
     throw refusal();
   }
@@ -397,9 +427,9 @@ function metaRefusal(raw: unknown): string | null {
 }
 
 /**
- * One snapshot's thing list, in either of the two forms `ThingsSnapshot` allows. Checked for every
- * snapshot, not just the one `isLoadableState` sees: a keyframe is restored the same way, and a
- * malformed list is what a restore would crash on rather than refuse over.
+ * Whether one snapshot carries a thing list of the shape `ThingsSnapshot` holds. Checked for every
+ * snapshot, not just the one {@link isLoadableState} sees: a keyframe is restored the same way, and
+ * a malformed list is what a restore would crash on rather than refuse over.
  */
 function hasThingList(snapshot: unknown): boolean {
   const things = isRecord(snapshot) && isRecord(snapshot.things) ? snapshot.things : null;
@@ -459,6 +489,24 @@ const freshId = (): Promise<string> => freshStoredId(store());
  * state the recording ran on, and a shortest-roundtrip double reads back bit-identical.
  */
 async function encodeData(id: string, data: ReplayData): Promise<StoredState> {
-  const stored = { ...data, slots: data.slots.map((slot) => ({ ...slot, tics: packTics(slot.tics) })) };
-  return { id, encoding: STATE_ENCODING, bytes: await compressText(JSON.stringify(stored)) };
+  return { id, encoding: STATE_ENCODING, bytes: await compressLines(recordLines(data)) };
+}
+
+/**
+ * The first line of a stored record: everything but the slots and the snapshots, which follow it a
+ * line each, and how many of each there are. docs/replays.md § Storage.
+ */
+type RecordHead = Omit<ReplayData, 'slots' | 'snapshots'> & { slots: number; snapshots: number };
+
+/**
+ * `data` as a stored record's lines: its {@link RecordHead}, every slot with its smooth columns
+ * packed ({@link packTics}), then every snapshot — a JSON document a line, so nothing on the way to
+ * the store is a string larger than one slot or one snapshot. docs/replays.md § Storage.
+ */
+function* recordLines(data: ReplayData): Generator<string> {
+  const { slots, snapshots, ...rest } = data;
+  const head: RecordHead = { ...rest, slots: slots.length, snapshots: snapshots.length };
+  yield JSON.stringify(head);
+  for (const slot of slots) yield JSON.stringify({ ...slot, tics: packTics(slot.tics) });
+  for (const snapshot of snapshots) yield JSON.stringify(snapshot);
 }

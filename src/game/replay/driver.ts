@@ -5,7 +5,7 @@
  * {@link ReplayHost}. docs/replays.md § The TicInput seam.
  */
 import { ReplayRecorder } from './recorder.ts';
-import { ReplayPlayback } from './playback.ts';
+import { ReplayPlayback, type ReloadStates } from './playback.ts';
 import type { Keyframe, Replay, ReplayCapture } from './defs.ts';
 import { quantizePose } from './defs.ts';
 import { applySimSettings, captureSessionSettings, releaseSimSettings } from './settings.ts';
@@ -65,9 +65,10 @@ export interface ReplayHost {
   /**
    * The level `map` at `state`, for a keyframe.
    *
-   * @param map  the level to restore — this one when the set has no such map
+   * @param map      the level to restore — this one when the set has no such map
+   * @param reloads  what `R` reloads on that level, as playing through to it leaves them
    */
-  restoreKeyframe(map: string, state: GameSnapshot): void;
+  restoreKeyframe(map: string, state: GameSnapshot, reloads: ReloadStates): void;
   /** Every slot's body as the fog sweeps from them, refilled for this tic — the check sample's. */
   bodies(): readonly Pos2[];
   /** The "Entering" card for the current level. */
@@ -391,13 +392,16 @@ export class ReplayDriver {
    * A seek anchor for the recorder at this moment, where one is recording and the moment allows a
    * capture at all: a keyframe taken mid-cheat or over a corpse would restore what a save refuses
    * to write. docs/replays.md § Seeking.
+   *
+   * @param state  this moment's snapshot where the caller already holds one — the recorder files a
+   *               snapshot by identity, so a later restore of the same object stores nothing twice
    */
-  writeKeyframe(): void {
+  writeKeyframe(state?: GameSnapshot): void {
     const recorder = this.recorder;
     if (!recorder || this.host.local.cheats.typing || this.host.blockedMoment() !== null) {
       return;
     }
-    recorder.keyframe(this.host.level.name, this.host.capture().state);
+    recorder.keyframe(this.host.level.name, state ?? this.host.capture().state);
   }
 
   /** A playback's pins come off; a recording is finished by the session layer before this. */
@@ -421,7 +425,7 @@ export class ReplayDriver {
   /** The world as `frame` held it at that anchor, cameras and pinned settings included. */
   private applyKeyframe(frame: Keyframe, playback: ReplayPlayback): void {
     const state = playback.replay.data.snapshots[frame.snapshot];
-    this.host.restoreKeyframe(frame.map, state);
+    this.host.restoreKeyframe(frame.map, state, playback.reloadsAt(frame));
     playback.seek(frame.tic);
     this.snapToTic(playback, frame.tic);
     // The state is the record's own again, so whatever had drifted before this point is gone.

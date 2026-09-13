@@ -146,7 +146,6 @@ async function boot(): Promise<void> {
         playback: replay,
         net: netGame,
         autoSave: () => withCapture((capture) => savegames.writeSave(capture, takeOverSaveName(replay, capture))),
-        checkpoint: { write: savegames.writeAutosave, read: savegames.readAutosave },
         onCampaignEnd: () => {
           disposeGame();
           // Every browser in the game reaches this tic together; the host takes the room back to
@@ -302,8 +301,8 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * Stores whatever `finished` was still recording (docs/replays.md § Recording). Fire-and-forget
-   * like the checkpoint: a refused write must not take the session change down with it.
+   * Stores whatever `finished` was still recording (docs/replays.md § Recording). Fire-and-forget:
+   * a refused write must not take the session change down with it.
    */
   const storeRecording = (finished: Game): void => {
     const capture = finished.finishRecording();

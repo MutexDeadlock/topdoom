@@ -14,7 +14,7 @@ import { DOOM_TIC } from '../../constants.ts';
 
 /**
  * Bumped on any change a reader of the previous version would misread — including a `SAVE_VERSION`
- * bump, since the record embeds savegame snapshots. `tests/game/replay.test.ts` pins the pair.
+ * bump, since the record embeds savegame snapshots. `tests/game/replaystore.test.ts` pins the pair.
  */
 export const REPLAY_VERSION = 1;
 
@@ -82,7 +82,7 @@ export const BUTTON_FIRE = 1;
 export const BUTTON_RIGHT_EDGE = 2;
 
 /**
- * The ten persisted settings a tic can observe — `replay/settings.ts` captures and pins them. One
+ * The nine persisted settings a tic can observe — `replay/settings.ts` captures and pins them. One
  * record on disk; the engine splits it by owner (docs/multiplayer.md § Player settings).
  */
 export interface SimSettings extends PlayerSettings, SessionSettings {}

@@ -1,7 +1,6 @@
 import { beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AUTOSAVE_ID,
   SAVE_VERSION,
   deleteSave,
   exportSave,
@@ -11,7 +10,6 @@ import {
   missingWadLabel,
   missingWadText,
   overwriteSave,
-  readAutosave,
   readSave,
   renameSave,
   requiredWads,
@@ -21,7 +19,6 @@ import {
   substitutableIwad,
   wadLabel,
   wadSetRefusal,
-  writeAutosave,
   writeSave,
   type SaveCapture,
   type SaveWad,
@@ -30,7 +27,9 @@ import {
   STATE_ENCODING,
   base64ToBytes,
   bytesToBase64,
+  compressLines,
   compressText,
+  decompressLines,
   decompressText,
 } from '../../src/game/savestore.ts';
 import { memoryBackend, type MemoryBackend } from '../fixtures/savestore.ts';
@@ -532,52 +531,18 @@ describe('Savegames · the store', () => {
   });
 });
 
-/** The level-entry checkpoint: one reserved id, hidden from both tabs. See docs/savegames.md § The checkpoint. */
-describe('Savegames · the checkpoint', () => {
-  test('it replaces itself and never appears in the list', async () => {
-    await writeAutosave(capture('E1M1'));
-    await writeAutosave(capture('E1M2'));
-    assert.equal(store.metas.size, 1, 'one meta, not one per level');
-    assert.equal(store.states.size, 1);
-    assert.equal((await readAutosave())?.map, 'E1M2', 'the later write won');
-
-    assert.deepEqual(await listSaves(), [], 'hidden with nothing else stored');
-    const mine = await writeSave(capture(), 'my save');
-    assert.deepEqual(
-      (await listSaves()).map((e) => e.meta.id),
-      [mine.id],
-      'and hidden beside a real save',
-    );
-  });
-
-  test('an unusable checkpoint reads as null rather than throwing', async () => {
-    assert.equal(await readAutosave(), null, 'nothing stored');
-
-    await writeAutosave(capture());
-    store.states.delete(AUTOSAVE_ID);
-    assert.equal(await readAutosave(), null, 'state record gone');
-
-    await writeAutosave(capture());
-    tamperMeta(AUTOSAVE_ID, { version: SAVE_VERSION + 1 });
-    assert.equal(await readAutosave(), null, 'written by another build');
-  });
-
-  test('the capture round-trips through it, thumbnail-less and all', async () => {
-    await writeAutosave({ ...capture('MAP12'), thumb: '' });
-    const save = await readAutosave();
-    assert.equal(save?.id, AUTOSAVE_ID);
-    assert.equal(save?.skill, 3);
-    assert.equal(save?.thumb, '');
-    assert.deepEqual(save?.wads, [{ name: 'DOOM.WAD', id: 'abc123' }]);
-    assert.deepEqual(save?.state, state);
-  });
-});
-
 /** The byte codecs under the store: real gzip both ways, and the export file's base64. */
 describe('Savegames · codecs', () => {
   test('gzip round-trips, non-ASCII included', async () => {
     const text = '{"name":"Ärger im Töten-Level ✓","x":1.5}';
     assert.equal(await decompressText(await compressText(text)), text);
+  });
+
+  test('lines round-trip one at a time, a line longer than any stream chunk included', async () => {
+    const lines = ['{"a":1}', 'Ärger ✓', 'x'.repeat(300_000), ''];
+    const read: string[] = [];
+    for await (const line of decompressLines(await compressLines(lines))) read.push(line);
+    assert.deepEqual(read, lines);
   });
 
   test('compression actually shrinks a repetitive payload', async () => {

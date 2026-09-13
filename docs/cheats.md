@@ -154,7 +154,7 @@ and its best-time comparison for one red `You cheated` line under the `STFKILL3`
 
 **The two toggles are session state, not level state.** They live on `Game`, so an exit carries
 them into the next map the way vanilla's `player_t.cheats` does; `restart` after a death reloads a
-checkpoint, and what that save recorded is what comes back.
+checkpoint, and what that snapshot recorded is what comes back.
 
 A save records the toggles per slot for a session that **used** one (`PlayerSlotSnapshot.cheats`,
 optional and absent otherwise), so a save that never cheated reads as "no cheats". The block's mere

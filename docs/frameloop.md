@@ -157,7 +157,7 @@ A replay banks `rawDt × speed` instead of `rawDt`, and nothing at all while its
 or its stream is spent; both of those draw at alpha 1, the frozen-simulation rule above. That pause
 is **not** the menu's — the frame loop keeps running so the bar stays live, and `ESC` still pauses
 the game as it always did. `MAX_TICS_PER_FRAME` bounds what a speed can actually reach on a slow
-frame, so 5× under a 30 fps cap runs at about 4.3×. docs/replays.md § Playback.
+frame, so the top step, 4×, holds only down to 28 fps. docs/replays.md § Playback.
 
 A **network game holds the frame** the same way while a peer's row for the next tic is missing, or
 a snapshot it is to restore is still on its way: nothing is banked, so no catch-up burst follows the

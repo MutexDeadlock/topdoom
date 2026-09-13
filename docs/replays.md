@@ -129,15 +129,15 @@ player settings and the session's at tic start and writes a change as a `setting
 its slot, or a `session` event, so a change made in the menu is stamped "apply before tic k".
 `releaseSimSettings` puts the stored values back when a playback ends.
 
-Four of the ten are a player's (`PlayerSettings`) and reach the tic through the slot —
+Four of the nine are a player's (`PlayerSettings`) and reach the tic through the slot —
 docs/multiplayer.md § Player settings: the local slot's through the pins, every other slot's as the
 playback's own record of it (`ReplayPlayback.slotSettings`). A playback answers each slot's
 right-button edge under that slot's settings in force.
 
 ## Restore events
 
-`R` while dead reloads the level from a snapshot the replay does not otherwise hold, and one of
-its three routes lands asynchronously (docs/death.md § Player death). Every route ends in
+`R` while dead reloads the level from a snapshot the replay does not otherwise hold, and a map slow
+enough to build parks that load for a frame (docs/session.md § The loading screen). Every route ends in
 `Game.reloadLevel`, which tells the recorder *what* was restored (the snapshot, or null for a
 fresh reload with a fresh inventory) at the tic count it lands on: **an event at tic k is applied
 before tic k**. All three routes land between tics, a parked load included.
@@ -221,7 +221,7 @@ because this is a replay (docs/hud.md § Best times).
 The frame loop banks `rawDt × speed`, and nothing while the bar's pause is on or the stream is
 spent; both draw at alpha 1 like a popup. The bar's pause is not the menu's — the frame keeps
 running so the bar stays live; ESC still pauses the game as always. `MAX_TICS_PER_FRAME` caps
-the speed a slow frame can reach (about 4.3× under a 30 fps cap) — not raised.
+the speed a slow frame can reach (the top step holds down to 28 fps) — not raised.
 
 Before each tic `beginTic` applies the due events, pins the settings and compares the
 recording's check sample; the first disagreement is `desyncedAt`, shown by the bar, and playback
@@ -283,7 +283,7 @@ the viewer. Once the stream is spent, `Space` and the pause button **start the r
 seek to tic 0): there is nothing left to pause, and the run is right there to watch again.
 
 The bar (`#replay-bar`, `--z-replaybar`): a track with one marker per level advanced into; on
-hover the pause, the speed steps (`SPEED_STEPS`, 0.25×–5×), the crosshair toggle, the camera picker, and **Take
+hover the pause, the speed steps (`SPEED_STEPS`, 0.25×–4×), the crosshair toggle, the camera picker, and **Take
 over** (`ReplayDriver.takeOver`): live input from the next tic, the orbit glided back onto the 45° lattice
 (the pose it inherits is wherever the recording's own Q/E step had got to —
 docs/camera.md § Camera orbit), the settings released, `cheated`
@@ -293,8 +293,9 @@ in** (`GameOptions.autoSave`, named after the replay and the level clock). That 
 is no separate "save here" button: a player who wants this moment takes it over and has it. It also
 moves `savedState`, so `R` after a death returns to the take-over point rather than to the replay's
 last restore. `game saved` goes on the feed (docs/hud.md § HUD messages), not the bar, which is gone
-by then; a moment the capture refuses (an intermission, a corpse) says so in the center message,
-which no setting hides, and stops nothing else.
+by then. A moment the capture refuses (an intermission, a corpse) writes nothing and says nothing:
+the save was not asked for, and `R` or the next level's checkpoint covers both. A store that refuses
+the write says so in the center message, which no setting hides, and stops nothing else.
 
 The reticle is drawn where the recording aimed, projected through the interpolated camera each
 frame; the pointer keeps the ordinary arrow meanwhile (`Crosshair.detach`), since the bar's
@@ -317,6 +318,14 @@ otherwise the sentence `readReplay` would have thrown (the saves list does the s
 docs/menu-saves.md § Save and Load tabs) — the format version (which covers the
 savegame version with it), or a meta too damaged to read. The list prints it in red beside the row
 and greys Play, so a row that cannot be played says why without being clicked.
+
+**The record is stored as JSON lines in one gzip stream**: a head (`RecordHead` — everything but
+the slots and the snapshots, plus how many of each), then a line per slot, then a line per snapshot
+(`recordLines`, `decodeRecord`, over `savestore.ts`'s `compressLines`/`decompressLines`). Both ways
+run a line at a time, so no string is larger than one slot's columns or one snapshot. The whole
+record as one string hits the engine's string-length limit (~536 M characters in V8) on a long run
+over a huge map — a NUTS.WAD keyframe is ~4 MB of JSON, one a minute — failing the store at the end
+of the run. A record in the earlier one-document layout frames nothing and reads as damaged.
 
 `exportReplay` writes `<name>.topdoomreplay.json` (`replayFileName`, over the saves'
 `downloadFileName` — docs/savegames.md § Download and import): the meta in the clear, `data` as the stored
@@ -369,15 +378,10 @@ and one file, and `game/replay.ts` decodes it.
 - **`atan2` is the one that decides it.** Every monster's `A_FaceTarget` is an `atan2`, so a whole
   level's facings diverge on the first tic; the other four are rarer and rounded apart far less
   often. A determinism change that leaves `atan2` on the platform buys nothing.
-- **A verdict is not always a divergence.** `check` compares doubles exactly, so a ULP of drift
-  reads as a desync. `Fauler goes NUTS` is the case that says so: recorded before the fix, it still
-  reports 2:22 on any engine but its own, while the P_Random cursor matches at all 199 samples,
-  `y` never moves at all and `x` is 1-2 ULP out — the run plays out identically to its end.
 - **Vanilla's own answer was measured and rejected.** `R_PointToAngle2` is a 2049-entry
   `tantoangle` lookup rather than a real arctangent, which would be both deterministic and more
   faithful, but its 0.033° lattice is 12 orders of magnitude coarser than a ULP: it desynced
-  `GoingDown MAP08` after 1:05 and `Fauler goes NUTS` after 0:08, where the software `atan2` leaves
-  the first untouched.
+  `GoingDown MAP08` after 1:05, where the software `atan2` leaves it untouched.
 - **A stand-in game WAD** used to, and no longer does. A replay may run on a substitute IWAD
   (docs/savegames.md § WAD-set identity), and auto-aim's pick tested the *drawn sprite*, so the same
   ray locked onto a different body: 139 of 144 monster sprite quads differ between DOOM2.WAD and
@@ -470,7 +474,11 @@ found two seconds before it) is still showing.
 **The picture stands still until the target lands.** A catching-up frame draws nothing, so the last
 frame before the jump stays on screen and `#replay-seek` pulses a double triangle over it, pointing
 the way `ReplayPlayback.seekBack` says the viewer asked to go — not the way the tics run, which is
-always forwards. Only the bar updates. Drawing the catch-up instead ran the level at several times
+always forwards. Only the bar updates. The overlays a tic raises — center message, feed, level card,
+death overlay, intermission, end card — are DOM, composited whether or not a frame is drawn, so
+`ReplayBar.update` hides them off the same `seekTarget` (`body.replay-seeking` over the
+`.hide-on-replay-seek` they wear, docs/styles.md § Hiding an element): a pickup line shown and faded
+inside the catch-up would flash. Drawing the catch-up instead ran the level at several times
 speed under a camera that only moves once the seek ends, which reads as a bug. Two details of the
 marker are load-bearing: it pulses on `opacity`/`transform` alone, which the compositor animates
 while the main thread grinds tics, and the keyframe restore waits one frame (`ReplayDriver.seekAnchor`) so
@@ -478,8 +486,8 @@ the marker is painted before a level build blocks the page for as long as any ma
 
 What a jump has to put back beyond the snapshot: both cameras (`snapPose`, from the landing tic's
 own recorded pose), `cheated` (the record's own verdict — a seek past a recorded cheat has to
-arrive with it), the
-pinned settings, and the playback's own forward-only cursors — `ReplayPlayback.seek` re-seats the
+arrive with it), what `R` reloads after a take-over (`ReplayPlayback.reloadsAt`, docs/savegames.md
+§ The checkpoint), the pinned settings, and the playback's own forward-only cursors — `ReplayPlayback.seek` re-seats the
 event and check indices and replays the settings events up to the target. A seek that re-anchors
 clears `desyncedAt`: the state is the record's own again, so what had drifted before it is gone.
 

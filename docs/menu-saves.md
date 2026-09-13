@@ -24,10 +24,9 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   tooltip**, so the Overwrite `title` alone would tell the player nothing, and it keeps the
   unconditional text. The throw stays in place regardless: the buttons are a courtesy,
   `Game.saveVia`'s own capture is the actual gate.
-- Saving takes an optional name (defaulting to map + date), and both panels list every save the
-  player made, newest first: thumbnail, name, the level · level time, then skill · date. The
-  level-entry checkpoint is the one save neither tab ever shows — `listSaves` drops it, and it
-  costs nobody a slot (docs/savegames.md § The checkpoint). Rows are rendered fresh on every
+- Saving takes an optional name (a blank one is `defaultName`'s, docs/savegames.md § Naming), and
+  both panels list every save the player made, newest first: thumbnail, name, the level · level
+  time, then skill · date. Rows are rendered fresh on every
   `open` via `SavegamesUi.refresh`, with the `#pwad-list` scrollTop-restore trick.
 - **The level line and the missing-file warnings come from `Menu.describeSave`**, not from the save:
   a save stores the map *lump* name, which alone can't name a level (docs/wad.md § Level names), so
@@ -121,11 +120,11 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   the tooltip; Load and Overwrite are `.primary`.
 - **Download** writes the save as `<name>.topdoomsave.json` through a temporary anchor: one
   tab-indented JSON file whose meta fields are readable and whose `state` is the stored gzip bytes,
-  base64'd (`exportSave` — docs/savegames.md § Storage has the format's rules);
+  base64'd (`exportSave` — docs/savegames.md § Download and import has the format's rules);
   **import** accepts such a file back via its own `#save-file-input` (the WAD `#file-input` stays
   out of this), or by dropping a `.json` onto the menu —
   `installDropTarget` routes `.json` to the importer and everything else to `addFiles` as before.
-- Every failure — quota, cap, version, missing WAD — lands in the shared `#menu-status` line;
+- Every failure — quota, version, missing WAD — lands in the shared `#menu-status` line;
   `SavegamesUi` never touches the running game. The three hooks (`onSave`, `onOverwrite`, `onLoad`)
   are `main.ts`'s (docs/session.md § Session lifecycle), which owns the `Game` instance and
   the selection the save records; the first two share one `withCapture` body, which hands its store
@@ -176,11 +175,10 @@ Play for a set the library can't supply. What is this tab's own:
   plus its button) and grows from there — the `.saves` rule, docs/menu.md § Panel sizing. Without it
   the detail panel's content set the *menu's* height: a replay carrying a two-line warning made this
   tab taller than every other one, so switching to it grew the menu. The panel scrolls instead.
-- **A replay that cannot be played says why, in red**, where the Load list only greys the button and
-  notes the version in its meta line: `ReplayListEntry.refusal` is the sentence `readReplay` would
-  have thrown, printed in the panel beside the Play it greys, with the missing-file lines under it
-  (docs/replays.md § Storage). Its list row is dimmed by colour and carries the same sentence on its
-  tooltip — a row is not a button, so a tooltip is readable there.
+- **A replay that cannot be played says why, in red**, as a save row does: `ReplayListEntry.refusal`
+  is the sentence `readReplay` would have thrown, printed in the panel beside the Play it greys, with
+  the missing-file lines under it (docs/replays.md § Storage). Its list row is dimmed by colour and
+  carries the same sentence on its tooltip — a row is not a button, so a tooltip is readable there.
 - **Play is held to confirm over a run of the player's own** (`required`, § Save and Load tabs):
   starting a replay tears the session down exactly as Load does. Over a replay it is a plain click —
   the one being watched is still in the store.

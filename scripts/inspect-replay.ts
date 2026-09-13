@@ -12,7 +12,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { VERSION } from '../src/constants.ts';
-import { STATE_ENCODING, base64ToBytes, decompressText } from '../src/game/savestore.ts';
+import { STATE_ENCODING, base64ToBytes } from '../src/game/savestore.ts';
 import { wadLabel, wadRoles, type SaveWad } from '../src/game/savegames.ts';
 import {
   BOUND_KEYS,
@@ -22,6 +22,7 @@ import {
   REPLAY_VERSION,
   checkTic,
   compatDrift,
+  decodeRecord,
   maskHas,
   poseAt,
   replayMap,
@@ -78,11 +79,11 @@ for (const [i, wad] of wads.entries()) {
 const markers = levels.map((l) => `${l.map} @ ${clock(replaySeconds(l.tic))}`).join(', ');
 console.log(`\nlevels: ${markers || 'none recorded'}`);
 
-const stored = JSON.parse(await decompressText(base64ToBytes(file.data as string))) as ReplayData;
+const stored = (await decodeRecord(base64ToBytes(file.data as string))) as ReplayData | null;
 // A file the game would refuse still gets read this far — saying what it is missing beats a stack
 // trace, and this is the tool a broken download is brought to.
-if (!Array.isArray(stored.slots)) {
-  console.log('\nWARNING: no player records — a replay from before coop, which this build will not play');
+if (!stored) {
+  console.log('\nWARNING: the stored lines frame no record — an older layout or a cut-off file, which this build will not play');
   process.exit(0);
 }
 // The smooth columns are differences on disk (docs/replays.md § The record).

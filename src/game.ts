@@ -112,10 +112,11 @@ import {
   type GameSnapshot,
   type PlayerSlotSnapshot,
 } from './game/snapshot.ts';
-import { loadedSetRefusal, wadSetOf, type CheckpointStore, type SaveCapture, type SaveGame } from './game/savegames.ts';
+import { wadSetOf, type SaveCapture } from './game/savegames.ts';
 import {
   GLOBAL_PLAYER_SETTINGS,
   ReplayPlayback,
+  type ReloadStates,
   ReplayRecorder,
   ReplayDriver,
   type Replay,
@@ -251,12 +252,10 @@ export interface GameOptions {
    * docs/savegames.md § Apply order.
    */
   restore?: GameSnapshot | null;
-  /** The checkpoint store, taken as a port so this class still knows nothing about IndexedDB. */
-  checkpoint?: CheckpointStore | null;
   /**
    * Called when the campaign is over and nothing follows: the session layer's cue to tear this
-   * {@link Game} down and put the menu back up (docs/session.md § Session lifecycle). A port like
-   * {@link GameOptions.checkpoint} — this class knows nothing about the menu.
+   * {@link Game} down and put the menu back up (docs/session.md § Session lifecycle). A port: this
+   * class knows nothing about the menu.
    */
   onCampaignEnd?: (() => void) | null;
   /**
@@ -274,8 +273,7 @@ export interface GameOptions {
   playerSkins?: WadFile | null;
   /**
    * The session's loading screen, so a level too big to build between two frames can put it up
-   * first. A port like {@link GameOptions.checkpoint}: absent means the load simply happens inline.
-   * docs/session.md § The loading screen.
+   * first. Absent means the load simply happens inline. docs/session.md § The loading screen.
    */
   loading?: LoadingScreen | null;
   /**
@@ -530,34 +528,22 @@ export class Game {
   readonly title: string;
 
   /**
-   * Where the level-entry checkpoint is kept, or null when nothing is offering
-   * one (the tests, mainly). docs/savegames.md § The checkpoint.
+   * The level-entry checkpoint: the level as it stood the moment this session advanced into it,
+   * which `R` reloads where there is no {@link Game.savedState}. Null on the session's first level,
+   * which nothing was advanced into. docs/savegames.md § The checkpoint.
    */
-  private checkpoint: CheckpointStore | null;
+  private checkpoint: GameSnapshot | null = null;
   /** What the last exit of the last level calls — {@link GameOptions.onCampaignEnd}. */
   private onCampaignEnd: (() => void) | null;
   /** The session's loading screen, or null where nothing offers one (the tests). */
   private loading: LoadingScreen | null;
   /**
-   * Whether *this session* has written a checkpoint, i.e. has advanced a level
-   * at least once. What stops {@link Game.restart} from restoring a checkpoint left in the
-   * store by an earlier run — that save would be a level start with a different
-   * run's inventory, which is not what "restart this level" means.
-   */
-  private hasCheckpoint = false;
-  /**
-   * The savegame this level is currently playing out of, if any: the one it was
-   * loaded from, and every manual save taken since. It is what `R` goes back to,
-   * ahead of the checkpoint — in memory, so no store read and no session match
-   * (docs/death.md § Player death). Dropped by {@link Game.enterLevel}, which is the only
-   * way out of a level.
+   * The savegame this level is currently playing out of, if any: the one it was loaded from, and
+   * every manual save taken since. It is what `R` goes back to, ahead of {@link Game.checkpoint}
+   * (docs/death.md § Player death). Dropped by {@link Game.enterLevel}; a playback's
+   * {@link Game.restoreKeyframe} sets it to the landing's own.
    */
   private savedState: GameSnapshot | null;
-  /**
-   * Guards the two async gaps in {@link Game.restart}: a held-down `R`, and a {@link Game} torn
-   * down mid-read.
-   */
-  private restarting = false;
   private disposed = false;
 
   /** `?pos=x,y` override for the player start, consumed by the first map load. */
@@ -584,7 +570,6 @@ export class Game {
       skill,
       startPos = null,
       restore = null,
-      checkpoint = null,
       onCampaignEnd = null,
       gldefsText = '',
       playerSkins = null,
@@ -602,7 +587,6 @@ export class Game {
     this.title = title;
     this.skill = skill;
     this.startPos = startPos;
-    this.checkpoint = checkpoint;
     this.onCampaignEnd = onCampaignEnd;
     this.loading = loading;
     this.savedState = restore;
@@ -740,7 +724,7 @@ export class Game {
       blockedMoment: () => this.blockedMoment(),
       capture: () => this.captureSave({ thumbnail: false }),
       reloadLevel: (state) => this.reloadLevel(state),
-      restoreKeyframe: (map, state) => this.restoreKeyframe(map, state),
+      restoreKeyframe: (map, state, reloads) => this.restoreKeyframe(map, state, reloads),
       bodies: () => this.bodies(),
       showLevelCard: () => this.showLevelCard(this.currentMap),
       takenOver: () => this.takenOver(),
@@ -1028,12 +1012,14 @@ export class Game {
   /**
    * The savegame taking over writes, so the handed-over level is one the player can come back to —
    * and, through {@link Game.saveVia}, what `R` reloads from here on. Reported on the feed rather
-   * than on the bar, which is gone by the time it lands; a refused moment (an intermission, a
-   * corpse) says so in the center message instead, which no setting hides, and takes nothing else
-   * down with it. docs/replays.md § Playback, docs/hud.md § HUD messages.
+   * than on the bar, which is gone by the time it lands. A moment that refuses a save (a corpse, an
+   * intermission) is skipped without a word: nobody asked for this one, and `R` or the next level's
+   * checkpoint covers both. A store that refuses the write says so in the center message, which no
+   * setting hides, and takes nothing else down with it. docs/replays.md § Playback, docs/hud.md
+   * § HUD messages.
    */
   private async saveTakeOver(): Promise<void> {
-    if (!this.autoSave) return;
+    if (!this.autoSave || this.blockedMoment() !== null) return;
     try {
       await this.autoSave();
       this.messages.show('game saved');
@@ -1045,15 +1031,20 @@ export class Game {
   /**
    * The level at `state`, for a keyframe restore ({@link ReplayDriver.runSeek}).
    *
-   * @param map  the level to restore — this one when the set has no such map
+   * @param map      the level to restore — this one when the set has no such map
+   * @param reloads  what `R` reloads on that level, as playing through to it leaves them
    */
-  private restoreKeyframe(map: string, state: GameSnapshot): void {
+  private restoreKeyframe(map: string, state: GameSnapshot, reloads: ReloadStates): void {
     const index = this.mapNames.indexOf(map);
     this.buildLevel(index >= 0 ? index : this.level.index, state);
     // Not part of what `buildLevel` restores — it is the session's, and only a load that
     // starts a session (the constructor) reads it from a snapshot. A seek past a cheat the
     // recording typed has to arrive with the recording's own verdict on the run.
     this.cheated = state.cheated;
+    // The landing's own, not the pair the playback left: a seek must not change what a take-over's
+    // `R` reloads, and the jump may be onto another map. docs/savegames.md § The checkpoint.
+    this.savedState = reloads.savedState;
+    this.checkpoint = reloads.checkpoint;
   }
 
   get currentMap(): string {
@@ -1161,7 +1152,6 @@ export class Game {
   }
 
   dispose(): void {
-    // Read by `resumeFromCheckpoint`, whose store read can still be in flight.
     this.disposed = true;
     this.stop();
     this.driver.dispose();
@@ -1299,7 +1289,15 @@ export class Game {
     const { thumbnail = true } = options;
     const refusal = this.saveRefusal();
     if (refusal) throw new Error(refusal);
-    return this.captureMoment(thumbnail);
+    const { level } = this;
+    return {
+      ...wadSetOf(this.wad, level.name, this.dehacked?.sources ?? null),
+      skill: this.skill,
+      levelTime: level.time,
+      // A thumbnail costs a full extra render, and only a save the menu lists ever draws one.
+      thumb: thumbnail ? this.view.thumbnail(this.scene, 320) : '',
+      state: this.captureSnapshot(),
+    };
   }
 
   /**
@@ -1312,7 +1310,7 @@ export class Game {
    */
   private captureState(joining: SlotAssignment | null): NetCapture | null {
     if (this.popup !== null || this.pendingExit !== null) return null;
-    const { state } = this.captureMoment(false);
+    const state = this.captureSnapshot();
     if (joining) state.players[joining.slot] = this.freshSlotSnapshot(joining.slot);
     return { map: this.currentMap, state };
   }
@@ -1337,29 +1335,20 @@ export class Game {
   }
 
   /**
-   * {@link Game.captureSave}'s body, refusing nothing: what every capture is made of — the level's
-   * own share ({@link Level.snapshot}), every slot's, and what outlives a level: the session's
-   * verdicts, the effects in flight, the RNG.
+   * This moment's snapshot, refusing nothing: what every capture is made of — the level's own share
+   * ({@link Level.snapshot}), every slot's, and what outlives a level: the session's verdicts, the
+   * effects in flight, the RNG.
    */
-  private captureMoment(thumbnail: boolean): SaveCapture {
-    const { level } = this;
+  private captureSnapshot(): GameSnapshot {
     return {
-      ...wadSetOf(this.wad, level.name, this.dehacked?.sources ?? null),
-      skill: this.skill,
-      levelTime: level.time,
-      // The checkpoint passes `false`: it is never listed, so nothing would ever
-      // draw its thumbnail, and taking one costs a full extra render.
-      thumb: thumbnail ? this.view.thumbnail(this.scene, 320) : '',
-      state: {
-        cheated: this.cheated,
-        netgame: this.netgame,
-        ...(this.deathmatch ? { deathmatch: true as const } : {}),
-        players: this.slots.map((slot) => slot.snapshot()),
-        ...level.snapshot(),
-        projectiles: this.projectiles.snapshot(),
-        teleportFogs: this.effects.snapshotTeleportFogs(),
-        rng: getRandomCursors(),
-      },
+      cheated: this.cheated,
+      netgame: this.netgame,
+      ...(this.deathmatch ? { deathmatch: true as const } : {}),
+      players: this.slots.map((slot) => slot.snapshot()),
+      ...this.level.snapshot(),
+      projectiles: this.projectiles.snapshot(),
+      teleportFogs: this.effects.snapshotTeleportFogs(),
+      rng: getRandomCursors(),
     };
   }
 
@@ -1868,10 +1857,9 @@ export class Game {
       player.syncInterpolation();
       // docs/audio.md § Player and pickups.
       this.audio.play(death.sound, player, playerOrigin(slot.index));
-      // The hint depends on what `R` will actually do — a savegame to reload is
-      // known here and now, where a checkpoint is only a store read away, and under a playback `R`
-      // is the record's rather than the viewer's, so there is nothing to offer
-      // (docs/death.md § Player death).
+      // The hint depends on what `R` will actually do — reload a savegame or restart the level —
+      // and under a playback `R` is the record's rather than the viewer's, so there is nothing to
+      // offer (docs/death.md § Player death).
       if (slot === this.viewed) this.armDeathOverlay();
       return true;
     }
@@ -2038,7 +2026,7 @@ export class Game {
 
   /**
    * Advancing into another level: the exit the player just took, or IDCLEV's warp, which arrives
-   * the same way. The checkpoint is written *after* the load — what a death on the
+   * the same way. The checkpoint is taken *after* the load — what a death on the
    * new level returns to is that level at tic 0. Advancing while dead is `G_DoLoadLevel`'s
    * `PST_DEAD` → `PST_REBORN`, read off player state here rather than queued at the exit;
    * {@link Game.restart} restores a checkpoint instead (docs/death.md § Player death).
@@ -2105,16 +2093,17 @@ export class Game {
         slot.inventory = createInventory();
       }
     }
-    // A savegame belongs to the level it was taken on; the checkpoint written
-    // below is what `R` reloads from here on (docs/death.md § Player death).
+    // A savegame belongs to the level it was taken on; the checkpoint taken below — the level as
+    // entered, the inventory carried in — is what `R` reloads from here on. docs/savegames.md § The
+    // checkpoint.
     this.savedState = null;
     this.buildLevel(index);
-    this.writeCheckpoint();
+    this.checkpoint = this.captureSnapshot();
 
     // The level's own seek anchor, on the tic its track marker gets: the advancing tic's row was
-    // closed before this ran, so `ticCount` is already the new level's first. docs/replays.md
-    // § Seeking.
-    this.driver.writeKeyframe();
+    // closed before this ran, so `ticCount` is already the new level's first. The checkpoint's own
+    // object, so a recorded reload of it files no second copy. docs/replays.md § Seeking.
+    this.driver.writeKeyframe(this.checkpoint);
   }
 
   /**
@@ -2164,68 +2153,16 @@ export class Game {
   }
 
   /**
-   * Stores the state the player should come back to when they die on the level
-   * being entered. Fire-and-forget: a refused write (a full storage quota) must
-   * not take the level change down with it, and the flag only goes up once the
-   * bytes are actually in the store — a checkpoint that was never written must
-   * not be read back. docs/savegames.md § The checkpoint.
-   */
-  private writeCheckpoint(): void {
-    if (!this.checkpoint) return;
-    let capture: SaveCapture;
-    try {
-      // Nothing here should throw — the refusals `captureSave` checks are all
-      // false on a level just loaded — but this runs inside the frame loop,
-      // where an exception would take the running game down with it.
-      capture = this.captureSave({ thumbnail: false });
-    } catch (err) {
-      console.warn('checkpoint not captured:', err);
-      return;
-    }
-    void this.checkpoint
-      .write(capture)
-      .then(() => {
-        this.hasCheckpoint = true;
-      })
-      .catch((err: unknown) => console.warn('checkpoint not saved:', err));
-  }
-
-  /**
-   * `R`, while dead. Reloads the level's savegame where there is one, and
-   * otherwise dispatches the checkpoint read below; stays `void` because {@link Game.tic}
-   * calls it, and re-entrant while a read is in flight is the same press twice.
+   * `R`, while dead: the level again from {@link Game.savedState}, else from
+   * {@link Game.checkpoint}, else fresh with a fresh inventory (docs/death.md § Player death). All
+   * three are in memory, so each is one {@link Game.loadLevel}, and `R` on a map slow enough to
+   * freeze gets the loading screen an exit would.
    */
   private restart(): void {
     // A replay restarts where its recording did: the restore event, not the key
     // (docs/replays.md § Restore events).
     if (this.playback) return;
-    if (this.restarting) return;
-    // The savegame path is synchronous — the snapshot is already in memory, and
-    // it came from this very session, so there is nothing to match against
-    // (docs/death.md § Player death).
-    if (this.savedState) {
-      const state = this.savedState;
-      this.loadLevel(this.level.index, () => this.reloadLevel(state));
-      return;
-    }
-    this.restarting = true;
-    void this.resumeFromCheckpoint().finally(() => {
-      this.restarting = false;
-    });
-  }
-
-  /**
-   * The level again from its checkpoint, or — with none written this session, one that no longer
-   * matches, or a store that refused the read — fresh with a fresh inventory. Both go through
-   * {@link Game.loadLevel}, so `R` on a map slow enough to freeze gets the loading screen an exit
-   * would.
-   */
-  private async resumeFromCheckpoint(): Promise<void> {
-    const save = this.hasCheckpoint && this.checkpoint ? await this.checkpoint.read() : null;
-    // The read is async, so the session may have moved on underneath it: the
-    // menu can have started another level (and disposed this Game) meanwhile.
-    if (this.disposed || !this.local.dead) return;
-    const state = save && this.matchesSession(save) ? save.state : null;
+    const state = this.savedState ?? this.checkpoint;
     this.loadLevel(this.level.index, () => this.reloadLevel(state));
   }
 
@@ -2270,18 +2207,6 @@ export class Game {
   private beginTic(): void {
     this.net?.beginTic();
     this.driver.beginTic();
-  }
-
-  /**
-   * Whether a checkpoint is one this level can be reloaded from: the same map,
-   * the same skill (which decides which things exist at all), and a WAD set
-   * `wadSetRefusal` accepts — the same gate a manual load goes through, so a
-   * checkpoint can't refuse where a load would work
-   * (docs/savegames.md § WAD-set identity).
-   */
-  private matchesSession(save: SaveGame): boolean {
-    if (save.map !== this.currentMap || save.skill !== this.skill) return false;
-    return loadedSetRefusal(save, this.wad) === null;
   }
 
   /**

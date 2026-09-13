@@ -181,41 +181,36 @@ single player `R` calls `restart`, which reloads the level from one of three sta
 **A savegame of this level, when there is one.** `Game.savedState` is the snapshot the level is
 currently being played out of: what it was loaded from (the constructor's `restore`) and every
 manual save taken since. The latter is `saveVia`'s doing — the menu hands it the store call to
-make and it captures, writes and moves `savedState` only if the write came back, the same trio
-`writeCheckpoint` keeps together. Dying after loading or saving therefore returns the player to
-*that* moment rather than to the level's start, which is what "reload" means everywhere else and
-what the overlay's own hint promises. This path is synchronous: the snapshot is in memory and came
-from this very session, so there is no store read and no `matchesSession` check to make. It is
-dropped by `enterLevel`, the only way out of a level — a savegame belongs to the level it was taken
-on, and the checkpoint that call writes takes over from there. Applying the same snapshot twice is
+make and it captures, writes and moves `savedState` only if the write came back. Dying after
+loading or saving therefore returns the player to *that* moment rather than to the level's start,
+which is what "reload" means everywhere else and what the overlay's own hint promises. It is
+dropped by `enterLevel` — a savegame belongs to the level it was taken on, and the checkpoint that
+call takes over from there — and a playback's keyframe restore sets it to what playing through to
+the landing leaves (docs/savegames.md § The checkpoint). Applying the same snapshot twice is
 safe by construction: every `restore` on the load path copies or re-derives out of it and none
 retains a reference into it (docs/savegames.md § Apply order).
 
-**Otherwise the checkpoint** written when the player advanced into the level (docs/savegames.md §
+**Otherwise the checkpoint** taken when the player advanced into the level (docs/savegames.md §
 The checkpoint) — so the health, armor, ammo and weapons carried in are what the level restarts
 with, and the inventory comes out of the snapshot.
 
-**Otherwise a plain reload**, what `R` always did: a fresh `Inventory` and a bare `buildLevel`.
-That covers no checkpoint written this session (the first level of a run), one that no longer
-matches map/skill/WAD set, and a store that refused the read.
+**Otherwise a plain reload**, what `R` always did: a fresh `Inventory` and a bare `buildLevel` —
+the first level of a run, which nothing was advanced into.
 
 All three end in `Game.reloadLevel`, which is also what a recording writes the reload down at
 (docs/replays.md § Restore events) and what a playback performs from the event.
 
 None of the three is a special case, just the ordinary map-load path, which already resets
 player/world/specials/fog for a normal transition and, via its own top-of-function reset,
-`PlayerSlot.dead`/the overlay/`PlayerSlot.actor`'s animation state too. The one wrinkle is the checkpoint's:
-reading it is async while `tic` is not, so `restart` dispatches and returns, `restarting` swallows a
-second press, and `disposed`/`PlayerSlot.dead` are re-checked after the read because the menu can have
-started another level meanwhile.
+`PlayerSlot.dead`/the overlay/`PlayerSlot.actor`'s animation state too.
 
 **The overlay's hint names which of the two the press will do** — "press R to reload last savegame"
 against "press R to restart" — because reloading a save and restarting the level are different
 promises to make to a player standing over their own corpse. `damageSlot` passes
 `DeathOverlay.show` a `DeathHint` (`Game.deathHint`) and `DeathOverlay` owns the wording, the same
-split the killer line uses. Only the savegame can be answered for at death time: whether a
-*checkpoint* is readable is a store read away, so both level-reload outcomes share the one hint,
-which is a distinction the player has no reason to care about anyway.
+split the killer line uses. The checkpoint and the plain reload share the one hint: both restart the
+level, and which inventory comes back with it is a distinction the player has no reason to care
+about.
 
 **A death inside a replay gets no hint at all** (`'none'`): `R` there is the record's input, not the
 viewer's, so offering a key that answers to someone else would be a promise the overlay cannot keep.

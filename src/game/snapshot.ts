@@ -322,7 +322,7 @@ export interface ThingsSnapshot {
    * Only the things no longer as this map spawned them, as `[id, state]` pairs in ascending id.
    * A restore re-spawns the level from the map and reads these over it, so a thing nothing has
    * touched costs nothing; an id past the spawn count is one the run itself made, and is pushed in
-   * order. The whole list this replaced is what `SAVE_VERSION` 2 refuses.
+   * order. A save holding the whole list this replaced is refused as damaged.
    * docs/savegames.md § The format and its version.
    */
   changed: [number, ThingState][];

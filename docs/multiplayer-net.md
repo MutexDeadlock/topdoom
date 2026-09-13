@@ -151,7 +151,7 @@ under a tenth of a second.
 (a peer is at most `delay` ahead). Every browser stops before `atTic` (`NetSeat.ready` →
 `NetSession.pendingRestore`):
 
-- The host captures the level there (`Game.captureState`: `captureMoment` without a save's death
+- The host captures the level there (`Game.captureState`: `captureSnapshot` without a save's death
   refusal — a corpse restores as one) and sends `snapshot`; a moment no snapshot can carry (a
   popup up, an exit pending) moves the sync `2 × delay` on and lets the tics run.
 - Everyone, the host included, restores it (`Game.restoreFromNet` → `buildLevel`) and continues

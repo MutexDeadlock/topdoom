@@ -100,7 +100,7 @@ does (autorun and the right mouse button), so both are there while you play — 
 | `1`–`7` | select weapon; pressing a slot again toggles within it (fist/chainsaw, shotgun/super shotgun) |
 | mouse wheel | cycle through the weapons you own |
 | `Q` / `E` | orbit the camera around the player |
-| `R` | reload the level from your save, or from the checkpoint it wrote on the way in (once dead) |
+| `R` | reload the level from your save, or from the checkpoint it took on the way in (once dead) |
 | `F2` / `F3` / `F4` | menu on Save / Load / Settings |
 | `ESC` | menu / resume |
 | `+` / `-` | camera distance *(manual camera mode)* |
@@ -150,7 +150,7 @@ pause menu. A save carries a thumbnail, the level and the time on the clock, kee
 was made with, and downloads as a `.topdoomsave.json` file you can drop back on the window. A row
 whose WADs the library can no longer supply says so in red rather than failing on the click.
 
-Entering a level also writes a checkpoint of its own, so `R` after a death costs you the level and
+Entering a level also takes a checkpoint of its own, so `R` after a death costs you the level and
 not the run — unless you saved in that level, which `R` prefers. Finishing a level records its
 **best time**, shown on the end-of-level screen and beaten in green; a cheated run and a replay
 both set none. See [docs/savegames.md](docs/savegames.md) and [docs/hud.md](docs/hud.md).

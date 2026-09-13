@@ -17,7 +17,7 @@ import {
   writeReplay,
 } from '../../src/game/replay.ts';
 import { SAVE_VERSION, wadSetRefusal } from '../../src/game/savegames.ts';
-import { STATE_ENCODING } from '../../src/game/savestore.ts';
+import { STATE_ENCODING, compressText, decompressLines } from '../../src/game/savestore.ts';
 import { memoryBackend, type MemoryBackend } from '../fixtures/savestore.ts';
 import { replayCapture as capture } from '../fixtures/replay.ts';
 
@@ -100,6 +100,20 @@ describe('Replays · the store', () => {
     assert.equal((await listReplays()).length, 2);
     const replay = await readReplay(imported.id);
     assert.equal(replay.ticCount, 2);
+  });
+
+  test('the record is stored a line per slot and snapshot; a one-document record reads as damaged', async () => {
+    const meta = await writeReplay(capture(), 'x');
+    const lines: string[] = [];
+    for await (const line of decompressLines(backend.states.get(meta.id)!.bytes)) lines.push(line);
+    const head = JSON.parse(lines[0]);
+    assert.deepEqual([head.slots, head.snapshots, lines.length], [1, 1, 3]);
+
+    // The whole record as one string is the layout the lines replaced. docs/replays.md § Storage.
+    const { data } = capture();
+    const bytes = await compressText(JSON.stringify(data));
+    backend.states.set(meta.id, { id: meta.id, encoding: STATE_ENCODING, bytes });
+    await assert.rejects(readReplay(meta.id), /damaged/);
   });
 
   test('the import refuses what is not a replay, naming a version mismatch', async () => {

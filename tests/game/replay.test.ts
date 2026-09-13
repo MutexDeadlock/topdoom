@@ -346,6 +346,33 @@ describe('Replays · recording and playing back', () => {
     assert.equal(recorder.keyframeDue, true);
   });
 
+  test("a jump hands `R` what playing through leaves it: the start, then each level's entry", () => {
+    const recorder = new ReplayRecorder([scriptedInput([])], recordingStart());
+    const input = recorder.input(0);
+    const snapshot = (p: number) => ({ players: [{ player: {} }], rng: { p, m: 0 } }) as unknown as GameSnapshot;
+    for (let i = 0; i < KEYFRAME_INTERVAL; i++) input.endTic();
+    recorder.keyframe('E1M1', snapshot(1));
+    for (let i = 0; i < 100; i++) input.endTic();
+    recorder.levelLoaded('E1M2');
+    recorder.keyframe('E1M2', snapshot(2));
+    for (let i = 0; i < KEYFRAME_INTERVAL; i++) input.endTic();
+    recorder.keyframe('E1M2', snapshot(3));
+    // A level whose entry anchor was refused (a cheat half typed): its first anchor comes later.
+    input.endTic();
+    recorder.levelLoaded('E1M3');
+    input.endTic();
+    recorder.keyframe('E1M3', snapshot(4));
+    const playback = new ReplayPlayback(replayOf(recorder));
+    const { snapshots, keyframes } = playback.replay.data;
+    const [start, firstLevel, entry, secondEntered, refused] = keyframes.map((frame) => playback.reloadsAt(frame));
+    assert.deepEqual(start, { savedState: snapshots[0], checkpoint: null }, 'the first level reloads the start');
+    assert.deepEqual(firstLevel, { savedState: snapshots[0], checkpoint: null }, 'anywhere on it');
+    assert.equal(entry.savedState, null);
+    assert.equal(entry.checkpoint, snapshots[keyframes[2].snapshot], 'a level entered reloads its entry');
+    assert.equal(secondEntered.checkpoint, snapshots[keyframes[2].snapshot], 'from any later anchor on it');
+    assert.deepEqual(refused, { savedState: null, checkpoint: null }, 'no entry anchor, a plain restart');
+  });
+
   test('the check samples catch a divergence at the first sample that disagrees', () => {
     clearRandom();
     const rows: ScriptedRow[] = Array.from({ length: CHECK_INTERVAL * 2 + 1 }, () => ({}));

@@ -437,8 +437,9 @@ the line: once it has faded, the next one is `x1` again. What it prints:
   through `NetHost.notice` (docs/multiplayer-net.md § Joining a game, § Leaving). The stall notice
   stays a center message: it is redrawn every second for as long as the wait lasts.
 - **`game saved`** once a replay's take-over has written its save (`Game.saveTakeOver`,
-  docs/replays.md § Playback). A refused save stays a center message: a reason why something did
-  not happen is not a setting's to hide.
+  docs/replays.md § Playback). A store that refuses the write stays a center message: a reason why
+  something did not happen is not a setting's to hide. A moment that refuses the save raises
+  nothing.
 - **`recording ended: a player joined`** (`Game.restoreFromNet`), shown after the level is rebuilt
   from the snapshot, whose `clearOverlays` would take it straight down
   (docs/multiplayer-net.md § Joining a game).

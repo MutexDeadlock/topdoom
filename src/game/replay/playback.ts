@@ -22,9 +22,19 @@ import {
   type SimSettings,
 } from './defs.ts';
 import { RowInput, readRow } from './row.ts';
+import type { GameSnapshot } from '../snapshot.ts';
 
 /** What the viewer is watching a replay through — see {@link ReplayPlayback.cameraView}. */
 export type ReplayCameraView = 'recording' | 'manual';
+
+/**
+ * What `R` reloads on a level, `Game.savedState` and `Game.checkpoint` — see
+ * {@link ReplayPlayback.reloadsAt}.
+ */
+export interface ReloadStates {
+  savedState: GameSnapshot | null;
+  checkpoint: GameSnapshot | null;
+}
 
 export class ReplayPlayback {
   readonly replay: Replay;
@@ -163,6 +173,24 @@ export class ReplayPlayback {
       found = frame;
     }
     return found;
+  }
+
+  /**
+   * What `R` reloads on the level a jump to `frame` lands on, as playing through to it leaves them:
+   * the record's start on its first level, which is what a playback is built from, and on a level
+   * entered since, the keyframe laid down as it was entered — null where that one was refused.
+   * docs/savegames.md § The checkpoint.
+   */
+  reloadsAt(frame: Keyframe): ReloadStates {
+    const { levels, data } = this.replay;
+    let entered = levels[0];
+    for (const marker of levels) {
+      if (marker.tic > frame.tic) break;
+      entered = marker;
+    }
+    if (entered === levels[0]) return { savedState: data.snapshots[0], checkpoint: null };
+    const anchor = data.keyframes.find((k) => k.tic === entered.tic && k.map === entered.map);
+    return { savedState: null, checkpoint: anchor ? data.snapshots[anchor.snapshot] : null };
   }
 
   /**

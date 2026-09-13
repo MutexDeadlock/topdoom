@@ -9,9 +9,10 @@ import type { DoomMap, Sector } from '../../wad/map.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 import type { World } from '../world.ts';
 import type { ThingLayer } from '../things.ts';
-import { TALLEST_BODY_HEIGHT } from '../monsters/tables.ts';
+import { NO_SIDE } from '../../wad/map.ts';
+import { TALLEST_BODY_HEIGHT, WIDEST_BODY_RADIUS } from '../monsters/tables.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
-import { neighborSectorIndices } from '../world.ts';
+import { sectorLines } from '../world.ts';
 import { CORPSE_HEIGHT_FRACTION, CRUSH_DAMAGE } from './defs.ts';
 
 /**
@@ -121,7 +122,7 @@ export function applyCrushDamage(
     }
   }
   if (gap < TALLEST_BODY_HEIGHT) {
-    for (const m of things?.crushablesInSectors(crushNeighborhood(map, sectorIndex)) ?? []) {
+    for (const m of things?.crushablesInSectors(crushNeighborhood(world, sectorIndex)) ?? []) {
       // Per body, not one shared band: a barrel is 42 tall against a
       // cyberdemon's 110, so the ceiling reaches them at very different points
       // of the same descent.
@@ -152,7 +153,7 @@ export function squashCorpses(world: World, things: ThingLayer | null, sectorInd
   // The same cheap pre-filter `applyCrushDamage` opens with, against the shortest corpse this
   // mover could be squeezing rather than the tallest body.
   if (sector.ceilHeight - sector.floorHeight >= TALLEST_BODY_HEIGHT * CORPSE_HEIGHT_FRACTION) return;
-  for (const m of things.corpsesInSectors(crushNeighborhood(map, sectorIndex))) {
+  for (const m of things.corpsesInSectors(crushNeighborhood(world, sectorIndex))) {
     if (!crushed(world, m.x, m.y, m.radius, m.height * CORPSE_HEIGHT_FRACTION, sectorIndex, true)) continue;
     things.crushCorpse(m.id);
   }
@@ -223,15 +224,14 @@ function blocksFloorRise(
   // by the mapper precisely where the script needs it and is usually meant to be
   // crushed there — having it silently jam the level's own machinery is the
   // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
-  const map = world.map;
   for (const player of players) {
     if (!boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) continue;
     if (floorHeight + PLAYER_HEIGHT > world.groundCeiling(player.x, player.y, PLAYER_RADIUS)) return true;
   }
   // `headroomBlocked`'s early-out, widened to the sectors a box walk can actually reach: this
   // sector's own gap clearing the tallest body says nothing about a neighbor's.
-  if (floorHeight + TALLEST_BODY_HEIGHT <= lowestCeilingAround(map, sectorIndex)) return false;
-  for (const m of things?.monstersInSectors(crushNeighborhood(map, sectorIndex)) ?? []) {
+  if (floorHeight + TALLEST_BODY_HEIGHT <= lowestCeilingAround(world, sectorIndex)) return false;
+  for (const m of things?.monstersInSectors(crushNeighborhood(world, sectorIndex)) ?? []) {
     if (!boxOverlapsSector(world, m.x, m.y, m.radius, sectorIndex)) continue;
     if (floorHeight + m.height > world.groundCeiling(m.x, m.y, m.radius, true)) return true;
   }
@@ -239,13 +239,12 @@ function blocksFloorRise(
 }
 
 /**
- * The lowest ceiling `World.groundCeiling` could return for a body standing in `sectorIndex`: the
- * sector's own and every one across a two-sided line from it, which is exactly how far the box
- * walk reaches. `blocksFloorRise`'s pre-filter alone.
+ * The lowest ceiling {@link World.groundCeiling} could return for a body overlapping `sectorIndex`:
+ * the lowest over {@link crushNeighborhood}. `blocksFloorRise`'s pre-filter alone.
  */
-function lowestCeilingAround(map: DoomMap, sectorIndex: number): number {
+function lowestCeilingAround(world: World, sectorIndex: number): number {
   let lowest = Infinity;
-  for (const sector of crushNeighborhood(map, sectorIndex)) {
+  for (const sector of crushNeighborhood(world, sectorIndex)) {
     if (sector.ceilHeight < lowest) lowest = sector.ceilHeight;
   }
   return lowest;
@@ -286,7 +285,6 @@ interface SectorSlot {
  */
 function headroomBlocked(world: World, things: ThingLayer | null, players: readonly Pos2[], slot: SectorSlot): boolean {
   const { sectorIndex, floorHeight, ceilingHeight } = slot;
-  const map = world.map;
   if (floorHeight + PLAYER_HEIGHT > ceilingHeight) {
     for (const player of players) {
       if (boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) return true;
@@ -296,7 +294,7 @@ function headroomBlocked(world: World, things: ThingLayer | null, players: reado
   // everyone — worth the early-out because it skips the sector query entirely,
   // which is the expensive half and runs per mover per tic.
   if (floorHeight + TALLEST_BODY_HEIGHT <= ceilingHeight) return false;
-  for (const m of things?.monstersInSectors(crushNeighborhood(map, sectorIndex)) ?? []) {
+  for (const m of things?.monstersInSectors(crushNeighborhood(world, sectorIndex)) ?? []) {
     if (!boxOverlapsSector(world, m.x, m.y, m.radius, sectorIndex)) continue;
     if (floorHeight + m.height > ceilingHeight) return true;
   }
@@ -304,14 +302,12 @@ function headroomBlocked(world: World, things: ThingLayer | null, players: reado
 }
 
 /**
- * The sectors a body caught by the mover in `sectorIndex` can be standing in:
- * that sector and everything across a two-sided line from it. Vanilla's
- * `P_ChangeSector` walks the blockmap blocks covering the sector's *bounding
- * box*, so a body next door is a candidate there too — and a collision box is
- * narrower than any sector, so one that reaches into the moving sector from
- * outside it is standing in a sector bordering it.
+ * The sectors a body overlapping `sectorIndex` can be centred in, and every sector whose ceiling
+ * its box can meet: those on a line within twice {@link WIDEST_BODY_RADIUS} of one of the
+ * sector's own. docs/specials-movers.md § Every other mover stops instead.
  */
-function crushNeighborhood(map: DoomMap, sectorIndex: number): ReadonlySet<Sector> {
+function crushNeighborhood(world: World, sectorIndex: number): ReadonlySet<Sector> {
+  const map = world.map;
   let perMap = neighborhoods.get(map);
   if (!perMap) {
     perMap = new Map();
@@ -320,11 +316,29 @@ function crushNeighborhood(map: DoomMap, sectorIndex: number): ReadonlySet<Secto
   let sectors = perMap.get(sectorIndex);
   if (!sectors) {
     sectors = new Set([map.sectors[sectorIndex]]);
-    for (const i of neighborSectorIndices(map, sectorIndex)) sectors.add(map.sectors[i]);
+    const reach = 2 * WIDEST_BODY_RADIUS;
+    for (const own of sectorLines(map, sectorIndex)) {
+      const a = map.vertexes[map.linedefs[own].v1];
+      const b = map.vertexes[map.linedefs[own].v2];
+      const left = Math.min(a.x, b.x) - reach;
+      const right = Math.max(a.x, b.x) + reach;
+      const bottom = Math.min(a.y, b.y) - reach;
+      const top = Math.max(a.y, b.y) + reach;
+      world.linesNearInto((left + right) / 2, (bottom + top) / 2, Math.max(right - left, top - bottom) / 2, nearLines);
+      for (const i of nearLines) {
+        if (!world.boxOverlapsLine(left, bottom, right, top, i)) continue;
+        const line = map.linedefs[i];
+        if (line.right !== NO_SIDE) sectors.add(map.sectors[map.sidedefs[line.right].sector]);
+        if (line.left !== NO_SIDE) sectors.add(map.sectors[map.sidedefs[line.left].sector]);
+      }
+    }
     perMap.set(sectorIndex, sectors);
   }
   return sectors;
 }
+
+/** `crushNeighborhood`'s scratch line list — read and dropped inside the one call. */
+const nearLines: number[] = [];
 
 /**
  * `PIT_ChangeSector`'s two questions about one body: does the headroom `P_ThingHeightClip` gives it

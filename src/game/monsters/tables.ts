@@ -591,12 +591,19 @@ export function monsterStatsFor(fast: boolean): Record<number, MonsterStats> {
  * The tallest body in the roster (the cyberdemon's 110), derived from the table so it can't drift —
  * a cheap "nobody can be caught in a gap this big" early-out.
  */
-export let TALLEST_BODY_HEIGHT = Math.max(...Object.values(MONSTER_STATS).map((s) => s.height));
+export let TALLEST_BODY_HEIGHT = rosterMax('height');
+
+/**
+ * The widest body in the roster, derived like {@link TALLEST_BODY_HEIGHT}: how far past a moving
+ * sector's own lines a body caught by it can reach
+ * (`specials/moverblocking.ts: crushNeighborhood`).
+ */
+export let WIDEST_BODY_RADIUS = rosterMax('radius');
 
 /**
  * Re-derives everything above that is computed from `MONSTER_STATS`, after something has written
  * into it. The one caller is the DEHACKED applier (docs/dehacked.md § Applying: reset, then
- * patch) — a patch edits `MONSTER_STATS` in place, and both values here were otherwise frozen at
+ * patch) — a patch edits `MONSTER_STATS` in place, and the values here were otherwise frozen at
  * import, so a patched imp would stay fast-mode-vanilla and a patched cyberdemon would leave the
  * gap early-out short.
  *
@@ -605,5 +612,11 @@ export let TALLEST_BODY_HEIGHT = Math.max(...Object.values(MONSTER_STATS).map((s
  */
 export function rebuildDerivedMonsterStats(): void {
   FAST_MONSTER_STATS = deriveFastStats();
-  TALLEST_BODY_HEIGHT = Math.max(...Object.values(MONSTER_STATS).map((s) => s.height));
+  TALLEST_BODY_HEIGHT = rosterMax('height');
+  WIDEST_BODY_RADIUS = rosterMax('radius');
+}
+
+/** The largest `field` over every {@link MONSTER_STATS} entry. */
+function rosterMax(field: 'height' | 'radius'): number {
+  return Math.max(...Object.values(MONSTER_STATS).map((s) => s[field]));
 }

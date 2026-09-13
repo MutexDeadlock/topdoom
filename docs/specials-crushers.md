@@ -37,8 +37,9 @@ cybruisers penned there stood at the join and survived stroke after stroke.
 
 Membership in the crushing sector is still required — `boxOverlapsSector`, i.e. `World.sectorsTouching` —
 so a body squeezed by something else next door is that mover's business, not this one's. Its
-candidates are `ThingLayer.crushablesInSectors` over the crushing sector *and its neighbors*
-(`crushNeighborhood`), standing in for vanilla's walk of the blockmap blocks covering the sector's
+candidates are `ThingLayer.crushablesInSectors` over `crushNeighborhood` — every sector a body
+overlapping the crushing sector can be centred in (docs/specials-movers.md § Every other mover
+stops instead) — standing in for vanilla's walk of the blockmap blocks covering the sector's
 bounding box; the layer finds them by comparing against the exact same mutable `Sector` object
 references `PosedThing.sector` was seeded from, the same trick `tryPickup`'s live-height read relies
 on.

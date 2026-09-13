@@ -441,37 +441,38 @@ like a wall refusal, so `newChaseDir`'s ordinary re-routing already covers a mon
 ledge. The three exempt types don't just skip the check — they answer a blocked step by changing
 height instead; see § Floating monsters.
 
-**What the rule is measured against is a deliberate deviation, and it has to be.** Vanilla judges
-the *destination* alone (`tmfloorz - tmdropoffz > 24`), which permanently freezes a monster whose
-box already hangs over a ledge: every direction it could shuffle still hangs over that same ledge,
-so every one of them is refused, including the ones leading away. `dropoffRefuses` uses MBF's
-`monkeys` clipping instead (`p_map.c`, under killough's own "Prevent monsters from getting stuck
-hanging off ledges") — the destination against the floor and ledge the body is *standing* on
-(`thing->floorz`/`thing->dropoffz`), refusing a step down of more than `MAX_STEP_UP` or one hanging
-over a worse ledge than the current one.
+**Why the rule is not vanilla's: DOOM1 E1M5.** Vanilla judges the *destination* alone
+(`p_map.c: P_TryMove`, `tmfloorz - tmdropoffz > 24`), which freezes a monster whose box already
+hangs over a ledge: every direction it could shuffle still hangs over that ledge and is refused.
+E1M5's alcove in front of the yellow door (sector 13, x -704..-656) is 48 units wide against a
+demon's 60, so a demon in there always straddles the lift line (161) or the door line (158), and
+with the lift (sector 12) parked down at -104 it stood frozen until the lift came back up
+(`tests/regression/monster-hanging-over-ledge.test.ts`). `dropoffRefuses` therefore measures the
+destination against where the body *stands*, in three comparisons:
 
-The relaxation reaches **only** a body that already hangs: from anywhere else the two forms agree
-exactly, because a monster on flat ground stepping onto a ledge line has `dropoffz` equal to its own
-floor, so the new ledge is a fresh drop under both. A hanging monster gains the ability to shuffle
-along and off the ledge, and still cannot descend it — the moment its box clears the line entirely
-the destination's floor is the low one, more than a step below where it stands.
+1. **MBF's `monkeys` clipping** (`p_map.c`, under killough's "Prevent monsters from getting stuck
+   hanging off ledges"; prboom-plus ships it off): refused when the destination's floor sits more
+   than `MAX_STEP_UP` below the standing floor (`thing->floorz`), or its lowest floor that far below
+   the standing one (`thing->dropoffz`). A hanging monster can shuffle along and off the ledge, and
+   still cannot descend it.
+2. **The centre clause, this engine's own**: a step may not carry the centre more than `MAX_STEP_UP`
+   below the floor its centre is over now (`PositionCheck.centreFloorZ`). The MBF clauses alone let
+   a hanging body slide out until a sliver of its box is on floor, walking on air over the pit; this
+   stops it at the ledge line, half its box over. Relative, so a body whose centre is already past a
+   ledge (a sector moved under it, a teleport) can walk back off.
+3. **The standing floor is capped at `MAX_STEP_UP` above the centre's floor**, this engine's own. A
+   body left on the corner of a ledge taller than a step, its centre over the floor below, would
+   otherwise read every step off as a drop from the ledge while every step back onto it is walled;
+   with the cap it steps down, as vanilla's destination test lets it.
+**A step into a bigger overhang is not refused.** Vanilla's own test for it (the destination hangs
+over more than `MAX_STEP_UP`, and over more than the body does now) refuses a box spanning two
+stairs of an ordinary staircase, on nearly every IWAD map. So a monster can climb rubble its box
+grazes, one legal step at a time, and stand briefly over the lower floor; comparison 3 gets it back
+down.
 
-**A third comparison bounds how far past the ledge that shuffle reaches, and it is this engine's
-own.** The two MBF clauses only stop a body *descending*; nothing in them stops it sliding outward
-until a sliver of its box is all that is still on floor, and with `z` pinned to the straddled
-opening (docs/movement.md § Collision) that reads on screen as a monster walking on air over the
-pit. So the floor under the body's own centre (`World.floorAt` — the height it would rest at with no
-ledge holding it up) gets the same relative treatment as the other two: a step may not carry the
-centre more than `MAX_STEP_UP` below the ground its centre is over now. A hanging body may therefore
-reach the ledge line and no further, so it hangs at most half its box over — exactly what a monster
-standing at any ledge edge already shows. Stated relatively for the same reason the others are: a
-body whose centre is *already* past a ledge (a sector moved under it, a teleport) has to be able to
-walk back off.
-
-**Repro: DOOM1 E1M5**, the alcove in front of the yellow door (sector 13, x -704..-656). It is 48
-units wide against a demon's 60, so a demon in there always straddles the lift line (161) on one
-side or the door line (158) on the other. With the lift (sector 12) parked down at -104 the vanilla
-form refused all eight directions and the demon stood frozen until the lift came back up.
+**Repro (3): GoingDown.wad MAP25**, sector 9's south-east corner (lines 84 and 5641, floor -144): a
+demon climbed the rubble there and froze at z -144 over sector 127 (floor -176).
+`tests/regression/monster-perched-on-ledge-corner.test.ts`.
 
 **MBF pairs its clipping change with `P_AvoidDropoff`, which steers a hanging monster away from the
 ledge, and this engine deliberately does not.** That half exists to stop the outward drift the two

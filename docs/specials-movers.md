@@ -278,8 +278,8 @@ overlaps is what would actually crush it. Without this the mover carries the bod
 neighbor and pins it there — every step out reads blocked, and nothing ever reports `nofit`, so a
 lift never reverses. Repro: GoingDown.wad MAP03, the lift in sector 67 rising flush with the
 crawlspace ceiling in sector 7, with a demon on the lift's edge. `blocksFloorRise`'s cheap
-pre-filter is therefore the lowest ceiling over the sector *and its neighbors*
-(`lowestCeilingAround`), not the sector's own gap.
+pre-filter is therefore the lowest ceiling over `crushNeighborhood` (`lowestCeilingAround`), not
+the sector's own gap.
 
 A door reverses direction outright (it already has a `raising` state to fall back into); a
 `CeilingMover`/`FloorMover` has none, so it skips that tick's step and retries the next — reading as
@@ -306,9 +306,18 @@ automatically, so that direction essentially never traps anyone.
 point test, and for every body — the player and each monster alike.** Walking up to a door leaves
 the collision box straddling the frame — the same straddling `World.groundFloor` accounts for — so a
 body's *center* still reads as the corridor's sector while the door sector, the one actually about
-to close on it, is never checked at all. The candidates therefore come from `crushNeighborhood`, the
-moving sector *and everything across a two-sided line from it*, exactly as `applyCrushDamage` takes
-them (docs/specials-crushers.md § Crushers).
+to close on it, is never checked at all. The candidates therefore come from `crushNeighborhood`,
+exactly as `applyCrushDamage` takes them (docs/specials-crushers.md § Crushers).
+
+**`crushNeighborhood` is every sector on a line within twice `WIDEST_BODY_RADIUS` of one of the
+moving sector's own lines, not its adjacency.** A candidate is found by the sector under its
+centre, and a strip narrower than a body's box puts that centre two sectors away while the box
+still reaches the mover — the lift then carries it into the ceiling beyond the strip. Repro:
+GoingDown.wad MAP03, the demon at (-569, -823) centred in sector 7, its box across the 8-unit
+sector 304 onto lift 67 (`tests/regression/lift-carries-monster-into-neighbor.test.ts`). The same
+set bounds every ceiling a box on the mover can meet, which is what `lowestCeilingAround` needs.
+Vanilla reaches the same bodies through `P_ChangeSector`'s walk of the blockmap blocks over the
+sector's bounding box widened by `MAXRADIUS` (`p_map.c`, `p_setup.c: P_GroupLines`).
 
 **`boxOverlapsSector` is `World.sectorsTouching`** (docs/world.md § Sectors under a body), not a
 sampling of the box. Sampling its eight corners and edge midpoints — what this did — steps over any

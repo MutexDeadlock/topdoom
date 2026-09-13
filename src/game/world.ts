@@ -233,19 +233,26 @@ export function bodyFloor(
 }
 
 /**
- * Whether the dropoff rule refuses a step from `standing` to `dest`: no height the destination walk
- * reports may sit more than {@link MAX_STEP_UP} below the same height where the body stands.
- * Relative rather than vanilla's destination-only test, and carrying a third comparison of its
- * own — docs/monster-ai.md § The dropoff rule for both.
+ * Whether the dropoff rule refuses a step from `standing` to `dest`. Vanilla's destination-only
+ * test (`P_TryMove`, `tmfloorz - tmdropoffz > 24`) freezes a monster whose box already hangs over a
+ * ledge (DOOM1 E1M5's alcove), so this measures against where the body stands: MBF's `monkeys`
+ * clipping, a centre clause and a cap on the standing floor — docs/monster-ai.md § The dropoff rule
+ * for all three.
  *
  * **The one home of this rule.** Every mover vanilla routes through `P_TryMove` shares it: the
  * monster walk step (`monsters/ai.ts: testStep`) and knockback and conveyor momentum
  * (`game/things.ts: applyKnockback`, `P_XYMovement`'s own `P_TryMove` call). A mover exempt in
  * vanilla — `MF_FLOAT` or the `MF_DROPOFF` `P_KillMobj` hands every corpse — never asks.
+ *
+ * @param standing  the walk at the body's own position and feet
+ * @param dest      the walk at the position the step reaches for, same feet
+ * @returns true when the step would carry the body off a ledge it may not descend
  */
 export function dropoffRefuses(standing: PositionCheck, dest: PositionCheck): boolean {
+  // A ledge sliver holding the body up above its centre's floor is not a height it may not leave.
+  const floorZ = Math.min(standing.floorZ, standing.centreFloorZ + MAX_STEP_UP);
   return (
-    standing.floorZ - dest.floorZ > MAX_STEP_UP ||
+    floorZ - dest.floorZ > MAX_STEP_UP ||
     standing.dropoffZ - dest.dropoffZ > MAX_STEP_UP ||
     // Both centre floors come off walks already in hand — see `PositionCheck.centreFloorZ`.
     standing.centreFloorZ - dest.centreFloorZ > MAX_STEP_UP

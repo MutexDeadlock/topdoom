@@ -1,11 +1,12 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { World } from '../../src/game/world.ts';
+import { neighborSectorIndices, World } from '../../src/game/world.ts';
 import { buildThingSprites } from '../../src/game/things.ts';
 import { MoverOccupancy } from '../../src/game/specials/moverblocking.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
-import { gridMap } from '../fixtures/gridmap.ts';
+import type { Pos2 } from '../../src/types.ts';
+import { gridMap, type GridMap } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 import { crushSources } from '../fixtures/specialsrig.ts';
 
@@ -36,11 +37,29 @@ function scene(inset: number) {
     cell: CELL,
     heights: { L: { floor: BOTTOM, ceil: TOP + DEMON.height }, c: { floor: BOTTOM, ceil: TOP } },
   });
-  const map = grid.map;
-  const lift = grid.index(1, 1);
-  const at = { x: 2 * CELL - inset, y: grid.centre(1, 1).y };
-  map.things.push({ ...at, angle: 0, type: ThingType.demon, flags: 7 });
-  const world = new World(map);
+  return populate(grid, grid.index(1, 1), { x: 2 * CELL - inset, y: grid.centre(1, 1).y });
+}
+
+/**
+ * Lift, strip, crawlspace in a row of 16-unit cells: the strip is narrower than the demon's box, so
+ * a demon centred in the crawlspace reaches across it onto the lift.
+ * docs/specials-movers.md § Every other mover stops instead.
+ */
+function stripScene() {
+  const cell = 16;
+  const low = { floor: BOTTOM, ceil: TOP };
+  const grid = gridMap(['#######', ...Array<string>(5).fill('#Lsccc#'), '#######'], {
+    cell,
+    heights: { L: { floor: BOTTOM, ceil: TOP + DEMON.height }, s: low, c: low },
+  });
+  const scene = populate(grid, grid.index(1, 3), { x: 3 * cell + 4, y: grid.centre(3, 3).y });
+  return { ...scene, centreSector: grid.index(3, 3) };
+}
+
+/** A demon placed at `at` on `grid`'s map, and the occupancy the mover in `lift` asks. */
+function populate(grid: GridMap, lift: number, at: Pos2) {
+  grid.map.things.push({ ...at, angle: 0, type: ThingType.demon, flags: 7 });
+  const world = new World(grid.map);
   const things = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
   return { world, lift, at, occupancy: new MoverOccupancy(world, crushSources({ things: () => things })) };
 }
@@ -63,5 +82,12 @@ describe('Regressions · a lift edge carrying a monster into a low neighbor', ()
   test('a demon standing clear of the edge rides all the way up', () => {
     const { occupancy, lift } = scene(DEMON.radius + 1);
     assert.equal(occupancy.blocksFloorRise(lift, TOP), false, 'the ordinary case is untouched');
+  });
+
+  test('a demon centred two sectors away still reaches the lift across a narrow strip', () => {
+    const { world, lift, at, centreSector, occupancy } = stripScene();
+    assert.equal(world.sectorIndexAt(at.x, at.y), centreSector, 'its centre is past the strip');
+    assert.ok(!neighborSectorIndices(world.map, lift).includes(centreSector), 'and not in a sector bordering the lift');
+    assert.equal(occupancy.blocksFloorRise(lift, TOP), true, 'the top would pin it under the crawlspace');
   });
 });

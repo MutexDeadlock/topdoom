@@ -44,6 +44,10 @@ Fixed bugs
     right level
   - fixed bugs regarding tracers and projectiles 
     (I thought we fiexd long ago -.-)
+  - a lift no longer carries a monster into the ceiling when the monster's
+    box reaches onto it across a narrow strip
+  - a monster perched on a ledge corner above the floor under it, no longer
+    freezes there
 
 
 ===============================================================================

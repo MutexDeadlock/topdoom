@@ -34,12 +34,13 @@ Rules that hold this together:
   § End card). The handler nulls `game` *before* disposing it — the call arrives from inside that
   very `Game`'s tic — and reopens the menu with `open('none')`, as a launcher: there is no returning
   to a run that is over.
-- **A reload over a run of the player's own is confirmed** (`beforeunload`, armed only while
-  `session()` is `'game'`): nothing in a running level survives it — the checkpoint is
-  kept in memory, and a recording sits in its recorder until a teardown
-  stores it (docs/replays.md § Recording). The browser owns the dialog and its text; F5 itself
-  cannot be swallowed. A playback reproduces from the store and the menu alone holds nothing, so
-  neither arms it.
+- **A reload during a run of the player's own is confirmed** (`beforeunload`, armed only while
+  `session()` is `'game'` and the menu is closed): nothing in a running level survives it — the
+  checkpoint is kept in memory, and a recording sits in its recorder until a teardown
+  stores it (docs/replays.md § Recording). The guard catches a missed F3/F4 mid-fight; with the
+  menu open a reload is deliberate and goes straight through, even over a paused level. The browser
+  owns the dialog and its text; F5 itself cannot be swallowed. A playback reproduces from the store
+  and the menu alone holds nothing, so neither arms it.
 - **`audio.resume()` runs synchronously before `startLevel`'s first `await`**, while still inside
   the click handler — the only moment a browser reliably lets an `AudioContext` start. A `?map=`
   deep link never gets that click, so `boot` also arms one-shot `pointerdown`/`keydown` unlockers.

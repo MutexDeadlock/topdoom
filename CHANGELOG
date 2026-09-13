@@ -1,7 +1,7 @@
-v0.20.0 (2026-09-13)
+v0.20.0 (2026-09-14)
 
 Deathmatch is the last major feature before v1.0, 
-so until that, only polish and fixes.
+so until then, only polish and fixes.
 
 And yes: Replays broke again. BUT you can now record hours of gameplay in
 slaughter-maps without fear that the replay become too big in memory :)
@@ -21,6 +21,7 @@ Features and improvements
   - menu: 
     - reworked status messages
     - select arrows and number steppers in the menu's own colours
+    - F5 with the menu open reloads without asking
   - HUD messages over the status bar; a repeated line counts up (x2); 
     Settings > Visuals > Messages picks all / MP only / off
   - the pickup puff is drawn in the item fog's own art (IFOG), shrinking around

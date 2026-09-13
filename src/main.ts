@@ -405,9 +405,9 @@ async function boot(): Promise<void> {
   window.addEventListener('pointerdown', unlockAudio, { once: true });
   window.addEventListener('keydown', unlockAudio, { once: true });
 
-  // A reload over a run of the player's own is confirmed — docs/session.md § Session lifecycle.
+  // A reload during a run of the player's own is confirmed — docs/session.md § Session lifecycle.
   window.addEventListener('beforeunload', (e) => {
-    if (session() !== 'game') return;
+    if (session() !== 'game' || menu.isOpen) return;
     e.preventDefault();
     e.returnValue = true; // what browsers before Chrome 119 read instead
   });

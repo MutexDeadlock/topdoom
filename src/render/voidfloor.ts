@@ -33,7 +33,7 @@ const MIX_A = 0.55;
  * Tuned by feel; the domain warp is what makes this read as fog rather than blobs.
  */
 const WARP_SCALE = 0.32;
-const WARP_STRENGTH = 0.22;
+const WARP_STRENGTH = 0.69;
 
 /** Drift of the warp field and of the two density layers, in tiles per second. Tuned by feel. */
 const DRIFT_WARP: [number, number] = [0.012, 0.0088];

@@ -4,7 +4,7 @@ Deathmatch is the last major feature before v1.0,
 so until then, only polish and fixes.
 
 And yes: Replays broke again. BUT you can now record hours of gameplay in
-slaughter-maps without fear that the replay become too big in memory :)
+slaughter-maps without fear that the replay could not be saved :)
 
 Features and improvements
   - multiplayer: 
@@ -49,6 +49,7 @@ Fixed bugs
     box reaches onto it across a narrow strip
   - a monster perched on a ledge corner above the floor under it, no longer
     freezes there
+  - IDCLIP: forces no longer move the player, as in Boom
 
 
 ===============================================================================

@@ -88,7 +88,7 @@ Toggles `MF_NOCLIP` on the player. `Player.noclip` is the flag every reader goes
 `game.ts` writes it once at the top of the tic, beside the code-matching itself: a `Player` is
 rebuilt by every level load and the cheat outlives it, so the value has to be re-pushed — and
 pushing it before any system runs is what keeps specials and movement from disagreeing within one
-tic. From there it reaches three places:
+tic. From there it reaches four places:
 
 - **Movement.** `Player.moveBy` returns the requested displacement instead of routing it through
   `slideMove`, so no wall or solid body clips it, and each channel reads its velocity back
@@ -102,6 +102,9 @@ tic. From there it reaches three places:
   matching `P_TryMove`, which runs its `spechit` list only for a thing without the flag. Nothing
   fires by being walked over — no doors, no teleports, no exit lines. **Use triggers still work**:
   `P_UseLines` never looks at the flag, so `Space` opens a door from the wrong side of it as usual.
+- **Floor forces.** Conveyors, pushers and ice or mud leave the player alone: `game.ts` asks
+  `Forces` nothing for a noclipping slot, as Boom's `T_Scroll`, `T_Pusher`/`PIT_PushThing` and
+  `P_GetFriction` each skip a thing with the flag (docs/specials-forces.md).
 
 Walking out past the map's edge is as unmapped here as in vanilla: the BSP resolves a point in the
 void to whatever leaf it lands in, and the floor comes back from that sector.

@@ -79,7 +79,7 @@ import { VoodooDolls } from './game/specials/voodoo.ts';
 import { colormapTint } from './wad/colormaps.ts';
 import { readAnimated } from './wad/animated.ts';
 import { readSwitches, switchPairs, type SwitchPairLookup } from './wad/switches.ts';
-import { switchPairTexture } from './game/specials/defs.ts';
+import { NO_FRICTION, switchPairTexture } from './game/specials/defs.ts';
 import { IconOfSin } from './game/monsters/iconofsin.ts';
 import { Hud } from './ui/hud/hud.ts';
 import { Crosshair } from './ui/hud/crosshair.ts';
@@ -2545,26 +2545,30 @@ export class Game {
       const at = m ?? line ?? onPlane;
       // Whatever the world is pushing the player with this tic — a conveyor
       // underfoot — onto the same momentum channel a hit's knockback uses.
-      // Applied before the move, as `T_Scroll` runs before `P_PlayerThink`.
-      const carry = this.level.forces.carryForBody(player, PLAYER_RADIUS, slot.touch);
+      // Applied before the move, as `T_Scroll` runs before `P_PlayerThink`. None of the three floor
+      // forces reaches a noclipping player: `T_Scroll`, `T_Pusher` and `P_GetFriction` all skip
+      // `MF_NOCLIP` (docs/cheats.md § IDCLIP).
+      const forces = player.noclip ? null : this.level.forces;
+      const carry = forces?.carryForBody(player, PLAYER_RADIUS, slot.touch);
       if (carry) player.applyForce(carry.x, carry.y);
       // Wind, current and point pushers, which unlike a conveyor reach the
       // player alone (`Forces.pushForBody`). "On the ground" is vanilla's
       // `thing->z > thing->floorz` test, which `groundFloor` answers here — a
       // full `checkPosition`, so it is only asked for where a pusher exists.
-      if (this.level.forces.pusherCount > 0) {
-        const { world, forces } = this.level;
-        const onGround = player.z <= world.groundFloor(player.x, player.y, PLAYER_RADIUS);
+      if (forces && forces.pusherCount > 0) {
+        const onGround = player.z <= this.level.world.groundFloor(player.x, player.y, PLAYER_RADIUS);
         const push = forces.pushForBody(player, PLAYER_RADIUS, onGround, slot.touch);
         if (push) player.applyForce(push.x, push.y);
       }
       // What the floor underfoot does to the player's own movement — ice, mud,
       // or (on every map with no 223 line) nothing at all.
-      const ground = this.level.forces.frictionUnder(player, {
-        radius: PLAYER_RADIUS,
-        speed: vecLength(player.velX, player.velY),
-        cache: slot.touch,
-      });
+      const ground = forces
+        ? forces.frictionUnder(player, {
+            radius: PLAYER_RADIUS,
+            speed: vecLength(player.velX, player.velY),
+            cache: slot.touch,
+          })
+        : NO_FRICTION;
       // Monsters are solid: the player walks around them, not through them.
       player.update(dt, input, at, camera.viewerAngleDeg + 180, this.solidBodiesAround(player, slot), ground);
       return { monster: m, shootLine: line, cursor: onPlane };

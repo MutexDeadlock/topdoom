@@ -194,4 +194,4 @@ falloff are *defined* in terms of it.
 `T_Pusher` skips every non-player outright, and `PIT_PushThing` widens to monsters only under
 `mbf_features`, which complevel 9 — the Boom target — does not set. A conveyor's carry has no such
 gate and moves every body on the belt (`T_Scroll`'s `sc_carry`). The asymmetry is Boom's, not this
-engine's.
+engine's. Neither reaches a noclipping player (docs/cheats.md § IDCLIP).

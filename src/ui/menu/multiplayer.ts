@@ -5,8 +5,8 @@
  * Pure DOM over a {@link NetSession}; every failure goes to the menu's status line.
  * docs/multiplayer-net.md § The Multiplayer tab.
  */
+import { DEFAULT_RELAY_URL } from '../../constants.ts';
 import {
-  DEFAULT_RELAY_URL,
   MAX_INPUT_DELAY,
   MIN_INPUT_DELAY,
   MIN_NAME_LENGTH,

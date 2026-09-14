@@ -93,9 +93,7 @@ src/util/      helpers shared across layers: 2D geometry plus the aim ray's box 
                is a field of (storage), raw DEFLATE (inflate, for compressed nodes), the five
                approximated Math functions in software so a tic runs the same on every engine
                (fdlibm), vanilla's random table — the engine's only entropy source
-src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
-                   BRIGHTNESS_LIFT, DEFAULT_PICKUP_SCALE + PICKUP_SCALE, VIEW_DISTANCE +
-                   FOG_START_FRACTION, WATER_SURFACE_ALPHA, FIRST_RUN_WADS)
+src/constants.ts   cross-cutting values, feel dials and deployment defaults (the constants rule below)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 src/styles.css     the stylesheet index.html links; @imports the .css beside each ui module
 index.html         the page skeleton; @includes the .html beside each one
@@ -106,8 +104,7 @@ assets/        the sources that WAD is built from: gldefs.txt, secret.ogg, playe
 scripts/       headless inspection of a WAD (inspect-wad.ts), of a savegame file
                (inspect-save.ts) and of a replay (inspect-replay.ts); building assets/
                playerskins.wad (build-playerskins.ts)
-server/        the WebSocket relay a network game runs through — its own package (`npm run relay`),
-               and the same rooms as a Cloudflare Worker (cloudflare/)
+server/        the relay, its own package: Node (`npm run relay`) or a Cloudflare Worker (cloudflare/)
 ```
 
 ## Subsystem documentation
@@ -206,10 +203,12 @@ before declaring a number tuned: every `weapons.ts` rate, spread and damage has 
 (docs/weapons.md § Fire rates). Never a third, unmarked category: a bare number with no note is
 indistinguishable from a transcription error.
 
-**`constants.ts` stays small**, and admits a constant on exactly one of two grounds: it is used in
+**`constants.ts` stays small**, and admits a constant on exactly one of three grounds: it is used in
 more than two files and isn't identity-coupled to any one module (`DOOM_TIC`), or it is a **feel
 dial** — a tuned-by-feel presentation number parked somewhere obvious so it stays easy to retune,
-however few files read it (`BRIGHTNESS_LIFT`, `DEFAULT_PICKUP_SCALE`, `VIEW_DISTANCE`). A dial
+however few files read it (`BRIGHTNESS_LIFT`, `DEFAULT_PICKUP_SCALE`, `VIEW_DISTANCE`), or it is a
+**deployment default** — decided by the deployment rather than the code, however few files read it
+(`FIRST_RUN_WADS`, `DEFAULT_RELAY_URL`). A dial
 brings its own scope with it when the two are retuned together and separating them would hide half
 the decision — `PICKUP_SCALE`, the per-type factors and so the whitelist of what scales at all, is
 the one such table here and stays the exception, not a licence for tables generally. Nothing else: a constant

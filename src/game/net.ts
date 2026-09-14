@@ -4,7 +4,6 @@
  * docs/multiplayer-net.md.
  */
 export {
-  DEFAULT_RELAY_URL,
   INPUT_DELAY,
   MAX_INPUT_DELAY,
   MIN_INPUT_DELAY,

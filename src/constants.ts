@@ -1,6 +1,7 @@
 /**
- * Cross-cutting values and the tuned-by-feel dials. CLAUDE.md's constants rule says what may live
- * here — nothing identity-coupled to one module, however often it's imported.
+ * Cross-cutting values, the tuned-by-feel dials and the deployment's defaults. CLAUDE.md's
+ * constants rule says what may live here — nothing identity-coupled to one module, however often
+ * it's imported.
  *
  * Cross-cutting, so there is no `docs/` page of its own: each dial is documented where it takes
  * effect — docs/render.md § View distance, docs/render-lighting.md § Sector lighting,
@@ -16,6 +17,13 @@ export const VERSION = '0.20.0-test1';
  * nothing else: no key and no game behavior is behind it — docs/devmode.md § Dev mode.
  */
 export const DEVMODE = import.meta.env?.VITE_DEVMODE === 'true';
+
+/**
+ * **The relay the Multiplayer tab offers before a player enters one** — nothing stored. This
+ * deployment's Cloudflare Worker; a local `npm run relay` is `ws://localhost:8765`.
+ * docs/multiplayer-net.md § The relay on Cloudflare.
+ */
+export const DEFAULT_RELAY_URL = 'wss://relay.topdoom.workers.dev';
 
 /**
  * One vanilla tic in seconds. DOOM's whole game clock runs at 35 Hz

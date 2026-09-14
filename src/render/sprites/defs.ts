@@ -6,11 +6,8 @@
 import * as THREE from 'three';
 
 /**
- * Default viewer angle (DOOM-space, 0 = east, 90 = north, counter-clockwise):
- * due south, matching TopDownCamera's yaw=0. The camera can orbit (see
- * TopDownCamera.viewerAngleDeg), so this constant is only the fallback for
- * callers that don't pass a live angle; SpriteActor.setPose is re-called
- * every frame with the camera's actual current viewer angle.
+ * Default viewer angle (DOOM-space, 0 = east, 90 = north, counter-clockwise): due south, matching
+ * TopDownCamera's yaw=0. Only the fallback for callers that don't pass the camera's live angle.
  */
 export const VIEWER_ANGLE_DEG = -90;
 
@@ -38,9 +35,10 @@ export function whiteVertexColors(geometry: THREE.BufferGeometry): void {
 
 /**
  * A lump's place in the atlas as the batch shader reads it, already mirrored where the cached
- * sprite is: `u0`/`v0` are the quad's bottom-left corner and `u1`/`v1` its top-right, so a
- * mirrored sprite has `u0 > u1`. `offsetX` is how far the quad's centre sits right of the thing —
- * the hotspot's `left` — negated when mirrored. docs/sprites.md § Batching.
+ * sprite is: {@link AtlasSprite.u0}/{@link AtlasSprite.v0} are the quad's bottom-left corner and
+ * {@link AtlasSprite.u1}/{@link AtlasSprite.v1} its top-right, so a mirrored sprite has `u0 > u1`.
+ * {@link AtlasSprite.offsetX} is how far the quad's centre sits right of the thing — the hotspot's
+ * `left` — negated when mirrored. docs/sprites.md § Batching.
  */
 export interface AtlasSprite {
   page: THREE.DataTexture;

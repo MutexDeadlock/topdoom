@@ -4,11 +4,10 @@
  * a stair chain runs, which sidedef slots carry switch art, and what a boss
  * death does on this particular map.
  *
- * Everything here is a pure function of the `DoomMap` — no runtime state, no
- * `SpecialsController`, no THREE. `scanSectors` in particular runs
- * before the controller exists at all (`mapmesh.ts` needs it to decide what
- * stays out of the static batch), which is what makes this module the natural
- * home for the rest of the same scans.
+ * Everything here is a pure function of the {@link DoomMap} — no runtime state, no
+ * `SpecialsController`, no THREE. {@link scanSectors} in particular runs before the controller
+ * exists at all (`mapmesh.ts` needs it to decide what stays out of the static batch), which is what
+ * makes this module the natural home for the rest of the same scans.
  *
  * See docs/specials.md.
  */
@@ -46,7 +45,7 @@ export interface BossDeathTrigger {
   action: BossDeathAction;
   /**
    * Whether `A_BossDeath`'s "make sure there is a player alive for victory" loop guards this row.
-   * Only rows that really come from that function carry it — Keen's does not. See `KEEN_DOOR_TAG`.
+   * Only rows from that function carry it — Keen's does not. See {@link KEEN_DOOR_TAG}.
    */
   needsLivingPlayer: boolean;
 }
@@ -62,14 +61,14 @@ export interface BossDeathTrigger {
 export const KEEN_DOOR_TAG = 666;
 
 /**
- * Vanilla's `A_BossDeath` (`p_enemy.c`), confirmed against source — see docs/death.md §
- * Boss death for the full table. Pure function of the map's own lump name: vanilla gates on
- * `gameepisode`/`gamemap`, not on which WAD supplied the map, so a PWAD's own MAP07 gets the
- * same Mancubus/Arachnotron triggers the IWAD's does.
+ * What a boss death triggers on this map — `A_BossDeath` (`p_enemy.c`), full table in
+ * docs/death.md § Boss death. Pure function of the map's own lump name: vanilla gates on
+ * `gameepisode`/`gamemap`, not on which WAD supplied the map, so a PWAD's own MAP07 gets the same
+ * Mancubus/Arachnotron triggers the IWAD's does.
  *
- * Commander Keen's own trigger is appended to every map's table, for the reason at `KEEN_DOOR_TAG`
- * above. The Icon of Sin has no entry here at all: `A_BrainDie` exits the level directly rather
- * than through a tag, and `game/monsters/iconofsin.ts` owns it.
+ * Commander Keen's own trigger is appended to every map's table, for the reason at
+ * {@link KEEN_DOOR_TAG}. The Icon of Sin has no entry here at all: `A_BrainDie` exits the level
+ * directly rather than through a tag, and `game/monsters/iconofsin.ts` owns it.
  */
 export function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
   /** A row of `A_BossDeath`'s own switch, and so one its player-alive loop guards. */
@@ -150,10 +149,10 @@ export interface StairStep {
  * connector lines all face the same way. That is vanilla's own
  * `EV_BuildStairs` walk, and mapsets depend on the restriction.
  *
- * Purely a function of static map data (adjacency + floor textures), so running
- * it once at load time (`scanSectors`) and again at trigger time can't
- * disagree. `direction` and `ignoreTexture` are Boom's generalized additions
- * (`EV_DoGenStairs`' Igno bit); both default to the vanilla walk.
+ * Purely a function of static map data (adjacency + floor textures), so running it once at load
+ * time ({@link scanSectors}) and again at trigger time can't disagree. `direction` and
+ * `ignoreTexture` are Boom's generalized additions (`EV_DoGenStairs`' Igno bit); both default to
+ * the vanilla walk.
  */
 export function findStairChain(
   map: DoomMap,
@@ -200,15 +199,14 @@ export interface SwitchEntry {
 }
 
 /**
- * Switch-textured slots on either side of `line` — regardless of trigger
- * kind (walkover switches with real SW art exist too, if rarely). The
- * texture found at scan time is treated as "off"; its pair is "on".
+ * Switch-textured slots on either side of `line` — regardless of trigger kind (walkover switches
+ * with real SW art exist too, if rarely). The texture found at scan time is treated as "off"; its
+ * pair is "on".
  *
- * `pairs` resolves that pair: the `SW1`/`SW2` name convention by default, or
- * the WAD set's own `SWITCHES` table when it ships one (`wad/switches.ts`),
- * whose pairs need not share a suffix. Passed in rather than looked up here
- * because this stays a pure function of the map — docs/wad.md § ANIMATED and
- * SWITCHES.
+ * @param pairs  resolves that pair: the `SW1`/`SW2` name convention by default, or the WAD set's
+ *               own `SWITCHES` table when it ships one (`wad/switches.ts`), whose pairs need not
+ *               share a suffix. Passed in rather than looked up here because this stays a pure
+ *               function of the map — docs/wad.md § ANIMATED and SWITCHES.
  */
 export function findSwitchEntries(
   map: DoomMap,
@@ -232,13 +230,13 @@ export function findSwitchEntries(
 /**
  * The two sector sets a map's specials imply, from one walk of its linedefs.
  *
- * - `moving`: sectors whose floor or ceiling a special can actually drive.
- * - `movable`: those plus the ones pulled out of the static batch only so a
- *   switch texture can be swapped on them — a superset of `moving`.
+ * - {@link SectorScan.moving}: sectors whose floor or ceiling a special can actually drive.
+ * - {@link SectorScan.movable}: those plus the ones pulled out of the static batch only so a switch
+ *   texture can be swapped on them — a superset of {@link SectorScan.moving}.
  *
- * They are different questions and `mapmesh.ts` needs both — a mesh that never
- * moves is diced vertically like static geometry, and one that does cannot be
- * (`WALL_CHUNK_LEN`). docs/render.md § Mover meshes.
+ * They are different questions and `mapmesh.ts` needs both — a mesh that never moves is diced
+ * vertically like static geometry, and one that does cannot be (`WALL_CHUNK_LEN`).
+ * docs/render.md § Mover meshes.
  */
 export interface SectorScan {
   moving: Set<number>;
@@ -246,9 +244,10 @@ export interface SectorScan {
 }
 
 /**
- * Both sets of `SectorScan` in one pass. `pairs` is `findSwitchEntries`'
- * switch-pair lookup, and must be the same one the controller is given or the
- * two disagree about which sectors carry switches.
+ * Both sets of {@link SectorScan} in one pass.
+ *
+ * @param pairs  {@link findSwitchEntries}' switch-pair lookup; must be the same one the controller
+ *               is given or the two disagree about which sectors carry switches.
  */
 export function scanSectors(map: DoomMap, pairs?: SwitchPairLookup): SectorScan {
   const moving = new Set<number>();
@@ -308,9 +307,9 @@ export function scanSectors(map: DoomMap, pairs?: SwitchPairLookup): SectorScan 
 }
 
 /**
- * Every sector a map's boss-death table can move — the tags in `bossDeathTriggersFor`, resolved
- * against `map.sectors`. **Load-bearing for `scanSectors`:** these sectors are driven by
- * `triggerTag`, which has no triggering linedef, so nothing else in that scan can find them.
+ * Every sector a map's boss-death table can move — the tags in {@link bossDeathTriggersFor},
+ * resolved against `map.sectors`. **Load-bearing for {@link scanSectors}:** these sectors are
+ * driven by `triggerTag`, which has no triggering linedef, so nothing else in that scan finds them.
  * MAP32's Keen door (sector 16, tag 666) and MAP07's Arachnotron platform (sector 1, tag 667) both
  * have no linedef carrying their tag at all; without this they stay in the static batch and get
  * drawn a second time the moment their mover mesh appears. See docs/death.md § Boss death.

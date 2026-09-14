@@ -9,7 +9,9 @@ import { MAP_LUMPS, udmfDoomSpecials } from './map.ts';
 /** Green, amber, red: it runs, some of it doesn't play right, some of it won't load at all. */
 export type SupportLevel = 'ok' | 'partial' | 'broken';
 
-/** Every reason a file is not `ok`. `SUPPORT_ISSUES` says what each one costs and how badly. */
+/**
+ * Every reason a file is not `ok`. {@link SUPPORT_ISSUES} says what each one costs and how badly.
+ */
 export type SupportCode = 'udmf' | 'noBsp' | 'incomplete' | 'hexen' | 'dehacked';
 
 /**
@@ -22,23 +24,19 @@ export interface SupportIssue {
 
 /**
  * A file's verdict: every reason it is not fully supported, worst first, and empty when it is.
- *
- * **The level is derived, never stored** (`supportLevel`). This is what both persisted copies hold
- * (`ManifestEntry.support`, `LibraryDescriptor.support`), so a stored level would be a second
- * source of truth that a row written today keeps asserting after `SUPPORT_ISSUES` reclassifies a
- * code — and one a damaged record could contradict outright.
+ * **The level is derived, never stored** ({@link supportLevel}) — docs/wad.md § Will it run?
  */
 export type WadSupport = SupportIssue[];
 
 /**
  * What each reason costs, and the sentence the tooltip states it in. **Worst first** — the order
- * here is the order `wadSupport` reports issues in, and the `broken` block ends where `hexen`
+ * here is the order {@link wadSupport} reports issues in, and the `broken` block ends where `hexen`
  * starts.
  *
- * A `broken` map will not run as its author built it; most cannot load at all, yielding an empty
- * world with no floor to stand on. `loads` marks the one that does load and is walkable, flagged
- * red for what will not run in it — `refusesToLoad` is what reads the pair. A `partial` map plays,
- * just not the way its author built it. docs/wad.md § Will it run?
+ * A `broken` map will not run as its author built it; most cannot load at all. `loads` marks the
+ * one that does load and is walkable, flagged red for what will not run in it —
+ * {@link refusesToLoad} is what reads the pair. A `partial` map plays, just not the way its author
+ * built it. docs/wad.md § Will it run?
  */
 const SUPPORT_ISSUES: Record<
   SupportCode,
@@ -75,7 +73,7 @@ export function supportLevel(support: WadSupport): SupportLevel {
  */
 export interface MapLumpSummary {
   name: string;
-  /** Lump name to size, for the lumps in `MAP_GROUP_LUMPS` that follow this map's marker. */
+  /** Lump name to size, for the lumps in {@link MAP_GROUP_LUMPS} that follow this map's marker. */
   lumps: ReadonlyMap<string, number>;
   /**
    * A UDMF map's namespace, sniffed off the head of its `TEXTMAP` (`sniffUdmfNamespace`) —
@@ -86,12 +84,12 @@ export interface MapLumpSummary {
 }
 
 /**
- * The lumps that count as part of a map's group while scanning a directory. `MAP_LUMPS` is what
- * `loadMap` reads a binary map by; the rest belong to a UDMF or Hexen group. A UDMF group whose
- * TEXTMAP directly follows the marker is bracketed instead (`TEXTMAP` … `ENDMAP`, any lump names
- * between), which `describe.ts`'s walk handles as its own state. The UDMF names are listed here
- * for the group that walk does not claim — a TEXTMAP further down, which reads as a map rather
- * than as no map at all — beside the stragglers a Hexen map trails after BEHAVIOR.
+ * The lumps that count as part of a map's group while scanning a directory. {@link MAP_LUMPS} is
+ * what `loadMap` reads a binary map by; the rest belong to a UDMF or Hexen group. A UDMF group
+ * whose TEXTMAP directly follows the marker is bracketed instead, and `describe.ts`'s walk handles
+ * it as its own state (docs/wad.md § Will it run?); the UDMF names here are for the group that walk
+ * does not claim — a TEXTMAP further down, which reads as a map rather than as no map at all —
+ * beside the stragglers a Hexen map trails after BEHAVIOR.
  */
 export const MAP_GROUP_LUMPS: ReadonlySet<string> = new Set([
   ...MAP_LUMPS,
@@ -106,13 +104,12 @@ export const MAP_GROUP_LUMPS: ReadonlySet<string> = new Set([
 const REQUIRED_LUMPS = ['THINGS', 'LINEDEFS', 'SIDEDEFS', 'VERTEXES', 'SECTORS'];
 
 /**
- * The verdict for one file. `dehShortfall` is its `DEHACKED` patch having asked for something this
- * engine deliberately does not apply (`DehSupport`'s `unsupported`) — the MBF thing flags, a
- * re-keyed `ID #`, `A_RandomJump`: things that change how a thing behaves rather than how it reads.
- * `noTarget` and `unknown` are **not** counted: the first is a finale screen or a pickup message,
- * the second a line the parser didn't recognise, and neither changes how the level plays.
+ * The verdict for one file. Pure, so it is testable without a WAD — the reading is `describe.ts`'s.
  *
- * Pure, so it is testable without a WAD — the reading is `describe.ts`'s.
+ * @param dehShortfall  its `DEHACKED` patch asked for something this engine deliberately does not
+ *                      apply (`DehSupport`'s `unsupported`) — the MBF thing flags, a re-keyed
+ *                      `ID #`, `A_RandomJump`; `noTarget` and `unknown` are **not** counted
+ *                      (docs/wad.md § Will it run?)
  */
 export function wadSupport(maps: readonly MapLumpSummary[], dehShortfall: boolean): WadSupport {
   const byCode = new Map<SupportCode, string[]>();
@@ -187,8 +184,8 @@ export function nothingLoads(support: WadSupport, mapCount: number): boolean {
 /**
  * Whether a code means the map is refused outright, as against flagged red for what will not run
  * in one that does load (`loads`, above). The refusal count and the tooltip's headline must agree
- * on this, so they read it here rather than each spelling out the pair — `supportLevel` is the
- * deliberate exception: the glyph is red either way.
+ * on this, so they read it here rather than each spelling out the pair — {@link supportLevel} is
+ * the deliberate exception: the glyph is red either way.
  */
 function refusesToLoad(code: SupportCode): boolean {
   const { level, loads } = SUPPORT_ISSUES[code];
@@ -200,8 +197,10 @@ const NAMED_MAPS = 3;
 
 /**
  * The support column's tooltip: the verdict, then one line per reason naming the maps that raise
- * it, by name and at most `NAMED_MAPS` of them. `mapCount` is the file's own map count, which is
- * what decides whether the headline says *some* maps or all of them.
+ * it, by name and at most {@link NAMED_MAPS} of them.
+ *
+ * @param mapCount  the file's own map count, which decides whether the headline says *some* maps
+ *                  or all of them
  */
 export function describeSupport(support: WadSupport, mapCount: number): string {
   const level = supportLevel(support);

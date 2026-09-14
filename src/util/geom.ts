@@ -1,9 +1,9 @@
 /**
  * The primitives more than one layer needs — segment crossings, point-to-segment distance, the
- * swept box tests, the convex-polygon queries, and the one 3D test here (`rayEntersBox`, auto-aim's
- * pick). Pure functions on scalars, deliberately: their callers compute coordinates inline
- * thousands of times a frame, so a point-object parameter here would allocate in exactly the wrong
- * place (docs/conventions.md § Named arguments).
+ * swept box tests, the convex-polygon queries, and the one 3D test here ({@link rayEntersBox},
+ * auto-aim's pick). Pure functions on scalars, deliberately: their callers compute coordinates
+ * inline thousands of times a frame, so a point-object parameter here would allocate in exactly the
+ * wrong place (docs/conventions.md § Named arguments).
  * Each is documented at its own declaration; the rules built on them live with their callers —
  * docs/movement.md § Collision, docs/render-occlusion.md, docs/fogofwar.md and
  * docs/monster-attacks.md § Monster projectiles in flight.
@@ -31,8 +31,8 @@ export function vecLength(dx: number, dy: number): number {
  *
  * The form every per-line inner loop uses — sightlines, shot and projectile traces, the fog's
  * sight sweep, the wall fader — because the `{ t }` its wrapper returns would allocate one object
- * per crossing in code that runs thousands of times a frame. `segmentIntersect` wraps it for the
- * callers that read `t` off a record instead.
+ * per crossing in code that runs thousands of times a frame. {@link segmentIntersect} wraps it for
+ * the callers that read `t` off a record instead.
  */
 export function segmentCrossT(
   ax: number,
@@ -60,8 +60,8 @@ export function segmentCrossT(
 }
 
 /**
- * `segmentCrossT` as a nullable record: the crossing's parameter `t` along the first segment, or
- * null if they don't cross within both segments' bounds. For the callers outside a hot loop —
+ * {@link segmentCrossT} as a nullable record: the crossing's parameter `t` along the first segment,
+ * or null if they don't cross within both segments' bounds. For the callers outside a hot loop —
  * `specials.ts`'s walk and use triggers, `world.ts`'s sliding moves.
  */
 export function segmentIntersect(
@@ -139,14 +139,16 @@ export function traceHitsBox(
 }
 
 /**
- * How far an explosion at (px, py) is from the **edge** of the body of
- * half-width `radius` at (bx, by), never below 0 — vanilla's `PIT_RadiusAttack`
- * (`p_map.c`), which is what its splash falls off over.
+ * How far an explosion at (px, py) is from the **edge** of the body of half-width `radius` at
+ * (bx, by), never below 0 — vanilla's `PIT_RadiusAttack` (`p_map.c`), which is what its splash
+ * falls off over.
  *
- * Neither centre-to-centre nor Euclidean: vanilla subtracts the body's own
- * radius and measures on the Chebyshev metric, which together decide how much
- * splash a wide monster takes. Whole map units, floored as vanilla's `>> FRACBITS` leaves them, so
- * a splash deals whole points. See docs/combat.md § Splash and the BFG.
+ * Neither centre-to-centre nor Euclidean: vanilla subtracts the body's own radius and measures on
+ * the Chebyshev metric, which together decide how much splash a wide monster takes.
+ * See docs/combat.md § Splash and the BFG.
+ *
+ * @returns whole map units, floored as vanilla's `>> FRACBITS` leaves them, so a splash deals
+ *          whole points
  */
 export function blastDistanceToBox(px: number, py: number, bx: number, by: number, radius: number): number {
   const dx = Math.abs(bx - px);
@@ -156,10 +158,10 @@ export function blastDistanceToBox(px: number, py: number, bx: number, by: numbe
 }
 
 /**
- * How far from a body's centre either box test can reach — its half-diagonal.
- * A grid prefilter feeding `traceHitsBox` or `segmentEntersBox` has to be
- * inflated by this or the widest bodies are dropped before the test sees them,
- * which shows up only as a hit-rate change on crowded maps.
+ * How far from a body's centre either box test can reach — its half-diagonal. A grid prefilter
+ * feeding {@link traceHitsBox} or {@link segmentEntersBox} has to be inflated by this or the widest
+ * bodies are dropped before the test sees them, which shows up only as a hit-rate change on crowded
+ * maps.
  */
 export function boxReach(halfWidth: number): number {
   return halfWidth * Math.SQRT2;
@@ -221,10 +223,10 @@ export function segmentEntersBox(
  * half-width `half` centred on (bx, by) and standing from `floor` up to `top`, or null if it never
  * does. The one 3D primitive here, and its only caller is auto-aim's pick
  * (`ThingLayer.pickMonster`): a body's own `mobjinfo` box against the ray from the camera, a plain
- * box and deliberately **not** `traceHitsBox`'s direction-dependent diagonal. Slab-clipped like
- * `segmentEntersBox`, with the same explicit guard on an axis-parallel component and the same
- * "exactly grazing is a miss". The far end is unbounded: a pointer ray has no length of its own,
- * and the near crossing is what orders candidates. docs/combat.md § Auto-aim.
+ * box and deliberately **not** {@link traceHitsBox}'s direction-dependent diagonal. Slab-clipped
+ * like {@link segmentEntersBox}, with the same explicit guard on an axis-parallel component and the
+ * same "exactly grazing is a miss". The far end is unbounded: a pointer ray has no length of its
+ * own, and the near crossing is what orders candidates. docs/combat.md § Auto-aim.
  */
 export function rayEntersBox(
   ox: number,
@@ -302,7 +304,7 @@ export function polygonCentroid(poly: ArrayLike<number>): Pos2 {
   return { x: x / n, y: y / n };
 }
 
-/** A flat polygon's axis-aligned extent, filled by `polygonBounds` into a caller-owned buffer. */
+/** A flat polygon's axis-aligned extent, as {@link polygonBounds} fills a caller-owned buffer. */
 export interface PolygonBounds {
   minX: number;
   minY: number;
@@ -335,10 +337,9 @@ export function polygonBounds(poly: ArrayLike<number>, out: PolygonBounds): void
 }
 
 /**
- * Point-in-convex-polygon test via consistent cross-product sign (works for
- * either winding order, since only sign *agreement* across edges matters).
- * `poly` is a flat [x0,y0, x1,y1, …] array. The degenerate case of
- * `segmentMeetsConvexPolygon` below, which is what the renderer itself asks;
+ * Point-in-convex-polygon test via consistent cross-product sign (works for either winding order,
+ * since only sign *agreement* across edges matters). `poly` is a flat [x0,y0, x1,y1, …] array. The
+ * degenerate case of {@link segmentMeetsConvexPolygon}, which is what the renderer itself asks;
  * this stays as the primitive tests assert a footprint with.
  */
 export function pointInConvexPolygon(px: number, py: number, poly: ArrayLike<number>): boolean {
@@ -361,19 +362,18 @@ export function pointInConvexPolygon(px: number, py: number, poly: ArrayLike<num
 }
 
 /**
- * Whether any part of the segment `(x0, y0) → (x1, y1)` lies inside the convex
- * `poly` (a flat [x0,y0, x1,y1, …] array), touching edges included. The
- * segment twin of `pointInConvexPolygon`, and the one `FlatFader` actually
- * needs: a sightline meets a floor's height plane over a whole *span* rather
- * than at a point, because the thing it must reveal is an upright sprite with
- * height — docs/render-occlusion.md § Flats.
+ * Whether any part of the segment `(x0, y0) → (x1, y1)` lies inside the convex `poly` (a flat
+ * [x0,y0, x1,y1, …] array), touching edges included. The segment twin of
+ * {@link pointInConvexPolygon}, and the one `FlatFader` actually needs: a sightline meets a floor's
+ * height plane over a whole *span* rather than at a point, because the thing it must reveal is an
+ * upright sprite with height — docs/render-occlusion.md § Flats.
  *
- * A Cyrus-Beck clip: each edge is a half-plane the segment's parameter range is
- * narrowed against, so the whole test is one pass over the edges and allocates
- * nothing. Either winding works, the way it does for `pointInConvexPolygon` —
- * but this one has to *know* which, so a caller asking the same immutable ring
- * every frame passes `wind` (-1 or 1) from its own memo rather than paying a
- * shoelace pass per call; omitted, it is derived here.
+ * A Cyrus-Beck clip: each edge is a half-plane the segment's parameter range is narrowed against,
+ * so the whole test is one pass over the edges and allocates nothing. Either winding works, the way
+ * it does for {@link pointInConvexPolygon} — but this one has to *know* which.
+ *
+ * @param wind  -1 or 1, from the caller's own memo for an immutable ring it asks every frame, so no
+ *              shoelace pass is paid per call; omitted, it is derived here
  */
 export function segmentMeetsConvexPolygon(
   x0: number,
@@ -444,18 +444,16 @@ export function signedPolygonArea2(poly: ArrayLike<number>): number {
 }
 
 /**
- * Clips a convex polygon against the half-plane cross(p) <= 0 (Sutherland-Hodgman).
- * The line is given as a point (px, py) plus a direction (dx, dy). `poly` is a
- * flat [x0,y0, x1,y1, …] array; the result may have more or fewer points.
+ * Clips a convex polygon against the half-plane cross(p) <= 0 (Sutherland-Hodgman). The line is
+ * given as a point (px, py) plus a direction (dx, dy). `poly` is a flat [x0,y0, x1,y1, …] array;
+ * the result may have more or fewer points.
  *
- * `tolerance` (map units, default 0) pushes the line that far towards the
- * discarded side, so the result keeps anything within that distance of it. The
- * result is still a proper half-plane clip of the input, hence still convex and
- * still a subset of it.
- *
- * `out` lets a caller that clips in a loop reuse one buffer instead of taking a fresh array per
- * cut (`mapmesh.ts`'s `diceOnGrid`, which cuts every flat on the map against a grid). It is
- * cleared on entry, so it must **not** alias `poly`.
+ * @param tolerance  map units the line is pushed towards the discarded side, so the result keeps
+ *                   anything within that distance of it — still a proper half-plane clip of the
+ *                   input, hence still convex and still a subset of it
+ * @param out        a buffer a caller that clips in a loop reuses instead of taking a fresh array
+ *                   per cut (`mapmesh.ts`'s `diceOnGrid`, which cuts every flat on the map against
+ *                   a grid); cleared on entry, so it must **not** alias `poly`
  */
 export function clipConvexPolygon(
   poly: ArrayLike<number>,

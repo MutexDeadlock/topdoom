@@ -645,8 +645,8 @@ export class NetSession {
   }
 
   /**
-   * `member`'s new colour, on the host — read through `asPlayerColor`, so one this build doesn't
-   * know keeps the old. A member seated in the running game keeps the colour it started with.
+   * `member`'s new colour, on the host — read through {@link asPlayerColor}, so one this build
+   * doesn't know keeps the old. A member seated in the running game keeps its starting colour.
    */
   private recolor(member: number, color: PlayerColor): void {
     const peer = this.peers.find((p) => p.member === member);

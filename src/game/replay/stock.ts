@@ -7,10 +7,9 @@
 
 /**
  * Where stock replays sit, without slashes — `public/<STOCK_DIR>/` on disk, `/<STOCK_DIR>/…` as a
- * URL. Declared here, beside the code that fetches through it, and imported by
- * `plugins/replay-manifest.ts` rather than restated there: the two must name the same folder or the
- * menu lists files it cannot then play. The WAD manifest's `WAD_DIR` rule, one folder over
- * (docs/wad.md § The `public/game/` manifest).
+ * URL. `plugins/replay-manifest.ts` imports it rather than restating it: the two must name the same
+ * folder or the menu lists files it cannot then play. The WAD manifest's `WAD_DIR` rule, one folder
+ * over (docs/wad.md § The `public/game/` manifest).
  */
 export const STOCK_DIR = 'game/replay';
 
@@ -19,9 +18,9 @@ export const STOCK_MANIFEST_PATH = `${STOCK_DIR}/index.json`;
 
 /**
  * One served replay, as the plugin writes it: the download file's own meta fields with its `data`
- * left behind. `meta` is raw JSON and stays unvalidated here; `asReplayMeta`/`metaRefusal`
- * (`game/replay.ts`) are what a stored row's meta goes through too, so a damaged stock file lists
- * and says why rather than vanishing.
+ * left behind. {@link StockReplayEntry.meta} is raw JSON and stays unvalidated here;
+ * `asReplayMeta`/`metaRefusal` (`game/replay.ts`) are what a stored row's meta goes through too, so
+ * a damaged stock file lists and says why rather than vanishing.
  */
 export interface StockReplayEntry {
   file: string;
@@ -29,9 +28,8 @@ export interface StockReplayEntry {
 }
 
 /**
- * The id a served file is listed, played and downloaded under. Stock and stored replays share one
- * id space, so the prefix is what routes a read to the folder instead of to the store, and what the
- * menu asks to mark a row read-only.
+ * The id a served file is listed, played and downloaded under; its prefix is what routes a read to
+ * the folder instead of the store, and what the menu asks to mark a row read-only.
  */
 export function stockReplayId(file: string): string {
   return `${STOCK_PREFIX}${file}`;

@@ -586,7 +586,7 @@ array and rebuilt once per `ThingLayer.update`. It is a closure rather than a se
 thing layer purely so the pooled buffers and the two bucket arrays below can't be reached from
 anywhere else.
 
-`blockersFor` reads a **uniform grid of solid bodies** (`blockerGrid`, rebuilt once per
+`blockersFor` reads a **uniform grid of solid bodies** (rebuilt once per
 `ThingLayer.update`) rather than scanning every thing, for the same reason vanilla has a blockmap:
 the naive version is O(monsters²) per frame, catastrophic past a stock level's population. Verified
 to return exactly the same neighbour set as the linear scan across all of NUTS.WAD's real positions.
@@ -668,7 +668,7 @@ case at its old cost. This is the same adaptive trick `blockersFor` uses, and fo
 fixed worst-case box is what made monster AI the frame's bottleneck, while sizing from the map's own
 population measured as noise even with a thousand shots in the air.
 
-**`blockerGrid` is not monsters-only, and the difference between solid and shootable is what keeps
+**The grid is not monsters-only, and the difference between solid and shootable is what keeps
 that safe.** It admits the exploding barrel and every `SOLID_DECORATION_TYPES` prop, because those
 carry vanilla's `MF_SOLID` and so block the player (`solidBodies`) and a monster's own movement
 (`blockersFor`) exactly as a monster does — reusing the index costs nothing. But a plain decoration
@@ -860,7 +860,7 @@ it's why the lost soul can carry vanilla's real chase speed — 46.7 units/sec, 
 the game, less than a fifth of a walking player. Modelling it as a fast melee walker (an eyeballed
 260 units/sec) got the threat roughly right by getting both halves wrong; with the charge in place
 the vanilla numbers work, because a lost soul is meant to drift harmlessly and then commit.
-`stepCharge` is deliberately the one movement here that doesn't use `slideMove`: a charge that
+`stepCharge` deliberately doesn't use `slideMove`: a charge that
 rounded corners would home in on the player, and being able to sidestep a committed lost soul is the
 whole reason the attack is fair.
 

@@ -89,10 +89,8 @@ export class Reader {
   }
 
   /**
-   * The same normalisation over an arbitrary field width. Boom's `ANIMATED`
-   * and `SWITCHES` records hold **9**-byte NUL-terminated names rather than
-   * the directory's 8-byte padded ones, and the upper-casing is load-bearing
-   * either way: every texture and flat lookup keys on upper case.
+   * {@link Reader.name8}'s normalisation over an arbitrary field width, for Boom's **9**-byte
+   * `ANIMATED` and `SWITCHES` names — docs/wad.md § ANIMATED and SWITCHES.
    */
   name(width: number): string {
     let s = '';

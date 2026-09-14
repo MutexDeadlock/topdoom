@@ -1,6 +1,6 @@
 /**
- * `MaterialBank`: WAD bitmaps turned into cached three.js materials — every wall texture and flat
- * exists exactly once on the GPU, including the dither-fade variants occlusion asks for.
+ * {@link MaterialBank}: WAD bitmaps turned into cached three.js materials — every wall texture and
+ * flat exists exactly once on the GPU, including the dither-fade variants occlusion asks for.
  * See docs/render-occlusion.md.
  */
 import * as THREE from 'three';
@@ -25,15 +25,15 @@ import { DISTANCE_LIGHT_GLSL, diminishUniform } from './sectorlight.ts';
 
 export type SurfaceKind = 'wall' | 'flat';
 
-/** A texture's pixel dimensions, as `MaterialBank.size` reports them. */
+/** A texture's pixel dimensions, as {@link MaterialBank.size} reports them. */
 export interface Size {
   w: number;
   h: number;
 }
 
 /**
- * The live uniform objects `DynamicLights` mutates each frame; see docs/lights.md § Two lighting
- * paths.
+ * The live uniform objects {@link DynamicLights} mutates each frame.
+ * docs/lights.md § Two lighting paths.
  */
 type LightUniforms = DynamicLights['uniforms'];
 
@@ -45,15 +45,15 @@ const SOFT_SPAN = glslFloat(2 * SHADOW_SOFT_BINS);
  * `diffuseColor` is still live. `vColor` is the sector's baked light and `sampledDiffuseColor` the
  * texel: the lights are added to the *multiplier*, not the texel, which reproduces vanilla's
  * fullbright ceiling instead of overbrightening the texture past it. The ceiling is the tone
- * mapper's rather than a clamp here, so what passes it survives to be the bloom's only source. Fog
- * is applied later, to `gl_FragColor`, so a lit surface still fogs.
+ * mapper's rather than a clamp here, so what passes it survives to be the bloom's only source.
  * docs/lights.md § Two lighting paths, § Bloom.
  *
- * A light only counts where it can be seen from, tested twice. `vLightCell` is the surface's own
- * BSP leaf and `uLightVis` the per-leaf list of the lights that flooded into it, which is all the
- * fragment loop walks; `uLightShadow` then carries, per light and per direction, how far that
- * light gets before a wall stops it, which drops the rest per pixel. `uLightVisWidth` 0 means no
- * level is bound and geometry draws no dynamic light. docs/lights.md § Light stops at walls.
+ * A light only counts where it can be seen from, tested twice. `aLightCell` is the light cell the
+ * surface was filed under and `uLightVis` the per-cell list of the lights that flooded into it,
+ * which is all the fragment loop walks; `uLightShadow` then carries, per light and per direction,
+ * how far that light gets before a wall stops it, which drops the rest per pixel.
+ * `uLightVisWidth` 0 means no level is bound and geometry draws no dynamic light.
+ * docs/lights.md § Light stops at walls.
  */
 const DYN_LIGHT_FRAGMENT = /* glsl */ `
             // Gated on the light count and the level being bound, both the same for every
@@ -131,14 +131,10 @@ export class MaterialBank {
   }
 
   /**
-   * Wall texture pixel height, or null if the name doesn't resolve — vanilla's
-   * `textureheight[]` lookup, needed by `raiseToTexture` (`game/specials.ts`)
-   * to find the shortest bottom-texture height among a sector's neighboring
-   * lines. Decodes (and caches, via `GraphicsBank.texture`'s own cache) the
-   * full bitmap rather than reading just the `TEXTURE1`/`TEXTURE2` header,
-   * since this is only ever called from a rarely-firing trigger, not a hot
-   * path — not worth a second, header-only lookup path just to skip
-   * compositing patches that would otherwise never get decoded anyway.
+   * Wall texture pixel height, or null if the name doesn't resolve — vanilla's `textureheight[]`,
+   * for `raiseToTexture` (`game/specials.ts`). Decodes and caches the full bitmap
+   * ({@link GraphicsBank.texture}) rather than reading the `TEXTURE1`/`TEXTURE2` header alone: the
+   * caller is a rarely-firing trigger, not worth a second, header-only lookup path.
    */
   textureHeight(name: string): number | null {
     return this.gfx.texture(name)?.height ?? null;

@@ -51,27 +51,23 @@ interface Playback {
 }
 
 /**
- * The music side of the audio engine: one track at a time, looping, on its own
- * gain node so it sits beside the sfx bus rather than under it.
+ * The music side of the audio engine: one track at a time, looping, on its own gain node so it
+ * sits beside the sfx bus rather than under it.
  *
- * MUS and MIDI are synthesized here (`music/opl.ts` and the WAD's own `GENMIDI`
- * bank), rendered in chunks on the main thread and scheduled onto the
- * `AudioContext` — no worklet, because the chip is cheap next to a frame of
- * this renderer and a worklet would need its own build step (docs/music.md
- * § Getting it to the speakers). An Ogg/FLAC/MP3/WAV track skips all of that
- * and loops as a plain `AudioBufferSourceNode`.
+ * MUS and MIDI are synthesized here (`music/opl.ts` and the WAD's own `GENMIDI` bank), rendered in
+ * chunks on the main thread and scheduled onto the `AudioContext`, with no worklet —
+ * docs/music.md § Getting it to the speakers. An Ogg/FLAC/MP3/WAV track skips all of that and loops
+ * as a plain `AudioBufferSourceNode`.
  *
- * Volume 0 stops playback outright, the way `AudioEngine`'s own 0 does, and
- * raising it again restarts the track from the top.
+ * Volume 0 stops playback outright, the way `AudioEngine`'s own 0 does, and raising it again
+ * restarts the track from the top.
  */
 export class MusicPlayer {
   private ctx: AudioContext | null = null;
   private bus: GainNode | null = null;
   private bank: MusicBank | null = null;
 
-  /**
-   * What `play` was last given, kept so the context or the bank arriving late can still start it.
-   */
+  /** What {@link MusicPlayer.play} was last given, so a late context or bank can still start it. */
   private track: string | null = null;
   private playback: Playback | null = null;
   /** The looping source of an already-decoded container track. */
@@ -79,14 +75,13 @@ export class MusicPlayer {
   /** Guards against a `decodeAudioData` that lands after the track was changed. */
   private decodeToken = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
-  /** Rendering time not yet handed to the profiler — see `takeRenderMs`. */
+  /** Rendering time not yet handed to the profiler — see {@link MusicPlayer.takeRenderMs}. */
   private renderMs = 0;
 
   private _volume: number;
   /**
-   * The master slider's value, pushed in by `AudioEngine` — which owns it and persists it. Held
-   * here only as this player's own start/stop gate: the gain itself is the master node's,
-   * downstream of this bus, so nothing here has to apply it.
+   * The master slider's value, pushed in by `AudioEngine`, which owns and persists it — held here
+   * only as this player's start/stop gate. docs/music.md § Volume.
    */
   private _master = 1;
 
@@ -94,7 +89,10 @@ export class MusicPlayer {
     this._volume = storedVolume(VOLUME_STORAGE_KEY, DEFAULT_VOLUME);
   }
 
-  /** Called by `AudioEngine` once its context exists; `destination` is the master gain. */
+  /**
+   * Called by `AudioEngine` once its context exists.
+   * @param destination  the master gain
+   */
   attach(ctx: AudioContext, destination: AudioNode): void {
     if (this.ctx) return;
     this.ctx = ctx;
@@ -115,9 +113,8 @@ export class MusicPlayer {
   }
 
   /**
-   * 0-1; persisted, so it survives a reload. As with sfx there is no separate
-   * mute: 0 stops the track outright rather than rendering a chip nobody can
-   * hear, and coming back up starts it again from the beginning.
+   * 0-1; persisted. As with sfx there is no separate mute: 0 stops the track outright, and coming
+   * back up starts it again from the beginning. docs/music.md § Volume.
    */
   setVolume(value: number): void {
     const previous = this.audible;
@@ -302,10 +299,9 @@ export class MusicPlayer {
   }
 
   /**
-   * One chunk of chip output, with the song's events applied at the sample they fall on: render up
-   * to the next event, apply every event due there, repeat. Reaching the end wraps to the start —
-   * every DOOM track loops (`I_PlaySong(handle, looping)`) — and resets the chip's voices, so a
-   * note still held at the last event can't hang over the loop.
+   * One chunk of chip output, with the song's events applied at the sample they fall on. Reaching
+   * the end wraps to the start and resets the chip's voices — every DOOM track loops
+   * (`I_PlaySong(handle, looping)`). docs/music.md § Getting it to the speakers.
    */
   private renderChunk(playback: Playback, ctx: AudioContext): AudioBuffer {
     const total = playback.chunkFrames;
@@ -357,7 +353,7 @@ export class MusicPlayer {
  * map itself, each gated on the lump existing. docs/music.md § Which track a level plays.
  */
 export class LevelMusic {
-  /** Only `has` is needed of the bank — structural, so tests can pass a plain lump-name set. */
+  /** Only {@link MusicBank.has} is needed — structural, so tests can pass a lump-name set. */
   private bank: Pick<MusicBank, 'has'>;
   /** `MapInfo.music`'s map-name → track projection of the set's MAPINFO. */
   private byMap: Map<string, string>;
@@ -406,7 +402,7 @@ const SOFT_CLIP_KNEE = 0.7;
 const SOFT_CLIP_STEPS = 4096;
 
 /**
- * The bus' transfer curve: straight through below `SOFT_CLIP_KNEE`, asymptotic above it. A
+ * The bus' transfer curve: straight through below {@link SOFT_CLIP_KNEE}, asymptotic above it. A
  * `WaveShaperNode` clamps its input to -1..1 before looking up, so the curve's ends are also the
  * ceiling — anything past full scale lands there softly instead of squaring off.
  */

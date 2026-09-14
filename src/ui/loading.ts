@@ -36,8 +36,9 @@ export class LoadingScreen {
   }
 
   /**
-   * Raises the bar and fills it. `total` of 0 leaves the bar down: a source whose size is unknown
-   * (an uploaded file, a library file) reports no fraction rather than a lying one.
+   * Raises the bar and fills it.
+   * @param total  0 for a source of unknown size (an uploaded file, a library file), which leaves
+   *               the bar down rather than showing a lying fraction
    */
   progress(loaded: number, total: number): void {
     if (total <= 0) return;
@@ -55,8 +56,8 @@ export class LoadingScreen {
 
   /**
    * Resolves after the browser has had a chance to paint what was just set. The level build that
-   * follows a `show` runs in one synchronous block, so without this the overlay is put up and taken
-   * down inside a single task and never reaches the screen.
+   * follows a {@link LoadingScreen.show} runs in one synchronous block, so without this the overlay
+   * is put up and taken down inside a single task and never reaches the screen.
    */
   painted(): Promise<void> {
     return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));

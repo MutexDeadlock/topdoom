@@ -7,9 +7,8 @@
  */
 
 /**
- * What `Menu` needs of a popup that can cover it. `close` reports whether it *was* up, which is
- * what lets `closeTopOverlay` dismiss exactly one thing per `ESC`; `Menu.overlays` holds them in
- * one ordered list rather than naming them at each of the three sites that walk them.
+ * What `Menu` needs of a popup that can cover it. {@link MenuOverlay.close} reports whether it
+ * *was* up, so one `ESC` dismisses exactly one thing.
  */
 export interface MenuOverlay {
   close(): boolean;
@@ -23,10 +22,8 @@ export class OverlayShell {
    * Takes the **elements**, not their IDs: each popup still looks its own markup up in its field
    * initializers, so an ID renamed in the HTML fails at construction rather than lazily
    * (docs/menu.md § One screen, two jobs).
-   *
-   * `onClose` rather than hiding directly, because what a dismissal *means* belongs to the popup —
-   * the reader drops its pending read, the WAD Library throws its draft away — and both routes in
-   * here have to reach that one answer.
+   * @param onClose  what both dismissals call rather than hiding directly: what one *means* is the
+   *                 popup's — the reader drops its pending read, the WAD Library its draft
    */
   constructor(root: HTMLElement, closeButton: HTMLElement, onClose: () => void) {
     this.root = root;
@@ -42,7 +39,7 @@ export class OverlayShell {
     this.root.classList.remove('hidden');
   }
 
-  /** Hides it, reporting whether it *was* up — `MenuOverlay.close`'s answer. */
+  /** Hides it, reporting whether it *was* up — {@link MenuOverlay.close}'s answer. */
   hide(): boolean {
     if (!this.isOpen) return false;
     this.root.classList.add('hidden');

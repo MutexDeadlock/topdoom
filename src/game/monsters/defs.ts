@@ -1,10 +1,8 @@
 /**
- * The record shapes every monster system passes around, the constants tied to
- * those shapes, and the pure helpers derived from `info.c`/`p_enemy.c`
- * literals. The tables read *through* these shapes are `monsters/tables.ts`;
- * the simulation reading both is `monsters/ai.ts` and `monsters/attacks.ts` —
- * the same `defs`/`tables` split the thing layer makes (docs/conventions.md §
- * The role names). Data and pure functions only. See docs/monster-ai.md.
+ * The record shapes every monster system passes around, the constants tied to those shapes, and
+ * the pure helpers derived from `info.c`/`p_enemy.c` literals — data and pure functions only. The
+ * tables read *through* these shapes are `monsters/tables.ts`, the simulation reading both
+ * `monsters/ai.ts` and `monsters/attacks.ts`. See docs/monster-ai.md.
  */
 import { ThingType } from '../things/doomednums.ts';
 import type { SfxId } from '../../audio/sfx.ts';
@@ -35,20 +33,19 @@ export interface MonsterBody extends Pos3 {
   attackPause: number;
   /**
    * Shots left in the attack currently being played out, and the countdown to the next one
-   * (`AttackStats.shots`).
+   * ({@link AttackStats.shots}).
    */
   burstLeft: number;
   burstTimer: number;
   /**
-   * Set while the pending `burstLeft` is a **melee swing** rather than a ranged
-   * volley: the two share one timer, since a monster is only ever inside one
-   * attack, but they land through different code and pose off different
-   * chains. docs/monster-ai.md § The windup.
+   * Set while the pending {@link MonsterBody.burstLeft} is a **melee swing** rather than a ranged
+   * volley: the two share one timer but land through different code and pose off different chains.
+   * docs/monster-ai.md § The windup.
    */
   swinging: boolean;
   /**
-   * >0 while a lost soul's `A_SkullAttack` charge is in flight, travelling `chargeAngle` at charge
-   * speed until it connects or hits geometry.
+   * >0 while a lost soul's `A_SkullAttack` charge is in flight, travelling
+   * {@link MonsterBody.chargeAngle} at charge speed until it connects or hits geometry.
    */
   chargeTimer: number;
   chargeAngle: number;
@@ -58,11 +55,9 @@ export interface MonsterBody extends Pos3 {
    */
   painTimer: number;
   /**
-   * Vanilla's `MF_INFLOAT`: set while a `flies` monster is changing height to
-   * get past a step it can't cross, cleared the moment it moves again. Only
-   * `settleVertical` reads it — it suppresses the hover-toward-target drift so
-   * the two float rules can't fight each other. Inert for every grounded type.
-   * docs/monster-ai.md § Floating monsters.
+   * Set while a {@link MonsterStats.flies} monster is changing height to get past a step it can't
+   * cross (`MF_INFLOAT`), cleared the moment it moves again. Only `settleVertical` reads it, to
+   * suppress the hover-toward-target drift. docs/monster-ai.md § Floating monsters.
    */
   inFloat: boolean;
 
@@ -70,17 +65,14 @@ export interface MonsterBody extends Pos3 {
   // not seconds, as vanilla's own `A_Chase` measures it; `chaseTimer` is the only thing that
   // converts between the two.
 
-  /**
-   * Which of vanilla's eight movement directions it walks, `DI_NODIR` (8) when it has nowhere to go
-   * — the 8-way grid behind DOOM's zig-zag approach.
-   */
+  /** Which of vanilla's eight directions it walks, {@link DI_NODIR} when it has nowhere to go. */
   movedir: number;
   /**
    * Chase calls left before `newChaseDir` re-routes — vanilla's `movecount`, reseeded to
    * `P_Random() & 15`.
    */
   movecount: number;
-  /** Accumulates real time toward the next chase call (`MonsterStats.chaseInterval`). */
+  /** Accumulates real time toward the next chase call ({@link MonsterStats.chaseInterval}). */
   chaseTimer: number;
   /**
    * Set when a frame's move was refused; the next chase call re-routes, the way vanilla reacts to
@@ -92,36 +84,26 @@ export interface MonsterBody extends Pos3 {
    * being hurt. Keeps an infight from thrashing between targets.
    */
   threshold: number;
-  /**
-   * Vanilla's `MF_JUSTHIT` — "the target just hit the enemy, so fight back": the next missile check
-   * fires regardless of the range roll.
-   */
+  /** Makes the next missile check fire regardless of the range roll — vanilla's `MF_JUSTHIT`. */
   justHit: boolean;
-  /**
-   * Vanilla's `MF_JUSTATTACKED` — "do not attack twice in a row": the next chase call re-routes
-   * instead of attacking.
-   */
+  /** Makes the next chase call re-route instead of attacking — vanilla's `MF_JUSTATTACKED`. */
   justAttacked: boolean;
   /** Chase calls left of vanilla's `reactiontime`; blocks ranged attacks only. */
   reactionTicks: number;
   /**
-   * True while inside an `AttackStats.refire` loop, which re-enters the attack the instant its
-   * state sequence ends.
+   * True while inside an {@link AttackStats.refire} loop, which re-enters the attack the instant
+   * its state sequence ends.
    */
   refiring: boolean;
   /**
-   * A persistent coin flip standing in for which side of `A_Tracer`'s
-   * `gametic & 3` gate this revenant sits on — vanilla's revenant is a guided
-   * or an unguided shooter, not a per-shot roll. Unused unless
-   * `AttackStats.projectile.homing` is set; reseeded on spawn and rerolled on
-   * wake/pain, the events that reshuffle vanilla's parity. See
+   * A persistent coin flip standing in for which side of `A_Tracer`'s `gametic & 3` gate this
+   * revenant sits on. Unused unless {@link AttackStats.projectile}'s `homing` is set. See
    * docs/monster-attacks.md § The revenant's homing missile.
    */
   homingBias: boolean;
   /**
-   * Seconds of *walking* since this monster's last footstep sound, and which
-   * of `MonsterSounds.walk`'s sounds comes next. Both inert for every type
-   * without footsteps (all but the three heavy ones) — see that field's doc.
+   * Seconds of *walking* since this monster's last footstep sound, and which of
+   * {@link MonsterSounds.walk}'s sounds comes next. Both inert for a type without footsteps.
    */
   walkSoundTimer: number;
   walkSoundStep: number;
@@ -138,28 +120,22 @@ export interface MonsterBody extends Pos3 {
 
 export interface AttackStats {
   /**
-   * Map units, **melee only** — this monster's own `MELEERANGE`, which
-   * `meleeThreshold` turns into the actual reach against a given target. Every
-   * stock type uses the vanilla 64. A ranged attack deliberately has no range
-   * field: vanilla gives it none, and giving it one was a real bug. See
-   * docs/monster-ai.md § Melee reach.
+   * Map units, **melee only** — this monster's own `MELEERANGE`, which {@link meleeThreshold} turns
+   * into the actual reach against a given target. A ranged attack deliberately has no range field:
+   * vanilla gives it none. See docs/monster-ai.md § Melee reach.
    */
   range?: number;
   /**
-   * Melee only — what a target that stepped out of reach during the windup
-   * costs. Vanilla's melee actions split on exactly this: `A_TroopAttack`,
-   * `A_HeadAttack` and `A_BruisAttack` fall through to `P_SpawnMissile` and
-   * throw the type's own `ranged` missile after it, while `A_SargAttack` and
-   * `A_SkelFist` simply miss. docs/monster-ai.md § The windup.
+   * Melee only — a target that stepped out of reach during the windup has the type's own
+   * {@link MonsterStats.ranged} missile thrown after it rather than simply being missed.
+   * docs/monster-ai.md § The windup.
    */
   missileOnMiss?: true;
   diceSides: number;
   diceMult: number;
   /**
-   * Hitscan only — bullets per attack (`A_SPosAttack`'s 3 `P_LineAttack`s).
-   * Each is traced as its own bolt, with its own spread angle and its own
-   * damage roll, so a burst can land partially. Absent means the ordinary
-   * single bullet. See docs/monster-attacks.md § Hitscan vs. projectile.
+   * Hitscan only — bullets per attack (`A_SPosAttack`'s 3 `P_LineAttack`s), each traced and rolled
+   * on its own; absent means one. See docs/monster-attacks.md § Hitscan vs. projectile.
    */
   pellets?: number;
   /**
@@ -176,25 +152,21 @@ export interface AttackStats {
   /**
    * One entry per shot, where the volley's shots are not all the same attack — each is read for
    * its roll and its projectile in place of the chain's own, the shot's spacing and the pose
-   * staying the chain's. Absent in vanilla, whose every multi-shot chain repeats one action (the
-   * mancubus's three `A_FatAttack*` are one attack fanned by `pairOffsetsRad`); a DEHACKED patch
-   * can mix them, and NoSp2.wad's cybruiser does — rocket, then the baron's green ball.
+   * staying the chain's. Absent in vanilla; a DEHACKED patch can mix them.
    * docs/monster-attacks.md § A volley of unlike shots.
    *
-   * This is the one field that makes `AttackStats` hold its own type, so **anything walking the
-   * stat table has to walk these too** — `fastVariant` and the projectile sweep in `tables.ts`
-   * both do, and a new traversal that forgets them silently misses a patched volley's shots.
-   * One level only: an entry's own `shotAttacks` is stripped when it is built (dehacked/apply.ts).
+   * This is the one field that makes {@link AttackStats} hold its own type, so **anything walking
+   * the stat table has to walk these too** — `fastVariant` and the projectile sweep in `tables.ts`
+   * both do, and a new traversal that forgets them silently misses a patched volley's shots. One
+   * level only: an entry's own {@link AttackStats.shotAttacks} is stripped when it is built
+   * (dehacked/apply.ts).
    */
   shotAttacks?: readonly AttackStats[];
   /**
-   * Seconds into the attack before it first lands — the `A_FaceTarget` states
-   * vanilla's chain opens with, ahead of the one carrying the damaging action.
-   * Read for **both kinds**: a shot leaves this far into the volley, a claw
-   * connects this far into the swing, and each re-checks its own gate at that
-   * moment rather than at the one the attack was chosen on — which is why
-   * cover saves you from an arch-vile and why backing off spoils a bite.
-   * docs/monster-ai.md § The windup, docs/monster-archvile.md.
+   * Seconds into the attack before it first lands — the `A_FaceTarget` states vanilla's chain
+   * opens with, ahead of the one carrying the damaging action. Read for **both kinds**: a shot
+   * leaves this far into the volley, a claw connects this far into the swing, and each re-checks
+   * its own gate at that moment. docs/monster-ai.md § The windup, docs/monster-archvile.md.
    */
   startDelaySeconds?: number;
   /**
@@ -210,19 +182,15 @@ export interface AttackStats {
    */
   charge?: { speed: number; maxDist: number };
   /**
-   * The pain elemental's `A_PainAttack`/`A_PainShootSkull`: spawns a lost soul
-   * in front of itself and launches it at the elemental's own target.
-   * `game/things.ts` owns the spawning since it holds the `PosedThing` list;
-   * `stepMonsterAI` only reports that one should happen, the same split as
-   * every other attack kind. docs/monster-ai.md § The pain elemental.
+   * The pain elemental's `A_PainAttack`/`A_PainShootSkull`: spawns a lost soul in front of itself
+   * and launches it at the elemental's own target. docs/monster-ai.md § The pain elemental.
    */
   spawn?: { type: number };
   /**
-   * Non-null for a ranged attack that throws a flying projectile sprite rather
-   * than resolving as an instant hitscan bolt. `sprite` is confirmed against
-   * `DOOM2.WAD`'s lump names; `speed` is that missile's own `mobjinfo.speed`
-   * (fracunits per tic, so `× 35`), **not** a tuned value — eyeballing them
-   * was a shipped bug. See docs/monster-attacks.md § Hitscan vs. projectile.
+   * Non-null for a ranged attack that throws a flying projectile sprite rather than resolving as an
+   * instant hitscan bolt. `sprite` is confirmed against `DOOM2.WAD`'s lump names; `speed` is that
+   * missile's own `mobjinfo.speed` (fracunits per tic, so `× 35`), **not** a tuned value. See
+   * docs/monster-attacks.md § Hitscan vs. projectile.
    */
   projectile?: {
     sprite: string;
@@ -235,25 +203,20 @@ export interface AttackStats {
      */
     pairOffsetsRad?: number[][];
     /**
-     * Cyberdemon only: its missile is a real `MT_ROCKET`, whose death state is
-     * the one monster-projectile death state that calls `A_Explode`. Every
-     * other monster fireball genuinely has no splash in vanilla either — this
-     * isn't a simplification. docs/monster-attacks.md § Hitscan vs. projectile.
+     * Cyberdemon only: its missile is a real `MT_ROCKET`, the one monster projectile whose death
+     * state calls `A_Explode`. docs/monster-attacks.md § Hitscan vs. projectile.
      */
     splash?: { radius: number; damage: number };
     /**
-     * Revenant only: `MT_TRACER`, the one monster projectile with a homing
-     * flight state. Marks the *type* as homing-capable; whether a given shot
-     * homes is `MonsterBody.homingBias`. `game/projectiles.ts`'s `advanceHoming`
-     * implements the turn.
+     * Revenant only: `MT_TRACER`. Marks the *type* as homing-capable; whether a given shot homes is
+     * {@link MonsterBody.homingBias}. `game/projectiles.ts`'s `advanceHoming` implements the turn.
      */
     homing?: boolean;
   };
   /**
-   * `P_CheckMissileRange`'s distance falloff. `rangeFalloffScale` (default 1)
-   * shrinks distance before capping — vanilla halves it for the types it
-   * special-cases; `rangeFalloffCap` (default 200) is its clamp, except the
-   * cyberdemon's tighter 160. docs/monster-ai.md § Attacking.
+   * `P_CheckMissileRange`'s distance falloff: {@link AttackStats.rangeFalloffScale} (default 1)
+   * shrinks distance before capping, {@link AttackStats.rangeFalloffCap} (default 200) is its
+   * clamp. docs/monster-ai.md § Attacking.
    */
   rangeFalloffScale?: number;
   rangeFalloffCap?: number;
@@ -268,10 +231,8 @@ export interface AttackStats {
    */
   maxOffsetDist?: number;
   /**
-   * Arch-vile only (`A_VileAttack`), replacing the hitscan-tracer stand-in:
-   * guaranteed direct damage (`diceSides:1, diceMult:20` encodes vanilla's
-   * unrolled literal) plus an upward launch, then a radius blast centred near
-   * the victim rather than the vile. Applied only if the sight check at fire
+   * Arch-vile only (`A_VileAttack`): guaranteed direct damage plus an upward launch, then a radius
+   * blast centred near the victim rather than the vile, applied only if the sight check at fire
    * time passes — `monsters/vile.ts`. docs/monster-archvile.md.
    */
   blast?: { knockUpSpeed: number; splashRadius: number; splashDamage: number };
@@ -305,11 +266,10 @@ export interface MonsterSounds {
    */
   melee?: SfxId;
   /**
-   * The sound the swing *starts* on, a `startDelaySeconds` windup ahead of the
-   * one above: `mobjinfo.attacksound`, which `A_Chase` plays on entering
-   * `meleestate` (the demon's `sgtatk`), and `A_SkelWhoosh`'s `skeswg` on the
-   * revenant's first swing state, which occupies the same moment. Plays
-   * whether or not the swing goes on to land.
+   * The sound the swing *starts* on, a {@link AttackStats.startDelaySeconds} windup ahead of the
+   * one above: `mobjinfo.attacksound`, which `A_Chase` plays on entering `meleestate` (the demon's
+   * `sgtatk`), and `A_SkelWhoosh`'s `skeswg` on the revenant's first swing state, which occupies
+   * the same moment. Plays whether or not the swing goes on to land.
    */
   meleeWindup?: SfxId;
   /**
@@ -317,7 +277,7 @@ export interface MonsterSounds {
    * `A_SPosAttack`/`A_CPosAttack`'s `shotgn`. Doubles as the lost soul's
    * `A_SkullAttack` charge launch (`mobjinfo.attacksound`, `sklatk`), the same
    * "the attack fires now" moment. A projectile-thrower has none: the missile's
-   * own launch sound covers it (`game.ts`'s `PROJECTILE_SOUNDS`), exactly as in
+   * own launch sound covers it (`spritefx/tables.ts`'s `PROJECTILE_SOUNDS`), exactly as in
    * vanilla.
    */
   attack?: SfxId;
@@ -327,24 +287,16 @@ export interface MonsterSounds {
    */
   windup?: SfxId;
   /**
-   * Footsteps, and how far apart. Only the three heavy monsters have any
-   * (`A_Hoof`/`A_Metal`/`A_BabyMetal` sit on individual walk states), and they
-   * matter more here than in vanilla: a wide top-down view still can't show
-   * what is stomping toward you from the next room. Vanilla's cyberdemon
-   * alternates `hoof` and `metal` at an uneven 18/6-tic spacing within its
-   * 24-tic run loop; `sounds` cycling on one even interval is the accepted
-   * simplification, since this engine interpolates the walk instead of stepping
-   * a state chain.
+   * Footsteps, and how far apart: only the three heavy monsters have any, and `sounds` cycles on
+   * one even interval rather than vanilla's per-state spacing. See docs/audio.md § Monsters.
    */
   walk?: { sounds: readonly SfxId[]; interval: number };
 }
 
 export interface MonsterStats {
   /**
-   * Map units/sec while chasing, **derived from vanilla, not tuned by feel**:
-   * `speed × (A_Chase states in the walk loop) × 35 / (tics in the loop)`,
-   * with no per-tic accumulation to lose in translation. See docs/monster-ai.md
-   * § Timings and damage come from vanilla, not from feel.
+   * Map units/sec while chasing, **derived from vanilla, not tuned by feel**. See
+   * docs/monster-ai.md § Timings and damage come from vanilla, not from feel.
    */
   speed: number;
   /**
@@ -363,23 +315,20 @@ export interface MonsterStats {
    */
   radius: number;
   /**
-   * Vanilla's `mobjinfo.mass`, the genuine per-type figure. Feeds
-   * `thrustSpeed`, `P_DamageMobj`'s
-   * horizontal knockback, so a cyberdemon barely budges from a hit that
-   * staggers a zombieman. The arch-vile's separate *vertical* launch
-   * (`VILE_KNOCKUP_SPEED`) still uses a flat 100. docs/movement.md § Knockback.
+   * Vanilla's `mobjinfo.mass`, the genuine per-type figure. Feeds {@link thrustSpeed},
+   * `P_DamageMobj`'s horizontal knockback, so a cyberdemon barely budges from a hit that staggers a
+   * zombieman. The arch-vile's separate *vertical* launch (`VILE_KNOCKUP_SPEED`) uses a flat 100.
+   * docs/movement.md § Knockback.
    */
   mass: number;
   melee: AttackStats | null;
   ranged: AttackStats | null;
-  /** This type's vanilla sounds — see `MonsterSounds`. */
   sounds: MonsterSounds;
   /**
-   * `mobjinfo.height` — this body's real vertical extent, 56 to 110 across the
-   * roster. Every fit/reach test that knows *which* body it is asking about
-   * uses this rather than one shared figure: a cyberdemon is nearly twice an
-   * imp, which decides whether a crusher catches it and whether it fits through
-   * a low opening. See `BODY_HEIGHT_FALLBACK`.
+   * `mobjinfo.height` — this body's real vertical extent, 56 to 110 across the roster. Every
+   * fit/reach test that knows *which* body it is asking about uses this rather than one shared
+   * figure: a cyberdemon is nearly twice an imp, which decides whether a crusher catches it and
+   * whether it fits through a low opening. See {@link BODY_HEIGHT_FALLBACK}.
    */
   height: number;
   /**
@@ -393,11 +342,10 @@ export interface MonsterStats {
    */
   painDuration: number;
   /**
-   * Vanilla's `MF_FLOAT | MF_NOGRAVITY` — cacodemon, lost soul and pain
-   * elemental only. Such a monster never falls, hovers toward its target's
-   * mid-height, changes height instead of turning when a step blocks it
-   * (`P_Move`'s `floatok` branch), and is exempt from the dropoff rule.
-   * See docs/monster-ai.md § Floating monsters.
+   * Vanilla's `MF_FLOAT | MF_NOGRAVITY` — cacodemon, lost soul and pain elemental only. Such a
+   * monster never falls, hovers toward its target's mid-height, changes height instead of turning
+   * when a step blocks it, and is exempt from the dropoff rule. See docs/monster-ai.md § Floating
+   * monsters.
    */
   flies?: boolean;
   /**
@@ -410,22 +358,20 @@ export interface MonsterStats {
 
 export interface MonsterAttack {
   /**
-   * `'vileWindup'` is purely cosmetic: fired when a `blast` attack *starts*,
-   * so `game.ts` can show the warning flame the player reacts to. Its
-   * `damage`/`angleRad` are unused.
+   * `'vileWindup'` is purely cosmetic: fired when an {@link AttackStats.blast} attack *starts*, so
+   * `MonsterAttacks.resolve` can spawn the warning flame (`spawnWindupFire`) the player reacts to.
+   * Its {@link MonsterAttack.damage} and {@link MonsterAttack.angleRad} are unused.
    *
-   * `'spawn'` is the pain elemental's `A_PainAttack`, also fired at attack
-   * start and carrying no damage of its own — `angleRad` is the elemental's
-   * facing, all `spawnLostSoul` needs to place the new monster.
+   * `'spawn'` is the pain elemental's `A_PainAttack`, also fired at attack start and carrying no
+   * damage of its own — {@link MonsterAttack.angleRad} is the elemental's facing, all
+   * `spawnLostSoul` needs to place the new monster.
    */
   kind: 'melee' | 'ranged' | 'resurrect' | 'vileWindup' | 'spawn';
   damage: number;
   /**
-   * The individual rolls making up `damage` — one per bullet
-   * (`AttackStats.pellets`). A hitscan attack traces each separately, since
-   * each flies its own spread angle and hits or misses on its own; every other
-   * kind reads the `damage` sum and ignores these. Empty for the attacks that
-   * roll nothing at all (`spawn`, `vileWindup`, `resurrect`).
+   * The individual rolls making up {@link MonsterAttack.damage} — one per bullet
+   * ({@link AttackStats.pellets}), which a hitscan attack traces separately; every other kind reads
+   * the sum. Empty for the attacks that roll nothing at all (`spawn`, `vileWindup`, `resurrect`).
    */
   bullets: number[];
   /**
@@ -445,14 +391,10 @@ export interface MonsterAttack {
     splash?: { radius: number; damage: number };
     homing?: boolean;
   }[];
-  /**
-   * Set only for the arch-vile's real `A_VileAttack` — see `AttackStats.blast`'s doc.
-   * `monsters/vile.ts` applies direct damage plus knockback, then a radius blast, instead of the
-   * generic hitscan-tracer path every other non-projectile ranged monster uses.
-   */
+  /** Set only for the arch-vile's `A_VileAttack` — see {@link AttackStats.blast}. */
   blast?: { knockUpSpeed: number; splashRadius: number; splashDamage: number };
   /**
-   * Set only for a `'resurrect'` attack (`AttackStats.resurrects`): the raised corpse's
+   * Set only for a `'resurrect'` attack ({@link MonsterStats.resurrects}): the raised corpse's
    * `PosedThing` ID — see `ThingLayer.update`, which applies the actual revival since
    * `stepMonsterAI` has no access to the thing list itself.
    */
@@ -460,11 +402,11 @@ export interface MonsterAttack {
 }
 
 /**
- * A fired `MonsterAttack`, plus who fired it and at what — what
- * `ThingLayer.update` hands back for the caller to realize (a tracer, a
- * projectile, `damage` on whatever it actually reached). Lives here rather than
- * with `ThingLayer`: everything it adds to `MonsterAttack` is a plain ID or
- * coordinate, so it carries no dependency on the thing storage at all.
+ * A fired {@link MonsterAttack}, plus who fired it and at what — what `ThingLayer.update` hands
+ * back for the caller to realize (a tracer, a projectile, {@link MonsterAttack.damage} on whatever
+ * it actually reached). Lives here rather than with `ThingLayer`: everything it adds to
+ * {@link MonsterAttack} is a plain ID or coordinate, so it carries no dependency on the thing
+ * storage.
  */
 export interface MonsterAttackEvent extends MonsterAttack, Pos3 {
   /**
@@ -526,7 +468,7 @@ export function chaseStep(stats: MonsterStats): number {
 
 /**
  * Vanilla's `MELEERANGE` (`p_local.h`: `64*FRACUNIT`). Not the melee threshold itself — see
- * `meleeThreshold`.
+ * {@link meleeThreshold}.
  */
 export const MELEE_RANGE = 64;
 
@@ -581,15 +523,13 @@ export function thrustSpeed(damage: number, mass: number): number {
 }
 
 /**
- * Whether a monster-fired *projectile* deals no damage to `victimType` —
- * `PIT_CheckThing`'s "don't hit same species as originator". Barons and hell
- * knights are one species in both directions, vanilla's one hardcoded
- * cross-type pairing. Projectiles only: hitscan has no species check, so
- * zombiemen really do gun each other down.
+ * Whether a monster-fired *projectile* deals no damage to `victimType` — `PIT_CheckThing`'s "don't
+ * hit same species as originator", barons and hell knights counting as one. Projectiles only:
+ * hitscan has no species check.
  *
- * **This is not a pass-through** — the missile stops dead on a same-species
- * body. `game/projectiles.ts: bodyStruckBy` owns that distinction; docs/monster-ai.md §
- * Infighting has why it decides whole fights on a crowded map.
+ * **This is not a pass-through** — the missile stops dead on a same-species body.
+ * `game/projectiles.ts: bodyStruckBy` owns that distinction; docs/monster-ai.md § Infighting has
+ * why it decides whole fights on a crowded map.
  */
 export function sameSpecies(shooterType: number, victimType: number): boolean {
   if (shooterType === victimType) return true;
@@ -598,11 +538,9 @@ export function sameSpecies(shooterType: number, victimType: number): boolean {
 }
 
 /**
- * Vanilla's eight movement directions in `dirtype_t` order (E, NE, N, NW, W,
- * SW, S, SE), plus `DI_NODIR` for "nowhere to go". Monsters only ever walk
- * along these, never straight at the target — the reason a DOOM monster
- * approaches in visible zig-zags instead of gliding at you on a perfect
- * bearing.
+ * Vanilla's eight movement directions in `dirtype_t` order (E, NE, N, NW, W, SW, S, SE), plus
+ * {@link DI_NODIR} for "nowhere to go" — the only headings a monster walks along.
+ * docs/monster-ai.md § Movement.
  */
 export const DI_NODIR = 8;
 /**
@@ -616,9 +554,9 @@ export const DIR_X = [1, 0.71716, 0, -0.71716, -1, -0.71716, 0, 0.71716];
 export const DIR_Y = [0, 0.71716, 1, 0.71716, 0, -0.71716, -1, -0.71716];
 
 /**
- * The facing each `movedir` turns a monster to, radians. Derived from the two tables above with
- * the same `atan2` the caller would have used, once at load rather than per walking monster per
- * tic: `movedir` indexes constants, so the answer is one of eight values.
+ * The facing each {@link MonsterBody.movedir} turns a monster to, radians. Derived from the two
+ * tables above with the same {@link atan2} the caller would have used, once at load rather than per
+ * walking monster per tic: the answer is one of eight values.
  */
 export const DIR_ANGLE = DIR_X.map((x, i) => atan2(DIR_Y[i], x));
 
@@ -634,29 +572,23 @@ export function monsterShootZ(bodyHeight: number): number {
 }
 
 /**
- * The width `spawnPlayerShot`'s **locked-on** test uses, and the fallback
- * `blockRadius` for a shootable type with no `MonsterStats`/`INERT_SHOOTABLE`
- * entry. One shared box on purpose *here*: it keeps the lock from behaving like
- * homing, so a spread pellet misses the clicked monster at exactly the width any
- * other bullet would — and it costs nothing on a wide monster, since a pellet
- * that fails it falls through to `raycastMonster`, which tests that body at its
- * real `MonsterStats.radius`. Everything a shot can actually collide with is
- * per-species; only this one gate isn't.
+ * The width `spawnPlayerShot`'s **locked-on** test uses, and the fallback `blockRadius` for a
+ * shootable type with no {@link MonsterStats}/`INERT_SHOOTABLE` entry. One shared box on purpose
+ * *here*: it keeps the lock from behaving like homing, so a spread pellet misses the clicked
+ * monster at exactly the width any other bullet would. docs/combat.md § How a shot deals damage.
  */
 export const MONSTER_HIT_RADIUS = 24;
 /**
- * The vertical half of that same deliberately-shared auto-aim lock box, and
- * shared for the identical reason — the lock must not behave like homing. Left
- * at the 64 the engine used everywhere before bodies got their real
- * `mobjinfo.height`, since retuning auto-aim is a separate question from
- * getting the physical heights right.
+ * The vertical half of that same deliberately-shared lock box, shared for the same reason. The
+ * value is tuned by feel: vanilla has no lock box to take a figure from.
+ * docs/combat.md § How a shot deals damage.
  */
 export const MONSTER_LOCK_HEIGHT = 64;
 /**
- * `PosedThing.bodyHeight` for a shootable type carrying no `mobjinfo.height` of
- * its own — the same last-resort role `MONSTER_HIT_RADIUS` plays for the width,
- * and reached by nothing in the stock roster, every member of which has a real
- * height in `MONSTER_STATS`/`INERT_SHOOTABLE`/`BARREL_HEIGHT`.
+ * `PosedThing.bodyHeight` for a shootable type carrying no `mobjinfo.height` of its own — the same
+ * last-resort role {@link MONSTER_HIT_RADIUS} plays for the width, and reached by nothing in the
+ * stock roster, every member of which has a real height in
+ * `MONSTER_STATS`/`INERT_SHOOTABLE`/`BARREL_HEIGHT`.
  *
  * Deliberately a last resort rather than a shared figure: heights gate movement
  * as well as shots, so one number for every body has a crusher catching bodies

@@ -1,13 +1,7 @@
 /**
  * MAP30's Icon of Sin: the boss eye's spitter, the spawn cube in flight, telefrag on landing and
- * the brain's death sequence. See docs/monster-iconofsin.md.
- *
- * Three `ThingType` members drive it. `bossShooter` (`MT_BOSSSPIT`) is the invisible eye that does
- * the spitting, and the *only* thing that makes a map an Icon of Sin map; `bossTarget` is where a
- * cube is aimed, `bossBrain` the shootable target itself. The first two are
- * `MF_NOBLOCKMAP|MF_NOSECTOR` in `info.c` and neither has a sprite of its own, which is why both
- * stay out of `THING_SPRITES` and are read straight off `map.things` here — the same treatment
- * `SpecialsController.findTeleportDestination` gives the teleport-landing marker.
+ * the brain's death sequence, driven by three {@link ThingType} members read straight off
+ * `map.things`. See docs/monster-iconofsin.md.
  */
 import type { DoomMap, Thing } from '../../wad/map.ts';
 import type { SpriteBank } from '../../wad/sprites.ts';
@@ -29,13 +23,9 @@ import { atan2, cos, sin } from '../../util/fdlibm.ts';
 
 /**
  * Where the eye sights from, above its own floor: `MT_BOSSSPIT`'s `mobjinfo.height` of 32, less the
- * `height >> 2` `P_CheckSight` docks off its `sightzstart`.
- *
- * `hasLineOfSight` always lifts the origin it is handed by `SIGHT_EYE_HEIGHT`, which is the right
- * approximation for everything else in the game and wrong for a 32-tall thing sitting in a 32-tall
- * ceiling slot — it would sight from *above* its own ceiling. Subtracting that lift back off is
- * what makes the wedge really start inside the slot. See docs/monster-iconofsin.md § Waking the
- * eye.
+ * `height >> 2` `P_CheckSight` docks off its `sightzstart`. The lift `hasLineOfSight` adds,
+ * {@link SIGHT_EYE_HEIGHT}, comes back off at the call. See
+ * docs/monster-iconofsin.md § Waking the eye.
  */
 const SHOOTER_SIGHT_Z = 32 - (32 >> 2);
 
@@ -68,9 +58,10 @@ const SPAWN_FIRE_FRAME_SECONDS = 4 * DOOM_TIC;
 
 /**
  * The radius the *player* is telefragged against when a cube lands — **tuned by feel**, mid-range
- * across `SPAWN_CUBE_MONSTERS`' 20-to-48 `mobjinfo.radius` spread, so a spawn spot is uniformly
- * lethal to stand on rather than lethal only when the lottery picks a fat monster. The monster half
- * of the stomp runs off each body's own `blockRadius` inside `ThingLayer.spawnMonster`.
+ * across {@link SPAWN_CUBE_MONSTERS}' 20-to-48 `mobjinfo.radius` spread, so a spawn spot is
+ * uniformly lethal to stand on rather than lethal only when the lottery picks a fat monster. The
+ * monster half of the stomp runs off each body's own `blockRadius` inside
+ * `ThingLayer.spawnMonster`.
  */
 const PLAYER_TELEFRAG_RADIUS = 32;
 
@@ -106,7 +97,10 @@ const EXPLODE_FRAME_SECONDS = 10 * DOOM_TIC;
 const EXPLODE_CHAIN_INTERVAL = 3 * EXPLODE_FRAME_SECONDS;
 const EXPLODE_CHAIN_COUNT = 8;
 
-/** Where a cube is headed and how far along it is — everything `makeCube` needs beside a position. */
+/**
+ * Where a cube is headed and how far along it is — everything {@link IconOfSin.makeCube} needs
+ * beside a position.
+ */
 interface CubeFlight {
   angleRad: number;
   /** The `MT_BOSSTARGET` it was aimed at — where it turns into a monster. */
@@ -125,7 +119,7 @@ interface SpawnCube extends Pos3, CubeFlight {
   drawPrevZ: number;
 }
 
-/** What an `IconOfSin` is built with, beside the map it reads its three boss things off. */
+/** What an {@link IconOfSin} is built with, beside the map it reads its three boss things off. */
 export interface IconOfSinOptions {
   ctx: CombatContext;
   effects: SpriteFxLayer;
@@ -159,7 +153,7 @@ export class IconOfSin {
    * `A_BrainAwake`'s `braintargets`, in map-thing order; filled on waking, exactly as vanilla does.
    */
   private targets: Pos3[] = [];
-  /** `braintargeton` — the round-robin cursor into `targets`. */
+  /** `braintargeton` — the round-robin cursor into {@link IconOfSin.targets}. */
   private targetIndex = 0;
   /**
    * `A_BrainSpit`'s file-scope `easy`, flipped on every call and used to skip every other spit on
@@ -170,9 +164,9 @@ export class IconOfSin {
   private awake = false;
   private spitTimer = 0;
   private cubes: SpawnCube[] = [];
-  /** `draw`'s interpolated position, reused per cube so drawing allocates nothing. */
+  /** {@link IconOfSin.draw}'s interpolated position, reused per cube so it allocates nothing. */
   private readonly drawAt: Pos3 = { x: 0, y: 0, z: 0 };
-  /** Counts down from `BRAIN_DEATH_TO_EXIT` once the brain dies; -1 while it's still alive. */
+  /** Counts down from {@link BRAIN_DEATH_TO_EXIT} once the brain dies; -1 while it's alive. */
   private exitTimer = -1;
   private explodeTimer = 0;
 
@@ -189,17 +183,19 @@ export class IconOfSin {
   }
 
   /**
-   * Whether the brain is dead and the level is on its way out, so `onExit` is now unavoidable.
-   * `game.ts` reads it to keep the death overlay and `R` off a level that is already ending.
-   * docs/death.md § Dying on the way out.
+   * Whether the brain is dead and the level is on its way out, so {@link IconOfSin.onExit} is
+   * unavoidable. `game.ts` reads it to keep the death overlay and `R` off a level that is already
+   * ending. docs/death.md § Dying on the way out.
    */
   get exiting(): boolean {
     return this.exitTimer >= 0;
   }
 
   /**
-   * Everything mutable for a savegame, or null on a map with no eye (nothing to save). Cubes name
-   * their target by index into `targets`, since the live field is a reference into that array.
+   * Everything mutable for a savegame. Cubes name their target by index into
+   * {@link IconOfSin.targets}, since the live field is a reference into that array.
+   *
+   * @returns null on a map with no eye, which has nothing to save
    */
   snapshot(): IconSnapshot | null {
     if (!this.shooter) return null;
@@ -224,8 +220,9 @@ export class IconOfSin {
   }
 
   /**
-   * Restore twin of `snapshot`; each cube goes back through `makeCube`, the same builder
-   * `brainSpit` uses. docs/savegames.md § Apply order.
+   * Restore twin of {@link IconOfSin.snapshot}; each cube goes back through
+   * {@link IconOfSin.makeCube}, the same builder {@link IconOfSin.brainSpit} uses.
+   * docs/savegames.md § Apply order.
    */
   restore(s: IconSnapshot | null): void {
     if (!s || !this.shooter) return;
@@ -261,8 +258,8 @@ export class IconOfSin {
 
   /**
    * One frame of the whole sequence. **Must run inside the caller's
-   * `SpriteFxLayer.beginFrame`/`endFrame` pair**: the cubes draw through that batch, exactly as
-   * `ProjectileLayer.update` does.
+   * {@link SpriteFxLayer.beginFrame}/{@link SpriteFxLayer.endFrame} pair**: the cubes draw through
+   * that batch, exactly as `ProjectileLayer.update` does.
    */
   update(dt: number): void {
     if (this.exitTimer >= 0) {
@@ -284,9 +281,9 @@ export class IconOfSin {
   }
 
   /**
-   * Draws every cube still in flight, interpolated `alpha` of the way through
-   * the last tic. Runs inside the caller's `SpriteFxLayer.beginFrame`/`endFrame`
-   * pair, same as the cube's own update. docs/frameloop.md § Interpolation.
+   * Draws every cube still in flight, interpolated `alpha` of the way through the last tic. Runs
+   * inside the caller's {@link SpriteFxLayer.beginFrame}/{@link SpriteFxLayer.endFrame} pair, same
+   * as {@link IconOfSin.update}. docs/frameloop.md § Interpolation.
    */
   draw(alpha: number): void {
     for (const c of this.cubes) {
@@ -299,9 +296,11 @@ export class IconOfSin {
 
   /**
    * One `MT_SPAWNSHOT` in flight, animator armed and interpolation seeded from where it stands.
-   * Null when this WAD set can't draw `BOSF` — the same silent drop a missing missile sprite gets.
-   * Shared by `brainSpit` and the savegame restore, so a restored cube can't be built differently
-   * from a freshly spat one.
+   * Shared by {@link IconOfSin.brainSpit} and the savegame restore, so a restored cube can't be
+   * built differently from a freshly spat one.
+   *
+   * @returns null when this WAD set can't draw `BOSF` — the same silent drop a missing missile
+   *          sprite gets
    */
   private makeCube(at: Pos3, flight: CubeFlight): SpawnCube | null {
     const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, 'BOSF', CUBE_FRAMES, CUBE_FRAME_SECONDS);

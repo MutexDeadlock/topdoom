@@ -1,10 +1,7 @@
 /**
- * The vanilla stat tables every monster is looked up in — `MONSTER_STATS`, the
- * two `INERT_SHOOTABLE` oddities, and nightmare's derived `FAST_MONSTER_STATS`
- * — keyed on `things/doomednums.ts` and shaped by `monsters/defs.ts`. Data
- * only, lifted from `info.c`/`p_enemy.c`, never tuned by feel; the simulation
- * reading it is `monsters/ai.ts` and `monsters/attacks.ts`. See
- * docs/monster-ai.md.
+ * The vanilla stat tables every monster is looked up in — {@link MONSTER_STATS}, the two
+ * {@link INERT_SHOOTABLE} oddities, and nightmare's derived {@link FAST_MONSTER_STATS}. Data only,
+ * lifted from `info.c`/`p_enemy.c`, never tuned by feel. See docs/monster-ai.md.
  */
 import { WEAPON_RANGE } from '../world.ts';
 import { ThingType } from '../things/doomednums.ts';
@@ -16,34 +13,30 @@ import { MOBJ_INFO } from '../dehacked/tables.ts';
 
 /**
  * Vanilla's own `FATSPREAD` (`ANG90/8`) — the mancubus's fireball-pair fan angle, see
- * `AttackStats.projectile.pairOffsetsRad`.
+ * {@link AttackStats.projectile}'s `pairOffsetsRad`.
  */
 const FATSPREAD = Math.PI / 2 / 8;
 
 /**
- * Vanilla's `A_VileAttack` launch, `momz = 1000*FRACUNIT/mass` (`× 35` for
- * per-tic → units/sec). Deliberately uses vanilla's *default* mass 100 for
- * every victim rather than `MonsterStats.mass`, unlike `thrustSpeed` above —
- * an accepted approximation for one attack on one monster type.
+ * Vanilla's `A_VileAttack` launch, `momz = 1000*FRACUNIT/mass` (`× 35` for per-tic → units/sec).
+ * Deliberately uses vanilla's *default* mass 100 for every victim rather than
+ * {@link MonsterStats.mass}, unlike `defs.ts`'s `thrustSpeed` — an accepted approximation for one
+ * attack on one monster type.
  *
- * Lives here rather than with the rest of the vile's code in `monsters/vile.ts`
- * because `MONSTER_STATS` below reads it, and that file already imports this
- * one.
+ * Lives here rather than with the rest of the vile's code in `monsters/vile.ts` because
+ * {@link MONSTER_STATS} below reads it, and that file already imports this one.
  */
 const VILE_KNOCKUP_SPEED = (1000 / 100) * 35;
 
 /**
- * The two `MONSTER_TYPES` members with no entry in `MONSTER_STATS` below.
- * `MT_KEEN` and `MT_BOSSBRAIN` are `MF_SOLID|MF_SHOOTABLE` with no seestate,
- * meleestate or missilestate at all, so neither wakes, moves or attacks in
- * vanilla either. What a monster normally reads off `MonsterStats` that still
- * applies to something which only stands there and dies lives here instead: its
- * real `mobjinfo.radius`, and the two sounds `A_Pain`/`A_Scream` play.
+ * The two `MONSTER_TYPES` members with no entry in {@link MONSTER_STATS} below — `MT_KEEN` and
+ * `MT_BOSSBRAIN`, which neither wake, move nor attack — and what a {@link MonsterStats} would
+ * otherwise carry for them: the real `mobjinfo.radius`, and the two sounds `A_Pain`/`A_Scream`
+ * play. `ThingLayer.damage` is the only consumer.
  *
  * `unattenuated` is the brain's `A_BrainPain`/`A_BrainScream` calling `S_StartSound(NULL, …)`, the
  * same rule `things.ts`'s `BOSS_TYPES` applies to the cyberdemon and spider mastermind; Keen's own
- * are ordinary positional calls. `ThingLayer.damage` is the only consumer. No pain *chance* here:
- * neither type has one worth rolling (256 and 255 of 256). docs/monster-ai.md § Commander Keen.
+ * are ordinary positional calls. docs/monster-ai.md § Commander Keen.
  */
 export const INERT_SHOOTABLE: Record<
   number,
@@ -54,17 +47,18 @@ export const INERT_SHOOTABLE: Record<
 };
 
 /**
- * One attack as written out here. `duration` — and the volley's `shots`/`shotInterval` and the
- * windup's `startDelaySeconds` — are walked out of the chain's own states by the fill below, so a
- * row carries them only where `FRAME_OVERRIDES` says the shipped reading wins.
+ * One attack as written out here. {@link AttackStats.duration} — and the volley's
+ * {@link AttackStats.shots}/{@link AttackStats.shotInterval} and the windup's
+ * {@link AttackStats.startDelaySeconds} — are walked out of the chain's own states by the fill
+ * below, so a row carries them only where {@link FRAME_OVERRIDES} says the shipped reading wins.
  */
 type AttackSeed = Omit<AttackStats, 'duration'> & Partial<Pick<AttackStats, 'duration'>>;
 
 /**
- * A stat row as written out here: every field no state chain can carry. `speed`, `chaseInterval`,
- * `painDuration` and each attack's timings cannot be written here at all — the fill loop below
- * writes them from vanilla's own chains, which is what turns these seeds into complete
- * `MonsterStats`.
+ * A stat row as written out here: every field no state chain can carry.
+ * {@link MonsterStats.speed}, {@link MonsterStats.chaseInterval}, {@link MonsterStats.painDuration}
+ * and each attack's timings cannot be written here at all — the fill loop below writes them from
+ * vanilla's own chains, which is what turns these seeds into complete {@link MonsterStats}.
  */
 type MonsterSeed = Omit<MonsterStats, 'speed' | 'chaseInterval' | 'painDuration' | 'melee' | 'ranged'> & {
   melee: AttackSeed | null;
@@ -73,13 +67,14 @@ type MonsterSeed = Omit<MonsterStats, 'speed' | 'chaseInterval' | 'painDuration'
 
 /**
  * Per-doomednum combat stats, covering every `MONSTER_TYPES` entry except the two in
- * `INERT_SHOOTABLE` above, and completed by the fill loop below (§ the fill loop,
+ * {@link INERT_SHOOTABLE} above, and completed by the fill loop below (§ the fill loop,
  * docs/dehacked.md § Frames).
  *
- * **Both timing and damage are lifted from vanilla, not tuned by feel.** `painChance`, `radius`,
- * `height`, `mass` and the sounds are `mobjinfo` fields; `diceSides`/`diceMult` are each attack's
- * own literal roll from `p_enemy.c`, or `PIT_CheckThing`'s universal missile formula. Splash is
- * correctly non-uniform — only the cyberdemon's `MT_ROCKET` explodes in vanilla. See
+ * **Both timing and damage are lifted from vanilla, not tuned by feel.**
+ * {@link MonsterStats.painChance}, {@link MonsterStats.radius}, {@link MonsterStats.height},
+ * {@link MonsterStats.mass} and the sounds are `mobjinfo` fields; each attack's
+ * {@link AttackStats.diceSides}/{@link AttackStats.diceMult} is its own literal roll from
+ * `p_enemy.c`, or `PIT_CheckThing`'s universal missile formula. See
  * docs/monster-ai.md § Timings and damage come from vanilla, not from feel, and
  * docs/monster-attacks.md § Hitscan vs. projectile for which types get which attack.
  */
@@ -457,8 +452,8 @@ const FRAME_OVERRIDES: Record<number, { melee?: true; ranged?: true; windup?: tr
  * sounds, the damage rolls — is `mobjinfo`/`p_enemy.c` data that no state chain carries, and stays
  * written out above.
  *
- * Runs before `deriveFastStats` and `TALLEST_BODY_HEIGHT` below, which read the finished table, and
- * before `dehacked/apply.ts` snapshots it for `resetDehacked`.
+ * Runs before {@link deriveFastStats} and {@link TALLEST_BODY_HEIGHT} below, which read the
+ * finished table, and before `dehacked/apply.ts` snapshots it for `resetDehacked`.
  */
 for (const [key, m] of Object.entries(pristineFrameTables().monsters)) {
   const dn = Number(key);
@@ -489,15 +484,16 @@ for (const [key, m] of Object.entries(pristineFrameTables().monsters)) {
 }
 
 /**
- * An `AttackStats` whose `projectile` is known present — what `forEachProjectileAttack` hands back.
+ * An {@link AttackStats} whose {@link AttackStats.projectile} is known present — what
+ * {@link forEachProjectileAttack} hands back.
  */
 type ProjectileAttack = AttackStats & { projectile: NonNullable<AttackStats['projectile']> };
 
 /**
- * Every `AttackStats` in the table that fires the named flight sprite. In vanilla one `mobjinfo`
- * *is* the imp's fireball wherever it comes from, so a patch that edits `MT_TROOPSHOT` has to move
- * every stat block naming `BAL1` together — `dehacked/apply.ts` rewrites their stats through this
- * and `dehacked/frames.ts` rekeys them when the sprite itself is patched.
+ * Every {@link AttackStats} in the table that fires the named flight sprite. In vanilla one
+ * `mobjinfo` *is* the imp's fireball wherever it comes from, so a patch that edits `MT_TROOPSHOT`
+ * has to move every stat block naming `BAL1` together — `dehacked/apply.ts` rewrites their stats
+ * through this and `dehacked/frames.ts` rekeys them when the sprite itself is patched.
  * docs/dehacked.md § Thing records.
  */
 export function forEachProjectileAttack(sprite: string, visit: (attack: ProjectileAttack) => void): void {
@@ -520,23 +516,18 @@ export function forEachProjectileAttack(sprite: string, visit: (attack: Projecti
 const FAST_MISSILE_SPEED: Record<string, number> = { BAL1: 20 * 35, BAL2: 20 * 35, BAL7: 20 * 35 };
 
 /**
- * The types whose state tics fast mode halves: `for (i=S_SARG_RUN1; i<=S_SARG_PAIN2; i++)
- * states[i].tics >>= 1`. That range is the demon's run, attack and pain states — and the spectre
- * runs on the very same state chain (`info.c`'s `MT_SPECTRE`), so it is caught by the same loop.
- * Nothing else in the roster is: on nightmare a cyberdemon moves at exactly its usual pace, which
- * surprises people who expect "fast monsters" to mean all of them.
+ * The types whose state tics fast mode halves:
+ * `for (i=S_SARG_RUN1; i<=S_SARG_PAIN2; i++) states[i].tics >>= 1`. That range is the demon's run,
+ * attack and pain states — and the spectre's, which runs on the very same state chain (`info.c`'s
+ * `MT_SPECTRE`). Nothing else in the roster is. docs/monster-ai.md § Fast monsters.
  */
 const FAST_TIC_TYPES = new Set<number>([ThingType.demon, ThingType.spectre]);
 
 /**
- * `MONSTER_STATS` as vanilla's fast mode leaves it — what `G_InitNew` produces by editing the
+ * {@link MONSTER_STATS} as vanilla's fast mode leaves it — what `G_InitNew` produces by editing the
  * global `states`/`mobjinfo` tables in place when the skill is nightmare (or `-fast` is given,
  * which this engine has no switch for). Derived rather than typed out, so a stat corrected in the
- * table above can't fail to reach the fast one.
- *
- * Halving a state's tics doubles how often `A_Chase` runs, which in this engine's dt-scaled model
- * is a doubled `speed` and a halved `chaseInterval`; the attack and pain states in the same range
- * become half as long. See docs/monster-ai.md § Fast monsters.
+ * table above can't fail to reach the fast one. See docs/monster-ai.md § Fast monsters.
  */
 export let FAST_MONSTER_STATS: Record<number, MonsterStats> = deriveFastStats();
 
@@ -601,14 +592,14 @@ export let TALLEST_BODY_HEIGHT = rosterMax('height');
 export let WIDEST_BODY_RADIUS = rosterMax('radius');
 
 /**
- * Re-derives everything above that is computed from `MONSTER_STATS`, after something has written
- * into it. The one caller is the DEHACKED applier (docs/dehacked.md § Applying: reset, then
- * patch) — a patch edits `MONSTER_STATS` in place, and the values here were otherwise frozen at
- * import, so a patched imp would stay fast-mode-vanilla and a patched cyberdemon would leave the
- * gap early-out short.
+ * Re-derives everything above that is computed from {@link MONSTER_STATS}, after something has
+ * written into it. The one caller is the DEHACKED applier
+ * (docs/dehacked.md § Applying: reset, then patch) — a patch edits {@link MONSTER_STATS} in place,
+ * and the values here were otherwise frozen at import, so a patched imp would stay
+ * fast-mode-vanilla and a patched cyberdemon would leave the gap early-out short.
  *
- * These are `let` for that reason alone. Nothing else assigns them, and `monsterStatsFor` is
- * still the single accessor every reader goes through.
+ * These are `let` for that reason alone. Nothing else assigns them, and {@link monsterStatsFor} is
+ * the single accessor every reader goes through.
  */
 export function rebuildDerivedMonsterStats(): void {
   FAST_MONSTER_STATS = deriveFastStats();

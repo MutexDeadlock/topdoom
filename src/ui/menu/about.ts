@@ -8,10 +8,9 @@ import { OverlayShell, type MenuOverlay } from './overlay.ts';
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /**
- * The contact address, ROT13'd — the one thing on this page a harvester wants. Neither the markup
- * nor a plain text scrape of the bundle turns up anything mailable; only a scraper that runs the
- * page gets the address, which is the cheap 90% of the problem. Decoded into the link's `href` at
- * construction — the link reads "E-Mail", so the address is never on the page as text either.
+ * The contact address, ROT13'd so neither the markup nor a text scrape of the bundle turns up
+ * anything mailable — docs/menu.md § About. Decoded into the link's `href` at construction; the
+ * link reads "E-Mail", so the address is never on the page as text either.
  */
 const MAIL = 'zngmr-g-aej@jro.qr';
 
@@ -49,9 +48,9 @@ export class AboutUi implements MenuOverlay {
   }
 
   /**
-   * Closes the popup, reporting whether it *was* open — `main.ts`'s ESC handler asks this first
-   * (through `Menu.closeTopOverlay`), so one ESC dismisses the popup and leaves the menu (and a
-   * paused level) alone. The same explicit hand-off `LibraryUi.close` gets.
+   * Closes the popup, so one ESC dismisses it and leaves the menu (and a paused level) alone —
+   * docs/menu.md § The overlays over the menu.
+   * @returns whether it *was* open
    */
   close(): boolean {
     return this.shell.hide();
@@ -74,12 +73,9 @@ export class AboutUi implements MenuOverlay {
   }
 
   /**
-   * Fills the Changelog tab on first open. The file is a *dynamic* `import`, so the bundler
-   * resolves it at build time (no `public/` copy, and nothing that can 404) but parks the text in
-   * its own chunk, downloaded only by someone who actually opens the tab — docs/menu.md § About.
-   *
-   * A failed load is reported in the panel and leaves `changelogLoaded` false, so simply reopening
-   * retries.
+   * Fills the Changelog tab on first open, from a *dynamic* `import` that parks the text in its own
+   * chunk. A failed load leaves {@link AboutUi.changelogLoaded} false, so reopening retries —
+   * docs/menu.md § About.
    */
   private async loadChangelog(): Promise<void> {
     if (this.changelogLoaded) return;

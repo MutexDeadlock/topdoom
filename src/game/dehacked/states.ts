@@ -1,19 +1,18 @@
 /**
  * The frame table as data: `states[]`, `sprnames[]` and each `mobjinfo` row's eight state
  * pointers, transcribed mechanically from `linuxdoom-1.10/info.c` and `info.h` and from prboom's
- * own for the rows MBF appended. This is what a
- * DEHACKED `Frame N` record indexes and what `dehacked/frames.ts` walks to re-derive the engine's
- * letter-list tables; it is never stepped at runtime. MBF's own appended states are here too, and
- * a patch may grow the table past them. Read-side and import-free, so the menu can classify a
- * patch through it. See docs/dehacked.md § Frames and § Extended states.
+ * own for the rows MBF appended. This is what a DEHACKED `Frame N` record indexes and what
+ * `dehacked/frames.ts` walks to re-derive the engine's letter-list tables; it is never stepped at
+ * runtime, and a patch may grow it. Read-side and import-free, so the menu can classify a patch
+ * through it. See docs/dehacked.md § Frames and § Extended states.
  */
 
 /**
- * One `state_t`: `[sprite, frame, tics, action, next, name]`. `sprite` indexes `SPRITE_NAMES`;
- * `frame`'s low bits are the letter (0 = `A`) and bit 15 is `FF_FULLBRIGHT`; `tics` of -1 holds
- * forever; `action` is the `A_*` name or `''` for `NULL` — kept because the walk loop's chase
- * count and the barrel's `A_Explode` position depend on it, not to run it; `next` is the
- * `nextstate` index; `name` is `info.h`'s `statenum_t` mnemonic, for reports and tests.
+ * One `state_t`: `[sprite, frame, tics, action, next, name]`. `sprite` indexes
+ * {@link SPRITE_NAMES}; `frame`'s low bits are the letter (0 = `A`) and bit 15 is
+ * {@link FF_FULLBRIGHT}; `tics` of -1 holds forever; `action` is the `A_*` name or `''` for `NULL`,
+ * read by the walker and never run; `next` is the `nextstate` index; `name` is `info.h`'s
+ * `statenum_t` mnemonic, for reports and tests.
  */
 export type StateRow = readonly [sprite: number, frame: number, tics: number, action: string, next: number, name: string];
 
@@ -66,7 +65,7 @@ export const INVISIBLE_SPRITE = 138;
  * `states[]`, all 1076 in `statenum_t` order: vanilla's 967, then MBF's 109. Index 0 is `S_NULL`,
  * the "no state" every `mobjinfo` pointer that doesn't exist points at, and the state a chain that
  * expires into nothing steps to. A DEH `Frame N` is the 0-based index here, and one past the end
- * grows the table instead — `stateTableSize`, docs/dehacked.md § Extended states.
+ * grows the table instead — {@link stateTableSize}, docs/dehacked.md § Extended states.
  */
 export const STATES: readonly StateRow[] = [
   [0, 0, -1, '', 0, 'S_NULL'], // 0
@@ -1155,10 +1154,8 @@ export const STATES: readonly StateRow[] = [
 ];
 
 /**
- * Where MBF's appended states start — the end of vanilla's own `states[]`. What `isPspriteState`
- * stops at: the beta BFG's chain draws a gun sprite but belongs to no weapon this engine or MBF's
- * own `weaponinfo[]` reaches, so a `Frame` record on one of those rows is world data like any
- * other. docs/dehacked.md § Extended states.
+ * Where MBF's appended states start — the end of vanilla's own `states[]`, and where
+ * {@link isPspriteState} stops. docs/dehacked.md § Extended states.
  */
 export const MBF_STATES_START = 967;
 
@@ -1172,12 +1169,9 @@ export const MBF_STATES_START = 967;
 export const MAX_STATE_INDEX = 32767;
 
 /**
- * How large the frame table grows once a patch addresses state `highest`.
- *
- * dsda-doom's `dsda/state.c: dsda_EnsureCapacity` **doubles** rather than growing to fit, so the
- * slots between the highest index a patch names and that power of two exist too — fresh, and
- * reachable by a `Next frame` or a `Thing` pointer that lands in them. Reproducing the doubling is
- * what makes those pointers land the same way here.
+ * How large the frame table grows once a patch addresses state `highest` — **doubling**, as
+ * dsda-doom's `dsda/state.c: dsda_EnsureCapacity` does, so a pointer landing between the highest
+ * index and that power of two lands the same way here. docs/dehacked.md § Extended states.
  */
 export function stateTableSize(highest: number): number {
   let size = STATES.length;
@@ -1383,12 +1377,10 @@ export interface WeaponStates {
 /**
  * Every `weaponinfo[]` row's state pointers, in `p_pspr.h`'s `weapontype_t` order — the order a DEH
  * `Weapon N` record indexes 0-based, which `dehacked/tables.ts`'s `WEAPON_ORDER` maps onto
- * `WeaponId`. The ammo type each row also carries lives in `WEAPONS` itself, so only the states are
- * here.
+ * `WeaponId`. The ammo type each row also carries lives in `WEAPONS` itself.
  *
- * The `up`/`down` naming is `d_items.c`'s, not the patch format's: `d_deh.c`'s `deh_weapon[]` calls
- * `upstate` "Deselect frame" and `downstate` "Select frame", the two the wrong way round. The
- * labels are what a patch writes, so the bridge keeps them and this table keeps the struct's.
+ * The `up`/`down` naming is `d_items.c`'s, not the patch format's swapped labels —
+ * docs/dehacked.md § Weapon, Ammo and Misc.
  */
 export const WEAPON_STATES: readonly WeaponStates[] = [
   { up: 4, down: 3, ready: 2, atk: 5, flash: 0 }, // 0 fist
@@ -1408,9 +1400,8 @@ export const WEAPON_STATES: readonly WeaponStates[] = [
  * `atkstate` the moment it is reached (`p_pspr.c`), so the chain never runs past it. Bounded by the
  * visited set, so a patched chain that loops back without one still terminates.
  *
- * Lives beside the data rather than in `dehacked/frames.ts` because two readers need the same span
- * and must not disagree about it: the walker sums its tics for the fire rate (docs/weapons.md
- * § Fire rates), and `dehacked/tables.ts` classifies a `Frame` record by whether it names one.
+ * Lives beside the data so its two readers can't disagree about the span: the walker's fire rate
+ * (docs/weapons.md § Fire rates) and `dehacked/tables.ts`'s `Frame` classification.
  */
 export function fireChainStates(states: readonly StateRow[], atk: number): number[] {
   const span: number[] = [];
@@ -1429,12 +1420,7 @@ export function fireChainStates(states: readonly StateRow[], atk: number): numbe
  * Whether a state belongs to a weapon's first-person chain — `S_LIGHTDONE` through `S_BFGFLASH2`,
  * the states `p_pspr.c` steps rather than `P_MobjThinker`. Decided by sprite:
  * `SPR_SHTG`..`SPR_BFGF` (indices 1-15) are the gun and flash lumps, and nothing in the world draws
- * them. This engine has no first-person weapon, so a `Frame` record on one of these has no sink
- * here.
- *
- * Vanilla's own rows only (`MBF_STATES_START`). MBF's appended `S_OLDBFG*` draw `SPR_BFGG` but sit
- * in no `weaponinfo[]` row's chain, so they are the scratch space a patch treats them as rather
- * than a gun being held.
+ * them. Vanilla's own rows only ({@link MBF_STATES_START}) — docs/dehacked.md § Extended states.
  */
 export function isPspriteState(index: number): boolean {
   if (index >= MBF_STATES_START) return false;

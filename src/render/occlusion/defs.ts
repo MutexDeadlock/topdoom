@@ -17,21 +17,19 @@ import type { Pos3 } from '../../types.ts';
 export const FADE_ALPHA = 0.2;
 
 /**
- * How wide a hole a sightline opens in whatever it is stopped by, and the
- * full-strength core inside it where the ramp has not started easing back yet.
- * Walls and flats share both, so a hole spanning a floor and the wall behind
- * it is one shape. **Tuned by feel**, but not freely: alpha exists only at
- * chunk corners, so a `FADE_CORE` under `WALL_CHUNK_LEN / 2` cannot open a hole
- * wider than one chunk however the ramp is shaped, and on a tall occluder seen
- * at a grazing angle that one chunk reads as a slit. Sized off the chunk for that reason rather
- * than set as a bare number. docs/render-occlusion.md § The fade is a hole, not a wall.
+ * How wide a hole a sightline opens in whatever it is stopped by. Walls and flats share it, so a
+ * hole spanning a floor and the wall behind it is one shape. **Tuned by feel**, but sized off the
+ * chunk rather than set as a bare number: alpha exists only at chunk corners, so a
+ * {@link FADE_CORE} under `WALL_CHUNK_LEN / 2` cannot open a hole wider than one chunk, which on a
+ * tall occluder seen at a grazing angle reads as a slit.
+ * docs/render-occlusion.md § The fade is a hole, not a wall.
  */
 export const FADE_RADIUS = WALL_CHUNK_LEN * 1.5;
 
 /**
  * The core is this fraction of whatever radius a target carries, so every
- * target's hole is the one shape scaled. Stated once, here: `holeAlpha` shapes
- * the ramp through it and `FADE_CORE` is the player's own radius through it, so
+ * target's hole is the one shape scaled. Stated once, here: {@link holeAlpha} shapes
+ * the ramp through it and {@link FADE_CORE} is the player's own radius through it, so
  * retuning the ratio moves the renderer and the tests together.
  */
 const FADE_CORE_FRACTION = 0.5;
@@ -39,29 +37,24 @@ const FADE_CORE_FRACTION = 0.5;
 export const FADE_CORE = FADE_RADIUS * FADE_CORE_FRACTION;
 
 /**
- * How far an awake monster can be and still count as a fade target.
- * **Tuned by feel** to roughly a room's length, not converted from vanilla.
- * Deliberately a plain distance cap rather than a `hasLineOfSight` gate, which
- * would make the fade a no-op for the case it exists for — docs/render-occlusion.md §
- * Wall occlusion fading.
+ * How far an awake monster can be and still count as a fade target. **Tuned by feel** to roughly a
+ * room's length, not converted from vanilla. Deliberately a plain distance cap rather than a
+ * `hasLineOfSight` gate, which would make the fade a no-op for the case it exists for —
+ * docs/render-occlusion.md § Wall occlusion fading.
  */
 export const MONSTER_FADE_RANGE = 768;
 
 /**
- * How wide a hole an awake *monster* opens, against the player's `FADE_RADIUS` — **tuned by feel**,
- * and the smallest that still clears a whole chunk rather than a slit (alpha lives only at chunk
- * corners, so a core under `WALL_CHUNK_LEN / 2` cannot).
- * docs/render-occlusion.md § The fade is a hole, not a wall.
+ * How wide a hole an awake *monster* opens, against the player's {@link FADE_RADIUS} —
+ * **tuned by feel**, and deliberately under a whole chunk: its core is under `WALL_CHUNK_LEN / 2`,
+ * so it can read as a slit. docs/render-occlusion.md § Which sightlines a wall fades for.
  */
 export const MONSTER_FADE_RADIUS = FADE_RADIUS / 2;
 
 /**
- * The alpha one crossing pulls a point at `distanceSquared` from it down to:
- * `floor` inside the core, smoothstepped back to 1 by `radius`, and 1 beyond.
- * The core is always half the radius, so a target's hole is one shape scaled.
- * The one ramp both faders window with — a hole spanning a floor and the wall
- * behind it is one shape because this is one function.
- * docs/render-occlusion.md § The fade is a hole, not a wall.
+ * The alpha one crossing pulls a point at `distanceSquared` from it down to: `floor` inside the
+ * core ({@link FADE_CORE_FRACTION} of `radius`), smoothstepped back to 1 by `radius`, and 1 beyond.
+ * The one ramp both faders window with. docs/render-occlusion.md § The fade is a hole, not a wall.
  */
 export function holeAlpha(distanceSquared: number, floor: number, radius: number): number {
   if (distanceSquared >= radius * radius) return 1;
@@ -82,7 +75,7 @@ export const SNAP_EPS = 0.004;
  * What occlusion is tested against — the player, or an awake monster. Not a point: `z` is the
  * middle of an **upright sprite** and `halfHeight` how far it reaches either side, so a sightline
  * is a wedge rather than a ray. `fadeFloor` is how far down this target pulls what hides it
- * (`FADE_ALPHA` is full strength) and `fadeRadius` how wide a hole it opens.
+ * ({@link FADE_ALPHA} is full strength) and `fadeRadius` how wide a hole it opens.
  * docs/render-occlusion.md § The target is the billboard.
  */
 export type FadeTarget = Pos3 & { halfHeight: number; fadeFloor: number; fadeRadius: number };
@@ -102,7 +95,8 @@ export class TargetPlanes {
    * the thousand-odd mover faders a frame refills.
    * docs/render-occlusion.md § The target is the billboard.
    *
-   * A camera standing exactly over a target in plan leaves `n` and `d0` both zero, and `0 > 0`
+   * A camera standing exactly over a target in plan leaves `n` and {@link TargetPlanes.d0} both
+   * zero, and `0 > 0`
    * cuts nothing — the hole goes back to the whole ball. `MIN_TILT_DEG` keeps the player off that
    * point; a monster can stand on it for a frame.
    */
@@ -129,7 +123,7 @@ export class TargetPlanes {
   }
 }
 
-/** A 2D box in DOOM map space, for `fadeReach`'s caller to test its own geometry against. */
+/** A 2D box in DOOM map space, for {@link fadeReach}'s caller to test its own geometry against. */
 export interface FadeBox {
   minX: number;
   minY: number;
@@ -148,14 +142,14 @@ export function stretchBox(box: FadeBox, x: number, y: number): void {
 /**
  * Whether two map-space boxes touch at all — a mover's footprint against a fade
  * reach or a reveal, or a fader's against the frame's bag of crossings. An
- * empty box (`emptyBox`, never stretched) overlaps nothing, which is the answer
+ * empty box ({@link emptyBox}, never stretched) overlaps nothing, which is the answer
  * a fader with no quads and a bag with no points both want.
  */
 export function boxesOverlap(a: FadeBox, b: FadeBox): boolean {
   return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
 }
 
-/** An inverted box, which `stretchBox` turns into the bound of whatever it is then given. */
+/** An inverted box, which {@link stretchBox} turns into the bound of whatever it is then given. */
 export function emptyBox(): FadeBox {
   return { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
 }
@@ -170,8 +164,8 @@ export function grownBox(box: FadeBox, by: number, out: FadeBox): FadeBox {
 }
 
 /**
- * `sightBox`'s output, reused: the two faders run back to back and neither holds the box past its
- * own update.
+ * {@link sightBox}'s output, reused: the two faders run back to back and neither holds the box
+ * past its own update.
  */
 const sightBoxOut = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 
@@ -219,11 +213,11 @@ export function fadeReach(camX: number, camY: number, targets: FadeTarget[], out
 }
 
 /**
- * The quads a `commit` caller knows fog of war moved this frame — `count`
- * entries of `indices`, which is a reused buffer and longer than `count`.
- * Declared structurally here rather than imported, so the render layer keeps no
- * import edge into `game/fogofwar.ts` (the `ScrollOffsets` rule below).
- * `null` means "assume all of them", which is what a wholesale reveal reports.
+ * The quads a `commit` caller knows fog of war moved this frame — {@link ChangedQuads.count}
+ * entries of {@link ChangedQuads.indices}, which is a reused buffer and longer than the count.
+ * Declared structurally here rather than imported, so the render layer keeps no import edge into
+ * `game/fogofwar.ts`, as `render/scroller.ts`'s `ScrollOffsets` is. `null` means "assume all of
+ * them", which is what a wholesale reveal reports.
  */
 export interface ChangedQuads {
   readonly indices: Int32Array;
@@ -276,14 +270,14 @@ export class FadeCrossings {
    * in.
    */
   h: Float64Array = new Float64Array(64);
-  /** Which target's sightline was stopped here — an index into `TargetPlanes`. */
+  /** Which target's sightline was stopped here — an index into {@link TargetPlanes}. */
   target: Float64Array = new Float64Array(64);
   count = 0;
   /**
-   * Where the whole bag stands, grown as points arrive. Kept here rather than
-   * derived by each reader because the bag is the frame's, not a fader's: every
-   * fader that folds it would otherwise rebuild the same box, and only `push`
-   * can change the answer. Empty (inverted) until the first point.
+   * Where the whole bag stands, grown as points arrive. Kept here rather than derived by each
+   * reader because the bag is the frame's, not a fader's: every fader that folds it would otherwise
+   * rebuild the same box, and only {@link FadeCrossings.push} can change the answer. Empty
+   * (inverted) until the first point.
    */
   readonly bounds: FadeBox = emptyBox();
 

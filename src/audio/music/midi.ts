@@ -28,11 +28,8 @@ interface TickedEvent {
 }
 
 /**
- * A standard MIDI file's events with absolute times, or null when the bytes
- * aren't one. Every track is read onto the shared tick clock and merged, then
- * walked once to apply the tempo map — a tempo change sits in track 0 of a
- * format-1 file but governs all of them, so times can only be resolved after
- * the merge.
+ * A standard MIDI file's events with absolute times, or null when the bytes aren't one. Every track
+ * is merged onto the shared tick clock before the tempo map is applied — docs/music.md § MIDI.
  */
 export function decodeMidi(bytes: Uint8Array): Song | null {
   if (bytes.length < 14) return null;
@@ -136,10 +133,8 @@ class MidiReader {
 }
 
 /**
- * One `MTrk` chunk's events on the file's tick clock. Running status (an event
- * that omits its status byte and reuses the last one) is the one piece of the
- * format that can't be skipped past, since it decides how many data bytes
- * follow.
+ * One `MTrk` chunk's events on the file's tick clock, running status included —
+ * docs/music.md § MIDI.
  */
 function readTrack(r: MidiReader, end: number, out: TickedEvent[]): void {
   let tick = 0;

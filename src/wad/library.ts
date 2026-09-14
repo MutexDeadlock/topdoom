@@ -1,7 +1,7 @@
 /**
  * The menu's WAD library, and this layer's one entry point: what a source is and where one comes
  * from (`library/`), which maps a game-WAD + add-on selection yields, and loading the picked set
- * into `WadFile`s. See docs/wad.md and docs/menu-wads.md.
+ * into {@link WadFile}s. See docs/wad.md and docs/menu-wads.md.
  */
 import { WadFile } from './wad.ts';
 import { idOf } from './checksum.ts';
@@ -52,19 +52,19 @@ export {
   type LibrarySkip,
 } from './library/disk.ts';
 
-/** One row of the menu's level list. `title` is absent when nothing in the set names the level. */
+/** One row of the menu's level list. */
 export interface MergedMap {
   name: string;
   provider: string;
+  /** Absent when nothing in the set names the level. */
   title?: string;
 }
 
 /**
- * Parses an uploaded file far enough to categorise it, then keeps it in memory. `text` is the
- * `.txt` picked or dropped alongside it, which `Menu.addFiles` pairs by name — an upload sits in no
- * folder, so a sibling can only ever arrive in the same batch. The `File` itself, not its bytes: a
- * handle keeps the read where every other source has it, at the moment the player opens the popup
- * (docs/wad.md § The text file beside a WAD).
+ * Parses an uploaded file far enough to categorise it, then keeps it in memory.
+ *
+ * @param text  the `.txt` picked or dropped alongside it, which `Menu.addFiles` pairs by name
+ *              (docs/wad.md § The text file beside a WAD)
  */
 export async function uploadedSource(name: string, buffer: ArrayBuffer, text?: File): Promise<WadSource> {
   const described = await describeWad(name, bytesOf(buffer));
@@ -139,13 +139,9 @@ export function mergedMaps(iwad: WadSource, pwads: WadSource[]): MergedMap[] {
 /**
  * Loads the selected files in the order the engine has to merge them.
  *
- * `onProgress` reports the whole set at once — bytes arrived against bytes expected — because that
- * is the one number a progress bar can show while several files download in parallel. Every source
- * that will download declares itself in this same tick (`DownloadProgress`), so the total is the
- * sum of their manifest `size`s and is fixed before the first byte: the bar only ever moves
- * forward. A source already in memory (an upload, a second start on the same set) declares nothing
- * and is left out, which is why a warm start shows no bar rather than a full one.
- * docs/session.md § The loading screen.
+ * @param onProgress  bytes arrived against bytes expected, for the whole set at once — a source
+ *                    already in memory declares nothing and is left out
+ *                    (docs/session.md § The loading screen)
  */
 export async function loadWadFiles(iwad: WadSource, pwads: WadSource[], onProgress?: Progress): Promise<WadFile[]> {
   const sources = [iwad, ...pwads];

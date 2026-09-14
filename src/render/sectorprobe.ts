@@ -110,11 +110,12 @@ export class SectorProbe {
   }
 
   /**
-   * Which sector a point is in, or -1 for void — the nearest linedef decides,
-   * by which side of it the point falls on. Rings of grid cells are scanned
-   * outwards until one can no longer reach closer than the best line in hand.
-   * `ignoreSelfRef` skips self-referencing lines, for asking which sector
-   * *encloses* such a construct rather than landing back on the construct.
+   * Which sector a point is in, or -1 for void — the nearest linedef decides, by which side of it
+   * the point falls on. Rings of grid cells are scanned outwards until one can no longer reach
+   * closer than the best line in hand.
+   *
+   * @param ignoreSelfRef Skips self-referencing lines, for asking which sector *encloses* such a
+   *   construct rather than landing back on the construct.
    */
   sectorIndexAt(x: number, y: number, ignoreSelfRef = false): number {
     let bestDistSq = Infinity;

@@ -6,10 +6,11 @@
  */
 
 /**
- * The art a level's sky is drawn from: `named` (the set's MAPINFO) where `art` resolves it, else
- * `vanillaSkyTexture`. `art` is the caller's lookup, and either name may be a composite texture or
- * the bare patch lump a set can ship one as — vanilla accepts only the first, and a mapper naming
- * the second gets the sky they meant.
+ * The art a level's sky is drawn from: `named` where `art` resolves it, else
+ * {@link vanillaSkyTexture}. Either name may be a composite texture or the bare patch lump a set
+ * can ship one as.
+ *
+ * @param named  the set's MAPINFO sky
  */
 export function levelSkyArt<T>(mapName: string, named: string | undefined, art: (name: string) => T | null): T | null {
   return (named ? art(named) : null) ?? art(vanillaSkyTexture(mapName));

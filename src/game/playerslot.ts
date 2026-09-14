@@ -56,7 +56,7 @@ export interface PlayerSlotOptions {
 
 /** How a player's death plays out — {@link playerDeath}'s answer. */
 export interface PlayerDeath {
-  /** `P_KillMobj`'s `xdeathstate`: the gib chain, {@link PLAYER_XDEATH_FRAMES}. */
+  /** The gib chain, {@link PLAYER_XDEATH_FRAMES} — `P_KillMobj`'s `xdeathstate`. */
   gibbed: boolean;
   /** The cry: `A_XScream`'s `slop` for a gib, else `A_PlayerScream`'s `pdiehi` or `pldeth`. */
   sound: SfxId;

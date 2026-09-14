@@ -23,15 +23,15 @@ const STRENGTH = 0.35;
  * follow it. Tuned by feel against cost: the glow is blurred past any detail the first divisor
  * throws away, and the levels are what set how wide it spreads.
  *
- * **`DOWNSCALE` above 4 needs more taps in the bright pass**, whose four cover a 4x4 block and no
- * more — docs/lights.md § Why the bright pass is four taps.
+ * **{@link DOWNSCALE} above 4 needs more taps in the bright pass**, whose four cover a 4x4 block
+ * and no more — docs/lights.md § Why the bright pass is four taps.
  */
 const DOWNSCALE = 4;
 const LEVELS = 4;
 
 /**
- * The upsample tent's reach, in fractions of the screen. Tuned by feel — it, not `LEVELS`, is the
- * dial for how tight or how hazy the glow reads.
+ * The upsample tent's reach, in fractions of the screen. Tuned by feel — it, not {@link LEVELS},
+ * is the dial for how tight or how hazy the glow reads.
  */
 const FILTER_RADIUS = 0.008;
 
@@ -57,11 +57,8 @@ export function setBloom(on: boolean): void {
 /**
  * What passed the threshold, and by how much. Nothing else reaches the blur chain.
  *
- * Four taps rather than one, and that is what stops the glow flickering: a single bilinear tap
- * averages 2x2 source texels however far this pass reduces, so at `DOWNSCALE` 4 it reads 4 of every
- * 16 and *which* 4 shifts as the camera moves. The threshold is applied per tap, before the
- * average, so a lone bright texel still contributes instead of being diluted under it and popping
- * back over. docs/lights.md § Why the bright pass is four taps.
+ * Four taps rather than one, and the threshold applied per tap before the average — both what stops
+ * the glow flickering at {@link DOWNSCALE} 4. docs/lights.md § Why the bright pass is four taps.
  */
 const BRIGHT_FRAGMENT = /* glsl */ `
   uniform sampler2D tSource;
@@ -133,10 +130,9 @@ const COMPOSITE_FRAGMENT = /* glsl */ `
 
 /**
  * The post chain, owned by `Viewport` because it outlives every level. While the setting is off it
- * holds no targets at all and `render` is the plain call it replaced: the scene target is the whole
- * cost of this feature, and a player who does not want the glow should not pay it. The one
- * exception is a session that *started* with the glow on, where the canvas has no MSAA of its own
- * to fall back to — docs/lights.md § Bloom and the canvas's MSAA.
+ * holds no targets at all and {@link Bloom.render} is the plain call it replaced — except in a
+ * session that *started* with the glow on, where the canvas has no MSAA of its own to fall back to
+ * (docs/lights.md § Bloom and the canvas's MSAA).
  *
  * Nothing here decides *what* glows. That is `textures.ts`'s light term passing 1 and the threshold
  * above, so a material added later glows only if it deliberately exceeds white
@@ -230,8 +226,9 @@ export class Bloom {
   }
 
   /**
-   * Builds or re-sizes the targets for the drawing buffer as it is now. `release` deliberately
-   * leaves `size` alone: it is the size just read here, and the rebuild below is what consumes it.
+   * Builds or re-sizes the targets for the drawing buffer as it is now. {@link Bloom.release}
+   * deliberately leaves {@link Bloom.size} alone: it is the size just read here, and the rebuild
+   * below consumes it.
    */
   private resize(): void {
     const wasX = this.size.x;

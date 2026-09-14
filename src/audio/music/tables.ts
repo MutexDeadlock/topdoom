@@ -29,8 +29,8 @@ const DOOM2_MUSIC = [
 
 /**
  * The intermission's and finale's tracks. Held as `mus_*` mnemonics, like every other row in this
- * file, so they resolve through `musicLumpName` and a BEX `[MUSIC]` redirect reaches them too —
- * as literal `D_*` lump names they would be the one path that silently ignores one.
+ * file, so they resolve through {@link musicLumpName} and a BEX `[MUSIC]` redirect reaches them
+ * too — as literal `D_*` lump names they would be the one path that silently ignores one.
  */
 const INTERMISSION_MUSIC = 'inter';
 const INTERMISSION_MUSIC_COMMERCIAL = 'dm2int';
@@ -122,7 +122,7 @@ export function vanillaMusicFor(mapName: string): string | null {
  * The intermission's track, `S_ChangeMusic(mus_inter)` / `mus_dm2int`: vanilla
  * keys the choice on `gamemode == commercial`, which this engine — having no
  * gamemode — reads off the map-name shape, the same approximation
- * `vanillaMusicFor` makes.
+ * {@link vanillaMusicFor} makes.
  */
 export function intermissionMusicFor(mapName: string): string {
   return musicLumpName(COMMERCIAL_MAP.test(mapName) ? INTERMISSION_MUSIC_COMMERCIAL : INTERMISSION_MUSIC);
@@ -130,9 +130,9 @@ export function intermissionMusicFor(mapName: string): string {
 
 /**
  * The track the campaign's last screen plays — `F_StartFinale`'s own `S_ChangeMusic`, keyed on the
- * map-name shape for the same want-of-a-gamemode reason as `intermissionMusicFor`. This engine's
- * end card is not vanilla's finale (docs/hud.md § End card), but it is the screen that stands in
- * for it, so it takes the same music.
+ * map-name shape for the same want-of-a-gamemode reason as {@link intermissionMusicFor}. This
+ * engine's end card is not vanilla's finale (docs/hud.md § End card), but it is the screen that
+ * stands in for it, so it takes the same music.
  */
 export function finaleMusicFor(mapName: string): string {
   return musicLumpName(COMMERCIAL_MAP.test(mapName) ? FINALE_MUSIC_COMMERCIAL : FINALE_MUSIC);

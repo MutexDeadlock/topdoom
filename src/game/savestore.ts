@@ -51,12 +51,10 @@ const DB_VERSION = 1;
 /**
  * The real backend: one database, two object stores keyed by record ID — `<prefix>-meta` holds
  * plain meta objects so listing never touches a snapshot, `<prefix>-state` the compressed bytes.
- * The savegames live in `topdoom`; a replay's record has the same two halves and takes the same
- * backend over its own database, kept separate so an upgrade that fails for one can't take the
- * other down (docs/replays.md § Storage). An IndexedDB transaction auto-commits as soon as control
- * returns to the event loop with no request pending, so nothing here may `await` between opening a
- * transaction and issuing its requests — which is why {@link SaveStoreBackend.putSave} takes
- * finished bytes and the compression happens before it is called.
+ * Saves and replays each get their own database (docs/replays.md § Storage). An IndexedDB
+ * transaction auto-commits as soon as control returns to the event loop with no request pending, so
+ * nothing here may `await` between opening a transaction and issuing its requests — which is why
+ * {@link SaveStoreBackend.putSave} takes finished bytes.
  */
 export function idbBackend(names: { database: string; prefix: string }): SaveStoreBackend {
   const META_STORE = `${names.prefix}-meta`;

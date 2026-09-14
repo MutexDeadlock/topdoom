@@ -1,7 +1,7 @@
 /**
- * `DynamicLights`: the per-frame dynamic light set. Every drawn sprite offers its frame key here,
- * the ones GLDEFS binds a light to become emitters, and the result reaches geometry as a shader
- * uniform array and sprites as an additive tint. See docs/lights.md.
+ * {@link DynamicLights}: the per-frame dynamic light set. Every drawn sprite offers its frame key
+ * here, the ones GLDEFS binds a light to become emitters, and the result reaches geometry as a
+ * shader uniform array and sprites as an additive tint. See docs/lights.md.
  */
 import * as THREE from 'three';
 import { DOOM_TIC } from '../constants.ts';
@@ -15,27 +15,24 @@ import { readStorage, writeStorage } from '../util/storage.ts';
 /**
  * The directory's own surface, handed out here so no importer names an inner file. The cell layout
  * is a round trip: `mapmesh.ts` files every surface into it at build time and hands the result back
- * as `BuiltMap.lightCells` for `commit` to fill. docs/conventions.md § File names.
+ * as `BuiltMap.lightCells` for {@link DynamicLights.commit} to fill. docs/conventions.md § File
+ * names.
  */
 export { LightVisibility, SHADOW_STEPS, BIN_HALF, BIN_PER_RADIAN, type LightWorld } from './lights/vis.ts';
 export { LightCells, lightCellsOf, LIGHT_CELL_SIZE, LIGHT_CELL_MARGIN } from './lights/cells.ts';
 
 /**
- * How many lights can reach the geometry shader at once. **Tuned by feel**, and generously: a
- * slaughter map with a hundred projectiles in the air should read as fireworks, which a tight cap
- * turns into lights popping in and out as the ranking shuffles. Raising it costs shader *slots*
- * rather than per-pixel work, since a fragment only ever walks its own leaf's list — but those
- * slots are the ceiling to watch, at two uniform rows per light.
+ * How many lights can reach the geometry shader at once. **Tuned by feel**, and generously. Raising
+ * it costs shader *slots* rather than per-pixel work, since a fragment only ever walks its own
+ * leaf's list — but those slots are the ceiling to watch, at two uniform rows per light.
  * docs/lights.md § What reaches the shader.
  */
 
 export const MAX_DYN_LIGHTS = 96;
 
 /**
- * What a GLDEFS `size` is multiplied by to get the radius a light actually reaches. The dial for
- * how far the lights carry: tuned by feel, and the first thing to turn if they read too tight or
- * too washed out. Exported so `tests/render/lights.test.ts` can size its fixtures from it rather
- * than mirroring the number — a test that reddens when this is retuned is pinning the dial.
+ * What a GLDEFS `size` is multiplied by to get the radius a light actually reaches. Tuned by feel,
+ * and exported so the tests size their fixtures from it. docs/lights.md § How far a light carries.
  */
 export const RADIUS_SCALE = 1.25;
 
@@ -55,11 +52,10 @@ const VIS_WORDS = 4;
 
 /**
  * How many lights one cell's texel can name: 16 byte-sized slots in its four words, each a
- * committed light's index, `EMPTY_SLOT` past the last. A **list, not a bitmask** — the list is what
- * bounds the fragment loop, where a bitmask prices every fragment by the size of the whole
- * committed set. Past the cap a cell drops the excess, which by then the clamped sum has made
- * invisible there. Both: docs/lights.md § How the answer reaches a fragment.
- * `MAX_DYN_LIGHTS` must stay below `EMPTY_SLOT`, or a light's index is read as the terminator.
+ * committed light's index, {@link EMPTY_SLOT} past the last. A **list, not a bitmask**, and past
+ * the cap a cell drops the excess — both docs/lights.md § How the answer reaches a fragment.
+ * {@link MAX_DYN_LIGHTS} must stay below {@link EMPTY_SLOT}, or a light's index is read as the
+ * terminator.
  */
 export const MAX_LIGHTS_PER_LEAF = VIS_WORDS * 4;
 
@@ -74,23 +70,21 @@ export const EMPTY_SLOT = 0xff;
 export const EMPTY_WORD = 0xffffffff;
 
 /**
- * How far past its nearest blocker a fragment may still be lit. The wall casting a shadow is itself
- * at exactly the blocker distance, so without this every lit wall face would shadow itself; with
- * it, the face stays lit and the floor behind the wall does not. **Tuned by feel**, bounded on both
- * sides: below about 2 the faces flicker on shallow angles, and above the thickness of the thinnest
- * wall a map draws the far side of that wall lights up too.
+ * How far past its nearest blocker a fragment may still be lit, so a lit wall face — at exactly the
+ * blocker distance — does not shadow itself. **Tuned by feel**, bounded on both sides: below about
+ * 2 the faces flicker on shallow angles, and above the thickness of the thinnest wall a map draws
+ * the far side of that wall lights up too.
  */
 export const SHADOW_BIAS = 4;
 
 /**
  * How wide a shadow's edge is, as a half-width in angular bins: a fragment is lit by the fraction
  * of the arc `[bin - this, bin + this]` that clears the blocker, rather than by the one bin it
- * falls in. A binary test draws every shadow with a razor edge, which no light this soft has.
+ * falls in. docs/lights.md § Soft edges.
  *
- * **Tuned by feel**, against the arithmetic: a bin is 1.4 degrees (`SHADOW_STEPS`), so three of
- * them is a penumbra of ~7 map units at the rim of a 105-unit light and half that mid-way in —
- * and because the kernel is angular, it widens with distance from the light the way a real one
- * does. It is what sets `SHADOW_TAPS`, so raising it costs fetches per lit fragment.
+ * **Tuned by feel**, against the arithmetic: a bin is 1.4 degrees ({@link SHADOW_STEPS}), so three
+ * of them is a penumbra of ~7 map units at the rim of a 105-unit light and half that mid-way in.
+ * It is what sets {@link SHADOW_TAPS}, so raising it costs fetches per lit fragment.
  */
 export const SHADOW_SOFT_BINS = 1.5;
 
@@ -102,15 +96,15 @@ export const SHADOW_SOFT_BINS = 1.5;
 export const SHADOW_TAPS = Math.ceil(2 * SHADOW_SOFT_BINS) + 1;
 
 /**
- * The emitter-ID space every `offer`/`tintAt` caller shares. `dontlightself` and a light's flicker
- * phase both key off the ID, so the three sources must not collide: a thing offers `PosedThing.id`
- * (a plain array index, 0 and up), a one-shot effect counts down from -1 (`effectEmitterId`), and
- * the player sits at `PLAYER_EMITTER_ID` below every effect's. Declared here because
- * `DynamicLights` is the only module that reads any of them. docs/lights.md § What emits.
+ * The emitter-ID space every {@link DynamicLights.offer}/{@link DynamicLights.tintAt} caller
+ * shares. `dontlightself` and a light's flicker phase both key off the ID, so the three sources
+ * must not collide: a thing offers `PosedThing.id` (a plain array index, 0 and up), a one-shot
+ * effect counts down from -1 ({@link effectEmitterId}), and the player sits at
+ * {@link PLAYER_EMITTER_ID} below every effect's. docs/lights.md § What emits.
  */
 export const PLAYER_EMITTER_ID = -1_000_000;
 
-/** Player slot `slot`'s emitter ID — `PLAYER_EMITTER_ID` and downward, past where the effects wrap. */
+/** Player slot `slot`'s emitter ID: {@link PLAYER_EMITTER_ID} downward, past the effects. */
 export function playerEmitterId(slot: number): number {
   return PLAYER_EMITTER_ID - slot;
 }
@@ -125,9 +119,9 @@ export interface Tint {
 const STORAGE_KEY = 'dynamicLights';
 
 /**
- * How many emitters keep a memo. A one-shot effect (`effectEmitterId`) gets a fresh ID every time
- * one spawns, so without a cap the map would grow for the life of the level; four frames' worth of
- * lights is room enough that nothing on screen is ever evicted.
+ * How many emitters keep a memo. A one-shot effect ({@link effectEmitterId}) gets a fresh ID every
+ * time one spawns, so without a cap the map would grow for the life of the level; four frames'
+ * worth of lights is room enough that nothing on screen is ever evicted.
  */
 const MEMO_CAP = MAX_DYN_LIGHTS * 4;
 
@@ -156,9 +150,9 @@ export function setDynamicLights(enabled: boolean): void {
 }
 
 /**
- * The `n`th one-shot effect's emitter ID. Wraps short of `PLAYER_EMITTER_ID` rather than counting
- * down forever, so a long session cannot walk an effect onto the player's ID and stop a light
- * reaching whichever of the two `dontlightself` then skips.
+ * The `n`th one-shot effect's emitter ID. Wraps short of {@link PLAYER_EMITTER_ID} rather than
+ * counting down forever, so a long session cannot walk an effect onto the player's ID.
+ * docs/lights.md § What emits.
  */
 export function effectEmitterId(n: number): number {
   return -1 - (n % (-PLAYER_EMITTER_ID - 1));
@@ -172,14 +166,14 @@ interface Emitter {
   y: number;
   z: number;
   radius: number;
-  /** What the caller scaled this light to, 1 = the GLDEFS definition as written — see `offer`. */
+  /** {@link DynamicLights.offer}'s `intensity`: 1 = the GLDEFS definition as written. */
   intensity: number;
   /**
    * The emitter's own BSP leaf, where the reach fill starts. -1 = the caller had none to hand;
    * resolved at commit.
    */
   subsector: number;
-  /** `commit`'s cull key, written only on the frames that overflow — see there. */
+  /** {@link DynamicLights.commit}'s cull key, written only on the frames that overflow. */
   sortKey: number;
 }
 
@@ -193,21 +187,22 @@ interface LightMemo {
   y: number;
   /** The leaf the flood started from, which resolves from the position but is passed in. */
   from: number;
-  /** `LightVisibility.sightVersion` when this was answered. */
+  /** {@link LightVisibility.sightVersion} when this was answered. */
   sight: number;
-  /** The radius `reached` was flooded at — the *live* one, so a flickering light re-floods. */
+  /** The *live* radius {@link LightMemo.reached} was flooded at, so a flicker re-floods. */
   reachRadius: number;
   reached: number[];
-  /** Cast at `widestSize`, so a flickering light does **not** re-cast. See there. */
+  /** Cast at {@link widestSize}, so a flickering light does **not** re-cast. See there. */
   shadows: Float32Array;
-  /** The `frame` this was last used on, for `pruneMemos`. */
+  /** The {@link DynamicLights.frame} last used on, for {@link DynamicLights.pruneMemos}. */
   frame: number;
 }
 
 /**
- * Gathers the frame's lights and hands them to the two consumers: `uniforms` for map geometry
- * (`render/textures.ts` patches every material's shader against them) and `tintAt` for sprites,
- * which are lit on the CPU instead (docs/lights.md § Two lighting paths).
+ * Gathers the frame's lights and hands them to the two consumers: {@link DynamicLights.uniforms}
+ * for map geometry (`render/textures.ts` patches every material's shader against them) and
+ * {@link DynamicLights.tintAt} for sprites, which are lit on the CPU instead (docs/lights.md § Two
+ * lighting paths).
  */
 export class DynamicLights {
   /**
@@ -219,7 +214,7 @@ export class DynamicLights {
     uLightCount: { value: 0 },
     uLightPos: { value: new Float32Array(MAX_DYN_LIGHTS * 4) },
     uLightColor: { value: new Float32Array(MAX_DYN_LIGHTS * 3) },
-    /** Light cell -> compacted list of the lights that reach it. See `bindLevel`. */
+    /** Light cell -> compacted list of lights reaching it. See {@link DynamicLights.bindLevel}. */
     uLightVis: { value: makeVisTexture(new Uint32Array(VIS_WORDS).fill(EMPTY_WORD), 1, 1) },
     /**
      * Row width of that texture, and the flag for whether it means anything: 0 = no level bound —
@@ -228,24 +223,27 @@ export class DynamicLights {
     uLightVisWidth: { value: 0 },
     /**
      * Per light, per direction, how far it gets before a wall stops it. See
-     * `LightVisibility.castShadows`.
+     * {@link LightVisibility.castShadows}.
      */
     uLightShadow: { value: makeShadowTexture(new Float32Array(SHADOW_STEPS * MAX_DYN_LIGHTS)) },
   };
 
   /**
    * `uLightPos`/`uLightColor`'s arrays under a direct name. Both are allocated once and never
-   * replaced — only `uLightVis` is rebound (`bindLevel`) — and the per-sprite tint loop reads
-   * them per light in the leaf, where a two-deep property chain is pure overhead.
+   * replaced — only `uLightVis` is rebound ({@link DynamicLights.bindLevel}) — and the per-sprite
+   * tint loop reads them per light in the leaf, where a two-deep property chain is pure overhead.
    */
   private readonly lightPos = this.uniforms.uLightPos.value;
   private readonly lightColor = this.uniforms.uLightColor.value;
 
   private readonly defs: Gldefs;
   private vis: LightVisibility | null = null;
-  /** Per emitter ID, what `reach`/`castShadows` last answered for it — see `LightMemo`. */
+  /** Per emitter ID, what its flood and shadow cast last answered — see {@link LightMemo}. */
   private memos = new Map<number, LightMemo>();
-  /** Counts `commit`s, so `pruneMemos` can tell a memo used this frame from one left behind. */
+  /**
+   * Counts {@link DynamicLights.commit} calls, so {@link DynamicLights.pruneMemos} can tell a memo
+   * used this frame from one left behind.
+   */
   private frame = 0;
   private visSlots = new Uint32Array(VIS_WORDS).fill(EMPTY_WORD);
   /** Per light cell, how many of its slots are filled — where the next light appends. */
@@ -254,9 +252,9 @@ export class DynamicLights {
    * Which cells carry a light this frame, so clearing costs the lit ones rather than the level.
    */
   private touched: number[] = [];
-  /** `commit`'s scratch for the cells one reached leaf hands a light. */
+  /** {@link DynamicLights.commit}'s scratch for the cells one reached leaf hands a light. */
   private reachedCells: number[] = [];
-  /** The shadow texture's own array, one `SHADOW_STEPS` row per committed light. */
+  /** The shadow texture's own array, one {@link SHADOW_STEPS} row per committed light. */
   private shadows: Float32Array;
   /**
    * Which emitter ID each shadow-texture row currently holds, or -1 for a row never written. The
@@ -267,7 +265,7 @@ export class DynamicLights {
    */
   private rowOwner = new Int32Array(MAX_DYN_LIGHTS).fill(-1);
   /**
-   * Whether any row of `shadows` was rewritten this frame, so a frame of memo hits uploads nothing.
+   * Whether any {@link DynamicLights.shadows} row was rewritten, so pure memo hits upload nothing.
    */
   private shadowsDirty = false;
   private clock = 0;
@@ -280,14 +278,16 @@ export class DynamicLights {
   private offerCount = 0;
 
   /**
-   * Last frame's committed set, which `tintAt` samples. Its own storage rather than references
-   * into `offered`: that array is a pool the next frame's `offer` calls overwrite in place, and
-   * `tintAt` reads this set *during* that frame's draw.
+   * Last frame's committed set, which {@link DynamicLights.tintAt} samples. Its own storage rather
+   * than references into {@link DynamicLights.offered}: that array is a pool the next frame's
+   * {@link DynamicLights.offer} calls overwrite in place, and {@link DynamicLights.tintAt} reads
+   * this set *during* that frame's draw.
    *
    * Only what the uniform arrays don't already hold: radius and colour live in `uLightPos.w` and
-   * `uLightColor`, written by the same `commit` and read by `sampleLight` from there, so the two
-   * halves of one light cannot disagree. Position stays here because the uniforms carry it in
-   * three.js space and a sprite tint is measured in DOOM space.
+   * `uLightColor`, written by the same {@link DynamicLights.commit} and read by
+   * {@link DynamicLights.sampleLight} from there, so the two halves of one light cannot disagree.
+   * Position stays here because the uniforms carry it in three.js space and a sprite tint is
+   * measured in DOOM space.
    */
   private committed = {
     x: new Float32Array(MAX_DYN_LIGHTS),
@@ -298,7 +298,7 @@ export class DynamicLights {
   };
   private committedCount = 0;
 
-  /** `offerAndTint`'s one reused output — see there for its lifetime. */
+  /** {@link DynamicLights.offerAndTint}'s one reused output — see there for its lifetime. */
   private sampled: Tint = { r: 0, g: 0, b: 0 };
 
   private scratch = new THREE.Vector3();
@@ -314,9 +314,9 @@ export class DynamicLights {
 
   /**
    * Points the controller at a level's subsector graph, sizing the visibility texture to it.
-   * Called once per map load, before the first frame is drawn; `null` (tests, tools) leaves every
-   * sprite tint ungated, while geometry — which only ever draws in a bound level — draws no
-   * dynamic light, which is what `uLightVisWidth` 0 means to the shader.
+   *
+   * @param vis `null` (tests, tools) leaves every sprite tint ungated, while geometry — which only
+   *   ever draws in a bound level — draws no dynamic light (`uLightVisWidth` 0).
    */
   bindLevel(vis: LightVisibility | null): void {
     this.vis = vis;
@@ -342,12 +342,12 @@ export class DynamicLights {
   }
 
   /**
-   * Opens a frame: advances the animation clock and records what the camera can see, which is what
-   * culling measures against. `rawDt` is the real elapsed time, not the tic step — a light's
-   * flicker is presentation, and stuttering it with the fixed step would be visible.
+   * Opens a frame: advances the animation clock and records what the camera can see, for culling.
    *
-   * `view` is the camera's view volume at the pose it will draw at (`TopDownCamera.viewFrustum`),
-   * and every offer outside it is dropped — see `offer`. Omitted (tests, tools), nothing is culled.
+   * @param rawDt The real elapsed time, not the tic step — a light's flicker is presentation, and
+   *   stuttering it with the fixed step would be visible.
+   * @param view The camera's view volume at the pose it will draw at (`TopDownCamera.viewFrustum`);
+   *   every offer outside it is dropped. Omitted (tests, tools), nothing is culled.
    */
   beginFrame(rawDt: number, camX: number, camY: number, view?: THREE.Frustum): void {
     this.clock += rawDt;
@@ -361,19 +361,20 @@ export class DynamicLights {
   /**
    * Offers a drawn sprite as a possible emitter. Called once per drawn sprite per frame from the
    * three draw funnels, so it does no allocation and gives up in two map lookups when the frame
-   * carries no light. `x`/`y`/`z` are DOOM map space with `z` at the thing's feet, which is what
-   * a GLDEFS `offset` is measured up from. `subsector` is the emitter's own BSP leaf where the
-   * caller already holds one (`PosedThing.subsector`, `OneShotEffect.subsector`) — the flood fill
-   * starts there, and -1 means resolve it at commit, for the few offers that survive culling.
+   * carries no light.
    *
-   * The position and identity stay **scalars** here and in `offerAndTint`/`tintAt`/`sampleLight`,
-   * against docs/conventions.md § Named arguments' usual bar: two of the three callers compute the
-   * coordinates inline, and one record per drawn sprite measured ~5% on this path — see
-   * docs/lights.md § What reaches the shader.
+   * The position and identity stay **scalars** here and in {@link DynamicLights.offerAndTint},
+   * {@link DynamicLights.tintAt} and {@link DynamicLights.sampleLight}, against
+   * docs/conventions.md § Named arguments' usual bar: one record per drawn sprite measured ~5% on
+   * this path — see docs/lights.md § What reaches the shader.
    *
-   * `intensity` scales this one offer down from what its GLDEFS definition says — both the colour
-   * and the radius, so a frame drawn at a fraction of the size the definition assumes lights a
-   * proportionally smaller patch. docs/lights.md § Dimming one offer.
+   * @param x DOOM map space, as are `y` and `z`.
+   * @param z At the thing's feet, which is what a GLDEFS `offset` is measured up from.
+   * @param subsector The emitter's own BSP leaf where the caller already holds one
+   *   (`PosedThing.subsector`, `OneShotEffect.subsector`), where the flood fill starts; -1 resolves
+   *   it at commit, for the few offers that survive culling.
+   * @param intensity Scales this one offer down from its GLDEFS definition — colour and radius
+   *   together. docs/lights.md § Dimming one offer.
    */
   offer(
     frameKey: string,
@@ -418,7 +419,7 @@ export class DynamicLights {
   }
 
   /**
-   * Closes the frame: culls the offers to the `MAX_DYN_LIGHTS` whose reach comes nearest the
+   * Closes the frame: culls the offers to the {@link MAX_DYN_LIGHTS} whose reach comes nearest the
    * camera's target and uploads them. Runs after every draw funnel has offered, and before the
    * render — so geometry sees this frame's lights.
    */
@@ -516,12 +517,10 @@ export class DynamicLights {
   /**
    * The whole of what a drawn sprite does with the lights: offers itself as an emitter, then
    * samples what reaches it. Every draw funnel goes through here rather than pairing the two
-   * calls itself — the order is load-bearing (`tintAt` reads last frame's committed set, `offer`
-   * fills this frame's), and a sprite that offered without sampling would light the room but not
-   * itself.
+   * calls itself, since the order is load-bearing.
    *
-   * The returned `Tint` is **one reused scratch**, valid until the next call: read it before
-   * drawing the next sprite, which every caller does. docs/lights.md § Two lighting paths.
+   * @returns **One reused scratch**, valid until the next call.
+   *   docs/lights.md § Two lighting paths.
    */
   offerAndTint(
     frameKey: string,
@@ -540,13 +539,11 @@ export class DynamicLights {
   /**
    * The light reaching a point, as an additive tint for a sprite. Samples the **previous** frame's
    * committed set: sprites are lit and offered in the same pass, so this frame's set isn't closed
-   * yet when a sprite needs its tint. One frame of latency on a moving light's tint is invisible
-   * at these speeds, and gathering in a second pass would mean walking every drawn sprite twice.
+   * yet. docs/lights.md § Two lighting paths.
    *
-   * `emitterId` is the sprite's own, so a `dontlightself` light can skip it (docs/lights.md § Two
-   * lighting paths). `subsector` is the sprite's leaf, and its light list — the same one the
-   * geometry shader walks — is all that is sampled, so a sprite behind a wall goes unlit exactly
-   * as the wall does.
+   * @param emitterId The sprite's own, so a `dontlightself` light can skip it.
+   * @param subsector The sprite's leaf; only its light list, the one the geometry shader walks,
+   *   is sampled, so a sprite behind a wall goes unlit exactly as the wall does.
    */
   tintAt(x: number, y: number, z: number, emitterId: number, out: Tint, subsector = -1): void {
     out.r = 0;
@@ -576,10 +573,8 @@ export class DynamicLights {
   /**
    * One light's reached-leaf list, and its shadow row written into `this.shadows` — from the memo
    * where nothing it depends on has moved, freshly computed and remembered where something has.
-   *
-   * The two halves are checked separately: the flood is keyed on the *live* radius, so a
-   * flickering light re-floods every frame, while the cast is taken at `widestSize` and survives
-   * the flicker. docs/lights.md § What a light remembers between frames.
+   * The flood is keyed on the *live* radius and the cast on {@link widestSize}, checked separately.
+   * docs/lights.md § What a light remembers between frames.
    */
   private recall(vis: LightVisibility, e: Emitter, sight: number, index: number): number[] {
     const from = e.subsector >= 0 ? e.subsector : vis.subsectorAt(e.x, e.y);
@@ -627,17 +622,17 @@ export class DynamicLights {
     return memo.reached;
   }
 
-  /** Drops every memo no light used this frame, once the map has outgrown `MEMO_CAP`. */
+  /** Drops every memo no light used this frame, once the map has outgrown {@link MEMO_CAP}. */
   private pruneMemos(): void {
     if (this.memos.size <= MEMO_CAP) return;
     for (const [id, memo] of this.memos) if (memo.frame !== this.frame) this.memos.delete(id);
   }
 
   /**
-   * How much of light `index` reaches a point past its shadows, 0 to 1 — the CPU half of the
-   * shader's shadow lookup, so a sprite standing behind a pillar goes dark with the floor it stands
-   * on, and softens across the shadow's edge with it (`SHADOW_SOFT_BINS`). `x`/`y` are DOOM space;
-   * the map is indexed in three.js space, hence the flipped `y`.
+   * How much of light `index` reaches a point past its shadows, 0 to 1: the CPU half of the
+   * shader's soft shadow lookup ({@link SHADOW_SOFT_BINS}). docs/lights.md § Soft edges.
+   *
+   * @param x DOOM space, as is `y`; the map is indexed in three.js space, hence the flipped `y`.
    */
   private unshadowed(index: number, x: number, y: number): number {
     if (!this.vis) return 1;
@@ -658,7 +653,7 @@ export class DynamicLights {
     return lit / span;
   }
 
-  /** One committed light's contribution to a sprite tint — the body `tintAt`'s two paths share. */
+  /** One light's share of a sprite tint, the body both {@link DynamicLights.tintAt} paths run. */
   private sampleLight(i: number, x: number, y: number, z: number, emitterId: number, out: Tint): void {
     const c = this.committed;
     if (c.dontLightSelf[i] === 1 && c.id[i] === emitterId) return;
@@ -712,9 +707,6 @@ function makeVisTexture(data: Uint32Array, width: number, height: number): THREE
  * flicker, and it is **not** `util/random`: the vanilla table is the engine's gameplay entropy on
  * two global cursors, so drawing from it here would make what a monster does depend on how many
  * torches were on screen. See docs/random.md § Why the cursors are global.
- *
- * Being a pure function of (ID, step) also means a light needs no per-emitter state to survive a
- * save/load, or a frame where its sprite wasn't drawn.
  */
 function hash01(id: number, step: number): number {
   let h = (id * 0x9e3779b1) ^ (step * 0x85ebca6b);
@@ -725,22 +717,18 @@ function hash01(id: number, step: number): number {
 }
 
 /**
- * The widest radius a def can ever show, before `RADIUS_SCALE` — the two sizes every animated kind
- * cycles between, and the one size a point light holds.
- *
- * Shadows are cast at *this* rather than at the instant's radius, which is what lets one cast
- * serve a flickering light for as long as it stands still: a blocker recorded past the live radius
- * is further than any fragment that survives the falloff, so the extra reach can never change a
- * verdict. docs/lights.md § What a light remembers between frames.
+ * The widest radius a def can ever show, before {@link RADIUS_SCALE} — the two sizes every animated
+ * kind cycles between, and the one size a point light holds. Shadows are cast at *this*, so one
+ * cast serves a flickering light — docs/lights.md § What a light remembers between frames.
  */
 function widestSize(def: LightDef): number {
   return def.kind === 'point' ? def.size : Math.max(def.size, def.secondarySize);
 }
 
 /**
- * The radius a light shows at this instant, before `RADIUS_SCALE`. Each branch is GZDoom's
+ * The radius a light shows at this instant, before {@link RADIUS_SCALE}. Each branch is GZDoom's
  * `ADynamicLight::Tick` (`a_dynlight.cpp`), with its per-actor cycler state replaced by a pure
- * function of the emitter ID and the clock — see `hash01`.
+ * function of the emitter ID and the clock — see {@link hash01}.
  */
 function animatedSize(def: LightDef, id: number, clock: number): number {
   switch (def.kind) {

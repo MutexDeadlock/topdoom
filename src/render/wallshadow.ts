@@ -40,8 +40,8 @@ interface SectorWalls {
 }
 
 /**
- * What `sectorWalls` answers with, weak on the map and built once: a mover's rebuild asks the same
- * question of the same fixed geometry every tic.
+ * What {@link sectorWalls} answers with, weak on the map and built once: a mover's rebuild asks the
+ * same question of the same fixed geometry every tic.
  */
 const sectorWallCache = new WeakMap<DoomMap, SectorWalls[]>();
 
@@ -71,9 +71,9 @@ export function setWallShade(on: boolean): void {
 }
 
 /**
- * Collects the walls that can shade one fan — its sector's own lines, which is where a wall
- * bounding it can stand — and answers whether any did, so the caller can skip `wallShadeAt` for a
- * fan nothing stands on. `wallShadeAt` reads what this left behind, so the two are one call apart.
+ * Collects the walls that can shade one fan — its sector's own lines, where any wall bounding it
+ * stands — and answers whether any did, so the caller can skip {@link wallShadeAt} for a fan
+ * nothing stands on. {@link wallShadeAt} reads what this left behind, so they are one call apart.
  */
 export function beginWallShade(
   map: DoomMap,
@@ -136,7 +136,7 @@ export function wallShadeAt(x: number, y: number): number {
 }
 
 /**
- * `sectorLines`' own lines (`game/world.ts`, vanilla's `sec->lines[]`) with the endpoints and the
+ * {@link sectorLines}' own lines (vanilla's `sec->lines[]`) with the endpoints and the
  * sector across each hoisted out of the WAD records, because the filter above runs once per line
  * per leaf.
  */

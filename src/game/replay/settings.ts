@@ -59,7 +59,8 @@ export function captureSessionSettings(): SessionSettings {
  * a lobby from before the netgame rules carries only the first two, and reads as coop with no
  * limits. docs/multiplayer-deathmatch.md § Settings.
  *
- * @param partial  a record from any build — extra fields, a `SimSettings` among them, are left out
+ * @param partial  a record from any build — extra fields, a {@link SimSettings} among them, are
+ *                 left out
  */
 export function withSessionDefaults(partial: Partial<SessionSettings>): SessionSettings {
   return sessionRecord((key) => partial[key] ?? FIELDS[key].fallback);
@@ -140,8 +141,8 @@ interface SessionField<T> {
 
 /**
  * Every session setting once, in the record's field order: capture, defaults, the wire's check,
- * pinning, release and comparison all run over it. Keyed by `SessionSettings`, so a field without
- * a row is a type error — a new session setting is its field there and one row here.
+ * pinning, release and comparison all run over it. Keyed by {@link SessionSettings}, so a field
+ * without a row is a type error — a new session setting is its field there and one row here.
  */
 const SESSION_FIELDS: { readonly [K in keyof SessionSettings]: SessionField<SessionSettings[K]> } = {
   infiniteTallActors: { get: getInfiniteTallActors, override: overrideInfiniteTallActors, fallback: false },
@@ -159,11 +160,7 @@ const SESSION_KEYS = Object.keys(SESSION_FIELDS) as (keyof SessionSettings)[];
  */
 const FIELDS = SESSION_FIELDS as unknown as Record<keyof SessionSettings, SessionField<boolean | number>>;
 
-/**
- * A whole session record, built field by field in {@link SESSION_FIELDS}' order.
- *
- * @param valueOf  each field's value
- */
+/** A whole session record, built field by field in {@link SESSION_FIELDS}' order. */
 function sessionRecord(valueOf: (key: keyof SessionSettings) => boolean | number): SessionSettings {
   const record: Partial<Record<keyof SessionSettings, boolean | number>> = {};
   for (const key of SESSION_KEYS) record[key] = valueOf(key);

@@ -11,7 +11,7 @@ docs/monster-attacks.md.
 holds `tryRaiseCorpse` (called from `runChaseCall`), `resolveVileBlast`/`spawnWindupFire`/
 `vileFlameFor` (called from `MonsterAttacks`), and the vile's constants. Two exceptions stay out of
 it and say so at the declaration: the fire-time sight recheck and the `'vileWindup'` return remain
-one-line branches in `ai.ts`, and `VILE_KNOCKUP_SPEED` lives in `defs.ts` because `MONSTER_STATS`
+one-line branches in `ai.ts`, and `VILE_KNOCKUP_SPEED` lives in `tables.ts` because `MONSTER_STATS`
 reads it (docs/monster-attacks.md § Resolving an attack).
 
 Both signature mechanics are modeled, confirmed against `p_enemy.c`/`info.c`.

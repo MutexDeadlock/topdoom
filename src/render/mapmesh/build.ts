@@ -1,6 +1,6 @@
 /**
- * The build a mesh is accumulated into: one `Batch` per texture, the vertex push every surface
- * goes through, and turning a finished batch into a three.js mesh.
+ * The build a mesh is accumulated into: one {@link Batch} per texture, the vertex push every
+ * surface goes through, and turning a finished batch into a three.js mesh.
  * See docs/render.md § Mesh building.
  */
 import * as THREE from 'three';
@@ -13,7 +13,7 @@ import { vecLength } from '../../util/geom.ts';
 import { lightSegment } from '../sectorlight.ts';
 import { wallProbePoint, type FlatSurface, type SectorTransfers, type WallOccluder } from './defs.ts';
 
-/** The batches a build is accumulating into, one per `batchKey`. */
+/** The batches a build is accumulating into, one per {@link batchKey}. */
 export class BatchSet {
   private batches = new Map<string, Batch>();
 
@@ -27,9 +27,7 @@ export class BatchSet {
     return b;
   }
 
-  /**
-   * The batch `key` names, or undefined — `WallOccluder.key` is the same `kind + ':' + texture`.
-   */
+  /** The batch `key` names — {@link WallOccluder.key} is the same `kind + ':' + texture`. */
   byKey(key: string): Batch | undefined {
     return this.batches.get(key);
   }
@@ -44,8 +42,8 @@ export type SizeFn = (kind: SurfaceKind, name: string) => Size | null;
 /**
  * The working set every builder below threads: the map, the options resolved once, and the
  * batches and records they append to. One covers either the whole map's static geometry or a
- * single mover's sector — which of the two is `holdsStill`/`includeSide`, and nothing else here
- * knows the difference. See docs/render.md § Mesh building.
+ * single mover's sector — which of the two is {@link Build.holdsStill}/{@link Build.includeSide},
+ * and nothing else here knows the difference. See docs/render.md § Mesh building.
  */
 export interface Build {
   map: DoomMap;
@@ -55,7 +53,7 @@ export interface Build {
   graph: LeafGraph;
   bank: MaterialBank;
   batches: BatchSet;
-  /** Texture dimensions, recording into `missing` whatever the WAD has no lump for. */
+  /** Texture dimensions, recording into {@link Build.missing} whatever the WAD has no lump for. */
   size: SizeFn;
   missing: Set<string>;
   transfers: SectorTransfers;
@@ -104,12 +102,12 @@ export function pushVertex(
   z: number,
   u: number,
   v: number,
-  /** How lit the surface is — `lightSegment` of its light and fake contrast, for `Batch.segs`. */
+  /** {@link lightSegment} of the surface's light and fake contrast, for {@link Batch.segs}. */
   seg: number,
   alpha = 1,
   /**
-   * -1 leaves the cell unresolved: wall quads get theirs from `fillWallCells` once the occluders
-   * exist.
+   * -1 leaves the cell unresolved: wall quads get theirs from {@link fillWallCells} once the
+   * occluders exist.
    */
   cell = -1,
   /** 1 marks the vertex as standing under sky; 0, the default, is indoors. */
@@ -198,7 +196,7 @@ export function relightRange(
   for (let v = start; v < start + count; v++) seg.setX(v, s);
 }
 
-/** Flags what `relightRange` wrote for upload. */
+/** Flags what {@link relightRange} wrote for upload. */
 export function markRelit(geom: THREE.BufferGeometry | undefined): void {
   if (!geom) return;
   geom.getAttribute('aLightSeg').needsUpdate = true;
@@ -210,7 +208,7 @@ interface Batch {
   texture: string;
   positions: number[];
   uvs: number[];
-  /** Per vertex RGBA, but only A carries anything: RGB is a flat 1 — see `pushVertex`. */
+  /** Per vertex RGBA, but only A carries anything: RGB is a flat 1 — see {@link pushVertex}. */
   colors: number[];
   /**
    * Per vertex, the light segment the shader samples the ramp at — the `aLightSeg` attribute, and

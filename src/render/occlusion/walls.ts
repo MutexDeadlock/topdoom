@@ -1,6 +1,6 @@
 /**
- * `WallFader`: the wall quads a camera→target sightline crosses, dissolved so the target behind
- * them stays visible. See docs/render-occlusion.md.
+ * {@link WallFader}: the wall quads a camera→target sightline crosses, dissolved so the target
+ * behind them stays visible. See docs/render-occlusion.md.
  */
 import * as THREE from 'three';
 import type { WallOccluder } from '../mapmesh.ts';
@@ -10,10 +10,10 @@ import type { Opening } from '../../game/world.ts';
 import * as defs from './defs.ts';
 
 /**
- * Total occluder count below which `WallFader` scans them all instead of building an index: over a
- * short list the 3x3 cell walk costs more than the scan it replaces. **Tuned by feel.** A mover
- * fader is not excluded — the grid is indexed on quad midpoints, and a refresh moves a mover's
- * heights, never a quad's footprint, so the buckets stay true across one.
+ * Total occluder count below which {@link WallFader} scans them all instead of building an index:
+ * over a short list the 3x3 cell walk costs more than the scan it replaces. **Tuned by feel.** A
+ * mover fader is not excluded — the grid is indexed on quad midpoints, and a refresh moves a
+ * mover's heights, never a quad's footprint, so the buckets stay true across one.
  */
 const GRID_MIN_OCCLUDERS = 256;
 
@@ -25,10 +25,10 @@ const GRID_MIN_OCCLUDERS = 256;
 const scratchReach: defs.FadeBox = defs.emptyBox();
 
 /**
- * Fades the wall quads currently sitting on a camera→target sightline. `update` only computes
- * that factor; a wall's on-screen alpha is its *product* with fog of war's reveal — two systems
- * driving the same vertex-alpha channel — so `commit` writes the combined value once both are
- * known. See docs/render-occlusion.md.
+ * Fades the wall quads currently sitting on a camera→target sightline. {@link WallFader.update}
+ * only computes that factor; a wall's on-screen alpha is its *product* with fog of war's reveal —
+ * two systems driving the same vertex-alpha channel — so {@link WallFader.commit} writes the
+ * combined value once both are known. See docs/render-occlusion.md.
  */
 export class WallFader {
   private occluders: WallOccluder[];
@@ -41,8 +41,8 @@ export class WallFader {
    */
   private occlusionAlpha: Float32Array;
   /**
-   * What `commit` last wrote per corner, so an unchanged quad costs no rewrite. NaN until first
-   * written, so the first commit always lands.
+   * What {@link WallFader.commit} last wrote per corner, so an unchanged quad costs no rewrite. NaN
+   * until first written, so the first commit always lands.
    */
   private lastCombined: Float32Array;
   /**
@@ -53,14 +53,11 @@ export class WallFader {
   /**
    * Per quad, whether it is the passable gap of its own line — an opening a body can walk through,
    * screened by a **masked** texture a look already passes through, so fading it reveals nothing.
-   *
    * **Asked lazily**, of the quads a sightline crosses in pass one and the quads a crossing reaches
-   * in pass two, and at most once per quad per frame (`passableStamp`). Deciding it for every quad
-   * up front was most of what pass one cost on a map with tens of thousands of them, and on a
-   * frame where the camera holds a few hundred units of the level almost none of them are asked.
+   * in pass two, and at most once per quad per frame ({@link WallFader.passableStamp}).
    */
   private passable: Uint8Array;
-  /** The `update` each `passable` entry was last decided on. */
+  /** The {@link WallFader.update} each {@link WallFader.passable} entry was decided on. */
   private passableStamp: Int32Array;
   /**
    * Whether each batch's texture is masked, memoised — one material lookup per texture for the
@@ -68,7 +65,7 @@ export class WallFader {
    */
   private maskedByKey = new Map<string, boolean>();
   private frameStamp = 0;
-  /** Reused by `update`'s per-line opening lookup — see `openingInto`. */
+  /** Scratch for the per-line {@link defs.FadeFrame.openingInto} lookup. */
   private opening: Opening = { top: 0, bottom: 0 };
   /**
    * Per-target scratch, grown on demand: position, sprite half-height, and the current line side's
@@ -96,14 +93,14 @@ export class WallFader {
   private hitStamp = new Int32Array(0);
   private groupStamp = 0;
   /**
-   * `update`'s own bag, for a fader that stands alone: a frame with several of
-   * them shares one instead (`collectCrossings`). Allocated on first use, since
-   * a level's mover faders — thousands of them — only ever take the shared one.
+   * {@link WallFader.update}'s own bag, for a fader that stands alone: a frame with several of
+   * them shares one instead ({@link WallFader.collectCrossings}). Allocated on first use, since a
+   * level's mover faders — thousands of them — only ever take the shared one.
    */
   private crossings: defs.FadeCrossings | null = null;
   /**
    * Uniform grid over chunk midpoints, so a crossing can find the quads around it without scanning
-   * the map. Null below `GRID_MIN_OCCLUDERS`.
+   * the map. Null below {@link GRID_MIN_OCCLUDERS}.
    */
   private grid: {
     cell: number;
@@ -121,22 +118,18 @@ export class WallFader {
    */
   private candidates: Int32Array;
   /**
-   * Every quad's footprint, boxed — what lets `applyCrossings` drop a crossing,
-   * or the frame's whole bag of them, that lands nowhere near this fader.
-   * Built once, for the reason `buildGrid` gives: a refresh changes heights,
-   * never footprints. Empty on a fader with no quads, which then rejects
-   * everything. `MoverGeometry` seeds its mesh bounds from it rather than
-   * walking the same quads again.
+   * Every quad's footprint, boxed — what lets {@link WallFader.applyCrossings} drop a crossing, or
+   * the frame's whole bag of them, that lands nowhere near this fader. Built once, for the reason
+   * {@link GRID_MIN_OCCLUDERS} gives: a refresh changes heights, never footprints. Empty on a
+   * fader with no quads, which then rejects everything. `MoverGeometry` seeds its mesh bounds from
+   * it rather than walking the same quads again.
    */
   readonly footprint: defs.FadeBox = defs.emptyBox();
   /**
    * The runs of quads sharing a line side, which `addWall` emits together —
-   * `[runFirst[r], runLast[r]]` plus that side's own segment and linedef. Pass
-   * one walks *these* rather than every quad: the box test is per line side
-   * already, and on a map with hundreds of thousands of quads the run it
-   * belongs to is the only thing most of them would have contributed to. Built
-   * once, since a refresh changes a mover quad's heights but never which line
-   * side it came from (see `buildGrid` for the same argument about footprints).
+   * `[runFirst[r], runLast[r]]` plus that side's own segment and linedef. Pass one walks *these*
+   * rather than every quad. Built once, since a refresh never changes which line side a quad came
+   * from. docs/render-occlusion.md § Nothing per-frame is per-quad.
    */
   private runFirst: Int32Array;
   private runLast: Int32Array;
@@ -147,46 +140,43 @@ export class WallFader {
   private runSegBy: Float64Array;
   private runCount = 0;
   /**
-   * The quads whose alpha is not settled at 1 — the only ones `update` has to
-   * reset, damp and hand to `commit`. A quad joins when a crossing first folds
-   * it and leaves once it has relaxed all the way back, so the per-frame cost
-   * follows the size of the hole rather than the size of the map.
-   * `activeSlot[j]` is where quad `j` sits in `active`, or -1.
+   * The quads whose alpha is not settled at 1 — the only ones {@link WallFader.update} has to
+   * reset, damp and hand to {@link WallFader.commit}. A quad joins when a crossing first folds it
+   * and leaves once it has relaxed all the way back, so the per-frame cost follows the hole, not
+   * the map. `activeSlot[j]` is where quad `j` sits in {@link WallFader.active}, or -1.
    */
   private active: Int32Array;
   private activeSlot: Int32Array;
   private activeCount = 0;
   /**
-   * The `update` a still-active quad first came to rest on, or -1 while it is
-   * still moving. A quad is kept one extra frame after it settles so the
-   * `commit` that follows still writes the value it settled *on*; the next
-   * `update` is what drops it.
+   * The {@link WallFader.update} a still-active quad first came to rest on, or -1 while it is still
+   * moving. Kept one extra frame after it settles so the {@link WallFader.commit} that follows
+   * still writes the value it settled *on*; the next {@link WallFader.update} drops it.
    */
   private settledStamp: Int32Array;
   /**
-   * Set until the first `commit`, which has to write every quad because `lastCombined` starts NaN.
+   * Set until the first {@link WallFader.commit}, which has to write every quad because
+   * {@link WallFader.lastCombined} starts NaN.
    */
   private commitAll = true;
   /**
-   * The highest combined alpha the last `commit` resolved for each mesh key —
-   * zero means every quad that mesh draws is currently invisible, which is what
-   * lets a caller skip drawing it entirely (`MoverGeometry.updateFading`).
-   * Only filled when `trackVisibility` is on, since maintaining it costs a map
-   * lookup per quad per frame and the static batches have tens of thousands of
-   * them with no use for the answer.
+   * The highest combined alpha the last {@link WallFader.commit} resolved for each mesh key — zero
+   * means every quad that mesh draws is invisible, which lets a caller skip drawing it
+   * (`MoverGeometry.updateFading`). Only filled when {@link WallFader.trackVisibility} is on.
    * See docs/render-occlusion.md § Skipping invisible mover meshes.
    */
   readonly maxAlphaByKey = new Map<string, number>();
   private trackVisibility: boolean;
   /**
-   * The batches this frame's `commit` wrote into, reused rather than reallocated: a level can hold
-   * a couple of thousand faders and every one of them commits every frame.
+   * The batches this frame's {@link WallFader.commit} wrote into, reused rather than reallocated: a
+   * level can hold a couple of thousand faders and every one of them commits every frame.
    */
   private dirtyBuffers = new Set<THREE.BufferAttribute>();
   /**
    * Each quad's colour buffer, by occluder index — resolved here rather than looked up per quad per
-   * frame. Re-resolved by `invalidateWritten`, which is called on the one path that can move a quad
-   * to a different batch (`refreshMoverMesh` rewrites `key` through `copyRefreshedQuad`).
+   * frame. Re-resolved by {@link WallFader.invalidateWritten}, which is called on the one path that
+   * can move a quad to a different batch (`refreshMoverMesh` rewrites {@link WallOccluder.key}
+   * through `copyRefreshedQuad`).
    */
   private attrs: (THREE.BufferAttribute | undefined)[] = [];
 
@@ -217,20 +207,17 @@ export class WallFader {
   }
 
   /**
-   * Whether nothing here is faded or still relaxing — so an `update` that can
-   * fold none of these quads (see `fadeReach`) would do nothing at all.
+   * Whether nothing here is faded or still relaxing — so an {@link WallFader.update} that can fold
+   * none of these quads (see {@link defs.fadeReach}) would do nothing at all.
    */
   get idle(): boolean {
     return this.activeCount === 0;
   }
 
   /**
-   * Forgets what `commit` believes is in the vertex buffers, so the next one
-   * writes every quad again. For the one thing that changes those buffers
-   * behind this class's back: `refreshMoverMesh` rewrites a mover's whole
-   * colour attribute, alpha channel included, and without this the
-   * unchanged-alpha skip keeps a refreshed quad at whatever the *builder* put
-   * there — a door in unrevealed space drawn solid while it moves.
+   * Forgets what {@link WallFader.commit} believes is in the vertex buffers, so the next one writes
+   * every quad again. For the one thing that changes those buffers behind this class's back:
+   * `refreshMoverMesh` rewrites a mover's whole colour attribute, alpha channel included.
    * docs/render-occlusion.md § Mover meshes a frame cannot touch.
    */
   invalidateWritten(): void {
@@ -243,11 +230,9 @@ export class WallFader {
   /**
    * Both passes over this fader's own crossings alone — right for a fader that is the only one on
    * the map, which is what the tests build. A level splits its walls across the static batches and
-   * one mesh per mover, and those share a bag through `collectCrossings`/`applyCrossings` instead.
-   *
-   * `FadeFrame.openingInto` tells a genuinely solid quad from one that only *renders* solid; the
-   * lookup is per line but the test it feeds is per **quad**, which is load-bearing.
-   * docs/render-occlusion.md.
+   * one mesh per mover, and those share a bag through
+   * {@link WallFader.collectCrossings}/{@link WallFader.applyCrossings} instead.
+   * docs/render-occlusion.md § One hole, whichever mesh it lands in.
    */
   update(frame: defs.FadeFrame): void {
     const bag = (this.crossings ??= new defs.FadeCrossings());
@@ -257,14 +242,13 @@ export class WallFader {
   }
 
   /**
-   * Pass one, appending to `out` rather than replacing it: where this fader's
-   * own walls stop each sightline. The caller resets the bag once for the frame
-   * and hands the same one to every fader, so what one fader's wall stops the
-   * next fader's geometry still has to make way for —
+   * Pass one, appending to `out` rather than replacing it: where this fader's own walls stop each
+   * sightline. The caller resets the bag once for the frame and hands the same one to every fader,
+   * so what one fader's wall stops the next fader's geometry still has to make way for —
    * docs/render-occlusion.md § One hole, whichever mesh it lands in.
    *
-   * Pairs with `applyCrossings`, and runs first: it is where the frame's
-   * `passable` memo is stamped.
+   * Pairs with {@link WallFader.applyCrossings}, and runs first: it is where the frame's
+   * {@link WallFader.passable} memo is stamped.
    */
   collectCrossings(frame: defs.FadeFrame, out: defs.FadeCrossings): void {
     const { camX, camY, camZ, targets, openingInto } = frame;
@@ -345,8 +329,8 @@ export class WallFader {
    * enters as the gap between the crossing and the quad's own band, so a wall
    * the sightline clears keeps standing.
    *
-   * Runs after `collectCrossings`, which is what stamps the `passable` memo the
-   * quad tests below read.
+   * Runs after {@link WallFader.collectCrossings}, which is what stamps the
+   * {@link WallFader.passable} memo the quad tests below read.
    */
   applyCrossings(frame: defs.FadeFrame, hits: defs.FadeCrossings): void {
     const { dt, camX, camY, targets, openingInto } = frame;
@@ -462,15 +446,14 @@ export class WallFader {
   }
 
   /**
-   * Writes base × occlusion × fog-of-war combined alpha into each wall's
-   * vertex-colour alpha channel. `fogAlphaOf` is keyed by the wall's index in
-   * this list, not by sector: which subsector a wall quad faces into is
-   * geometry FogOfWar works out for itself (see its `wallAlpha`), so the mesh
-   * builder doesn't have to carry a fog-specific field around.
+   * Writes base × occlusion × fog-of-war combined alpha into each wall's vertex-colour alpha
+   * channel. The base is the quad's own permanent translucency (a Boom 260 midtexture) — a *third*
+   * input to this one channel, and the only one that never changes after the build.
+   * docs/render-occlusion.md.
    *
-   * The base is the quad's own permanent translucency (a Boom 260 midtexture)
-   * — a *third* input to this one channel, and the only one that never changes
-   * after the build. docs/render-occlusion.md.
+   * @param fogAlphaOf Keyed by the wall's index in this list, not by sector: which subsector a wall
+   *   quad faces into is geometry FogOfWar works out for itself (see its `wallAlpha`), so the mesh
+   *   builder doesn't have to carry a fog-specific field around.
    */
   commit(fogAlphaOf: (occluderIndex: number) => number, fogChanged?: defs.ChangedQuads | null): void {
     const dirty = this.dirtyBuffers;
@@ -536,10 +519,9 @@ export class WallFader {
   }
 
   /**
-   * Collects the maximal runs of consecutive quads sharing a line side. A run
-   * that broke up would cost an extra crossing solve, never a different answer
-   * — the same tolerance pass one always had for its grouping. Takes
-   * `footprint` on the way past, since it is the one walk over every quad.
+   * Collects the maximal runs of consecutive quads sharing a line side. A run that broke up would
+   * cost an extra crossing solve, never a different answer. Takes {@link WallFader.footprint} on
+   * the way past, since it is the one walk over every quad.
    */
   private buildRuns(): void {
     let line = -1;
@@ -573,9 +555,9 @@ export class WallFader {
   }
 
   /**
-   * Puts a quad on the active list if it isn't there, and gives its four
-   * corners a fresh `wanted` of 1 as it joins — the reset that would otherwise
-   * be a fill across every quad on the map.
+   * Puts a quad on the active list if it isn't there, and gives its four corners a fresh
+   * {@link WallFader.wanted} of 1 as it joins — the reset that would otherwise be a fill across
+   * every quad on the map.
    */
   private markActive(j: number): void {
     if (this.activeSlot[j] >= 0) return;
@@ -590,10 +572,9 @@ export class WallFader {
   }
 
   /**
-   * Buckets every quad by its midpoint. The cell is sized so the eight
-   * neighbours of a crossing's own cell always cover `FADE_RADIUS` plus the
-   * furthest a quad's corner can sit from the midpoint that filed it — which is
-   * what lets a query stop at 3×3.
+   * Buckets every quad by its midpoint. The cell is sized so the eight neighbours of a crossing's
+   * own cell always cover {@link defs.FADE_RADIUS} plus the furthest a quad's corner can sit from
+   * the midpoint that filed it — which is what lets a query stop at 3×3.
    */
   private buildGrid(): void {
     let halfChunk = 0;
@@ -621,7 +602,7 @@ export class WallFader {
     this.grid = { cell, minX, minY, cols, rows, start, items };
   }
 
-  /** Fills `candidates` with the quads a crossing at (x, y) could reach, and returns how many. */
+  /** Fills {@link WallFader.candidates} with quads in reach of (x, y) and returns how many. */
   private candidatesNear(x: number, y: number): number {
     const g = this.grid;
     if (!g) return this.occluders.length;
@@ -653,9 +634,10 @@ export class WallFader {
   }
 
   /**
-   * Whether a quad covers its line's whole walkable opening, against the `opening` last looked up.
-   * The rule `passable` records, written once: pass one reads it against a per-line-side lookup it
-   * already holds, `isPassable` against one it takes itself.
+   * Whether a quad covers its line's whole walkable opening, against the
+   * {@link WallFader.opening} last looked up. The rule {@link WallFader.passable} records, written
+   * once: pass one reads it against a per-line-side lookup it already holds,
+   * {@link WallFader.isPassable} against one it takes itself.
    */
   private spansOpening(o: WallOccluder): boolean {
     return o.botH >= this.opening.bottom && o.topH <= this.opening.top;
@@ -678,9 +660,9 @@ export class WallFader {
   }
 
   /**
-   * Whether quad `j` is its line's passable gap, decided once per quad per `update` — see
-   * `passable`. Pass one answers it for the quads it crosses; every other quad first gets asked
-   * here, by the crossing that would otherwise fade it.
+   * Whether quad `j` is its line's passable gap, decided once per quad per
+   * {@link WallFader.update} — see {@link WallFader.passable}. Pass one answers it for the quads it
+   * crosses; every other quad first gets asked here, by the crossing that would otherwise fade it.
    */
   private isPassable(j: number, openingInto: (line: number, out: Opening) => boolean): boolean {
     if (this.passableStamp[j] === this.frameStamp) return this.passable[j] === 1;

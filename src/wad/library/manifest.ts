@@ -1,6 +1,6 @@
 /**
  * The WADs the server itself offers: where they are served from, the `index.json` listing them, and
- * the `WadSource` one served file becomes — the only place in this layer that fetches.
+ * the {@link WadSource} one served file becomes — the only place in this layer that fetches.
  * See docs/wad.md § The `public/game/` manifest.
  */
 import { decodeTextFile } from './textfile.ts';
@@ -74,8 +74,8 @@ function servedPath(folder: string, file: string): string {
 
 /**
  * A served text file as text — the sibling `.txt` a WAD row offers, fetched only when the player
- * opens it. Decoded by `decodeTextFile` rather than `res.text()`, which would assume UTF-8 and turn
- * a DOS-era file's box art into replacement characters.
+ * opens it. Decoded by {@link decodeTextFile} rather than `res.text()`, which would assume UTF-8
+ * and turn a DOS-era file's box art into replacement characters.
  */
 async function fetchText(url: string): Promise<string> {
   const res = await fetch(url);

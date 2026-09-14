@@ -55,10 +55,9 @@ export function keySlotColor(slot: KeySlot): KeyColor {
 }
 
 /**
- * Whether `keys` opens `lock` — the one lock check every trigger path uses.
- * Lives here rather than beside `LockRule` (`specials/defs.ts`) because it is
- * a question about the inventory, and keeping it here leaves that module's
- * import of the key types type-only.
+ * Whether `keys` opens `lock` — the one lock check every trigger path uses. Lives here rather than
+ * beside {@link LockRule} (`specials/defs.ts`) because it is a question about the inventory, and
+ * keeping it here leaves that module's import of the key types type-only.
  */
 export function satisfiesLock(keys: ReadonlySet<KeySlot>, lock: LockRule): boolean {
   switch (lock.kind) {
@@ -120,47 +119,41 @@ export function tickPowers(inv: Inventory, dt: number): void {
 const ITEM_PICKUP_RADIUS = 20;
 
 /**
- * `PIT_CheckThing`'s `blockdist` for the player against an item (map units):
- * the two radii summed, tested as an axis-aligned box, not a circle
- * (docs/items.md § Collecting things).
+ * `PIT_CheckThing`'s `blockdist` for the player against an item (map units), tested as an
+ * axis-aligned box, not a circle (docs/items.md § Collecting things).
  */
 export const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
 
 const AMMO_MAX: Record<AmmoType, number> = { bullets: 200, shells: 50, rockets: 50, cells: 300 };
 
 /**
- * Vanilla's own `maxammo[]`, doubled once a backpack has been collected —
- * `P_TouchSpecialThing`'s backpack case multiplies every entry by 2 in place,
- * permanently. Every cap check in this file goes through here rather than
- * reading `AMMO_MAX` directly, so a weapon's own ammo grant respects the
- * raised cap too, not just plain ammo pickups.
+ * Vanilla's own `maxammo[]`, doubled once a backpack has been collected — `P_TouchSpecialThing`'s
+ * backpack case multiplies every entry by 2 in place, permanently. Every cap check goes through
+ * here rather than reading {@link AMMO_MAX}. docs/items.md § Powerups and the backpack.
  */
 export function ammoMax(inv: Inventory, type: AmmoType): number {
   return inv.backpack ? AMMO_MAX[type] * 2 : AMMO_MAX[type];
 }
 
 /**
- * Vanilla's `clipammo[]` — one clip's worth of each ammo class. Every ammo grant in this file goes
- * through it, because `P_GiveAmmo` multiplies its `num` by this table: `AMMO_PICKUPS` above counts
- * clips, `WEAPON_PICKUPS` below hands over two of them, and a backpack gives one of each
- * (`P_GiveAmmo(player, i, 1)` per class) on top of raising the caps.
- *
- * Patchable: a DEHACKED `Ammo N / Per ammo` line writes here, and the multipliers above are why
- * that reaches the pickups too. docs/dehacked.md § Weapon, Ammo and Misc.
+ * Vanilla's `clipammo[]` — one clip's worth of each ammo class, which `P_GiveAmmo` multiplies its
+ * `num` by: {@link AMMO_PICKUPS} counts clips, {@link WEAPON_PICKUPS} hands over two, and a
+ * backpack gives one of each (`P_GiveAmmo(player, i, 1)` per class). A DEHACKED
+ * `Ammo N / Per ammo` line writes here. docs/dehacked.md § Weapon, Ammo and Misc.
  */
 const CLIP_AMMO: Record<AmmoType, number> = { bullets: 10, shells: 4, rockets: 1, cells: 20 };
 
 /**
- * Vanilla's `maxammo[i]` for one class. `ammoMax` is the only reader, so the backpack's doubling
- * follows on its own.
+ * Vanilla's `maxammo[i]` for one class. {@link ammoMax} is the only reader, so the backpack's
+ * doubling follows on its own.
  */
 export function setMaxAmmo(type: AmmoType, max: number): void {
   AMMO_MAX[type] = max;
 }
 
 /**
- * Vanilla's `clipammo[i]`. Nothing else needs re-deriving: `AMMO_PICKUPS` and `WEAPON_PICKUPS`
- * both count clips rather than amounts, exactly as `P_GiveAmmo` does, so they follow from here.
+ * Vanilla's `clipammo[i]`. Nothing else needs re-deriving: {@link AMMO_PICKUPS} and
+ * {@link WEAPON_PICKUPS} count clips rather than amounts, so they follow from here.
  */
 export function setClipAmmo(type: AmmoType, per: number): void {
   CLIP_AMMO[type] = per;
@@ -168,8 +161,8 @@ export function setClipAmmo(type: AmmoType, per: number): void {
 
 /**
  * One patchable `Misc` limit, read at the point of use rather than copied — the same rule
- * `HEALTH_PICKUPS`' `{limit}` rows follow, so a patch applied mid-session is seen by the next read.
- * `game/cheats.ts` is the reader outside this module.
+ * {@link HEALTH_PICKUPS}' `{limit}` rows follow, so a patch applied mid-session is seen by the next
+ * read. `game/cheats.ts` is the reader outside this module.
  */
 export function inventoryLimit(field: keyof InventoryLimits): number {
   return LIMITS[field];
@@ -180,7 +173,7 @@ export function setInventoryLimits(limits: Partial<InventoryLimits>): void {
   Object.assign(LIMITS, limits);
 }
 
-/** Everything the two `set*` functions above can move, as vanilla leaves it. */
+/** Everything {@link setInventoryLimits} can move, as vanilla leaves it. */
 const LIMITS: InventoryLimits = {
   /** Vanilla's `MAXHEALTH` (`d_player.h`) — the cap ordinary health pickups stop at. */
   maxHealth: 100,
@@ -221,11 +214,9 @@ export function resetInventoryLimits(): void {
 const PISTOL_START_STORAGE_KEY = 'pistolStart';
 
 /**
- * Whether every level is entered on a fresh `createInventory()` instead of carrying health, armor,
- * ammo and weapons over — the speedrunners' "pistol start", off by default and not vanilla's
- * behavior for an ordinary exit (it is what vanilla does between *episodes*, and what its level
- * select has always done). Read by `game.ts: enterLevel`, the one place a level transition installs
- * an inventory. docs/items.md § Pistol start.
+ * Whether every level is entered on a fresh {@link createInventory} instead of carrying health,
+ * armor, ammo and weapons over — the speedrunners' "pistol start", off by default. Read by
+ * `game.ts: enterLevel`. docs/items.md § Pistol start.
  * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
 let pistolStart = readStorage(PISTOL_START_STORAGE_KEY, false);
@@ -247,16 +238,13 @@ export function overridePistolStart(enabled: boolean | null): void {
 const AUTO_SWITCH_STORAGE_KEY = 'autoSwitchWeapon';
 
 /**
- * Whether the game picks a *better* weapon for you: on ammo collected from empty (`AMMO_UPGRADE`)
- * and on the ready weapon running dry (`AMMO_FALLBACK_ORDER`, game/weapons.ts). **On by default** —
- * vanilla does both unconditionally, so the setting exists to opt out. The local slot reads it live
- * (`GLOBAL_PLAYER_SETTINGS`), so it applies to the level already running; the rules themselves take
- * the collecting slot's own (`PickupOptions.autoSwitch`, `WeaponSystem.autoSwitch`).
- * docs/weapons.md § Automatic weapon switching.
- *
- * Two switches are deliberately **outside** it, both because neither is a guess at which weapon is
- * better: a newly picked-up weapon selecting itself (`P_GiveWeapon`, in `applyPickup` below), and
- * berserk selecting the fist (`givePower`) — punching is that pickup's entire effect.
+ * Whether the game picks a *better* weapon for you: on ammo collected from empty
+ * ({@link AMMO_UPGRADE}) and on the ready weapon running dry (`AMMO_FALLBACK_ORDER`,
+ * game/weapons.ts). **On by default** — vanilla does both unconditionally, so the setting exists to
+ * opt out. The local slot reads it live (`GLOBAL_PLAYER_SETTINGS`), so it applies to the level
+ * already running; the rules themselves take the collecting slot's own
+ * ({@link PickupOptions.autoSwitch}, `WeaponSystem.autoSwitch`). The weapon-pickup and berserk
+ * switches are deliberately outside it — docs/weapons.md § Automatic weapon switching.
  * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
 let autoSwitchWeapon = readStorage(AUTO_SWITCH_STORAGE_KEY, true);
@@ -279,11 +267,11 @@ export function overrideAutoSwitchWeapon(enabled: boolean | null): void {
 export interface PickupOptions {
   /** A monster's drop: granted ammo halves (`P_GiveAmmo`'s monster-drop rule). Default false. */
   dropped?: boolean;
-  /** Skills 1 and 5 double granted ammo. Default `DEFAULT_SKILL`. */
+  /** Skills 1 and 5 double granted ammo. Default {@link DEFAULT_SKILL}. */
   skill?: Skill;
   /**
-   * The collecting player's automatic weapon switching, which `AMMO_UPGRADE` is gated on — the
-   * slot's `PlayerSettings.autoSwitchWeapon`. Default on, the setting's own default.
+   * The collecting player's automatic weapon switching, which {@link AMMO_UPGRADE} is gated on —
+   * the slot's `PlayerSettings.autoSwitchWeapon`. Default on, the setting's own default.
    */
   autoSwitch?: boolean;
   /**
@@ -297,7 +285,7 @@ export interface PickupOptions {
 /**
  * Applies a picked-up thing's effect, vanilla's `P_TouchSpecialThing` rules. Returns false for an
  * item that shouldn't be collected right now (Stimpack at full health), so the caller leaves it on
- * the ground — and in a netgame, `leftInNetgame` says which taken ones stay there too. See
+ * the ground — and in a netgame, {@link leftInNetgame} says which taken ones stay there too. See
  * docs/items.md § Collecting things.
  */
 export function applyPickup(inv: Inventory, type: number, options: PickupOptions = {}): boolean {
@@ -445,14 +433,10 @@ export function pickupLine(type: number, inv: Inventory): string | null {
 }
 
 /**
- * The sound a collected item makes — vanilla's `P_TouchSpecialThing`, which
- * starts from `itemup` and overrides it per sprite: `getpow` for the six
- * powerups plus the soulsphere and megasphere (the two health items that push
- * past 100), `wpnup` for the seven weapons. Everything else — health, armor,
- * ammo, keys, the backpack — keeps the plain `itemup` blip.
- *
- * Played **unattenuated** by the caller, as vanilla's own
- * `S_StartSound(NULL, sound)` does: you are standing on it.
+ * The sound a collected item makes — `P_TouchSpecialThing` starts from `itemup` and overrides it
+ * per sprite: `getpow` for the six powerups plus the soulsphere and megasphere, `wpnup` for the
+ * seven weapons. Played **unattenuated** by the caller, as vanilla's `S_StartSound(NULL, sound)`
+ * does: you are standing on it.
  */
 export function pickupSound(type: number): SfxId {
   if (type === ThingType.megasphere || type === ThingType.soulsphere || POWERUP_PICKUPS[type])
@@ -462,10 +446,8 @@ export function pickupSound(type: number): SfxId {
 }
 
 /**
- * Keys and powerups don't survive a level transition in vanilla
- * (`G_PlayerFinishLevel` clears `player->cards` and `player->powers` and
- * drops the `MF_SHADOW` invisibility flag off the player); health, armor,
- * ammo and the backpack's raised ammo caps do.
+ * Keys and powerups don't survive a level transition (`G_PlayerFinishLevel`); health, armor, ammo
+ * and the backpack's raised ammo caps do. docs/items.md § Inventory.
  */
 export function finishLevel(inv: Inventory): void {
   inv.keys.clear();
@@ -473,26 +455,21 @@ export function finishLevel(inv: Inventory): void {
 }
 
 /**
- * Vanilla's own `damage < 1000` gate on invulnerability (and godmode) in
- * `P_DamageMobj`: the powerup ignores every ordinary hit, but a big enough
- * one — `TELEFRAG_DAMAGE`'s 10000 — still lands, so invulnerability is no
- * defence against being teleported onto (docs/death.md § Telefrag).
+ * Vanilla's own `damage < 1000` gate on invulnerability (and godmode) in `P_DamageMobj`: a big
+ * enough hit — `TELEFRAG_DAMAGE` — still lands (docs/death.md § Telefrag).
  */
 const INVULNERABLE_DAMAGE_LIMIT = 1000;
 
 /**
  * Reduces health by `amount`, letting worn armor absorb part of it first — vanilla's `P_DamageMobj`
  * armor formula in its whole points, with invulnerability short-circuiting it where vanilla checks
- * (see {@link INVULNERABLE_DAMAGE_LIMIT}). `health` clamps at 0, as `player->health` does.
- * docs/death.md § Player death.
- *
- * `god` is IDDQD's `CF_GODMODE` (docs/cheats.md § IDDQD) — a parameter rather than an inventory
- * field because it is not something the player carries, and required rather than defaulted so a
- * damage path added later has to say which it is.
+ * (see {@link INVULNERABLE_DAMAGE_LIMIT}). {@link Inventory.health} clamps at 0, as
+ * `player->health` does. docs/death.md § Player death.
  *
  * @param inv     the player's, whose armor and health the hit spends
  * @param amount  the damage in whole points
- * @param god     IDDQD's god mode
+ * @param god     IDDQD's `CF_GODMODE` (docs/cheats.md § IDDQD) — a parameter because the player
+ *                doesn't carry it, required so a damage path added later has to say which it is
  * @returns the body's health after the hit, unclamped — vanilla's `target->health`, below 0 on a
  *          killing blow, which the gib and the death cry read — or null where the hit was blocked
  */
@@ -515,15 +492,18 @@ export function applyDamage(inv: Inventory, amount: number, god: boolean): numbe
 }
 
 /**
- * Applies `AMMO_UPGRADE` for one ammo class, given what the player held **before** the grant —
- * vanilla's `oldammo`. Call it once per class granted, in `AMMO_UPGRADE`'s own order where several
- * land together; `ready` is the weapon held when the *pickup* began, which the caller has to hold
- * still because this engine has no pending/ready split. docs/items.md § Ammo raises the weapon.
+ * Applies {@link AMMO_UPGRADE} for one ammo class. Call it once per class granted, in its own order
+ * where several land together; only where the collecting player's `autoSwitch` is on.
+ * docs/items.md § Ammo raises the weapon.
  *
  * The `bullets` row's `pistol` fallback is unconditional in vanilla (`weaponowned[wp_pistol]` is
  * never false there); here it takes the same ownership test as every other entry, since
- * `Inventory.weapons` is authoritative — the deviation `AMMO_FALLBACK_ORDER` also carries
- * (game/weapons.ts). Only called where the collecting player's `autoSwitch` is on.
+ * {@link Inventory.weapons} is authoritative — the deviation `AMMO_FALLBACK_ORDER` also carries
+ * (game/weapons.ts).
+ *
+ * @param oldAmount  what the player held **before** the grant — vanilla's `oldammo`
+ * @param ready      the weapon held when the *pickup* began, which the caller holds still because
+ *                   this engine has no pending/ready split
  */
 function upgradeOnAmmo(inv: Inventory, type: AmmoType, oldAmount: number, ready: WeaponId): void {
   if (oldAmount > 0) return;
@@ -534,10 +514,9 @@ function upgradeOnAmmo(inv: Inventory, type: AmmoType, oldAmount: number, ready:
 }
 
 /**
- * Vanilla's `P_GivePower`, which is not uniform across the six powers: the four timed ones restart
- * their own clock, berserk also runs `P_GiveBody(player, 100)` and switches to the fist, and the
- * computer area map is the only one that can be refused — its generic "already have it" branch
- * leaves a second one on the ground. docs/items.md § Powerups and the backpack.
+ * Vanilla's `P_GivePower`, which is not uniform across the six powers: berserk also tops up health
+ * and switches to the fist, and only the computer area map can be refused.
+ * docs/items.md § Powerups and the backpack.
  */
 function givePower(inv: Inventory, power: PowerId): boolean {
   if (power === 'berserk') {

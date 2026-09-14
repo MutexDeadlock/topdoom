@@ -8,10 +8,8 @@ import { SHIPPED_GLDEFS, shippedLump } from './shipped.ts';
 import { decodeTextLump, stripComments } from './textlump.ts';
 
 /**
- * The lump names carrying light definitions. GZDoom reads **every** one of these, in load order,
- * layering them (`gldefs.cpp: LoadGLDefs`) — unlike the MAPINFO family, where a file's several
- * lumps are alternatives and only the first is read. `GLDEFS` is the modern name; `DOOMDEFS` is
- * the game-specific one GZDoom still accepts for Doom.
+ * The lump names carrying light definitions, **every** one of them read (docs/wad.md § GLDEFS).
+ * `GLDEFS` is the modern name; `DOOMDEFS` is the game-specific one GZDoom still accepts for Doom.
  */
 const GLDEFS_LUMPS = ['GLDEFS', 'DOOMDEFS'];
 
@@ -34,18 +32,24 @@ export interface LightDef {
   r: number;
   g: number;
   b: number;
-  /** Primary radius in map units. GZDoom clamps `size` to 1..1024 (`gldefs.cpp`). */
+  /** Primary radius in map units, clamped to 1..1024 as GZDoom does (`gldefs.cpp`). */
   size: number;
-  /** The other radius an animated light moves between; equal to `size` for a `point`. */
+  /**
+   * The other radius an animated light moves between; equal to {@link LightDef.size} for a
+   * `point`.
+   */
   secondarySize: number;
   /** Seconds per cycle, for `pulse` and `flicker2`. GZDoom stores `interval * TICRATE` tics. */
   interval: number;
-  /** Probability 0..1 of taking `size` rather than `secondarySize` on a tic, for `flicker`. */
+  /**
+   * Probability 0..1 of taking {@link LightDef.size} rather than {@link LightDef.secondarySize} on
+   * a tic, for `flicker`.
+   */
   chance: number;
   /**
-   * Where the light sits relative to the thing, in DOOM map space. GLDEFS writes
-   * `offset x up y`, so its **middle** argument is the vertical one (`gldefs.cpp: ParseTriple`
-   * feeds a ZDoom-space triple) — that is `offZ` here, measured up from the thing's feet.
+   * Where the light sits relative to the thing, in DOOM map space. GLDEFS writes `offset x up y`,
+   * so its **middle** argument is the vertical one (`gldefs.cpp: ParseTriple` feeds a ZDoom-space
+   * triple) — that is {@link LightDef.offZ} here, measured up from the thing's feet.
    */
   offX: number;
   offY: number;
@@ -70,13 +74,13 @@ export interface Gldefs {
   /**
    * Frame reference → light name, both kinds in one map: `PUFFA` (5 characters, one specific
    * frame) and `TROO` (4, every frame of that sprite). The key's own length tells them apart, so
-   * one can never shadow the other and `lightForFrame` reads the exact binding first.
+   * one can never shadow the other and {@link lightForFrame} reads the exact binding first.
    */
   frames: Map<string, string>;
   /**
-   * `lightForFrame`'s memo, frame key → the light it resolves to or null. Filled on first ask and
-   * cleared whenever `parseGldefs` writes into this set. It exists because the two-step lookup
-   * below allocates: the exact 5-character binding misses for nearly every drawn frame, and the
+   * {@link lightForFrame}'s memo, frame key → the light it resolves to or null. Filled on first ask
+   * and cleared whenever {@link parseGldefs} writes into this set. It exists because the two-step
+   * lookup allocates: the exact 5-character binding misses for nearly every drawn frame, and the
    * sprite-wide fallback's `slice` would then run once per drawn sprite per frame.
    */
   resolved: Map<string, LightDef | null>;
@@ -314,8 +318,8 @@ export function gldefsFromWad(wad: Wad, base: Gldefs): Gldefs {
 let stockText: Promise<string> | null = null;
 
 /**
- * The stock GZDoom light definitions as text for `parseGldefs`: the `GLDEFS` lump of the WAD the
- * engine ships, built from `assets/gldefs.txt`. A file that fails to load resolves to an empty
+ * The stock GZDoom light definitions as text for {@link parseGldefs}: the `GLDEFS` lump of the WAD
+ * the engine ships, built from `assets/gldefs.txt`. A file that fails to load resolves to an empty
  * string rather than rejecting — no lights is a worse looking game, not a broken one, and it must
  * never keep a level from starting. See docs/wad.md § The WAD the engine ships.
  */

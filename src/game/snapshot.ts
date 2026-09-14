@@ -49,9 +49,9 @@ export interface InventorySnapshot {
   armorType: 0 | 1 | 2;
   ammo: Record<AmmoType, number>;
   /**
-   * Key *colors*, what saves have always stored. Still written (derived from
-   * {@link InventorySnapshot.keySlots}) so a save stays readable by builds from before card/skull
-   * tracking; a reader prefers {@link InventorySnapshot.keySlots} when present.
+   * Key *colors*, written (derived from {@link InventorySnapshot.keySlots}) so a save stays
+   * readable by builds from before card/skull tracking; a reader prefers
+   * {@link InventorySnapshot.keySlots} when present.
    */
   keys: KeyColor[];
   /**
@@ -166,10 +166,9 @@ export interface SpecialsSnapshot {
 /**
  * Which {@link PosedThing} fields a killable thing's {@link MonsterFields} block can carry — the
  * one list `snapshotThings` and `restoreThings` both loop over, so a field can't be saved and then
- * not restored. Everything not named here is either re-derived by `pushThing` on restore or
- * deliberately dropped — including {@link PosedThing.dead} (⟺ `health <= 0`, every death/revive
- * site maintains it) and {@link PosedThing.deathFrameCount} (recomputed by `enterDeathPose` on a
- * restored corpse) (docs/savegames.md § What is saved and what is deliberately not).
+ * not restored. Everything else, {@link PosedThing.dead} and {@link PosedThing.deathFrameCount}
+ * among it, is re-derived on restore or deliberately dropped
+ * (docs/savegames.md § What is saved and what is deliberately not).
  */
 export const MONSTER_SAVE_KEYS = [
   'health',
@@ -373,12 +372,9 @@ export interface IconSnapshot {
 export type ProjectileSnapshot = Omit<Projectile, 'anim'>;
 
 /**
- * A teleport-fog puff mid-animation: where it is and how far into its ~1.7 s it
- * has got. The animator, the sector light and `drawPrev*` are all re-derived by
- * the ordinary `spawn` on restore rather than saved — a fog never moves, so
- * `drawPrev*` is its own position, and re-sampling the light picks up a sector
- * whose lighting has since changed. docs/savegames.md § What is saved and what
- * is deliberately not.
+ * A teleport-fog puff mid-animation: where it is and how far into its ~2 s it has got. The
+ * animator, the sector light and `drawPrev*` are re-derived by the ordinary `spawn` on restore — a
+ * fog never moves. docs/savegames.md § What is saved and what is deliberately not.
  */
 export interface TeleportFogState extends Pos3 {
   elapsed: number;
@@ -440,7 +436,8 @@ export interface GameSnapshot {
   netgame: boolean;
   /**
    * Whether the netgame is a deathmatch, written only when it is: part of thing identity like
-   * {@link GameSnapshot.netgame}, and absent in every save from before it. docs/multiplayer-deathmatch.md.
+   * {@link GameSnapshot.netgame}, and absent in every save from before it.
+   * docs/multiplayer-deathmatch.md.
    */
   deathmatch?: true;
   /** Every player slot, by slot — how many there are is the snapshot's to say. */
@@ -458,7 +455,7 @@ export interface GameSnapshot {
   projectiles: ProjectileSnapshot[];
   /**
    * The teleport fogs still playing — the one `SpriteFxLayer` transient long
-   * enough (~1.7 s) to be caught mid-animation by a save. Optional because it
+   * enough (~2 s) to be caught mid-animation by a save. Optional because it
    * was added without a `SAVE_VERSION` bump: absent means no fogs, which is
    * exactly what a save from before it restored to.
    */
@@ -525,16 +522,10 @@ export function decodeSeconds(encoded: number): number {
 }
 
 /**
- * `JSON.stringify` replacer that rounds every number to 6 decimals —
- * dt-accumulated doubles otherwise serialize with 17-digit tails, and those
- * tails are most of a float's JSON cost. 6 decimals keeps the error at 1e-6 map
- * units/radians/seconds, far below anything observable (collision radii are
- * 16+, a tic is 1/35 s). Integers — sector heights, the RNG cursors, the `-1`
- * sentinel — pass through exactly; everything else is untouched. A replacer
- * rather than a pass over the tree: the rounding only ever matters in the
- * stored text, and a second copy of the largest object the feature builds is
- * the last thing to allocate next to the quota this exists to protect.
- * docs/savegames.md § The format and its version.
+ * `JSON.stringify` replacer that rounds every number to 6 decimals — dt-accumulated doubles
+ * otherwise serialize with 17-digit tails. Integers pass through exactly. A replacer rather than a
+ * pass over the tree, so no second copy of the largest object the feature builds is allocated next
+ * to the quota this exists to protect. docs/savegames.md § The format and its version.
  */
 export function roundFloat(_key: string, value: unknown): unknown {
   return typeof value === 'number' ? Math.round(value * 1e6) / 1e6 : value;
@@ -597,10 +588,8 @@ export function sectorBaseline(map: DoomMap): SectorSnapshot[] {
 }
 
 /**
- * The sectors that no longer match `baseline`, as `[index, fields]`. A whole
- * level's sectors written out cost ~24 KB of JSON on DOOM2 MAP15 and are
- * identical to the freshly loaded map in all but the handful a door, lift or
- * light has touched — so only those are stored (docs/savegames.md § Storage).
+ * The sectors that no longer match `baseline`, as `[index, fields]` — most of a level is never
+ * touched, so only those are stored (docs/savegames.md § Storage).
  */
 export function snapshotSectors(map: DoomMap, baseline: SectorSnapshot[]): SectorEntry[] {
   const out: SectorEntry[] = [];

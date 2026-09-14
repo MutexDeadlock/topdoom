@@ -1,7 +1,7 @@
 /**
  * Parses the MAPINFO lump family (UMAPINFO/ZMAPINFO/MAPINFO) for what a WAD set says about its own
- * levels: titles, where each exit leads, which track plays. `MapInfo` reads the set's lumps once
- * and the three consumers in this directory project it. See docs/wad.md § Level names.
+ * levels: titles, where each exit leads, which track plays. {@link MapInfo} reads the set's lumps
+ * once and the three consumers in this directory project it. See docs/wad.md § Level names.
  */
 import type { Wad, WadFile } from '../wad.ts';
 import { decodeTextLump, stripComments } from '../textlump.ts';
@@ -11,9 +11,9 @@ import { decodeTextLump, stripComments } from '../textlump.ts';
  * entries define only a name.
  */
 export interface MapInfoEntry {
-  /** The level's own title — see `parseMapInfo`'s list of the syntaxes that carry one. */
+  /** The level's own title — see {@link parseMapInfo}'s list of the syntaxes that carry one. */
   title?: string;
-  /** Where the normal exit leads (`next`), as a map lump name — or `MAPINFO_END` for a finale. */
+  /** Where the normal exit leads (`next`), as a map lump name — or {@link MAPINFO_END} for a finale. */
   next?: string;
   /** Where the secret exit leads — `secretnext` (ZDoom) or `nextsecret` (UMAPINFO). */
   secretNext?: string;
@@ -37,9 +37,10 @@ export interface MapInfoEntry {
 export const MAPINFO_LUMPS = ['UMAPINFO', 'ZMAPINFO', 'MAPINFO'];
 
 /**
- * The `next`/`secretNext` value meaning "the campaign ends here" rather than naming a level — every
- * finale keyword of both syntaxes reads as this one value (docs/wad.md § Level progression). No map
- * can collide with it: `@` is not a character a lump name carries.
+ * The {@link MapInfoEntry.next}/{@link MapInfoEntry.secretNext} value meaning "the campaign ends
+ * here" rather than naming a level — every finale keyword of both syntaxes reads as this one value
+ * (docs/wad.md § Level progression). No map can collide with it: `@` is not a character a lump name
+ * carries.
  */
 export const MAPINFO_END = '@END';
 
@@ -48,7 +49,7 @@ export function preferredMapInfoLump(present: readonly string[]): string | null 
   return MAPINFO_LUMPS.find((name) => present.includes(name)) ?? null;
 }
 
-/** Just the titles out of `parseMapInfo` — what the menu's map list and `LevelNames` want. */
+/** Just the titles out of {@link parseMapInfo} — what the menu's map list wants. */
 export function parseMapInfoNames(text: string): Map<string, string> {
   const names = new Map<string, string>();
   for (const [map, entry] of parseMapInfo(text)) {
@@ -59,11 +60,10 @@ export function parseMapInfoNames(text: string): Map<string, string> {
 
 /**
  * What a loaded WAD set's MAPINFO lumps say about its levels, read once on construction and
- * projected for the three consumers rather than re-parsed per consumer. Built once per `Game`:
- * which lumps apply depends on the file set, not on which map is loaded. docs/wad.md § Level names.
+ * projected for the three consumers. Built once per `Game`. docs/wad.md § Level names.
  */
 export class MapInfo {
-  /** Each map's winning entry, with the file that defined it — see `readEntries`. */
+  /** Each map's winning entry, with the file that defined it — see {@link readEntries}. */
   private entries: Map<string, DefinedEntry>;
 
   constructor(wad: Wad) {
@@ -71,15 +71,17 @@ export class MapInfo {
   }
 
   /**
-   * What the set defines for one map, or undefined for a map no file names. Keys are upper-case.
+   * What the set defines for one map, or undefined for a map no file names.
+   *
+   * @param mapName  upper-case, as the keys are
    */
   entry(mapName: string): MapInfoEntry | undefined {
     return this.entries.get(mapName)?.entry;
   }
 
   /**
-   * The map-name → title projection (see `parseMapInfoNames`), each carrying whether the IWAD is
-   * what defined it — the guard in docs/wad.md § Level names.
+   * The map-name → title projection (see {@link parseMapInfoNames}), each carrying whether the IWAD
+   * is what defined it — the guard in docs/wad.md § Level names.
    */
   titles(): Map<string, { title: string; fromIwad: boolean }> {
     const titles = new Map<string, { title: string; fromIwad: boolean }>();
@@ -116,10 +118,9 @@ interface DefinedEntry {
 }
 
 /**
- * Every `map` entry the loaded WAD set defines: one lump per file (`MAPINFO_LUMPS`), files in load
- * order, a later file's entry replacing an earlier one outright rather than merging field by field
- * — its provenance with it, so the replacement can't leave a stale one behind.
- * See docs/wad.md § Level names.
+ * Every `map` entry the loaded WAD set defines: one lump per file ({@link MAPINFO_LUMPS}), files in
+ * load order, a later file's entry replacing an earlier one outright — its provenance with it, so
+ * the replacement can't leave a stale one behind. See docs/wad.md § Level names.
  */
 function readEntries(wad: Wad): Map<string, DefinedEntry> {
   // Keyed by source file, in first-appearance order, which is load order.
@@ -177,9 +178,9 @@ function normalizeMapName(name: string): string {
 }
 
 /**
- * The property keys `parseMapInfo` reads: each maps onto its `MapInfoEntry` field through its own
- * value normalizer. One table for both syntax walkers below, so a new key can't end up read in the
- * block form but forgotten in the brace-less one.
+ * The property keys {@link parseMapInfo} reads: each maps onto its {@link MapInfoEntry} field
+ * through its own value normalizer. One table for both syntax walkers below, so a new key can't end
+ * up read in the block form but forgotten in the brace-less one.
  */
 const PROPERTY_KEYS: Record<
   string,
@@ -188,7 +189,7 @@ const PROPERTY_KEYS: Record<
     value: (token: Token | undefined) => string | undefined;
     /**
      * Set where the key alone is the statement and the token after it is usually the following
-     * property — the finale keys — so `readProperty` consumes nothing.
+     * property — the finale keys — so {@link readProperty} consumes nothing.
      */
     bare?: true;
   }
@@ -208,10 +209,10 @@ const PROPERTY_KEYS: Record<
 };
 
 /**
- * One `PROPERTY_KEYS` read at `keyIndex`, applied to `entry` — shared by both syntax walkers.
- * Answers the last token index it consumed, which the walkers resume after: a value can read as a
- * key of its own, and ZDoom's `sky1 SKY1 0` is exactly that — read token by token, the value
- * `SKY1` is a second `sky1` statement whose own value is the scroll speed.
+ * One {@link PROPERTY_KEYS} read at `keyIndex`, applied to `entry` — shared by both syntax walkers.
+ *
+ * @returns  the last token index it consumed, which the walkers resume after: a value can read as a
+ *           key of its own — ZDoom's `sky1 SKY1 0` (docs/wad.md § The sky texture)
  */
 function readProperty(entry: MapInfoEntry, tokens: Token[], keyIndex: number): number {
   const prop = PROPERTY_KEYS[tokens[keyIndex].text.toLowerCase()];
@@ -228,9 +229,9 @@ function readProperty(entry: MapInfoEntry, tokens: Token[], keyIndex: number): n
 const FINALE_KEYWORD = /^end(game|pic|bunny|cast|demon|title)/i;
 
 /**
- * A `next`/`secretnext` value as a map lump name, or `MAPINFO_END` for a finale keyword. Anything
- * unrecognised is left to fall through — `LevelProgression` only takes a name the loaded set
- * provides (docs/wad.md § Level progression).
+ * A `next`/`secretnext` value as a map lump name, or {@link MAPINFO_END} for a finale keyword.
+ * Anything unrecognised is left to fall through — `LevelProgression` only takes a name the loaded
+ * set provides (docs/wad.md § Level progression).
  */
 function exitValue(token: Token | undefined): string | undefined {
   if (!token || token.text === '{' || token.text === '}' || token.text === '=') return undefined;
@@ -250,7 +251,7 @@ function endValue(token: Token | undefined): string | undefined {
 /**
  * A `music` or sky value as a lump name. Quoted or not (both syntaxes are in the wild), and ZDoom's
  * `$MUSIC_…` string-table indirection is left alone: it names no lump, and a value that doesn't
- * resolve simply falls back to the vanilla per-map choice.
+ * resolve falls back to the vanilla per-map choice.
  */
 function lumpValue(token: Token | undefined): string | undefined {
   if (!token || token.text === '{' || token.text === '}' || token.text === '=') return undefined;
@@ -259,10 +260,10 @@ function lumpValue(token: Token | undefined): string | undefined {
 
 /**
  * Every `map` entry one MAPINFO/ZMAPINFO/UMAPINFO lump's text defines, keyed by map lump name:
- * the three syntaxes that name a level, plus the `PROPERTY_KEYS` properties in both the `{ … }`
- * block form and the old brace-less one. Anything else in the file is not a `map` keyword followed
- * by a name and is walked past. See docs/wad.md § Level names for the syntaxes and for why a
- * `lookup` title records nothing.
+ * the three syntaxes that name a level, plus the {@link PROPERTY_KEYS} properties in both the
+ * `{ … }` block form and the old brace-less one. Anything else in the file is not a `map` keyword
+ * followed by a name and is walked past. See docs/wad.md § Level names for the syntaxes and for why
+ * a `lookup` title records nothing.
  */
 function parseMapInfo(text: string): Map<string, MapInfoEntry> {
   const maps = new Map<string, MapInfoEntry>();

@@ -1,6 +1,6 @@
 /**
- * `LightVisibility`: which subsectors a dynamic light actually reaches — a flood fill out of the
- * emitter's own BSP leaf that crosses a boundary only where sight does, so a torch stops at its
+ * {@link LightVisibility}: which subsectors a dynamic light actually reaches — a flood fill out of
+ * the emitter's own BSP leaf that crosses a boundary only where sight does, so a torch stops at its
  * wall instead of shining through it. See docs/lights.md § Light stops at walls.
  */
 import { closestTOnSegment, distSqToSegment, polygonCentroid, segmentCrossT, vecLength } from '../../util/geom.ts';
@@ -53,9 +53,9 @@ export interface LightWorld {
 
 /**
  * One leaf's boundary, split across two arrays because half of it is indices and half geometry.
- * `ints` is `[neighbour, blockerCount, ...linedefs]` per record; `geom` is `[ax, ay, bx, by]` per
- * record, in the same order. A record is one *neighbour* across a polygon edge, so an edge that
- * borders several leaves contributes several — see `edgesOf`.
+ * {@link Edges.ints} is `[neighbour, blockerCount, ...linedefs]` per record; {@link Edges.geom} is
+ * `[ax, ay, bx, by]` per record, in the same order. A record is one *neighbour* across a polygon
+ * edge, so an edge bordering several leaves contributes several ({@link LightVisibility.edgesOf}).
  */
 interface Edges {
   ints: Int32Array;
@@ -66,21 +66,17 @@ const NO_EDGES: Edges = { ints: new Int32Array(0), geom: new Float64Array(0) };
 
 /**
  * The shadow map's angular indexing: bin 0 is due west and bin `SHADOW_STEPS / 2` due east.
- * Exported because all three readers — `castShadows` here, `DynamicLights.unshadowed` and the
- * fragment shader `render/textures.ts` splices these into — must index with the one convention,
- * or the map is read half a turn out.
+ * Exported because all three readers — {@link LightVisibility.castShadows} here,
+ * `DynamicLights.unshadowed` and the fragment shader `render/textures.ts` splices these into — must
+ * index with the one convention, or the map is read half a turn out.
  */
 export const BIN_PER_RADIAN = SHADOW_STEPS / (2 * Math.PI);
 export const BIN_HALF = SHADOW_STEPS / 2;
 
 /**
  * The level's subsector adjacency, and the flood fill `DynamicLights.commit` runs over it once per
- * committed light per frame.
- *
- * Adjacency is **built lazily, per subsector, and kept**: each edge costs a BSP descent and a short
- * linedef walk, and lights only ever touch the small part of a map they stand in. Which linedefs
- * stand in an edge is fixed geometry and cached with it; whether they *block* is asked live, so a
- * door opening lets light through on the tic it opens.
+ * committed light per frame. Adjacency is **built lazily, per subsector, and kept**; whether a
+ * linedef in it *blocks* is asked live. docs/lights.md § The adjacency graph.
  */
 export class LightVisibility {
   readonly subsectorCount: number;
@@ -92,29 +88,34 @@ export class LightVisibility {
   private world: LightWorld;
   private edges: (Edges | null)[];
   /**
-   * `reach`'s frontier, a binary heap of leaves ordered by `cost` — see `heapPush`. A leaf enters
-   * once per path that improved on its cost, so an entry may be stale by the time it surfaces;
-   * `settled` is what tells. Reused across calls.
+   * {@link LightVisibility.reach}'s frontier, a binary heap of leaves ordered by
+   * {@link LightVisibility.cost}, reused across calls — see {@link LightVisibility.heapPush}.
    */
   private heap: number[] = [];
-  /** Per subsector, the `stamp` of the last `reach` that gave it a cost (`seen`) and settled it. */
+  /**
+   * Per subsector, the {@link LightVisibility.stamp} of the last {@link LightVisibility.reach} that
+   * gave it a cost ({@link LightVisibility.seen}) and settled it ({@link LightVisibility.settled}).
+   */
   private seen: Int32Array;
   private settled: Int32Array;
   private stamp = 0;
-  /** Per subsector, how far the light's path ran to reach it and where it entered — see `reach`. */
+  /**
+   * Per subsector, how far the light's path ran to reach it and where it entered — see
+   * {@link LightVisibility.reach}.
+   */
   private cost: Float64Array;
   private entry: Float64Array;
   /**
-   * The light `castShadows` is currently tracing, parked here rather than captured: it runs once
-   * per committed light per frame, and a fresh visitor closure per light is the allocation
-   * `reach`'s out-array signature exists to avoid.
+   * The light {@link LightVisibility.castShadows} is currently tracing, parked here rather than
+   * captured: it runs once per committed light per frame, and a fresh visitor closure per light is
+   * the allocation {@link LightVisibility.reach}'s out-array signature exists to avoid.
    */
   private castX = 0;
   private castZ = 0;
   private castRadius = 0;
   private castOut: Float32Array = new Float32Array(0);
   private castOffset = 0;
-  /** `castShadows`'s own candidate list — see `World.linesNearInto`. */
+  /** {@link LightVisibility.castShadows}'s own candidate list — see `World.linesNearInto`. */
   private castLines: number[] = [];
 
   constructor(map: DoomMap, polys: SubSectorPoly[], world: LightWorld) {
@@ -139,9 +140,8 @@ export class LightVisibility {
    * `from` included, nearest path first. An out array rather than a visitor because this runs once
    * per committed light per frame, and a callback would allocate a closure per light.
    *
-   * Two rules decide what is reached: a boundary is crossed only where `World.blocksSight` lets it
-   * be, asked live so a door works, and `radius` bounds the **path** the light took rather than the
-   * straight line to it. Attenuation stays straight-line, matching the shader.
+   * A boundary is crossed only where `World.blocksSight` lets it be, asked live, and `radius`
+   * bounds the **path** the light took rather than the straight line to it.
    * docs/lights.md § Light stops at walls.
    */
   reach(from: number, x: number, y: number, radius: number, out: number[]): void {
@@ -203,12 +203,10 @@ export class LightVisibility {
   /**
    * A token that changes whenever any answer `blocksSight` could give has changed: a hash over
    * every sector's floor and ceiling, which is all `World.blocksSight` reads. What
-   * `DynamicLights` keys its per-emitter memo of `reach`/`castShadows` on, so a light that has
-   * not moved in a level where nothing has moved is flooded once, not once per frame.
-   *
-   * **Derived, not bumped.** A version counter raised by whoever moves a sector is a contract the
-   * next mover can forget, and forgetting it looks like light shining through a closed door;
-   * nobody can forget this. One pass over `map.sectors`, once per frame.
+   * `DynamicLights` keys its per-emitter memo of
+   * {@link LightVisibility.reach}/{@link LightVisibility.castShadows} on. **Derived, not bumped** —
+   * docs/lights.md § What a light remembers between frames. One pass over `map.sectors`, once per
+   * frame.
    */
   sightVersion(): number {
     let h = 0;
@@ -245,16 +243,10 @@ export class LightVisibility {
 
   /**
    * A leaf's edges, computed on first use and kept: per edge, the leaf across it and every linedef
-   * standing between the two.
-   *
-   * One polygon edge is **split into a record per leaf across it**, walking the BSP along the edge
-   * pushed `EDGE_PROBE_OFFSET` out — a single midpoint probe answers for whichever neighbour the
-   * midpoint lands in and loses every other, which is how a light stops dead at a doorway in the
-   * open half of a wall it shares its edge with.
-   *
-   * Which linedefs stand in a record is a **crossing test from the leaf's own centre, not a
-   * collinearity one** — the load-bearing choice here, and the reason an out-of-map probe needs no
-   * special case. docs/lights.md § The adjacency graph.
+   * standing between the two. One polygon edge is **split into a record per leaf across it**,
+   * walking the BSP along the edge pushed {@link EDGE_PROBE_OFFSET} out; which linedefs stand in a
+   * record is a **crossing test from the leaf's own centre, not a collinearity one**.
+   * docs/lights.md § The adjacency graph.
    */
   private edgesOf(subsector: number): Edges {
     const hit = this.edges[subsector];
@@ -288,8 +280,8 @@ export class LightVisibility {
       }
       // Both ends pulled in, so a corner probes this edge's own neighbours rather than a leaf that
       // only touches the polygon at that point. `len / 4` caps the pull-in on a short edge at a
-      // quarter of it, leaving half the edge to probe along however short it is — **tuned by
-      // feel**, against nothing but that requirement.
+      // quarter of it, leaving half the edge to probe along however short it is —
+      // **tuned by feel**, against nothing but that requirement.
       const inset = Math.min(EDGE_PROBE_OFFSET, len / 4) / len;
       // Two segments in step: `s`->`e` runs along the polygon edge itself, which is what a record
       // stores as its geometry, and `p`->`q` is that same span pushed out into the neighbour,
@@ -328,8 +320,8 @@ export class LightVisibility {
   }
 
   /**
-   * One sight blocker's bite out of the light `castShadows` set up. A pre-bound field rather than
-   * a closure passed per call — see the `cast*` scratch above.
+   * One sight blocker's bite out of the light {@link LightVisibility.castShadows} set up. A
+   * pre-bound field rather than a closure passed per call — see the `cast*` scratch above.
    */
   private castVisit = (line: number): void => {
     if (!this.world.blocksSight(line)) return;
@@ -390,10 +382,11 @@ export class LightVisibility {
   }
 
   /**
-   * `reach`'s frontier as a binary min-heap on `cost`, kept by hand because the fill runs once per
-   * committed light per frame and a sorted insert over the handful of leaves a light touches is
-   * cheaper than any allocation. Duplicates are allowed — a leaf is pushed again when a cheaper
-   * path turns up — and `reach` drops the stale ones on the way out.
+   * {@link LightVisibility.reach}'s frontier as a binary min-heap on {@link LightVisibility.cost},
+   * kept by hand because the fill runs once per committed light per frame and a sorted insert over
+   * the handful of leaves a light touches is cheaper than any allocation. Duplicates are allowed —
+   * a leaf is pushed again when a cheaper path turns up — and {@link LightVisibility.reach} drops
+   * the stale ones on the way out.
    */
   private heapPush(leaf: number): void {
     const heap = this.heap;

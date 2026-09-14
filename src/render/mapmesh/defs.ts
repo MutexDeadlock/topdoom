@@ -63,17 +63,16 @@ export interface MapMeshOptions {
    */
   movableSectors?: Set<number>;
   /**
-   * The subset of `movableSectors` whose planes a special can actually *move* (`scanSectors`'
-   * `moving`), as against the ones pulled out only so a switch texture can be swapped. It decides
-   * whether a mover's walls dice vertically; omitted means assume they all move.
+   * The subset of {@link MapMeshOptions.movableSectors} whose planes a special can actually *move*
+   * (`scanSectors`' `moving`), as against the ones pulled out only so a switch texture can be
+   * swapped. It decides whether a mover's walls dice vertically; omitted assumes they all move.
    * docs/render.md § A mover dices vertically only where nothing moves.
    */
   movingSectors?: Set<number>;
   /**
    * `World.subsectorAt`, injected so the renderer keeps no import edge into `game/`. Supplied,
-   * every surface carries the
-   * leaf it faces into, which is what lets a dynamic light stop at a wall (docs/lights.md § Light
-   * stops at walls); omitted, nothing is gated.
+   * every surface carries the leaf it faces into, which is what lets a dynamic light stop at a wall
+   * (docs/lights.md § Light stops at walls); omitted, nothing is gated.
    */
   subsectorAt?: (x: number, y: number) => number;
 }
@@ -135,9 +134,9 @@ export interface WallOccluder {
    */
   line: number;
   /**
-   * The wall texture this quad draws, which `key` encodes — recorded rather than recovered from
-   * the key, which would make `batchKey`'s encoding load-bearing in both directions. The
-   * `FlatSurface.texName` precedent; `SurfaceScroller` sizes its UV step from it.
+   * The wall texture this quad draws, which {@link WallOccluder.key} encodes — recorded rather than
+   * recovered from the key, which would make `batchKey`'s encoding load-bearing in both directions.
+   * The {@link FlatSurface.texName} precedent; `SurfaceScroller` sizes its UV step from it.
    */
   texName: string;
   /**
@@ -170,17 +169,17 @@ export const WALL_CHUNK_LEN = 128;
 
 /**
  * How far past a wall's face its leaf is probed. A face sits exactly on the boundary between the
- * room it looks into and whatever is behind it, so the sample has to step off it. **Tuned by
- * feel**: far enough to clear whatever rounding the boundary left, far short of anything the BSP
- * would put on the other side.
+ * room it looks into and whatever is behind it, so the sample has to step off it.
+ * **Tuned by feel**: far enough to clear whatever rounding the boundary left, far short of anything
+ * the BSP would put on the other side.
  */
 const WALL_PROBE_OFFSET = 1.5;
 
 /**
- * The point a wall quad's leaf is probed at: the face's midpoint, stepped `WALL_PROBE_OFFSET` off
- * the front side (`addWall` builds every quad facing right of a→b). The one definition, so fog of
- * war cannot disagree about which room a quad faces — docs/fogofwar.md § Mover wall quads. Writes
- * into `out`: the fog path runs it per mover quad per refresh.
+ * The point a wall quad's leaf is probed at: the face's midpoint, stepped {@link WALL_PROBE_OFFSET}
+ * off the front side (`addWall` builds every quad facing right of a→b). The one definition, so fog
+ * of war cannot disagree about which room a quad faces — docs/fogofwar.md § Mover wall quads.
+ * @param out  written in place: the fog path runs this per mover quad per refresh
  */
 export function wallProbePoint(ax: number, ay: number, bx: number, by: number, out: Pos2): void {
   const dx = bx - ax;
@@ -191,16 +190,15 @@ export function wallProbePoint(ax: number, ay: number, bx: number, by: number, o
 }
 
 /**
- * One rendered floor/ceiling triangle fan's vertex range within its batch,
- * so `FogOfWar` (game/fogofwar.ts) can rewrite its alpha the same way
- * `WallOccluder` lets `WallFader` rewrite a wall's. Keyed by subsector, not
- * sector — see FogOfWar's class doc for why the distinction matters.
+ * One rendered floor/ceiling triangle fan's vertex range within its batch, so `FogOfWar`
+ * (game/fogofwar.ts) can rewrite its alpha the same way {@link WallOccluder} lets `WallFader`
+ * rewrite a wall's. Keyed by subsector, not sector — `FogOfWar`'s class doc says why.
  */
 export interface FlatSurface {
   key: string;
   /**
-   * The texture this fan draws, which `key` encodes — kept apart so a refresh can match without
-   * building one.
+   * The texture this fan draws, which {@link FlatSurface.key} encodes — kept apart so a refresh can
+   * match without building one.
    */
   texName: string;
   vertexStart: number;
@@ -211,7 +209,7 @@ export interface FlatSurface {
    * structure's cap belongs to no leaf — the ring encloses void — and is seen from any side of the
    * structure, so any one of the leaves its ring borders showing is enough
    * (docs/fogofwar.md § How reveal reaches the geometry). Absent on an ordinary flat, which is a
-   * leaf's own floor and answers with `subsector` alone.
+   * leaf's own floor and answers with {@link FlatSurface.subsector} alone.
    */
   revealedBy?: readonly number[];
   /** Sector this fan belongs to — for specials-driven relight. */
@@ -230,8 +228,8 @@ export interface FlatSurface {
   points: Float64Array;
   /**
    * DOOM (x, y) of every vertex this fan drew, in draw order — what `FlatFader` measures each
-   * vertex's own fade from. Separate from `points` because the fan is diced finer than its outline
-   * (`addFlatFan`), and single-precision because the only thing read off it is a distance.
+   * vertex's own fade from. Separate from {@link FlatSurface.points} because the fan is diced finer
+   * than its outline (`addFlatFan`), and single-precision since only a distance is read off it.
    */
   vertexXY: Float32Array;
   /** World height (floor or ceiling) this surface sits at. */
@@ -252,7 +250,7 @@ export interface FlatSurface {
 /**
  * The world-aligned grid `addFlatFan` dices a flat on. Derived rather than tuned: a square cell
  * split by its diagonal leaves that diagonal as its longest edge, so this is the widest cell whose
- * edges still obey `WALL_CHUNK_LEN`. docs/render.md § Flats are diced on a world grid.
+ * edges still obey {@link WALL_CHUNK_LEN}. docs/render.md § Flats are diced on a world grid.
  */
 export const FLAT_GRID_LEN = WALL_CHUNK_LEN / Math.SQRT2;
 
@@ -272,7 +270,7 @@ export const FLAT_TEX_SIZE = 64;
 
 /**
  * Which subsectors and linedefs a sector owns — what keeps a rebuild proportional to the sector
- * rather than to the map. Declared structurally here like `SectorTransfers`, and supplied by
+ * rather than to the map. Declared structurally here like {@link SectorTransfers}, and supplied by
  * `game/specials/movergeometry.ts`. docs/render.md § Mover meshes.
  */
 export interface MoverIndex {
@@ -295,12 +293,11 @@ export interface MoverBuild {
   polys: SubSectorPoly[];
   bank: MaterialBank;
   /**
-   * `movableSectors` is required here, not merely honoured — it is what decides which of a shared
-   * line's two sides this mover owns, and without it a line between two movers would have both of
-   * them build both sides — so the type demands it rather than leaving it to prose.
+   * {@link MapMeshOptions.movableSectors} is required here, not merely honoured: it decides which
+   * of a shared line's two sides this mover owns, and without it a line between two movers would
+   * have both of them build both sides.
    */
   options: MapMeshOptions & { movableSectors: Set<number> };
-  /** What keeps a rebuild proportional to the sector rather than to the map. */
   index: MoverIndex;
 }
 
@@ -309,13 +306,13 @@ export interface MoverMesh {
   group: THREE.Group;
   meshes: Map<string, THREE.Mesh>;
   /**
-   * How many of `meshes` draw walls, which a refresh compares its rebuilt batches against to
-   * decide whether the buffers still fit. Recorded rather than recovered from the keys, which
-   * would make `batchKey`'s encoding load-bearing in both directions.
+   * How many of {@link MoverMesh.meshes} draw walls, which a refresh compares its rebuilt batches
+   * against to decide whether the buffers still fit. Recorded rather than recovered from the keys,
+   * which would make `batchKey`'s encoding load-bearing in both directions.
    */
   wallMeshCount: number;
   wallQuads: WallOccluder[];
   flatFans: FlatSurface[];
-  /** How many upper steps this sector's build left out — `BuiltMap.trimmedUppers`' twin. */
+  /** How many upper steps this sector's build left out — {@link BuiltMap.trimmedUppers}' twin. */
   trimmedUppers: number;
 }

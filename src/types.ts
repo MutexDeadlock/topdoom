@@ -1,7 +1,6 @@
 /**
- * Small structural types shared across layers, for shapes that were otherwise
- * spelled out inline (`{ x: number; y: number; z: number }`) in a dozen
- * signatures each, or passed as loose scalar parameter runs.
+ * Small structural types shared across layers, in place of shapes spelled out inline
+ * (`{ x: number; y: number; z: number }`) or passed as loose scalar parameter runs.
  *
  * These are **structural**, deliberately: `Player`, `PosedThing`, `MonsterBody` and the WAD's own
  * `Thing` all already carry `x`/`y`(/`z`), so they satisfy {@link Pos2}/{@link Pos3} with no

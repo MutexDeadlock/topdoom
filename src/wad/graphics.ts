@@ -1,6 +1,6 @@
 /**
- * Decodes the WAD's graphics into RGBA `Bitmap`s: PLAYPAL, the column/post picture format, raw
- * flats, and TEXTURE1/2 + PNAMES patch composition (`GraphicsBank`).
+ * Decodes the WAD's graphics into RGBA {@link Bitmap}s: PLAYPAL, the column/post picture format,
+ * raw flats, and TEXTURE1/2 + PNAMES patch composition ({@link GraphicsBank}).
  * See docs/wad.md § Loading and merging.
  */
 import { Reader } from './reader.ts';
@@ -40,9 +40,10 @@ export class GraphicsBank {
   private wad: Wad;
 
   /**
-   * `palette` overrides the file's own PLAYPAL, for a bank over a WAD that ships none: the player
-   * skins (`wad/playerskin.ts`) are palette indices with no palette of their own and borrow the
-   * loaded set's. docs/sprites.md § Weapon-matching player sprites.
+   * @param palette  overrides the file's own PLAYPAL, for a bank over a WAD that ships none: the
+   *                 player skins (`wad/playerskin.ts`) are palette indices with no palette of
+   *                 their own and borrow the loaded set's —
+   *                 docs/sprites.md § Weapon-matching player sprites
    */
   constructor(wad: Wad, palette?: Uint8Array) {
     this.wad = wad;
@@ -60,18 +61,18 @@ export class GraphicsBank {
   }
 
   /**
-   * Wall texture names in `TEXTURE1`/`TEXTURE2` definition order — vanilla's
-   * own texture-index order (`r_data.c`'s `textures[]`, built by reading
-   * TEXTURE1 then TEXTURE2 in lump order). `render/textureanim.ts` uses this
-   * to resolve an animdef's start..end name range into the actual in-between
-   * frames, the same way `P_InitPicAnims` does.
+   * Wall texture names in `TEXTURE1`/`TEXTURE2` definition order — vanilla's own texture-index
+   * order (`r_data.c`'s `textures[]`, built by reading TEXTURE1 then TEXTURE2 in lump order).
+   * `render/textureanim.ts` uses this to resolve an animdef's start..end name range into the actual
+   * in-between frames, the same way `P_InitPicAnims` does.
    */
   textureNamesInOrder(): string[] {
     return [...this.texDefs.keys()];
   }
 
   /**
-   * Flat names in `F_START`..`F_END` lump order — same role as `textureNamesInOrder`, for flats.
+   * Flat names in `F_START`..`F_END` lump order — same role as
+   * {@link GraphicsBank.textureNamesInOrder}, for flats.
    */
   flatNamesInOrder(): string[] {
     return [...this.flats.keys()];
@@ -141,10 +142,10 @@ export class GraphicsBank {
   }
 
   /**
-   * Drops a decoded `picture` from the cache. For a caller that reads a lump once and keeps what
-   * it needs elsewhere — `render/sprites.ts` packs every sprite in the set into the atlas pages,
-   * and holding all 1381 of DOOM2's decoded bitmaps as well costs ~18 MB for nothing. A later
-   * `picture` of the same name simply decodes again.
+   * Drops a decoded {@link GraphicsBank.picture} from the cache. For a caller that reads a lump
+   * once and keeps what it needs elsewhere — `render/sprites.ts` packs every sprite in the set into
+   * the atlas pages, and holding all 1381 of DOOM2's decoded bitmaps as well costs ~18 MB for
+   * nothing. A later {@link GraphicsBank.picture} of the same name decodes again.
    */
   forgetPicture(name: string): void {
     this.cache.delete('P:' + name.toUpperCase());

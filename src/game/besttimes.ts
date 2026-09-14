@@ -23,8 +23,8 @@ const LEGACY_STORAGE_KEY = 'topdoom.bestTimes';
 export const MAX_RECORDS = 400;
 
 /**
- * One level's best time. `wad`/`map`/`skill` are duplicated from the key purely so the stored
- * record reads.
+ * One level's best time. {@link BestTime.wad}/{@link BestTime.map}/{@link BestTime.skill} are
+ * duplicated from the key purely so the stored record reads.
  */
 export interface BestTime {
   seconds: number;
@@ -35,7 +35,7 @@ export interface BestTime {
   at: string;
 }
 
-/** The stored row: one record per level, keyed by `bestTimeKey` — the object store's `keyPath`. */
+/** The stored row: one record per level, keyed by {@link bestTimeKey} — the store's `keyPath`. */
 export interface StoredBestTime extends BestTime {
   key: string;
 }
@@ -49,8 +49,8 @@ export interface BestTimeResult {
 
 /**
  * What the record store needs from storage — small enough that tests replace it with one Map
- * (`setBestTimeBackend`). Rows are `unknown` on read; validation stays with the caller, in the
- * style every other store here reads in.
+ * ({@link setBestTimeBackend}). Rows are `unknown` on read; validation stays with the caller, in
+ * the style every other store here reads in.
  */
 export interface BestTimeBackend {
   readAll(): Promise<unknown[]>;
@@ -72,8 +72,8 @@ export function bestTimeKey(wadId: string, map: string, skill: Skill): string {
 
 /**
  * The table as the session sees it, so the two readers below can stay synchronous for the frame
- * that ends a level. Filled by `loadBestTimes`; empty before it, which is why boot awaits that —
- * docs/hud.md § The store.
+ * that ends a level. Filled by {@link loadBestTimes}; empty before it, which is why boot awaits
+ * that — docs/hud.md § The store.
  */
 const cache = new Map<string, StoredBestTime>();
 
@@ -102,9 +102,7 @@ export function recordBestTime(key: string, seconds: number, meta: Omit<BestTime
   return { previous, isNewBest };
 }
 
-/**
- * Drops every stored record. Not wired to any UI yet; here so the store has a way back to empty.
- */
+/** Drops every stored record — no UI calls it; it gives the store a way back to empty. */
 export function clearBestTimes(): void {
   cache.clear();
   queue(() => store().clear());
@@ -200,7 +198,7 @@ function readLegacy(): Record<string, BestTime> | null {
   return out;
 }
 
-/** A stored row read back, or null when it isn't one. Same fail-soft stance as `readLegacy`. */
+/** A stored row read back, or null if it isn't one. Same fail-soft stance as {@link readLegacy}. */
 function asStoredBestTime(value: unknown): StoredBestTime | null {
   const entry = asBestTime(value);
   if (!entry) return null;
@@ -224,9 +222,9 @@ function asBestTime(value: unknown): BestTime | null {
 }
 
 /**
- * Trims the cache back to `MAX_RECORDS` and reports the keys that went, for the same transaction as
- * the write that overflowed it. Oldest first: an entry with no usable date sorts oldest and so goes
- * first — it predates that field or was hand-edited, and either way is the least worth keeping.
+ * Trims the cache back to {@link MAX_RECORDS} and reports the keys that went, for the same
+ * transaction as the write that overflowed it. Oldest first: an entry with no usable date sorts
+ * oldest — it predates that field or was hand-edited, and either way is the least worth keeping.
  */
 function evict(): string[] {
   if (cache.size <= MAX_RECORDS) return [];
@@ -248,8 +246,8 @@ function queue(work: () => Promise<void>): void {
 let pending: Promise<void> = Promise.resolve();
 
 /**
- * Its own database, deliberately not a `DB_VERSION` bump on the savegames one — docs/hud.md § The
- * store.
+ * Its own database, deliberately not a `DB_VERSION` bump on the savegames one —
+ * docs/hud.md § The store.
  */
 const DB_NAME = 'topdoom-besttimes';
 const DB_VERSION = 1;
@@ -267,11 +265,12 @@ let backend: BestTimeBackend | null = null;
 const store = (): BestTimeBackend => (backend ??= idbBackend());
 
 /**
- * The real backend: one object store, one record per level keyed by `bestTimeKey` (docs/hud.md §
- * The store). An IndexedDB transaction auto-commits as soon as control returns to the event loop
- * with no request pending, so nothing here may `await` between opening a transaction and issuing
- * its requests — `game/savestore.ts`'s rule, and its shape. A browser with no `indexedDB` rejects
- * out of `openDb`, which `load` reads as "no database" rather than as an empty one.
+ * The real backend: one object store, one record per level keyed by {@link bestTimeKey}
+ * (docs/hud.md § The store). An IndexedDB transaction auto-commits as soon as control returns to
+ * the event loop with no request pending, so nothing here may `await` between opening a transaction
+ * and issuing its requests — `game/savestore.ts`'s rule, and its shape. A browser with no
+ * `indexedDB` rejects out of {@link openDb}, which {@link load} reads as "no database" rather than
+ * as an empty one.
  */
 function idbBackend(): BestTimeBackend {
   return {

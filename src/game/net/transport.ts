@@ -1,7 +1,7 @@
 /**
  * The connection a `NetSession` talks through: JSON messages in, JSON messages out, and the one
- * signal that the other end is gone. `WebSocketTransport` is the real one, over the relay; the
- * tests' loopback in `tests/fixtures/net.ts` is the other. docs/multiplayer-net.md § The relay.
+ * signal that the other end is gone. {@link WebSocketTransport} is the real one, over the relay;
+ * the tests' loopback in `tests/fixtures/net.ts` is the other. docs/multiplayer-net.md § The relay.
  */
 
 export interface Transport {
@@ -58,7 +58,10 @@ export class WebSocketTransport implements Transport {
     this.socket.close();
   }
 
-  /** `onClose` once, whichever of the two events arrives first, and never after `close`. */
+  /**
+   * {@link WebSocketTransport.onClose} once, whichever of the two events arrives first, and never
+   * after {@link WebSocketTransport.close}.
+   */
   private ended(reason: string): void {
     if (this.closed) return;
     this.closed = true;

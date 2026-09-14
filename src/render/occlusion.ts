@@ -40,18 +40,17 @@ export {
 
 /**
  * Most bodies besides the player that can be fade targets at once, nearest first. Purely
- * a cost bound (`WallFader` cost is quads × targets): past a couple of dozen
+ * a cost bound ({@link WallFader} cost is quads × targets): past a couple of dozen
  * nearby monsters, every wall any of them stands behind is already faded by a
  * nearer one. See docs/monster-ai.md § Spatial indexing.
  */
 const MAX_FADE_TARGETS = 48;
 
 /**
- * The player plus the bodies near enough to fade walls for — the awake monsters (alerted ones only,
- * since an unseen sleeping monster is supposed to stay hidden) and the other living players —
- * nearest first and capped at `MAX_FADE_TARGETS`. **Each target's wedge is its own body**, built
- * from the same `height` field `shotPath` locks onto. docs/render-occlusion.md § The target is the
- * billboard.
+ * The player plus the bodies near enough to fade walls for — the awake monsters and the other
+ * living players — nearest first and capped at {@link MAX_FADE_TARGETS}. **Each target's wedge is
+ * its own body**, built from the same `height` field `shotPath` locks onto.
+ * docs/render-occlusion.md § The target is the billboard.
  */
 export function collectFadeTargets(player: Pos3, bodies: readonly StandingBody[]): FadeTarget[] {
   const nearby = bodies
@@ -86,7 +85,7 @@ export function collectFadeTargets(player: Pos3, bodies: readonly StandingBody[]
  * The faders a frame runs besides the static batches: the per-sector meshes
  * movable geometry is drawn from, which live behind `game/specials.ts`.
  * Declared structurally, so the render layer keeps no import edge into the game
- * layer (the `ScrollOffsets` rule above) — and so `FadePass` needs to know only
+ * layer (the `ScrollOffsets` rule above) — and so {@link FadePass} needs to know only
  * that the two halves exist and which order they run in.
  */
 export interface FadeParticipant {
@@ -116,7 +115,7 @@ export interface FadeReveal {
 export class FadePass {
   readonly walls: WallFader;
   readonly flats: FlatFader;
-  /** Refilled from scratch every `run`, and reused across frames and levels. */
+  /** Refilled from scratch every {@link FadePass.run}, and reused across frames and levels. */
   private readonly wallHits = new FadeCrossings();
   private readonly flatHits = new FadeCrossings();
 
@@ -126,14 +125,10 @@ export class FadePass {
   }
 
   /**
-   * Pass one for the static batches and `movers` alike, then pass two over what
-   * they all filed, then the commit that folds in the reveal.
-   *
-   * `movers`' own pass two runs here rather than at its own call site: it reads
-   * `changedBounds`, whose fallback flag is separate from the `changedWalls`
-   * one the wall commit consumes (game/fogofwar.ts), so the two are order-free
-   * — and keeping them together is what makes the ordering a property of this
-   * method instead of a comment somewhere else.
+   * Pass one for the static batches and `movers` alike, then pass two over what they all filed,
+   * then the commit that folds in the reveal. `movers`' own pass two runs here too, which is what
+   * makes the ordering a property of this method.
+   * docs/render-occlusion.md § One hole, whichever mesh it lands in.
    */
   run(frame: FadeFrame, reveal: FadeReveal, movers?: FadeParticipant): void {
     const { wallHits, flatHits } = this;

@@ -1,7 +1,7 @@
 /**
  * Plays a decoded song on the chip: instrument selection out of `GENMIDI`, voice allocation over
- * the chip's `OPL_CHANNELS` channels, and the note/volume/bend arithmetic that becomes register
- * writes. See docs/music.md § From notes to registers.
+ * the chip's {@link OPL_CHANNELS} channels, and the note/volume/bend arithmetic that becomes
+ * register writes. See docs/music.md § From notes to registers.
  */
 import {
   GENMIDI_MELODIC,
@@ -25,13 +25,13 @@ const BEND_SEMITONES = 2;
 const TL_MAX = 0x3f;
 
 /**
- * Each chip channel's register addresses, `channelRegisters` run once — read per score event below.
+ * Each chip channel's register addresses, {@link channelRegisters} run once — read per score event.
  */
 const CHANNEL_REGS = Array.from({ length: OPL_CHANNELS }, (_, i) => channelRegisters(i));
 
 /**
  * `2^(20 - block)` per block, computed once rather than per pitch write. The division by
- * `OPL_RATE` stays at the call: scaling by a power of two is exact, so multiplying first and
+ * {@link OPL_RATE} stays at the call: scaling by a power of two is exact, so multiplying first and
  * dividing after leaves the result one rounding away from exact instead of two.
  */
 const BLOCK_SHIFT = Array.from({ length: 8 }, (_, block) => Math.pow(2, 20 - block));
@@ -64,7 +64,7 @@ interface ChannelState {
   /** -1..1, the score's pitch bend around centre. */
   bend: number;
   sustain: boolean;
-  /** MIDI's 0-127, centre 64 — see `panBits`. */
+  /** MIDI's 0-127, centre 64 — see {@link panPosition}. */
   pan: number;
 }
 
@@ -97,7 +97,7 @@ export class OplSynth {
   private voices: (Voice | null)[] = new Array(OPL_CHANNELS).fill(null);
   /**
    * What each chip channel last played, left behind at release so a successor
-   * note can **reclaim** the channel — see `allocate` for why that is audible
+   * note can **reclaim** the channel — see {@link OplSynth.allocate} for why that is audible
    * and not bookkeeping. Stale while the channel is occupied; only free
    * channels are ever read.
    */
@@ -249,8 +249,8 @@ export class OplSynth {
   /**
    * A chip channel for a note on `midiChannel`. Key-on cuts whatever still rings on the channel it
    * takes, so which free channel is taken is audible: **reclaim** the one this MIDI channel
-   * released most recently, else the **least audible** free one, else drop the voice `victimScore`
-   * ranks lowest. docs/music.md § From notes to registers has why each rule is there.
+   * released most recently, else the **least audible** free one, else drop the voice
+   * {@link victimScore} ranks lowest — docs/music.md § From notes to registers.
    */
   private allocate(midiChannel: number, note: number): number {
     let reclaim = -1;
@@ -405,9 +405,9 @@ function newChannelState(): ChannelState {
 /**
  * How droppable a sounding voice is, highest first — Chocolate Doom's `ReplaceExistingVoice` rule,
  * made total so it orders any two voices: sustain-held, then the second voice of a two-voice
- * instrument, then the highest MIDI channel, then the oldest (docs/music.md § From notes to
- * registers). The four are packed into one number so `allocate` is a single pass, with the age term
- * small enough that it only breaks ties.
+ * instrument, then the highest MIDI channel, then the oldest. Packed into one number so
+ * {@link OplSynth.allocate} is a single pass, with the age term small enough that it only breaks
+ * ties. docs/music.md § From notes to registers.
  */
 function victimScore(voice: Voice): number {
   const sustained = voice.sustained ? 1 : 0;
@@ -416,7 +416,7 @@ function victimScore(voice: Voice): number {
 }
 
 /**
- * A MIDI pan (0-127) as `OplChip.setPan`'s 0-1. Two deliberate departures from
+ * A MIDI pan (0-127) as {@link OplChip.setPan}'s 0-1. Two deliberate departures from
  * DMX live here, both explained in docs/music.md § From notes to registers: the
  * score's value is used **as it stands** rather than quantized to the chip's
  * three gate positions, and the sides are **not swapped**, which DMX does and

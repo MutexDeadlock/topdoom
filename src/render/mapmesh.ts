@@ -1,8 +1,8 @@
 /**
  * Builds the level's three.js meshes from the subsector polygons and linedefs — floors and walls
- * batched by texture, lit per sector (`render/sectorlight.ts`) — and owns `doomToWorld`/
- * `worldToDoom`, the one place DOOM space and three.js space meet. See docs/render.md § Mesh
- * building.
+ * batched by texture, lit per sector (`render/sectorlight.ts`) — and owns {@link doomToWorld}/
+ * {@link worldToDoom}, the one place DOOM space and three.js space meet.
+ * See docs/render.md § Mesh building.
  */
 import * as THREE from 'three';
 import { isTextured, type DoomMap } from '../wad/map.ts';
@@ -43,10 +43,10 @@ export function doomToWorld(x: number, y: number, z: number, out = new THREE.Vec
 }
 
 /**
- * `doomToWorld` the other way: a three.js point (x, y, z) is the DOOM point
- * (x, -z, y). A pure axis permutation with no translation, so it maps a
- * *direction* as faithfully as a position — the reason `render/tracer.ts` reuses
- * `doomToWorld` the same way. Takes an optional `out` for a caller on a hot path.
+ * {@link doomToWorld} the other way: a three.js point (x, y, z) is the DOOM point (x, -z, y). A
+ * pure axis permutation with no translation, so it maps a *direction* as faithfully as a position
+ * — the reason `render/tracer.ts` reuses {@link doomToWorld} the same way.
+ * @param out  for a caller on a hot path
  */
 export function worldToDoom(x: number, y: number, z: number, out: Pos3 = { x: 0, y: 0, z: 0 }): Pos3 {
   out.x = x;
@@ -194,9 +194,9 @@ export function refreshMoverMesh(mesh: MoverMesh, mover: MoverBuild, sectorIndex
 }
 
 /**
- * A build over the whole map's static geometry. Everything left in it is static — `buildWalls`
- * and `buildFlats` drop every line and leaf touching a mover wholesale — so `holdsStill` answers
- * true for everything and every side is this build's.
+ * A build over the whole map's static geometry: {@link buildWalls} and {@link buildFlats} drop
+ * every line and leaf touching a mover wholesale, so {@link Build.holdsStill} answers true for
+ * everything and every side is this build's.
  */
 function beginBuild(map: DoomMap, polys: SubSectorPoly[], bank: MaterialBank, options: MapMeshOptions): Build {
   const transfers = options.transfers ?? ownTransfers(map);
@@ -240,7 +240,7 @@ function beginBuild(map: DoomMap, polys: SubSectorPoly[], bank: MaterialBank, op
   };
 }
 
-/** A build over one mover's own sector — `buildMoverMesh` and `refreshMoverMesh` share it. */
+/** A build over one mover's sector, for {@link buildMoverMesh} and {@link refreshMoverMesh}. */
 function beginMoverBuild(mover: MoverBuild, sectorIndex: number): Build {
   const build = beginBuild(mover.map, mover.polys, mover.bank, mover.options);
   const { movingSectors, movableSectors } = mover.options;

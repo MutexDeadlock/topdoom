@@ -2,7 +2,7 @@
  * What the WAD's text lumps share before each grammar takes over. GZDoom's text-lump family
  * (MAPINFO, GLDEFS, …) all carry C-style comments over otherwise unrelated syntaxes, so the
  * comment strip is here and each parser keeps its own tokenizer, and every one of them reaches
- * its text through `decodeTextLump`.
+ * its text through {@link decodeTextLump}.
  * See docs/wad.md and docs/lights.md § The grammar.
  */
 

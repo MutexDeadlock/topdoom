@@ -54,9 +54,9 @@ export interface NetGame {
 
 /**
  * What a lobby's host sets the room to play under: the {@link SessionSettings} every browser pins
- * per tic, and the mode beside them — `deathmatch`, which `Game` reads once at the level start and
- * the snapshot keeps (`GameSnapshot.deathmatch`), so neither a pin nor a replay carries it.
- * docs/multiplayer-deathmatch.md § Settings.
+ * per tic, and the mode beside them — {@link NetRules.deathmatch}, which `Game` reads once at the
+ * level start and the snapshot keeps ({@link GameSnapshot.deathmatch}), so neither a pin nor a
+ * replay carries it. docs/multiplayer-deathmatch.md § Settings.
  */
 export interface NetRules extends SessionSettings {
   deathmatch: boolean;
@@ -243,8 +243,8 @@ function isPlayerSettings(v: unknown): v is PlayerSettings {
 
 /**
  * The netgame rules are optional on the wire, each typed when present — the session settings by
- * `sessionFieldsValid`'s table: a lobby from a build before them still seats a newer joiner, who
- * reads it through `withRulesDefaults`. docs/multiplayer-deathmatch.md § Settings.
+ * {@link sessionFieldsValid}'s table: a lobby from a build before them still seats a newer joiner,
+ * who reads it through `withRulesDefaults`. docs/multiplayer-deathmatch.md § Settings.
  */
 function isNetRules(v: unknown): v is NetRules {
   return isRecord(v) && sessionFieldsValid(v) && (v.deathmatch === undefined || typeof v.deathmatch === 'boolean');

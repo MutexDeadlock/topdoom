@@ -6,7 +6,7 @@
  * Doom/Boom special numbers follows its § II.C and gzdoom's udmf_zdoom.txt § II.C.
  * See docs/wad.md § UDMF.
  */
-import type { LineDef, Sector, SideDef, Thing, Vertex } from './defs.ts';
+import { NO_SIDE, type LineDef, type Sector, type SideDef, type Thing, type Vertex } from './defs.ts';
 
 /** Everything a TEXTMAP lump holds that this engine reads. */
 export interface UdmfMap {
@@ -25,7 +25,7 @@ export interface UdmfMap {
  * (udmf.txt § II.C), and `ZDoomTranslated` "uses Doom-type specials" (udmf_zdoom.txt
  * § II.C). Heretic and Strife reuse the Doom-shaped fields but number their specials for
  * their own games, and everything Hexen-shaped (`zdoom`, `hexen`, `dsda`, `eternity`)
- * carries ZDoom action specials — all of those park in `LineDef.action` instead.
+ * carries ZDoom action specials — all of those park in {@link LineDef.action} instead.
  */
 const DOOM_SPECIALS_NAMESPACES: ReadonlySet<string> = new Set(['doom', 'zdoomtranslated']);
 
@@ -293,9 +293,9 @@ function readSidedef(p: TextmapParser): SideDef {
 }
 
 /**
- * Defaults per udmf.txt § III: heights 0 and `lightlevel` 160. The light clamps at 0 —
- * UDMF writes it as a signed integer where the binary lump's unsigned read never saw a
- * negative, and `Sector.light`'s consumers expect none.
+ * Defaults per udmf.txt § III: heights 0 and `lightlevel` 160. The light clamps at 0 — UDMF writes
+ * it as a signed integer where the binary lump's unsigned read never saw a negative, and
+ * {@link Sector.light}'s consumers expect none.
  */
 function readSector(p: TextmapParser): Sector {
   const out: Sector = { floorHeight: 0, ceilHeight: 0, floorTex: '-', ceilTex: '-', light: 160, special: 0, tag: 0 };
@@ -335,9 +335,9 @@ const LINE_FLAG_BITS: Record<string, number> = {
 };
 
 /**
- * A linedef's fields kept raw until the whole lump is read: whether `special` reaches the
- * Doom tables or parks in `LineDef.action` depends on the namespace, and only the spec's
- * "should" puts that assignment first in the file (udmf.txt § II.C).
+ * A linedef's fields kept raw until the whole lump is read: whether {@link RawLinedef.special}
+ * reaches the Doom tables or parks in {@link LineDef.action} depends on the namespace, and only the
+ * spec's "should" puts that assignment first in the file (udmf.txt § II.C).
  */
 interface RawLinedef {
   v1: number;
@@ -393,7 +393,7 @@ const THING_FLAG_BITS: Record<string, number> = {
 /** Doom's `MTF_NOTSINGLE`, the bit `single`'s absence maps onto — as in `map/hexen.ts`. */
 const NOTSINGLE = 0x0010;
 
-/** The single-player gate inverts exactly as in `map/hexen.ts`: `single` absent → `NOTSINGLE`. */
+/** The single-player gate inverts as in `map/hexen.ts`: `single` absent → {@link NOTSINGLE}. */
 function readThing(p: TextmapParser): Thing {
   const out: Thing = { x: 0, y: 0, angle: 0, type: 0, flags: 0 };
   let single = false;
@@ -417,22 +417,17 @@ function readThing(p: TextmapParser): Thing {
   return out;
 }
 
-/**
- * `map.ts`'s `NO_SIDE`, named here to keep the parent import type-only (it imports this module).
- */
-const NO_SIDE = 0xffff;
-
-/** A UDMF sidedef index: absent is written −1 (udmf.txt § III), the engine says `NO_SIDE`. */
+/** A UDMF sidedef index: absent is written −1 (udmf.txt § III), the engine says {@link NO_SIDE}. */
 function sideIndex(v: number): number {
   return v < 0 ? NO_SIDE : v;
 }
 
 /**
- * In a Doom-specials namespace the tag is the line's `id`, written as both `id` and
- * `arg0` by every compliant converter (udmf.txt § III, "Tag / ID Behavior"), so either
- * serves. Anywhere else `special` is a ZDoom number in a namespace of its own and parks
- * in `LineDef.action` with `special`/`tag` zeroed, exactly as `map/hexen.ts` does —
- * docs/wad.md § What a Hexen map does not get.
+ * In a Doom-specials namespace the tag is the line's `id`, written as both `id` and `arg0` by every
+ * compliant converter (udmf.txt § III, "Tag / ID Behavior"), so either serves. Anywhere else
+ * {@link RawLinedef.special} is a ZDoom number in a namespace of its own and parks in
+ * {@link LineDef.action} with {@link LineDef.special}/{@link LineDef.tag} zeroed, exactly as
+ * `map/hexen.ts` does — docs/wad.md § What a Hexen map does not get.
  */
 function materializeLine(raw: RawLinedef, doomSpecials: boolean): LineDef {
   // Field order is `map.ts`'s own, shared with the Doom and Hexen readers: `linedefs` is read on

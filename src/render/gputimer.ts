@@ -1,7 +1,6 @@
 /**
- * `GpuTimer`: how long the GPU actually spent on a frame — the half of the frame `FrameProfiler`
- * cannot see, since every row it keeps is main-thread wall clock inside one `requestAnimationFrame`
- * callback and the GPU finishes long after that returns. See docs/devmode.md § Profiling overlay.
+ * {@link GpuTimer}: how long the GPU actually spent on a frame — the half `FrameProfiler` cannot
+ * see. See docs/devmode.md § Profiling overlay.
  */
 import { PROFILE_SMOOTHING } from '../util/profiler.ts';
 
@@ -46,10 +45,8 @@ const STALL_FRAMES = 120;
 /**
  * One `TIME_ELAPSED_EXT` query around the render call, read back when the driver has it.
  *
- * The extension is **often absent** — browsers have disabled it on and off for side-channel
- * reasons, and it is missing outright on some drivers — so every method simply no-ops and `ms`
- * stays null rather than this being an error, and the overlay says so instead of showing a wrong
- * number.
+ * The extension is **often absent**, so every method no-ops and {@link GpuTimer.ms} stays null
+ * rather than this being an error. docs/devmode.md § Profiling overlay.
  */
 export class GpuTimer {
   /**
@@ -64,7 +61,7 @@ export class GpuTimer {
   private active: WebGLQuery | null = null;
   private smoothed = 0;
   private read = false;
-  /** Consecutive frames the pool has been full with nothing collected — see `STALL_FRAMES`. */
+  /** Consecutive frames the pool has been full with nothing collected — see {@link STALL_FRAMES}. */
   private stalled = 0;
 
   constructor(gl: QueryContext) {
@@ -93,9 +90,8 @@ export class GpuTimer {
 
   /**
    * Closes the frame's query, if this frame opened one, and collects whatever earlier ones the
-   * driver has finished. **The collecting is unconditional**, and that is what keeps a stall from
-   * being permanent: a frame opens no query precisely when the pool is already full, so gating the
-   * harvest on having one would leave the full pool with nothing left to empty it.
+   * driver has finished — **unconditionally**, or a full pool would have nothing left to empty it.
+   * docs/devmode.md § Profiling overlay.
    */
   end(): void {
     const q = this.q;
@@ -109,10 +105,9 @@ export class GpuTimer {
   }
 
   /**
-   * Takes the results that are ready and returns their queries to the pool. A **disjoint** — the
-   * GPU having been reset or otherwise interrupted — invalidates every query in flight rather than
-   * one of them, and reading the flag is what clears it, so it is read once here and the whole
-   * batch is dropped when it is set.
+   * Takes the results that are ready and returns their queries to the pool. A **disjoint**
+   * invalidates every query in flight, and reading the flag clears it, so it is read once here and
+   * the whole batch is dropped when it is set.
    */
   private harvest(): void {
     const q = this.q;

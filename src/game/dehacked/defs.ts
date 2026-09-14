@@ -4,20 +4,15 @@
  */
 
 /**
- * How far one DEHACKED record or field got.
- *
- * The distinction that matters is `noTarget` against `unsupported`: the first means the patch asked
- * for something this engine simply doesn't have (a finale screen, a pickup message), the second
- * means it asked for something deliberately left out of scope even though a target exists or could
- * (action pointers, re-keying a thing's doomednum). Both keep playing; only
- * the second is ever worth revisiting. `unknown` is neither — the parser didn't recognise the text
- * at all.
+ * How far one DEHACKED record or field got. Only `unsupported` — out of scope though a target
+ * exists or could — is worth revisiting; `noTarget` is a target this engine doesn't have, `unknown`
+ * text the parser didn't recognise. docs/dehacked.md § The coverage report.
  */
 export type DehSupport = 'applied' | 'noTarget' | 'unsupported' | 'unknown';
 
 /**
- * What a `DehWarning` can carry. A warning is raised only where a field did *not* fully land, so
- * `applied` is excluded at the type rather than filtered for at each reader.
+ * What a {@link DehWarning} can carry. A warning is raised only where a field did *not* fully land,
+ * so `applied` is excluded at the type rather than filtered for at each reader.
  */
 export type DehShortfall = Exclude<DehSupport, 'applied'>;
 
@@ -41,9 +36,8 @@ export type DehRecordKind =
   | 'header';
 
 /**
- * One thing a patch asked for that didn't fully land, already deduped. `count` is why: EPIC.WAD's
- * one hanging body repoints seven frame fields, and a report that printed one line each would bury
- * the fact worth knowing under seven rows.
+ * One thing a patch asked for that didn't fully land, already deduped and counted.
+ * docs/dehacked.md § The coverage report.
  */
 export interface DehWarning {
   /** The record as the patch spelled it, minus its index: `Thing`, `[CODEPTR]`. */
@@ -53,7 +47,7 @@ export interface DehWarning {
   support: DehShortfall;
   /** One sentence a reader can act on, naming what was skipped rather than restating the class. */
   detail: string;
-  /** How many times this exact `(record, field)` pair occurred. */
+  /** How many times this exact `(record, field, support)` triple occurred. */
   count: number;
 }
 
@@ -75,9 +69,8 @@ export interface DehThingEdit {
   /** 0..1, vanilla's `painchance` over 256. */
   painChance?: number;
   /**
-   * The full replacement `mobjinfo.flags` mask, or undefined where the record set no `Bits` line.
-   * A `Bits` value replaces the whole mask rather than adding to it, so the difference between
-   * "absent" and "zero" is load-bearing — docs/dehacked.md § Bits.
+   * The full replacement `mobjinfo.flags` mask, or undefined where the record set no `Bits` line —
+   * "absent" and "zero" differ. docs/dehacked.md § Bits.
    */
   bits?: number;
   /**
@@ -115,10 +108,8 @@ export interface DehFrameEdit {
   /**
    * `state_t`'s general-purpose data fields, in order: index 0 is `Unknown 1` (`misc1`), index 1 is
    * `Unknown 2` (`misc2`). Dense — a slot the patch never wrote reads 0, which is what `info.c`
-   * gives both fields on every state. An array rather than two named fields because MBF21's
-   * `Args1`..`Args8` are the same slots widened, and would extend this rather than replace it.
-   * Only MBF's own pointers read them (`A_Spawn`'s type and z, `A_PlaySound`'s sound) —
-   * docs/dehacked.md § Action pointers.
+   * gives both fields on every state. Only MBF's own pointers read them (`A_Spawn`'s type and z,
+   * `A_PlaySound`'s sound) — docs/dehacked.md § Action pointers.
    */
   args?: readonly number[];
 }
@@ -146,9 +137,8 @@ export interface DehAmmoEdit {
 }
 
 /**
- * One `Weapon N` record: vanilla's whole `weaponinfo[]` row, which is an ammo type and five state
- * pointers — no damage and no rate, because in vanilla a weapon's rate *is* its fire chain's
- * durations. docs/dehacked.md § Weapon, Ammo and Misc.
+ * One `Weapon N` record: vanilla's whole `weaponinfo[]` row, an ammo type and five state pointers.
+ * docs/dehacked.md § Weapon, Ammo and Misc.
  */
 export interface DehWeaponEdit {
   /** 0-based `weapontype_t`. */
@@ -160,9 +150,8 @@ export interface DehWeaponEdit {
   ammoType: number;
   /**
    * The five state pointers, as `states[]` indices, by the name `WEAPON_STATES` uses rather than
-   * the name the patch writes — `d_deh.c` labels `upstate` "Deselect frame" and `downstate`
-   * "Select frame", the two the wrong way round. A key present with 0 is `S_NULL`, as meaningful as
-   * any other value. Only `atk` reaches a sink here, the fire rate walked off its chain
+   * the swapped labels the patch writes. A key present with 0 is `S_NULL`, as meaningful as any
+   * other value. Only `atk` reaches a sink here, the fire rate walked off its chain
    * (docs/weapons.md § Fire rates); the other four are carried so the record reads whole.
    */
   states?: Partial<Record<WeaponStatePointer, number>>;
@@ -183,8 +172,8 @@ export interface DehPatch {
   pointerEdits: readonly DehPointerEdit[];
   /**
    * BEX `[SPRITES]` and vanilla `Text 4 4` alike: a pristine `sprnames[]` name, lowercased, to the
-   * four-character name its lumps should resolve through instead. docs/dehacked.md § Sprite
-   * renames.
+   * four-character name its lumps should resolve through instead.
+   * docs/dehacked.md § Sprite renames.
    */
   spriteRenames: ReadonlyMap<string, string>;
   /**

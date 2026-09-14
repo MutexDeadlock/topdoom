@@ -1,6 +1,6 @@
 /**
  * Boom's generalized linedefs (0x2F80-0x7FFF): seven bitfield-encoded families
- * decoded into the same `SpecialDef`/`Effect` shapes the vanilla table uses.
+ * decoded into the same {@link SpecialDef}/`Effect` shapes the vanilla table uses.
  * Every mask, enum ordering and speed/wait value below is transcribed from
  * boom202/PrBoom+ `p_spec.h` and `p_genlin.c` (`EV_DoGen*`), cross-checked
  * against boomref.txt. See docs/specials.md § Generalized linedefs.
@@ -29,7 +29,7 @@ const GEN_END = 0x8000;
 
 /**
  * p_spec.h `StairDirection` — `EV_DoGenStairs` XORs it into the line's special on every successful
- * retrigger (`SpecialDef.retriggerXor`).
+ * retrigger ({@link SpecialDef.retriggerXor}).
  */
 const STAIR_DIRECTION_BIT = 0x0100;
 
@@ -55,7 +55,7 @@ export function decodeGeneralized(special: number): SpecialDef | null {
 /**
  * `p_spec.h: triggertype_e` (bits 0-2): WalkOnce, WalkMany, SwitchOnce,
  * SwitchMany, GunOnce, GunMany, PushOnce, PushMany — Push is a use press that
- * acts on the line's own back sector, i.e. `manual`.
+ * acts on the line's own back sector, i.e. {@link SpecialDef.manual}.
  */
 function triggerBits(value: number): Pick<SpecialDef, 'trigger' | 'repeatable' | 'manual' | 'requiresTag'> {
   // Everything but the two Push kinds acts by tag, and Boom refuses those

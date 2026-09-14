@@ -9,8 +9,8 @@ import { doomToWorld } from './mapmesh.ts';
 import { vecLength } from '../util/geom.ts';
 
 /**
- * Disc radius in map units, against the player's own 16-unit radius (`game/player.ts`). Tuned by
- * feel — wider than the body, or it reads as a smudge rather than a mark on the floor.
+ * Disc radius in map units, against the player's own 16-unit radius (`game/player.ts`).
+ * Tuned by feel — wider than the body, or it reads as a smudge rather than a mark on the floor.
  */
 const RADIUS = 24;
 
@@ -34,25 +34,19 @@ const ALPHA_AIRBORNE = 0.45;
 const FALL_RANGE = 160;
 
 /**
- * How dark the shadow draws at this height above the ground it is cast on — `ALPHA_GROUNDED` at
- * zero, ramping to `ALPHA_AIRBORNE` at `FALL_RANGE` and holding there. Exported for the test.
+ * How dark the shadow draws at this height above its ground — {@link ALPHA_GROUNDED} at zero,
+ * ramping to {@link ALPHA_AIRBORNE} at {@link FALL_RANGE} and holding there. Exported for the test.
  */
 export function shadowAlpha(heightAboveGround: number): number {
   const t = Math.min(Math.max(heightAboveGround / FALL_RANGE, 0), 1);
   return ALPHA_GROUNDED + (ALPHA_AIRBORNE - ALPHA_GROUNDED) * t;
 }
 
-/**
- * The disc. Session-scoped like the player's own billboard, since nothing about it depends on which
- * map is loaded — only where it is put each frame.
- */
+/** The disc, session-scoped like the player's own billboard. */
 export class PlayerShadow {
   readonly mesh: THREE.Mesh;
   private material: THREE.MeshBasicMaterial;
-  /**
-   * Multiplies the height ramp, so the invisibility powerup fades the shadow along with the body it
-   * belongs to rather than leaving a black disc gliding around on its own.
-   */
+  /** Multiplies the height ramp, so the invisibility powerup fades the shadow with the body. */
   private opacityScale = 1;
 
   constructor() {
@@ -77,8 +71,10 @@ export class PlayerShadow {
   }
 
   /**
-   * Puts the disc under the player: `groundZ` is where they would stand here, `feetZ` where they
-   * are now.
+   * Puts the disc under the player.
+   *
+   * @param groundZ  where they would stand here
+   * @param feetZ    where they are now
    */
   update(x: number, y: number, groundZ: number, feetZ: number): void {
     doomToWorld(x, y, groundZ + LIFT, this.mesh.position);

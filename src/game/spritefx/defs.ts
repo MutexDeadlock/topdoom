@@ -37,7 +37,7 @@ export interface OneShotEffect extends Pos3 {
   light: number;
   /**
    * The subsector this effect sits in, resolved once at spawn (and re-derived
-   * only for the one effect that moves, the vile's flame). `drawList` gates
+   * for the two effects that move, the vile's flame and the crusher's blood). `drawList` gates
    * drawing on it, so an effect in a room the player has never seen stays
    * hidden — docs/fogofwar.md § How reveal reaches the geometry.
    */
@@ -47,8 +47,8 @@ export interface OneShotEffect extends Pos3 {
   /**
    * Set only for the arch-vile's windup flame (vanilla's `MT_FIRE`/`A_Fire`):
    * position is re-derived every frame from this target's live position and
-   * facing rather than staying fixed. `null` means the player; absent (the
-   * common case) skips this. See docs/monster-archvile.md.
+   * facing rather than staying fixed. Encoded as `PosedThing.targetId` is; absent
+   * (the common case) skips this. See docs/monster-archvile.md.
    */
   followTargetId?: number;
   /**
@@ -66,7 +66,7 @@ export interface OneShotEffect extends Pos3 {
   /**
    * Position at the end of the previous tic, for the render layer to interpolate
    * from. Every effect carries it although only the arch-vile's following flame
-   * ever moves — a stationary explosion's `prev` simply equals its current
+   * and the crusher's blood move — a stationary explosion's `prev` simply equals its current
    * position, which costs one branch-free lerp rather than a special case.
    * docs/frameloop.md § Interpolation.
    */
@@ -192,8 +192,8 @@ export function turnToward(from: number, to: number, maxDelta: number): number {
 }
 
 /**
- * Vanilla's `PIT_CheckThing` for a missile, as one frame's worth of flight: where along the step
- * `from`→`to` the projectile **first touches** `body`, or null if it passed it. Both halves are the
+ * Where along the step `from`→`to` a projectile **first touches** `body`, or null if it passed it —
+ * vanilla's `PIT_CheckThing` for a missile, as one frame's worth of flight. Both halves are the
  * real vanilla test rather than a tolerance — laterally the axis-aligned
  * `thing->radius + tmthing->radius` box ({@link segmentEntersBox}, swept along the step),
  * vertically the asymmetric overhead/underneath pair, evaluated at the moment of contact.

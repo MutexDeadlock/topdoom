@@ -1,8 +1,7 @@
 /**
- * The top-left status text, the fps counter behind it, and the camera framing
- * keys — the text collapsing to "`N` fps" without the debug-info setting. Both
- * whether it shows and how much it says are the player's own settings, each
- * defaulting to `DEVMODE`.
+ * The top-left status text, the fps counter behind it, and the camera framing keys — the text
+ * collapsing to "`N` fps" without the debug-info setting. Both whether it shows and how much it
+ * says are the player's own settings, each defaulting to {@link DEVMODE}.
  * See docs/devmode.md § Dev mode and § FPS counter.
  */
 import type { TicInput } from '../../game/input.ts';
@@ -12,11 +11,9 @@ import { DEVMODE } from '../../constants.ts';
 import { readStorage, writeStorage } from '../../util/storage.ts';
 
 /**
- * The camera framing keys. Zoom and tilt are player-facing controls
- * (`TopDownCamera.applyFramingKeys`) and are not gated on `DEVMODE`: the camera
- * distance/tilt they set are framing preferences, not debug state. They act in
- * manual camera mode only and are inert while the auto camera drives the
- * framing — docs/camera.md § Auto camera.
+ * The camera framing keys: player-facing controls ({@link TopDownCamera.applyFramingKeys}), not
+ * gated on {@link DEVMODE}. They act in manual camera mode only and are inert while the auto camera
+ * drives the framing — docs/camera.md § Auto camera.
  */
 export function handleHotkeys(input: TicInput, camera: TopDownCamera): void {
   if (getCameraMode() === 'manual') camera.applyFramingKeys(input);
@@ -24,13 +21,12 @@ export function handleHotkeys(input: TicInput, camera: TopDownCamera): void {
 
 const FPS_STORAGE_KEY = 'fps';
 
-/** `getFpsVisible`'s memo of the stored setting; null until first read. */
+/** {@link getFpsVisible}'s memo of the stored setting; null until first read. */
 let fpsVisible: boolean | null = null;
 
 /**
- * Whether the top-left status text is wanted. Defaults to `DEVMODE`, like the
- * profiling overlay's own setting, and a stored choice overrides that either
- * way. See docs/devmode.md § FPS counter.
+ * Whether the fps counter is wanted. Defaults to {@link DEVMODE}, and a stored choice
+ * overrides that either way. See docs/devmode.md § FPS counter.
  */
 export function getFpsVisible(): boolean {
   if (fpsVisible === null) fpsVisible = readStorage(FPS_STORAGE_KEY, DEVMODE);
@@ -45,14 +41,13 @@ export function setFpsVisible(on: boolean): void {
 
 const DEBUG_INFO_STORAGE_KEY = 'debuginfo';
 
-/** `getDebugInfo`'s memo of the stored setting; null until first read. */
+/** {@link getDebugInfo}'s memo of the stored setting; null until first read. */
 let debugInfo: boolean | null = null;
 
 /**
- * Whether the status text says more than the frame rate — the map, the
- * position, the sector, the camera, the awake monsters and the sound channels
- * (`Game.debugLines`). Defaults to `DEVMODE` like the two overlays' own
- * settings, and a stored choice overrides that either way.
+ * Whether the status text says more than the frame rate — the map, the position, the sector, the
+ * camera, the awake monsters and the sound channels (`Presenter.debugLines`). Defaults to
+ * {@link DEVMODE}, and a stored choice overrides that either way.
  * See docs/devmode.md § FPS counter.
  */
 export function getDebugInfo(): boolean {
@@ -79,14 +74,11 @@ export class DebugHud {
   }
 
   /**
-   * Counts one frame and repaints the status text. `rawDt` must be the real
-   * elapsed time, never `Game.frame`'s clamped `dt` — see that clamp's own
-   * comment for why a clamped delta under-reports a genuine slideshow.
-   *
-   * `details` is a closure rather than a prepared string list so its body —
-   * which walks the BSP for the player's sector, among other things — only
-   * runs when the block is actually shown. It takes a null frame rate for a
-   * block whose fps counter is switched off — docs/devmode.md § FPS counter.
+   * Counts one frame and repaints the status text.
+   * @param rawDt  the frame's real elapsed time, unscaled by playback speed and uncapped —
+   *               docs/frameloop.md § The accumulator
+   * @param details  a closure so its body only runs while the block is shown, handed a null frame
+   *                 rate while the fps counter is off — docs/devmode.md § FPS counter
    */
   update(rawDt: number, details: (fps: number | null) => string[]): void {
     // Counted even while hidden, so switching the text on mid-level reads a
@@ -112,11 +104,10 @@ export class DebugHud {
 }
 
 /**
- * Puts the two settings on `#hud`'s class — what debughud.css shows the text by
- * and what `DebugHud.update` reads to skip its work, so the three can't
- * disagree. Either one alone keeps the element up: the debug block is not the
- * counter's to hide. Safe to call before any `DebugHud` exists: the element is
- * static markup.
+ * Puts the two settings on `#hud`'s class — what debughud.css shows the text by and what
+ * {@link DebugHud.update} reads to skip its work, so the three can't disagree. Either one alone
+ * keeps the element up: the debug block is not the counter's to hide. Safe to call before any
+ * {@link DebugHud} exists: the element is static markup.
  */
 function applyHudVisible(): void {
   const wanted = getFpsVisible() || getDebugInfo();

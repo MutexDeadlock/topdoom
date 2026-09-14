@@ -184,10 +184,8 @@ export function missionOf(iwadFileName: string): LevelMission | null {
 }
 
 /**
- * The graphic vanilla's intermission prints a level's name with, or undefined for a map name
- * outside both schemes. `WI_loadData` (`wi_stuff.c`) builds these itself: `CWILV%2.2d` over a
- * 0-based map index for DOOM II, `WILV%d%d` over 0-based episode and map otherwise — so `MAP07` is
- * `CWILV06` and `E1M1` is `WILV00`.
+ * The graphic vanilla's intermission (`wi_stuff.c`'s `WI_loadData`) prints a level's name with —
+ * `MAP07` is `CWILV06`, `E1M1` is `WILV00` — or undefined for a map name outside both schemes.
  */
 export function levelNamePatch(mapName: string): string | undefined {
   const doom2 = /^MAP(\d\d)$/.exec(mapName);
@@ -199,9 +197,9 @@ export function levelNamePatch(mapName: string): string | undefined {
 
 /**
  * Strips a `level 1:`, `MAP01:` or `E1M1:` identifier and capitalizes what is left — the two edits
- * `LEVEL_NAMES` was generated with (see its own doc), applied to a title arriving from somewhere
- * else so the two read alike. A value naming none of the three prefixes is kept verbatim:
- * EPIC.WAD's `1 - a fool's paradise` carries no level identifier at all.
+ * {@link LEVEL_NAMES} was generated with, applied to a title arriving from somewhere else so the
+ * two read alike. A value naming none of the three prefixes is kept verbatim: EPIC.WAD's
+ * `1 - a fool's paradise` carries no level identifier at all.
  */
 export function stripTitlePrefix(text: string): string {
   const bare = text.replace(/^\s*(?:level\s+\d+|MAP\d{1,2}|E\dM\d)\s*:\s*/i, '').trim();
@@ -233,9 +231,8 @@ export interface LevelNameSources {
 
 /**
  * The level's own title, or undefined if nothing knows one: what the WAD set's MAPINFO says, else
- * what a DEHACKED patch says, else the vanilla title. The IWAD's own titles and the vanilla table
- * name only maps the IWAD still provides; an add-on's title of either kind names any map in the
- * set. See docs/wad.md § Level names for the order and the guard.
+ * what a DEHACKED patch says, else the vanilla title, all under the IWAD guard.
+ * See docs/wad.md § Level names for the order and the guard.
  */
 export function levelTitleFor(mapName: string, sources: LevelNameSources): string | undefined {
   const applies = (from?: TitleFrom) => (from && !(from.fromIwad && sources.providerIsPwad) ? from.title : undefined);
@@ -247,12 +244,13 @@ export function levelTitleFor(mapName: string, sources: LevelNameSources): strin
 
 /**
  * The mnemonic-keyed half of a DEHACKED patch's strings, projected onto map lump names and only
- * under the mission they belong to; a null mission keeps the plain `HUSTR_*` set rather than
- * dropping every title. Each is put through `stripTitlePrefix` to read like `LEVEL_NAMES`' own bare
- * values. Keys that are already lump names pass straight through — that is how a vanilla `Text`
- * substitution arrives, resolved to its map by `titleLookupFor` at parse time. `sources` says which
- * file's patch set each key, so a title carries the provenance of the string it came from; a key it
- * doesn't name counts as an add-on's, the permissive case. docs/dehacked.md § Strings.
+ * under the mission they belong to, each through {@link stripTitlePrefix}. Keys that are already
+ * lump names pass straight through — that is how a vanilla `Text` substitution arrives, resolved
+ * to its map by {@link titleLookupFor} at parse time. docs/dehacked.md § Strings.
+ *
+ * @param mission  null keeps the plain `HUSTR_*` set rather than dropping every title
+ * @param sources  which file's patch set each key, so a title carries the provenance of the string
+ *                 it came from; a key it doesn't name counts as an add-on's
  */
 export function dehTitlesFor(
   mission: LevelMission | null,
@@ -270,7 +268,7 @@ export function dehTitlesFor(
 /**
  * A file's level titles: what its own MAPINFO defines, and where that names nothing, what its
  * DEHACKED patch names. **The patch fills gaps, it never overwrites** — the same order
- * `levelTitleFor` applies in-game, stated here once so the menu's uploaded files and the
+ * {@link levelTitleFor} applies in-game, stated here once so the menu's uploaded files and the
  * build-time manifest cannot name the same level differently.
  *
  * The mission is projected from the file's own name, which for an IWAD is exactly the mission
@@ -333,10 +331,7 @@ export interface DehStrings {
   stringSources?: ReadonlyMap<string, WadFile>;
 }
 
-/**
- * Names the levels of one loaded WAD set. Built once per `Game` (the IWAD identification depends on
- * the file set, not on which map is loaded) and asked per map load.
- */
+/** Names the levels of one loaded WAD set: built once per `Game`, asked per map load. */
 export class LevelNames {
   private wad: Wad;
   private titles: Map<string, TitleFrom>;
@@ -375,23 +370,19 @@ export class LevelNames {
   }
 
   /**
-   * The `CWILV`/`WILV` lump to show instead of `nameFor`'s text, when the set has one that
-   * actually belongs to this map — the level's name as the WAD's own artist drew it beats anything
-   * assembled from a table.
-   *
-   * A patch from a *different* file than the map only counts when the map came from the IWAD,
-   * which is what keeps a PWAD's `MAP01` from announcing itself with the IWAD's `CWILV00`.
-   * docs/wad.md § Level names.
+   * The `CWILV`/`WILV` lump to show instead of {@link LevelNames.nameFor}'s text, when the set has
+   * one that belongs to this map — the level's name as the WAD's own artist drew it beats anything
+   * assembled from a table. docs/wad.md § Level names.
    */
   graphicFor(mapName: string): string | undefined {
     return this.patchFor(mapName, levelNamePatch(mapName.toUpperCase()));
   }
 
   /**
-   * The `M_EPI` graphic naming this map's episode, under the same provenance rule as `graphicFor`:
-   * a PWAD's own `E1M8` must not announce itself with the IWAD's "Knee-Deep in the Dead". DOOM II's
-   * IWAD carries `M_EPI1`-`M_EPI3` unused, which costs nothing here — no `MAP<nn>` has an episode
-   * to ask about. docs/hud.md § End card.
+   * The `M_EPI` graphic naming this map's episode, under the same provenance rule as
+   * {@link LevelNames.graphicFor}: a PWAD's own `E1M8` must not announce itself with the IWAD's
+   * "Knee-Deep in the Dead". DOOM II's IWAD carries `M_EPI1`-`M_EPI3` unused, which costs nothing
+   * here — no `MAP<nn>` has an episode to ask about. docs/hud.md § End card.
    */
   episodeGraphicFor(mapName: string): string | undefined {
     return this.patchFor(mapName, episodeNamePatch(mapName.toUpperCase()));

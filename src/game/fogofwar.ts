@@ -21,9 +21,7 @@ const SNAP_EPS = 0.004;
 /**
  * How many wall quads one frame's reveal may name individually before {@link FogOfWar.changedWalls}
  * gives up and reports "all of them" instead. A reveal touches a handful of subsectors a frame and
- * each holds a few dozen quads; the fallback is for the level-wide ramp the computer area map
- * starts, where the list would be as long as the map and the full pass is cheaper than building it.
- * **Tuned by feel.**
+ * each holds a few dozen quads. **Tuned by feel.** docs/fogofwar.md § Which walls a reveal moved.
  */
 const CHANGED_WALL_LIMIT = 4096;
 
@@ -421,8 +419,7 @@ export class FogOfWar {
 
   /**
    * Fades each subsector's drawn alpha toward whether it is explored. Purely cosmetic and on the
-   * **render** clock: nothing in the simulation reads {@link FogOfWar.alpha}, which is what lets
-   * this stay framerate-smooth without making shootability framerate-dependent.
+   * **render** clock: nothing in the simulation reads {@link FogOfWar.alpha}.
    */
   updateFade(dt: number): void {
     this.changedWallCount = 0;
@@ -498,9 +495,7 @@ export class FogOfWar {
   /**
    * Whether a subsector has been revealed — the **gameplay** gate, deciding what is shootable and
    * auto-aimable (`ThingLayer.update`): explored, and in the island any slot stands in, so no
-   * answer depends on which slot is drawn. Reads the crisp {@link FogOfWar.explored} flag rather
-   * than the damped {@link FogOfWar.alpha}, so it cannot depend on how many frames the fade has
-   * had. docs/fogofwar.md § What gameplay reads, § Islands.
+   * answer depends on which slot is drawn. docs/fogofwar.md § What gameplay reads, § Islands.
    */
   isVisible(subsector: number): boolean {
     if (this.explored[subsector] === 0) return false;
@@ -720,9 +715,8 @@ export class FogOfWar {
 
   /**
    * The sector of a subsector that is **permanently** solid — no vertical opening, and no special
-   * or mover that could ever give it one. {@link FogOfWar.testBlocker} waives such a sector's own
-   * lines while sampling it, or it would stay dark all level and draw as a hole. The opening test
-   * is live rather than load-time. docs/fogofwar.md § Closed sectors.
+   * or mover that could ever give it one — whose own lines {@link FogOfWar.testBlocker} waives
+   * while sampling it. docs/fogofwar.md § Closed sectors.
    *
    * @returns -1 for any other subsector
    */

@@ -1,9 +1,9 @@
 /**
  * The player's billboard art beyond the loaded set's own `PLAY` in green: the shipped
- * weapon-matching skins and the armour colours, each a `SpriteSkin` the billboard draws through.
- * `wad/playerskin.ts` owns the skin file, its setting and whether the loaded set draws its own
- * player; `wad/playercolor.ts` owns the colours. See docs/sprites.md § Weapon-matching player
- * sprites and § Player colours.
+ * weapon-matching skins and the armour colours, each a {@link SpriteSkin} the billboard draws
+ * through. `wad/playerskin.ts` owns the skin file, its setting and whether the loaded set draws its
+ * own player; `wad/playercolor.ts` owns the colours. See
+ * docs/sprites.md § Weapon-matching player sprites and § Player colours.
  */
 import type * as THREE from 'three';
 import { GraphicsBank } from '../wad/graphics.ts';
@@ -33,7 +33,7 @@ export const PLAYER_WEAPON_SPRITES: Record<WeaponId, string> = {
   supershotgun: 'PLA9',
 };
 
-/** What `PlayerSkins` draws from. */
+/** What {@link PlayerSkins} draws from. */
 export interface PlayerSkinsOptions {
   /** The shipped weapon-matching art, or null where its fetch failed: the set's `PLAY` then. */
   file: WadFile | null;
@@ -47,11 +47,9 @@ export interface PlayerSkinsOptions {
 
 /**
  * The skin file's own banks, and per colour the caches both it and the set's `PLAY` decode through.
- * The skin file is deliberately a `Wad` of its own rather than a file appended to the loaded set:
- * `wadSetId` turns every entry of `wad.files` into a savegame's WAD-set identity, so a set this
- * file joined would refuse every existing save and stamp a phantom file onto every new one
- * (docs/savegames.md § WAD-set identity). It ships no PLAYPAL and borrows the set's, so a WAD with
- * its own palette recolours the skins along with everything else.
+ * The skin file is deliberately a {@link Wad} of its own rather than a file appended to the loaded
+ * set, which would change every savegame's WAD-set identity (docs/savegames.md § WAD-set identity).
+ * It ships no PLAYPAL and borrows the set's.
  *
  * Built whether or not the setting currently asks for skins — the mode can change mid-session — and
  * a colour's caches only on its first draw; nothing decodes a lump until one is actually drawn.
@@ -80,16 +78,13 @@ export class PlayerSkins {
    * so the menu applies it to the level already running. A frame the weapon-matching art does not
    * draw — the gib chain — comes from `PLAY` in the same colour ({@link SpriteSkin.fallback}).
    *
-   * Which of the nine is drawn is `playerSkinWeapon`'s, not `weapon`'s: a DEHACKED patch can move
-   * a weapon's shot onto another weapon's, and the art follows the shot.
+   * Which of the nine is drawn is {@link playerSkinWeapon}'s, not `weapon`'s: a DEHACKED patch can
+   * move a weapon's shot onto another weapon's, and the art follows the shot.
    *
    * The same record comes back every frame for a given weapon and colour, so a caller handing it
    * straight to `SpriteActor.setSkin` allocates nothing.
    *
-   * @param weapon             the weapon in hand
-   * @param color              the armour colour drawn
    * @param setDrawsOwnPlayer  the loaded set's own answer, resolved once per session
-   * @returns the skin to draw through, null for the set's own green `PLAY`
    */
   skinFor(weapon: WeaponId, color: PlayerColor, setDrawsOwnPlayer: boolean): SpriteSkin | null {
     const skins = this.colorSkins(color);
@@ -141,12 +136,12 @@ export class PlayerSkins {
   }
 }
 
-/** One colour's art, as `PlayerSkins.skinFor` hands it out. */
+/** One colour's art, as {@link PlayerSkins.skinFor} hands it out. */
 interface ColorSkins {
   /** The set's `PLAY` in this colour, or null for green, which the set's atlas draws. */
   play: SpriteSkin | null;
   /** The shipped art in this colour, by weapon; null without the file. */
   byWeapon: Record<WeaponId, SpriteSkin> | null;
-  /** Every cache built for the colour, for `dispose`. */
+  /** Every cache built for the colour, for {@link PlayerSkins.dispose}. */
   caches: SpriteMaterialCache[];
 }

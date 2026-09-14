@@ -655,11 +655,9 @@ export class World {
   }
 
   /**
-   * Which side of linedef `lineIndex` an axis-aligned box lies on, or `-1` if
-   * it spans the line — vanilla's `P_BoxOnLineSide` (`p_maputl.c`), and the
-   * test that replaced this engine's original collision *circle*. The
-   * slopetype picks which two opposing corners decide it, so only two point
-   * tests run rather than four. See docs/movement.md § Collision.
+   * Which side of linedef `lineIndex` an axis-aligned box lies on, or `-1` if it spans the line —
+   * vanilla's `P_BoxOnLineSide` (`p_maputl.c`). The slopetype picks which two opposing corners
+   * decide it, so only two point tests run rather than four. See docs/movement.md § Collision.
    */
   boxOnLineSide(left: number, bottom: number, right: number, top: number, lineIndex: number): number {
     let p1 = 0;
@@ -696,8 +694,7 @@ export class World {
   /**
    * True if a box overlaps linedef `lineIndex`'s own bounding box — `PIT_CheckLine`'s cheap reject,
    * run before {@link World.boxOnLineSide}. Exactly flush is deliberately *not* an overlap,
-   * matching vanilla's `<=`/`>=` and the strict `< radius²` boundary the circle test it replaced
-   * also had.
+   * matching vanilla's `<=`/`>=`.
    */
   boxOverlapsLine(left: number, bottom: number, right: number, top: number, lineIndex: number): boolean {
     const base = lineIndex * 4;
@@ -1282,10 +1279,8 @@ export class World {
    * True if this line is a hard wall regardless of height — no opening to test.
    *
    * @param forMonster  additionally treats an {@link LF.BLOCK_MONSTERS} line as solid — vanilla's
-   *                    own `ML_BLOCKMONSTERS`, a line that fences monsters out of an area (or off a
-   *                    ledge) while leaving the player free to walk through; the player's own
-   *                    movement never passes `forMonster: true`, so this only ever narrows what a
-   *                    monster can cross, never the player
+   *                    `ML_BLOCKMONSTERS`, which fences monsters out of an area (or off a ledge)
+   *                    and never the player
    */
   isSolidWall(lineIndex: number, forMonster = false): boolean {
     const line = this.map.linedefs[lineIndex];
@@ -1314,9 +1309,8 @@ export class World {
   /**
    * Player 1 start (thing type 1); falls back to the map centre.
    *
-   * The **last** doomednum-1 thing, not the first — every earlier one is a
-   * voodoo doll, and spawning on top of one is a real bug. See docs/wad.md §
-   * Player start.
+   * The **last** doomednum-1 thing, not the first — every earlier one is a voodoo doll, and
+   * spawning on top of one is a real bug. See docs/wad.md § Player start.
    */
   playerStart(): Placement {
     const start = this.placedStart(ThingType.playerStart);
@@ -1502,7 +1496,7 @@ export class World {
    * @param stopOnBlock  returns on the first refusing line, as `P_CheckPosition` does; the heights
    *                     are then only partly accumulated, which is safe for a caller that wants
    *                     nothing but the verdict. A caller needing the heights *and* the verdict
-   *                     (`monsters/ai.ts: testStep`, and the dropoff test below) passes `false` and
+   *                     (`monsters/ai.ts: testStep`, `things.ts: overDropoff`) passes `false` and
    *                     gets both from the same walk.
    */
   checkPosition(

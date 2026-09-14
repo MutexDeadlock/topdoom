@@ -1,8 +1,6 @@
 /**
  * Attack resolution. `monsters/ai.ts` decides *that* a monster attacks and reports a
- * {@link MonsterAttackEvent}; this works out what that attack actually does to the world. The two
- * halves are kept apart by their dependencies: the AI touches nothing but a `MonsterBody`, while
- * this needs the thing list, the effect and projectile layers, and the audio engine.
+ * {@link MonsterAttackEvent}; this works out what that attack actually does to the world.
  * docs/monster-attacks.md § Resolving an attack.
  */
 import { WEAPON_RANGE } from '../world.ts';

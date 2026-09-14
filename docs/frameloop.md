@@ -261,7 +261,7 @@ first frame back is always due.
 ## Pausing (`game.ts: pause`, `stillFrame`, `stop`)
 
 A paused level is frozen but **still being drawn**: `pause` stops the simulation loop and starts
-`stillFrame`, which only calls `renderer.render` — no tics, no input, no profiling — and only every
+`stillFrame`, which only calls `view.present` — no tics, no input, no profiling — and only every
 ~50 ms, since a static scene has no reason to cost 60 fps. Without it the canvas would just be
 showing its last composited frame, which goes stale the moment anything invalidates it (a window
 resize resizes the canvas, a DPR change, a tab restore), and the menu now draws *over* the level

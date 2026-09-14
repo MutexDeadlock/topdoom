@@ -55,8 +55,8 @@ export interface PlayerHit {
 }
 
 /**
- * The live level as the combat systems (`game/projectiles.ts` and the shot
- * resolution still in `game.ts`) see it: the state they need to read, plus the
+ * The live level as the combat systems (`game/projectiles.ts` and
+ * `game/monsters/attacks.ts`) see it: the state they need to read, plus the
  * two effects they raise that belong to somebody else.
  *
  * Every member is a **getter, not a captured value** — {@link CombatContext.world},
@@ -253,11 +253,9 @@ export interface RadiusBlast {
 /**
  * An explosion's blast — vanilla's `P_RadiusAttack`: every living body whose **edge** lies within
  * {@link RadiusBlast.radius} of the impact point, with an unobstructed line to it, takes damage
- * falling off linearly to 0 there. Range is {@link blastDistanceToBox} (Chebyshev, minus that
- * body's own radius), not a centre-to-centre distance — which is what makes a wide monster both
- * catchable from further out and hurt harder at any range. **2D distance only, no height check**,
- * as in vanilla.
- * Vanilla carries one number where this takes two — docs/combat.md § Splash and the BFG.
+ * falling off linearly to 0 there. Range is {@link blastDistanceToBox}, not a centre-to-centre
+ * distance; **2D distance only, no height check**, as in vanilla.
+ * docs/combat.md § Splash and the BFG.
  */
 export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBlast): void {
   const { radius, maxDamage, hitsPlayer, source, slot } = blast;
@@ -286,10 +284,8 @@ export function applyRadiusDamage(ctx: CombatContext, at: Pos3, blast: RadiusBla
 }
 
 /**
- * What a blast deals one body, in whole points: vanilla's `bombdamage - dist`, which this is
- * exactly wherever `radius` equals `maxDamage` — every caller's case. Integer arithmetic, truncated
- * as C's division is, so no blast leaves a fraction on a body's health or armor.
- * docs/combat.md § Splash and the BFG.
+ * What a blast deals one body, in whole points: vanilla's `bombdamage - dist` wherever `radius`
+ * equals `maxDamage`, truncated as C's division is. docs/combat.md § Splash and the BFG.
  *
  * @param maxDamage  what a body at range 0 takes
  * @param radius     the range in map units over which the damage falls off to 0

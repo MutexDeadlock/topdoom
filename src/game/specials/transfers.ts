@@ -40,8 +40,8 @@ const TRANMAP_LUMP_SIZE = 65536;
 const COLORMAP_LUMP_SIZE = 34 * 256;
 
 /**
- * The level's transfers, built on first use and keyed by the `DoomMap` the way `world.ts`'s tag
- * indexes are. See docs/specials-transfers.md § Render transfers.
+ * The level's transfers, built on first use and keyed by the {@link DoomMap} the way `world.ts`'s
+ * tag indexes are. See docs/specials-transfers.md § Render transfers.
  */
 const cache = new WeakMap<DoomMap, { transfers: Transfers; probed: boolean }>();
 
@@ -58,7 +58,7 @@ export function transfersOf(map: DoomMap, lumpSize?: LumpSize): Transfers {
 
 /**
  * One level's render transfers: four passes over the linedefs at load, nothing kept ticking after.
- * Reached through `transfersOf`, not constructed directly, except by tests and
+ * Reached through {@link transfersOf}, not constructed directly, except by tests and
  * `scripts/inspect-wad.ts`. See docs/specials-transfers.md § Render transfers.
  */
 export class Transfers {
@@ -68,21 +68,21 @@ export class Transfers {
   private ceilingLightSec: Int32Array;
   private heightSecs: Int32Array;
   /**
-   * `heightSecs` again, narrowed to the sectors whose neighbours can follow a
-   * fake floor down — Boom's invisible-platform idiom, `markFakeFloors`. Dense
-   * for the same reason its siblings are. See docs/specials-transfers.md § The fake floor.
+   * {@link Transfers.heightSecs} again, narrowed to the sectors whose neighbours can follow a fake
+   * floor down — Boom's invisible-platform idiom, {@link Transfers.markFakeFloors}. Dense for the
+   * same reason its siblings are. See docs/specials-transfers.md § The fake floor.
    */
   private fakeFloorSecs: Int32Array;
   /**
-   * `heightSecs` again, narrowed to the sectors that had water over them when
-   * the level loaded — `markPools`, read by `poolBottom`. Dense for the same
-   * reason its siblings are. See docs/specials-transfers.md § Deep water.
+   * {@link Transfers.heightSecs} again, narrowed to the sectors that had water over them when the
+   * level loaded — {@link Transfers.markPools}, read by {@link Transfers.poolBottom}. Dense for the
+   * same reason its siblings are. See docs/specials-transfers.md § Deep water.
    */
   private poolSecs: Int32Array;
   /**
-   * The water sector each *island* sits inside — a sector the mapper left out of
-   * a pool's tag but walled in by it, `markPoolIslands`, read by `poolIsland`.
-   * Dense for the same reason its siblings are. See docs/specials-transfers.md § Deep water.
+   * The water sector each *island* sits inside — a sector the mapper left out of a pool's tag but
+   * walled in by it, {@link Transfers.markPoolIslands}, read by {@link Transfers.poolIsland}. Dense
+   * for the same reason its siblings are. See docs/specials-transfers.md § Deep water.
    */
   private islandSecs: Int32Array;
   /**
@@ -110,10 +110,9 @@ export class Transfers {
   readonly hasAny: boolean;
 
   /**
-   * `lumpSize` decides 260's midtexture overload, and is optional because only
-   * the two callers holding a `Wad` (`game.ts`, `scripts/inspect-wad.ts`) can
-   * answer it. Without it every midtexture name is taken as a texture, which is
-   * what it is on all but a handful of lines.
+   * @param lumpSize  decides 260's midtexture overload; optional because only the two callers
+   *                  holding a `Wad` (`game.ts`, `scripts/inspect-wad.ts`) can answer it. Without
+   *                  it every midtexture name is a texture, as it is on all but a handful of lines.
    */
   constructor(map: DoomMap, lumpSize?: LumpSize) {
     this.map = map;
@@ -178,9 +177,9 @@ export class Transfers {
   }
 
   /**
-   * The height a sector's ceiling is *drawn* at — its 242 control sector's,
-   * else its own (`r_bsp.c: R_FakeFlat`). The ceiling-side counterpart of
-   * `waterHeight`, and what sizes the walls across a two-sided line from it —
+   * The height a sector's ceiling is *drawn* at — its 242 control sector's, else its own
+   * (`r_bsp.c: R_FakeFlat`). The ceiling-side counterpart of {@link Transfers.waterHeight}, and
+   * what sizes the walls across a two-sided line from it —
    * see docs/specials-transfers.md § Deep water.
    */
   drawnCeiling(sectorIndex: number): number {
@@ -190,11 +189,11 @@ export class Transfers {
   }
 
   /**
-   * The height a sector's floor is *drawn* at: its 242 control sector's where `markFakeFloors`
-   * cleared the substitution and that sector is still the lower of the two, else its own — the
-   * floor-side counterpart of `drawnCeiling`. Comparing live is a deviation from vanilla's
-   * unconditional substitution (`r_bsp.c: R_FakeFlat`); see docs/specials-transfers.md § The fake
-   * floor.
+   * The height a sector's floor is *drawn* at: its 242 control sector's where
+   * {@link Transfers.markFakeFloors} cleared the substitution and that sector is still the lower of
+   * the two, else its own — the floor-side counterpart of {@link Transfers.drawnCeiling}. Comparing
+   * live is a deviation from vanilla's unconditional substitution (`r_bsp.c: R_FakeFlat`); see
+   * docs/specials-transfers.md § The fake floor.
    */
   drawnFloor(sectorIndex: number): number {
     const own = this.map.sectors[sectorIndex]?.floorHeight ?? 0;
@@ -206,8 +205,8 @@ export class Transfers {
 
   /**
    * The control sector a pool bottom takes its flat and light from, or -1 for a sector that never
-   * had water over it. Fixed at load (`markPools`), so a mover raising the bottom clear of the
-   * surface cannot turn it into water. See docs/specials-transfers.md § Deep water.
+   * had water over it. Fixed at load ({@link Transfers.markPools}), so a mover raising the bottom
+   * clear of the surface cannot turn it into water. See docs/specials-transfers.md § Deep water.
    */
   poolBottom(sectorIndex: number): number {
     return this.poolSecs[sectorIndex] ?? -1;
@@ -222,7 +221,7 @@ export class Transfers {
     return this.islandSecs[sectorIndex] ?? -1;
   }
 
-  /** Every island in a pool, and the water sector enclosing it — see `poolIsland`. */
+  /** Every island in a pool and the water sector enclosing it — {@link Transfers.poolIsland}. */
   poolIslands(): { sector: number; pool: number }[] {
     const out: { sector: number; pool: number }[] = [];
     for (let s = 0; s < this.islandSecs.length; s++) {
@@ -327,8 +326,8 @@ export class Transfers {
 
   /**
    * Picks the 242 sectors whose *below-floor* control sector is a fake floor to draw rather than a
-   * fake ceiling's leftover — the adjacency half of `drawnFloor`, settled here because nothing
-   * moves it. See docs/specials-transfers.md § The fake floor.
+   * fake ceiling's leftover — the adjacency half of {@link Transfers.drawnFloor}, settled here
+   * because nothing moves it. See docs/specials-transfers.md § The fake floor.
    */
   private markFakeFloors(): void {
     for (let s = 0; s < this.heightSecs.length; s++) {
@@ -342,7 +341,8 @@ export class Transfers {
 
   /**
    * The 242 sectors that had water over them at load — a height comparison a mover can undo, which
-   * is why `poolBottom` reads it from here. See docs/specials-transfers.md § Deep water.
+   * is why {@link Transfers.poolBottom} reads it from here.
+   * See docs/specials-transfers.md § Deep water.
    */
   private markPools(): void {
     for (let s = 0; s < this.heightSecs.length; s++) {
@@ -396,8 +396,8 @@ export class Transfers {
 
   /**
    * Whether every sector across a two-sided line from `s` can be drawn against a floor at `fake`:
-   * it sits at or below that height, and carries no 242 of its own. docs/specials-transfers.md §
-   * The fake floor has what each clause prevents.
+   * it sits at or below that height, and carries no 242 of its own.
+   * docs/specials-transfers.md § The fake floor has what each clause prevents.
    */
   private neighboursFollow(s: number, fake: number): boolean {
     for (const lineIndex of sectorLines(this.map, s)) {
@@ -417,8 +417,8 @@ export class Transfers {
   /**
    * 260. Tag 0 marks only the line it sits on; any other tag marks every line carrying it
    * (`p_setup.c: P_LoadLineDefs2`). The sidedef's midtexture name may be the translucency map
-   * instead of a texture, which draws no midtexture at all — see docs/specials-transfers.md §
-   * Translucent midtextures.
+   * instead of a texture, which draws no midtexture at all. See
+   * docs/specials-transfers.md § Translucent midtextures.
    */
   private spawnTranslucentLines(lumpSize?: LumpSize): void {
     for (const [i, line] of this.map.linedefs.entries()) {

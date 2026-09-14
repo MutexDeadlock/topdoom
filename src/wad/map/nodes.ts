@@ -2,7 +2,7 @@
  * Decodes the three BSP lumps (SEGS/SSECTORS/NODES) in every format Boom- and ZDoom-era
  * maps ship — vanilla 16-bit, DeePBSP V4, and the eight extended signatures: the plain
  * pair XNOD/ZNOD and the GL family XGLN/XGL2/XGL3 — and normalizes them to one in-memory
- * convention: 32-bit node children flagged with `SUBSECTOR_BIT`. Record layouts follow
+ * convention: 32-bit node children flagged with {@link SUBSECTOR_BIT}. Record layouts follow
  * PrBoom+'s `doomdata.h`/`p_setup.c` and gzdoom's `maploader.cpp`.
  * See docs/wad.md § Node formats.
  */
@@ -86,10 +86,8 @@ function signature(data: Uint8Array | undefined): string {
 }
 
 /**
- * The extended payload a map ships and how to read it, or null when it ships none.
- * **NODES is tested before SSECTORS**, as gzdoom's `LoadLevel` does: a map built with
- * both (`zdbsp -g -X`) carries XNOD in NODES beside XGLN in SSECTORS, and the plain
- * nodes are the ones it means for a renderer that isn't drawing from GL segs.
+ * The extended payload a map ships and how to read it, or null when it ships none. **NODES is
+ * tested before SSECTORS**, as gzdoom's `LoadLevel` does — docs/wad.md § Node formats.
  */
 function extendedPayload(
   ssectorsData: Uint8Array | undefined,
@@ -103,10 +101,9 @@ function extendedPayload(
 }
 
 /**
- * Vanilla 16-bit node child -> the normalized 32-bit convention, per PrBoom+
- * `P_LoadNodes`: 0xFFFF means "no child" and resolves to subsector 0 (that is
- * where PrBoom's -1 lands in `R_PointInSubsector`), and a subsector index past
- * the end of SSECTORS is clamped to 0 rather than left to crash a BSP walk.
+ * Vanilla 16-bit node child -> the normalized 32-bit convention, per PrBoom+ `P_LoadNodes`: 0xFFFF
+ * ("no child") resolves to subsector 0, and a subsector index past the end of SSECTORS is clamped
+ * to 0 rather than left to crash a BSP walk. docs/wad.md § Node formats.
  */
 function normalizeChild(child: number, subsectorCount: number): number {
   if (child === 0xffff) return SUBSECTOR_BIT >>> 0;
@@ -183,11 +180,9 @@ function readPlainSegs(r: Reader, count: number): Seg[] {
 }
 
 /**
- * GL segs, which store no second vertex: a leaf's segs run in order around its boundary,
- * so each one's `v2` is the next one's `v1`, wrapping at the end of the leaf — the
- * ordering gzdoom's `LoadGLZSegs` reconstructs them from. `partner`, the seg facing this
- * one from the leaf across the edge, is read past: nothing here walks between leaves.
- * docs/wad.md § GL nodes.
+ * GL segs, which store no second vertex: each one's {@link Seg.v2} is the next one's
+ * {@link Seg.v1}, wrapping at the end of the leaf — the ordering gzdoom's `LoadGLZSegs`
+ * reconstructs them from. `partner` is read past. docs/wad.md § GL nodes.
  */
 function readGlSegs(r: Reader, gl: number, subsectors: SubSector[], total: number, count: number): Seg[] {
   // gzdoom's own check (`LoadZNodes`): the two disagreeing means every seg index past the

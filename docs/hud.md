@@ -166,7 +166,7 @@ starts at 0 with every `buildLevel`. It also never advances on the tic an exit i
 tic already returns early once `pendingExit` is set (see that field's
 own doc in `game.ts`), before reaching the increment, so no separate "level complete" check is
 needed on top of the death check. That frozen instant is exactly what the intermission below shows,
-and it stays frozen for as long as the popup is up: those frames return early too.
+and it stays frozen for as long as the popup is up: those tics return early too.
 
 ## Level card
 
@@ -259,18 +259,18 @@ In a game of more than one player the scoreboard stands above the panel (§ Scor
 
 The control flow is the part worth knowing:
 
-- `Game.pendingExit` no longer loads the next map. On the frame it is consumed (still right after
+- `Game.pendingExit` does not load the next map. On the tic it is consumed (still right after
   the specials block has returned — see that field's own doc for why the teardown can't happen
   inside the callback) it shows the popup and sets `popup` to `'intermission'`.
-- While `popup` is set, a branch at the **top** of `frame` advances nothing at all — no clock, no
-  specials, no monsters — and only re-renders the still scene under the popup. `Space`/`Enter`
+- While `popup` is set, a branch at the **top** of `tic` advances nothing at all — no clock, no
+  specials, no monsters — and `frame` only redraws the still scene under the popup. `Space`/`Enter`
   enters the next level, which clears the popup and the field along with every other per-level
   overlay. `popup` is **one field, not a flag per screen** (§ End card adds the second): the two are
   mutually exclusive, and a field makes that unrepresentable instead of merely documented.
 - The popup ignores that key for its first `INTERMISSION_INPUT_DELAY` (`intermission.ts`). `Space`
   is *also* the use key, so without the delay a mashed exit switch dismisses the popup on the frame
   after it appears. The press that opened it can't leak through on its own — `Input.pressed` is
-  edge-triggered and the exit frame ends with `endFrame()` — but a second tap would.
+  edge-triggered and the exit tic ends with `Game.endTicInputs` — but a second tap would.
 - Deliberately not any-key, and deliberately not `pause()`: `Escape` belongs to the menu (`main.ts`)
   and would otherwise both pause and dismiss the popup in one press, and a paused `Game` stops
   reading input, which is the one thing this state needs.
@@ -312,7 +312,7 @@ Two deliberate deviations from vanilla, both about where the player ends up:
 
 Control flow, continuing § Intermission's:
 
-- `Game.resolveExit` (still on the frame `pendingExit` is consumed, the last moment `currentMap`
+- `Game.resolveExit` (still on the tic `pendingExit` is consumed, the last moment `currentMap`
   names the level being left) writes `nextMapIndex` — `-1` when nothing follows — and `pendingEnd`,
   which is *only* the scope. Everything else on the card is rebuilt in `showEndCard`, which still
   runs on the finished level, so there is no snapshot to keep in step.
@@ -459,7 +459,7 @@ Same rung as the bar (`--z-hud`): it is part of the bar, not a message over the 
 
 `src/ui/hud/message.ts`'s `CenterMessage` draws one short line of `WadFont` text over the middle of
 the view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
-holds at dead center), for 3 seconds. Four callers so far:
+holds at dead center), for 3 seconds. Its callers:
 
 - the secret announcement — `Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` (this
   module's own, since it is display text) and plays the `secret` chime on the frame
@@ -468,7 +468,7 @@ holds at dead center), for 3 seconds. Four callers so far:
   (docs/cheats.md), in the message's own yellow like the secret announcement; IDCLEV raises one only
   when it names a map the set hasn't got (docs/cheats.md § IDCLEV);
 - the locked door/switch line — `lockedLineMessage(lock, kind)` resolves the `LockedLine`
-  `Game.frame` drained out of `specials` through `specials/tables.ts`'s `LOCKED_LINES`, where
+  `Game.tic` drained out of `specials` through `specials/tables.ts`'s `LOCKED_LINES`, where
   vanilla's and Boom's `PD_*` text lives and where a DEH patch will have replaced it (docs/items.md
   § Locked doors and use triggers, docs/dehacked.md § Locked-door lines); its `oof` was already
   played there;
@@ -476,7 +476,9 @@ holds at dead center), for 3 seconds. Four callers so far:
   `ThingLayer.missingArt` is non-empty, so a monster the set could not draw and therefore did not
   spawn is not simply absent with nothing to explain it (docs/wad.md § Art a WAD set doesn't have).
   Raised at level load, which `clearOverlays` precedes, and it sits in its own band clear of the
-  level card's (30% vs. 40%).
+  level card's (30% vs. 40%);
+- the network stall notice (`NetHost.say`) and a take-over save the store refused
+  (`Game.saveTakeOver`) — both § HUD messages.
 
 `show` takes **runs**, not one string: a bare string draws in `COLOR_YELLOW`, a `{text, color}` run
 in whatever color it names, and they're laid out left to right on one canvas — which is what lets
@@ -500,9 +502,9 @@ in the middle of the view outstays its welcome faster than text in a corner. Its
 glyph height, roughly the level-stats strip's own) and `opacity: 0.75` are **tuned by feel** — it
 sits over the playfield, so it reads as an overlay rather than competing with what's under it.
 
-The timeout is ticked from `Game.frame`'s `dt`, so a paused game doesn't burn a message's display
-time behind the menu; `buildLevel` and `dispose` both `clear()` it, since the element is static
-markup that outlives any one `Game` (the same reason `Hud`'s panels `replaceChildren()`).
+The timeout is ticked from `Presenter.tickOverlayClocks`, so a paused game doesn't burn a message's
+display time behind the menu; `buildLevel` and `dispose` both `clear()` it, since the element is
+static markup that outlives any one `Game` (the same reason `Hud`'s panels `replaceChildren()`).
 
 ## Scoreboard
 

@@ -15,24 +15,20 @@ export interface SwitchPair {
 }
 
 /**
- * Resolves a switch texture to its opposite state, in either direction.
- * `switchPairTexture` (`game/specials/defs.ts`) is the name-convention
- * implementation; `switchPairs` below builds the lump-driven one.
+ * Resolves a switch texture to its opposite state, in either direction. `switchPairTexture`
+ * (`game/specials/defs.ts`) is the name-convention implementation; {@link switchPairs} builds the
+ * lump-driven one.
  */
 export type SwitchPairLookup = (name: string) => string | null;
 
 /**
- * The WAD set's `SWITCHES` pairs, or `null` when no file in the set defines
- * the lump (every stock IWAD). Terminated by a record whose `episode` is 0.
+ * The WAD set's `SWITCHES` pairs, or `null` when no file in the set defines the lump (every stock
+ * IWAD). Terminated by a record whose `episode` is 0.
  *
- * **The episode field is deliberately ignored.** Vanilla filters on it to keep
- * switches whose textures the current IWAD doesn't have out of the list, but
- * PrBoom+ already drops unknown-texture entries outright
- * (`p_switch.c: "Ignore switches referencing unknown texture names"`), and
- * existence is the only thing the number was ever a proxy for. Honouring it
- * here would make switch behavior depend on the IWAD's *file name*
- * (`missionOf`, already null for any renamed IWAD) — a worse signal than
- * asking the graphics bank. The caller applies the existence check.
+ * **The episode field is deliberately ignored**, as PrBoom+ drops unknown-texture entries outright
+ * instead (`p_switch.c: "Ignore switches referencing unknown texture names"`): existence is all the
+ * number was ever a proxy for, and honouring it would key switch behavior on the IWAD's *file
+ * name* (`missionOf`). The caller applies the existence check. docs/wad.md § ANIMATED and SWITCHES.
  */
 export function readSwitches(wad: Wad): SwitchPair[] | null {
   const lump = wad.find('SWITCHES');

@@ -17,21 +17,19 @@ import { DOOM_TIC } from '../../constants.ts';
 const INVISIBILITY_OPACITY = 0.35;
 
 /**
- * `toneMappingExposure` while the light visor is held — a flat multiply, as
- * close as this gets to vanilla forcing the brightest colormap row without
- * rebuilding every surface's baked vertex lighting (docs/items.md § Powerups and the backpack).
- * The visor's other half is `setDistanceFlattened`, which removes the depth falloff the way
- * vanilla's `fixedcolormap` does (docs/render-lighting.md § The light-amplification visor flattens
- * it).
+ * `toneMappingExposure` while the light visor is held — a flat multiply, as close as this gets to
+ * vanilla forcing the brightest colormap row without rebuilding every surface's baked vertex
+ * lighting (docs/items.md § Powerups and the backpack). The visor's other half is
+ * {@link setDistanceFlattened}, which removes the depth falloff the way vanilla's `fixedcolormap`
+ * does (docs/render-lighting.md § The light-amplification visor flattens it).
  */
 const LIGHT_VISOR_EXPOSURE = 2.5;
 
 /**
- * The red damage flash, echoing `ST_doPaletteStuff`'s `damagecount`: raw damage
- * into a counter clamped to 100, ticked down 1/tic. `PAIN_FLASH_MAX_DAMAGE` is
- * that clamp and `PAIN_FLASH_FADE_SECONDS` is 100 tics over 35.
- * `PAIN_FLASH_MAX_ALPHA` has no vanilla analogue
- * (there it's a palette swap, not an overlay) and is **tuned by feel**.
+ * The red damage flash, echoing `ST_doPaletteStuff`'s `damagecount`: raw damage into a counter
+ * clamped to 100, ticked down 1/tic. {@link PAIN_FLASH_MAX_DAMAGE} is that clamp and
+ * {@link PAIN_FLASH_FADE_SECONDS} is 100 tics over 35. {@link PAIN_FLASH_MAX_ALPHA} has no vanilla
+ * analogue (there it's a palette swap, not an overlay) and is **tuned by feel**.
  */
 const PAIN_FLASH_MAX_DAMAGE = 100;
 const PAIN_FLASH_FADE_SECONDS = 100 * DOOM_TIC;
@@ -46,8 +44,9 @@ const POWER_BLINK_WARNING_SECONDS = 3;
 const POWER_BLINK_HZ = 4;
 
 /**
- * How solid a player carrying `inv` draws: `INVISIBILITY_OPACITY` under partial invisibility,
- * blinking back as it runs out, else 1 — every slot's, written by `game.ts` as it poses them.
+ * How solid a player carrying `inv` draws: {@link INVISIBILITY_OPACITY} under partial
+ * invisibility, blinking back as it runs out, else 1 — every slot's, written by
+ * `game/presenter.ts` as it poses them.
  */
 export function invisibilityOpacity(inv: Inventory): number {
   return powerBlinkVisible(inv.powers.invisibility) ? INVISIBILITY_OPACITY : 1;
@@ -58,18 +57,17 @@ export class ScreenEffects {
   private tintEl = document.getElementById('screen-tint')!;
   private colormapEl = document.getElementById('colormap-tint')!;
   private painEl = document.getElementById('pain-flash')!;
-  /** Current intensity of the damage flash, 0-1 — bumped by `addPain`, decayed by `update`. */
+  /**
+   * Current intensity of the damage flash, 0-1 — bumped by {@link ScreenEffects.addPain}, decayed
+   * by {@link ScreenEffects.update}.
+   */
   private painFlash = 0;
 
   constructor(renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
   }
 
-  /**
-   * Drives every effect off inventory state each frame rather than toggling
-   * them on pickup/expiry, so a level change or restart clearing the powers
-   * needs no teardown path of its own.
-   */
+  /** Drives every effect off inventory state each frame — docs/hud.md § Screen effects. */
   update(dt: number, inv: Inventory): void {
     this.tintEl.classList.toggle('invulnerable', powerBlinkVisible(inv.powers.invulnerability));
     this.tintEl.classList.toggle('suited', powerBlinkVisible(inv.powers.radiationSuit));
@@ -82,10 +80,12 @@ export class ScreenEffects {
   }
 
   /**
-   * The colour cast of the Boom colormap the player is currently under, or null
-   * for none — `R_SetupFrame`'s view colormap, which a 242 sector picks by eye
-   * height (docs/specials-transfers.md § Deep water). Driven from `game.ts` rather than
-   * from `update`, which only ever sees the inventory.
+   * The colour cast of the Boom colormap the player is currently under — `R_SetupFrame`'s view
+   * colormap, which a 242 sector picks by eye height (docs/specials-transfers.md § Deep water).
+   * Driven from `game/presenter.ts` rather than from {@link ScreenEffects.update}, which only ever
+   * sees the inventory.
+   *
+   * @param tint  null for none
    */
   setColormapTint(tint: { r: number; g: number; b: number } | null): void {
     if (!tint) {
@@ -97,7 +97,7 @@ export class ScreenEffects {
     this.colormapEl.style.display = 'block';
   }
 
-  /** Bumps the damage flash by a hit that actually landed — see `PAIN_FLASH_MAX_DAMAGE`. */
+  /** Bumps the damage flash by a hit that actually landed — see {@link PAIN_FLASH_MAX_DAMAGE}. */
   addPain(amount: number): void {
     this.painFlash = Math.min(1, this.painFlash + amount / PAIN_FLASH_MAX_DAMAGE);
   }
@@ -127,11 +127,9 @@ export class ScreenEffects {
 }
 
 /**
- * Whether a powerup's screen effect should currently show, given its
- * remaining seconds (`Inventory.powers[id]`). Once inside the warning
- * window, `floor(secs * Hz) % 2` alternates every `1/Hz` seconds as `secs`
- * counts down — a plain on/off square wave ending exactly at 0, no separate
- * blink-phase timer to track.
+ * Whether a powerup's screen effect should currently show, given its remaining seconds
+ * ({@link Inventory.powers}): a plain on/off square wave inside the warning window, ending exactly
+ * at 0. docs/hud.md § Screen effects.
  */
 function powerBlinkVisible(secondsLeft: number): boolean {
   return (

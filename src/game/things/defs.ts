@@ -146,11 +146,9 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   touch: SectorTouchCache;
   /**
-   * The pinned-body memo for `applyKnockback` (`World.capturePin`): this exact
-   * position, feet height and velocity produced a blocked, velocity-zeroing
-   * outcome, valid until any stamped nearby sector height changes — a
-   * belt-pinned closet monster skips its `positionBlocked` re-check every tic
-   * on this. Derived state, never saved. docs/movement.md § Pinned-body memo.
+   * The pinned-body memo for `applyKnockback` (`World.capturePin`): this exact position, feet
+   * height and velocity produced a blocked, velocity-zeroing outcome, valid until any stamped
+   * nearby sector height changes. Derived state, never saved. docs/movement.md § Pinned-body memo.
    */
   pinned: PinnedMemo;
   /**
@@ -183,26 +181,23 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   picked: boolean;
   /**
-   * Remaining hit points;
-   * only meaningful for a `MONSTER_TYPES` thing (see `MONSTER_HEALTH`).
-   * everything else stays at `Infinity` and can never die.
+   * Remaining hit points: `MONSTER_HEALTH` for a `MONSTER_TYPES` thing, {@link BARREL_HEALTH}
+   * for a barrel, `Infinity` for everything else, which can never die.
    */
   health: number;
   /** Set once {@link PosedThing.health} reaches 0; see {@link ThingLayer.damage}. */
   dead: boolean;
   /**
-   * Seconds since {@link PosedThing.dead} was set. Vanilla's `PIT_VileCheck` refuses to raise a
-   * corpse whose own death animation is still playing (`tics != -1`, "not lying still yet") —
-   * `findRaisableCorpse` compares this against `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS` for
-   * the same gate.
+   * Seconds since {@link PosedThing.dead} was set — what `findRaisableCorpse` compares against
+   * `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS` to refuse a corpse whose death animation is
+   * still playing, `PIT_VileCheck`'s "not lying still yet" (`tics != -1`).
    */
   deadTime: number;
   /**
    * Frame count of whichever death animation (`MONSTER_DEATH_FRAMES` or the gibbed
-   * `MONSTER_XDEATH_FRAMES`) {@link ThingLayer.damage} actually played — set at time of death,
-   * read back by {@link PosedThing.deadTime}'s "still settling" check above. 0 for anything that
-   * never died with real death art (see {@link ThingLayer.damage}'s {@link PosedThing.hidden}
-   * fallback).
+   * `MONSTER_XDEATH_FRAMES`) {@link ThingLayer.damage} played, read back by
+   * {@link PosedThing.deadTime}'s "still settling" check. 0 for anything that never died with real
+   * death art (see {@link ThingLayer.damage}'s {@link PosedThing.hidden} fallback).
    */
   deathFrameCount: number;
   /**
@@ -219,31 +214,26 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   raiseFrames: string[] | undefined;
   /**
-   * Set once a dead barrel's own `A_Explode` has actually fired
-   * ({@link BARREL_CHAIN.explodeDelaySeconds} after death, not on death itself — see that
-   * constant's doc), so {@link ThingLayer.update}'s per-frame {@link PosedThing.deadTime} check
-   * doesn't re-fire it every subsequent frame. Meaningless for anything else.
+   * Set once a dead barrel's own `A_Explode` has fired ({@link BARREL_CHAIN.explodeDelaySeconds}
+   * after death, not on death itself), so {@link ThingLayer.update}'s per-frame
+   * {@link PosedThing.deadTime} check doesn't re-fire it. Meaningless for anything else.
    */
   barrelExploded: boolean;
   /**
    * Who dealt a barrel's killing blow, captured at the moment it died and carried forward to its
-   * own `A_Explode` — vanilla's `P_RadiusAttack` passes the exploding barrel's own `target`
-   * (whoever damaged it) as the new blast's `bombsource`, which is how a chain of barrels keeps
-   * attributing every link back to whoever set the first one off rather than to the previous
-   * barrel in the chain. Held as a projectile holds its shooter (`sourceId`/`sourceType`): a
-   * player as its slot's {@link targetOfSlot} with type 0, so every kill down a chain a player set
-   * off counts as theirs, and {@link hitBy} splits it back. `null` is nobody's — a crusher, a
-   * telefrag. Meaningless for anything else. docs/death.md § Exploding barrels.
+   * own `A_Explode` as the blast's `bombsource`, so a chain of barrels attributes every link back
+   * to whoever set the first one off. Held like a projectile's `sourceId`/`sourceType`: a player as
+   * its slot's {@link targetOfSlot} with type 0, so every kill down a chain a player set off counts
+   * as theirs, and {@link hitBy} splits it back. `null` is nobody's — a crusher, a telefrag.
+   * Meaningless for anything else. docs/death.md § Exploding barrels.
    */
   explodeSource: { id: number; type: number } | null;
   /**
-   * Vanilla's `P_DamageMobj` horizontal knockback (`momx`/`momy`), map units/sec — an impulse
-   * `damage` adds to in {@link ThingLayer.damage} (via `thrustSpeed`), then `applyKnockback`
-   * integrates and decays every frame on top of whatever movement (AI-driven, for a monster)
-   * already happened this frame, exactly as vanilla's own `P_XYMovement` momentum displaces a mobj
-   * independently of, and before, `A_Chase`'s own walk step in the same tic. Meaningless for
-   * anything {@link ThingLayer.damage} never touches (every non-monster, non-barrel thing) —
-   * always 0 there.
+   * Horizontal knockback (`P_DamageMobj`'s `momx`/`momy`), map units/sec — an impulse
+   * {@link ThingLayer.damage} adds via `thrustSpeed`, which `applyKnockback` integrates and decays
+   * every frame on top of whatever movement already happened, as `P_XYMovement` does before
+   * `A_Chase`'s walk step (docs/movement.md § Knockback). A conveyor's push adds to it too, on any
+   * thing but a flier.
    */
   velX: number;
   velY: number;
@@ -258,7 +248,7 @@ export interface PosedThing extends Pos3, MonsterBody {
   // these four are the layer's own, which `game/monsters/ai.ts` has no business knowing about.
   /**
    * True once this monster has spotted the player and started chasing
-   * ({@link ThingLayer.update}'s throttled wake check, LOOK_INTERVAL).
+   * ({@link ThingLayer.update}'s throttled wake check, `LOOK_INTERVAL_TICS`).
    */
   alerted: boolean;
   /**
@@ -286,8 +276,9 @@ export interface PosedThing extends Pos3, MonsterBody {
   /**
    * Who this monster is currently hunting: another {@link PosedThing}'s ID, or a player slot as
    * {@link targetOfSlot} encodes one. Set by {@link ThingLayer.damage} when something hurts it
-   * (see `shouldRetarget`) — the mechanism behind infighting — and reset to player 1 once that
-   * target dies. docs/multiplayer.md § Slot addressing.
+   * (see `shouldRetarget`) — the mechanism behind infighting. Once that target dies,
+   * `resolveTarget` looks all around for a player, or the monster idles.
+   * docs/multiplayer.md § Slot addressing.
    */
   targetId: number;
 }
@@ -451,8 +442,8 @@ export interface ThingLayer {
   solidBodies(pos: Pos2): ThingBlocker[];
   /**
    * Re-poses every thing at the camera's viewer angle and, for a living monster, ticks its AI:
-   * unalerted ones re-check sight every `LOOK_INTERVAL`, alerted ones run `stepMonsterAI` every
-   * frame, moving on vanilla's 8-way `P_NewChaseDir` rather than `slideMove`
+   * unalerted ones re-check sight every `LOOK_INTERVAL_TICS`, alerted ones run `stepMonsterAI`
+   * every frame, moving on vanilla's 8-way `P_NewChaseDir` rather than `slideMove`
    * (docs/monster-ai.md § Movement). Also ticks barrel death clocks, and returns every attack and
    * `A_Explode` due this frame for the caller to apply.
    *
@@ -685,11 +676,10 @@ export interface ThingLayer {
 export const AIM_SLOPE_LIMIT = 100 / 160;
 
 /**
- * The two types whose sight and death sounds vanilla plays **unattenuated**,
- * from nowhere in particular (`A_Look`/`A_Scream`'s own
- * `if (actor->type==MT_SPIDER || actor->type == MT_CYBORG) S_StartSound(NULL, …)`)
- * — you hear a cyberdemon wake up anywhere on the map. Nothing else about their
- * sounds is special: their pain, footsteps and shots all attenuate normally.
+ * The two types whose sight and death sounds vanilla plays **unattenuated**, from nowhere in
+ * particular — `A_Look`/`A_Scream`'s own
+ * `if (actor->type==MT_SPIDER || actor->type == MT_CYBORG) S_StartSound(NULL, …)`. Their pain,
+ * footsteps and shots attenuate normally.
  */
 export const BOSS_TYPES: Set<number> = new Set([ThingType.spiderMastermind, ThingType.cyberdemon]);
 
@@ -758,7 +748,7 @@ export const MAX_SKULLS_ON_LEVEL = 20;
 /**
  * Health a barrel spawns with — `MT_BARREL`'s `spawnhealth`, and the first of the four `BARREL_*`
  * stats. A barrel has no AI at all: `MONSTER_STATS` has no entry for it, so it never enters the
- * `if (stats && player)` branch in {@link ThingLayer.update}, and these four stand in for the
+ * `if (stats)` branch in {@link ThingLayer.update}, and these four stand in for the
  * stats that branch would otherwise have read. It is a plain solid, shootable prop that deals
  * splash damage on death.
  */
@@ -828,8 +818,7 @@ function barrelFromStates(): {
  * A barrel's `A_Explode` becoming due ({@link BARREL_CHAIN.explodeDelaySeconds} after it died, not
  * on death itself), for `game.ts` to turn into `applyRadiusDamage`. {@link BarrelExplosion.source},
  * when set, is who dealt the killing blow, and {@link BarrelExplosion.slot} the player who did —
- * see {@link PosedThing.explodeSource}'s doc for why this is what makes a chain of barrels
- * attribute correctly all the way back to whoever set the first one off.
+ * see {@link PosedThing.explodeSource}.
  */
 export interface BarrelExplosion extends Pos3 {
   source?: { id: number; type: number };

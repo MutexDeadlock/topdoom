@@ -1,6 +1,6 @@
 /**
- * Vanilla's `S_sfx[]` sound table (`sounds.c`) and the `SoundEmitter` surface game systems raise
- * sounds through. See docs/audio.md.
+ * Vanilla's `S_sfx[]` sound table (`sounds.c`) and the {@link SoundEmitter} surface game systems
+ * raise sounds through. See docs/audio.md.
  */
 import type { Pos2 } from '../types.ts';
 import { mRandom, pRandom } from '../util/random.ts';
@@ -36,7 +36,7 @@ export type SfxId = keyof typeof SFX;
 
 /**
  * Lump names a DEHACKED/BEX `[SOUNDS]` section has redirected, keyed by sfx name. Empty unless a
- * patch said otherwise, and `soundLumpName` is the only reader — so with no patch loaded the
+ * patch said otherwise, and {@link soundLumpName} is the only reader — so with no patch loaded the
  * template literal below is exactly what vanilla's `i_sound.c` does.
  * docs/dehacked.md § Sounds and music.
  */
@@ -81,14 +81,14 @@ export const SFX_NAMES = Object.keys(SFX) as SfxId[];
  * varies with it exactly as it does in vanilla's own mixer.
  *
  * **A deliberate deviation**: vanilla's own base is 128. The swing values stay vanilla's, so a
- * larger base makes the same `±16` a smaller fraction of the rate — a subtler wobble, tuned by
- * feel.
+ * larger base makes the same `±16` a smaller fraction of the rate — a subtler wobble,
+ * tuned by feel.
  */
 const NORM_PITCH = 192;
 const SAW_SOUNDS: ReadonlySet<SfxId> = new Set<SfxId>(['sawup', 'sawidl', 'sawful', 'sawhit']);
 const UNPITCHED: ReadonlySet<SfxId> = new Set<SfxId>(['itemup', 'tink']);
 
-/** Playback rate for one instance of `id` — see `NORM_PITCH`. */
+/** Playback rate for one instance of `id` — see {@link NORM_PITCH}. */
 export function randomPlaybackRate(id: SfxId): number {
   if (UNPITCHED.has(id)) return 1;
   // `16 - (M_Random()&31)` / `8 - (M_Random()&15)`, clamped to 0..255 there;
@@ -122,56 +122,50 @@ export function randomVariant(id: SfxId): SfxId {
 }
 
 /**
- * The key one sfx spends its same-tic start budget from — its `VARIANT_GROUPS` family, or its own
- * name. A crowd of zombiemen waking together draws a different `randomVariant` each, so keying the
- * budget on the lump would give one wake three budgets. docs/audio.md § Same-tic bursts.
+ * The key one sfx spends its same-tic start budget from — its {@link VARIANT_GROUPS} family, or its
+ * own name. docs/audio.md § Same-tic bursts.
  */
 export function sampleGroup(id: SfxId): string {
   return variantGroup(id)?.[0] ?? id;
 }
 
 /**
- * How a game system asks for a sound without knowing anything about Web Audio
- * — `audio/audio.ts: AudioEngine` is the only implementation, and `SILENT`
- * below stands in wherever there is no audio at all (a headless script, a
- * browser that refused an `AudioContext`).
+ * How a game system asks for a sound without knowing anything about Web Audio —
+ * `audio/audio.ts: AudioEngine` is the only implementation, and {@link SILENT} stands in wherever
+ * there is no audio at all (a headless script, a browser that refused an `AudioContext`).
  *
- * Sound is the one effect this engine's systems raise directly instead of
- * reporting back for `game.ts` to realize (the split `WeaponSystem.fire`'s
- * `Shot[]` and `ThingLayer.update`'s attacks follow): it changes no game
- * state, and the moments vanilla plays sounds at are *inside* those systems —
- * `A_Chase`'s 3-in-256 idle grunt has no observable event to hang off.
- * See docs/audio.md § Who plays what.
+ * Sound is the one effect this engine's systems raise directly instead of reporting back for
+ * `game.ts` to realize: it changes no game state, and vanilla plays sounds at moments *inside*
+ * those systems. See docs/audio.md § Who plays what.
  */
 export interface SoundEmitter {
   /**
-   * Starts `id` at DOOM-space point `at`, or unattenuated and centred at the
-   * listener when `at` is null/omitted — vanilla's own `S_StartSound(NULL, …)`,
-   * used for pickups, a locked door's grunt and the two bosses' sight/death
-   * roars.
-   *
-   * `origin` is vanilla's `origin` mobj pointer as a stable numeric key (see
-   * `monsterOrigin`/`sectorOrigin`/`PLAYER_ORIGIN`): starting a sound cuts off
-   * whatever that same origin was already playing, which is `S_StartSound`'s
-   * own "kill old sound" step — and the reason a held chaingun trigger sounds
-   * the way it does rather than layering a dozen overlapping shots.
+   * Starts `id`.
+   * @param at      DOOM-space; null or omitted plays unattenuated and centred at the listener —
+   *                vanilla's `S_StartSound(NULL, …)`, used for pickups, a locked door's grunt and
+   *                the two bosses' sight/death roars
+   * @param origin  vanilla's `origin` mobj pointer as a stable numeric key ({@link monsterOrigin}/
+   *                {@link sectorOrigin}/{@link PLAYER_ORIGIN}): starting a sound cuts off whatever
+   *                that same origin was already playing, `S_StartSound`'s own "kill old sound" step
    */
   play(id: SfxId, at?: Pos2 | null, origin?: number): void;
 }
 
-/** A `SoundEmitter` that plays nothing, so no caller needs an audio-or-not branch. */
+/** A {@link SoundEmitter} that plays nothing, so no caller needs an audio-or-not branch. */
 export const SILENT: SoundEmitter = { play: () => {} };
 
 /**
- * Origin keys (`SoundEmitter.play`'s third argument). Vanilla keys the
- * one-sound-per-origin rule on the emitting `mobj_t*`; the equivalents here are
- * the player, a `PosedThing` ID and a sector index, which overlap as plain
- * numbers and so get disjoint ranges. The offsets sit far past any WAD's own
- * 16-bit thing/sector index counts.
+ * Origin keys ({@link SoundEmitter.play}'s third argument). Vanilla keys the one-sound-per-origin
+ * rule on the emitting `mobj_t*`; the equivalents here are the player, a `PosedThing` ID and a
+ * sector index, which overlap as plain numbers and so get disjoint ranges. The offsets sit far past
+ * any WAD's own 16-bit thing/sector index counts.
  */
 export const PLAYER_ORIGIN = 1;
 
-/** Player slot `slot`'s origin key — `PLAYER_ORIGIN` and the three above it. docs/multiplayer.md § Player slots. */
+/**
+ * Player slot `slot`'s origin key — {@link PLAYER_ORIGIN} and the three above it.
+ * docs/multiplayer.md § Player slots.
+ */
 export function playerOrigin(slot: number): number {
   return PLAYER_ORIGIN + slot;
 }

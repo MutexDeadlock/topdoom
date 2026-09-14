@@ -1,20 +1,15 @@
 /**
- * The mouse cursor doubles as the aim reticle (see `game.ts`'s mouse-aim
- * raycast) — vanilla has no equivalent since its aim is keyboard/auto-aim
- * only, so this is TopDoom's own convention, tuned by feel rather than
- * sourced from vanilla. Its color reports player health at a glance without
- * spending any HUD space: blue above 100 (soulsphere/megasphere territory),
- * green at exactly 100, sliding through yellow down to red as health drops
- * to 0. See docs/hud.md § The crosshair.
+ * The mouse cursor doubles as the aim reticle, its color reporting player health — TopDoom's own
+ * convention, tuned by feel rather than sourced from vanilla, whose aim is keyboard/auto-aim only.
+ * See docs/hud.md § The crosshair.
  */
 import { COLOR_BLUE } from './wadfont.ts';
 
 /**
  * Reticle geometry in CSS pixels, all tuned by feel like the rest of the crosshair above.
- * `SIZE` stays at or under 32 because that's the largest cursor bitmap every platform accepts.
- * The outline is a second, wider pass of the same shape drawn underneath: it runs `HALO` further
- * out at both ends than the colored pass so the arm tips are capped too, and stops `HALO` short of
- * the colored dot so the center gap survives.
+ * {@link SIZE} stays at or under 32 because that's the largest cursor bitmap every platform
+ * accepts. {@link HALO} is how far the black outline pass stands proud of the colored one —
+ * docs/hud.md § The crosshair.
  */
 const SIZE = 28;
 const CENTER = SIZE / 2;
@@ -63,8 +58,8 @@ export class Crosshair {
 }
 
 /**
- * The over-100 blue, as CSS — the HUD's own `ARM2A0`-sampled blue (`COLOR_BLUE`), so the reticle
- * and the health number cross into it as one cue rather than in two different blues.
+ * The over-100 blue, as CSS — the HUD's own `ARM2A0`-sampled blue ({@link COLOR_BLUE}), so the
+ * reticle and the health number cross into it as one cue rather than in two different blues.
  */
 const OVER_HUNDRED = `rgb(${COLOR_BLUE.join(', ')})`;
 

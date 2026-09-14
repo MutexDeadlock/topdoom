@@ -41,8 +41,8 @@ export interface EndCardInfo {
 /**
  * The campaign-over popup, raised by the intermission's continue key rather than by the exit
  * itself: the level's own stats come first, this says the run is over. Same shape as
- * `Intermission` — a panel of native-size `WadFont` canvases that `endcard.css` scales — and the
- * same freeze/continue-key handling in `game.ts`, which owns both flags.
+ * `Intermission` — a panel of native-size {@link WadFont} canvases that `endcard.css` scales — and
+ * the same freeze/continue-key handling in `game.ts`, where one `Game.popup` field covers both.
  *
  * Deliberately not vanilla's `f_finale.c`: no `E1TEXT` crawl, no episode picture, no cast call.
  * docs/hud.md § End card names what that leaves out.

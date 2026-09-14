@@ -140,7 +140,7 @@ Load-bearing:
   cell sized to the tallest of them, so a panel free to shrink sits at the About tab's own height
   until the CHANGELOG is first measured and then jumps to the cap.
 - **The contact address is not in the markup**: `about.ts` holds it ROT13'd and writes the link's
-  text and `mailto:` at construction, so neither the partial nor a text scrape of the bundle yields
+  `mailto:` `href` at construction, so neither the partial nor a text scrape of the bundle yields
   anything mailable. It stops harvesters that don't run the page — which is most of them, and all
   this can do from a static page.
 

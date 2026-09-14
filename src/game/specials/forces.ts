@@ -33,9 +33,7 @@ const SCROLL_DIVISOR = 1 << 5;
  */
 const CARRY_FACTOR = 0.09375;
 
-/**
- * Tics per second. Rates lifted from thinkers are per tic; this engine's velocities are per second.
- */
+/** Rates lifted from thinkers are per tic; this engine's velocities are per second. */
 const TICS_PER_SECOND = 1 / DOOM_TIC;
 
 /**
@@ -49,7 +47,7 @@ const PUSH_DIVISOR = 1 << 7;
  * `doomdef.h`: the thrust factor that goes with vanilla's own friction
  * (`ORIG_FRICTION_FACTOR`, `0x800`), and the momentum above which a muddy floor
  * starts giving better footing (`15000` in fixed point, so 0.229 units/tic).
- * `ORIG_FRICTION` itself lives in `defs.ts` beside `NO_FRICTION`, since
+ * {@link ORIG_FRICTION} itself lives in `defs.ts` beside {@link NO_FRICTION}, since
  * `player.ts` needs the same number.
  */
 const ORIG_FRICTION_FACTOR = 2048;
@@ -64,7 +62,7 @@ const LOG_ORIG_FRICTION = log(ORIG_FRICTION);
  * vanilla's own terminal speed running on a normal floor — thrust
  * `forwardmove[1] × ORIG_FRICTION_FACTOR` over `1 − ORIG_FRICTION`, 16.67
  * units/tic, so 1.8×. It is the ceiling on how far a friction sector can raise
- * the terminal speed, and the reason `frictionUnder` bounds the friction it
+ * the terminal speed, and the reason {@link Forces.frictionUnder} bounds the friction it
  * derives its two scales from: a 223 line long enough for MBF's own clamp to
  * pin `friction` at exactly 1 would otherwise read as an infinite terminal.
  * docs/movement.md § Friction.
@@ -80,10 +78,10 @@ const MAX_TARGET_SCALE = 30 / ((50 * ORIG_FRICTION_FACTOR) / 0x10000 / (1 - ORIG
 export type ScrollTarget = 'side' | 'floorTex' | 'ceilTex' | 'carry';
 
 /**
- * One `T_Scroll` thinker as plain data: `dx`/`dy` are its authored rate in map
- * units per **tic**, `vdx`/`vdy` the accelerative integrator, `lastHeight` the
- * displacement control sector's previous `floor + ceiling`. `affectee` is a
- * linedef index for `side` and a sector index for the rest.
+ * One `T_Scroll` thinker as plain data: {@link Scroller.dx}/{@link Scroller.dy} are its authored
+ * rate in map units per **tic**, {@link Scroller.vdx}/{@link Scroller.vdy} the accelerative
+ * integrator, {@link Scroller.lastHeight} the displacement control sector's previous
+ * `floor + ceiling`. {@link Scroller.affectee} is a linedef index for `side`, a sector index else.
  */
 interface Scroller {
   target: ScrollTarget;
@@ -97,8 +95,8 @@ interface Scroller {
   vdy: number;
   lastHeight: number;
   /**
-   * The rate `tick` last resolved for this scroller, units per tic — what `advanceOffsets`
-   * integrates between tics.
+   * The rate {@link Forces.tick} last resolved for this scroller, units per tic — what
+   * {@link Forces.advanceOffsets} integrates between tics.
    */
   rate: Vec2;
 }
@@ -138,22 +136,24 @@ type Pusher = { sector: number } & (
 );
 
 /**
- * What `frictionUnder` measures for, beside the point it stands at: the body's box, how fast it is
- * going, and its own touched-sector cache. Named because `radius` and `speed` are adjacent numbers
- * a call site could swap in silence — docs/conventions.md § Named arguments. The per-thing queries
- * beside it stay scalar; see `carryForBody`.
+ * What {@link Forces.frictionUnder} measures for, beside the point it stands at. Named because
+ * {@link FrictionQuery.radius} and {@link FrictionQuery.speed} are adjacent numbers a call site
+ * could swap in silence — docs/conventions.md § Named arguments. The per-thing queries beside it
+ * stay scalar; see {@link Forces.carryForBody}.
  */
 export interface FrictionQuery {
   radius: number;
+  /** Horizontal speed in map units/sec, which only a muddy floor reads. */
   speed: number;
+  /** The body's own touch cache, shared with {@link Forces.carryForBody}. */
   cache: SectorTouchCache;
 }
 
 /**
  * What one 250-254 control line says about every scroller it spawns: the authored rate in map
  * units per tic, the sector whose height drives it (-1 for a plain scroller), and whether it
- * accelerates. Taken as a record because `control` and `affectee` are both plain sector-ish
- * indexes and were adjacent arguments — docs/conventions.md § Named arguments.
+ * accelerates. A record because {@link ScrollSource.control} and `affectee` are both plain
+ * sector-ish indexes and would be adjacent arguments — docs/conventions.md § Named arguments.
  */
 interface ScrollSource {
   dx: number;
@@ -166,12 +166,12 @@ interface ScrollSource {
 const NO_OFFSET: Readonly<Vec2> = { x: 0, y: 0 };
 
 /**
- * The always-on parameter lines of one level: scanned once from the map, then
- * ticked with the simulation.
+ * The always-on parameter lines of one level: scanned once from the map, then ticked with the
+ * simulation.
  *
- * **Two clocks, deliberately.** `tick` advances everything the simulation can observe exactly once
- * per tic; `advanceOffsets` integrates the *visual* offsets per rendered frame off the rate `tick`
- * last computed, so a scrolling waterfall doesn't step at 35 Hz.
+ * **Two clocks, deliberately.** {@link Forces.tick} advances everything the simulation can observe
+ * once per tic; {@link Forces.advanceOffsets} integrates the *visual* offsets per rendered frame
+ * off the rate {@link Forces.tick} last computed.
  * docs/specials-forces.md § Scrollers and conveyors.
  */
 export class Forces {
@@ -185,40 +185,35 @@ export class Forces {
   private sideOffsets = new Map<number, Vec2>();
   private floorOffsets = new Map<number, Vec2>();
   private ceilOffsets = new Map<number, Vec2>();
-  /** This tic's conveyor impulse per sector, in map units/sec — rebuilt by `tick`. */
+  /** This tic's conveyor impulse per sector, in map units/sec — rebuilt by {@link Forces.tick}. */
   private carry = new Map<number, Vec2>();
   /**
-   * Bounding box over every sector a conveyor targets, in map units, or an
-   * inverted box where the level has none. `carryForBody` runs for *every* thing
-   * on the level every tic, so this rejects the overwhelming majority before the
-   * BSP descent `sectorsTouching` would cost.
+   * Bounding box over every sector a conveyor targets, in map units, or an inverted box where the
+   * level has none. {@link Forces.carryForBody} runs for *every* thing on the level every tic, so
+   * this rejects most of them before the BSP descent {@link World.sectorsTouching} would cost.
    */
   private carryBounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   /**
-   * Returned by `carryForBody` and `pushForBody`, which run per body per tic — see their docs. One
-   * each, so a caller can hold both at once.
+   * Returned by {@link Forces.carryForBody} and {@link Forces.pushForBody}, which run per body per
+   * tic. One each, so a caller can hold both at once.
    */
   private carryScratch: Vec2 = { x: 0, y: 0 };
   private pushScratch: Vec2 = { x: 0, y: 0 };
   private frictionScratch: FrictionEffect = { friction: ORIG_FRICTION, targetScale: 1, accelScale: 1 };
-  /** `pushForBody`'s line-of-sight target, rewritten per point pusher rather than allocated. */
+  /** {@link Forces.pushForBody}'s line-of-sight target, reused rather than allocated. */
   private sightScratch: Pos3 = { x: 0, y: 0, z: 0 };
   /**
-   * Per-sector friction and thrust factor, `sec->friction`/`sec->movefactor` —
-   * filled once by `spawnFriction`, never ticked (see its doc).
+   * Per-sector friction and thrust factor, `sec->friction`/`sec->movefactor` — filled once by
+   * {@link Forces.spawnFriction}, never ticked (see its doc).
    */
   private friction = new Float64Array(0);
   private moveFactor = new Float64Array(0);
-  /**
-   * Whether any 223 line exists at all, so the per-body query costs nothing on the maps that have
-   * none.
-   */
+  /** Whether any 223 line exists, so the per-body query costs nothing on maps without one. */
   private hasFriction = false;
   /**
-   * The level's render transfers, for the one thing they change about
-   * *movement*: a Boom 242 sector's water surface, which both the conveyor and
-   * the pusher channels test against instead of the real floor
-   * (docs/specials-transfers.md § Deep water).
+   * The level's render transfers, for the one thing they change about *movement*: a Boom 242
+   * sector's water surface, which the conveyor and pusher channels test against instead of the real
+   * floor (docs/specials-transfers.md § Deep water).
    */
   private transfers: Transfers;
 
@@ -234,11 +229,9 @@ export class Forces {
 
   /**
    * `P_GetFriction` + `P_GetMoveFactor`: what the floor under a body of this radius does to its
-   * movement, or `NO_FRICTION` where nothing does. Every sector the body **touches** is a
+   * movement, or {@link NO_FRICTION} where nothing does. Every sector the body **touches** is a
    * candidate, and vanilla's own selection rule is transcribed rather than simplified to a minimum.
-   * `speed` is the body's current horizontal speed in map units/sec, which only a muddy floor
-   * reads. The result is **shared** scratch overwritten by the next call; `cache` is the caller's
-   * per-body touch cache, shared with the other two body queries (`carryForBody`).
+   * The result is **shared** scratch overwritten by the next call.
    * docs/specials-forces.md § Friction.
    */
   frictionUnder(pos: Pos3, body: FrictionQuery): Readonly<FrictionEffect> {
@@ -289,10 +282,7 @@ export class Forces {
     return this.frictionScratch;
   }
 
-  /**
-   * Whether anything in this level scrolls at all — lets the per-frame caller skip the walk
-   * entirely.
-   */
+  /** Whether anything in this level scrolls — lets the per-frame caller skip the walk. */
   get hasScrollers(): boolean {
     return this.scrollers.length > 0;
   }
@@ -321,9 +311,7 @@ export class Forces {
     return out;
   }
 
-  /**
-   * How many sectors a 223 line gave a friction other than normal — the inspector's coverage line.
-   */
+  /** Sectors a 223 line gave a friction other than normal — the inspector's coverage line. */
   get frictionSectors(): number {
     let n = 0;
     for (let i = 0; i < this.friction.length; i++) if (this.friction[i] !== ORIG_FRICTION) n++;
@@ -390,8 +378,8 @@ export class Forces {
   }
 
   /**
-   * Integrates the visual offsets by `dt` seconds at the rate `tick` last
-   * resolved. Called once per rendered frame, not per tic — see the class doc.
+   * Integrates the visual offsets by `dt` seconds at the rate {@link Forces.tick} last resolved.
+   * Called once per rendered frame, not per tic — see the class doc.
    */
   advanceOffsets(dt: number): void {
     const tics = dt * TICS_PER_SECOND;
@@ -439,10 +427,11 @@ export class Forces {
    * Every touched sector counts, a body only rides a floor it is standing on, and overlapping
    * belts sum. docs/specials-forces.md § Scrollers and conveyors.
    *
-   * `cache` must be the caller's **own body's** (docs/world.md § Sectors under a body). Scalars
-   * rather than a record: this runs per thing per frame, through `ThingLayer.update`'s carry
-   * callback. The return is shared scratch the next call overwrites, and `MF_NOGRAVITY` bodies are
-   * the caller's to skip — this has no thing table.
+   * Scalars rather than a record: this runs per thing per frame, through `ThingLayer.update`'s
+   * carry callback. The return is shared scratch the next call overwrites, and `MF_NOGRAVITY`
+   * bodies are the caller's to skip — this has no thing table.
+   *
+   * @param cache  the caller's **own body's** — docs/world.md § Sectors under a body
    */
   carryForBody(pos: Pos3, radius: number, cache: SectorTouchCache): Readonly<Vec2> | null {
     if (this.carry.size === 0) return null;
@@ -475,15 +464,12 @@ export class Forces {
    * This tic's pusher impulse on the **player** standing at `pos`, map
    * units/sec, or null where nothing pushes — `T_Pusher`.
    *
-   * Wind and current are constant over their sector and differ only in what being off the floor
-   * does; a point source radiates from its `MT_PUSH`/`MT_PULL` thing and needs line of sight.
+   * **Players only** — including voodoo dolls, which are player mobjs — where a conveyor's carry
+   * ({@link Forces.carryForBody}) moves every body: Boom's asymmetry, reproduced.
+   * docs/specials-forces.md § Pushers.
    *
-   * **Players only** — including voodoo dolls, which are player mobjs. A conveyor's carry has no
-   * such gate (`carryForBody`); the asymmetry is deliberate. See docs/specials-forces.md § Pushers.
-   *
-   * Like `carryForBody`, the caller supplies its per-body `cache` and gets
-   * back **shared** scratch that this method's next call overwrites — read it
-   * before calling again.
+   * Like {@link Forces.carryForBody}, the caller supplies its per-body `cache` and gets back
+   * **shared** scratch that this method's next call overwrites — read it before calling again.
    */
   pushForBody(pos: Pos3, radius: number, onGround: boolean, cache: SectorTouchCache): Readonly<Vec2> | null {
     if (this.pushers.length === 0) return null;
@@ -555,10 +541,11 @@ export class Forces {
    * spawn and a save from before the field existed — the reason it needs no `SAVE_VERSION` bump.
    * Indices outside the list are ignored: the scroller list comes from the map, not the save.
    *
-   * `lastHeight` needs no equivalent **only because of the apply order**: `Forces` is constructed
-   * after `applySectors` has written the restored heights, so every displacement scroller spawns
-   * watching the height it was saved at. Spawning it earlier would make the first restored tic see
-   * the whole saved-to-authored difference as one tic's movement. docs/savegames.md § Apply order.
+   * {@link Scroller.lastHeight} needs no equivalent **only because of the apply order**:
+   * {@link Forces} is constructed after `applySectors` has written the restored heights, so every
+   * displacement scroller spawns watching the height it was saved at; spawned earlier, the
+   * first restored tic would see the whole saved-to-authored difference as one tic's movement.
+   * docs/savegames.md § Apply order.
    */
   restore(saved: readonly ScrollerSnapshot[] | undefined): void {
     if (!saved) return;
@@ -571,10 +558,9 @@ export class Forces {
   }
 
   /**
-   * Fills `carryBounds` from the linedefs bounding every conveyor sector — a
-   * sector's footprint is contained in its own lines' vertices, so this is a
-   * conservative box. Runs once, after `spawnScrollers` has decided which
-   * sectors carry.
+   * Fills {@link Forces.carryBounds} from the linedefs bounding every conveyor sector — a sector's
+   * footprint is contained in its own lines' vertices, so this is a conservative box. Runs once,
+   * after {@link Forces.spawnScrollers} has decided which sectors carry.
    */
   private boundCarrySectors(): void {
     const carrying = new Set<number>();
@@ -739,7 +725,8 @@ export class Forces {
   }
 
   /**
-   * The conveyor half of 252/253: the same rate scaled by `CARRY_FACTOR`, on every tagged sector.
+   * The conveyor half of 252/253: the same rate scaled by {@link CARRY_FACTOR}, on every tagged
+   * sector.
    */
   private addCarry(tag: number, from: ScrollSource): void {
     const rate = { ...from, dx: from.dx * CARRY_FACTOR, dy: from.dy * CARRY_FACTOR };
@@ -814,10 +801,9 @@ export class Forces {
 }
 
 /**
- * Vanilla's `P_AproxDistance` (`m_fixed.c`), the cheap octagonal
- * distance estimate every pusher figure is computed against — reproduced rather
- * than replaced with a real hypotenuse, because a point pusher's reach and
- * falloff are defined in terms of it and a truer distance would move both.
+ * The cheap octagonal distance estimate — `P_AproxDistance` (`m_fixed.c`), reproduced rather than
+ * replaced with a real hypotenuse, because a point pusher's magnitude, reach and falloff and a
+ * friction line's length are defined in terms of it and a truer distance would move them.
  */
 function aproxDistance(dx: number, dy: number): number {
   dx = Math.abs(dx);

@@ -19,7 +19,7 @@ const BLINK_INTERVAL = 0.03;
  */
 const MUZZLE_GAP = 16;
 /**
- * The most of a shot's own length `MUZZLE_GAP` may eat, so a point-blank shot still
+ * The most of a shot's own length {@link MUZZLE_GAP} may eat, so a point-blank shot still
  * draws a line rather than nothing. Tuned by feel.
  */
 const MUZZLE_GAP_MAX_FRACTION = 0.6;
@@ -36,9 +36,9 @@ const RETRACT_SPEED = 1400;
  */
 const RETRACT_START = DOOM_TIC;
 /**
- * Over how many map units the muzzle end ramps from invisible to full brightness. Tuned
- * by feel, and an absolute length for the same reason `RETRACT_SPEED` is — docs/combat.md
- * § Effects and their batching.
+ * Over how many map units the muzzle end ramps from invisible to full brightness. Tuned by feel,
+ * and an absolute length for the same reason {@link RETRACT_SPEED} is —
+ * docs/combat.md § Effects and their batching.
  */
 const FADE_LENGTH = 160;
 /**
@@ -50,11 +50,10 @@ const FADE_LENGTH = 160;
 const FADE_COLORS = new Float32Array([1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1]);
 
 /**
- * One material per tracer colour, session-lived, the same ownership split
- * `render/sprites.ts`'s `SpriteMaterialCache` makes. Nothing on a tracer's material
- * is per-instance since the fade moved into the vertex attribute, and a material built
- * and disposed per tracer makes three.js relink the shader program every time the live
- * count returns to zero — which it does between every trigger pull.
+ * One material per tracer colour, session-lived, the same ownership split `render/sprites.ts`'s
+ * `SpriteMaterialCache` makes. A material built and disposed per tracer makes three.js relink the
+ * shader program every time the live count returns to zero.
+ * docs/combat.md § Effects and their batching.
  */
 const materials = new Map<number, THREE.LineBasicMaterial>();
 
@@ -62,7 +61,7 @@ const materials = new Map<number, THREE.LineBasicMaterial>();
  * A thin line from a hitscan shot's origin to where it struck, blinking for its short lifetime
  * rather than easing out the way `render/occlusion.ts`'s permanent geometry does. **Only the impact
  * end is a real world anchor** — the muzzle end belongs to a shooter who has usually moved on, so
- * it starts short of them, fades in over `FADE_LENGTH`, and retracts toward the impact.
+ * it starts short of them, fades in over {@link FADE_LENGTH}, and retracts toward the impact.
  * docs/combat.md § Effects and their batching.
  */
 export class Tracer {
@@ -72,7 +71,7 @@ export class Tracer {
   private readonly impact = new THREE.Vector3();
   /** Unit vector shooter → impact, so laying the vertices out is a multiply-add each. */
   private readonly dir = new THREE.Vector3();
-  /** Drawn length at spawn, gap already taken off — what `RETRACT_SPEED` eats into. */
+  /** Drawn length at spawn, gap already taken off — what {@link RETRACT_SPEED} eats into. */
   private readonly length: number;
   private readonly positions: THREE.BufferAttribute;
 
@@ -114,23 +113,19 @@ export class Tracer {
     return true;
   }
 
-  /**
-   * Drops this tracer's own geometry. The material is shared and outlives it — see `materialFor`.
-   */
+  /** Drops this tracer's own geometry; the shared material outlives it — see {@link materialFor}. */
   dispose(): void {
     this.line.geometry.dispose();
   }
 
   /**
-   * Puts the three vertices down for however far the tail has retracted by now: back
-   * from the impact by what is left of the line, with the fade point `FADE_LENGTH`
-   * ahead of it. Retraction is a constant *speed*, not a fraction of the line — the lag
-   * it hides is an absolute distance the shooter has walked, the same on a point-blank
-   * shot as on one across the map (docs/combat.md § Effects and their batching).
+   * Puts the three vertices down for however far the tail has retracted by now: back from the
+   * impact by what is left of the line, with the fade point {@link FADE_LENGTH} ahead of it.
+   * Retraction is a constant *speed*, not a fraction of the line
+   * (docs/combat.md § Effects and their batching).
    *
-   * Every vertex only ever moves *toward* the impact, so the bounding sphere three.js
-   * computed for the full-length line still contains them — no recompute, nothing
-   * culled early.
+   * Every vertex only ever moves *toward* the impact, so the bounding sphere three.js computed for
+   * the full-length line still contains them — no recompute, nothing culled early.
    */
   private layOut(): void {
     const travelled = Math.max(0, this.elapsed - RETRACT_START) * RETRACT_SPEED;

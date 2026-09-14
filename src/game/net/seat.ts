@@ -1,8 +1,6 @@
 /**
- * `NetSeat`: one browser's seat in a network game, as the level runs it — the local row sampled
- * and sent ahead, every slot posed from its row, the drawn camera ticked apart from the simulated
- * one, the frame held while a peer's rows are missing, the host's snapshot restored where a sync
- * lands. `Game` holds one while `GameOptions.net` is set and answers for it through `NetHost`.
+ * {@link NetSeat}: one browser's seat in a network game, as the level runs it. `Game` holds one
+ * while `GameOptions.net` is set and answers for it through {@link NetHost}.
  * docs/multiplayer-net.md § What a tic does.
  */
 import type { NetSession, NetCapture } from './session.ts';
@@ -41,7 +39,7 @@ export interface NetHost {
   rebindInputs(): void;
   /**
    * The level for a sync, or null on a moment no snapshot can carry. A function-valued property,
-   * since `NetSession.pendingRestore` is handed it unbound every frame.
+   * since {@link NetSession.pendingRestore} is handed it unbound every frame.
    */
   readonly captureState: (joining: SlotAssignment | null) => NetCapture | null;
   /** The level rebuilt from the host's snapshot; false when these WADs have no such map. */
@@ -101,9 +99,7 @@ export class NetSeat {
 
   /**
    * What goes between two tics: the local row sampled and sent, every slot's camera posed from its
-   * row, the session settings pinned. The camera is an input here as under a playback: every slot's
-   * tic runs at the pose its row was read at; an idle row poses nothing, and the camera stays where
-   * it was.
+   * row — an idle row poses nothing — and the session settings pinned.
    */
   beginTic(): void {
     this.sampleRow();

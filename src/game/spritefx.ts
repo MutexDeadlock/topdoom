@@ -227,7 +227,7 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Vanilla's `P_SpawnBlood`: the splash a hitscan or melee hit leaves on a body. Silent, and the
+   * The splash a hitscan or melee hit leaves on a body, vanilla's `P_SpawnBlood`. Silent, and the
    * hit is known to bleed by the time it arrives — the caller owns that question. See
    * docs/combat.md § Blood.
    */
@@ -254,7 +254,7 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Vanilla's `P_SpawnPuff`: the little cloud a bullet leaves where it stopped. Silent, and the
+   * The little cloud a bullet leaves where it stopped, vanilla's `P_SpawnPuff`. Silent, and the
    * caller places it — nothing here knows what was hit. See docs/combat.md § Bullet puffs.
    *
    * @param sparkless  the punch's own case, starting two frames in
@@ -313,8 +313,8 @@ export class SpriteFxLayer {
   }
 
   /**
-   * Vanilla `P_Teleport`'s pair, for anything that teleports: a puff where the thing stood and
-   * another ahead of where it lands. See docs/specials-teleporters.md § Teleporters.
+   * The fog pair for anything that teleports, vanilla `P_Teleport`'s: a puff where the thing stood
+   * and another ahead of where it lands. See docs/specials-teleporters.md § Teleporters.
    *
    * @param destZ  the landing floor, which only the caller can resolve
    */
@@ -379,7 +379,7 @@ export class SpriteFxLayer {
 
   /**
    * Starts a frame's batch. Everything drawn through {@link SpriteFxLayer.batchSprite} — including
-   * the projectiles game.ts advances between the update calls below — has to sit between this and
+   * `ProjectileLayer.draw`'s missiles — has to sit between this and
    * {@link SpriteFxLayer.endFrame}.
    */
   beginFrame(viewerAngleDeg: number): void {
@@ -548,10 +548,7 @@ export class SpriteFxLayer {
     e.motion = undefined;
   }
 
-  /**
-   * Advances a one-shot list in place and drops the ones that finished, matching every other list's
-   * remaining-array pattern here.
-   */
+  /** Advances every effect in a one-shot list and drops the ones that finished. */
   private advance(list: OneShotEffect[], dt: number): OneShotEffect[] {
     if (list.length === 0) return list;
     const remaining: OneShotEffect[] = [];

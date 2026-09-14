@@ -242,10 +242,8 @@ export class Menu {
   /** Ordered: add-ons are merged in the order the user picked them. */
   private selectedPwads: WadSource[] = [];
   /**
-   * Keys of picked add-ons the player has unticked. **Disabled, not removed** — the row stays in
-   * the list with its place in the order, so a mod can be switched off for one run and back on
-   * without being hunted down in the library again. Tracked as the *off* set so a newly picked
-   * add-on is on by default, which is what picking it meant.
+   * Keys of picked add-ons the player has unticked — **disabled, not removed**, and tracked as the
+   * *off* set so a new pick starts on (docs/menu-wads.md § The Add-ons list on the New Game tab).
    */
   private disabledPwads = new Set<string>();
 
@@ -399,10 +397,10 @@ export class Menu {
   }
 
   /**
-   * Anything but `'none'` says a level is loaded and paused behind the menu: the backdrop
-   * turns translucent and "Return to game" appears. The active tab is whatever
-   * the player last picked — reopening mid-level must not throw away the tab
+   * Opens on whatever tab the player last picked — reopening mid-level must not throw away the tab
    * they were on.
+   * @param session  anything but `'none'` says a level is loaded and paused behind the menu: the
+   *                 backdrop turns translucent and "Return to game" appears
    */
   open(session: MenuSession = 'none'): void {
     const inGame = session !== 'none';
@@ -491,9 +489,8 @@ export class Menu {
   }
 
   /**
-   * Dismisses whichever overlay is up, topmost first — the hand-off `main.ts` gives ESC before it
-   * acts on the menu itself. The order is {@link Menu.overlays}' and lives here rather than in the
-   * caller, so another overlay is one edit and never changes what ESC does elsewhere.
+   * Dismisses whichever overlay is up, topmost first ({@link Menu.overlays}) — the hand-off
+   * `main.ts` gives ESC before it acts on the menu itself.
    * @returns whether there was one
    */
   closeTopOverlay(): boolean {
@@ -579,11 +576,9 @@ export class Menu {
   }
 
   /**
-   * The menu's status line — or the WAD Library's, while that overlay is up. It covers `#menu`
-   * completely, so everything raised behind it (a file the overlay's own `Add single WADs…` just
-   * loaded, a WAD that wouldn't parse) would otherwise be reported to a line nobody can see, and
-   * would then surface on the New Game tab once the overlay closed, out of the context that
-   * explains it. docs/menu-wads.md § WAD Library.
+   * The menu's status line — or the WAD Library's, while that overlay is up: it covers `#menu`
+   * completely, and a message raised behind it would go to a line nobody can see.
+   * docs/menu-wads.md § WAD Library.
    * @param text  '' for the tab's own hint ({@link TAB_HINTS}) rather than a blank line
    * @param kind  what the message is, and so its colour — docs/menu-wads.md § The status line
    */
@@ -612,8 +607,7 @@ export class Menu {
 
   /**
    * What is running behind the menu. {@link Menu.open}'s own argument, read back off the classes it
-   * sets rather than mirrored in a field — one owner for the state, so the two can't disagree about
-   * what the backdrop is showing.
+   * sets rather than mirrored in a field — docs/menu.md § One screen, two jobs.
    */
   private get session(): MenuSession {
     if (!this.root.classList.contains('ingame')) return 'none';
@@ -690,8 +684,7 @@ export class Menu {
 
   /**
    * Autorun defaults to on ({@link getAutorun}'s own default). It shares the `Shift` row, whose
-   * description is *what that key does* — so the word has to follow the checkbox rather than state
-   * one of the two cases and leave the other to be inferred.
+   * description follows the checkbox — docs/menu.md § Settings tab.
    */
   private installAutorun(): void {
     const show = (on: boolean) => {
@@ -730,7 +723,7 @@ export class Menu {
   }
 
   /**
-   * The frame rate limit, `0` (unlimited) by default ({@link getFpsCap}). The running level reads
+   * The frame rate limit, `60` by default ({@link getFpsCap}). The running level reads
    * the setting per frame, so a change here applies without a restart — same as volume and autorun.
    * The `<option>` values are the capped rates themselves.
    */
@@ -842,7 +835,7 @@ export class Menu {
   }
 
   /**
-   * The top-left status text's on/off switch, beside the profiler's in the Debug / Dev section.
+   * The fps counter's on/off switch, beside the profiler's in the Debug / Dev section.
    * Like it, {@link setFpsVisible} applies to `#hud` itself, so it takes effect on the running
    * level — see docs/devmode.md § FPS counter.
    */
@@ -982,8 +975,8 @@ export class Menu {
 
   /**
    * Adopts a source as the game WAD: the New Game tab's select, which picks one file at a time.
-   * The WAD Library commits a whole set instead ({@link Menu.applyPicks}); both prune through
-   * {@link wadlib.pwadsFor}, so the two can't drift on what picking a game WAD does to the add-ons.
+   * The WAD Library commits a whole set instead ({@link Menu.applyPicks}). Neither drops an add-on
+   * the game WAD can't take: {@link Menu.activePwads} leaves it out.
    */
   private async adoptIwad(source: WadSource): Promise<void> {
     await this.identify(source);
@@ -1009,9 +1002,7 @@ export class Menu {
 
   /**
    * Adopts the WAD Library's whole pick in one go — the overlay stages its ticks and commits them
-   * here, on Apply (docs/menu-wads.md § WAD Library). A set rather than a row at a time, so a game
-   * WAD and the add-ons picked beside it land together rather than in an order the player never
-   * chose.
+   * here, on Apply (docs/menu-wads.md § WAD Library).
    */
   private async applyPicks(iwad: WadSource | null, pwads: readonly WadSource[]): Promise<void> {
     // Together, since each may read and hash a whole file off disk and no two touch each other.
@@ -1091,10 +1082,8 @@ export class Menu {
   }
 
   /**
-   * The add-ons **the player has picked**, in merge order — not every add-on on offer. Browsing is
-   * the WAD Library's job (docs/menu-wads.md § WAD Library), so this list is the picks themselves:
-   * short, always exactly what a start will merge, and never a second picker that would have to
-   * agree with the first about what is compatible.
+   * The add-ons **the player has picked**, in merge order — not every add-on on offer: browsing is
+   * the WAD Library's job (docs/menu-wads.md § WAD Library).
    */
   private renderPwads(): void {
     // Emptying the scroller clamps its scrollTop to 0, so removing an add-on far down a
@@ -1152,8 +1141,8 @@ export class Menu {
 
   /**
    * Why the selected game WAD can't merge one of the picks, as the badge its row carries. The rule
-   * is `library.ts: fitsGameWad`'s, the same one {@link wadlib.pwadsFor} and the WAD Library's
-   * greying read, and the wording is `labels.ts: mapStyleLabel`'s, the same one the overlay's rows
+   * is {@link wadlib.fitsGameWad}'s, the same one {@link wadlib.pwadsFor} and the WAD Library's
+   * greying read, and the wording is {@link mapStyleLabel}'s, the same one the overlay's rows
    * carry. See docs/menu-wads.md § Picking a WAD set.
    * @returns '' when it can
    */
@@ -1165,11 +1154,9 @@ export class Menu {
 
   /**
    * The add-ons a start would actually merge: picked, still ticked, *and* mergeable with the game
-   * WAD in front of them ({@link wadlib.pwadsFor}). Everything that resolves a WAD set — the level
-   * list, the start, the stored selection's ordering — reads this rather than
-   * {@link Menu.selectedPwads}, so neither an unticked row nor one the game WAD can't take can leak
-   * into a loaded game. That guard is what lets a mismatched pick keep its row instead of being
-   * pruned out of the list.
+   * WAD in front of them ({@link wadlib.pwadsFor}). Everything that resolves a WAD set reads this
+   * rather than {@link Menu.selectedPwads}, so neither an unticked row nor one the game WAD can't
+   * take can leak into a loaded game. docs/menu-wads.md § The Add-ons list on the New Game tab.
    */
   private activePwads(): WadSource[] {
     return wadlib.pwadsFor(
@@ -1246,10 +1233,9 @@ export class Menu {
   }
 
   /**
-   * The difficulty select, at the bottom of the New Game tab. Static,
-   * independent of the selected WADs: built once here. Picking a skill writes it
-   * straight to storage, so the next visit — and any ?map= deep link, which
-   * never passes the menu — starts at whatever was played last.
+   * The difficulty select, built once: it doesn't depend on the WADs. Picking a skill writes it
+   * straight to storage, so the next visit — and a ?map= deep link, which never passes the menu —
+   * starts at whatever was played last.
    */
   private installSkillSelect(): void {
     for (const skill of [1, 2, 3, 4, 5] as const) {
@@ -1283,14 +1269,9 @@ export class Menu {
   }
 
   /**
-   * Remembers the WAD set and level for the next visit. Called from the places the *player* changes
-   * something, never from {@link Menu.render}: {@link Menu.init} renders while restoring, and would
-   * write back a level select that hasn't caught up with the stored map yet.
-   *
-   * Uploads are never stored — their bytes are gone after a reload, so a stored key would restore a
-   * selection that can never load. That also keeps a missing manifest (every source gone,
-   * {@link Menu.selectedIwad} null) from wiping a good stored value.
-   * docs/menu.md § Persisted settings.
+   * Remembers the WAD set and level for the next visit. Called where the *player* changes
+   * something, never from {@link Menu.render}; uploads are never stored.
+   * docs/menu.md § Remembered selection, docs/menu.md § Persisted settings.
    */
   private saveSelection(): void {
     if (!this.selectedIwad || this.selectedIwad.origin === 'upload') return;
@@ -1363,9 +1344,8 @@ export class Menu {
    * {@link Menu.takeAsIwad}/{@link Menu.takeAsPwad} instead of the single-pick handlers.
    *
    * **Where the picks land depends on what is on top.** With the WAD Library up they are ticked
-   * into its draft instead, which applies on Apply — the same routing {@link Menu.setStatus} does,
-   * and for the same reason: the overlay covers `#menu`, so a selection made behind it is one the
-   * player never saw happen and `Close` would not undo (docs/menu-wads.md § WAD Library).
+   * into its draft instead, the same routing {@link Menu.setStatus} does.
+   * docs/menu-wads.md § WAD Library.
    */
   private async addFiles(files: File[]): Promise<void> {
     const added: WadSource[] = [];

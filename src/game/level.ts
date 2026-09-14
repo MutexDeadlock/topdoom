@@ -1,7 +1,7 @@
 /**
- * `Level`: what one loaded map is while it plays — the geometry, every system built over it, the
- * clock — held whole, so nothing ever reads a level half-built. `Game.buildLevel` builds the parts
- * in the order docs/savegames.md § Apply order fixes and hands them over in one go.
+ * {@link Level}: what one loaded map is while it plays — the geometry, every system built over it,
+ * the clock — held whole, so nothing ever reads a level half-built. `Game.buildLevel` builds the
+ * parts in the order docs/savegames.md § Apply order fixes and hands them over in one go.
  */
 import * as THREE from 'three';
 import type { ColorTint } from '../wad/colormaps.ts';
@@ -21,7 +21,7 @@ import type { IconOfSin } from './monsters/iconofsin.ts';
 import { snapshotSectors, type GameSnapshot, type SectorSnapshot } from './snapshot.ts';
 import type { Placement } from '../types.ts';
 
-/** The level's share of a `GameSnapshot` — what `Level.snapshot` fills. */
+/** The level's share of a {@link GameSnapshot} — what {@link Level.snapshot} fills. */
 export type LevelSnapshot = Pick<
   GameSnapshot,
   | 'levelTime'
@@ -36,7 +36,7 @@ export type LevelSnapshot = Pick<
   | 'scrollers'
 >;
 
-/** Everything a `Level` is made of, as `Game.buildLevel` hands it over — and its fields. */
+/** Everything a {@link Level} is made of, as `Game.buildLevel` hands it over — and its fields. */
 export interface LevelParts {
   /** The map lump's name, and its index in the set's map list. */
   readonly name: string;
@@ -48,7 +48,7 @@ export interface LevelParts {
   readonly monsterStomps: boolean;
   /**
    * The sectors as the WAD authored them, taken before anything has touched them — what a capture
-   * diffs against so only sectors a special has actually changed are saved (`snapshotSectors`).
+   * diffs against so only sectors a special has changed are saved ({@link snapshotSectors}).
    */
   readonly sectorBaseline: SectorSnapshot[];
   /** The map's geometry and queries; the map itself is `world.map`. */
@@ -56,10 +56,9 @@ export interface LevelParts {
   /** Boom's render transfers (game/specials/transfers.ts) — read per frame for the view colormap. */
   readonly transfers: Transfers;
   /**
-   * The colour cast of each 242 control sector's colormaps, resolved once: `R_SetupFrame` picks
-   * one of them per frame, and a WAD lookup per frame to answer that would be pure waste. Empty on
-   * the maps with none. The third, underwater colormap is not kept — `Presenter.viewColormap`
-   * never applies it.
+   * The colour cast of each 242 control sector's colormaps, resolved once since `R_SetupFrame`
+   * picks one of them per frame. Empty on the maps with none. The third, underwater colormap is not
+   * kept — `Presenter.viewColormap` never applies it.
    */
   readonly colormapTints: Map<number, { mid: ColorTint | null; top: ColorTint | null }>;
   /** Damage floors and the secret counter — see game/specials/sectoreffects.ts. */
@@ -68,8 +67,8 @@ export interface LevelParts {
   /** The ground the level stands in. docs/render.md § The void floor. */
   readonly voidFloor: VoidFloor;
   /**
-   * The static wall/flat faders and the bags every fader on the map files into — see `FadePass`,
-   * which owns the order the frame runs them in.
+   * The static wall/flat faders and the bags every fader on the map files into — see
+   * {@link FadePass}, which owns the order the frame runs them in.
    */
   readonly fadePass: FadePass;
   /** The always-on parameter lines — scrollers and conveyors (game/specials/forces.ts). */
@@ -97,7 +96,7 @@ export interface LevelParts {
   time: number;
 }
 
-/** The fields are `LevelParts`', declared once there and merged in. */
+/** The fields are {@link LevelParts}', declared once there and merged in. */
 export interface Level extends LevelParts {}
 
 export class Level {
@@ -143,9 +142,10 @@ export class Level {
   }
 
   /**
-   * Releases the level's scene content: the mover-owned meshes (`specials`), the static batches,
-   * the thing sprites and the void floor. The batched sprite meshes/materials are per-level; the
-   * geometry and textures behind them belong to `SpriteMaterialCache`, which outlives a level.
+   * Releases the level's scene content: the mover-owned meshes ({@link LevelParts.specials}), the
+   * static batches, the thing sprites and the void floor. The batched sprite meshes/materials are
+   * per-level; the geometry and textures behind them belong to `SpriteMaterialCache`, which
+   * outlives a level.
    */
   dispose(scene: THREE.Scene): void {
     this.specials.dispose();

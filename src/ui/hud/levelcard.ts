@@ -15,9 +15,8 @@ import { WadFont, type WadFontRecolor } from './wadfont.ts';
 const CARD_SECONDS = 3.5;
 
 /**
- * How much of that is spent fading out. Driven from `update`'s `dt` like the timeout itself rather
- * than handed to a CSS transition: a transition keeps running while the game is paused, so opening
- * the menu on a fresh level would leave the card to fade away behind it and be gone on return.
+ * How much of that is spent fading out, driven from {@link LevelCard.update}'s `dt` rather than a
+ * CSS transition, which keeps running while the game is paused (docs/hud.md § Level card).
  * **Tuned by feel.**
  */
 const FADE_SECONDS = 1;
@@ -36,10 +35,8 @@ const ENTERING = 'Entering';
 const LEVEL_NAME_GREY: WadFontRecolor = [197, 197, 197];
 
 /**
- * The "Entering / <level name>" card raised by every map load — see docs/hud.md § Level card.
- * Same "canvas sized to its content, CSS scales it" pattern `Hud` and `CenterMessage` use, one
- * canvas per line so the name can be drawn at twice the label's size without a second font: both
- * canvases hold native-size art and `levelcard.css` gives them different heights.
+ * The "Entering / <level name>" card raised by every map load, one canvas per line sized to its
+ * content for CSS to scale — see docs/hud.md § Level card.
  */
 export class LevelCard {
   private gfx: GraphicsBank;
@@ -59,10 +56,11 @@ export class LevelCard {
   }
 
   /**
-   * Raises the card for `name`, restarting the timeout if one was already up. `patch` is the
-   * WAD's own level-name graphic (`LevelNames.graphicFor`) where the set has one that belongs to
-   * this map — the name as its artist drew it, in place of the text; `name` still covers the maps
-   * and WADs that have no such lump, which is why both are passed.
+   * Raises the card, restarting the timeout if one was already up.
+   *
+   * @param name   drawn as text for the maps and WADs with no such lump as `patch`
+   * @param patch  the WAD's own level-name graphic (`LevelNames.graphicFor`) where the set has one
+   *               that belongs to this map — the name as its artist drew it, in place of the text
    */
   show(name: string, patch?: string): void {
     if (!patch || !drawIcon(this.nameCanvas, this.gfx, patch)) {
@@ -74,8 +72,8 @@ export class LevelCard {
   }
 
   /**
-   * Ticks the timeout down and fades the card out over its last `FADE_SECONDS`. Not called while
-   * the game is paused, so the menu doesn't eat the card's display time — or its fade.
+   * Ticks the timeout down and fades the card out over its last {@link FADE_SECONDS}. Not called
+   * while the game is paused, so the menu doesn't eat the card's display time — or its fade.
    */
   update(dt: number): void {
     if (this.secondsLeft <= 0) return;

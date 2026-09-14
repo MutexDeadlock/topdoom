@@ -120,8 +120,8 @@ export class Presenter {
   }
 
   /**
-   * One rendered frame: poses everything, runs the presentation-only animators, and draws. Advances
-   * no gameplay state whatsoever. docs/frameloop.md § What runs in a frame.
+   * One rendered frame: poses everything, runs the presentation-only animators, and draws.
+   * docs/frameloop.md § What runs in a frame.
    *
    * @param alpha  how far everything is posed of the way from the last tic to the current one
    */
@@ -185,10 +185,7 @@ export class Presenter {
     this.host.overlays.replayBar.update(this.host.playback, null, this.host.viewed.inventory.health);
   }
 
-  /**
-   * The 2D layers over the level: status bar, crosshair, center message, level card, the screen
-   * tints, the death overlay and the scoreboard.
-   */
+  /** The 2D layers over the level — every one of the {@link Overlays}. */
   private updateOverlays(dt: number, alpha: number): void {
     const { inventory } = this.host.viewed;
     const { hud, crosshair, replayBar, screenEffects, intermission, scoreboard } = this.host.overlays;
@@ -312,9 +309,7 @@ export class Presenter {
    * Places the player's own billboard: position, facing, sector light and which animation is due.
    *
    * @param alpha  how far through the last tic the positions are interpolated
-   * @param dt     what the animation advances on, since it is presentation and its own frame chain
-   *               is what times it — which is why {@link Presenter.draw} hands it 0 on a still
-   *               frame, where the real one would walk the sprite on the spot
+   * @param dt     what the animation advances on — 0 from {@link Presenter.draw} on a still frame
    *               (docs/frameloop.md § Pausing)
    */
   private posePlayer(slot: PlayerSlot, alpha: number, dt: number, viewAngleDeg: number): void {

@@ -25,9 +25,7 @@ export interface LibraryHooks {
   pwads(): readonly WadSource[];
   /**
    * Hands the menu the whole pick at once — the overlay stages its ticks and commits them here,
-   * on Apply and nowhere else. One call rather than one per row, because a set is what the menu
-   * resolves against: the game WAD decides which add-ons may stay, so half a set applied is a
-   * prune the player never asked for.
+   * on Apply and nowhere else (docs/menu-wads.md § WAD Library).
    */
   applyPicks(iwad: WadSource | null, pwads: readonly WadSource[]): void | Promise<void>;
   /** Hands the menu the library's current contents, replacing whatever it held before. */
@@ -272,8 +270,7 @@ export class LibraryUi implements MenuOverlay {
 
   /**
    * Closes the overlay **without applying anything** — `main.ts`'s ESC handler asks this first, so
-   * one ESC dismisses the overlay and leaves the menu (and a paused level) alone. The same explicit
-   * hand-off `AboutUi.close` gets, rather than two listeners racing over one key.
+   * one ESC dismisses the overlay and leaves the menu (and a paused level) alone.
    * @returns whether it *was* open
    */
   close(): boolean {
@@ -402,11 +399,8 @@ export class LibraryUi implements MenuOverlay {
   }
 
   /**
-   * The sidebar, as three boxes rather than one scroller: what the server ships is a fixed three
-   * rows, the buttons under it must stay put, and only the player's own folders can grow without
-   * bound — so only that middle box scrolls, and the overlay keeps one height whatever a library
-   * holds. `Dropped on the menu` rides with the server's rows: like them, it is a place the player
-   * never chose and never needs to scroll past their own folders to reach.
+   * The sidebar, as three boxes rather than one scroller: only the player's own folders can grow
+   * without bound, so only that middle box scrolls — docs/menu-wads.md § The folder tree.
    */
   private renderTree(
     nodes: readonly FolderNode[],
@@ -610,8 +604,8 @@ export class LibraryUi implements MenuOverlay {
     iwad: WadSource | null,
     isGameWad: boolean,
   ): HTMLLabelElement {
-    // The rule itself is `wad/library.ts`'s, shared with the prune that runs when a game WAD is
-    // picked — so a row this pane offers is one the menu will still be holding afterwards.
+    // The rule itself is `wad/library.ts`'s, shared with `Menu.activePwads` — so a row this pane
+    // offers is one a start will still merge.
     const incompatible = !wadlib.fitsGameWad(iwad, source);
     const dead = unplayable(source);
     // One rule behind both the greying-out and the input: a row that looks pickable and isn't
@@ -646,13 +640,10 @@ export class LibraryUi implements MenuOverlay {
   }
 
   /**
-   * Name, badge, detail. The badge leads the fixed-width block because what it carries is the
-   * *reason a row can't be picked*, which has to be read before the file's stats rather than after
-   * them.
+   * Name, badge, detail. The badge leads the fixed-width block, since the *reason a row can't be
+   * picked* has to be read before the file's stats. docs/menu-wads.md § The file rows.
    * @param mark  null for a row with no reason, which renders **no badge at all** rather than an
-   *              empty one: the badge leads the fixed-width block, so dropping it only widens the
-   *              flexing name and nothing behind it moves. `labels.ts: infoColumn` is the opposite
-   *              case — it has a column behind it, so an empty one there stays a spacer
+   *              empty one: nothing behind it moves, where `labels.ts: infoColumn` stays a spacer
    */
   private baseRow(
     source: WadSource,

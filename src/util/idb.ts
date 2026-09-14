@@ -7,9 +7,9 @@
  */
 
 /**
- * One request's result. Note that an IndexedDB transaction auto-commits as soon as control returns
- * to the event loop with no request pending, so a caller must not `await` between opening a
- * transaction and issuing its requests — build both in one synchronous expression.
+ * One request's result. An IndexedDB transaction auto-commits as soon as control returns to the
+ * event loop with no request pending, so a caller must not `await` between opening a transaction
+ * and issuing its requests — build both in one synchronous expression.
  */
 export const asPromise = <T>(request: IDBRequest<T>): Promise<T> =>
   new Promise((resolve, reject) => {

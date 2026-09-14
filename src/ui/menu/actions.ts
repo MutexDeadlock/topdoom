@@ -1,10 +1,7 @@
 /**
- * What the Save, Load, Replays and Multiplayer tabs share: the refusal contract every store call
- * runs under, the warning line beside a row, the heading's filter field and the line a list shows
- * in place of rows, a panel's read-only facts and the chip beside a name, the download and delete
- * icon buttons, and handing an export file to the browser.
- * Pure DOM; each tab keeps what differs — the store call, the noun and which fields the filter
- * looks through.
+ * What the Save, Load, Replays and Multiplayer tabs share: the refusal contract, the lines beside
+ * a row and in place of rows, the filter field, facts and chips, the icon buttons and the export
+ * download. Pure DOM; each tab keeps the store call, the noun and its filter's fields.
  * docs/menu-saves.md § Save and Load tabs.
  */
 
@@ -22,8 +19,7 @@ export type StatusLine = (text: string, kind?: StatusKind) => void;
 
 /**
  * Runs one store or hook call under the tabs' single refusal contract: anything thrown becomes the
- * status line's error, and the caller learns whether to go on — the store's calls all being async,
- * the action is awaited and so is the verdict.
+ * status line's error.
  * @param done  what the status line says once `action` has succeeded; omitted, nothing
  * @returns whether `action` succeeded
  */
@@ -78,8 +74,7 @@ export function matchesFilter(filter: string, fields: readonly string[]): boolea
 
 /**
  * The line a list shows in place of rows: nothing stored yet, or nothing its filter kept. A
- * rendered child rather than the `:empty::after` the add-on list uses — which of the two an empty
- * list means is the renderer's to say, and only it knows both counts.
+ * rendered child rather than the add-on list's `:empty::after`: only the renderer knows which.
  */
 export function emptyLine(text: string): HTMLDivElement {
   const line = document.createElement('div');

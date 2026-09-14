@@ -95,8 +95,8 @@ export interface ReplayHost {
 export class ReplayDriver {
   private readonly host: ReplayHost;
   /**
-   * What the tic reads its input through instead of the live `Input` while a replay is being
-   * recorded or played — see the two getters below it.
+   * What the tic reads its input through instead of the live `Input` while a replay is recorded or
+   * played — {@link ReplayDriver.recorder}, {@link ReplayDriver.playback}.
    */
   private replay: ReplayRecorder | ReplayPlayback | null = null;
   /**
@@ -170,9 +170,7 @@ export class ReplayDriver {
   }
 
   /**
-   * Why a recording can't start now, or null: a replay playing, one already recording, a cheat
-   * code half typed (the buffer is in no snapshot), or any moment a save would be refused —
-   * a recording starts by capturing one. Said in the recording's own words, since a player who
+   * Why a recording can't start now, or null — in the recording's own words, since a player who
    * pressed Record is not being told about saving. docs/replays.md § Recording.
    */
   recordingRefusal(): string | null {
@@ -184,10 +182,9 @@ export class ReplayDriver {
   }
 
   /**
-   * Starts recording from this moment. The level is **reloaded from the capture** first, so the
-   * run being recorded is exactly what a playback restores, transients and all — and the camera
-   * is put back mid-glide afterwards, since the reload snapped it. Throws
-   * {@link ReplayDriver.recordingRefusal}. docs/replays.md § Recording.
+   * Starts recording from this moment: the level **reloaded from the capture** first, the camera
+   * put back mid-glide after. Throws {@link ReplayDriver.recordingRefusal}.
+   * docs/replays.md § Recording.
    */
   startRecording(): void {
     const refusal = this.recordingRefusal();
@@ -267,10 +264,9 @@ export class ReplayDriver {
   }
 
   /**
-   * Jumps the playback to `tic`. The state comes from the last keyframe at or before it and the
-   * tics from there to the target are then run, which {@link ReplayDriver.runSeek} does over the
-   * frames that follow — a jump that stays ahead of the current position and passes no keyframe
-   * needs no restore and runs on from here. docs/replays.md § Seeking.
+   * Jumps the playback to `tic`: the last keyframe at or before it restored, then the tics from
+   * there run over the frames that follow ({@link ReplayDriver.runSeek}) — a jump ahead that passes
+   * no keyframe restores nothing. docs/replays.md § Seeking.
    */
   seekTo(tic: number): void {
     const playback = this.playback;
@@ -287,9 +283,8 @@ export class ReplayDriver {
 
   /**
    * One frame of a jump in progress: the marker alone on the first, then the keyframe restore, then
-   * the catch-up tics. The level's picture stands untouched throughout and is only drawn again once
-   * the target lands — running the tics on screen would play the level at speed under a camera that
-   * moves only at the end. docs/replays.md § Seeking.
+   * the catch-up tics; the level is drawn again only once the target lands.
+   * docs/replays.md § Seeking.
    */
   runSeek(rawDt: number): void {
     const playback = this.playback;

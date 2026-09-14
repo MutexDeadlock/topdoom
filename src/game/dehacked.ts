@@ -19,7 +19,7 @@ export { parseDehacked } from './dehacked/parse.ts';
 
 export type { DehPatch, DehShortfall, DehWarning } from './dehacked/defs.ts';
 
-/** Lump name a WAD-embedded patch travels under. BOOM made this the standard place for one. */
+/** Lump name a WAD-embedded patch travels under. */
 const DEHACKED_LUMP = 'DEHACKED';
 
 /** A parsed patch, plus which files in the set contributed one. */
@@ -28,13 +28,13 @@ export interface LoadedDehacked extends DehPatch {
   sources: readonly WadFile[];
   /**
    * Which file's patch set each string's winning value. Level naming asks — the IWAD's own titles
-   * don't name a map an add-on provides (docs/wad.md § Level names) — and the merged `strings`
-   * alone can't say.
+   * don't name a map an add-on provides (docs/wad.md § Level names) — and the merged
+   * {@link DehPatch.strings} alone can't say.
    */
   stringSources: ReadonlyMap<string, WadFile>;
 }
 
-/** The files `readDehacked` merges a lump from, in load order, or null if none has one. */
+/** The files {@link readDehacked} merges a lump from, in load order, or null if none has one. */
 export function dehackedSources(wad: Wad): WadFile[] | null {
   const lumps = wad.findAll(DEHACKED_LUMP);
   return lumps.length === 0 ? null : lumps.map((lump) => lump.source);
@@ -42,13 +42,11 @@ export function dehackedSources(wad: Wad): WadFile[] | null {
 
 /**
  * Every `DEHACKED` lump in the set, parsed in load order and merged, or null if the set has none.
+ * Cumulative rather than last-file-wins, unlike a MAPINFO lump; later files still win **per key**.
+ * docs/dehacked.md § Where a patch comes from.
  *
- * Merged rather than last-file-wins, unlike a MAPINFO lump: DEH patches are cumulative in every
- * engine that reads them — a `.deh` that retunes one monster does not repeal an earlier one that
- * renamed the levels. Later files still win **per key**, which is what the merge order gives.
- *
- * `titleLookup` reaches vanilla `Text` substitutions to a map (see `parseDehacked`); pass the one
- * `campaign/names.ts` builds.
+ * @param titleLookup  reaches vanilla `Text` substitutions to a map (see {@link parseDehacked});
+ *                     pass the one `campaign/names.ts` builds
  */
 export function readDehacked(
   wad: Wad,
@@ -120,10 +118,10 @@ export function readDehacked(
 
 /**
  * One line naming what a patch changed, and one naming what it asked for that this engine
- * couldn't do — the console half of the coverage report. Empty strings where there is nothing to
- * say, so a caller can skip the log entirely. `files` comes back too, so `inspect-wad`'s longer
- * report labels itself the same way rather than re-joining the sources, and `states` likewise: only
- * that report prints it, but the phrasing belongs with the rest of the report's.
+ * couldn't do — the console half of the coverage report. `files` and `states` come back for
+ * `inspect-wad`'s longer report, so its labels and phrasing match rather than re-joining sources.
+ *
+ * @returns empty strings where there is nothing to say, so a caller can skip the log entirely
  */
 export function describeDehacked(
   patch: LoadedDehacked,

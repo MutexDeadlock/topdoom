@@ -1,6 +1,6 @@
 /**
  * The player's own WAD folder: picking it, holding on to the permission, walking it for `.wad`
- * files, and turning what it holds into `WadSource`s the menu lists beside the server's own.
+ * files, and turning what it holds into {@link WadSource}s the menu lists beside the server's own.
  * The scan reads a few hundred KB per file (`describe.ts`) and memoizes the answer by size and
  * mtime, so re-opening the library costs no reads at all.
  * See docs/wad.md § The player's own library.
@@ -19,25 +19,25 @@ import {
 } from './store.ts';
 
 /**
- * Depth and count caps on the walk. A player who points this at their home directory should get a
- * truncated list rather than a hung menu; nobody's WAD collection is 8 levels deep or 2000 files.
+ * Depth and count caps on the walk, both tuned by feel. A player who points this at their home
+ * directory should get a truncated list rather than a hung menu; nobody's WAD collection is 8
+ * levels deep or 2000 files.
  */
 const MAX_DEPTH = 8;
 const MAX_FILES = 2000;
 
 /**
- * How many files a scan reads at once. Every file costs a `getFile()` plus up to four short slice
- * reads (`describeWad`), all of them round trips this thread spends waiting on rather than working
- * — so one at a time leaves nearly all of the wait unused, and at the `MAX_FILES` cap that is the
- * one wait the player watches. Bounded rather than unbounded: past a dozen or so in flight it is
- * the disk that limits the scan, and 2000 open files at once is a way to be refused outright.
+ * How many files a scan reads at once — tuned by feel. Every file costs a `getFile()` plus up to
+ * four short slice reads ({@link describeWad}), all of them round trips this thread spends waiting
+ * on rather than working. Bounded rather than unbounded: past a dozen or so in flight it is the
+ * disk that limits the scan, and 2000 open files at once is a way to be refused outright.
  */
 const SCAN_WIDTH = 12;
 
 /**
  * The File System Access bits `lib.dom` doesn't declare yet. Both are Chromium-only, which is the
- * whole reason `pickerBlock` exists — Firefox and Safari go through the `webkitdirectory`
- * fallback (`adoptFolderFiles`) and get no handle to remember.
+ * whole reason {@link pickerBlock} exists — Firefox and Safari go through the `webkitdirectory`
+ * fallback ({@link adoptFolderFiles}) and get no handle to remember.
  */
 interface HandlePermissions {
   queryPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
@@ -73,11 +73,9 @@ export interface LibrarySkip {
 const state: LibraryState = { handle: null, files: new Map(), descriptors: [], name: '', skipped: [] };
 
 /**
- * Why the File System Access picker can't be used here, or `''` when it can. Two separate reasons,
- * because they call for two different things from the player: `'unsupported'` is their browser and
- * nothing can change it, while `'framed'` is *this window* and opening the game in a tab of its own
- * fixes it. The overlay says which — an unexplained fallback is what made the embedded case read as
- * a broken button (docs/menu-wads.md § WAD Library).
+ * Why the File System Access picker can't be used here, or `''` when it can. `'unsupported'` is
+ * the player's browser; `'framed'` is *this window*, and opening the game in a tab of its own
+ * fixes it — the overlay says which (docs/menu-wads.md § WAD Library).
  *
  * `''` doubles as "this browser can remember the folder between visits": the persistence and the
  * picker are the same API, so they are one predicate rather than two names for it.
@@ -99,11 +97,8 @@ export function libraryPicked(): boolean {
 
 /**
  * Restores the remembered folder and its scan memo, without prompting for anything: `init` runs on
- * the boot path, where a permission dialog would be an ambush. The rows list from the memo alone;
- * `ensureLibraryAccess` is what a later user gesture pays for.
- *
- * Nothing is restored where there is no handle — a browser on the fallback path would list files
- * it has no way to read.
+ * the boot path, where a permission dialog would be an ambush. {@link ensureLibraryAccess} is what
+ * a later user gesture pays for. Nothing is restored where there is no handle.
  */
 export async function restoreLibrary(): Promise<void> {
   const handle = await readRootHandle();
@@ -130,8 +125,9 @@ export async function ensureLibraryAccess(): Promise<boolean> {
 
 /**
  * Opens the folder picker and adopts what comes back, replacing any folder already set — including
- * its memo, since a different root's rows say nothing about this one. Null when the player
- * cancelled, which is not an error.
+ * its memo, since a different root's rows say nothing about this one.
+ *
+ * @returns  null when the player cancelled, which is not an error
  */
 export async function pickLibraryFolder(): Promise<FileSystemDirectoryHandle | null> {
   // Invoked *through* globalThis, never detached into a local first: a native window method is
@@ -165,9 +161,9 @@ export async function pickLibraryFolder(): Promise<FileSystemDirectoryHandle | n
 
 /**
  * Which of a picked folder's files the library will actually take: a `.wad` by name, no deeper than
- * `MAX_DEPTH` below the folder, and no more than `MAX_FILES` of them. Exported because the overlay
- * has to say how many it is about to read *before* the scan starts, and a count taken by a second,
- * looser copy of this rule would promise files the scan then drops.
+ * {@link MAX_DEPTH} below the folder, and no more than {@link MAX_FILES} of them. Exported because
+ * the overlay has to say how many it is about to read *before* the scan starts, and a count taken
+ * by a second, looser copy of this rule would promise files the scan then drops.
  */
 export function acceptableWads(files: readonly File[]): File[] {
   return files
@@ -205,8 +201,8 @@ export async function adoptFolderFiles(files: readonly File[], onProgress?: Prog
 }
 
 /**
- * Walks the remembered folder and re-describes whatever changed, then writes the memo back. The
- * caller must have `ensureLibraryAccess()`d first — this is reached from the overlay's own click.
+ * Walks the remembered folder and re-describes whatever changed, then writes the memo back. Needs
+ * {@link ensureLibraryAccess} to have passed first — this is reached from the overlay's own click.
  */
 export async function rescanLibrary(onProgress?: Progress): Promise<void> {
   if (!state.handle) return;
@@ -254,9 +250,9 @@ export async function forgetLibrary(): Promise<void> {
 }
 
 /**
- * Everything the library holds, as sources the menu lists exactly like a server file's. `id` is
- * empty until `rememberLibraryId` fills it: the scan deliberately never hashed these files
- * (docs/wad.md § The player's own library).
+ * Everything the library holds, as sources the menu lists exactly like a server file's.
+ * {@link WadSource.id} is empty until {@link rememberLibraryId} fills it: the scan deliberately
+ * never hashed these files (docs/wad.md § The player's own library).
  */
 export function librarySources(): WadSource[] {
   return state.descriptors.map((descriptor) => {
@@ -312,9 +308,7 @@ interface Entry {
   path: string;
   /**
    * The `.txt` beside it in the same folder, when the walk saw one — its own name, not a path.
-   * Carried from the walk rather than read off the memo, because it is a property of the folder's
-   * listing and not of this file's bytes: a `.txt` dropped in later leaves every WAD's mtime alone.
-   * docs/wad.md § The text file beside a WAD.
+   * Carried from the walk rather than read off the memo: docs/wad.md § The text file beside a WAD.
    */
   textFile?: string;
   open(): Promise<File>;
@@ -353,9 +347,8 @@ async function walk(
  * Describes each entry, reusing the memo for any file whose size and mtime are unchanged.
  *
  * A file that won't open or won't parse is dropped from the list rather than failing the scan — one
- * junk `.wad` must not cost the folder — but the reason is **kept** in `state.skipped`. A scan that
- * silently discarded every file was indistinguishable from an empty folder, which is precisely the
- * shape of failure the player can do nothing with.
+ * junk `.wad` must not cost the folder — but the reason is **kept** in {@link LibraryState.skipped}
+ * (docs/wad.md § The player's own library).
  */
 async function describeAll(
   entries: readonly Entry[],
@@ -446,14 +439,9 @@ function relativePath(file: File): string {
 }
 
 /**
- * Whether this document is framed by a page of another origin. The File System Access API refuses
- * to run there — the pickers are available to a top-level document or a *same-origin* frame only,
- * and a cross-origin one gets a `SecurityError` — so the method existing on `window` is not enough
- * to know it can be called.
- *
- * The case that hits real users is **VS Code's Simple Browser**, which loads the dev server into an
- * `<iframe>` inside a `vscode-webview://` page. Reading the framing page's origin is itself blocked
- * cross-origin, so the throw *is* the answer.
+ * Whether this document is framed by a page of another origin, where the File System Access API
+ * refuses to run — the method existing on `window` is not enough to know it can be called. Reading
+ * the framing page's origin is itself blocked cross-origin, so the throw *is* the answer.
  */
 function inCrossOriginFrame(): boolean {
   const win = globalThis as { self?: unknown; top?: { location: Location } | null; location?: Location };
@@ -466,7 +454,7 @@ function inCrossOriginFrame(): boolean {
   }
 }
 
-/** `state.handle` under the permission methods `lib.dom` doesn't declare. */
+/** {@link LibraryState.handle} under the permission methods `lib.dom` doesn't declare. */
 function permissionedHandle(): (FileSystemDirectoryHandle & HandlePermissions) | null {
   return state.handle;
 }

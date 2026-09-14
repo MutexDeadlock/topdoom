@@ -8,8 +8,8 @@ import { beginHoleFills, closedHoleFill, flatArt, flatSpecs, flatSpecsOf, proces
 import { processLine } from './walls.ts';
 
 /**
- * What one fan of a refreshed mover is to be moved to — `planFlatRefresh` decides it,
- * `applyFlatRefresh` writes it.
+ * What one fan of a refreshed mover is to be moved to — {@link planFlatRefresh} decides it,
+ * {@link applyFlatRefresh} writes it.
  */
 interface FlatPlan {
   height: number;
@@ -17,14 +17,13 @@ interface FlatPlan {
   lightSector: number;
 }
 
-/** `planFlatRefresh`'s output, reused: a mover refresh happens per moving sector per frame. */
+/** {@link planFlatRefresh}'s output, reused: a refresh runs per moving sector per frame. */
 const flatPlan: FlatPlan[] = [];
 
 /**
- * Whether a mover's flats can be moved in place, and where to — one entry per `mesh.flatFans`;
- * null is a refusal. A tic can lift a fan's plane and relight it but never change its footprint,
- * so the specs are re-decided without emitting geometry and matched against the fans the mesh
- * holds. docs/render.md § Mover meshes.
+ * Whether a mover's flats can be moved in place, and where to: the specs re-decided without
+ * emitting geometry and matched against the fans the mesh holds. docs/render.md § Mover meshes.
+ * @returns one entry per {@link MoverMesh.flatFans}, or null for a refusal
  */
 export function planFlatRefresh(build: Build, mesh: MoverMesh, sectorIndex: number, index: MoverIndex): FlatPlan[] | null {
   const fans = mesh.flatFans;
@@ -60,10 +59,10 @@ export function planFlatRefresh(build: Build, mesh: MoverMesh, sectorIndex: numb
   return at === fans.length ? flatPlan : null;
 }
 
-/** `applyFlatRefresh`'s set of keys to re-upload — module scratch, one mover refresh at a time. */
+/** {@link applyFlatRefresh}'s keys to re-upload — module scratch, one mover refresh at a time. */
 const touchedFlatKeys = new Set<string>();
 
-/** Lifts every fan of a refreshed mover to the plane and colour `planFlatRefresh` settled on. */
+/** Lifts a refreshed mover's fans to the plane and colour {@link planFlatRefresh} settled on. */
 export function applyFlatRefresh(mesh: MoverMesh, plan: FlatPlan[]): void {
   const touched = touchedFlatKeys;
   touched.clear();
@@ -95,11 +94,11 @@ export function applyFlatRefresh(mesh: MoverMesh, plan: FlatPlan[]): void {
 
 /**
  * Copies a rebuilt quad over the live one, preserving what a rebuild cannot know: a mover changes
- * heights, never a footprint, so `subsector` keeps the leaf the build-time probe resolved rather
- * than the -1 `buildMoverWalls` emits — re-probing would be a BSP descent per quad per
- * refresh. Same rule as `aLightCell` above, stated here so the next footprint-fixed field on
- * `WallOccluder` is
- * handled where the exception already lives.
+ * heights, never a footprint, so {@link WallOccluder.subsector} keeps the leaf the build-time
+ * probe resolved rather than the -1 {@link buildMoverWalls} emits — re-probing would be a BSP
+ * descent per quad per refresh. Same rule as `aLightCell` in `mapmesh.ts: refreshMoverMesh`,
+ * stated here so the next footprint-fixed field on {@link WallOccluder} is handled where the
+ * exception already lives.
  */
 export function copyRefreshedQuad(dst: WallOccluder, src: WallOccluder): void {
   const subsector = dst.subsector;
@@ -109,7 +108,7 @@ export function copyRefreshedQuad(dst: WallOccluder, src: WallOccluder): void {
 
 /**
  * The flat half of a mover's geometry: its own sector's leaves, lids included. A refresh
- * re-decides these without emitting any (`planFlatRefresh`), because a mover changes a flat's
+ * re-decides these without emitting any ({@link planFlatRefresh}), because a mover changes a flat's
  * plane and its light but never its footprint — docs/render.md § Mover meshes.
  */
 export function buildMoverFlats(build: Build, sectorIndex: number, index: MoverIndex): void {

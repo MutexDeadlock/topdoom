@@ -1,6 +1,6 @@
 /**
  * Vanilla's animated flats and wall textures (`p_spec.c`'s `animdefs[]`), stepped on the tic
- * through `MaterialBank`. See docs/render.md § Animated textures.
+ * through {@link MaterialBank}. See docs/render.md § Animated textures.
  */
 import type { GraphicsBank } from '../wad/graphics.ts';
 import type { AnimDef } from '../wad/animated.ts';
@@ -50,20 +50,19 @@ interface Sequence {
   names: string[];
   speedSeconds: number;
   /**
-   * Last `floor(elapsed / speedSeconds)` this sequence was drawn at, so `update` only touches
-   * materials on the tic a frame actually changes.
+   * Last `floor(elapsed / speedSeconds)` this sequence was drawn at, so
+   * {@link AnimatedTextures.update} only touches materials on the tic a frame actually changes.
    */
   lastTic: number;
 }
 
 /**
- * Vanilla's `P_UpdateSpecials` "ANIMATE FLATS AND TEXTURES GLOBALLY" pass —
- * the other half of what `render/scroller.ts: SurfaceScroller` covers for
- * special-48 scrolling. Repoints each affected name's already-built material
- * at a different bitmap every few tics (`MaterialBank.setFrame`); no geometry
- * work needed. Per-frame phase is counted from each sequence's own start
- * rather than vanilla's absolute texture-table index. See docs/render.md §
- * Animated textures for both.
+ * Steps the animated flats and wall textures, as vanilla's `P_UpdateSpecials` does in its
+ * "ANIMATE FLATS AND TEXTURES GLOBALLY" pass — the other half of what
+ * `render/scroller.ts: SurfaceScroller` covers for special-48 scrolling. Repoints each name's
+ * already-built material at a different bitmap every few tics ({@link MaterialBank.setFrame}); no
+ * geometry work. Phase counts from each sequence's own start rather than vanilla's absolute
+ * texture-table index. See docs/render.md § Animated textures.
  */
 export class AnimatedTextures {
   private bank: MaterialBank;
@@ -71,10 +70,9 @@ export class AnimatedTextures {
   private elapsed = 0;
 
   /**
-   * `defs` is the table to animate: the WAD set's own `ANIMATED` lump when it
-   * has one (`wad/animated.ts: readAnimated`), the built-in vanilla table
-   * otherwise. Boom's lump *replaces* rather than extends, which is why this
-   * takes one table instead of merging two.
+   * @param defs The table to animate: the WAD set's own `ANIMATED` lump when it has one
+   *   (`wad/animated.ts: readAnimated`), the built-in vanilla table otherwise. Boom's lump
+   *   *replaces* rather than extends, which is why this takes one table instead of merging two.
    */
   constructor(gfx: GraphicsBank, bank: MaterialBank, defs: readonly AnimDef[] = ANIM_DEFS) {
     this.bank = bank;

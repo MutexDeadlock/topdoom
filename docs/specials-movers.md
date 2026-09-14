@@ -72,10 +72,10 @@ a door parked at the bottom on a delay timer (`'holdClosed'`, § Delayed doors) 
 than reproducing vanilla's reading of it — which restarts a `close30ThenOpen`'s 30s wait and bricks
 a `raiseIn5Mins` outright.
 
-**The rule is not the door's alone: `triggerLift` follows it too.** A `'rest'`ing lift used to be
-restarted in place, keeping the *previous* trigger's speed, wait and cached `downHeight`; it is now
-rebuilt like a door, so `EV_DoPlat`'s `plat->low = P_FindLowestFloorSurrounding` is re-read per
-trigger and a blazing line no longer runs at a slow line's speed (`tests/game/lifts.test.ts`). That
+**The rule is not the door's alone: `triggerLift` follows it too.** A `'rest'`ing lift is rebuilt
+like a door rather than restarted in place, so `EV_DoPlat`'s `plat->low =
+P_FindLowestFloorSurrounding` is re-read per trigger and each trigger runs at its own line's speed
+and wait (`tests/game/lifts.test.ts`). That
 leaves one invariant across every mover here — **`moverActive` false ⇒ rebuild from the new
 effect** — whose only exceptions are the two vanilla itself makes: stasis (a lift or crusher frozen
 by 54/89/57/74, where `specialdata` was never cleared) and the raise press above.
@@ -161,9 +161,9 @@ and since they target the same tag-matched sectors, `EV_DoCeiling` claims `speci
 Special 44/72 ("Ceiling Crush", `lowerAndCrush`) is the other user, lowering once to floor+8 and
 stopping — and **despite the name it never deals crush damage**: `EV_DoCeiling`'s `switch` sets
 `ceiling->crush = true` only for the *cyclic* crush types, and `lowerAndCrush` is a separate `case`
-label positioned just past that assignment, so jumping to it skips the flag. `CeilingMover` has no
-crush handling at all as a result; `crush==false` is exactly what makes a lowering `CeilingMover`
-stop rather than grind through anyone underneath.
+label positioned just past that assignment, so jumping to it skips the flag. Its `CeilingMover`
+leaves `crush` unset, which is exactly what makes a lowering `CeilingMover` stop rather than grind
+through anyone underneath; only Boom's generalized ceilings set it.
 
 ## Inverted plane moves
 
@@ -263,8 +263,8 @@ which in practice only the crushing-floor family sets.
 Unlike vanilla, the door check applies uniformly regardless of speed — this engine has no separate
 "blazeClose never reverses" door type to hook vanilla's one real exception on.
 
-`tickDoor` already had this for a closing door; the same rule now also applies to a lowering
-`CeilingMover` (real vanilla never sets `crush=true` for this mover) and to a rising `LiftMover` or
+The rule covers a closing door (`tickDoor`), a lowering `crush: false` `CeilingMover` (real vanilla
+never sets `crush=true` for this mover), a rising `LiftMover` and a rising
 `crush: false` `FloorMover` (covering every ordinary raise, `raiseToTexture`, `lowerAndChange`, the
 donut's ring, and stair builders — stairs never set `crush` either). Two `Occupancy` answers do it —
 `game/specials/moverblocking.ts`'s `blocksCeilingLower`/`blocksFloorRise`. A *rising* `CeilingMover`
@@ -320,10 +320,10 @@ Vanilla reaches the same bodies through `P_ChangeSector`'s walk of the blockmap 
 sector's bounding box widened by `MAXRADIUS` (`p_map.c`, `p_setup.c: P_GroupLines`).
 
 **`boxOverlapsSector` is `World.sectorsTouching`** (docs/world.md § Sectors under a body), not a
-sampling of the box. Sampling its eight corners and edge midpoints — what this did — steps over any
+sampling of the box. Sampling its eight corners and edge midpoints would step over any
 sector narrower than the body's radius: GoingDown.wad MAP08's crate-lift is an 8-unit ring (sector
-1) around its inner sector, and a demon beside it had every rim point land either outside the crate
-or in the middle of it, so the lift read as unobstructed and carried the demon up to be pinned
+1) around its inner sector, and a demon beside it has every rim point land either outside the crate
+or in the middle of it, so the lift would read as unobstructed and carry the demon up to be pinned
 there. `tests/regression/mover-sector-narrow-strip.test.ts`.
 
 Both take prospective heights as explicit parameters rather than reading `player.z`/`m.z`: the

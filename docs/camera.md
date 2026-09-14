@@ -25,8 +25,8 @@ and is what sprite rendering and player movement both key off — at the default
 case for "not yet orbited."
 
 A `stepYaw` call (Q/E) queues its step as a `targetYawDeg` for `tick` to animate `yawDeg` towards
-(`YAW_STEP_SMOOTH_RATE`) rather than jumping. Plain assignment (`camera.yawDeg = ...`, whose only
-remaining caller is the absolute reorient on spawn and on a loud teleport) still jumps immediately:
+(`YAW_STEP_SMOOTH_RATE`) rather than jumping. Plain assignment (`camera.yawDeg = ...`: the absolute
+reorient on spawn, respawn and a loud teleport, and a savegame's restore) still jumps immediately:
 the `yawDeg` setter keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E animates
 after an instant set. **Nothing may assign `yawDeg` unconditionally every frame** — even a no-op
 `-= 0` snaps `targetYawDeg` back to the current (still mid-animation) value and cancels a Q/E step
@@ -67,7 +67,7 @@ yaw crosses the wrap every tic. Invisible live — every field shifts together �
 pose, quantized off that yaw, read 180 and -180 on alternate tics, and every replay of the game
 drew a full turn per tic between them (docs/replays.md § Camera state).
 
-The DEVMODE readout rounds *before* wrapping, to [0°, 360°) (`game.ts: debugLines`). The orbit settles
+The DEVMODE readout rounds *before* wrapping, to [0°, 360°) (`Presenter.debugLines`). The orbit settles
 a hair either side of its lattice, so wrapping the raw float labels one physical angle `180` or
 `-180` (and yaw 0 `-0`) depending on which way it was turned into.
 
@@ -229,9 +229,9 @@ ripples slightly as the lobe rotates between rays.
 Each aggregate maps to 0..1 through **its own** shut-in/wide-open window — `SPREAD_NEAR`/`FAR`
 (60/600) and `AHEAD_NEAR`/`FAR` (90/1200). They cannot share one: a median runs roughly half of
 what the cosine-weighted mean does, so a window that suits one saturates the other. Both were
-picked off measured distributions rather than guessed — sampling every thing position in E1M1,
-DOOM2 MAP01/MAP07 and EPIC MAP01 — which is also how the original 192/960 was caught leaving the
-wide end of the framing unreachable on every one of those maps. The eye test above left both
+seeded from measured distributions — sampling every thing position in E1M1, DOOM2 MAP01/MAP07 and
+EPIC MAP01, which is also how the original 192/960 was caught leaving the wide end of the framing
+unreachable on every one of those maps — then **tuned by feel**. The eye test above left both
 windows where they were — on maps built out of rooms, whose walls close in 2D anyway, it barely
 moves the distributions at all. What it changes is the maps that aren't.
 

@@ -9,7 +9,7 @@ docs/combat.md. Death is docs/death.md.
 ## WeaponSystem
 
 `WeaponSystem` owns weapon selection and fire timing/ammo, and **deliberately knows nothing about
-three.js**: `update` returns a list of `Shot`s describing what was fired this frame (one per hitscan
+three.js**: `fire` returns a list of `Shot`s describing what was fired this frame (one per hitscan
 pellet, one per projectile launched, one per melee swing), and `ProjectileLayer`
 (`game/projectiles.ts`) turns those into tracer lines and flying sprites. Same split as
 `specials.ts`'s line triggers vs. `game.ts`'s teleport fog, and it's what lets fire rates and ammo

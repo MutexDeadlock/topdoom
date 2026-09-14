@@ -501,10 +501,10 @@ and the first is what keeps a report readable:
 
 `Unknown 1` and `Unknown 2` — `state_t`'s `misc1`/`misc2` — are carried on `DehFrameEdit.args`,
 dense and positional, index 0 first, and reach the walker as `PatchedStates.args`. That is a side
-map rather than two more columns on `StateRow` because **`linuxdoom-1.10` has no such fields at
-all**: DeHackEd invented them and MBF gave them meanings, so vanilla's reading is "absent", not
-"zero on 967 rows". MBF21's `Args1`..`Args8` are the same slots widened and would extend the array
-rather than replace it.
+map rather than two more columns on `StateRow` because **`linuxdoom-1.10` declares both fields
+but never reads them**, and every `info.c` row leaves them zero; only MBF's pointers give them
+meanings, so a patch's value is carried only on the states it wrote. MBF21's `Args1`..`Args8` are
+the same slots widened and would extend the array rather than replace it.
 
 ### What MBF's ten reach
 
@@ -907,9 +907,9 @@ has with the specials table, so a report can't drift out of step with what actua
 
 - **`applied`** — written into a real engine table.
 - **`noTarget`** — understood, but this engine simply doesn't have the thing (a finale screen, a
-  pickup message).
-- **`unsupported`** — deliberately out of scope even though a target exists or could (action
-  pointers, `ID #`).
+  cast-call name).
+- **`unsupported`** — deliberately out of scope even though a target exists or could
+  (`A_LineEffect`, `ID #`).
 - **`unknown`** — not recognised at all.
 
 The distinction between the middle two is the one worth keeping: only `unsupported` is ever worth
@@ -921,13 +921,10 @@ one record word can land differently by index — a `Frame` on a muzzle flash ha
 the table is unknown — and a row says one thing.
 
 **A `[STRINGS]` shortfall is reported only when it is `unknown`.** A recognised mnemonic this engine
-has no home for — `CC_*`, `AMSTR_*`, the deathmatch obituaries — is passed over in silence.
-It went the other way first, one grouped row per family, and that was wrong twice over. It was
-**noise**: freedoom2's patch produced sixteen rows whose entire content was a restatement of the
-scope this document already fixes, burying the one `Frame` row a reader can act on. And once a
-family became *partly* applied it was **misleading**: 31 obituary mnemonics reporting "no string
-this engine has anywhere to show" read as though obituaries were unimplemented, when in fact every
-one naming a killer this engine has had landed. Freedoom2's report is now a single `Frame` line.
+has no home for — `CC_*`, `AMSTR_*`, the deathmatch obituaries — is passed over in silence. A row
+per family would be **noise** (freedoom2's patch: sixteen rows restating the scope this document
+fixes, around its one actionable `Frame` row) and, for a partly applied family, **misleading** (31
+obituary mnemonics reading as though obituaries were unimplemented).
 
 The rule: **the report names what a reader can act on.** `unknown` qualifies — the parser did not
 recognise the mnemonic, which is either a patch this engine should learn or a bug in the reader.

@@ -1,6 +1,6 @@
 /**
- * `WeaponSystem`: the nine weapons — selection and slot toggling, vanilla fire rates, spread and
- * damage rolls, ammo spend — raising fire events for `game.ts` to realize. See docs/weapons.md.
+ * {@link WeaponSystem}: the nine weapons — selection and slot toggling, vanilla fire rates, spread
+ * and damage rolls, ammo spend — raising fire events for `game.ts` to realize. docs/weapons.md.
  */
 import { hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
 import type { WeaponsSnapshot } from './snapshot.ts';
@@ -23,10 +23,8 @@ const SAW_IDLE_INTERVAL = 4 * DOOM_TIC;
 
 /**
  * Vanilla's `MELEERANGE`: how far `A_Punch`/`A_Saw` trace out from the
- * player's own centre. `game/monsters/defs.ts` keeps its own, slightly longer
- * `MELEE_RANGE` for the *monster* side of the same idea — that one is a
- * body-to-body distance sampled per frame rather than per tic and carries
- * slack for it; this is a plain trace length, so it's vanilla's number as-is.
+ * player's own centre. The monster side's `MELEE_RANGE`
+ * (`game/monsters/defs.ts`) is the same number.
  */
 export const PLAYER_MELEE_RANGE = 64;
 
@@ -39,11 +37,10 @@ export const PLAYER_MELEE_RANGE = 64;
 const BERSERK_FIST_MULTIPLIER = 10;
 
 /**
- * The super shotgun's per-pellet slope jitter (`WeaponDef.slopeSpread`), out
- * of vanilla's 16.16 fixed point: `A_FireShotgun2` traces each pellet at
- * `bulletslope + ((P_Random()-P_Random())<<5)`, so the extremes are
- * ±(255<<5)/FRACUNIT of rise per unit travelled — about ±7°, or ±32 units of
- * height at 256 units out.
+ * The super shotgun's per-pellet slope jitter ({@link WeaponDef.slopeSpread}), out of vanilla's
+ * 16.16 fixed point: `A_FireShotgun2` traces each pellet at
+ * `bulletslope + ((P_Random()-P_Random())<<5)`, so the extremes are ±(255<<5)/FRACUNIT of rise per
+ * unit travelled — about ±7°, or ±32 units of height at 256 units out.
  */
 const SSG_SLOPE_SPREAD = (255 * 32) / 65536;
 
@@ -62,7 +59,7 @@ const SSG_RELOAD_SOUNDS: { tic: number; sfx: SfxId }[] = [
   { tic: 48, sfx: 'dbcls' },
 ];
 
-/** Tics from the shot to the last of `SSG_RELOAD_SOUNDS`, i.e. the whole sequence's length. */
+/** Tics from the shot to the last of {@link SSG_RELOAD_SOUNDS}: the whole sequence's length. */
 const SSG_RELOAD_TICS = 48;
 
 /**
@@ -97,16 +94,14 @@ export interface WeaponDef {
    */
   slopeSpread: number;
   /**
-   * Whether the **first** shot of a held trigger ignores `spreadDeg` entirely
-   * — `P_GunShot(mo, !player->refire)`, passed by `A_FirePistol` and
-   * `A_FireCGun` and by nothing else (`A_FireShotgun` hardcodes `false`). It
-   * is what makes a tapped pistol/chaingun shot dead accurate at any range
-   * while a held burst walks off target.
+   * Whether the **first** shot of a held trigger ignores {@link WeaponDef.spreadDeg} entirely —
+   * `P_GunShot(mo, !player->refire)`, passed by `A_FirePistol` and `A_FireCGun` and by nothing else
+   * (`A_FireShotgun` hardcodes `false`). docs/weapons.md § Spread.
    */
   accurateFirstShot: boolean;
   /**
-   * Melee only: how far in front of the player the swing reaches (`PLAYER_MELEE_RANGE`); 0 for
-   * everything else.
+   * Melee only: how far in front of the player the swing reaches ({@link PLAYER_MELEE_RANGE}); 0
+   * for everything else.
    */
   meleeRange: number;
   /**
@@ -117,10 +112,9 @@ export interface WeaponDef {
   /** Projectile only: SpriteBank name the flying shot is drawn as. */
   projectileSprite: string;
   /**
-   * Status-bar icon lump. Reuses the ground pickup's own sprite frame (the
-   * same convention ui/hud/hud.ts already uses for ammo/keys/health) for every
-   * weapon that has one; fist and pistol have no map pickup, so their own
-   * first-person "ready" frame stands in instead.
+   * Status-bar icon lump: the ground pickup's own sprite frame, the convention ui/hud/hud.ts uses
+   * for ammo/keys/health; fist and pistol have no map pickup, so their first-person "ready" frame
+   * stands in.
    */
   iconLump: string;
   /**
@@ -135,14 +129,14 @@ export interface WeaponDef {
    * (`A_FireShotgun` plays `shotgn` once for all seven). `null` where the shot's
    * sound comes from somewhere else: the rocket launcher and plasma rifle have
    * no weapon sound of their own in vanilla, the missile they spawn brings its
-   * `mobjinfo.seesound` with it (`game.ts`'s `PROJECTILE_SOUNDS`), and a melee
+   * `mobjinfo.seesound` with it (`spritefx/tables.ts`'s `PROJECTILE_SOUNDS`), and a melee
    * swing's sound depends on whether it connected.
    */
   fireSound: SfxId | null;
   /**
-   * Melee only: the swing's sound on connecting and on missing — `A_Punch`'s
-   * `punch` (silent on a miss, hence a null `missSound`), `A_Saw`'s
-   * `sawhit`/`sawful`. Both null for everything else.
+   * Melee only: the swing's sound on connecting and on missing — `A_Punch`'s `punch` (silent on a
+   * miss, hence a null {@link WeaponDef.missSound}), `A_Saw`'s `sawhit`/`sawful`. Both null for
+   * everything else.
    */
   hitSound: SfxId | null;
   missSound: SfxId | null;
@@ -162,20 +156,16 @@ export interface WeaponDef {
   /**
    * Which weapon's shipped player skin draws this one — itself, until a patch moves the shot.
    * `null` where no shipped skin depicts what it fires, which takes the whole set out of use
-   * (`playerSkinWeapon`). Presentation, like `iconLump`, and borrowed with the rest of the shot
-   * when a fire chain is repointed. docs/sprites.md § Weapon-matching player sprites.
+   * ({@link playerSkinWeapon}). Presentation, like {@link WeaponDef.iconLump}, and borrowed with
+   * the rest of the shot when a fire chain is repointed.
+   * docs/sprites.md § Weapon-matching player sprites.
    */
   skinWeapon: WeaponId | null;
 }
 
 /**
- * Keyboard slot 1-7 → the weapons in it, best (most upgraded) first. A digit
- * key not already selecting a weapon from this slot jumps to the best one
- * owned; pressed again (matching vanilla's own slot-sharing for fist/chainsaw
- * and shotgun/supershotgun) it steps to the *next* owned weapon in the slot
- * instead, so repeated presses toggle between the two rather than always
- * landing back on the same "best" pick — otherwise a slot's weaker weapon
- * would be permanently unreachable once its upgrade is owned.
+ * Keyboard slot 1-7 → the weapons in it, best (most upgraded) first; pressed again, a digit steps
+ * to the *next* owned weapon in the slot — docs/weapons.md § Slot keys
  */
 export const WEAPON_SLOTS: WeaponId[][] = [
   ['chainsaw', 'fist'],
@@ -188,20 +178,17 @@ export const WEAPON_SLOTS: WeaponId[][] = [
 ];
 
 /**
- * The mouse wheel's order, and the HUD icon strip's: the slot order above with
- * each shared slot read weakest first, which is also weakest-to-strongest
- * overall. Derived rather than written out, so a weapon added to a slot lands
- * beside its slotmate here too — docs/weapons.md § The wheel walks the slot order
+ * The mouse wheel's order, and the HUD icon strip's: {@link WEAPON_SLOTS} with each shared slot
+ * read weakest first — docs/weapons.md § The wheel walks the slot order
  */
 export const WEAPON_CYCLE: WeaponId[] = WEAPON_SLOTS.flatMap((slot) => [...slot].reverse());
 
 /**
  * `P_CheckAmmo`'s fallback chain (`p_pspr.c`), first match wins: what the ready weapon is replaced
- * with once it can no longer fire, terminating at the fist. A third order, unrelated to
- * `WEAPON_SLOTS` and `WEAPON_CYCLE` above. `minAmmo` is **strictly greater than** and is not
- * `ammoPerShot` — vanilla's own off-by-one, transcribed rather than corrected. Two deliberate
- * deviations from that C: the `gamemode` clauses are dropped, and the pistol row tests ownership.
- * docs/weapons.md § AMMO_FALLBACK_ORDER.
+ * with once it can no longer fire, terminating at the fist. `minAmmo` is **strictly greater than**
+ * and is not {@link WeaponDef.ammoPerShot} — vanilla's own off-by-one, transcribed rather than
+ * corrected. Two deliberate deviations from that C: the `gamemode` clauses are dropped, and the
+ * pistol row tests ownership. docs/weapons.md § AMMO_FALLBACK_ORDER.
  */
 const AMMO_FALLBACK_ORDER: { weapon: WeaponId; ammo: AmmoType | null; minAmmo: number }[] = [
   { weapon: 'plasmaRifle', ammo: 'cells', minAmmo: 0 },
@@ -216,19 +203,17 @@ const AMMO_FALLBACK_ORDER: { weapon: WeaponId; ammo: AmmoType | null; minAmmo: n
 
 /**
  * A weapon as written out here: every field its own state chain can't carry.
- * `cooldown` is absent on purpose and cannot be written — the fill loop below
- * walks it out of `info.c`'s own fire chain, which is what turns these seeds
- * into complete `WeaponDef`s.
+ * {@link WeaponDef.cooldown} is absent on purpose and cannot be written — the fill loop below walks
+ * it out of `info.c`'s own fire chain, which is what turns these seeds into complete
+ * {@link WeaponDef}s.
  */
 type WeaponSeed = Omit<WeaponDef, 'cooldown' | 'skinWeapon'>;
 
 /**
- * **Every number in this table is vanilla's** — spread from the `<<18`/`<<19`
- * shifts in `p_pspr.c`, damage from `P_GunShot`/`PIT_CheckThing`, ammo cost
- * from `P_FireWeapon`, projectile speed from `mobjinfo`; the fire rates are
- * walked out of the weapon state chains further down. Nothing here is tuned
- * by feel; a top-down camera changes how a weapon is *aimed*, not how fast it
- * shoots or how hard it hits. See docs/weapons.md § Fire rates.
+ * **Every number in this table is vanilla's** — spread from the `<<18`/`<<19` shifts in `p_pspr.c`,
+ * damage from `P_GunShot`/`PIT_CheckThing`, ammo cost from `P_FireWeapon`, projectile speed from
+ * `mobjinfo`; the fire rates are walked out of the weapon state chains further down. Nothing here
+ * is tuned by feel. See docs/weapons.md § Fire rates.
  */
 const WEAPON_SEED: Record<WeaponId, WeaponSeed> = {
   fist: {
@@ -465,9 +450,8 @@ export const WEAPONS = WEAPON_SEED as Record<WeaponId, WeaponDef>;
 /**
  * Writes every weapon's fire rate from the walker's reading of vanilla's own `states[]`
  * (docs/weapons.md § Fire rates) — the summed tics of its `atkstate` chain, the `A_ReFire` state
- * excluded, over the number of shots one pass fires. The rest of each row is `p_pspr.c` data no
- * chain carries and stays written out above. `skinWeapon` starts as the identity here rather than
- * as nine hand-written rows: unpatched, every weapon is drawn as itself.
+ * excluded, over the number of shots one pass fires. {@link WeaponDef.skinWeapon} starts as the
+ * identity here rather than as nine hand-written rows: unpatched, every weapon is drawn as itself.
  *
  * Runs at import, before `dehacked/apply.ts` snapshots the table for `resetDehacked`.
  */
@@ -479,7 +463,8 @@ for (const [index, id] of WEAPON_ORDER.entries()) {
 
 /**
  * Which weapon's shipped player art draws `weapon`, or null for none at all — the one reader of
- * `WeaponDef.skinWeapon`, so the set-wide rule lives with the field rather than at the draw site.
+ * {@link WeaponDef.skinWeapon}, so the set-wide rule lives with the field rather than at the draw
+ * site.
  *
  * A patch that repoints a fire chain at another weapon's firing action moves the art with the shot:
  * nosp4.wad's chainsaw fires rockets and is drawn holding the launcher. One that leaves a weapon
@@ -498,16 +483,14 @@ export interface HitscanShot {
   kind: 'hitscan';
   angleRad: number;
   /**
-   * This pellet's own jitter off the shot's aim *slope* (`WeaponDef.slopeSpread`),
-   * as rise per unit travelled — non-zero only for the super shotgun. Applied
-   * by moving the aim point up or down at the target's distance, since that is
-   * what `shotPath` derives its slope from.
+   * This pellet's own jitter off the shot's aim *slope* ({@link WeaponDef.slopeSpread}), as rise
+   * per unit travelled — non-zero only for the super shotgun. docs/weapons.md § Spread.
    */
   slopeOffset: number;
   /**
-   * This pellet's own damage roll (WeaponDef.damageDiceSides/Multiplier) — applied only if this
-   * pellet's own `angleRad`, spread included, lands on a body (game/projectiles.ts:
-   * spawnPlayerShot).
+   * This pellet's own damage roll ({@link WeaponDef.damageDiceSides}) — applied only if this
+   * pellet's own {@link HitscanShot.angleRad}, spread included, lands on a body
+   * (game/projectiles.ts: spawnPlayerShot).
    */
   damage: number;
 }
@@ -524,12 +507,12 @@ export interface ProjectileShot {
   damage: number;
   /**
    * Splash to apply at the impact point regardless of what (if anything) was targeted, straight
-   * from WeaponDef.splash — null for a non-explosive projectile (plasma, BFG).
+   * from {@link WeaponDef.splash} — null for a non-explosive projectile (plasma, BFG).
    */
   splash: { radius: number; damage: number; hitsPlayer: boolean } | null;
   /**
-   * The BFG's real secondary attack on arrival, straight from WeaponDef.spray — null for every
-   * other projectile.
+   * The BFG's real secondary attack on arrival, straight from {@link WeaponDef.spray} — null for
+   * every other projectile.
    */
   spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
 }
@@ -537,14 +520,14 @@ export interface ProjectileShot {
 export interface MeleeShot {
   kind: 'melee';
   angleRad: number;
-  /** How far in front of the player this swing reaches (`WeaponDef.meleeRange`). */
+  /** How far in front of the player this swing reaches ({@link WeaponDef.meleeRange}). */
   range: number;
   /** This swing's damage roll, already scaled by berserk where it applies. */
   damage: number;
   /**
-   * Carried from `WeaponDef.hitSound`/`missSound` so whoever resolves the
-   * swing doesn't have to look the weapon back up to know what it sounds like
-   * — the same reason a `ProjectileShot` carries its own sprite and splash.
+   * Carried from {@link WeaponDef.hitSound}/{@link WeaponDef.missSound} so whoever resolves the
+   * swing doesn't have to look the weapon back up — the same reason a {@link ProjectileShot}
+   * carries its own sprite and splash.
    */
   hitSound: SfxId | null;
   missSound: SfxId | null;
@@ -552,11 +535,11 @@ export interface MeleeShot {
 
 export type Shot = HitscanShot | ProjectileShot | MeleeShot;
 
-/** What `update`'s two sound passes both work from, built once per call. */
+/** What {@link WeaponSystem.update}'s two sound passes both work from, built once per call. */
 interface SoundFrame {
   dt: number;
   firing: boolean;
-  /** Whether `inv.currentWeapon` differs from what was selected on the previous frame. */
+  /** Whether {@link Inventory.currentWeapon} differs from the previous frame's selection. */
   justSwitched: boolean;
   inv: Inventory;
   audio: SoundEmitter;
@@ -566,8 +549,8 @@ interface SoundFrame {
 
 /**
  * Owns weapon selection (number keys, mouse wheel) and fire timing/ammo. Knows nothing about
- * three.js or what a shot hits: `update` returns the `Shot`s fired this frame and the layers above
- * realize them. See docs/weapons.md § WeaponSystem.
+ * three.js or what a shot hits: {@link WeaponSystem.fire} returns the {@link Shot}s fired this
+ * frame and the layers above realize them. See docs/weapons.md § WeaponSystem.
  */
 export class WeaponSystem {
   /**
@@ -577,63 +560,52 @@ export class WeaponSystem {
    */
   autoSwitch = true;
   /**
-   * Tics until the trigger may fire again, counted as a **whole number** rather
-   * than as seconds remaining. The simulation steps one tic at a time and every
-   * `WeaponDef.cooldown` is a whole number of tics, so an integer countdown is
-   * both exact and the same model vanilla has — a psprite sitting in a state
-   * with that many tics left. Seconds invited a float residue to decide whether
-   * a shot landed on tic N or N+1, which is a whole 33% of the plasma rifle's
-   * rate. docs/weapons.md § Fire rates.
+   * Tics until the trigger may fire again, counted as a **whole number** rather than as seconds
+   * remaining — the same model vanilla has, a psprite sitting in a state with that many tics left.
+   * docs/weapons.md § Fire rates.
    */
   private cooldownTics = 0;
   /**
-   * Which weapon was selected as of the previous frame, so a switch can be
-   * noticed at all — it can come from a key, the wheel *or* a pickup, so this
-   * is compared once a frame rather than at each of those. See `update`.
+   * Which weapon was selected as of the previous frame, so a switch can be noticed at all — it can
+   * come from a key, the wheel *or* a pickup, so this is compared once a frame rather than at each
+   * of those. See {@link WeaponSystem.update}.
    */
   private weaponLastFrame: WeaponId = 'pistol';
   /**
-   * The weapon selected before the current one, for the right button's
-   * "switch to previous weapon" binding. Maintained off `weaponLastFrame`'s
-   * once-a-frame comparison so a pickup- or berserk-driven switch counts too,
-   * exactly as that field's own doc describes. Null until the first switch of
-   * the level.
+   * The weapon selected before the current one, for the right button's "switch to previous weapon"
+   * binding; null until the level's first switch. Maintained off
+   * {@link WeaponSystem.weaponLastFrame}'s once-a-frame comparison, so a pickup- or berserk-driven
+   * switch counts too.
    */
   private previousWeapon: WeaponId | null = null;
   /**
-   * The weapon last selected out of each slot, indexed like `WEAPON_SLOTS` and
-   * null where the slot hasn't been used yet this level. Maintained off the
-   * same once-a-frame comparison `previousWeapon` is, for the same reason —
-   * docs/weapons.md § Slot keys
+   * The weapon last selected out of each slot, indexed like {@link WEAPON_SLOTS} and null where the
+   * slot hasn't been used yet this level. Maintained off the same once-a-frame comparison
+   * {@link WeaponSystem.previousWeapon} is, for the same reason — docs/weapons.md § Slot keys
    */
   private slotWeapon: (WeaponId | null)[] = [];
-  /** Counts down to the chainsaw's next idle rattle — see `SAW_IDLE_INTERVAL`. */
+  /** Counts down to the chainsaw's next idle rattle — see {@link SAW_IDLE_INTERVAL}. */
   private sawIdleTimer = 0;
   /**
-   * Tics since the super shotgun's last shot while its reload is still running,
-   * or -1 when none is — the clock `SSG_RELOAD_SOUNDS` is played off, so 0 (the
-   * shot's own tic) is a live value and the idle state needs its own sentinel.
-   * Vanilla counts nothing here: those sounds are actions on states the psprite
-   * is walking through anyway, and this engine collapses that whole chain into
-   * one `cooldownTics` number, so the moments inside it need their own clock.
+   * Tics since the super shotgun's last shot while its reload is still running, or -1 when none is
+   * — the clock {@link SSG_RELOAD_SOUNDS} is played off, so 0 (the shot's own tic) is a live value
+   * and the idle state needs its own sentinel. Vanilla counts nothing here: those sounds are
+   * actions on states the psprite walks through, and this engine collapses that whole chain into
+   * one {@link WeaponSystem.cooldownTics} number, so the moments inside it need their own clock.
    */
   private reloadTic = -1;
   /**
-   * Vanilla's `player->refire`: how many shots the trigger has already fired
-   * without coming up. Only `WeaponDef.accurateFirstShot` reads it, and only
-   * for "is this shot the first of the burst" — `A_ReFire` zeroes it the
-   * moment the button is released or a weapon switch is pending, which
-   * `update` reproduces by comparing against `refireWeapon`.
+   * How many shots the trigger has fired without coming up — vanilla's `player->refire`, read only
+   * by {@link WeaponDef.accurateFirstShot}. Zeroed on release or a pending weapon switch, as
+   * `A_ReFire` does, by {@link WeaponSystem.fire} comparing against
+   * {@link WeaponSystem.refireWeapon}.
    */
   private refire = 0;
   private refireWeapon: WeaponId | null = null;
   /**
-   * Whether a fire chain is still running, i.e. a shot has been fired that
-   * `A_ReFire` has not yet closed. It is what makes `checkAmmo` run once after
-   * the *last* shot of a burst even though the trigger came up — vanilla's
-   * `A_ReFire` sits on the chain's final state and runs either way.
-   * One tic wide, and saved anyway: a replay's keyframe has to restore the tic
-   * the recording ran, where a load could afford to cost one trigger pull.
+   * Whether a fire chain is still running, i.e. a shot has been fired that `A_ReFire` has not yet
+   * closed — what makes {@link WeaponSystem.checkAmmo} run once after the *last* shot of a burst.
+   * One tic wide, and saved anyway: a replay's keyframe has to restore the tic the recording ran.
    * docs/weapons.md § Automatic weapon switching, docs/replays.md § Seeking.
    */
   private chainEnding = false;
@@ -667,8 +639,8 @@ export class WeaponSystem {
   }
 
   /**
-   * The fire-timing and selection state a savegame keeps: `beginLevel`'s reset
-   * list minus `weaponLastFrame`, which `restore` derives rather than reads back.
+   * The fire-timing and selection state a savegame keeps: {@link WeaponSystem.beginLevel}'s reset
+   * list minus {@link WeaponSystem.weaponLastFrame}, which {@link WeaponSystem.restore} derives.
    */
   snapshot(): WeaponsSnapshot {
     return {
@@ -684,9 +656,9 @@ export class WeaponSystem {
   }
 
   /**
-   * The restore twin of `beginLevel`, applied over its reset — docs/savegames.md
-   * § Apply order. Takes the *restored* inventory, since `beginLevel` ran far
-   * earlier in the load and only ever saw the outgoing one.
+   * The restore twin of {@link WeaponSystem.beginLevel}, applied over its reset —
+   * docs/savegames.md § Apply order. Takes the *restored* inventory, since
+   * {@link WeaponSystem.beginLevel} ran earlier in the load and only saw the outgoing one.
    */
   restore(s: WeaponsSnapshot, inv: Inventory): void {
     this.cooldownTics = s.cooldownTics;
@@ -734,10 +706,8 @@ export class WeaponSystem {
   }
 
   /**
-   * Applies this frame's number-key, mouse-wheel and right-button weapon
-   * switches. Runs before `update`, so the swap below reads the weapon
-   * left behind by an *earlier* switch and that same call then records the one
-   * being left now — which is what makes a second click toggle back.
+   * Applies this frame's number-key, mouse-wheel and right-button weapon switches, ahead of
+   * {@link WeaponSystem.update} — docs/weapons.md § Switch to previous weapon.
    */
   handleSwitching(input: TicInput, inv: Inventory, wheelDelta: number): void {
     // Ahead of the wheel block, which early-returns on no scroll.
@@ -769,10 +739,10 @@ export class WeaponSystem {
   }
 
   /**
-   * Ticks the fire cooldown and, while `firing` is held and both cooldown
-   * and ammo allow it, spends ammo and returns the shot(s) fired this frame:
-   * one `HitscanShot` per pellet, one `ProjectileShot` per launch, or one
-   * `MeleeShot` per swing. Empty whenever nothing fired.
+   * Ticks the fire cooldown and, while `firing` is held and both cooldown and ammo allow it, spends
+   * ammo and returns the shot(s) fired this frame: one {@link HitscanShot} per pellet, one
+   * {@link ProjectileShot} per launch, or one {@link MeleeShot} per swing. Empty whenever nothing
+   * fired.
    */
   fire(firing: boolean, inv: Inventory, aimAngleRad: number): Shot[] {
     // Clamped at 0 rather than allowed to run negative. That and the plain
@@ -874,14 +844,10 @@ export class WeaponSystem {
   }
 
   /**
-   * The super shotgun's three reload sounds, each `SSG_RELOAD_SOUNDS` tics after
-   * the shot that started them — the one weapon in the game whose state chain
-   * keeps making noise once the shot itself is gone. Two things abort the
-   * sequence, both because vanilla lowers the weapon and its psprite never
-   * reaches the states those actions sit on: switching away, and
-   * `SSG_RELOAD_CHECK_TIC`'s ammo check. `at` is the player's own position,
-   * which they are attenuated from as vanilla's `player->mo` origin makes them.
-   * docs/audio.md § Weapons and projectiles.
+   * The super shotgun's three reload sounds, each {@link SSG_RELOAD_SOUNDS} tics after the shot
+   * that started them. Two things abort the sequence, both because vanilla lowers the weapon and
+   * its psprite never reaches the states those actions sit on: switching away, and
+   * {@link SSG_RELOAD_CHECK_TIC}'s ammo check. docs/audio.md § Weapons and projectiles.
    */
   private updateReloadSounds({ inv, audio, at }: SoundFrame): void {
     if (this.reloadTic < 0) return;
@@ -902,11 +868,10 @@ export class WeaponSystem {
   }
 
   /**
-   * The two weapon sounds that aren't tied to firing: the chainsaw announcing
-   * itself as it comes up (`P_BringUpWeapon`, which does this for no other
-   * weapon) and its idle rattle while it's the ready weapon and the trigger is
-   * released (`A_WeaponReady`, see `SAW_IDLE_INTERVAL`). `at` is the player's
-   * own position, which both are attenuated from.
+   * The two weapon sounds that aren't tied to firing: the chainsaw announcing itself as it comes
+   * up (`P_BringUpWeapon`, which does this for no other weapon) and its idle rattle while it's the
+   * ready weapon and the trigger is released (`A_WeaponReady`, see {@link SAW_IDLE_INTERVAL}).
+   * `at` is the player's own position, which both are attenuated from.
    */
   private updateSounds({ dt, firing, justSwitched, inv, audio, at }: SoundFrame): void {
     const weapon = inv.currentWeapon;
@@ -933,16 +898,18 @@ export class WeaponSystem {
   }
 
   /**
-   * Vanilla's `P_CheckAmmo`: whether the ready weapon can pay for one shot, and if it can't, the
-   * switch to the best owned weapon that can — `AMMO_FALLBACK_ORDER`, ending at the fist. Returns
-   * what vanilla does, **true when the shot may go ahead**, so a caller reads it as its own guard.
+   * Whether the ready weapon can pay for one shot, and if it can't, the switch to the best owned
+   * weapon that can — vanilla's `P_CheckAmmo` over {@link AMMO_FALLBACK_ORDER}, ending at the fist.
    *
-   * The switch is what `autoSwitch` governs; the *answer* is not. With the setting off an empty
-   * weapon stays selected and simply fires nothing, which is what this engine did before the rule
-   * existed. docs/weapons.md § Automatic weapon switching.
+   * The switch is what {@link WeaponSystem.autoSwitch} governs; the *answer* is not: with the
+   * setting off an empty weapon stays selected and fires nothing.
+   * docs/weapons.md § Automatic weapon switching.
    *
    * Ownership of the *ready* weapon is deliberately not tested — vanilla doesn't, and the fire-rate
-   * tests drive weapons they never add to `inv.weapons`.
+   * tests drive weapons they never add to {@link Inventory.weapons}.
+   *
+   * @returns **true when the shot may go ahead**, as vanilla's does, so a caller reads it as its
+   *          own guard
    */
   private checkAmmo(inv: Inventory): boolean {
     const def = WEAPONS[inv.currentWeapon];

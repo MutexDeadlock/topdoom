@@ -1,8 +1,8 @@
 /**
- * Chase/attack decisions: `tryWake` and `stepMonsterAI`, pure functions over a `MonsterBody`, a
- * `World` and a `SoundEmitter` that mutate the body and return *what happened* for the caller to
- * realize — the headlessly-testable half of the split whose other side, realizing an attack
- * against the world, is `monsters/attacks.ts`. See docs/monster-ai.md.
+ * Chase/attack decisions: {@link tryWake} and {@link stepMonsterAI}, pure functions over a
+ * {@link MonsterBody}, a {@link World} and a {@link SoundEmitter} that mutate the body and return
+ * *what happened* — the headlessly-testable half of the split whose other side is
+ * `monsters/attacks.ts`. See docs/monster-ai.md.
  */
 import type { Sector } from '../../wad/map.ts';
 import {
@@ -41,7 +41,7 @@ import { DOOM_TIC } from '../../constants.ts';
 import { vecLength } from '../../util/geom.ts';
 import { atan2, cos, sin } from '../../util/fdlibm.ts';
 
-/** Everything one `stepMonsterAI` call is given about the step it is being asked to take. */
+/** Everything one {@link stepMonsterAI} call is given. */
 export interface MonsterStep {
   dt: number;
   /**
@@ -70,10 +70,10 @@ export interface MonsterStep {
    */
   useLines?: (body: MonsterBody, x: number, y: number) => void;
   /**
-   * `A_Chase`'s netgame retarget, present only in a netgame: a monster with no `threshold` left
-   * that cannot see its target looks all around for a player (`lookForPlayers`), and a chase call
-   * that found one ends there. True when the target moved.
-   * docs/multiplayer-coop.md § Target choice.
+   * `A_Chase`'s netgame retarget, present only in a netgame: a monster with no
+   * {@link MonsterBody.threshold} left that cannot see its target looks all around for a player
+   * ({@link lookForPlayers}), and a chase call that found one ends there. True when the target
+   * moved. docs/multiplayer-coop.md § Target choice.
    */
   retarget?: (body: MonsterBody) => boolean;
 }
@@ -88,10 +88,10 @@ export interface PlayerLook {
 }
 
 /**
- * One call's working set: the step plus the three handles and the five values every helper below
- * derives from them. Built once by `stepMonsterAI` and threaded through, so no helper restates
- * what the call already knows. The inherited `blockersFor` is consumed here rather than merely
- * read: `testStep` clears it once it has filled `collider.blockers` from it — see there.
+ * One call's working set: the step plus the handles and values every helper below derives from
+ * them, built once by {@link stepMonsterAI} and threaded through. The inherited
+ * {@link MonsterStep.blockersFor} is consumed here rather than merely read: {@link testStep} clears
+ * it once it has filled `collider.blockers` from it — see there.
  */
 interface Chase extends MonsterStep {
   body: MonsterBody;
@@ -101,28 +101,28 @@ interface Chase extends MonsterStep {
   dist: number;
   dx: number;
   dy: number;
-  /** This species' full `A_Chase` step (`chaseStep`), which every probe below is sized from. */
+  /** This species' full `A_Chase` step ({@link chaseStep}), which sizes every probe below. */
   step: number;
   /**
-   * Line of sight to the target, resolved by `canSee` on demand and at most once per call: only
-   * the refire loop and `runChaseCall` consume it, and both run far less often than
-   * `stepMonsterAI` does. Resolving it eagerly measured as the engine's largest single cost on a
-   * crowded map. docs/monster-ai.md § Spatial indexing.
+   * Line of sight to the target, resolved by {@link canSee} on demand and at most once per call:
+   * only the refire loop and {@link runChaseCall} consume it, and both run far less often than
+   * {@link stepMonsterAI} does. Resolving it eagerly measured as the engine's largest single cost
+   * on a crowded map. docs/monster-ai.md § Spatial indexing.
    */
   sight: boolean | null;
   /**
-   * Where `standingAt`'s memo was taken — position and feet — or null if it holds nothing yet. The
-   * buffer it fills is module-level (`standingCheck`) so it costs no allocation, but *whether it
-   * is valid* is a property of this one call — a fresh context is stale by construction, which is
-   * what a tic of movers under an unmoved body requires.
+   * Where {@link standingAt}'s memo was taken — position and feet — or null if it holds nothing
+   * yet. The buffer it fills is module-level ({@link standingCheck}) so it costs no allocation, but
+   * *whether it is valid* is a property of this one call — a fresh context is stale by
+   * construction, which is what a tic of movers under an unmoved body requires.
    */
   standingX: number | null;
   standingY: number;
   standingZ: number;
   /**
-   * This monster as a collision query, built once because `newChaseDir` probes up to eight
+   * This monster as a collision query, built once because {@link newChaseDir} probes up to eight
    * destinations for it. The feet height is the one field a probe varies, so each sets it first —
-   * see `testStep`.
+   * see {@link testStep}.
    */
   collider: Collider;
 }
@@ -149,7 +149,7 @@ const REACTION_CHASES = 8;
  */
 const BASE_THRESHOLD = 100;
 
-/** `opposite[]`: the about-face of each direction, which `newChaseDir` avoids picking. */
+/** `opposite[]`: the about-face of each direction, which {@link newChaseDir} avoids picking. */
 const OPPOSITE = [4, 5, 6, 7, 0, 1, 2, 3, DI_NODIR];
 /** `diags[]`, indexed `((dy < 0) << 1) | (dx > 0)` → NW, NE, SW, SE. */
 const DIAGS = [3, 1, 5, 7];
@@ -160,7 +160,8 @@ const CHASE_AXIS_EPSILON = 10;
 /**
  * `FLOATSPEED`, 4 map units per call. `P_ZMovement`'s hover runs once per tic, so as a rate that
  * is `FLOAT_SPEED / DOOM_TIC`; `P_Move`'s blocked-step adjustment runs once per *chase call*
- * instead, so `floatOverStep` scales it by `chaseInterval`. docs/monster-ai.md § Floating monsters.
+ * instead, so {@link floatOverStep} scales it by {@link MonsterStats.chaseInterval}.
+ * docs/monster-ai.md § Floating monsters.
  */
 const FLOAT_SPEED = 4;
 
@@ -172,33 +173,34 @@ const FLOAT_SPEED = 4;
 type StepResult = 'clear' | 'adjust' | 'blocked';
 
 /**
- * The buffer `standingAt` fills — vanilla keeps these heights on the actor
+ * The buffer {@link standingAt} fills — vanilla keeps these heights on the actor
  * (`thing->floorz`/`thing->dropoffz`) and this recomputes them. Shared rather than allocated per
  * call, like `ThingGrid`'s own pooled result; what makes a fill *valid* rides the call instead
- * (`Chase.standingX`).
+ * ({@link Chase.standingX}).
  */
 const standingCheck = makePositionCheck();
 
 /**
- * `testStep`'s destination walk, kept apart from `world.ts`'s default scratch so the one a
- * committed step lands on is still in hand when `adoptStanding` seeds the memo from it.
+ * {@link testStep}'s destination walk, kept apart from `world.ts`'s default scratch so the one a
+ * committed step lands on is still in hand when {@link adoptStanding} seeds the memo from it.
  */
 const stepCheck = makePositionCheck();
 
 /**
- * The collider `standingAt` and `stepCharge` probe with: geometry only, so unlike `Chase.collider`
- * it carries no blockers and no `from`. Kept and refilled per probe rather than rebuilt, like
- * `world.ts`'s own `standingCollider` — both run per monster per tic. See `makeCollider`.
+ * The collider {@link standingAt} and {@link stepCharge} probe with: geometry only, so unlike
+ * {@link Chase.collider} it carries no blockers and no `from`. Kept and refilled per probe rather
+ * than rebuilt, like `world.ts`'s own `standingCollider` — both run per monster per tic.
  */
 const probeCollider = makeCollider({ radius: 0, z: 0, height: 0, forMonster: true });
 
 /**
- * The idle `A_Look`, called once per unalerted monster on `ThingLayer.update`'s `LOOK_INTERVAL`
- * throttle. A noise that reached its sector wakes it after whoever made it, while they are alive —
- * an ambush monster only if it can see them; otherwise it looks for a player ahead of it
- * (`lookForPlayers`). On success mutates `body.alerted` and seeds `reactionTicks`, the same "mutate
- * the body, report what happened" shape as `stepMonsterAI`, and returns the slot it goes after; -1
- * while it sleeps on. docs/monster-ai.md § Waking up.
+ * The idle `A_Look`, run per unalerted monster on `ThingLayer.update`'s `LOOK_INTERVAL_TICS`
+ * throttle: a noise that reached its sector wakes it after whoever made it, else it looks for a
+ * player ahead of it ({@link lookForPlayers}). On success mutates `body.alerted` and seeds
+ * {@link WakeCheckBody.reactionTicks}, the same "mutate the body, report what happened" shape as
+ * {@link stepMonsterAI}. docs/monster-ai.md § Waking up.
+ *
+ * @returns the slot it goes after, or -1 while it sleeps on
  */
 export function tryWake(body: WakeCheckBody, world: World, sector: Sector | undefined, look: PlayerLook): number {
   const heard = sector ? world.soundTargetOf(sector) : -1;
@@ -215,12 +217,13 @@ export function tryWake(body: WakeCheckBody, world: World, sector: Sector | unde
 }
 
 /**
- * `P_LookForPlayers`: a player this monster could go after, in `lastlook` rotation — from where
- * the last look stopped, examining at most two players and never a full lap. A dead player is
- * passed over, as is one out of sight or, unless `allaround`, behind its back beyond melee range.
- * Returns the slot, or -1; `body.lastlook` keeps where the rotation stopped either way, which is
- * why a monster placed with `lastlook` 1 misses its first look in single player.
+ * `P_LookForPlayers`: a player this monster could go after, in {@link WakeCheckBody.lastlook}
+ * rotation — from where the last look stopped, examining at most two players and never a full lap.
+ * A dead player is passed over, as is one out of sight or, unless `allaround`, behind its back
+ * beyond melee range; `body.lastlook` keeps where the rotation stopped either way.
  * docs/monster-ai.md § Waking up.
+ *
+ * @returns the slot, or -1
  */
 export function lookForPlayers(body: WakeCheckBody, allaround: boolean, world: World, look: PlayerLook): number {
   const { players, subsectors } = look;
@@ -265,9 +268,9 @@ export function reactToDamage(body: MonsterBody, stats: MonsterStats): void {
 
 /**
  * `P_DamageMobj`'s target-switch rule — the whole mechanism behind infighting, with two carve-outs:
- * a monster still inside its `threshold` ignores new attackers (an arch-vile is exempt), and
- * nothing ever retaliates against an arch-vile. On a true result the caller reseeds `threshold`;
- * that is `commitTarget`. docs/monster-ai.md § Infighting.
+ * a monster still inside its {@link MonsterBody.threshold} ignores new attackers (an arch-vile is
+ * exempt), and nothing ever retaliates against an arch-vile. On a true result the caller reseeds
+ * the threshold; that is {@link commitTarget}. docs/monster-ai.md § Infighting.
  */
 export function shouldRetarget(body: MonsterBody, victimType: number, sourceType: number): boolean {
   if (sourceType === ThingType.archVile) return false;
@@ -275,19 +278,19 @@ export function shouldRetarget(body: MonsterBody, victimType: number, sourceType
   return true;
 }
 
-/** Commits a monster to a freshly-acquired target for `BASE_THRESHOLD` chase calls. */
+/** Commits a monster to a freshly-acquired target for {@link BASE_THRESHOLD} chase calls. */
 export function commitTarget(body: MonsterBody): void {
   body.threshold = BASE_THRESHOLD;
 }
 
 /**
  * Advances one already-alerted monster by `step.dt`: re-routes and closes on the target, fires
- * whichever attack is in range and off cooldown, and returns it for the caller to realize — the
- * same split as `WeaponSystem.fire`'s `Shot[]`.
+ * whichever attack is in range and off cooldown, and returns it for the caller to realize.
  *
- * **Decisions run on vanilla's clock, movement runs on the tic's.** `runChaseCall` fires on
- * `chaseInterval` and nothing else; position is interpolated per frame along the `movedir` the
- * last chase call settled on. docs/monster-ai.md § Movement and § Attacking.
+ * **Decisions run on vanilla's clock, movement runs on the tic's.** {@link runChaseCall} fires on
+ * {@link MonsterStats.chaseInterval} and nothing else; position is interpolated per frame along
+ * the {@link MonsterBody.movedir} the last chase call settled on.
+ * docs/monster-ai.md § Movement and § Attacking.
  */
 export function stepMonsterAI(
   body: MonsterBody,
@@ -470,8 +473,8 @@ export function stepMonsterAI(
 /**
  * One `A_Chase` call, in vanilla's own order: raise a corpse if this is an arch-vile that found
  * one, else age the counters, burn a call to `MF_JUSTATTACKED`, try melee, try a missile (only
- * while `movecount` has run out), and otherwise walk — re-routing when `movecount` expires or the
- * last frame's move was refused. docs/monster-ai.md § Movement.
+ * while {@link MonsterBody.movecount} has run out), and otherwise walk — re-routing when that
+ * expires or the last frame's move was refused. docs/monster-ai.md § Movement.
  */
 function runChaseCall(c: Chase): MonsterAttack | null {
   const { body, stats, dx, dy, sfx } = c;
@@ -525,8 +528,10 @@ function runChaseCall(c: Chase): MonsterAttack | null {
 
 /**
  * Starts a ranged attack: holds the monster still for its state sequence and queues its shots, or
- * launches a charge, or reports a spawn. Returns null except for the two attacks that have nothing
- * to wait on — the elemental's `spawn` and the arch-vile's `vileWindup`. See `MonsterAttack.kind`.
+ * launches a charge, or reports a spawn.
+ *
+ * @returns null but for the two attacks that have nothing to wait on — the elemental's `spawn` and
+ *          the arch-vile's `vileWindup` ({@link MonsterAttack.kind})
  */
 function beginRangedAttack(c: Chase): MonsterAttack | null {
   const { body, stats, dx, dy, sfx } = c;
@@ -554,9 +559,9 @@ function beginRangedAttack(c: Chase): MonsterAttack | null {
 }
 
 /**
- * The moment a swing lands, `startDelaySeconds` into the attack: the reach is re-tested here and
- * not where the swing was chosen, so a target that backed out during the windup is missed. What a
- * miss costs is the type's own — `AttackStats.missileOnMiss`. docs/monster-ai.md § The windup.
+ * The moment a swing lands, {@link AttackStats.startDelaySeconds} into the attack: the reach is
+ * re-tested here, not where the swing was chosen. What a miss costs is the type's own —
+ * {@link AttackStats.missileOnMiss}. docs/monster-ai.md § The windup.
  */
 function strikeMelee(c: Chase): MonsterAttack | null {
   const { body, stats, sfx } = c;
@@ -590,12 +595,14 @@ function inMeleeReach(c: Chase): boolean {
 
 /**
  * Rolls one instance of `attack`'s damage, tagged with the projectile(s) the caller should spawn.
- * `offsetsRad` is one radian offset per projectile (omitted = the single straight shot everything
- * but the mancubus fires); `attack.pellets` rolls that many bullets, kept separate in `bullets` as
- * well as summed into `damage`. See those fields' docs.
+ * `attack.pellets` rolls that many bullets, kept separate in {@link MonsterAttack.bullets} as well
+ * as summed into {@link MonsterAttack.damage}.
  *
- * The one helper here that wants no `Chase` — it reads a bare `AttackStats`, which is what lets
- * `strikeMelee` roll a monster's melee and its miss-missile through the same call.
+ * The one helper here that wants no {@link Chase} — it reads a bare {@link AttackStats}, which is
+ * what lets {@link strikeMelee} roll a monster's melee and its miss-missile through the same call.
+ *
+ * @param offsetsRad  one radian offset per projectile; omitted, the single straight shot everything
+ *                    but the mancubus fires
  */
 function fireAttack(
   kind: 'melee' | 'ranged',
@@ -632,9 +639,8 @@ function fireAttack(
 
 /**
  * One frame of a charging monster's flight (`A_SkullAttack`): straight along its launch heading,
- * stopping on contact or on geometry. Deliberately **not** `slideMove`, unlike every other
- * movement here — a charge that rounded corners would track the player, and sidestepping a
- * committed lost soul is what makes the attack fair. docs/monster-ai.md § The lost soul.
+ * stopping on contact or on geometry. Deliberately **not** `slideMove` —
+ * docs/monster-ai.md § The lost soul.
  */
 function stepCharge(c: Chase): MonsterAttack | null {
   const { body, stats, world, dt } = c;
@@ -716,15 +722,11 @@ function newChaseDir(c: Chase): void {
 }
 
 /**
- * Whether this monster could take a full chase step in `dir` — vanilla's
- * `P_TryWalk` minus the part that performs the move (movement is interpolated
- * per frame here). Committing reseeds `movecount` to `P_Random() & 15` as
- * `P_TryWalk` does, which paces both re-routing and the missile gate.
- *
- * A step a flier can only take after changing height still counts as walkable,
- * because vanilla's `P_TryWalk` calls `P_Move`, which reports the float as a
- * successful move — that is what keeps a cacodemon committed to a ledge
- * instead of re-routing away from it.
+ * Whether this monster could take a full chase step in `dir` — vanilla's `P_TryWalk` minus the
+ * part that performs the move (movement is interpolated per frame here). Committing reseeds
+ * {@link MonsterBody.movecount} to `P_Random() & 15` as `P_TryWalk` does, which paces both
+ * re-routing and the missile gate. A step a flier can only take after changing height still counts
+ * as walkable — docs/monster-ai.md § Floating monsters.
  */
 function tryWalk(c: Chase, dir: number): boolean {
   const { body } = c;
@@ -739,8 +741,8 @@ function tryWalk(c: Chase, dir: number): boolean {
 
 /**
  * `P_CheckMissileRange`, run as the real per-attempt roll once per chase call rather than
- * converted into a cooldown — `runChaseCall` ticks at vanilla's cadence, so it can sample it as
- * often as vanilla does. The roll *suppresses* the shot, so fire chance is `(256 - dist) / 256`;
+ * converted into a cooldown — {@link runChaseCall} ticks at vanilla's cadence, so it can sample it
+ * as often as vanilla does. The roll *suppresses* the shot, so fire chance is `(256 - dist) / 256`;
  * `MF_JUSTHIT` short-circuits all of it. docs/monster-ai.md § Attacking.
  */
 function checkMissileRange(c: Chase): boolean {
@@ -816,9 +818,9 @@ function floatOverStep(c: Chase, x: number, y: number): void {
 }
 
 /**
- * One `P_CheckPosition` at the body's own position: the standing side of `dropoffRefuses`, and the
- * floor `settleVertical` rests the body on. The probe carries the body's own feet, which is what
- * keeps a ledge more than a step above them from counting as either
+ * One `P_CheckPosition` at the body's own position: the standing side of {@link dropoffRefuses},
+ * and the floor {@link settleVertical} rests the body on. The probe carries the body's own feet,
+ * which is what keeps a ledge more than a step above them from counting as either
  * (`world.ts: stepsTooHigh`, docs/movement.md § Collision).
  */
 function standingAt(c: Chase): PositionCheck {
@@ -838,11 +840,12 @@ function standingAt(c: Chase): PositionCheck {
 }
 
 /**
- * Seeds `standingAt`'s memo from the walk a committed step was approved on: `stepCheck` holds the
- * destination the body now stands at, at the same feet and radius, so the standing walk
- * `settleVertical` asks for next would repeat it line for line. `blocked` is false by
- * construction — the step was refused by neither geometry nor bodies, and the standing walk
- * carries no bodies. docs/monster-ai.md § The dropoff rule.
+ * Seeds {@link standingAt}'s memo from the walk a committed step was approved on:
+ * {@link stepCheck} holds the destination the body now stands at, at the same feet and radius, so
+ * the standing walk {@link settleVertical} asks for next would repeat it line for line.
+ * {@link PositionCheck.blocked} is false by construction — the step was refused by neither
+ * geometry nor bodies, and the standing walk carries no bodies. docs/monster-ai.md § The dropoff
+ * rule.
  */
 function adoptStanding(c: Chase): void {
   const { body } = c;
@@ -861,7 +864,7 @@ function adoptStanding(c: Chase): void {
   body.sectorY = body.y;
 }
 
-/** Resolves `Chase.sight` on first ask and returns it — see that field's doc. */
+/** Resolves {@link Chase.sight} on first ask and returns it. */
 function canSee(c: Chase): boolean {
   if (c.sight === null) c.sight = c.world.hasLineOfSight(c.body, c.target);
   return c.sight;
@@ -869,9 +872,9 @@ function canSee(c: Chase): boolean {
 
 /**
  * Settles vertical position and velocity. A grounded monster does what `Player.update` does — snap
- * while grounded, integrate gravity while airborne. A `flies` monster never falls (`MF_NOGRAVITY`)
- * and drifts toward its target's mid-height while close enough (`P_ZMovement`'s `MF_FLOAT` block),
- * clamped between the floor under it and the ceiling above. docs/monster-ai.md § Floating monsters.
+ * while grounded, integrate gravity while airborne. A {@link MonsterStats.flies} monster never
+ * falls (`MF_NOGRAVITY`) and drifts toward its target's mid-height while close enough, clamped
+ * between the floor under it and the ceiling above. docs/monster-ai.md § Floating monsters.
  */
 function settleVertical(c: Chase): void {
   const { body, stats, dt, target } = c;
@@ -918,8 +921,7 @@ function settleVertical(c: Chase): void {
 
 /**
  * `P_LookForPlayers`'s field-of-view gate: the forward ~180°, unless the player is within
- * `MELEERANGE`. Initial wake-up only — `A_Chase` never re-applies it to an already-hunting
- * monster. docs/monster-ai.md § Waking up.
+ * `MELEERANGE`. docs/monster-ai.md § Waking up.
  */
 function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: number, playerX: number, playerY: number): boolean {
   const dist = vecLength(playerX - monsterX, playerY - monsterY);

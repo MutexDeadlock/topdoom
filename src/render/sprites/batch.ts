@@ -12,29 +12,24 @@ import { skyScale } from '../skytint.ts';
 const INITIAL_CAPACITY = 64;
 
 /**
- * How far a fuzzed sprite is darkened, and the two ends of the per-pixel
- * translucency the shimmer runs between. All three tuned by feel — this
- * engine's fuzz is a look chosen against vanilla's own, not derived from it
- * (docs/sprites.md § The spectre's fuzz), so they are the whole of it and are
- * meant to be retuned by eye. The midpoint of the alpha range sits near the
- * player's own `INVISIBILITY_OPACITY`, which is the same `MF_SHADOW` in vanilla.
+ * How far a fuzzed sprite is darkened, and the two ends of the per-pixel translucency the shimmer
+ * runs between. All three tuned by feel against vanilla's own fuzz rather than derived from it, and
+ * meant to be retuned by eye — docs/sprites.md § The spectre's fuzz.
  */
 const FUZZ_DARKEN = 0.42;
 const FUZZ_ALPHA_MIN = 0.12;
 const FUZZ_ALPHA_MAX = 0.62;
 
 /**
- * How often the fuzz pattern is redrawn. Vanilla advances `fuzzpos` through
- * `fuzzoffset[FUZZTABLE]` once per column per frame, i.e. the shimmer steps at
- * the frame rate of a 35fps game; stepping on the tic keeps that cadence
- * instead of letting the shimmer run faster on a faster display.
+ * How often the fuzz pattern is redrawn: on the tic, vanilla's frame rate (`fuzzpos` walks
+ * `fuzzoffset[FUZZTABLE]` per column per frame), so a faster display doesn't shimmer faster.
  */
 const FUZZ_STEP_SECONDS = DOOM_TIC;
 
 /**
- * The shimmer's clock and its noise, prepended to the fragment shader by `applyFuzz`.
- * A 3D hash (Hoskins' `hash13`) taking the tic as a third dimension, and
- * deliberately not the noise `render/textures.ts` dithers the wall fade with —
+ * The shimmer's clock and its noise, prepended to the fragment shader by
+ * {@link patchFuzz}. A 3D hash (Hoskins' `hash13`) taking the tic as a third dimension,
+ * and deliberately not the noise `render/textures.ts` dithers the wall fade with —
  * docs/sprites.md § Why the fuzz can't share the wall dither's noise.
  */
 const FUZZ_GLSL = `
@@ -79,8 +74,8 @@ interface Batch {
   rect: THREE.InstancedBufferAttribute | null;
   uv: THREE.InstancedBufferAttribute | null;
   /**
-   * Whether the mesh's geometry is this batch's to dispose — an atlas batch's `unitPlane`. A lump
-   * batch draws `SpriteMaterialCache`'s own plane, which outlives the level.
+   * Whether the mesh's geometry is this batch's to dispose — an atlas batch's {@link unitPlane}. A
+   * lump batch draws `SpriteMaterialCache`'s own plane, which outlives the level.
    */
   ownsGeometry: boolean;
 }
@@ -90,17 +85,17 @@ type BatchKey = THREE.DataTexture | CachedSprite;
 
 /**
  * Draws many sprites as a few `InstancedMesh`es instead of one `THREE.Mesh` each, rebuilt from
- * scratch every frame (`begin`/`add`/`end`): one mesh per atlas page, and one per lump for a lump
- * the atlas has no room for (`CachedSprite.atlas` null).
+ * scratch every frame ({@link SpriteBatch.begin}/{@link SpriteBatch.add}/{@link SpriteBatch.end}):
+ * one mesh per atlas page, and one per lump for a lump the atlas has no room for
+ * ({@link CachedSprite.atlas} null).
  *
- * Batching is a hard performance requirement rather than a refinement, and
- * both the rebuild-wholesale choice and the two properties that make a
- * per-instance write cheap are load-bearing: docs/sprites.md § Batching.
+ * Batching is a hard performance requirement, and both the rebuild-wholesale choice and the two
+ * properties that make a per-instance write cheap are load-bearing: docs/sprites.md § Batching.
  */
 export class SpriteBatch {
   readonly group = new THREE.Group();
   private batches = new Map<BatchKey, Batch>();
-  /** One per page, and one clone per lump drawn from its own texture — see `materialFor`. */
+  /** One per page, and one clone per lump off the atlas — see {@link SpriteBatch.materialFor}. */
   private materials = new Map<BatchKey, THREE.MeshBasicMaterial>();
   private cos = 1;
   private sin = 0;
@@ -109,25 +104,21 @@ export class SpriteBatch {
   private fuzz: boolean;
   private opacity = 1;
   /**
-   * The shimmer's clock, shared by every material this batch builds — a live
-   * uniform object handed to each patched shader, so `setFuzzTime` is one
-   * write no matter how many lumps the batch spans.
+   * The shimmer's clock, shared by every material this batch builds — a live uniform object handed
+   * to each patched shader, so {@link SpriteBatch.setFuzzTime} is one write no matter how many
+   * lumps the batch spans.
    */
   private fuzzTime = { value: 0 };
 
   /**
-   * `depthBias` biases every fragment this batch draws toward the camera by
-   * that many depth-buffer units (`polygonOffset`), so it wins the depth test
-   * against anything drawn at the *same* depth. Meant for exactly that case —
-   * two upright sprite planes standing at the same map position, which are
-   * coplanar and would otherwise resolve by draw order (docs/items.md §
-   * Making monster drops readable). It is deliberately far too small to push a
-   * sprite through geometry genuinely in front of it.
+   * `depthBias` biases every fragment this batch draws toward the camera by that many depth-buffer
+   * units (`polygonOffset`), sized to settle a coplanar tie between two sprite planes at the same
+   * map position and nothing more (docs/items.md § Making monster drops readable).
    *
-   * `translucent` builds this batch's materials for `setOpacity` — see there.
-   * `fuzz` draws everything in this batch as vanilla's `MF_SHADOW` fuzz — a
-   * translucent batch whose alpha varies per pixel rather than coming from
-   * `setOpacity`; see `applyFuzz`.
+   * `translucent` builds this batch's materials for {@link SpriteBatch.setOpacity} — see there.
+   * `fuzz` draws everything in this batch as vanilla's `MF_SHADOW` fuzz — a translucent batch whose
+   * alpha varies per pixel rather than coming from {@link SpriteBatch.setOpacity}; see
+   * {@link SpriteBatch.applyFuzz}.
    */
   constructor(options: { depthBias?: number; translucent?: boolean; fuzz?: boolean } = {}) {
     this.group.name = 'sprite-batches';
@@ -137,7 +128,7 @@ export class SpriteBatch {
   }
 
   /**
-   * Advances the fuzz shimmer to level time `seconds` (see `applyFuzz`). Only
+   * Advances the fuzz shimmer to level time `seconds` (see {@link SpriteBatch.applyFuzz}). Only
    * meaningful on a `fuzz` batch; a plain uniform write, called every frame.
    */
   setFuzzTime(seconds: number): void {
@@ -145,15 +136,10 @@ export class SpriteBatch {
   }
 
   /**
-   * Fades everything this batch draws to `opacity` (1 = fully opaque). Batch-
-   * wide, not per-instance: three.js's `instanceColor` has no alpha channel,
-   * so a per-sprite fade would need a custom shader — every sprite in a
-   * `translucent` batch fades together.
-   *
-   * Only meaningful on a `translucent` batch, whose materials are built
-   * transparent from the start so this is a plain uniform write. Flipping
-   * `transparent`/`alphaTest` on a live material instead would force a shader
-   * recompile, and this is called every frame.
+   * Fades everything this batch draws to `opacity` (1 = fully opaque) — batch-wide, since
+   * `instanceColor` has no alpha. Only meaningful on a `translucent` batch, whose materials are
+   * built transparent from the start so this is a plain uniform write every frame.
+   * docs/sprites.md § Batching.
    */
   setOpacity(opacity: number): void {
     this.opacity = opacity;
@@ -172,14 +158,14 @@ export class SpriteBatch {
   }
 
   /**
-   * Queues one sprite. `x`/`y`/`z` are already **three.js** space (the caller
-   * converts via `doomToWorld`) and `light` is a 0..1 tint (`lightToColor`).
-   * `tint` adds a dynamic light's contribution on top of that
-   * (docs/lights.md § Two lighting paths); omitted is the unlit sprite.
+   * Queues one sprite. The position stays **scalars** rather than a point, the coordinate-triple
+   * exception in docs/conventions.md § Named arguments: this runs once per drawn sprite per frame,
+   * and every caller has just computed the three through `doomToWorld` into a reused vector.
    *
-   * The position stays **scalars** rather than a point, the coordinate-triple exception in
-   * docs/conventions.md § Named arguments: this runs once per drawn sprite per frame, and every
-   * caller has just computed the three through `doomToWorld` into a reused vector.
+   * @param x      **three.js** space, as are `y` and `z` — the caller converts via `doomToWorld`
+   * @param light  a 0..1 tint (`lightToColor`)
+   * @param tint   a dynamic light's contribution on top of that, omitted for the unlit sprite —
+   *               docs/lights.md § Two lighting paths
    */
   add(
     cached: CachedSprite,
@@ -189,7 +175,7 @@ export class SpriteBatch {
     scale: number,
     light: number,
     tint?: Tint,
-    /** Whether this sprite stands under sky — see `skyScale`. */
+    /** Whether this sprite stands under sky — see {@link skyScale}. */
     sky = false,
   ): void {
     const atlas = cached.atlas;
@@ -244,11 +230,8 @@ export class SpriteBatch {
   }
 
   /**
-   * Ends a frame: publishes each batch's instance count and flags the written part of its buffers
-   * for upload. Only that part — a batch keeps the capacity it once grew to, and uploading it
-   * whole was most of the frame's GL traffic on a map that spreads its things over hundreds of
-   * lumps. A batch nothing landed in is hidden outright: the renderer would otherwise still bind
-   * and upload it for a draw of zero instances. docs/sprites.md § Batching.
+   * Ends a frame: publishes each batch's instance count and flags only the written part of its
+   * buffers for upload, and hides a batch nothing landed in. docs/sprites.md § Batching.
    */
   end(): void {
     for (const b of this.batches.values()) {
@@ -363,11 +346,9 @@ export class SpriteBatch {
   }
 
   /**
-   * The instanced twin of a lump's material: same texture and alpha test, but
-   * `vertexColors` on (so `instanceColor` actually reaches the fragment
-   * shader — see the `color` attribute comment in `render/sprites.ts`) and a
-   * white base color, since the tint rides per instance rather than on the
-   * shared material.
+   * The instanced twin of a lump's material: same texture and alpha test, but `vertexColors` on
+   * (so `instanceColor` reaches the fragment shader — {@link whiteVertexColors}) and a white base
+   * color, since the tint rides per instance rather than on the shared material.
    */
   private materialFor(cached: CachedSprite): THREE.MeshBasicMaterial {
     const hit = this.materials.get(cached);
@@ -404,18 +385,15 @@ export class SpriteBatch {
   }
 
   /**
-   * Turns a lump's material into this engine's `MF_SHADOW` fuzz: the sprite
-   * darkened to `FUZZ_DARKEN` and faded to a per-pixel alpha between
-   * `FUZZ_ALPHA_MIN` and `FUZZ_ALPHA_MAX`, re-drawn every `FUZZ_STEP_SECONDS`,
-   * so the floor shows through and shimmers.
-   *
-   * Blending rather than a screen-door discard, so the spectre carries no
-   * per-pixel mask for a fading wall's own dither to collide with:
+   * Turns a lump's material into this engine's `MF_SHADOW` fuzz: the sprite darkened to
+   * {@link FUZZ_DARKEN} and faded to a per-pixel alpha between {@link FUZZ_ALPHA_MIN} and
+   * {@link FUZZ_ALPHA_MAX}, re-drawn every {@link FUZZ_STEP_SECONDS}, so the floor shows through
+   * and shimmers. Blended rather than a screen-door discard:
    * docs/sprites.md § Why the fuzz can't share the wall dither's noise.
    *
    * Deliberately cruder than vanilla's own effect rather than an approximation of it, and the
-   * rejection of the closer reproduction is the load-bearing part: docs/sprites.md §
-   * The spectre's fuzz.
+   * rejection of the closer reproduction is the load-bearing part:
+   * docs/sprites.md § The spectre's fuzz.
    */
   private applyFuzz(material: THREE.MeshBasicMaterial): void {
     const fuzzTime = this.fuzzTime;
@@ -437,8 +415,8 @@ function publish(attribute: THREE.BufferAttribute, count: number): void {
 
 /**
  * The plane every atlas batch instances: bottom-centre at the origin, a unit wide and tall, which
- * `ATLAS_BEGIN_VERTEX_GLSL` sizes and shifts per instance. One per batch, since the batch's own
- * lanes hang off it.
+ * {@link ATLAS_BEGIN_VERTEX_GLSL} sizes and shifts per instance. One per batch, since the batch's
+ * own lanes hang off it.
  */
 function unitPlane(): THREE.BufferGeometry {
   const geometry = new THREE.PlaneGeometry(1, 1);
@@ -447,7 +425,7 @@ function unitPlane(): THREE.BufferGeometry {
   return geometry;
 }
 
-/** The fuzz's fragment patch — see `SpriteBatch.applyFuzz`. */
+/** The fuzz's fragment patch — see {@link SpriteBatch.applyFuzz}. */
 function patchFuzz(shader: THREE.WebGLProgramParametersWithUniforms, fuzzTime: { value: number }): void {
   shader.uniforms.uFuzzTime = fuzzTime;
   shader.fragmentShader = shader.fragmentShader.replace(

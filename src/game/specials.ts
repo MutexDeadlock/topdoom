@@ -1,7 +1,7 @@
 /**
- * `SpecialsController`: drives every linedef/sector special in a loaded map — doors, lifts, floor
- * movers, crushers, stair builders, teleporters, lights and exits. See docs/specials.md, which
- * routes to the per-mechanism docs beside it.
+ * {@link SpecialsController}: drives every linedef/sector special in a loaded map — doors, lifts,
+ * floor movers, crushers, stair builders, teleporters, lights and exits. docs/specials.md routes to
+ * the per-mechanism docs beside it.
  */
 import * as THREE from 'three';
 import { isTextured, LF, NO_SIDE, type DoomMap, type LineDef, type Sector } from '../wad/map.ts';
@@ -67,18 +67,19 @@ export interface LightState {
   phase: number;
   /**
    * The current light value for `flicker` alone, which is the one pattern that
-   * isn't a two-level toggle `bright` can express — see `tickLight`.
+   * isn't a two-level toggle {@link LightState.bright} can express — see {@link tickLight}.
    */
   level: number;
 }
 
 /**
  * A locked line the player just used without what it wants — what `game.ts` needs to say so
- * (see `consumeLockedLine`). `kind` is vanilla's own split between "open this door" (`PD_*K`, the
- * manual door specials 26-28/32-34, where the line *is* the door) and "activate this object"
- * (`PD_*O`, the remote switches 99/133-137) — the two messages `EV_VerticalDoor` and
- * `EV_DoLockedDoor` print. Boom's generalized locks carry their own wording per `LockRule`
- * (`P_CanUnlockGenDoor`'s `PD_*` picks). docs/items.md § Locked doors and use triggers.
+ * (see {@link SpecialsController.consumeLockedLine}). {@link LockedLine.kind} is vanilla's own
+ * split between "open this door" (`PD_*K`, the manual door specials 26-28/32-34, where the line
+ * *is* the door) and "activate this object" (`PD_*O`, the remote switches 99/133-137) — the two
+ * messages `EV_VerticalDoor` and `EV_DoLockedDoor` print. Boom's generalized locks carry their own
+ * wording per {@link defs.LockRule} (`P_CanUnlockGenDoor`'s `PD_*` picks).
+ * docs/items.md § Locked doors and use triggers.
  */
 export interface LockedLine {
   lock: defs.LockRule;
@@ -100,18 +101,17 @@ const USE_RANGE = 64;
 const LINE_TELEPORT_NUDGE = 0.01;
 
 /**
- * Vanilla's own moving-floor/ceiling grind (`sfx_stnmov`) is retriggered on a
- * global `leveltime & 7` clock, not per mover — so every plane in motion
- * anywhere on the map emits in the *same* tic, which is why a room full of
- * rising stairs sounds like one machine rather than a dozen. `moveSoundDue`
- * below reproduces that shared clock.
+ * Vanilla's own moving-floor/ceiling grind (`sfx_stnmov`) is retriggered on a global
+ * `leveltime & 7` clock, not per mover — so every plane in motion anywhere on the map emits in the
+ * *same* tic, which is why a room full of rising stairs sounds like one machine rather than a
+ * dozen. {@link SpecialsController.moveSoundDue} reproduces that shared clock.
  */
 const MOVE_SOUND_INTERVAL = 8 * DOOM_TIC;
 
 /**
  * A door's sounds, by whether it's one of the "blazing" (4x speed) types —
  * vanilla picks `bdopn`/`bdcls` over `doropn`/`dorcls` per special number
- * (`p_doors.c`), which maps exactly onto `DOOR_SPEED_FAST` here since those are
+ * (`p_doors.c`), which maps exactly onto {@link defs.DOOR_SPEED_FAST} here since those are
  * the same specials.
  */
 const DOOR_SOUNDS: Record<'normal' | 'fast', { open: SfxId; close: SfxId }> = {
@@ -125,10 +125,13 @@ const DOOR_SOUNDS: Record<'normal' | 'fast', { open: SfxId; close: SfxId }> = {
  */
 const MONSTER_CROSS_RADIUS = 136;
 
-/** `crossLines`'s own candidate list — see `World.linesNearInto`; `trigger` may walk lines of its own. */
+/**
+ * {@link SpecialsController.crossLines}'s own candidate list — see {@link World.linesNearInto};
+ * {@link SpecialsController.trigger} may walk lines of its own.
+ */
 const crossLinesScratch: number[] = [];
 
-/** `useMonster`'s own, for the same reason: the `trigger` pass below it may walk lines itself. */
+/** {@link SpecialsController.useMonster}'s own, for the same reason. */
 const useLinesScratch: number[] = [];
 
 /**
@@ -147,13 +150,10 @@ const SWITCH_ALWAYS_FLIPS = new Set([
 ]);
 
 /**
- * `holdClosed` is the mirror of `hold`: waiting at the *bottom* before
- * automatically moving again, rather than at the top. Two cases reach it —
- * a `closeThenOpen` door (16/76) after it finishes closing, and a
- * sector-type-14 door's initial 5-minute wait before its first move at all
- * (`spawnSectorDoorTimer`) — both transition to `raising` once
- * `holdRemaining` elapses, same shape as `hold`'s own transition to
- * `lowering`.
+ * `holdClosed` is the mirror of `hold`: waiting at the *bottom* before moving again, rather than
+ * at the top. Two cases reach it — a `closeThenOpen` door (16/76) after it finishes closing, and a
+ * sector-type-14 door's initial wait ({@link SpecialsController.spawnSectorDoorTimer}) — both going
+ * `raising` once {@link DoorMover.holdRemaining} elapses, as `hold` goes `lowering`.
  */
 type DoorState = 'raising' | 'hold' | 'holdClosed' | 'lowering' | 'open' | 'closed';
 interface DoorMover {
@@ -167,7 +167,7 @@ interface DoorMover {
 }
 
 /**
- * `'stasis'` is vanilla `in_stasis` (`EV_StopPlat` froze it; `stasisFrom`
+ * `'stasis'` is vanilla `in_stasis` (`EV_StopPlat` froze it; {@link LiftMover.stasisFrom}
  * remembers the direction, vanilla's `oldstatus`). `'hold'` serves both ends
  * of a perpetual lift's travel — on expiry the direction is re-derived from
  * which end it sits at (`T_PlatRaise`'s own `floorheight == low` test).
@@ -186,16 +186,12 @@ interface LiftMover {
    * absent on movers from older saves, where plain downWaitUpStay is right.
    */
   perpetual?: boolean;
-  /** The direction a stop line froze this lift out of — see `LiftState`. */
+  /** The direction a stop line froze this lift out of — see {@link LiftState}. */
   stasisFrom?: Exclude<LiftState, 'stasis'>;
   /**
-   * Boom's `toggleUpDn` (211/212): each stroke completes in the tic it starts
-   * and parks in `'stasis'`, so the next activation reverses it. In vanilla
-   * the instantness is *emergent* — `T_MovePlane` is told to move down toward
-   * a destination that is above the floor, so its very first step clamps to
-   * the target and reports `pastdest`. This engine's movers auto-direction
-   * toward their target instead, so nothing would clamp; the flag says so
-   * explicitly. Optional, so an older save reads as an ordinary lift.
+   * Boom's `toggleUpDn` (211/212): each stroke completes in the tic it starts and parks in
+   * `'stasis'`, so the next activation reverses it — explicit here, emergent in vanilla. Optional,
+   * so an older save reads as an ordinary lift. docs/specials-movers.md § Toggle plats.
    */
   instant?: boolean;
   /**
@@ -214,35 +210,29 @@ interface FloorMover {
   state: 'moving' | 'done';
   crush: boolean;
   /**
-   * `floor->direction`, copied from the effect that started this mover and
-   * fixed for its life — what `tickFloor` steps along instead of re-deriving a
-   * direction from `target` each tick. It only shows when `target` sits on the
-   * *far* side of it, which `T_MovePlane` then takes in one step rather than
-   * travelling the wrong way at mover speed. Absent on a mover from a save
-   * written before this field existed, where re-deriving is the old behavior.
-   * docs/specials-movers.md § Inverted plane moves.
+   * `floor->direction`, copied from the effect that started this mover and fixed for its life —
+   * what {@link SpecialsController.tickFloor} steps along instead of re-deriving a direction from
+   * {@link FloorMover.target} each tick. Absent on a mover from an older save, where re-deriving is
+   * right. docs/specials-movers.md § Inverted plane moves.
    */
   direction?: 'up' | 'down';
   /**
-   * Texture/special applied only once this mover reaches `target`, never at
-   * trigger time — vanilla's `lowerAndChange` and the donut's ring riser
-   * (`donutRaise`), both of which apply `floor->texture`/`newspecial` in
-   * `T_MoveFloor`'s `pastdest` branch rather than up front the way this
-   * table's ordinary `FloorEffect.changeTexture` family does. `tickFloor`
-   * applies it in the same tick the mover's `state` flips to `'done'`.
-   * `special` absent (Boom's texture-only change, `FChgTxt`) leaves the
-   * sector's special untouched — old saves always carry a number here, which
-   * restores the old always-write behavior exactly.
+   * Texture/special applied only once this mover reaches {@link FloorMover.target}, never at
+   * trigger time — vanilla's `lowerAndChange` and the donut's ring riser (`donutRaise`), both of
+   * which apply `floor->texture`/`newspecial` in `T_MoveFloor`'s `pastdest` branch rather than up
+   * front the way {@link defs.FloorEffect.changeTexture} does. {@link SpecialsController.tickFloor}
+   * applies it in the same tick {@link FloorMover.state} flips to `'done'`. `special` absent
+   * (Boom's texture-only change, `FChgTxt`) leaves the sector's special untouched; an older save
+   * always carries one.
    */
   arrivalTexture?: { floorTex: string; special?: number };
 }
 
 /**
- * A one-way ceiling mover — see `CeilingEffect`'s doc. No hold, no reversal
- * state, no periodic crush *damage*: nothing that reaches this mover needs
- * them. It still stalls rather than lowering through someone in its way —
- * `tickCeiling`'s `blocksCeilingLower` check.
- * docs/specials-movers.md § One-way ceiling movers.
+ * A one-way ceiling mover — see {@link defs.CeilingEffect}. No hold, no reversal state: nothing
+ * that reaches this mover needs them. Unless {@link CeilingMover.crush}, it stalls rather than
+ * lowering through someone in its way — {@link SpecialsController.tickCeiling}'s
+ * {@link Occupancy.blocksCeilingLower} check. docs/specials-movers.md § One-way ceiling movers.
  */
 interface CeilingMover {
   kind: 'ceiling';
@@ -250,19 +240,16 @@ interface CeilingMover {
   speed: number;
   target: number;
   state: 'moving' | 'done';
-  /**
-   * `ceiling->direction` — `FloorMover.direction`'s mirror, absent on an older save for the same
-   * reason.
-   */
+  /** `ceiling->direction` — {@link FloorMover.direction}'s mirror, absent on older saves too. */
   direction?: 'up' | 'down';
   /**
    * Boom generalized ceilings only — grind through a body, full speed, periodic damage (see
-   * `CeilingEffect.crush`). Absent = vanilla's stall.
+   * {@link defs.CeilingEffect.crush}). Absent = vanilla's stall.
    */
   crush?: boolean;
   /**
-   * Boom's arrival-time change, ceiling flavor (`SurfaceChange`) — applied like
-   * `FloorMover.arrivalTexture`.
+   * Boom's arrival-time change, ceiling flavor ({@link defs.SurfaceChange}) — applied like
+   * {@link FloorMover.arrivalTexture}.
    */
   arrivalTexture?: { ceilTex: string; special?: number };
 }
@@ -274,8 +261,8 @@ interface CeilingMover {
  *
  * **The one plane mover with no `direction` of its own**, and the one that doesn't need one:
  * reading the direction off the target each tick is exactly Boom for all three variants, and the
- * clamp `tickFloor`/`tickCeiling` carry has nothing to catch here.
- * docs/specials-movers.md § Inverted plane moves.
+ * clamp {@link SpecialsController.tickFloor}/{@link SpecialsController.tickCeiling} carry has
+ * nothing to catch here. docs/specials-movers.md § Inverted plane moves.
  */
 interface ElevatorMover {
   kind: 'elevator';
@@ -307,19 +294,19 @@ interface CrusherMover {
    * docs/specials-crushers.md § Crushers.
    */
   stoppedFrom?: 'lowering' | 'raising';
-  /** Vanilla's `silentCrushAndRaise` (special 141) — see `CrusherEffect.silent`. */
+  /** Vanilla's `silentCrushAndRaise` (special 141) — see {@link defs.CrusherEffect.silent}. */
   silent: boolean;
-  /** Boom's fully silent generalized crusher — see `CrusherEffect.noEndClack`. */
+  /** Boom's fully silent generalized crusher — see {@link defs.CrusherEffect.noEndClack}. */
   noEndClack?: boolean;
   /**
-   * See `CrusherEffect.slowsWhenCrushing`. Absent on a mover from a save written before it existed,
-   * where the slowing majority (25/49/73/141) is the safer default.
+   * See {@link defs.CrusherEffect.slowsWhenCrushing}. Absent on a mover from a save written before
+   * it existed, where the slowing majority (25/49/73/141) is the safer default.
    */
   slowsWhenCrushing?: boolean;
   /**
    * Currently grinding through a body at an eighth speed — `T_MoveCeiling`'s
    * mutated `ceiling->speed`, cleared again when the descent reaches the
-   * bottom. Live state, so it rides along in a savegame like `state` does.
+   * bottom. Live state, so it rides along in a savegame like {@link CrusherMover.state} does.
    */
   slowed?: boolean;
 }
@@ -332,30 +319,33 @@ interface CrusherMover {
  */
 export type Mover = DoorMover | LiftMover | FloorMover | CrusherMover | CeilingMover | ElevatorMover;
 
-/** The `at` for a caller with no silent teleport in play — see `trigger`. */
+/** The `at` for a caller with no silent teleport — see {@link SpecialsController.trigger}. */
 const NO_SOURCE: Placement = { x: 0, y: 0, angle: 0 };
 
-/** One moving sector's interpolation window — see `SpecialsController.moverLerp`. */
+/** One moving sector's interpolation window — see {@link SpecialsController.moverLerp}. */
 interface MoverLerp {
   /** Plane heights at the end of the previous tic — the interpolation source. */
   prevFloor: number;
   prevCeil: number;
-  /** Tic-exact heights, stashed by `drawMovers` while the map holds lerped ones. */
+  /**
+   * Tic-exact heights, stashed by {@link SpecialsController.drawMovers} while the map holds lerped
+   * ones.
+   */
   ticFloor: number;
   ticCeil: number;
   /**
-   * Heights `drawMovers` last refreshed the mesh at, so a frame whose lerp lands on the same
-   * values skips the refresh. Seeded to the pre-move heights when the window opens: with no
-   * window, the mesh last drew tic-exact — a window only ever closes with the mesh refreshed at
-   * its final heights. A rebuild from another path (a switch flash, an arrival texture) bakes
-   * tic-exact heights without updating this; the next frame's differing alpha refreshes over it,
-   * so the skip is at most one frame stale.
+   * Heights {@link SpecialsController.drawMovers} last refreshed the mesh at, so a frame whose lerp
+   * lands on the same values skips the refresh. Seeded to the pre-move heights when the window
+   * opens: with no window, the mesh last drew tic-exact — a window only ever closes with the mesh
+   * refreshed at its final heights. A rebuild from another path (a switch flash, an arrival
+   * texture) bakes tic-exact heights without updating this; the next frame's differing alpha
+   * refreshes over it, so the skip is at most one frame stale.
    */
   drawnFloor: number;
   drawnCeil: number;
 }
 
-/** What a `SpecialsController` needs beside the `World` it runs over. */
+/** What a {@link SpecialsController} needs beside the {@link World} it runs over. */
 export interface SpecialsOptions extends MoverGeometryOptions {
   /**
    * A level exit fired: `slot` is the player whose use, crossing or shot it was (a voodoo doll's is
@@ -370,7 +360,7 @@ export interface SpecialsOptions extends MoverGeometryOptions {
    */
   occupants?: OccupancySources;
   /**
-   * Overrides what `occupants` would be answered through. The seam
+   * Overrides what {@link SpecialsOptions.occupants} would be answered through. The seam
    * `tests/fixtures/specialsrig.ts` drives a mover into an obstruction with, no bodies needed.
    */
   occupancy?: Occupancy;
@@ -378,11 +368,11 @@ export interface SpecialsOptions extends MoverGeometryOptions {
   playersAt: readonly Pos2[];
   sfx?: SoundEmitter;
   /**
-   * How a switch texture resolves to its opposite state — **the same lookup
-   * the caller gave `scanSectors`**, for the same "must not
-   * disagree" reason `movableSectors` is passed in. Defaults to the
-   * `SW1`/`SW2` name convention; a WAD set with a `SWITCHES` lump supplies
-   * its own (docs/wad.md § ANIMATED and SWITCHES).
+   * How a switch texture resolves to its opposite state — **the same lookup the caller gave
+   * `scanSectors`**, for the same "must not disagree" reason
+   * {@link MoverGeometryOptions.movableSectors} is passed in. Defaults to the `SW1`/`SW2` name
+   * convention; a WAD set with a `SWITCHES` lump supplies its own —
+   * docs/wad.md § ANIMATED and SWITCHES.
    */
   switchPairs?: SwitchPairLookup;
 }
@@ -401,83 +391,83 @@ export class SpecialsController {
   /** Who is standing in a mover — see `specials/moverblocking.ts`. */
   private occupancy: Occupancy;
   private sfx: SoundEmitter;
-  /** `A_BossDeath`'s per-map table, resolved once from `map.name` — see `notifyBossDeath`. */
+  /** Resolved once from `map.name` — see {@link SpecialsController.notifyBossDeath}. */
   private bossDeathTriggers: BossDeathTrigger[];
-  /**
-   * Vanilla's `sector->soundorg` — where a sector's own sounds come from,
-   * computed lazily per sector and cached (`soundOrigin`).
-   */
+  /** Each sector's sound origin, computed lazily — see {@link SpecialsController.soundOrigin}. */
   private sectorOrigins = new Map<number, Pos2>();
   /**
    * Counts down to the next `stnmov` grind, and whether one is due this frame — see
-   * `MOVE_SOUND_INTERVAL`.
+   * {@link MOVE_SOUND_INTERVAL}.
    */
   private moveSoundTimer = MOVE_SOUND_INTERVAL;
   private moveSoundDue = false;
   /**
    * Counts down to the next crush-damage pulse, and whether one is due this frame — see
-   * `tickCrush`.
+   * {@link SpecialsController.tickCrush}.
    */
   private crushDamageTimer = defs.CRUSH_DAMAGE_INTERVAL;
   private crushDamageDue = false;
 
   /**
    * The two independent mover slots per sector, Boom's `sec->floordata` /
-   * `sec->ceilingdata` — see `moverClass` for which kind lands where, and
+   * `sec->ceilingdata` — see {@link moverClass} for which kind lands where, and
    * docs/specials.md § One mover per sector for why they are separate.
    */
   private floorMovers = new Map<number, Mover>();
   private ceilingMovers = new Map<number, Mover>();
   /**
    * Presentation-only interpolation windows, one per sector whose planes moved last tic: what
-   * `drawMovers` lerps the drawn geometry through, opened on the tic path by `trackPlaneMove`
-   * and never saved. docs/frameloop.md § Interpolation.
+   * {@link SpecialsController.drawMovers} lerps the drawn geometry through, opened on the tic path
+   * by {@link SpecialsController.trackPlaneMove} and never saved.
+   * docs/frameloop.md § Interpolation.
    */
   private moverLerp = new Map<number, MoverLerp>();
-  /** `drawMovers`' per-frame rebuild set, reused so drawing allocates nothing. */
+  /** {@link SpecialsController.drawMovers}' rebuild set, reused so drawing allocates nothing. */
   private drawDirty = new Set<number>();
   private usedOnce = new Set<number>();
   /**
-   * Lines currently flipped from their authored special by `SpecialDef.retriggerXor`
-   * (Boom's generalized stairs alternating direction). The map's own linedefs are
-   * never mutated — `lineSpecial` applies the XOR on read — so the authored number
-   * stays the truth for anything classifying lines, and a restore is a plain
-   * assignment. docs/specials.md § Generalized linedefs.
+   * Lines flipped from their authored special by {@link defs.SpecialDef.retriggerXor} (Boom's
+   * generalized stairs alternating direction). The map's own linedefs are never mutated —
+   * {@link SpecialsController.lineSpecial} applies the XOR on read.
+   * docs/specials.md § Generalized linedefs.
    */
   private retriggerFlips = new Set<number>();
 
   /**
    * Every line whose authored special a shot triggers — auto-aim's candidate set
-   * (`pickShootTarget`). Scanned once here rather than per tic: on a big map that
-   * is thousands of `lookupSpecial` calls for what is almost always a handful of
+   * ({@link SpecialsController.pickShootTarget}). Scanned once here rather than per tic: on a big
+   * map that is thousands of {@link lookupSpecial} calls for what is almost always a handful of
    * lines, and which lines carry a shoot special never changes.
    */
   private shootLines: number[] = [];
 
   /**
-   * Every line a *monster* could push its way through (`useMonster`), decided once from the three
-   * static halves of the test: `PIT_CheckLine` never puts a one-sided or `BLOCKING`/
-   * `BLOCK_MONSTERS` line in `spechit` at all, and `P_UseSpecialLine` refuses a secret line and
-   * anything outside its non-player allow-list (`SpecialDef.monsterActivate`). Only the geometry
-   * is left to test per call, which is what makes the pass cheap enough to run on a blocked step.
+   * Every line a *monster* could push its way through ({@link SpecialsController.useMonster}),
+   * decided once from the three static halves of the test: `PIT_CheckLine` never puts a one-sided
+   * or `BLOCKING`/`BLOCK_MONSTERS` line in `spechit` at all, and `P_UseSpecialLine` refuses a
+   * secret line and anything outside its non-player allow-list
+   * ({@link defs.SpecialDef.monsterActivate}). Only the geometry is left to test per call, which
+   * makes the pass cheap enough to run on a blocked step.
    */
   private monsterUseLines = new Set<number>();
   /**
    * Whether any line on this map could be triggered by a monster walking over it, from the static
-   * special alone: a once-only line drops out of the live set but never joins it. Read only to
-   * skip `crossLines`'s scan outright on a map with none — docs/monster-ai.md § Opening doors.
+   * special alone: a once-only line drops out of the live set but never joins it. Read only to skip
+   * {@link SpecialsController.crossLines}'s scan outright on a map with none —
+   * docs/monster-ai.md § Opening doors.
    */
   private hasMonsterWalkLine = false;
   /**
-   * `useMonster`'s hit list — vanilla's `spechit`, refilled in place rather than allocated per
-   * blocked step. Collected before anything fires, so a `trigger` that queries the world can't
-   * disturb the line walk it was found in.
+   * {@link SpecialsController.useMonster}'s hit list — vanilla's `spechit`, refilled in place
+   * rather than allocated per blocked step. Collected before anything fires, so a
+   * {@link SpecialsController.trigger} that queries the world can't disturb the line walk it was
+   * found in.
    */
   private monsterUseHits: number[] = [];
 
   /**
-   * `handleUseTrigger`'s scratch `Opening`, so a use press allocates none. Read it before the next
-   * lookup.
+   * {@link SpecialsController.handleUseTrigger}'s scratch {@link Opening}, so a use press allocates
+   * none. Read it before the next lookup.
    */
   private useOpening: Opening = { top: 0, bottom: 0 };
 
@@ -486,20 +476,25 @@ export class SpecialsController {
 
   private lightStates = new Map<number, LightState>();
 
-  /** Where each slot's player stood at the end of the previous tic — what `crossLines` scans from. */
+  /**
+   * Where each slot's player stood at the end of the previous tic — what
+   * {@link SpecialsController.crossLines} scans from.
+   */
   private prev: Pos2[];
   /**
-   * Per slot, set by `trigger` for the one tic a teleport fires, and consumed at the end of that
-   * slot's `activate` to seed its `prev` from the destination instead of the pre-teleport
-   * position `activate` was called with. Without this, the next tic's walk-trigger scan would
-   * test a segment from the old spot all the way to the teleport pad — an arbitrarily long jump
-   * that could cross (and wrongly re-trigger) unrelated lines along the way.
+   * Per slot, set by {@link SpecialsController.trigger} for the one tic a teleport fires, and
+   * consumed at the end of that slot's {@link SpecialsController.activate} to seed its
+   * {@link SpecialsController.prev} from the destination instead of the pre-teleport position.
+   * Without this, the next tic's walk-trigger scan would test a segment from the old spot all the
+   * way to the teleport pad — an arbitrarily long jump that could cross (and wrongly re-trigger)
+   * unrelated lines.
    */
   private lastTeleports: (Pos2 | null)[];
   /**
-   * Per slot, set by `trigger` when that player uses a keyed line without its key, and read (and
-   * cleared) by `consumeLockedLine` — this controller knows which key a line wants, but nothing
-   * about the HUD that has to say so, the same reason `onExit`/`onTeleport` are callbacks.
+   * Per slot, set by {@link SpecialsController.trigger} when that player uses a keyed line without
+   * its key, and read (and cleared) by {@link SpecialsController.consumeLockedLine} — this
+   * controller knows which key a line wants, but nothing about the HUD that has to say so, the same
+   * reason {@link SpecialsController.onExit}/{@link SpecialsController.onTeleport} are callbacks.
    */
   private lockedLines: (LockedLine | null)[];
 
@@ -562,10 +557,10 @@ export class SpecialsController {
   }
 
   /**
-   * The controller's mutable state for a savegame, deep-copied since the live
-   * movers keep mutating. The one-frame flags (`lastTeleports`, `lockedLines`)
-   * and the due-this-frame booleans are deliberately dropped —
-   * docs/savegames.md § What is saved and what is deliberately not.
+   * The controller's mutable state for a savegame, deep-copied since the live movers keep mutating.
+   * The one-frame flags ({@link SpecialsController.lastTeleports},
+   * {@link SpecialsController.lockedLines}) and the due-this-frame booleans are deliberately
+   * dropped — docs/savegames.md § What is saved and what is deliberately not.
    */
   snapshot(): SpecialsSnapshot {
     return structuredClone({
@@ -585,7 +580,7 @@ export class SpecialsController {
    * Overwrites the constructor's own seeding (sector door timers, light
    * states) with the saved state. Sector heights/lights were already applied
    * to the map before any geometry was built, so the only visual fix-up needed
-   * here is the switch on-textures: `findSwitchEntries` reads the *authored*
+   * here is the switch on-textures: {@link findSwitchEntries} reads the *authored*
    * sidedef as the off state, so a flashed switch has to be flipped after that
    * scan, not baked into the map up front. docs/savegames.md § Apply order.
    */
@@ -626,15 +621,15 @@ export class SpecialsController {
   }
 
   /**
-   * The mover meshes as the fade pass sees them — `MoverGeometry` satisfies `FadeParticipant` on
-   * its own, so `game.ts` hands the fader this rather than the controller. Driven from there after
-   * the camera has settled, not from `update`.
+   * The mover meshes as the fade pass sees them — {@link MoverGeometry} satisfies
+   * {@link FadeParticipant} on its own, so `game.ts` hands the fader this, not the controller.
+   * Driven from there after the camera has settled, not from {@link SpecialsController.update}.
    */
   get fadeParticipant(): FadeParticipant {
     return this.geometry;
   }
 
-  /** The mover meshes' share of the ceiling-trim tally — see `MoverGeometry.trimmedUppers`. */
+  /** The mover meshes' share of the ceiling-trim tally ({@link MoverGeometry.trimmedUppers}). */
   get trimmedUppers(): number {
     return this.geometry.trimmedUppers;
   }
@@ -679,9 +674,10 @@ export class SpecialsController {
   }
 
   /**
-   * `World.openingInto` at the plane heights `drawMovers` last drew rather than the tic-exact ones
-   * the map holds — the fade pass's lookup, since the quads it tests against the opening were built
-   * at the lerped heights. docs/render-occlusion.md § Which sightlines a wall fades for.
+   * {@link World.openingInto} at the plane heights {@link SpecialsController.drawMovers} last drew
+   * rather than the tic-exact ones the map holds — the fade pass's lookup, since the quads it tests
+   * against the opening were built at the lerped heights.
+   * docs/render-occlusion.md § Which sightlines a wall fades for.
    */
   drawnOpeningInto(lineIndex: number, out: Opening): boolean {
     const found = this.world.openingInto(lineIndex, out);
@@ -704,8 +700,8 @@ export class SpecialsController {
   /**
    * The keyed line slot `slot`'s player was refused this tic, if any — one read per attempt, so
    * holding `use` against a locked door re-announces it on every press and not in between. Call
-   * after `activate`, which is where every keyed line is reached from (all of them are `use`
-   * triggers).
+   * after {@link SpecialsController.activate}, which is where every keyed line is reached from
+   * (all of them are `use` triggers).
    */
   consumeLockedLine(slot: number): LockedLine | null {
     const locked = this.lockedLines[slot];
@@ -714,8 +710,9 @@ export class SpecialsController {
   }
 
   /**
-   * One whole tic for a level with one player: `beginTic`, that slot's `activate`, `endTic` — the
-   * three `game.ts` runs itself, once per slot in the middle. What every test drives.
+   * One whole tic for a level with one player: {@link SpecialsController.beginTic}, that slot's
+   * {@link SpecialsController.activate}, {@link SpecialsController.endTic} — the three `game.ts`
+   * runs itself, once per slot in the middle. What every test drives.
    */
   update(dt: number, player: Placement, input: TicInput, ownedKeys: ReadonlySet<KeySlot>, noclip = false): void {
     this.beginTic(dt);
@@ -725,8 +722,8 @@ export class SpecialsController {
 
   /**
    * The movers' share of a tic: their two shared clocks, every plane's step, and the corpses it
-   * crunched. Ahead of every `activate`, so a lift underfoot has already moved when a player's
-   * ground is sampled — docs/frameloop.md § What runs in a tic.
+   * crunched. Ahead of every {@link SpecialsController.activate}, so a lift underfoot has already
+   * moved when a player's ground is sampled — docs/frameloop.md § What runs in a tic.
    */
   beginTic(dt: number): void {
     const dirty = new Set<number>();
@@ -748,18 +745,18 @@ export class SpecialsController {
 
   /**
    * One player slot's use press, and the walk triggers it crossed since its last tic. Between
-   * `beginTic` and `endTic`, once per slot. docs/multiplayer.md § What a slot's tic does.
+   * {@link SpecialsController.beginTic} and {@link SpecialsController.endTic}, once per slot.
+   * docs/multiplayer.md § What a slot's tic does.
+   *
+   * @param noclip  IDCLIP: walk triggers stop firing, exactly as `MF_NOCLIP` keeps `P_TryMove`
+   *                from running its `spechit` list at all. Use triggers are untouched —
+   *                `P_UseLines` never looks at the flag. docs/cheats.md § IDCLIP.
    */
   activate(
     slot: number,
     player: Placement,
     input: TicInput,
     ownedKeys: ReadonlySet<KeySlot>,
-    /**
-     * IDCLIP: walk triggers stop firing, exactly as `MF_NOCLIP` keeps `P_TryMove` from running
-     * its `spechit` list at all. Use triggers are untouched — `P_UseLines` never looks at the
-     * flag. docs/cheats.md § IDCLIP.
-     */
     noclip = false,
   ): void {
     this.lastTeleports[slot] = null;
@@ -778,8 +775,8 @@ export class SpecialsController {
   }
 
   /**
-   * A player put down somewhere new between two tics — a coop respawn: the next `activate` tests
-   * the crossings from `at`, not from where the corpse lay.
+   * A player put down somewhere new between two tics — a coop respawn: the next
+   * {@link SpecialsController.activate} tests crossings from `at`, not where the corpse lay.
    */
   reseatSlot(slot: number, at: Pos2): void {
     this.prev[slot].x = at.x;
@@ -787,11 +784,11 @@ export class SpecialsController {
   }
 
   /**
-   * After every slot's `activate`: the switch flashes and the light patterns, which read what the
-   * triggers just started — a light a switch lit this tic draws from the table this tic, as it
-   * always has. No mesh rebuild here: `tickMover` opened a window for every moved plane, and
-   * `drawMovers` — which the frame runs at the draw's interpolation alpha before anything renders
-   * — brings the geometry up to date from those.
+   * After every slot's {@link SpecialsController.activate}: the switch flashes and the light
+   * patterns, which read what the triggers just started — a light a switch lit this tic draws from
+   * the table this tic. No mesh rebuild here: {@link SpecialsController.tickMover} opened a window
+   * for every moved plane, and {@link SpecialsController.drawMovers} — which the frame runs at the
+   * draw's interpolation alpha before anything renders — brings the geometry up to date from those.
    */
   endTic(dt: number): void {
     this.updateSwitchFlashes(dt);
@@ -800,9 +797,10 @@ export class SpecialsController {
 
   /**
    * A monster walking from `prev` to `pos` crosses whatever walk triggers lie between, gated to the
-   * short allow-list `SpecialDef.monsterActivate` carries. Returns the landing spot if the crossing
-   * teleported it, so the caller can move the monster and puff the fog; everything else happens as
-   * a side effect, as it does under the player. See docs/specials-teleporters.md § Teleporters.
+   * short allow-list {@link defs.SpecialDef.monsterActivate} carries. Returns the landing spot if
+   * the crossing teleported it, so the caller can move the monster and puff the fog; everything
+   * else happens as a side effect, as it does under the player.
+   * See docs/specials-teleporters.md § Teleporters.
    */
   crossMonster(prev: Pos2, pos: CrossingBody, ownedKeys: ReadonlySet<KeySlot>): defs.TeleportDest | null {
     return this.crossLines(prev, pos, 'monster', ownedKeys);
@@ -813,8 +811,8 @@ export class SpecialsController {
    * refused, over the lines the monster's box at the *attempted* position `(tryX, tryY)` crossed.
    * Every one of them that admits a non-player is pushed with `side` 0, so unlike the player's own
    * press the side the monster stands on is never tested. Returns a landing spot the same way
-   * `crossMonster` does. The key check still runs and a monster carries none, which is
-   * `EV_VerticalDoor`'s `if (!player) return;` by another route.
+   * {@link SpecialsController.crossMonster} does. The key check still runs and a monster carries
+   * none, which is `EV_VerticalDoor`'s `if (!player) return;` by another route.
    * docs/monster-ai.md § Opening doors.
    *
    * The coordinates stay scalars: the caller is `P_Move`'s refused step, which computes them
@@ -847,10 +845,10 @@ export class SpecialsController {
   }
 
   /**
-   * `crossMonster`'s voodoo-doll twin: whatever walk lines the doll was carried
-   * across this tic fire as though the player had walked them — same keys, same
-   * lines — but the landing spot of a teleport comes back for the caller to
-   * move the *doll*, not the player. See docs/specials-forces.md § Voodoo dolls.
+   * {@link SpecialsController.crossMonster}'s voodoo-doll twin: whatever walk lines the doll was
+   * carried across this tic fire as though the player had walked them — same keys, same lines — but
+   * the landing spot of a teleport comes back for the caller to move the *doll*, not the player.
+   * See docs/specials-forces.md § Voodoo dolls.
    */
   crossVoodoo(prev: Pos2, pos: Placement, ownedKeys: ReadonlySet<KeySlot>): defs.TeleportDest | null {
     return this.crossLines(prev, pos, 'voodoo', ownedKeys);
@@ -861,9 +859,10 @@ export class SpecialsController {
    * monster death that leaves none of its type alive on the level (`ThingLayer`'s own doomednum
    * check).
    *
-   * `playerAlive` is `A_BossDeath`'s "make sure there is a player alive for victory" loop, applied
-   * per row rather than to the whole call: only rows that came from that function carry
-   * `needsLivingPlayer` (see `bossDeathTriggersFor`).
+   * @param playerAlive  `A_BossDeath`'s "make sure there is a player alive for victory" loop,
+   *                     applied per row rather than to the whole call: only rows that came from
+   *                     that function carry {@link BossDeathTrigger.needsLivingPlayer} (see
+   *                     {@link bossDeathTriggersFor})
    */
   notifyBossDeath(type: number, playerAlive: boolean): void {
     for (const t of this.bossDeathTriggers) {
@@ -874,15 +873,16 @@ export class SpecialsController {
   }
 
   /**
-   * Fires a `shoot` special (24, 46, 47) on exactly this line — vanilla's
-   * `P_ShootSpecialLine`. The single-line form: a projectile fires only the line
-   * it hits (`game/projectiles.ts`), while a hitscan shot goes through
-   * `triggerShotPath` below, which fires each line it crossed through here.
-   * Either way the caller already knows the line rather than searching for it
-   * (`linesNear`), so this is a plain lookup. `shooter` is the firing player's slot, or `null`
-   * for a monster's shot, which reproduces vanilla's own per-number gate
-   * (`SpecialDef.monsterCanTrigger` — true only for 46): a monster's shot that happens to stop
-   * against a 24 or 47 line does nothing, same as vanilla.
+   * Fires a `shoot` special (24, 46, 47) on exactly this line — vanilla's `P_ShootSpecialLine`. The
+   * single-line form: a projectile fires only the line it hits (`game/projectiles.ts`), while a
+   * hitscan shot goes through {@link SpecialsController.triggerShotPath}, which fires each line it
+   * crossed through here. Either way the caller already knows the line rather than searching for it
+   * ({@link World.linesNear}), so this is a plain lookup.
+   *
+   * @param shooter  the firing player's slot, or `null` for a monster's shot, which reproduces
+   *                 vanilla's own per-number gate ({@link defs.SpecialDef.monsterCanTrigger},
+   *                 true only for 46): a monster's shot that stops against a 24 or 47 line
+   *                 does nothing
    */
   triggerShot(lineIndex: number | null, ownedKeys: ReadonlySet<KeySlot>, shooter: number | null = 0): void {
     if (lineIndex === null) return;
@@ -895,13 +895,13 @@ export class SpecialsController {
   /**
    * Fires every shoot special a **hitscan** shot from `from` to `to` crossed, in the order it
    * crossed them, plus `blocker` — the line that stopped it, if a line did — last. What each line
-   * still has to satisfy is `triggerShot`'s, unchanged. See docs/combat.md § Shoot-triggered
-   * specials.
+   * still has to satisfy is {@link SpecialsController.triggerShot}'s, unchanged.
+   * docs/combat.md § Shoot-triggered specials.
    *
-   * Crossings are tested against the linedefs' **raw vertexes**, not `World.lineOverlapEnds`:
-   * `shotPath` extends the ends so a ray can't leak between two walls at a shared vertex, and that
-   * extension would fire switches a bullet passed the end of. `handleUseTrigger` reads raw vertexes
-   * for the same reason.
+   * Crossings are tested against the linedefs' **raw vertexes**, not
+   * {@link World.lineOverlapEnds}: `shotPath` extends the ends so a ray can't leak between two
+   * walls at a shared vertex, and that extension would fire switches a bullet passed the end of.
+   * {@link SpecialsController.handleUseTrigger} reads raw vertexes for the same reason.
    */
   triggerShotPath(
     from: Pos2,
@@ -934,9 +934,9 @@ export class SpecialsController {
    * aimed, or null — auto-aim's lock onto switches, the counterpart to
    * `ThingLayer.pickMonster`. See docs/combat.md § Auto-aim.
    *
-   * A line that can no longer fire is no candidate: a spent one-shot, and a
-   * tagless line that acts by tag, both fail the same guards `trigger` leads with,
-   * and locking aim onto one would spend the shot on nothing.
+   * A line that can no longer fire is no candidate: a spent one-shot, and a tagless line that acts
+   * by tag, both fail the same guards {@link SpecialsController.trigger} leads with, and locking
+   * aim onto one would spend the shot on nothing.
    */
   pickShootTarget(ray: THREE.Ray, aimAt: Pos3, fireZ: number): ShootAim | null {
     const live: number[] = [];
@@ -950,16 +950,12 @@ export class SpecialsController {
   }
 
   /**
-   * Sector-type door timers (10/14, `SECTOR_DOOR_SPECIALS`) spawn their
-   * `DoorMover` directly, bypassing `triggerDoor` entirely — there's no
-   * linedef, no tag, nothing to trigger, just a mover that starts waiting
-   * the moment the map loads. `closeIn30` reuses the ordinary `hold` state
-   * (already exactly "wait, then lower, then stop") seeded straight into it
-   * rather than via a `raising` phase, since the sector is assumed already
-   * open in the map data; `raiseIn5Min` reuses `holdClosed` the same way,
-   * assumed already closed. Both use a plain `openClose` `DoorEffect` since
-   * neither vanilla type is `openOnly`/`closeThenOpen` once it actually
-   * starts moving (see `SECTOR_DOOR_SPECIALS`'s own doc).
+   * Sector-type door timers (10/14, `SECTOR_DOOR_SPECIALS`) spawn their {@link DoorMover}
+   * directly, bypassing {@link SpecialsController.triggerDoor}: no linedef, no tag, just a mover
+   * waiting from map load. `closeIn30` is seeded straight into `hold`, the sector authored open;
+   * `raiseIn5Min` into `holdClosed`, authored closed. Both use a plain `openClose`
+   * {@link defs.DoorEffect}, since neither type is `openOnly`/`closeThenOpen` once it moves.
+   * docs/specials-movers.md § Delayed doors.
    */
   private spawnSectorDoorTimer(sectorIndex: number, timer: defs.SectorDoorTimer): void {
     const sector = this.map.sectors[sectorIndex];
@@ -988,12 +984,12 @@ export class SpecialsController {
   }
 
   /**
-   * Routing this field read through a method (rather than reading
-   * `this.lastTeleports[slot]` directly at the end of `activate`) works around a type
-   * narrowing quirk in this project's pinned tsc: reading the field inline
-   * after the several method calls in `activate` — any of which may reach
-   * `trigger` and reassign it — left it typed as `null` regardless, when it
-   * can genuinely be non-null there.
+   * Routing this field read through a method (rather than reading `this.lastTeleports[slot]`
+   * directly at the end of {@link SpecialsController.activate}) works around a type
+   * narrowing quirk in this project's pinned tsc: reading the field inline after the several
+   * method calls in {@link SpecialsController.activate} — any of which may reach
+   * {@link SpecialsController.trigger} and reassign it — left it typed as `null` regardless, when
+   * it can genuinely be non-null there.
    */
   private consumeLastTeleport(slot: number): Pos2 | null {
     return this.lastTeleports[slot];
@@ -1107,8 +1103,8 @@ export class SpecialsController {
 
   /**
    * An exhaustive `switch` rather than an if/else chain with a fallthrough:
-   * a new `Mover` kind must be a compile error here, the way it already is in
-   * `moverActive`, not something that silently ticks as a crusher.
+   * a new {@link Mover} kind must be a compile error here, the way it already is in
+   * {@link SpecialsController.moverActive}, not something that silently ticks as a crusher.
    */
   private tickMover(mover: Mover, dt: number, dirty: Set<number>): void {
     const sector = this.map.sectors[mover.sectorIndex];
@@ -1320,10 +1316,10 @@ export class SpecialsController {
   }
 
   /**
-   * One-way ceiling move — see `CeilingMover`'s doc for why there's no
-   * hold/reversal state, unlike a door. A *lowering* move stalls on whoever is
-   * underneath (`blocksCeilingLower`, the same test a closing door makes);
-   * a rising one never blocks.
+   * One-way ceiling move — see {@link CeilingMover} for why there's no
+   * hold/reversal state, unlike a door. A *lowering* move without {@link CeilingMover.crush} stalls
+   * on whoever is underneath ({@link Occupancy.blocksCeilingLower}, the same test a closing door
+   * makes); a rising one never blocks.
    * docs/specials-movers.md § Every other mover stops instead.
    */
   private tickCeiling(mover: CeilingMover, dt: number, dirty: Set<number>): void {
@@ -1360,7 +1356,10 @@ export class SpecialsController {
     }
   }
 
-  /** `T_MoveCeiling`'s `pastdest` branch — no clack, unlike `finishFloor`: see `tickCeiling`. */
+  /**
+   * `T_MoveCeiling`'s `pastdest` branch — no clack, unlike {@link SpecialsController.finishFloor}:
+   * see {@link SpecialsController.tickCeiling}.
+   */
   private finishCeiling(mover: CeilingMover): void {
     mover.state = 'done';
     if (mover.arrivalTexture) this.applyArrivalChange(mover.sectorIndex, mover.arrivalTexture);
@@ -1458,16 +1457,17 @@ export class SpecialsController {
   }
 
   /**
-   * Asks `Occupancy` whether anything in `sectorIndex` is caught under the mover, dealing
-   * `CRUSH_DAMAGE` at the same time only on the shared `crushDamageDue` clock — two rates in one
-   * call because vanilla has two, and the damage one is level-wide rather than per mover.
+   * Asks {@link Occupancy} whether anything in `sectorIndex` is caught under the mover, dealing
+   * {@link defs.CRUSH_DAMAGE} at the same time only on the shared
+   * {@link SpecialsController.crushDamageDue} clock — two rates in one call because vanilla has
+   * two, and the damage one is level-wide rather than per mover.
    * See docs/specials-crushers.md § Crushers.
    */
   private tickCrush(sectorIndex: number): boolean {
     return this.occupancy.crush(sectorIndex, this.crushDamageDue);
   }
 
-  /** The slot a class's movers live in — see `moverClass`. */
+  /** The slot a class's movers live in — see {@link moverClass}. */
   private moverMap(cls: 'floor' | 'ceiling'): Map<number, Mover> {
     return cls === 'floor' ? this.floorMovers : this.ceilingMovers;
   }
@@ -1518,17 +1518,17 @@ export class SpecialsController {
     }
   }
 
-  /** Which pair of door sounds this door uses — see `DOOR_SOUNDS`. */
+  /** Which pair of door sounds this door uses — see {@link DOOR_SOUNDS}. */
   private doorSounds(effect: defs.DoorEffect): { open: SfxId; close: SfxId } {
     return DOOR_SOUNDS[effect.speed >= defs.DOOR_SPEED_FAST ? 'fast' : 'normal'];
   }
 
   /**
-   * `EV_DoDoor` against one tag-matched sector, and `EV_VerticalDoor` against a
-   * manual door's own back sector — returning that sector's share of vanilla's
-   * `rtn`. A settled door record is rebuilt from this trigger's effect rather
-   * than reused, and only a `reverseWhenMoving` press touches a door still in
-   * motion. See docs/specials-movers.md § Retriggering a door.
+   * `EV_DoDoor` against one tag-matched sector, and `EV_VerticalDoor` against a manual door's own
+   * back sector — returning that sector's share of vanilla's `rtn`. A settled door record is
+   * rebuilt from this trigger's effect rather than reused, and only a
+   * {@link defs.DoorEffect.reverseWhenMoving} press touches a door still in motion.
+   * See docs/specials-movers.md § Retriggering a door.
    */
   private triggerDoor(sectorIndex: number, effect: defs.DoorEffect, activator: defs.Activator = 'player'): boolean {
     // `ceilingActive` is vanilla's `sec->specialdata`, so a settled
@@ -1580,10 +1580,9 @@ export class SpecialsController {
   }
 
   /**
-   * `EV_DoPlat` against one tag-matched sector, returning that sector's share
-   * of vanilla's `rtn`. Like `triggerDoor`, a settled record is rebuilt from
-   * this trigger's own effect rather than restarted in place — see
-   * docs/specials-movers.md § Retriggering a door.
+   * `EV_DoPlat` against one tag-matched sector, returning that sector's share of vanilla's `rtn`.
+   * Like {@link SpecialsController.triggerDoor}, a settled record is rebuilt from this trigger's
+   * effect rather than restarted in place — see docs/specials-movers.md § Retriggering a door.
    */
   private triggerLift(sectorIndex: number, effect: defs.LiftEffect): boolean {
     const target = effect.target ?? 'lowestNeighborFloor';
@@ -1721,7 +1720,7 @@ export class SpecialsController {
    * Writes a resolved change onto its sector and repaints it: the surface
    * flat, the special when the change carries one (`texOnly` leaves it), and
    * the mesh rebuild without which the swap wouldn't be drawn. The one place
-   * a `SurfaceChange` lands, whether it came from a mover arriving or from
+   * a {@link defs.SurfaceChange} lands, whether it came from a mover arriving or from
    * `EV_DoChange`'s instant copy.
    */
   private applyArrivalChange(
@@ -1768,11 +1767,10 @@ export class SpecialsController {
   }
 
   /**
-   * Boom's generalized change (`SurfaceChange`), floor flavor: resolves the
-   * model sector now and hands `tickFloor` what to apply on arrival. The
-   * numeric model matches neighbors on *ceiling* height when the destination
-   * itself is ceiling-derived — `EV_DoGenFloor`'s own
-   * `P_FindModelCeilingSector` split.
+   * Boom's generalized change ({@link defs.SurfaceChange}), floor flavor: resolves the model
+   * sector now and hands {@link SpecialsController.tickFloor} what to apply on arrival. The numeric
+   * model matches neighbors on *ceiling* height when the destination itself is ceiling-derived —
+   * `EV_DoGenFloor`'s own `P_FindModelCeilingSector` split.
    */
   private resolveFloorChange(
     sectorIndex: number,
@@ -1788,11 +1786,11 @@ export class SpecialsController {
   }
 
   /**
-   * Boom's `P_FindShortestTextureAround`/`P_FindShortestUpperAround`, and the
-   * scan vanilla's own `raiseToTexture` runs (`triggerRaiseToTexture`): the
-   * smallest lower/upper texture pixel height on *either* sidedef of any
-   * two-sided line bordering the sector. `Infinity` when nothing qualifies —
-   * vanilla's own `MAXINT` sentinel, a malformed-map case.
+   * Boom's `P_FindShortestTextureAround`/`P_FindShortestUpperAround`, and the scan vanilla's own
+   * `raiseToTexture` runs ({@link SpecialsController.triggerRaiseToTexture}): the smallest
+   * lower/upper texture pixel height on *either* sidedef of any two-sided line bordering the
+   * sector. `Infinity` when nothing qualifies — vanilla's own `MAXINT` sentinel, a malformed-map
+   * case.
    */
   private shortestTextureAround(sectorIndex: number, slot: 'lower' | 'upper'): number {
     let minHeight = Infinity;
@@ -1814,14 +1812,12 @@ export class SpecialsController {
   }
 
   /**
-   * Vanilla's "AndChange" model-sector copy: the texture comes from the
-   * *triggering linedef's own front sector*, not the sector actually moving
-   * or its neighbors — confirmed against `EV_DoPlat`'s `raiseToNearestAndChange`
-   * case (`sec->floorpic = sides[line->sidenum[0]].sector->floorpic`), which
-   * is how mappers control what a raised floor turns into regardless of what
-   * it's rising toward. Rebuilt immediately (not left for the next dirty-mover
-   * pass) so the texture swap and the start of the rise read as one action,
-   * same as `flashSwitch` rebuilding right after it mutates a switch texture.
+   * Vanilla's "AndChange" model-sector copy: the texture comes from the *triggering linedef's own
+   * front sector*, not the sector moving or its neighbors — confirmed against `EV_DoPlat`'s
+   * `raiseToNearestAndChange` case (`sec->floorpic = sides[line->sidenum[0]].sector->floorpic`).
+   * Rebuilt immediately (not left for the next dirty-mover pass) so the texture swap and the start
+   * of the rise read as one action, same as {@link SpecialsController.flashSwitch} rebuilding right
+   * after it mutates a switch texture.
    */
   private applyFloorChange(sectorIndex: number, line: LineDef): void {
     const modelSectorIndex = line.right !== NO_SIDE ? this.map.sidedefs[line.right]?.sector : undefined;
@@ -1841,11 +1837,12 @@ export class SpecialsController {
    * A sector already crushing (in either direction) ignores a re-trigger, matching vanilla's
    * `sec->specialdata` guard; one frozen by a stop line resumes the direction it was travelling.
    *
-   * Returns `EV_DoCeiling`'s own `rtn`, which the switch gating in `trigger` reads: 1 only for a
-   * sector that got a *new* thinker. Restarting an in-stasis crusher deliberately reports `false` —
-   * vanilla runs `P_ActivateInStasisCeiling` before the loop, and the loop then `continue`s past
-   * that sector because stasis never cleared its `specialdata`, so `rtn` stays 0 and the switch
-   * neither flips nor is spent. docs/specials-crushers.md § Crushers.
+   * Returns `EV_DoCeiling`'s own `rtn`, which the switch gating in
+   * {@link SpecialsController.trigger} reads: 1 only for a sector that got a *new* thinker.
+   * Restarting an in-stasis crusher deliberately reports `false` — vanilla runs
+   * `P_ActivateInStasisCeiling` before the loop, and the loop then `continue`s past that sector
+   * because stasis never cleared its `specialdata`, so `rtn` stays 0 and the switch neither flips
+   * nor is spent. docs/specials-crushers.md § Crushers.
    */
   private triggerCrusher(sectorIndex: number, effect: defs.CrusherEffect): boolean {
     const existing = this.ceilingMovers.get(sectorIndex);
@@ -1908,8 +1905,8 @@ export class SpecialsController {
   }
 
   /**
-   * The ceiling flavor of `resolveFloorChange` — `EV_DoGenCeiling` matches neighbors on *floor*
-   * height when the destination is floor-derived.
+   * The ceiling flavor of {@link SpecialsController.resolveFloorChange} — `EV_DoGenCeiling`
+   * matches neighbors on *floor* height when the destination is floor-derived.
    */
   private resolveCeilingChange(
     sectorIndex: number,
@@ -1972,10 +1969,10 @@ export class SpecialsController {
 
   /**
    * Vanilla's `raiseToTexture` (`EV_DoFloor`'s own case, not reachable through
-   * `resolveFloorTarget`): the shortest lower-texture pixel height among the sector's bordering
-   * two-sided lines, both sidedefs of each. With no candidate at all, vanilla's `minsize` sentinel
-   * (`MAXINT`) is replicated as `Infinity` and the floor rises forever, which only a malformed map
-   * can reach. See docs/specials-movers.md § raiseToTexture, lowerAndChange.
+   * {@link resolveFloorTarget}): the shortest lower-texture pixel height among the sector's
+   * bordering two-sided lines, both sidedefs of each. With no candidate at all, vanilla's `minsize`
+   * sentinel (`MAXINT`) is replicated as `Infinity` and the floor rises forever, which only a
+   * malformed map can reach. See docs/specials-movers.md § raiseToTexture, lowerAndChange.
    */
   private triggerRaiseToTexture(sectorIndex: number): boolean {
     if (this.floorActive(sectorIndex)) return false;
@@ -1994,9 +1991,9 @@ export class SpecialsController {
   }
 
   /**
-   * Vanilla's `lowerAndChange` — see `LowerAndChangeEffect`'s doc for the
-   * model-sector search and why the texture/special only apply on arrival
-   * (`arrivalTexture`, applied by `tickFloor`).
+   * Vanilla's `lowerAndChange` — see {@link defs.LowerAndChangeEffect} for the model-sector search
+   * and why the texture/special only apply on arrival ({@link FloorMover.arrivalTexture},
+   * applied by {@link SpecialsController.tickFloor}).
    */
   private triggerLowerAndChange(sectorIndex: number): boolean {
     if (this.floorActive(sectorIndex)) return false;
@@ -2023,7 +2020,7 @@ export class SpecialsController {
   }
 
   /**
-   * Vanilla's `EV_DoDonut` — see `DonutEffect`'s doc for the ring/outer
+   * Vanilla's `EV_DoDonut` — see {@link defs.DonutEffect} for the ring/outer
    * search and the deliberate divergence from vanilla's own buggy two-sided
    * check. Only the hole (`holeIndex`) gets vanilla's busy-sector guard,
    * matching the real source, which never checks the ring before
@@ -2066,11 +2063,11 @@ export class SpecialsController {
   }
 
   /**
-   * Instant light-level changes/strobe-starts — see `LightChangeMode`'s doc
-   * for each mode's vanilla source. Unlike a blink pattern assigned at map
-   * load (`lightStates`, seeded in the constructor), these can target *any*
-   * sector on demand, which is exactly what `recolorSector` already handles
-   * generically — the only new piece here is computing the new level itself.
+   * Instant light-level changes/strobe-starts — see {@link defs.LightChangeMode} for each mode's
+   * vanilla source. Unlike a blink pattern assigned at map load
+   * ({@link SpecialsController.lightStates}, seeded in the constructor), these can target *any*
+   * sector on demand, which {@link MoverGeometry.recolorSector} handles generically — the only
+   * piece here is computing the new level itself.
    */
   private triggerLightChange(sectorIndex: number, effect: defs.LightChangeEffect): boolean {
     const sector = this.map.sectors[sectorIndex];
@@ -2110,7 +2107,7 @@ export class SpecialsController {
   /**
    * All steps in the chain start rising together (not staggered) — each just
    * has farther to travel, which is what produces the classic step-by-step
-   * reveal as they settle at different times. Reuses the plain `FloorMover`
+   * reveal as they settle at different times. Reuses the plain {@link FloorMover}
    * machinery per step rather than a dedicated mover kind, since a single
    * step is exactly a floor rising to a fixed target height.
    */
@@ -2155,9 +2152,8 @@ export class SpecialsController {
   }
 
   /**
-   * Where a crossing of `line` puts the body — vanilla's loud landing, or one
-   * of Boom's two silent kinds. See docs/specials-teleporters.md § Silent and line-to-line
-   * teleporters.
+   * Where a crossing of `line` puts the body — vanilla's loud landing, or one of Boom's two silent
+   * kinds. See docs/specials-teleporters.md § Silent and line-to-line teleporters.
    */
   private teleportArrival(
     lineIndex: number,
@@ -2182,7 +2178,7 @@ export class SpecialsController {
 
   /**
    * A linedef's own heading, `R_PointToAngle2(0, 0, line->dx, line->dy)` —
-   * off `World`'s precomputed `ld->dx`/`ld->dy` rather than re-derived from
+   * off {@link World}'s precomputed `ld->dx`/`ld->dy` rather than re-derived from
    * the vertexes, like every other line-geometry read in this file.
    */
   private lineAngle(lineIndex: number): number {
@@ -2254,10 +2250,10 @@ export class SpecialsController {
 
   /**
    * A line's *effective* special: the authored number, XORed with its
-   * `retriggerXor` while the line sits flipped (`retriggerFlips`). Every
-   * trigger path resolves through here rather than reading `line.special`
-   * directly, which is what lets Boom's retrigger alternation work without
-   * ever mutating the map — see `retriggerFlips`.
+   * {@link defs.SpecialDef.retriggerXor} while the line sits flipped
+   * ({@link SpecialsController.retriggerFlips}). Every trigger path resolves through here, not
+   * reading `line.special` directly, which is what lets Boom's retrigger alternation work without
+   * ever mutating the map.
    */
   private lineSpecial(lineIndex: number): number {
     const special = this.map.linedefs[lineIndex].special;
@@ -2266,14 +2262,14 @@ export class SpecialsController {
   }
 
   /**
-   * Whether this line's special can still do anything at all: a spent one-shot and a
-   * line that acts by tag but carries none are both dead letters. `trigger` leads with
-   * this, and `pickShootTarget` asks it before offering a line to auto-aim, so aim never
-   * locks onto a switch that would swallow the shot — the two must agree.
+   * Whether this line's special can still do anything at all: a spent one-shot and a line that acts
+   * by tag but carries none are both dead letters. {@link SpecialsController.trigger} leads with
+   * this, and {@link SpecialsController.pickShootTarget} asks it before offering a line to
+   * auto-aim, so aim never locks onto a switch that would swallow the shot — the two must agree.
    *
-   * Deliberately **not** including `trigger`'s key check: that one has side effects (the
-   * "you need the X key" message and `oof`) and stays where they belong.
-   * See `SpecialDef.requiresTag`.
+   * Deliberately **not** including {@link SpecialsController.trigger}'s key check: that one has
+   * side effects (the "you need the X key" message and `oof`) and stays where they belong.
+   * See {@link defs.SpecialDef.requiresTag}.
    */
   private stillFires(lineIndex: number, def: defs.SpecialDef): boolean {
     if (!def.repeatable && this.usedOnce.has(lineIndex)) return false;
@@ -2282,19 +2278,17 @@ export class SpecialsController {
   }
 
   /**
-   * `fromBackSide` is vanilla's `P_CrossSpecialLine` `side` argument — the side
-   * the thing was on *before* the move (`P_TryMove` passes `oldside`). Only the
-   * teleport branch reads it, matching vanilla, where `side` reaches nothing but
-   * `EV_Teleport`. See docs/specials-teleporters.md § Teleporters.
-   *
-   * `at` is where the activator is standing and which way it faces. Only Boom's
-   * silent teleports read it — they rotate the body relative to its current
-   * facing where a vanilla teleport overwrites it, and interpolate a
-   * line-to-line exit from the crossing point — so every other caller can leave
-   * it at the default.
-   *
-   * `slot` is which player a `'player'` activation is: the one its refused key and its teleport
-   * are filed under. Every other activator leaves it at the default.
+   * @param fromBackSide  vanilla's `P_CrossSpecialLine` `side` argument — the side the thing was on
+   *                      *before* the move (`P_TryMove` passes `oldside`). Only the teleport branch
+   *                      reads it, matching vanilla, where `side` reaches nothing but
+   *                      `EV_Teleport`. docs/specials-teleporters.md § Teleporters.
+   * @param at            where the activator is standing and which way it faces. Only Boom's
+   *                      silent teleports read it — they rotate the body relative to its current
+   *                      facing where a vanilla teleport overwrites it, and interpolate a
+   *                      line-to-line exit from the crossing point — so every other caller leaves
+   *                      the default.
+   * @param slot          which player a `'player'` activation is: the one its refused key and its
+   *                      teleport are filed under. Every other activator leaves the default.
    */
   private trigger(
     lineIndex: number,
@@ -2401,8 +2395,9 @@ export class SpecialsController {
 
   /**
    * One effect against one tag-matched sector, returning that sector's share of vanilla's `rtn`.
-   * `activator` reaches only the door, the one effect that acts differently for a monster — see
-   * `triggerDoor`.
+   *
+   * @param activator  reaches only the door, the one effect that acts differently for a monster —
+   *                   see {@link SpecialsController.triggerDoor}
    */
   private applyEffect(sectorIndex: number, effect: defs.Effect, activator: defs.Activator, line?: LineDef): boolean {
     switch (effect.kind) {
@@ -2448,12 +2443,13 @@ export class SpecialsController {
 
   /**
    * The one walk-trigger scan every activator goes through: whatever walk lines lie between `from`
-   * and `to` fire, gated per activator (`SpecialDef.monsterActivate` for monsters). Returns the
-   * landing spot if a crossing teleported the activator — a monster's or voodoo doll's move is the
-   * caller's to apply — or null.
+   * and `to` fire, gated per activator ({@link defs.SpecialDef.monsterActivate} for monsters).
+   * Returns the landing spot if a crossing teleported the activator — a monster's or voodoo doll's
+   * move is the caller's to apply — or null.
    *
-   * `to.angle` is the activator's heading, the one thing a silent teleport needs that this scan
-   * can't derive; the *position* it reads is the crossing point below, never where the move ended.
+   * @param to  its `angle` is the activator's heading, the one thing a silent teleport needs that
+   *            this scan can't derive; the *position* it reads is the crossing point below, never
+   *            where the move ended
    */
   private crossLines(
     from: Pos2,
@@ -2495,8 +2491,9 @@ export class SpecialsController {
   }
 
   /**
-   * The tag-matched half of `notifyBossDeath` — no triggering linedef exists, so this scans sector
-   * tags directly rather than going through `resolveTargets`/`trigger`.
+   * The tag-matched half of {@link SpecialsController.notifyBossDeath} — no triggering linedef
+   * exists, so this scans sector tags directly rather than going through {@link resolveTargets}/
+   * {@link SpecialsController.trigger}.
    */
   private triggerTag(tag: number, kind: 'lowerFloorToLowest' | 'raiseToTexture' | 'blazeOpen' | 'open'): void {
     for (const i of sectorsByTag(this.map, tag)) {
@@ -2577,8 +2574,9 @@ export class SpecialsController {
   }
 
   /**
-   * Swaps a switch line's sidedef textures to their on-state and plays the click — vanilla's
-   * `P_ChangeSwitchTexture`. `useAgain` is what arms the revert timer below.
+   * Swaps a switch line's textures to their on-state and plays the click — `P_ChangeSwitchTexture`.
+   *
+   * @param useAgain  arms the revert timer below
    */
   private flashSwitch(lineIndex: number, useAgain: boolean): void {
     const entries = this.switchTextures.get(lineIndex);
@@ -2636,9 +2634,9 @@ export class SpecialsController {
 
 /**
  * Whether a blocked monster could ever push this line, from its flags alone — the static half of
- * `SpecialsController.useMonster`'s test, and the reason a monster cannot open a door that is
+ * {@link SpecialsController.useMonster}'s test, and the reason a monster cannot open a door that is
  * fenced off (`BLOCK_MONSTERS`), barred (`BLOCKING`), one-sided, or flagged secret.
- * See `monsterUseLines`.
+ * See {@link SpecialsController.monsterUseLines}.
  */
 function monsterCouldPush(line: LineDef): boolean {
   if (line.left === NO_SIDE || line.right === NO_SIDE) return false;
@@ -2646,11 +2644,9 @@ function monsterCouldPush(line: LineDef): boolean {
 }
 
 /**
- * Which of Boom's two per-sector "busy" slots a mover kind occupies —
- * `sec->floordata` vs `sec->ceilingdata`, the split `P_SectorActive` reads.
- * The elevator claims *both* in vanilla; it lives in the floor map here and
- * `ceilingActive` looks for it there, since one object in two maps would
- * `structuredClone` into two on save and then tick twice.
+ * Which of Boom's two per-sector "busy" slots a mover kind occupies — `sec->floordata` vs
+ * `sec->ceilingdata`, the split `P_SectorActive` reads. The elevator claims *both*; it lives in the
+ * floor map, where {@link SpecialsController.ceilingActive} looks for it too.
  * docs/specials.md § One mover per sector.
  */
 function moverClass(kind: Mover['kind']): 'floor' | 'ceiling' {
@@ -2689,7 +2685,7 @@ const FLICKER_STEP = 16;
 
 /**
  * The four patterns `P_SpawnStrobeFlash` spawns, and so the only ones carrying
- * its `minlight == maxlight` rule — see `makeLightState`.
+ * its `minlight == maxlight` rule — see {@link makeLightState}.
  */
 const STROBE_PATTERNS = new Set<defs.LightPattern>(['blink05', 'blink1', 'syncBlink05', 'syncBlink1']);
 
@@ -2776,10 +2772,10 @@ function changedSpecial(change: defs.SurfaceChange, model: Sector): number | und
 }
 
 /**
- * `shortestTexture` resolves the two `FbyST` targets alone, and is a thunk
- * because the scan behind it needs the material bank (controller state) while
- * every other target is a pure function of the map — and because the scan
- * walks every linedef, so it must not run for the targets that don't want it.
+ * @param shortestTexture  resolves the two `FbyST` targets alone; a thunk because the scan behind
+ *                         it needs the material bank (controller state) while every other target
+ *                         is a pure function of the map, and walks every linedef, so it must not
+ *                         run for the targets that don't want it
  */
 function resolveFloorTarget(
   world: World,
@@ -2835,7 +2831,7 @@ function resolveFloorTarget(
   }
 }
 
-/** Same `shortestTexture` convention as `resolveFloorTarget`, for the `CbyST` pair. */
+/** Same `shortestTexture` convention as {@link resolveFloorTarget}, for the `CbyST` pair. */
 function resolveCeilingTarget(
   world: World,
   sectorIndex: number,
@@ -2875,9 +2871,9 @@ function resolveCeilingTarget(
 }
 
 /**
- * The most a mover may move a plane in one second — the per-kind speed field, exhaustive so a
- * new `Mover` kind must decide its rate here. `trackPlaneMove` compares a tic's actual travel
- * against it to tell a continuous stroke from a discontinuous jump.
+ * The most a mover may move a plane in one second — the per-kind speed field, exhaustive so a new
+ * {@link Mover} kind must decide its rate here. {@link SpecialsController.trackPlaneMove} compares
+ * a tic's actual travel against it to tell a continuous stroke from a discontinuous jump.
  */
 function moverSpeed(mover: Mover): number {
   switch (mover.kind) {

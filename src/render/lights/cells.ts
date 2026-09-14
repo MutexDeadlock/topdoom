@@ -1,8 +1,8 @@
 /**
- * `LightCells`: the index space the dynamic-light lists are kept in — one cell per BSP leaf, and a
- * grid of them across a leaf too big for one, so a fragment on a huge open floor walks only the
- * lights near it. What `aLightCell` indexes and `DynamicLights.commit` fills. See docs/lights.md
- * § Light cells.
+ * {@link LightCells}: the index space the dynamic-light lists are kept in — one cell per BSP leaf,
+ * and a grid of them across a leaf too big for one, so a fragment on a huge open floor walks only
+ * the lights near it. What `aLightCell` indexes and `DynamicLights.commit` fills.
+ * See docs/lights.md § Light cells.
  */
 import { polygonBounds, type PolygonBounds } from '../../util/geom.ts';
 import type { SectorPoly } from '../bsp.ts';
@@ -17,13 +17,10 @@ export const LIGHT_CELL_SIZE = 256;
 
 /**
  * How far a surface filed under a cell may reach past the point it was filed by — half a wall
- * chunk (`mapmesh.ts`'s `WALL_CHUNK_LEN`, 128) and half the diagonal of the grid square a flat
- * cell is diced out of (`mapmesh.ts`'s `FLAT_CELL_EXTENT`), both 64, plus a unit so a dice cell's
- * own rounding never tips it over. A
- * light is listed in every cell within `radius + this` of it, so nothing filed under a cell can
- * be lit by a light the cell does not list; `tests/render/lightcells.test.ts` holds the two
- * against it. A surface wider than this is filed under its leaf's catch-all cell instead
- * (`cellFor`).
+ * chunk (`mapmesh.ts`'s `WALL_CHUNK_LEN`, 128) and half the diagonal of the grid square a flat cell
+ * is diced out of (`mapmesh.ts`'s `FLAT_CELL_EXTENT`), both 64, plus a unit so a dice cell's own
+ * rounding never tips it over. A surface wider than this is filed under its leaf's catch-all cell
+ * instead ({@link LightCells.cellFor}). docs/lights.md § Light cells.
  */
 export const LIGHT_CELL_MARGIN = 65;
 
@@ -110,7 +107,7 @@ export class LightCells {
   /**
    * The cell a surface is filed under: the one its anchor (`x`, `y`) falls in where every point of
    * it lies within `extent` of that anchor, the catch-all otherwise. `extent` past
-   * `LIGHT_CELL_MARGIN` is what a sub-cell's list cannot vouch for.
+   * {@link LIGHT_CELL_MARGIN} is what a sub-cell's list cannot vouch for.
    */
   cellFor(leaf: number, x: number, y: number, extent: number): number {
     if (extent > LIGHT_CELL_MARGIN) return this.start[leaf];

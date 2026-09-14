@@ -15,8 +15,8 @@ import { VIEW_DISTANCE } from '../constants.ts';
 const DROP = 96;
 
 /**
- * The two ends of the density ramp, and the dials that decide how much of this reads at all. Tuned
- * by feel — docs/render.md § The void floor for what each end has to clear.
+ * The two ends of the density ramp, and the dials that decide how much of this reads at all.
+ * Tuned by feel — docs/render.md § The void floor for what each end has to clear.
  */
 const THIN = 0x080604;
 const THICK = 0x121014;
@@ -87,9 +87,10 @@ export function voidFloorHeight(map: DoomMap): number {
 }
 
 /**
- * The plane's footprint: `map.bounds` grown by `VIEW_DISTANCE` on every side, so it still reaches
- * past the horizon from a camera standing in the far corner of the level. Exported for the test;
- * `[minX, minY, maxX, maxY]` in DOOM units.
+ * The plane's footprint: `map.bounds` grown by {@link VIEW_DISTANCE} on every side, so it reaches
+ * past the horizon from a camera in the level's far corner. Exported for the test.
+ *
+ * @returns `[minX, minY, maxX, maxY]`, in DOOM map units.
  */
 export function voidFloorBounds(map: DoomMap): [number, number, number, number] {
   const { minX, minY, maxX, maxY } = map.bounds;

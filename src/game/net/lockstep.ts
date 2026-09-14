@@ -1,7 +1,7 @@
 /**
- * `LockstepScheduler`: every slot's rows by tic, and whether the tic about to run has every row it
- * needs. Pure bookkeeping — the session feeds it what arrives and asks it what to serve; nothing
- * here knows a message or a clock. docs/multiplayer-net.md § Lockstep.
+ * {@link LockstepScheduler}: every slot's rows by tic, and whether the tic about to run has every
+ * row it needs. Pure bookkeeping — the session feeds it what arrives and asks it what to serve;
+ * nothing here knows a message or a clock. docs/multiplayer-net.md § Lockstep.
  */
 import type { PlayerSettings } from '../replay/defs.ts';
 import type { TicRow } from '../replay/row.ts';
@@ -14,7 +14,7 @@ export interface LockstepOptions {
   startTic?: number;
 }
 
-/** What `push` did with a row. */
+/** What {@link LockstepScheduler.push} did with a row. */
 export type PushResult = 'stored' | 'late' | 'ignored';
 
 /** One slot's stream: the rows and settings changes that have arrived, and which tics need none. */

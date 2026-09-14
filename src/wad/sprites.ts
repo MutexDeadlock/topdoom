@@ -1,12 +1,12 @@
 /**
- * `SpriteBank`: indexes the WAD's sprite lumps (S_START..S_END) by sprite name, frame letter and
- * rotation, so a thing's facing resolves to a lump — through a DEHACKED `[SPRITES]` rename where a
- * patch made one. See docs/sprites.md.
+ * {@link SpriteBank}: indexes the WAD's sprite lumps (S_START..S_END) by sprite name, frame letter
+ * and rotation, so a thing's facing resolves to a lump — through a DEHACKED `[SPRITES]` rename
+ * where a patch made one. See docs/sprites.md.
  */
 import type { Lump, Wad } from './wad.ts';
 
 export interface SpriteFrame {
-  /** Lump name to read as a Bitmap via GraphicsBank.picture(). */
+  /** Lump name to read as a `Bitmap` via `GraphicsBank.picture`. */
   lump: string;
   /** True if this rotation is the lump's image mirrored horizontally. */
   flip: boolean;
@@ -18,7 +18,7 @@ const SPRITE_END = /^(S|SS)_END$/;
 /**
  * Sprite names a DEHACKED `[SPRITES]` section (or a vanilla `Text 4 4`) has renamed: the pristine
  * `sprnames[]` name to the four characters its lumps now start with, both uppercased. Empty unless
- * a patch said otherwise. Read once, when a `SpriteBank` is built — `game.ts` builds it after
+ * a patch said otherwise. Read once, when a {@link SpriteBank} is built — `game.ts` builds it after
  * `applyDehacked` — so a lookup pays nothing for it. docs/dehacked.md § Sprite renames.
  */
 const SPRITE_RENAMES = new Map<string, string>();
@@ -46,20 +46,20 @@ export function resetSpriteLumps(): void {
 }
 
 /**
- * Indexes sprite lumps (S_START..S_END) by sprite name and frame letter, so a
- * thing's facing can be turned into the matching lump. DOOM sprite names are
- * SSSSFRfr: a 4-letter sprite, a frame letter, a rotation digit (0 = the only
- * view, used for objects that look the same from every angle; 1-8 = the eight
- * directions DOOM renders directional things from), and optionally a second
- * frame+rotation pair meaning "this same lump, mirrored, is also that other
- * rotation" — the usual way DOOM halves the art needed for symmetric actors.
+ * Indexes sprite lumps (S_START..S_END) by sprite name and frame letter, so a thing's facing can be
+ * turned into the matching lump. DOOM sprite names are SSSSFRfr: a 4-letter sprite, a frame letter,
+ * a rotation digit (0 = the only view; 1-8 = the eight directions), and optionally a second
+ * frame+rotation pair meaning "this same lump, mirrored, is also that other rotation".
  *
- * A renamed sprite (`SPRITE_RENAMES`) is indexed under the name things ask for
- * as well as its own: `POSS = ZOMB` files every `ZOMB*` lump under `POSS` too,
- * so `lookup('POSS', …)` finds it with no per-call indirection.
+ * A renamed sprite ({@link SPRITE_RENAMES}) is indexed under the name things ask for as well as its
+ * own: `POSS = ZOMB` files every `ZOMB*` lump under `POSS` too, so `lookup('POSS', …)` finds it
+ * with no per-call indirection.
  */
 export class SpriteBank {
-  /** Every sprite lump's name, once each, whatever `lookup` resolves to — what an atlas packs. */
+  /**
+   * Every sprite lump's name, once each, whatever {@link SpriteBank.lookup} resolves to — what an
+   * atlas packs.
+   */
   readonly lumpNames: string[];
   private frames = new Map<string, Map<string, SpriteFrame>>();
 
@@ -105,8 +105,8 @@ export class SpriteBank {
   /**
    * Claims rotation slots for one lump, the first claim on a slot standing: a `rot=0` lump takes
    * every slot still free, and keeps a single `'0'` entry where it reached the frame untouched —
-   * which is the overwhelmingly common frame, and why `lookup` needs no ordering state.
-   * Callers walk newest-first. docs/sprites.md § Rotation 0 against directional frames.
+   * which is the overwhelmingly common frame, and why {@link SpriteBank.lookup} needs no ordering
+   * state. Callers walk newest-first. docs/sprites.md § Rotation 0 against directional frames.
    */
   private addFrame(sprite: string, frame: string, rotation: string, lump: string, flip: boolean): void {
     if (!/[A-Z]/.test(frame) || !/[0-8]/.test(rotation)) return;

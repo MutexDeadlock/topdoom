@@ -11,7 +11,7 @@ const MUS_TICKS_PER_SECOND = 140;
 
 /**
  * MUS's own controller numbers (the `changeController` event's first byte),
- * mapped onto the names `MusicEvent` carries. Deliberately **not** MIDI's
+ * mapped onto the names {@link MusicEvent} carries. Deliberately **not** MIDI's
  * numbering: MUS renumbers them 0-9, so 3 is volume here and pitch bend
  * elsewhere. 0 (instrument) is handled as a program change before this table is
  * reached, and the four this maps to `null` are real controllers the OPL synth

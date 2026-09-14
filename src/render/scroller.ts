@@ -20,10 +20,10 @@ export interface ScrollableGeometry {
 }
 
 /**
- * The accumulated texture offsets this scroller draws, in map units — the read
- * side of `game/specials/forces.ts: Forces`, declared structurally so the
- * render layer keeps no import edge into the game layer (the `SwitchPairLookup`
- * precedent). `scrollingLines`/`scrollingFlats` are read once, at index time.
+ * The accumulated texture offsets this scroller draws, in map units — the read side of
+ * `game/specials/forces.ts: Forces`, declared structurally so the render layer keeps no import edge
+ * into the game layer (the `SwitchPairLookup` precedent). {@link ScrollOffsets.scrollingLines} and
+ * {@link ScrollOffsets.scrollingFlats} are read once, at index time.
  */
 export interface ScrollOffsets {
   scrollingLines(): readonly number[];
@@ -39,7 +39,7 @@ export interface ScrollOffsets {
 interface ScrollingWall {
   /**
    * The batch's UV buffer, resolved once at index time. The static meshes are built once per level
-   * and this scroller is built with them, so the attribute cannot go stale — see `SurfaceScroller`.
+   * and this scroller with them, so the attribute cannot go stale — see {@link SurfaceScroller}.
    */
   attr: THREE.BufferAttribute;
   line: number;
@@ -73,14 +73,14 @@ interface ScrollingWall {
  * untouched UVs are kept whole rather than as two edge values.
  */
 interface ScrollingFlat {
-  /** The batch's UV buffer, resolved once at index time — see `ScrollingWall`. */
+  /** The batch's UV buffer, resolved once at index time — see {@link ScrollingWall}. */
   attr: THREE.BufferAttribute;
   sector: number;
   isCeiling: boolean;
   vertexStart: number;
   /** `[u, v]` per vertex as built, the base every frame's offset is added to. */
   base: Float32Array;
-  /** Last offset written into the buffer — see `ScrollingWall`. */
+  /** Last offset written into the buffer — see {@link ScrollingWall}. */
   lastDu: number;
   lastDv: number;
 }
@@ -96,9 +96,9 @@ interface ScrollingFlat {
  */
 export class SurfaceScroller {
   /**
-   * The one source this scroller's index was built against — `scrollingLines`/`scrollingFlats`
-   * were read from it at construction, so a later frame's offsets can only come from the same
-   * object.
+   * The one source this scroller's index was built against — {@link ScrollOffsets.scrollingLines}
+   * and {@link ScrollOffsets.scrollingFlats} were read from it at construction, so a later frame's
+   * offsets can only come from the same object.
    */
   private offsets: ScrollOffsets;
   private walls: ScrollingWall[] = [];

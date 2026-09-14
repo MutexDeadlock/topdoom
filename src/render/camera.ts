@@ -1,5 +1,5 @@
 /**
- * `TopDownCamera`: the tilted overhead camera — follow smoothing, aim lead, and the Q/E orbit.
+ * {@link TopDownCamera}: the tilted overhead camera — follow smoothing, aim lead and the Q/E orbit.
  * See docs/camera.md § Camera orbit and camera-relative movement, and § The camera is simulation
  * state.
  */
@@ -75,7 +75,8 @@ export const MAX_TILT_DEG = 70;
 export const MIN_RESCUE_DISTANCE = 64;
 
 /**
- * How fast `yawDeg` catches up to a `stepYaw` target, as a lerp-per-second rate — tuned by feel.
+ * How fast {@link TopDownCamera.yawDeg} catches up to a {@link TopDownCamera.stepYaw} target, as a
+ * lerp-per-second rate — tuned by feel.
  */
 const YAW_STEP_SMOOTH_RATE = 18;
 
@@ -84,17 +85,13 @@ const YAW_STEP_SMOOTH_RATE = 18;
  */
 const FOLLOW_SMOOTH_RATE = 10;
 
-/**
- * Cap on the aim lead, in map units — however far the cursor is, the follow point never leaves the
- * player this far behind, so the player stays on screen. Tuned by feel. docs/camera.md § Aim lead.
- */
+/** Cap on the aim lead, in map units — tuned by feel. docs/camera.md § Aim lead. */
 const MAX_AIM_LEAD = 220;
 
 /**
- * How fast `distance`/`tiltDeg` catch up to their targets, as a lerp-per-second
- * rate — tuned by feel. Deliberately fast: the slow "breathing" of the auto
- * camera lives in its own openness smoothing (game/autocamera.ts), so this only
- * has to make target changes read as motion rather than steps.
+ * How fast {@link TopDownCamera.distance}/{@link TopDownCamera.tiltDeg} catch up to their targets,
+ * as a lerp-per-second rate — tuned by feel. Deliberately fast: the slow "breathing" of the auto
+ * camera lives in its own openness smoothing (docs/camera.md § Auto camera).
  */
 const FRAMING_SMOOTH_RATE = 10;
 
@@ -114,28 +111,28 @@ const KEY_YAW_STEP = 45;
 const KEY_YAW_REPEAT_INTERVAL = 0.26;
 
 /**
- * The nearest orbit angle a Q/E step can rest on — what the two seams that inherit a yaw from
- * somewhere else snap onto (a save's restore, a playback taken over), since only a whole `stepYaw`
- * ever moves the orbit afterwards and an angle picked up mid-glide would survive every one of them.
- * The lattice is absolute multiples of `KEY_YAW_STEP` rather than the phase the level actually
- * started on: nothing tracks that phase, so where a map's player start or a silent teleporter's
- * `turnYaw` left an off-45° one this shifts the orbit by up to half a step, which is cosmetic.
+ * The nearest multiple of {@link KEY_YAW_STEP}, the orbit angle a Q/E step can rest on — what a yaw
+ * inherited from outside the orbit (a save's restore, a playback taken over) snaps onto.
  * docs/camera.md § Camera orbit.
  */
 export function latticeYaw(yawDeg: number): number {
   return Math.round(yawDeg / KEY_YAW_STEP) * KEY_YAW_STEP;
 }
 
-/** The orbit that sits behind a DOOM heading of `angle` radians — what `faceHeading` assigns. */
+/**
+ * The orbit that sits behind a DOOM heading of `angle` radians — what
+ * {@link TopDownCamera.faceHeading} assigns.
+ */
 export function headingYawDeg(angle: number): number {
   return (angle * 180) / Math.PI - 90;
 }
 
 /**
  * A camera hanging above the player, tilted slightly off vertical so walls show a bit of their
- * height and the level reads as a space rather than a plan. `yawDeg` orbits it around the followed
- * point (Q/E, `applyYawInput`). Its follow point, yaw and framing are **simulation state**,
- * advanced in `tick` on the tic clock and interpolated into the `THREE` camera by `applyToCamera` —
+ * height and the level reads as a space rather than a plan. {@link TopDownCamera.yawDeg} orbits it
+ * around the followed point (Q/E, {@link TopDownCamera.applyYawInput}). Its follow point, yaw and
+ * framing are **simulation state**, advanced in {@link TopDownCamera.tick} on the tic clock and
+ * interpolated into the `THREE` camera by {@link TopDownCamera.applyToCamera} —
  * docs/camera.md § The camera is simulation state.
  */
 export class TopDownCamera {
@@ -145,43 +142,47 @@ export class TopDownCamera {
   private _tiltDeg: number;
   private _distance: number;
   /**
-   * Where `distance`/`tiltDeg` are animating towards — the framing twin of
-   * `stepYaw`'s target. Written every tic by the auto camera, or by the manual
-   * framing keys; a plain `distance`/`tiltDeg` assignment jumps instead.
+   * Where {@link TopDownCamera.distance}/{@link TopDownCamera.tiltDeg} are animating towards — the
+   * framing twin of {@link TopDownCamera.stepYaw}'s target. Written every tic by the auto camera,
+   * or by the manual framing keys; {@link TopDownCamera.snapFraming} jumps instead.
    */
   private _targetDistance: number;
   private _targetTiltDeg: number;
 
   private _yawDeg: number;
   /**
-   * Where `yawDeg` is animating towards — see `stepYaw`. Equal to `_yawDeg` outside of a Q/E snap.
+   * Where {@link TopDownCamera.yawDeg} is animating towards — see {@link TopDownCamera.stepYaw}.
+   * Equal to {@link TopDownCamera._yawDeg} outside of a Q/E snap.
    */
   private _targetYawDeg: number;
 
   private target = new THREE.Vector3();
   private smoothed = new THREE.Vector3();
   /**
-   * Last tic's `smoothed`/`_yawDeg`/`_distance`/`_tiltDeg`, the interpolation source for
-   * `applyToCamera`.
+   * Last tic's follow point, yaw, distance and tilt — the interpolation source for
+   * {@link TopDownCamera.applyToCamera}.
    */
   private prevSmoothed = new THREE.Vector3();
   private prevYawDeg: number;
   private prevDistance: number;
   private prevTiltDeg: number;
   private initialised = false;
-  /** Seconds Q/E has been continuously held, for auto-repeat — see `applyYawInput`. */
+  /** Seconds Q/E has been held unbroken, for {@link TopDownCamera.applyYawInput}'s auto-repeat. */
   private qHoldTime = 0;
   private eHoldTime = 0;
-  /** Scratch for `applyToCamera`'s interpolated follow point, so drawing allocates nothing. */
+  /** Scratch for {@link TopDownCamera.applyToCamera}'s follow point: drawing allocates nothing. */
   private viewPoint = new THREE.Vector3();
   /**
-   * The view volume at the pose `applyToCamera` last set, rewritten in place every frame — what
-   * `DynamicLights` culls its offers against, so an emitter the camera cannot see costs nothing.
-   * See docs/lights.md § What reaches the shader.
+   * The view volume at the pose {@link TopDownCamera.applyToCamera} last set, rewritten in place
+   * every frame — what `DynamicLights` culls its offers against, so an emitter the camera cannot
+   * see costs nothing. docs/lights.md § What reaches the shader.
    */
   readonly viewFrustum = new THREE.Frustum();
   private projScreen = new THREE.Matrix4();
-  /** The interpolated yaw `applyToCamera` last drew at — see `viewAngleDeg`. */
+  /**
+   * The interpolated yaw {@link TopDownCamera.applyToCamera} last drew at — see
+   * {@link TopDownCamera.viewAngleDeg}.
+   */
   private viewYawDeg: number;
 
   constructor(aspect: number, options: TopDownCameraOptions = {}) {
@@ -205,8 +206,8 @@ export class TopDownCamera {
   }
 
   /**
-   * Orbit angle in degrees, 0 = due south. Assigning it — which only the
-   * instant reorient on spawn/teleport does — jumps immediately; `stepYaw` is
+   * Orbit angle in degrees, 0 = due south. Assigning it — the instant reorient on spawn, respawn
+   * and loud teleport, and a save's restore — jumps immediately; {@link TopDownCamera.stepYaw} is
    * the only way to animate towards a new value.
    */
   get yawDeg(): number {
@@ -224,36 +225,34 @@ export class TopDownCamera {
   }
 
   /**
-   * Jumps the orbit behind a DOOM heading of `angle` radians, the way `yawDeg` assigns — a spawn's,
-   * a teleport's and a respawn's reorient. `viewerAngleDeg` reads back `angle` turned 180°.
+   * Jumps the orbit behind a DOOM heading of `angle` radians — a spawn's, a teleport's and a
+   * respawn's reorient. {@link TopDownCamera.viewerAngleDeg} reads back `angle` turned 180°.
    */
   faceHeading(angle: number): void {
     this.yawDeg = headingYawDeg(angle);
   }
 
   /**
-   * Where the orbit is heading — `yawDeg` itself outside of a Q/E step. What a savegame stores, so
-   * a save taken mid-step comes back on the lattice instead of stranding the orbit between two
-   * (docs/camera.md § Camera orbit). Read-only: `stepYaw` glides, the `yawDeg` setter jumps.
+   * Where the orbit is heading — {@link TopDownCamera.yawDeg} itself outside a Q/E step — and what
+   * a savegame stores (docs/camera.md § Camera orbit). Read-only: {@link TopDownCamera.stepYaw}
+   * glides, the {@link TopDownCamera.yawDeg} setter jumps.
    */
   get targetYawDeg(): number {
     return this._targetYawDeg;
   }
 
   /**
-   * Queues a relative yaw change (the Q/E 45° snap) to animate smoothly
-   * towards over the next few frames, rather than jumping instantly the way
-   * a plain `yawDeg` assignment does.
+   * Queues a relative yaw change (the Q/E 45° snap) to animate towards over the next few frames,
+   * rather than jumping the way a {@link TopDownCamera.yawDeg} assignment does.
    */
   stepYaw(deltaDeg: number): void {
     this._targetYawDeg += deltaDeg;
   }
 
   /**
-   * Turns the orbit instantly by `deltaDeg` — the silent teleporter's relative reorient. Unlike a
-   * `yawDeg` assignment it carries a Q/E step still in flight along with it instead of collapsing
-   * the target onto the mid-animation angle, which would abandon the orbit off the 45° lattice.
-   * docs/camera.md § Camera orbit.
+   * Turns the orbit instantly by `deltaDeg` — the silent teleporter's relative reorient — carrying
+   * a Q/E step still in flight along with it, where a {@link TopDownCamera.yawDeg} assignment would
+   * strand it off the 45° lattice. docs/camera.md § Camera orbit.
    */
   turnYaw(deltaDeg: number): void {
     this._yawDeg += deltaDeg;
@@ -264,22 +263,22 @@ export class TopDownCamera {
   }
 
   /**
-   * Camera distance from the follow point, in map units. Read-only: `targetDistance` glides,
-   * `snapFraming` jumps.
+   * Camera distance from the follow point, in map units. Read-only:
+   * {@link TopDownCamera.targetDistance} glides, {@link TopDownCamera.snapFraming} jumps.
    */
   get distance(): number {
     return this._distance;
   }
 
   /**
-   * Tilt away from straight down, in degrees. Read-only: `targetTiltDeg` glides, `snapFraming`
-   * jumps.
+   * Tilt away from straight down, in degrees. Read-only: {@link TopDownCamera.targetTiltDeg}
+   * glides, {@link TopDownCamera.snapFraming} jumps.
    */
   get tiltDeg(): number {
     return this._tiltDeg;
   }
 
-  /** Where `distance` is animating towards, clamped to the envelope. */
+  /** Where {@link TopDownCamera.distance} is animating towards, clamped to the envelope. */
   get targetDistance(): number {
     return this._targetDistance;
   }
@@ -289,15 +288,15 @@ export class TopDownCamera {
   }
 
   /**
-   * The auto camera's route into the same target, floored at `MIN_RESCUE_DISTANCE` instead. Write-
-   * only on purpose: `targetDistance` is the one place to read the target from.
-   * docs/camera.md § The buried-eye rescue.
+   * The auto camera's route into the same target, floored at {@link MIN_RESCUE_DISTANCE} instead.
+   * Write-only on purpose: {@link TopDownCamera.targetDistance} is the one place to read the target
+   * from. docs/camera.md § The buried-eye rescue.
    */
   set autoDistance(value: number) {
     this._targetDistance = clamp(value, MIN_RESCUE_DISTANCE, MAX_CAMERA_DISTANCE);
   }
 
-  /** Where `tiltDeg` is animating towards, clamped to the same envelope. */
+  /** Where {@link TopDownCamera.tiltDeg} is animating towards, clamped to the same envelope. */
   get targetTiltDeg(): number {
     return this._targetTiltDeg;
   }
@@ -307,9 +306,10 @@ export class TopDownCamera {
   }
 
   /**
-   * Poses the framing with nothing left to glide — the framing twin of `snapTo`, and the only route
-   * that writes value, target and `prev` at once. Being the auto camera's route it takes
-   * `autoDistance`'s lower floor rather than the manual keys'. docs/camera.md § Auto camera.
+   * Poses the framing with nothing left to glide — the framing twin of
+   * {@link TopDownCamera.snapTo}, and the only route that writes value, target and `prev` at once.
+   * Being the auto camera's route it takes {@link TopDownCamera.autoDistance}'s lower floor rather
+   * than the manual keys'. docs/camera.md § Auto camera.
    */
   snapFraming(distance: number, tiltDeg: number): void {
     this.autoDistance = distance;
@@ -322,8 +322,8 @@ export class TopDownCamera {
 
   /**
    * Puts the follow point at `pos` with nothing left to catch up on — the position twin of the
-   * `yawDeg` setter, needed because this camera outlives the level. Collapses the interpolation
-   * window and poses the `THREE` camera immediately. Set `yawDeg` first if both are being snapped.
+   * {@link TopDownCamera.yawDeg} setter — and poses the `THREE` camera immediately. Set
+   * {@link TopDownCamera.yawDeg} first if both are being snapped.
    * docs/camera.md § The camera is simulation state.
    */
   snapTo(pos: Pos3): void {
@@ -334,7 +334,7 @@ export class TopDownCamera {
     this.applyToCamera(1);
   }
 
-  /** The pose this tic is being read at — see `CameraPose`. */
+  /** The pose this tic is being read at — see {@link CameraPose}. */
   pose(): CameraPose {
     return {
       yaw: this._yawDeg,
@@ -347,9 +347,8 @@ export class TopDownCamera {
   /**
    * Puts the camera *at* `pose`, this tic's state becoming the previous one so the draw still
    * interpolates between the two. The targets follow it, so a camera handed back to its own
-   * `tick` afterwards (a replay taken over) carries on from here instead of gliding somewhere else.
-   * The previous yaw is taken a whole turn round where that is the shorter arc, so a pose read at
-   * 180° after one at -180° draws no turn; the pose itself is kept as given.
+   * {@link TopDownCamera.tick} afterwards (a replay taken over) carries on from here instead of
+   * gliding somewhere else. The previous yaw goes onto the shorter arc; the pose is kept as given.
    * docs/replays.md § Camera state.
    */
   setPose(pose: CameraPose): void {
@@ -367,8 +366,7 @@ export class TopDownCamera {
    * Puts the camera at `pose` but leaves the targets alone, so a Q/E step or a framing glide still
    * in flight carries on from here — and leaves the previous tic's pose alone, since this moves the
    * camera nowhere it wasn't. What a recording does every tic with its own pose rounded onto the
-   * record's lattice: `setPose` there would collapse each target onto whatever the ease had reached
-   * by that tic, and a 45° orbit would arrive one damped step per press.
+   * record's lattice; {@link TopDownCamera.setPose} there would end each glide on its first tic.
    * docs/replays.md § Camera state.
    */
   roundPose(pose: CameraPose): void {
@@ -380,8 +378,8 @@ export class TopDownCamera {
   }
 
   /**
-   * `setPose` with no history left to interpolate out of — for the discontinuities: a playback
-   * opening, a seek landing somewhere else entirely. docs/replays.md § Camera state.
+   * {@link TopDownCamera.setPose} with no history to interpolate out of: a playback opening, a seek
+   * landing somewhere else entirely. docs/replays.md § Camera state.
    */
   snapPose(pose: CameraPose): void {
     this.setPose(pose);
@@ -413,8 +411,9 @@ export class TopDownCamera {
   }
 
   /**
-   * Puts every field `snapshot` took back, and poses the `THREE` camera at the tic-exact result
-   * — the same "no glide left over" `snapTo` promises, for a state that was itself mid-glide.
+   * Puts every field {@link TopDownCamera.snapshot} took back, and poses the `THREE` camera at the
+   * tic-exact result — the same "no glide left over" {@link TopDownCamera.snapTo} promises, for a
+   * state that was itself mid-glide.
    */
   restore(state: CameraSnapshot): void {
     this._yawDeg = state.yaw;
@@ -492,7 +491,7 @@ export class TopDownCamera {
   /**
    * DOOM-space angle (0 = east, 90 = north, CCW) from the followed point to the camera; -90 at
    * yaw 0, matching `sprites.ts`'s `VIEWER_ANGLE_DEG`. The **tic-exact** angle, which is what the
-   * simulation reads — billboards want `viewAngleDeg` instead.
+   * simulation reads — billboards want {@link TopDownCamera.viewAngleDeg} instead.
    * docs/camera.md § The camera is simulation state.
    */
   get viewerAngleDeg(): number {
@@ -501,8 +500,8 @@ export class TopDownCamera {
 
   /**
    * The DOOM-space height the camera is currently pointed at — the eye height it was last given,
-   * after follow smoothing, at the pose `applyToCamera` last struck. The aim plane is derived from
-   * this rather than from the player's own live `z`, which parts company with it during a fall.
+   * after follow smoothing, at the pose {@link TopDownCamera.applyToCamera} last struck. The aim
+   * plane is derived from this rather than from the player's own live `z`.
    * docs/camera.md § Aim lead.
    */
   get followHeight(): number {
@@ -510,8 +509,8 @@ export class TopDownCamera {
   }
 
   /**
-   * The followed point in DOOM map space — `followHeight`'s two horizontal companions, and the
-   * same interpolated pose. What `DynamicLights` culls against, being the middle of what is on
+   * The followed point in DOOM map space — {@link TopDownCamera.followHeight}'s two horizontal
+   * companions, at the same pose. What `DynamicLights` culls against, being the middle of the
    * screen (docs/lights.md § What reaches the shader). three's `(x, y, z)` is DOOM's `(x, -z, y)`.
    */
   get followX(): number {
@@ -523,8 +522,8 @@ export class TopDownCamera {
   }
 
   /**
-   * The eye itself in DOOM map space, at the pose `applyToCamera` last struck — the `follow*`
-   * getters' other end, and where the occlusion fade measures its sight lines from.
+   * The eye in DOOM map space, at the pose {@link TopDownCamera.applyToCamera} last struck — the
+   * `follow*` getters' other end, and where the occlusion fade measures its sight lines from.
    */
   get eyeX(): number {
     return this.camera.position.x;
@@ -539,9 +538,8 @@ export class TopDownCamera {
   }
 
   /**
-   * `viewerAngleDeg` at the interpolated pose the camera is actually drawn at,
-   * for billboard orientation. Using the tic-exact angle instead would leave
-   * every sprite a fraction of a yaw snap out of line with the walls behind it.
+   * {@link TopDownCamera.viewerAngleDeg} at the interpolated pose the camera is actually drawn at,
+   * for billboard orientation. docs/camera.md § The camera is simulation state.
    */
   get viewAngleDeg(): number {
     return this.viewYawDeg - 90;
@@ -558,8 +556,8 @@ export class TopDownCamera {
   }
 
   /**
-   * One tic of camera *simulation*: advances the smoothed follow point and the
-   * orbit yaw. Draws nothing — `applyToCamera` is what moves the `THREE` camera.
+   * One tic of camera *simulation*: advances the smoothed follow point and the orbit yaw. Draws
+   * nothing — {@link TopDownCamera.applyToCamera} is what moves the `THREE` camera.
    *
    * @param pos     the followed point in DOOM coordinates (the player's feet)
    * @param cursor  where the pointer meets the aim plane, if anywhere — deliberately *not* whatever
@@ -659,7 +657,7 @@ export class TopDownCamera {
   /**
    * The ray from the camera through the DOOM-space point — what the tic picks with, built from
    * the aim point rather than from the pointer so a replay's recorded aim casts the same ray
-   * (docs/replays.md § The TicInput seam). Same pose rule as `rayFor`.
+   * (docs/replays.md § The TicInput seam). Same pose rule as {@link TopDownCamera.rayFor}.
    */
   rayToward(x: number, y: number, z: number): THREE.Ray {
     const origin = this.camera.position.clone();
@@ -668,10 +666,8 @@ export class TopDownCamera {
   }
 
   /**
-   * Brings `yawDeg` back into (-180°, 180°] by shifting **every** yaw field — the target, both
-   * interpolation ends — by the *same* whole turn. Each of those is read only as a difference or
-   * through trig, so a shared turn changes nothing; wrapping one alone would leave the others a
-   * turn away and send the camera the long way round. docs/camera.md § Camera orbit.
+   * Brings {@link TopDownCamera.yawDeg} back into (-180°, 180°] by shifting **every** yaw field —
+   * the target, both interpolation ends — by the *same* whole turn. docs/camera.md § Camera orbit.
    */
   private normaliseYaw(): void {
     const turns = Math.ceil((this._yawDeg - 180) / 360);

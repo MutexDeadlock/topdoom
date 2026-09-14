@@ -6,13 +6,9 @@ import { ThingType } from '../things/doomednums.ts';
 import type { AmmoType, InventoryLimits, KeySlot, PowerId, WeaponId } from './defs.ts';
 
 /**
- * How long each powerup lasts, in seconds — vanilla's own `INVULNTICS`
- * (30s), `INVISTICS`/`IRONTICS` (60s) and `INFRATICS` (120s) over 35, plain
- * constants that survive the conversion out of tics intact (unlike
- * `weapons.ts`'s fire rates, see there). Berserk and the computer area map
- * are `Infinity`: vanilla stores them as a flag that never counts down, and
- * both are cleared at the end of the level like every other power
- * (`finishLevel`).
+ * How long each powerup lasts, in seconds — vanilla's `INVULNTICS` (30s), `INVISTICS`/`IRONTICS`
+ * (60s) and `INFRATICS` (120s) over 35. Berserk and the computer area map are `Infinity`, a flag
+ * that never counts down. docs/items.md § Powerups and the backpack.
  */
 export const POWER_SECONDS: Record<PowerId, number> = {
   invulnerability: 30,
@@ -26,7 +22,7 @@ export const POWER_SECONDS: Record<PowerId, number> = {
 /**
  * A health pickup grants either a fixed amount or whatever a `LIMITS` field currently says — the
  * soulsphere is the one `Misc` can move (`Soulsphere health`), so it names the field and is read at
- * the point of use rather than mirrored here, exactly as `ARMOR_PICKUP_CLASS` below.
+ * the point of use rather than mirrored here, exactly as {@link ARMOR_PICKUP_CLASS} below.
  * `bonus` picks which cap applies. docs/items.md § Collecting things.
  */
 type HealthPickup = { bonus: boolean } & ({ amount: number } | { limit: keyof InventoryLimits });
@@ -52,8 +48,7 @@ export const ARMOR_PICKUP_CLASS: Record<number, 'greenArmorClass' | 'blueArmorCl
 /**
  * Each ammo pickup's `num` as `P_TouchSpecialThing` passes it to `P_GiveAmmo`, which multiplies it
  * by `clipammo[type]` — so these are **clip counts, not amounts**: a clip is one, a box is five.
- * Vanilla's own indirection, kept rather than folded flat, because `CLIP_AMMO` is patchable and
- * everything computed off it has to follow.
+ * docs/items.md § Ammo counts, and what a patch can move.
  */
 export const AMMO_PICKUPS: Record<number, { type: AmmoType; clips: number }> = {
   [ThingType.clip]: { type: 'bullets', clips: 1 },
@@ -75,7 +70,7 @@ export const KEY_PICKUPS: Record<number, KeySlot> = {
   [ThingType.yellowSkullKey]: 'yellowSkull',
 };
 
-/** The powerup spheres/items, by doomednum — see `POWER_SECONDS` for how long each lasts. */
+/** The powerup spheres/items, by doomednum — see {@link POWER_SECONDS} for how long each lasts. */
 export const POWERUP_PICKUPS: Record<number, PowerId> = {
   [ThingType.invulnerability]: 'invulnerability',
   [ThingType.berserk]: 'berserk',
@@ -99,10 +94,9 @@ export const AMMO_UPGRADE: { ammo: AmmoType; from: readonly WeaponId[]; to: read
 ];
 
 /**
- * Ammo granted alongside a weapon pickup follows vanilla's `P_GiveWeapon`:
- * it hands over `2 * clipammo[type]` — twice what a single clip gives — for a
- * weapon placed directly on the map, or exactly half that for one a dead
- * monster dropped (`applyPickup`'s `dropped` param). The chainsaw needs none.
+ * Ammo granted alongside a weapon pickup follows vanilla's `P_GiveWeapon`: `2 * clipammo[type]`
+ * for a weapon placed on the map, half that for one a monster dropped (`applyPickup`'s `dropped`).
+ * The chainsaw needs none.
  */
 export const WEAPON_PICKUPS: Record<
   number,
@@ -119,10 +113,9 @@ export const WEAPON_PICKUPS: Record<
 
 /**
  * What the feed prints for each pickup, keyed by `d_englsh.h`'s own `GOT*` mnemonic and verbatim
- * from it — `P_TouchSpecialThing`'s `player->message` per sprite. Keyed by mnemonic so a BEX
- * `[STRINGS]` patch replaces one by name (`dehacked/apply.ts`'s `replaceByMnemonic`), whole lines
- * rather than names to interpolate; `GOTSHELLS`' literal 4 is vanilla's own and does not follow
- * `CLIP_AMMO`. docs/hud.md § HUD messages, docs/dehacked.md § Pickup messages.
+ * from it — `P_TouchSpecialThing`'s `player->message` per sprite. `GOTSHELLS`' literal 4 is
+ * vanilla's own and does not follow `CLIP_AMMO`. docs/hud.md § HUD messages,
+ * docs/dehacked.md § Pickup messages.
  */
 export const PICKUP_LINES: Record<string, string> = {
   GOTARMOR: 'Picked up the armor.',
@@ -165,7 +158,7 @@ export const PICKUP_LINES: Record<string, string> = {
 };
 
 /**
- * Which `PICKUP_LINES` mnemonic each pickup prints, `P_TouchSpecialThing`'s sprite cases by
+ * Which {@link PICKUP_LINES} mnemonic each pickup prints, `P_TouchSpecialThing`'s sprite cases by
  * doomednum. The medikit is absent: it picks between `GOTMEDINEED` and `GOTMEDIKIT` by the health
  * it leaves, which `pickupLine` decides.
  */

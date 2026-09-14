@@ -1,20 +1,17 @@
 /**
- * DOOM's random numbers, which are not random: a fixed 256-byte table and two
- * cursors that walk it. Everything in this engine that fuzzes a value — damage
- * dice, pellet spread, pain chance, an AI decision, a light's dark period —
- * draws from here and nowhere else — through the two cursors below, or through
- * the shared draw *shapes* at the bottom of this file (`rollDamage`,
- * `triangularDraw`, `triangularSpread`), which every layer from weapons to the
- * Icon of Sin's spitter reuses rather than rewriting the arithmetic.
+ * DOOM's random numbers, which are not random: a fixed 256-byte table and two cursors that walk it.
+ * Everything in this engine that fuzzes a value draws from here and nowhere else — through the two
+ * cursors below, or through the shared draw *shapes* at the bottom of this file
+ * ({@link rollDamage}, {@link triangularDraw}, {@link triangularSpread}).
  *
  * docs/random.md § The table and the two cursors.
  */
 
 /**
- * `m_random.c`'s `rndtable`, verbatim, kept in the source's own 14-per-row
- * layout so it can be diffed against the C file line by line. Exported for the
- * test that checks that transcription — read it through `pRandom`/`mRandom`,
- * never by index, or the draw won't advance a cursor.
+ * `m_random.c`'s `rndtable`, verbatim, kept in the source's own 14-per-row layout so it can be
+ * diffed against the C file line by line. Exported for the test that checks that transcription —
+ * read it through {@link pRandom}/{@link mRandom}, never by index, or the draw won't advance a
+ * cursor.
  */
 export const RNDTABLE = new Uint8Array([
   0, 8, 109, 220, 222, 241, 149, 107, 75, 248, 254, 140, 16, 66,
@@ -67,9 +64,8 @@ export function mRandom(): number {
 }
 
 /**
- * `M_ClearRandom`: both cursors back to 0, called at level load. Note this does
- * *not* make a run reproducible in this engine — docs/random.md § What this
- * does not buy.
+ * `M_ClearRandom`: both cursors back to 0, called at level load. This does *not* make a run
+ * reproducible in this engine — docs/random.md § What this does not buy.
  */
 export function clearRandom(): void {
   prndindex = 0;
@@ -100,26 +96,20 @@ export function rollDamage(sides: number, multiplier: number): number {
 }
 
 /**
- * Vanilla's `P_Random()-P_Random()` shape: a triangular draw centred on 0 and
- * `width` wide at its extremes, in whatever unit the caller counts in. Every
- * random fuzz in the game is this one distribution.
- *
- * The `/255` is what makes `width` mean what every caller's constant already
- * says it means — the value at vanilla's `255 << shift` extreme — while keeping
- * the draw on the table's own integer grid. Two separate `pRandom()` calls, and
- * subtracting *adjacent* table entries is the point: see docs/random.md
- * § The triangular draw.
+ * Vanilla's `P_Random()-P_Random()` shape: a triangular draw centred on 0 and `width` wide at its
+ * extremes, in whatever unit the caller counts in. Every random fuzz in the game is this one
+ * distribution. Two separate {@link pRandom} calls, and the `/255` that keeps the draw on the
+ * table's own integer grid — docs/random.md § The triangular draw.
  */
 export function triangularDraw(width: number): number {
   return ((pRandom() - pRandom()) / 255) * width;
 }
 
 /**
- * `triangularDraw` in degrees, returned as radians off-aim — the angular half
- * of it: the player's pellet spread and melee swing, a monster bullet's
- * `<<20`, `A_FaceTarget`'s `MF_SHADOW` `<<21`. The super shotgun's *slope*
- * jitter (`game/weapons.ts`'s `WeaponDef.slopeSpread`) is the one that isn't an
- * angle.
+ * {@link triangularDraw} in degrees, returned as radians off-aim — the angular half of it: the
+ * player's pellet spread and melee swing, a monster bullet's `<<20`, `A_FaceTarget`'s `MF_SHADOW`
+ * `<<21`. The super shotgun's *slope* jitter (`game/weapons.ts`'s `WeaponDef.slopeSpread`) is the
+ * one that isn't an angle.
  */
 export function triangularSpread(deg: number): number {
   return (triangularDraw(deg) * Math.PI) / 180;

@@ -25,12 +25,11 @@ export const PLAYER_HEIGHT = 56;
 export const PLAYER_MASS = 100;
 
 /**
- * Height above the feet a weapon fires from, and the plane the mouse cursor
- * is projected onto for aiming (`game.ts`'s `camera.pointerToPlane`) — the two
- * have to match, or a tracer/projectile would visibly start from a different
- * height than where the crosshair appears to be. The value is vanilla's `shootz`
- * (`p_map.c`) — docs/combat.md § shotPath. A monster's own equivalent is
- * `game/monsters/defs.ts`'s `monsterShootZ`, the same formula on its body height.
+ * Height above the feet a weapon fires from, and the plane the mouse cursor is projected onto for
+ * aiming ({@link aimPlaneZ}) — the two have to match, or a
+ * tracer/projectile would visibly start from a different height than where the crosshair appears
+ * to be. The value is vanilla's `shootz` (`p_map.c`) — docs/combat.md § shotPath. A monster's own
+ * equivalent is `game/monsters/defs.ts`'s `monsterShootZ`, the same formula on its body height.
  */
 export const AIM_HEIGHT_OFFSET = PLAYER_HEIGHT / 2 + 8;
 
@@ -55,11 +54,9 @@ const SIDE_MOVE = [24, 40] as const;
 const MAX_PL_MOVE = 50;
 
 /**
- * Map units/sec per vanilla move unit. Vanilla's own works out to 11.67
- * (`forwardmove` 50 against its terminal running speed of ~583 units/sec);
- * this engine deliberately runs a little slower, so full-speed forward
- * running is 500 and everything else follows from the tables above:
- * 250 walking forward, 400 running sideways, 240 walking sideways.
+ * Map units/sec per vanilla move unit. Vanilla's own works out to 11.67 (`forwardmove` 50 against
+ * its terminal running speed of ~583 units/sec); this engine deliberately runs a little slower.
+ * docs/movement.md § Movement speed and straferunning.
  */
 const MOVE_UNIT_SPEED = 10;
 
@@ -96,11 +93,9 @@ export const GRAVITY = 1600;
 
 /**
  * How fast a fall has to end to knock the wind out of the player ({@link Player.landingSpeed}
- * above it plays `oof`). Vanilla's `P_ZMovement` grunts below `momz < -8` units/tic, which under
- * *its* gravity of 1 unit/tic² is reached by a drop of 32 units — so the threshold is derived from
- * that drop height under this engine's own (feel-tuned, stronger) {@link GRAVITY} rather than
- * copying the speed. Matching the speed instead would make shallower ledges grunt than vanilla's
- * do, and 24 units — DOOM's most common step height — sits right at that boundary.
+ * above it plays `oof`): the drop height `P_ZMovement`'s `momz < -8` grunt takes under vanilla's
+ * gravity, 32 units, under this engine's own {@link GRAVITY} — not its speed.
+ * docs/movement.md § Vertical physics: stairs, falling, gap-crossing.
  */
 export const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
 
@@ -202,8 +197,7 @@ export class Player implements Pos3 {
    * split.
    *
    * {@link PlayerSnapshot} calls the pair {@link PlayerSnapshot.knockVelX}/
-   * {@link PlayerSnapshot.knockVelY}: that is the saved wire format the channel was named by
-   * before it widened, and renaming it would orphan every existing save.
+   * {@link PlayerSnapshot.knockVelY}, the save format's names — renaming would orphan every save.
    */
   private momX = 0;
   private momY = 0;
@@ -214,9 +208,8 @@ export class Player implements Pos3 {
   private forced = false;
   /**
    * How fast the player was falling (map units/sec, positive) at the moment this frame's fall
-   * ended, or 0 if it didn't end in one. Vanilla's `P_ZMovement` grunts and dips the view for a
-   * landing harder than 8 units/tic; the grunt's own threshold is {@link HARD_LANDING_SPEED}
-   * above. Reset at the top of every {@link Player.update}, so it only ever describes this frame.
+   * ended, or 0 if it didn't end in one — what {@link HARD_LANDING_SPEED} is measured against.
+   * Reset at the top of every {@link Player.update}, so it only ever describes this frame.
    */
   landingSpeed = 0;
 
@@ -230,7 +223,7 @@ export class Player implements Pos3 {
 
   /**
    * Where the player was at the end of the previous tic, for the render layer to interpolate from —
-   * `game.ts: posePlayer` and the camera's follow point both read it. Written at the top of
+   * `Presenter.posePlayer` and the camera's follow point both read it. Written at the top of
    * {@link Player.update}, and re-synced by every teleport-like jump ({@link Player.moveTo}) so an
    * instant relocation is not smeared into a glide across the map.
    * docs/frameloop.md § Interpolation.
@@ -351,11 +344,9 @@ export class Player implements Pos3 {
   }
 
   /**
-   * Drops the player at an arbitrary spot, resting on whatever floor is there
-   * and standing still. Used by the `?pos=x,y` deep link (see main.ts) to reach
-   * a specific place in a map without walking to it — the practical way to
-   * check something like "what does fog of war reveal from in front of MAP01's
-   * big window", which is otherwise several rooms and a locked door away.
+   * Drops the player at an arbitrary spot, resting on whatever floor is there and standing still.
+   * Used by the `?pos=x,y` deep link (see main.ts) to reach a specific place in a map without
+   * walking to it.
    */
   moveTo(pos: Pos2): void {
     this.x = pos.x;
@@ -423,12 +414,10 @@ export class Player implements Pos3 {
 
   /**
    * The arch-vile's knockback (`game/monsters/defs.ts`'s `AttackStats.blast`, vanilla's
-   * `A_VileAttack` momz launch) — the one way {@link Player.velZ} ever goes positive. A bare
-   * velocity set wouldn't be enough: {@link Player.update}'s airborne branch only integrates
-   * gravity while `z > groundFloor`, and immediately after this call {@link Player.z} still sits
-   * exactly on the floor, so the very next frame would fall into the ground-snap branch and zero
-   * the launch right back out before it ever moved anything. The `+1` nudge is what makes
-   * {@link Player.update} see the player as already airborne.
+   * `A_VileAttack` momz launch) — the one way {@link Player.velZ} ever goes positive. The `+1`
+   * nudge is load-bearing: {@link Player.update}'s airborne branch only integrates gravity while
+   * `z > groundFloor`, so a body left exactly on the floor would take the ground-snap branch and
+   * zero the launch before it moved anything.
    */
   launchUpward(speed: number): void {
     this.velZ = speed;
@@ -653,8 +642,8 @@ export class Player implements Pos3 {
   /**
    * One displacement, clipped against walls and solid bodies — or taken raw while
    * {@link Player.noclip} is on, where `P_TryMove`'s every check is skipped and the move always
-   * lands whole. The velocity each caller reads back off the result is then simply what it asked
-   * for, which is exactly right: a noclipped run into a wall keeps its speed.
+   * lands whole. The velocity each caller reads back off the result is then what it asked for: a
+   * noclipped run into a wall keeps its speed.
    */
   private moveBy(dx: number, dy: number, blockers?: readonly ThingBlocker[]): Pos2 {
     if (this.noclip) return { x: this.x + dx, y: this.y + dy };

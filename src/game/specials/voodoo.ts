@@ -33,13 +33,10 @@ export interface VoodooDoll extends Pos3 {
   momX: number;
   momY: number;
   /**
-   * Derived per-tic state, never saved — `snapshot` copies the simulation's
-   * fields explicitly, exactly as `PosedThing` keeps its own `touch`/`pinned`.
-   * `touch` backs the force queries (`World.sectorsTouchingCached`); `rest` is
-   * the pinned-body memo (docs/movement.md § Pinned-body memo): the doll
-   * proved a whole tic a no-op from this exact position under this exact
-   * summed impulse, and skips the re-derivation until the impulse or a stamped
-   * nearby height changes.
+   * Derived per-tic state, never saved — {@link VoodooDolls.snapshot} copies the simulation's
+   * fields explicitly, as `PosedThing` keeps its own `touch`/`pinned`. {@link VoodooDoll.touch}
+   * backs the force queries ({@link World.sectorsTouchingCached}); {@link VoodooDoll.rest} is the
+   * pinned-body memo (docs/movement.md § Pinned-body memo).
    */
   touch: SectorTouchCache;
   rest: PinnedMemo;
@@ -48,11 +45,8 @@ export interface VoodooDoll extends Pos3 {
 /**
  * Every voodoo doll on the level, ticked as one.
  *
- * **Which things are dolls**: every doomednum-1 thing *except the last*, which
- * is the real player start (`World.playerStart`, docs/wad.md § Player start).
- * Vanilla spawns a body for all of them and puts the console player in the last
- * one; the rest keep standing there being player mobjs nobody controls, which is
- * the whole trick.
+ * **Which things are dolls**: every doomednum-1 thing *except the last*, which is the real player
+ * start ({@link World.playerStart}, docs/wad.md § Player start).
  *
  * **They are not drawn.** Vanilla renders them as marines, which in a top-down
  * view would read as a second player standing across the map — a deliberate
@@ -96,9 +90,9 @@ export class VoodooDolls {
    *
    * `collect` runs only for a doll that actually moved, and before `cross`, which is vanilla's own
    * order — docs/items.md § Collecting things. A doll has no gravity: it rides whatever floor it
-   * stands on (`groundFloor`), and one a belt pins against a wall skips the whole tic through the
-   * `rest` memo, the impulse compare being what breaks it. docs/specials-forces.md § Voodoo dolls,
-   * docs/movement.md § Pinned-body memo.
+   * stands on ({@link World.groundFloor}), and one a belt pins against a wall skips the whole tic
+   * through the {@link VoodooDoll.rest} memo, the impulse compare being what breaks it.
+   * docs/specials-forces.md § Voodoo dolls, docs/movement.md § Pinned-body memo.
    */
   update(
     dt: number,
@@ -203,8 +197,8 @@ export class VoodooDolls {
   }
 
   /**
-   * Every field the simulation mutates — docs/savegames.md § What is saved and what is deliberately
-   * not.
+   * Every field the simulation mutates —
+   * docs/savegames.md § What is saved and what is deliberately not.
    */
   snapshot(): VoodooSnapshot[] {
     return this.dolls.map((d) => ({ x: d.x, y: d.y, z: d.z, angle: d.angle, momX: d.momX, momY: d.momY }));

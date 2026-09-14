@@ -16,10 +16,10 @@ import { decodeTextLump } from './textlump.ts';
 
 /**
  * A file's bytes, addressable by range. Deliberately not "an ArrayBuffer": a library scan reads
- * hundreds of files it will never load, and `describeWad` touches only the header, the directory
- * and two lumps — a few hundred KB even for a 14 MB IWAD — so the source must be able to serve a
- * slice without materializing the whole file. A `File` does this natively
- * (`slice().arrayBuffer()`), `bytesOf` below wraps a buffer that is already in memory.
+ * hundreds of files it will never load, and {@link describeWad} touches only the header, the
+ * directory and two lumps — a few hundred KB even for a 14 MB IWAD — so the source must be able to
+ * serve a slice without materializing the whole file. A `File` does this natively
+ * (`slice().arrayBuffer()`), {@link bytesOf} wraps a buffer that is already in memory.
  */
 export interface ByteRanges {
   size: number;
@@ -55,7 +55,8 @@ const DIRECTORY_ENTRY_BYTES = 16;
 const UDMF_SNIFF_BYTES = 1024;
 
 /**
- * `ByteRanges` over bytes already in memory — the manifest plugin's file and an upload's buffer.
+ * {@link ByteRanges} over bytes already in memory — the manifest plugin's file and an upload's
+ * buffer.
  */
 export function bytesOf(buffer: ArrayBufferLike | Uint8Array): ByteRanges {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
@@ -65,7 +66,7 @@ export function bytesOf(buffer: ArrayBufferLike | Uint8Array): ByteRanges {
   };
 }
 
-/** `ByteRanges` over a `File`, which reads a slice off disk without pulling the rest in. */
+/** {@link ByteRanges} over a `File`, which reads a slice off disk without pulling the rest in. */
 export function bytesOfFile(file: Blob): ByteRanges {
   return {
     size: file.size,
@@ -79,8 +80,9 @@ export function bytesOfFile(file: Blob): ByteRanges {
  * constructor uses — an upload turns them into the menu's status line, the manifest plugin turns
  * them into "this file doesn't show up".
  *
- * `name` is the file's own name, not a label: `mergeLevelTitles` projects the mission from it, so
- * `plutonia.wad` resolves its `PHUSTR_*` strings (docs/wad.md § Level names).
+ * @param name  the file's own name, not a label: {@link mergeLevelTitles} projects the mission
+ *              from it, so `plutonia.wad` resolves its `PHUSTR_*` strings
+ *              (docs/wad.md § Level names)
  */
 export async function describeWad(name: string, src: ByteRanges): Promise<WadDescription> {
   if (src.size < HEADER_BYTES) throw new Error(`${name}: not a WAD file (only ${src.size} bytes)`);
@@ -198,7 +200,7 @@ async function text(src: ByteRanges, lump: Entry): Promise<string | null> {
   return decodeTextLump(await src.read(lump.offset, lump.size));
 }
 
-/** `Reader` over a slice, which may be a view into a larger buffer. */
+/** {@link Reader} over a slice, which may be a view into a larger buffer. */
 function reader(bytes: Uint8Array): Reader {
   return new Reader(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }

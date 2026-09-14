@@ -6,10 +6,10 @@
  */
 
 /**
- * `d_main.c`'s `GameMode_t`, less two of its five. `retail` folds into `registered`: nothing this
- * engine does reads Ultimate DOOM's fourth episode apart from the first three. `indetermined` has
- * no place at all — a set with no maps never starts a game (`game.ts` refuses it), and one whose
- * maps are named neither way is read as `registered` below.
+ * The game modes this engine tells apart — `d_main.c`'s `GameMode_t`, less two of its five.
+ * `retail` folds into `registered`. `indetermined` has no place at all — a set with no maps never
+ * starts a game (`game.ts` refuses it), and one whose maps are named neither way is read as
+ * `registered` below.
  */
 export type GameMode = 'shareware' | 'registered' | 'commercial';
 
@@ -21,15 +21,10 @@ const FIRST_EPISODE_MAP = /^E1M\d$/;
 const LATER_EPISODE_MAP = /^E[2-9]M\d$/;
 
 /**
- * The mode a set's map list makes it. `MAPxx` anywhere is DOOM 2 and everything after it; any
- * episode past the first is the registered DOOM 1, which is vanilla's own test for it —
- * `D_DoomMain` checks `e2m1`-`e3m9` before believing a WAD is the registered version (its four
- * companion sprite lumps, `dphoof`/`bfgga0`/`heada1`/`cybra1`, are art and so are not read here:
- * a WAD's art never decides what a tic does).
- *
- * Only a set that provides episode 1 and nothing else is shareware. A set naming its maps neither
- * way — a total conversion with its own names — is `registered`, the mode that withholds nothing
- * a DOOM 1 set can have: an unidentifiable set is not one to take weapons away from.
+ * The mode a set's map list makes it. `MAPxx` anywhere is DOOM 2; any episode past the first is the
+ * registered DOOM 1 (vanilla's own test, `D_DoomMain`); episode 1 and nothing else is shareware. A
+ * set naming its maps neither way is `registered`, the mode that withholds nothing a DOOM 1 set can
+ * have.
  */
 export function gameModeOf(mapNames: readonly string[]): GameMode {
   if (mapNames.some((name) => COMMERCIAL_MAP.test(name))) return 'commercial';

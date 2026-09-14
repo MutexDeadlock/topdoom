@@ -1,7 +1,7 @@
 /**
  * The records a map is made of — vertices, linedefs/sidedefs, sectors, the BSP leaves and THINGS —
  * and the sentinels the WAD encodes them with. Every format seam in this directory writes these,
- * and `map.ts` assembles a `DoomMap` out of them and re-exports the lot. See docs/wad.md.
+ * and `map.ts` assembles a {@link DoomMap} out of them and re-exports the lot. See docs/wad.md.
  */
 
 /** Which encoding a map's geometry lumps use. docs/wad.md § Map formats and § UDMF. */
@@ -31,7 +31,7 @@ export const SKY_FLAT = 'F_SKY1';
 
 /**
  * DOOM's sentinel for "no texture assigned" in a sidedef's texture slot. Lives here beside
- * `SKY_FLAT` for the same reason: it is what the WAD writes, read by the renderer and by
+ * {@link SKY_FLAT} for the same reason: it is what the WAD writes, read by the renderer and by
  * `game/specials.ts` alike, not a decision either of them makes.
  */
 const NO_TEXTURE = '-';
@@ -82,7 +82,7 @@ export interface LineDef {
   v1: number;
   v2: number;
   flags: number;
-  /** The Doom/Boom special. Always 0 on a Hexen-format map — see `action`. */
+  /** The Doom/Boom special. Always 0 on a Hexen-format map — see {@link LineDef.action}. */
   special: number;
   tag: number;
   right: number; // sidedef index, or NO_SIDE
@@ -107,10 +107,9 @@ export const LF = {
 } as const;
 
 /**
- * `Seg.linedef` on a GL miniseg — the edge a BSP split introduced, which lies on no
- * linedef at all. -1 rather than either format's own 0xFFFF/0xFFFFFFFF: it indexes
- * `linedefs` as `undefined` whatever the map's line count, which is what the field's
- * readers already do with a line that isn't there. docs/wad.md § GL nodes.
+ * {@link Seg.linedef} on a GL miniseg — the edge a BSP split introduced, which lies on no linedef
+ * at all. -1, so it indexes {@link DoomMap.linedefs} as `undefined` whatever the map's line count.
+ * docs/wad.md § GL nodes.
  */
 export const NO_LINE = -1;
 
@@ -118,7 +117,7 @@ export interface Seg {
   v1: number;
   v2: number;
   angle: number;
-  /** The line this edge runs on, or `NO_LINE` on a GL miniseg. docs/wad.md § GL nodes. */
+  /** The line this edge runs on, or {@link NO_LINE} on a GL miniseg. docs/wad.md § GL nodes. */
   linedef: number;
   /** 0 = same direction as the linedef, 1 = opposite. */
   direction: number;
@@ -126,8 +125,8 @@ export interface Seg {
 }
 
 /**
- * The sidedef a seg uses, and the one across the line from it (`NO_SIDE` on a
- * one-sided line) — the one home for `Seg.direction`'s winding convention.
+ * The sidedef a seg uses, and the one across the line from it ({@link NO_SIDE} on a one-sided
+ * line) — the one home for {@link Seg.direction}'s winding convention.
  */
 export function segSide(line: LineDef, direction: number): number {
   return direction === 0 ? line.right : line.left;

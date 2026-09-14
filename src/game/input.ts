@@ -64,7 +64,7 @@ export function respawnPressed(input: TicInput): boolean {
 }
 
 /**
- * The lattice the aim point sits on, in map units — 1/64 is far below anything a pick or a
+ * The lattice the aim point sits on, in map units — far below anything a pick or a
  * turn can resolve (tuned by feel). The point is quantized *before* the simulation reads it, so
  * what a replay stores is exactly what ran. docs/replays.md § The TicInput seam.
  */
@@ -115,9 +115,7 @@ const TYPED_LIMIT = 32;
  *
  * The edge latches ({@link Input.pressed}, {@link Input.rightMousePressed}) hold "went down since
  * the last **tic**", not since the last rendered frame, and {@link Input.endTic} is what clears
- * them. Rendering runs far more often than the simulation, so a frame-cadence clear would drop most
- * presses before a tic ever saw them.
- * docs/frameloop.md § Input runs on the tic.
+ * them. docs/frameloop.md § Input runs on the tic.
  */
 export class Input implements TicInput {
   private down = new Set<string>();
@@ -282,15 +280,10 @@ export class Input implements TicInput {
 }
 
 /**
- * Whether a key belongs to a focused form control rather than to the game — the
- * menu's name fields, its sliders, checkboxes and dropdowns. The listeners below
- * are on `window`, and they preventDefault `Space` and the arrows, which without
- * this leaves a save name unable to contain a space, a caret unable to move and
- * a dropdown unable to be arrowed through. Only ever true while the menu is up:
- * nothing else here takes focus, and `Menu.close` drops what it holds.
- *
- * Only `keydown` asks: a key held from the canvas into a field must still see
- * its `keyup`, and clearing one that was never latched costs nothing.
+ * Whether a key belongs to a focused form control rather than to the game — the menu's name
+ * fields, its sliders, checkboxes and dropdowns. Only ever true while the menu is up: nothing else
+ * here takes focus, and `Menu.close` drops what it holds. Only `keydown` asks.
+ * docs/frameloop.md § Input runs on the tic.
  */
 export function isTyping(target: EventTarget | null): boolean {
   return (

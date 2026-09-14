@@ -19,10 +19,7 @@ export const SKILL_NAMES: Record<Skill, string> = {
   5: 'Nightmare!',
 };
 
-/**
- * `sk_baby`, vanilla's own name for skill 1 — the two rules below are the only places it differs
- * from skill 2.
- */
+/** Skill 1 (`sk_baby`) — the two rules below are the only places it differs from skill 2. */
 const SKILL_BABY: Skill = 1;
 /**
  * `sk_nightmare`. Everything it changes beyond skill 4 is keyed off this: double ammo, fast
@@ -66,7 +63,7 @@ export function fastMonsters(skill: Skill): boolean {
 /**
  * Whether killed monsters come back — `G_InitNew`'s
  * `if (skill == sk_nightmare || respawnparm) respawnmonsters = true;` (`g_game.c`). As with
- * `fastMonsters` there is no command-line switch here, so nightmare is the only source.
+ * {@link fastMonsters} there is no command-line switch here, so nightmare is the only source.
  * What that actually does to a corpse is docs/monster-ai.md § Respawning monsters.
  */
 export function respawnMonsters(skill: Skill): boolean {

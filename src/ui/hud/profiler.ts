@@ -21,13 +21,13 @@ const HOT_FRACTION = 1;
 
 const PROFILER_STORAGE_KEY = 'profiler';
 
-/** `getProfilerVisible`'s memo of the stored setting; null until first read. */
+/** {@link getProfilerVisible}'s memo of the stored setting; null until first read. */
 let visible: boolean | null = null;
 
 /**
- * Whether the overlay is wanted. Defaults to `DEVMODE` — a dev build shows it
- * as it did before the checkbox existed, a release build starts hidden — and a
- * stored choice overrides that either way. See docs/devmode.md § Profiling overlay.
+ * Whether the overlay is wanted. Defaults to {@link DEVMODE} — a dev build shows it, a release
+ * build starts hidden — and a stored choice overrides that either way.
+ * See docs/devmode.md § Profiling overlay.
  */
 export function getProfilerVisible(): boolean {
   // Memoized because `Game.draw` asks every frame to decide whether to run the GPU timer, and the
@@ -44,13 +44,9 @@ export function setProfilerVisible(on: boolean): void {
 }
 
 /**
- * The per-category timing overlay (top-right — see profiler.css). Renders `FrameProfiler`'s
- * smoothed samples as bars sized against one 60fps frame's budget rather than against each other,
- * so bar *length* alone says whether a category is the reason a frame is being missed.
- * docs/devmode.md § Profiling overlay.
- *
- * Rows are created lazily and reused, the same "build once, update every frame" shape `Hud` uses,
- * and re-sorted worst-first on each update (`appendChild` on an existing child just moves it).
+ * The per-category timing overlay (top-right — see profiler.css): {@link FrameProfiler}'s smoothed
+ * samples as bars sized against one 60fps frame's budget rather than against each other, rows
+ * built once and re-sorted worst-first on each update. docs/devmode.md § Profiling overlay.
  */
 export class ProfilerHud {
   private root = document.getElementById('profiler-hud')!;
@@ -71,9 +67,9 @@ export class ProfilerHud {
   }
 
   /**
-   * Takes the `FrameProfiler` rather than its `samples()`, so the array and its
-   * per-label objects are only built once past the early return below — a
-   * hidden panel is the default outside dev mode, and this runs every frame.
+   * Takes the {@link FrameProfiler} rather than its {@link FrameProfiler.samples}, so the array and
+   * its per-label objects are only built once past the early return below — a hidden panel is the
+   * default outside dev mode, and this runs every frame.
    */
   update(profiler: FrameProfiler, gpuMs: number | null): void {
     // Toggled off in the menu: nothing on screen to update, and the panel's own
@@ -130,10 +126,9 @@ function msRow(label: string, ms: number): string {
 }
 
 /**
- * Puts the setting on `#profiler-hud`'s class, which is both what
- * profiler.css shows the panel by and what `ProfilerHud.update` reads to
- * skip its work — so the two can't disagree about whether the overlay is up.
- * Safe to call before any `ProfilerHud` exists: the element is static markup.
+ * Puts the setting on `#profiler-hud`'s class, which is both what profiler.css shows the panel by
+ * and what {@link ProfilerHud.update} reads to skip its work. Safe to call before any
+ * {@link ProfilerHud} exists: the element is static markup.
  */
 function applyProfilerVisible(): void {
   document.getElementById('profiler-hud')?.classList.toggle('visible', getProfilerVisible());

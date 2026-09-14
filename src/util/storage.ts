@@ -12,11 +12,11 @@
  */
 const SETTINGS_KEY = 'topdoom.settings';
 
-/** What a setting may be, beyond the menu's own WAD selection — see `readStorageObject`. */
+/** What a setting may be, beyond the menu's own WAD selection — see {@link readStorageObject}. */
 type Scalar = boolean | number | string;
 
 /**
- * How long `writeStorageSoon` holds a field before storing it: long enough that one drag of a
+ * How long {@link writeStorageSoon} holds a field before storing it: long enough that one drag of a
  * slider lands as a single write, short enough that a reload straight after the release still sees
  * it. Tuned by feel.
  */
@@ -74,11 +74,11 @@ export function writeStorage(key: string, value: Scalar | object): void {
 }
 
 /**
- * `writeStorage`, coalesced: the field is held for `WRITE_COALESCE_MS`, and everything pending when
- * that expires is stored in one write. For a setting a **continuous** control drives — the volume
- * sliders fire on every `input`, dozens across one drag, each of which would otherwise re-encode
- * the whole settings object. A read in between still sees the pending value, and a page going away
- * flushes early, so the delay loses nothing. docs/menu.md § Persisted settings.
+ * {@link writeStorage}, coalesced: the field is held for {@link WRITE_COALESCE_MS}, and everything
+ * pending when that expires is stored in one write. For a setting a **continuous** control drives —
+ * the volume sliders fire on every `input`, dozens across one drag, each of which would otherwise
+ * re-encode the whole settings object. A read in between still sees the pending value, and a page
+ * going away flushes early, so the delay loses nothing. docs/menu.md § Persisted settings.
  */
 export function writeStorageSoon(key: string, value: Scalar | object): void {
   pending.set(key, value);
@@ -86,7 +86,7 @@ export function writeStorageSoon(key: string, value: Scalar | object): void {
   armFlushOnHide();
 }
 
-/** Stores every field `writeStorageSoon` is still holding. The timer's own call, and the page's. */
+/** Stores every field {@link writeStorageSoon} still holds — the timer's call, and the page's. */
 export function flushStorage(): void {
   if (flushTimer !== null) {
     clearTimeout(flushTimer);
@@ -109,7 +109,7 @@ export function flushStorage(): void {
  * `localStorage`, or null where there is none. The property access itself throws in a browser with
  * site data blocked, so the guard has to be a `try` and not a `?.` — which is why nothing in `src/`
  * reaches for `globalThis.localStorage` on its own. Exported for `game/besttimes.ts`, whose one
- * pre-IndexedDB key is not a setting and so has no `readStorage` of its own.
+ * pre-IndexedDB key is not a setting and so has no {@link readStorage} of its own.
  */
 export function webStorage(): Storage | null {
   try {

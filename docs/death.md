@@ -319,7 +319,7 @@ member, so none of the monster AI applies. It still needs to plug into almost ev
 machinery a monster does (solid collision, hitscan/projectile/splash/melee hit-testing, auto-aim
 lock-on), which vanilla gets for free because none of those systems know what "monster" means — they
 only check `MF_SHOOTABLE`/`MF_SOLID`. This engine's equivalent generic layer is `ThingLayer`'s
-`blockerGrid`, so a barrel joins that grid alongside every `MONSTER_TYPES` thing
+solid-body grid (`ThingGrid`), so a barrel joins that grid alongside every `MONSTER_TYPES` thing
 (`ThingGrid.rebuild`, `solidBodies`, `pickMonster`) rather than needing a parallel set of spatial
 queries — `raycastMonster`/`monstersNear` become barrel-aware for free, which is what lets a rocket,
 a stray pellet, a monster's own fireball or another barrel's blast all hit one. The purely-solid

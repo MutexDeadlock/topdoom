@@ -429,9 +429,8 @@ export class Game {
   private pendingEnd: EndScope | null = null;
   /**
    * Which end-of-level popup is up, or null while the level is running. The level is finished and
-   * frozen behind either: {@link Game.frame} advances nothing until the player presses the continue
-   * key. Not {@link Game.pause}, which is the menu's — a popup has to keep reading input. One field
-   * rather than a flag each, so "both at once" isn't a state that can be reached.
+   * frozen behind either: {@link Game.tic} advances nothing until the player presses the continue
+   * key. Not {@link Game.pause}, which is the menu's — a popup has to keep reading input.
    * docs/hud.md § Intermission.
    */
   private popup: 'intermission' | 'endcard' | null = null;
@@ -514,9 +513,8 @@ export class Game {
    */
   private progression: LevelProgression;
   /**
-   * Measurement itself always runs — `performance.now()` calls are cheap enough
-   * not to bother gating; only what `ProfilerHud` draws of it follows the
-   * overlay's setting.
+   * Measurement itself always runs; only what `ProfilerHud` draws of it follows the overlay's
+   * setting. docs/devmode.md § Profiling overlay.
    */
   private profiler = new FrameProfiler();
   /** What a frame draws, and how (game/presenter.ts). docs/frameloop.md § What runs in a frame. */
@@ -1014,9 +1012,7 @@ export class Game {
    * and, through {@link Game.saveVia}, what `R` reloads from here on. Reported on the feed rather
    * than on the bar, which is gone by the time it lands. A moment that refuses a save (a corpse, an
    * intermission) is skipped without a word: nobody asked for this one, and `R` or the next level's
-   * checkpoint covers both. A store that refuses the write says so in the center message, which no
-   * setting hides, and takes nothing else down with it. docs/replays.md § Playback, docs/hud.md
-   * § HUD messages.
+   * checkpoint covers both. docs/replays.md § Playback, docs/hud.md § HUD messages.
    */
   private async saveTakeOver(): Promise<void> {
     if (!this.autoSave || this.blockedMoment() !== null) return;
@@ -1741,12 +1737,10 @@ export class Game {
   }
 
   /**
-   * Keeps redrawing the frozen level while paused, so the menu can sit over it
-   * (see docs/frameloop.md § Pausing). Nothing is advanced here — no dt, no input,
-   * no profiling — only `render`, and only every ~50 ms, since a static scene
-   * has no reason to cost 60 fps. {@link Game.dispose} must go through {@link Game.stop}, never
-   * {@link Game.pause}, or this would keep drawing a scene whose geometry and materials
-   * are already released.
+   * Keeps redrawing the frozen level while paused, so the menu can sit over it — no dt, no input,
+   * no profiling, every ~50 ms (docs/frameloop.md § Pausing). {@link Game.dispose} must go through
+   * {@link Game.stop}, never {@link Game.pause}, or this would keep drawing a scene whose geometry
+   * and materials are already released.
    */
   private stillFrame = (now: number) => {
     if (!this.paused) return;
@@ -2031,8 +2025,8 @@ export class Game {
    * `PST_DEAD` → `PST_REBORN`, read off player state here rather than queued at the exit;
    * {@link Game.restart} restores a checkpoint instead (docs/death.md § Player death).
    *
-   * @param reborn  a fresh `Inventory` for a living player too, as the pistol-start setting gives
-   *                every transition (docs/hud.md § End card, docs/items.md § Pistol start)
+   * @param reborn  a fresh {@link Inventory} for a living player too, as the pistol-start setting
+   *                gives every transition (docs/hud.md § End card, docs/items.md § Pistol start)
    */
   private enterLevel(index: number, reborn = false): void {
     this.loadLevel(index, () => this.runEnterLevel(index, reborn));
@@ -2110,7 +2104,7 @@ export class Game {
    * Where the exit just taken leads, into {@link Game.nextMapIndex} and {@link Game.pendingEnd}.
    * {@link LevelProgression} answers for the WAD set's own MAPINFO and for vanilla's tables; where
    * neither knows one — a PWAD map set naming its levels its own way — the next map in load order
-   * stands in, which is what every exit did before there was a progression at all.
+   * stands in.
    *
    * An exit vanilla ends the game on is the case that is *not* that fallback: it raises the end
    * card, and only then loads the next episode's first map if the set has one.
@@ -2183,8 +2177,8 @@ export class Game {
    * arrival — which adds a slot, and ends a recording, whose record has no room for one.
    * docs/multiplayer-net.md § Snapshots.
    *
-   * @returns false when these WADs have no such map, which ends the session and this `Game` with
-   *          it ({@link NetSeat.ready})
+   * @returns false when these WADs have no such map, which ends the session and this {@link Game}
+   *          with it ({@link NetSeat.ready})
    */
   private restoreFromNet(restore: NetRestore): boolean {
     const index = this.mapNames.indexOf(restore.map);
@@ -2730,8 +2724,8 @@ export class Game {
 
   /**
    * A deathmatch level's own two exits, checked where `P_UpdateSpecials` checks them: the time
-   * limit (`p_spec.c`'s `levelTimer`, over `Level.time`) and Boom's frag limit (`-frags`: any
-   * player's net frags). docs/multiplayer-deathmatch.md § Limits.
+   * limit (`p_spec.c`'s `levelTimer`, over {@link Level.time}) and Boom's frag limit (`-frags`:
+   * any player's net frags). docs/multiplayer-deathmatch.md § Limits.
    */
   private checkDeathmatchLimits(): void {
     if (!this.deathmatch || this.levelEnding) return;

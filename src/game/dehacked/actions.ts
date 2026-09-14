@@ -9,25 +9,23 @@ import type { DehSupport, StatePointer } from './defs.ts';
 
 /**
  * What the frame walker does with an action when it meets one in a chain — the whole of how an
- * action reaches this engine, since nothing steps `states[]` at runtime (docs/dehacked.md
- * § Frames). `'none'` is not "does nothing in DOOM": it is "nothing the walker derives reads it".
+ * action reaches this engine (docs/dehacked.md § Frames). `'none'` is not "does nothing in DOOM":
+ * it is "nothing the walker derives reads it".
  */
 export type ActionRole = 'chase' | 'firing' | 'weaponFire' | 'refire' | 'sound' | 'drop' | 'none';
 
 /**
- * One of the eight chains a `mobjinfo` row points at — `defs.ts`'s `StatePointer` under the name
- * this file's rules read in, and one union so a chain added later is added once. A few actions only
- * reach a sink from certain chains — `A_PlaySound` is a chain's sound, `A_Spawn` in a death chain
- * is what this engine has a drop table for — so a repoint onto a state outside them lands nowhere,
- * and the report says which chains it would have needed. `frames.ts: chainKindsOf` answers it for a
- * state.
+ * One of the eight chains a `mobjinfo` row points at — {@link StatePointer} under the name this
+ * file's rules read in, one union so a chain added later is added once. A few actions reach a sink
+ * only from certain chains, so a repoint onto a state outside them reports the chains it needed;
+ * `frames.ts: chainKindsOf` answers it for a state. docs/dehacked.md § Action pointers.
  */
 export type ChainKind = StatePointer;
 
 /**
  * Why a repoint of a `'none'` action doesn't land, in the terms the report speaks. Grouped rather
  * than written per action so the table below stays a list of names: the reason is the same for
- * every member of a group, and `MISS_DETAIL` says it once.
+ * every member of a group, and {@link MISS_DETAIL} says it once.
  */
 type ActionMiss = 'psprite' | 'perType' | 'branch' | 'chainClock' | 'explode' | 'lineEffect' | 'beta';
 
@@ -108,11 +106,11 @@ export interface ActionRow {
   /** `d_deh.c`'s own spelling, which is what a report prints. */
   name: string;
   role: ActionRole;
-  /** Absent exactly where `role` is not `'none'` — a role *is* a sink. */
+  /** Absent exactly where {@link ActionRow.role} is not `'none'` — a role *is* a sink. */
   miss?: ActionMiss;
   /** The chains this action reaches a sink from; absent where every chain reads it the same. */
   chains?: readonly ChainKind[];
-  /** Set for the `UNNAMEABLE` actions: no `[CODEPTR]` mnemonic resolves to one. */
+  /** Set for the {@link UNNAMEABLE} actions: no `[CODEPTR]` mnemonic resolves to one. */
   unnameable?: true;
 }
 
@@ -129,14 +127,14 @@ const CHAIN_SCOPED: Record<string, readonly ChainKind[]> = {
 /**
  * The actions `deh_bexptrs[]` does not list, so no `[CODEPTR]` mnemonic resolves to one. MBF's
  * three beta functions, which reach here only as a state's pristine action — a separate fact from
- * why the walker reads nothing from them, which is what `BY_MISS` answers.
+ * why the walker reads nothing from them, which is what {@link BY_MISS} answers.
  */
 const UNNAMEABLE: ReadonlySet<string> = new Set(['A_FireOldBFG', 'A_BetaSkullAttack', 'A_Stop']);
 
 /**
  * Every `deh_bexptrs[]` name, keyed lowercase, plus MBF's three beta functions that are not in that
- * array but do occupy states — `lookupAction` is what holds the difference. `A_NULL` is the list's
- * own terminator: an action cleared.
+ * array but do occupy states — {@link lookupAction} is what holds the difference. `A_NULL` is the
+ * list's own terminator: an action cleared.
  */
 export const ACTIONS: ReadonlyMap<string, ActionRow> = new Map([
   ...Object.entries(BY_ROLE).flatMap(([role, names]) =>
@@ -177,13 +175,13 @@ export function actionRole(action: string): ActionRole {
 }
 
 /**
- * How far one repoint gets: `from` is the state's pristine action, `to` what the patch asks for.
+ * How far one repoint gets. **The edit is classified, not the action**: one with a role on either
+ * side lands, because the derived tables change; one between two actions the walker reads nothing
+ * from reports under the target's own reason. docs/dehacked.md § Action pointers.
  *
- * **The edit is classified, not the action.** An edit either side of which the walker reads lands,
- * because the derived tables change — that covers clearing an `A_Chase` as well as adding one. A
- * repoint between two actions it reads nothing from cannot, and reports under the target's own
- * reason. `null` is a patch restating the action a state already has, which is not a shortfall at
- * all: several real patches write whole `[CODEPTR]` blocks that way.
+ * @param from  the state's pristine action
+ * @param to    what the patch asks for
+ * @returns null for a patch restating the action a state already has, which is not a shortfall
  */
 export function classifyDehackedPointer(
   from: string,

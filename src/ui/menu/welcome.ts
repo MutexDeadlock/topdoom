@@ -38,8 +38,8 @@ export class WelcomeUi implements MenuOverlay {
   }
 
   /**
-   * Closes the popup, reporting whether it *was* open — the same explicit hand-off `AboutUi.close`
-   * gets, so one ESC dismisses the popup and leaves the menu alone.
+   * Closes the popup, so one ESC dismisses it and leaves the menu alone.
+   * @returns whether it *was* open
    */
   close(): boolean {
     return this.shell.hide();

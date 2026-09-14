@@ -15,7 +15,7 @@ import { fireChainStates, isFlashState, isPspriteState, STATES, WEAPON_STATES } 
 
 /** One row of `linuxdoom-1.10/info.c`'s `mobjinfo[]`, in `info.h`'s `mobjtype_t` order. */
 export interface MobjRow {
-  /** The `mobjtype_t` name, for reports and for keying `MISSILE_SINKS`. */
+  /** The `mobjtype_t` name, for reports and for keying {@link MISSILE_SINKS}. */
   type: string;
   /**
    * `mobjinfo.doomednum` — the key every type-keyed table here uses — or -1 for a type no map can
@@ -34,10 +34,9 @@ export interface MobjRow {
 
 /**
  * All 137 of `mobjinfo[]`, transcribed mechanically from `linuxdoom-1.10/info.c` rather than by
- * hand. DEH addresses a thing by its **1-based** index here: `Thing 97` is `MOBJ_INFO[96]`.
- *
- * This is the checkable data twin of the `// MT_*` comments in `things/doomednums.ts` — those name
- * the pairing in prose, this makes it something a test can cross-check, and does.
+ * hand. DEH addresses a thing by its **1-based** index here: `Thing 97` is `MOBJ_INFO[96]`. A test
+ * cross-checks it against `things/doomednums.ts`' `// MT_*` comments.
+ * docs/dehacked.md § Thing records.
  */
 export const MOBJ_INFO: readonly MobjRow[] = [
   { type: 'MT_PLAYER', doomednum: -1, speed: 0 }, // 1
@@ -180,18 +179,9 @@ export const MOBJ_INFO: readonly MobjRow[] = [
 ];
 
 /**
- * Where a missile `mobjtype_t`'s patchable fields actually land. One vanilla `mobjinfo` can drive
- * several sinks at once — `MT_ROCKET` is the rocket launcher's missile, the cyberdemon's missile
- * and the flight radius `PROJECTILE_RADIUS` keys, and a `Speed` edit has to reach all of them —
- * so this is a record of optional sinks rather than a union.
- *
- * Keyed by flight sprite because that is what this engine keys a missile by
- * (`AttackStats.projectile.sprite`, `PROJECTILE_RADIUS`, `WeaponDef.projectileSprite`): in vanilla
- * the imp's fireball *is* one shared `mobjinfo`, so rewriting every stat block that names `BAL1`
- * is the faithful answer, not an approximation.
- *
- * `MT_SPAWNSHOT` is deliberately absent. The Icon of Sin's cube is not sprite-keyed — it carries
- * its own constants in `monsters/iconofsin.ts` — so it has no sink here and classifies `noTarget`.
+ * Where a missile `mobjtype_t`'s patchable fields actually land, keyed by the flight sprite this
+ * engine keys a missile by. A record of optional sinks, since one `mobjinfo` can drive several
+ * (`MT_ROCKET`); `MT_SPAWNSHOT` is deliberately absent. docs/dehacked.md § Thing records.
  */
 export const MISSILE_SINKS: Record<string, { sprite: string; weapons?: readonly WeaponId[] }> = {
   MT_TROOPSHOT: { sprite: 'BAL1' },
@@ -225,22 +215,17 @@ export const WEAPON_ORDER: readonly WeaponId[] = [
 ];
 
 /**
- * `ammotype_t` in `doomdef.h` order, which a DEH `Ammo N` record indexes **0-based**. The trap
- * worth naming: slot 2 is cells and slot 3 is rockets, which is not the order the engine's own
- * `AmmoType` union happens to be written in.
+ * `ammotype_t` in `doomdef.h` order, which a DEH `Ammo N` record indexes **0-based**. Slot 2 is
+ * cells and slot 3 is rockets — not the order the engine's own {@link AmmoType} is written in.
  */
 export const AMMO_ORDER: readonly AmmoType[] = ['bullets', 'shells', 'cells', 'rockets'];
 
 /**
  * `sfxenum_t` order, which a DEH `Sound N` record indexes. Slot 0 is `sfx_None` and is `null`
- * rather than an `SfxId`: a patch that sets a sound field to 0 is asking for silence, and
- * `MonsterSounds`' fields are already optional, so that maps to deleting the field.
- *
- * **Derived, not transcribed a second time.** `audio/sfx.ts`'s `SFX` already *is* `S_sfx[]` in
- * `sounds.h` order — the whole table, in vanilla's own sequence — so restating those 108 names
- * here would only create a copy that could drift from the original. What that costs is a
- * dependency on `SFX`'s declaration order staying vanilla's, which is exactly what the pinned
- * indices in `tests/game/dehacked-tables.test.ts` exist to catch.
+ * rather than an {@link SfxId}: a patch that sets a sound field to 0 is asking for silence.
+ * **Derived, not transcribed a second time**, from `audio/sfx.ts`'s `SFX`, whose order the pinned
+ * indices in `tests/game/dehacked-tables.test.ts` hold to vanilla's.
+ * docs/dehacked.md § Sounds and music.
  */
 export const SFX_ORDER: readonly (SfxId | null)[] = [null, ...SFX_NAMES];
 
@@ -312,12 +297,9 @@ export const MF_FLAGS: Record<string, FlagRow> = {
 };
 
 /**
- * Every flag a `Bits` mask asks for that this engine does not honour, for the coverage report.
- *
- * Raised from the mask rather than from the field name, which is the only place that knows what a
- * patch actually wanted: the `Bits` line itself always applies, so without this the individual
- * flags it silently drops would never be reported. `quiet` rows are skipped here, at the source —
- * for them a missing sink is the right answer. docs/dehacked.md § Bits.
+ * Every flag a `Bits` mask asks for that this engine does not honour, for the coverage report —
+ * raised from the mask, the only place that knows what a patch wanted, and skipping `quiet` rows at
+ * the source. docs/dehacked.md § Bits.
  */
 export function unhonoredFlags(mask: number): { name: string; support: DehShortfall }[] {
   const rows: { name: string; support: DehShortfall }[] = [];
@@ -330,14 +312,9 @@ export function unhonoredFlags(mask: number): { name: string; support: DehShortf
 
 /**
  * Which monster owns each of `p_enemy.c`'s attack actions — the bridge a repointed attack chain
- * reads its *identity* through. The walker says which action a chain now fires; this says whose
- * roll, projectile and splash that action is, and the applier copies that type's own `AttackStats`
- * onto the repointed chain (docs/dehacked.md § Action pointers).
- *
- * A bridge rather than a second table of rolls: every one of those figures is already written once
- * in `MONSTER_SEED` with its `p_enemy.c` citation, and a copy here would be exactly the drift the
- * one-home rule exists to prevent. `A_BrainSpit` has no row on purpose — the Icon of Sin's cube is
- * not an `AttackStats` at all, and carries its own constants in `monsters/iconofsin.ts`.
+ * reads its *identity* through, whose `AttackStats` the applier copies onto it.
+ * `A_BrainSpit` has no row on purpose: the Icon of Sin's cube is not an `AttackStats` at all, and
+ * carries its own constants in `monsters/iconofsin.ts`. docs/dehacked.md § Action pointers.
  */
 export const ATTACK_ACTION_SOURCES: Record<string, number> = {
   A_PosAttack: ThingType.zombieman,
@@ -360,14 +337,10 @@ export const ATTACK_ACTION_SOURCES: Record<string, number> = {
 };
 
 /**
- * Which weapon owns each of `p_pspr.c`'s nine firing actions — `ATTACK_ACTION_SOURCES` for the
- * player's side, and read the same way. The walker says which action a repointed fire chain now
- * carries; this says whose roll, spread, ammo cost and projectile that action is, and the applier
- * copies that weapon's own `WeaponDef` onto the repointed one (docs/dehacked.md § Action pointers).
- *
- * Every one of the nine is here and the mapping is 1:1 — vanilla writes one action per weapon, and
- * the two chains that carry two firing actions (`S_SAW1`/`S_SAW2`, `S_CHAIN1`/`S_CHAIN2`) repeat
- * their own.
+ * Which weapon owns each of `p_pspr.c`'s nine firing actions — {@link ATTACK_ACTION_SOURCES} for
+ * the player's side, whose `WeaponDef` the applier copies onto a repointed fire chain. 1:1: the two
+ * chains that carry two firing actions (`S_SAW1`/`S_SAW2`, `S_CHAIN1`/`S_CHAIN2`) repeat their own.
+ * docs/dehacked.md § Action pointers.
  */
 export const WEAPON_ACTION_SOURCES: Record<string, WeaponId> = {
   A_Punch: 'fist',
@@ -418,11 +391,9 @@ export const THING_STATE_FIELDS: Record<string, StatePointer> = {
 
 /**
  * `d_deh.c`'s `deh_mobjinfo[]` field names, spelled exactly as a patch writes them, mapped to how
- * far each gets here. Matched case-insensitively, as `deh_strcasecmp` does.
- *
- * `Reaction time` has no per-type home: `monsters/ai.ts` seeds one shared `REACTION_CHASES`, and
- * vanilla's own value is 8 for every monster. `Dropped item`, `Blood color` and `Bits2` are
- * MBF21's, not read yet. `ID #` is permanently out — docs/dehacked.md § What is not supported.
+ * far each gets here. Matched case-insensitively, as `deh_strcasecmp` does. `Dropped item`,
+ * `Blood color` and `Bits2` are MBF21's, unread; `ID #` and `Reaction time` are out —
+ * docs/dehacked.md § What is not supported.
  */
 const THING_FIELDS: Record<string, DehSupport> = {
   'hit points': 'applied',
@@ -445,9 +416,9 @@ const THING_FIELDS: Record<string, DehSupport> = {
 };
 
 /**
- * `d_deh.c`'s `deh_state[]`: which `DehFrameEdit` field each `Frame` line lands in. `Unknown 1`/
- * `Unknown 2` are `state_t.misc1`/`misc2`, which vanilla's own actions never read, so they classify
- * `noTarget` below rather than being carried.
+ * `d_deh.c`'s `deh_state[]`: which {@link DehFrameEdit} field each `Frame` line lands in.
+ * `Unknown 1`/`Unknown 2` land in {@link DehFrameEdit.args} instead, through
+ * {@link FRAME_ARG_FIELDS}.
  */
 export const FRAME_FIELD_SINKS: Record<string, Exclude<keyof DehFrameEdit, 'index' | 'args'>> = {
   'sprite number': 'spriteNum',
@@ -457,10 +428,9 @@ export const FRAME_FIELD_SINKS: Record<string, Exclude<keyof DehFrameEdit, 'inde
 };
 
 /**
- * `state_t`'s two general-purpose fields onto their slot in `DehFrameEdit.args`. Vanilla leaves
- * both zero everywhere and reads neither; MBF's own pointers are what give them a meaning
- * (`A_Spawn`'s type and z, `A_PlaySound`'s sound, `A_Scratch`'s damage) — docs/dehacked.md
- * § Action pointers.
+ * `state_t`'s two general-purpose fields onto their slot in {@link DehFrameEdit.args}. Vanilla
+ * leaves both zero everywhere and reads neither; MBF's own pointers give them a meaning —
+ * docs/dehacked.md § Action pointers.
  */
 export const FRAME_ARG_FIELDS: Record<string, number> = {
   'unknown 1': 0,
@@ -473,12 +443,9 @@ const FRAME_FIELDS: Record<string, DehSupport> = {
 };
 
 /**
- * Which `weaponinfo` state pointer each `Weapon` frame line repoints — `d_deh.c`'s own spellings
- * onto `WEAPON_STATES`' field names. Note the first two: `deh_weapon[]` labels `upstate` "Deselect
- * frame" and `downstate` "Select frame", the two the wrong way round, and the labels are what a
- * patch writes. Only a repointed `Shooting frame` changes anything here — it is the chain the fire
- * rate is walked from (docs/weapons.md § Fire rates); the other four are read so the record is
- * carried whole.
+ * Which `weaponinfo` state pointer each `Weapon` frame line repoints — `d_deh.c`'s own spellings,
+ * swapped labels included (`Deselect frame` is `upstate`), onto {@link WEAPON_STATES}' field
+ * names. Only a repointed `Shooting frame` changes anything (docs/weapons.md § Fire rates).
  */
 export const WEAPON_STATE_FIELDS: Record<string, WeaponStatePointer> = {
   'deselect frame': 'up',
@@ -489,9 +456,8 @@ export const WEAPON_STATE_FIELDS: Record<string, WeaponStatePointer> = {
 };
 
 /**
- * `d_deh.c`'s `deh_weapon[]` — an ammo type and five state pointers, and nothing else: vanilla's
- * `weaponinfo[]` carries no damage and no fire rate, because a weapon's rate *is* its fire chain's
- * durations. All six land. docs/dehacked.md § Weapon, Ammo and Misc.
+ * `d_deh.c`'s `deh_weapon[]` — an ammo type and five state pointers, all six landing.
+ * docs/dehacked.md § Weapon, Ammo and Misc.
  */
 const WEAPON_FIELDS: Record<string, DehSupport> = {
   'ammo type': 'applied',
@@ -505,10 +471,9 @@ const AMMO_FIELDS: Record<string, DehSupport> = {
 };
 
 /**
- * Where one `Misc` line lands: an `InventoryLimits` field, or a field of one `WEAPONS` entry.
- * Typed rather than a bare string so the applier writes through a checked key and `MISC_FIELDS`
- * can be derived from it — "is it applied" and "where does it land" were two independent
- * statements before, and only one of them was ever checked.
+ * Where one `Misc` line lands: an {@link InventoryLimits} field, or a field of one `WEAPONS`
+ * entry. Typed so the applier writes through a checked key and {@link MISC_FIELDS} can be derived
+ * from it.
  */
 export type MiscSink =
   | { limit: keyof InventoryLimits }
@@ -517,11 +482,8 @@ export type MiscSink =
 /**
  * `d_deh.c`'s `deh_misc[]` names and the sink each one has here. `Max Health` is vanilla's
  * `maxhealth`, the cap an ordinary medikit stops at; `Max Soulsphere` is `max_soul`, the higher one
- * the bonus items may push past it. `BFG Cells/Shot` is the one row that is not a limit at all —
- * vanilla's `deh_bfgcells` writes `weaponinfo[wp_bfg].ammopershot`.
- *
- * A name is in this table exactly when it has somewhere to go, which is what `MISC_FIELDS` reads
- * to classify it.
+ * the bonus items may push past it. A name is in this table exactly when it has somewhere to go,
+ * which is what {@link MISC_FIELDS} reads to classify it. docs/dehacked.md § Weapon, Ammo and Misc.
  */
 export const MISC_SINKS: Record<string, MiscSink> = {
   'initial health': { limit: 'initialHealth' },
@@ -541,9 +503,9 @@ export const MISC_SINKS: Record<string, MiscSink> = {
 };
 
 /**
- * `d_deh.c`'s `deh_misc[]`. The `IDFA` rows have no target because that cheat isn't implemented
- * here (the three that are reach their own rows in `MISC_SINKS` above), and `Monsters Infight` none
- * because infighting here is not a single global switch (docs/monster-ai.md § Infighting).
+ * `d_deh.c`'s `deh_misc[]`: {@link MISC_SINKS}' rows applied. The `IDFA` rows have no target
+ * because that cheat isn't implemented here, and `Monsters Infight` none because infighting here
+ * is not a single global switch (docs/monster-ai.md § Infighting).
  */
 const MISC_FIELDS: Record<string, DehSupport> = {
   ...appliedRows(MISC_SINKS),
@@ -554,15 +516,10 @@ const MISC_FIELDS: Record<string, DehSupport> = {
 };
 
 /**
- * `OB_*` obituary mnemonics and the `DamageCause` whose whole line each one replaces
- * (`things/tables.ts`'s `OBITUARIES`, `game/combat.ts`'s `DamageCause`). `'default'` is not a
- * cause but the fallback line an unattributed death draws.
- *
- * Neither reference set is vanilla — DOOM has no obituaries — and the two disagree about scope, so
- * both are accepted: Eternity's BEX string table defines only the attacker-less causes, ZDoom's
- * `LANGUAGE` adds the per-monster ones. Where the two name one sink twice the aliases sit on
- * separate rows and the later row here wins — a patch setting both meant the same thing by them.
- * docs/dehacked.md § Obituaries.
+ * `OB_*` obituary mnemonics and the {@link DamageCause} whose whole line each one replaces
+ * (`things/tables.ts`'s `OBITUARIES`); `'default'` is the fallback line an unattributed death
+ * draws. Eternity's and ZDoom's sets are both accepted, and where two name one sink the later row
+ * here wins. docs/dehacked.md § Obituaries.
  */
 export const OBITUARY_SINKS: Record<string, DamageCause | 'default'> = {
   OB_CRUSH: 'crush',
@@ -597,13 +554,10 @@ export const OBITUARY_SINKS: Record<string, DamageCause | 'default'> = {
 
 /**
  * The `PD_*` mnemonics this engine has a line for — `specials/tables.ts`'s `LOCKED_LINES`, the
- * fifteen `d_englsh.h` strings vanilla and Boom define between them.
- *
- * Spelled out here rather than read off that table because this module is on the **read** side:
- * `wad/library.ts` and the manifest plugin classify a patch without a `Game`, and importing the
- * specials tables to do it would pull the game layer into the menu's graph
- * (docs/dehacked.md § The two entry points). `tests/game/dehacked-apply.test.ts` cross-checks the
- * two lists, which is what keeps the duplication honest.
+ * fifteen `d_englsh.h` strings vanilla and Boom define between them. Spelled out rather than
+ * imported because this module is on the **read** side, where importing the specials tables would
+ * pull the game layer into the menu's graph (docs/dehacked.md § The two entry points);
+ * `tests/game/dehacked-apply.test.ts` cross-checks the two lists.
  */
 const LOCK_LINE_MNEMONICS: readonly string[] = [
   'PD_BLUEO', 'PD_REDO', 'PD_YELLOWO',
@@ -616,7 +570,7 @@ const LOCK_LINE_MNEMONICS: readonly string[] = [
 /**
  * The `GOT*` mnemonics this engine prints — `game/inventory/tables.ts`'s `PICKUP_LINES`, all 37 of
  * `d_englsh.h`'s pickup messages. Spelled out here for the same read-side reason
- * `LOCK_LINE_MNEMONICS` is, and cross-checked by the same test.
+ * {@link LOCK_LINE_MNEMONICS} is, and cross-checked by the same test.
  */
 const PICKUP_LINE_MNEMONICS: readonly string[] = [
   'GOTARMOR', 'GOTMEGA', 'GOTHTHBONUS', 'GOTARMBONUS',
@@ -630,9 +584,8 @@ const PICKUP_LINE_MNEMONICS: readonly string[] = [
 
 /**
  * The `STSTR_*` mnemonics this engine has a response for — `game/cheats.ts`'s `CHEAT_MESSAGES`,
- * the five `d_englsh.h` strings this engine's cheats print. Spelled out here rather than
- * imported for the same read-side reason `LOCK_LINE_MNEMONICS` is, and cross-checked by the same
- * test.
+ * the five `d_englsh.h` strings its cheats print. Spelled out for the same read-side reason
+ * {@link LOCK_LINE_MNEMONICS} is, and cross-checked by the same test.
  */
 const CHEAT_MESSAGE_MNEMONICS: readonly string[] = [
   'STSTR_DQDON', 'STSTR_DQDOFF',
@@ -645,10 +598,9 @@ const CHEAT_MESSAGE_MNEMONICS: readonly string[] = [
  * first, so `HUSTR_E1M1` and `HUSTR_1` both land on the level-title row while `HUSTR_PLRRED`
  * doesn't. Anything unlisted is `unknown`.
  *
- * **A `noTarget` row here is this table's whole purpose**: it is what marks a mnemonic as
- * recognised-and-deliberately-homeless, so the parser can pass over it in silence and report only
- * what it failed to recognise. The `OB_*` and `PD_*` rows catch the mnemonics with no sink; the
- * ones that have one are whole keys in `STRING_KEYS` below.
+ * **A `noTarget` row marks a mnemonic recognised-and-deliberately-homeless**, which the parser
+ * passes over in silence. The `OB_*` and `PD_*` rows catch the mnemonics with no sink; the ones
+ * that have one are whole keys in {@link STRING_KEYS} below.
  */
 const STRING_PREFIXES: readonly (readonly [string, DehSupport])[] = [
   ['HUSTR_PLR', 'noTarget'], // multiplayer player names
@@ -758,14 +710,11 @@ export function classifyDehackedField(kind: DehRecordKind, field: string, row?: 
 
 /**
  * How far one `Frame N` record gets, by which state it names. A world state applies, and so does a
- * **fire-chain** state: its tics *are* this engine's fire rate, walked back out of the chain
- * (docs/weapons.md § Fire rates). Every other first-person state is `noTarget` — a muzzle flash
- * because there is no weapon here to flash, and a bob, raise or lower state because this engine
- * draws no weapon sprite to animate. docs/dehacked.md § Frames.
+ * **fire-chain** state: its tics *are* this engine's fire rate (docs/weapons.md § Fire rates).
+ * Every other first-person state is `noTarget`. docs/dehacked.md § Frames.
  *
- * `stateCount` is the table the patch is growing (docs/dehacked.md § Extended states), which is
- * what an index is held against rather than `STATES.length`: a record naming a row past the end is
- * what grows it, and only one past the growth limit names nothing.
+ * @param stateCount  the table the patch is growing (docs/dehacked.md § Extended states), which an
+ *                    index is held against rather than `STATES.length`
  */
 export function classifyDehackedFrame(index: number, stateCount: number = STATES.length): DehSupport {
   if (!Number.isInteger(index) || index < 0 || index >= stateCount) return 'unknown';
@@ -779,8 +728,8 @@ export function classifyDehackedFrame(index: number, stateCount: number = STATES
  * psprite state outside them is a weapon's bob, raise or lower, which this engine has nothing to
  * draw and no clock to hold.
  *
- * Read off **pristine** `WEAPON_STATES`: a patch's own `Shooting frame` repoint is applied after
- * the parse, and vanilla's chains are what a patch writes its `Frame` records against anyway.
+ * Read off **pristine** {@link WEAPON_STATES}: a patch's own `Shooting frame` repoint is applied
+ * after the parse, and vanilla's chains are what a patch writes its `Frame` records against anyway.
  */
 const FIRE_CHAIN_STATES: ReadonlySet<number> = new Set(
   WEAPON_STATES.flatMap((w) => fireChainStates(STATES, w.atk)),
@@ -792,13 +741,9 @@ export function classifyDehackedFlag(mnemonic: string): FlagRow | undefined {
 }
 
 /**
- * How far one `[STRINGS]` mnemonic gets.
- *
- * **A `noTarget` here is reported nowhere** — `parse.ts` passes over it silently. The tables above
- * are the standing list of what this engine deliberately has no home for, and a report row per
- * family only ever repeated that: no cast call, no automap, no deathmatch. `unknown` is the one
- * shortfall worth a reader's attention, because it means the parser did not recognise the mnemonic
- * at all. docs/dehacked.md § The coverage report.
+ * How far one `[STRINGS]` mnemonic gets. **A `noTarget` here is reported nowhere** — `parse.ts`
+ * passes over it silently; only `unknown` is worth a reader's attention.
+ * docs/dehacked.md § The coverage report.
  */
 export function classifyDehackedString(key: string): DehSupport {
   const upper = key.trim().toUpperCase();

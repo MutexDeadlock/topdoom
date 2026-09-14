@@ -3,12 +3,11 @@
  * the `defs.ts` shapes as flat data rather than per-type code; `game/specials.ts` drives off these
  * tables.
  *
- * Every vanilla DOOM/DOOM2 special is covered, and Boom's numbers join through `lookupSpecial`
- * without touching the vanilla table (docs/specials.md § Scope). Two mechanisms sit outside
- * `LINE_SPECIALS` because neither is a triggerable linedef effect: `SECTOR_DAMAGE_SPECIALS`, a
- * sustained per-tic hazard, and the always-on `PARAM_LINE_SPECIALS` family. Keyed door numbers
- * (26-28, 32-34, 99, 133-137) carry a `lock` checked in `game/specials.ts` —
- * docs/items.md § Locked doors and use triggers.
+ * Boom's numbers join through {@link lookupSpecial} without touching the vanilla table
+ * (docs/specials.md § Scope). Two mechanisms sit outside {@link LINE_SPECIALS} because neither is a
+ * triggerable linedef effect: {@link SECTOR_DAMAGE_SPECIALS}, a sustained per-tic hazard, and the
+ * always-on {@link PARAM_LINE_SPECIALS} family. Keyed door numbers (26-28, 32-34, 99, 133-137)
+ * carry a {@link SpecialDef.lock} — docs/items.md § Locked doors and use triggers.
  */
 import { DOOM_TIC } from '../../constants.ts';
 import { keySlotColor } from '../inventory.ts';
@@ -53,13 +52,13 @@ function door(speed: number, mode: DoorMode = 'openClose', waitSeconds = DOOR_WA
 /**
  * The repeatable raise doors — the five numbers `EV_VerticalDoor`'s reuse
  * branch names literally, and so the only triggers that take over a door still
- * in motion (`DoorEffect.reverseWhenMoving`).
+ * in motion ({@link DoorEffect.reverseWhenMoving}).
  */
 function raiseDoor(speed: number): DoorEffect {
   return { ...door(speed), reverseWhenMoving: true };
 }
 
-/** Vanilla's color locks: card or skull of the color, interchangeably (see `LockRule`). */
+/** Vanilla's color locks: card or skull of the color, interchangeably (see {@link LockRule}). */
 function color(c: 'blue' | 'red' | 'yellow'): LockRule {
   return { kind: 'color', color: c };
 }
@@ -69,17 +68,15 @@ function lift(speed = LIFT_SPEED, waitSeconds = LIFT_WAIT, target?: LiftTarget):
 }
 
 /**
- * `floor()`'s **default** `floor->direction` per target: every vanilla "lower"
- * case runs -1, every "raise" one +1 (`p_floor.c`). Exhaustive over
- * `MoveTarget` so a new one can't be added without answering this, though the
- * targets only Boom's generalized floors reach take their direction from its
- * own bit instead (`generalized.ts: genFloor`).
+ * {@link floor}'s **default** `floor->direction` per target: every vanilla "lower" case runs -1,
+ * every "raise" one +1 (`p_floor.c`). Exhaustive over {@link MoveTarget} so a new one can't be
+ * added without answering this, though the targets only Boom's generalized floors reach take their
+ * direction from its own bit instead (`generalized.ts: genFloor`).
  *
- * It is a default and not the rule because vanilla hangs the direction on the
- * `EV_DoFloor` **case**, not on the height it aims at — the two agree across
- * every number in this file, which is what makes the table safe, but a future
- * number whose case disagrees must say so with `floor`'s `direction` option
- * rather than be quietly given the target's sign. See `FloorEffect.direction`.
+ * It is a default, not the rule, because vanilla hangs the direction on the `EV_DoFloor` **case**,
+ * not on the height it aims at — the two agree across every number in this file, which makes the
+ * table safe, but a future number whose case disagrees must say so with {@link floor}'s `direction`
+ * option rather than be quietly given the target's sign. See {@link FloorEffect.direction}.
  */
 const FLOOR_TARGET_DIRECTION: Record<MoveTarget, 'up' | 'down'> = {
   lowestNeighborFloor: 'down',
@@ -101,11 +98,10 @@ const FLOOR_TARGET_DIRECTION: Record<MoveTarget, 'up' | 'down'> = {
 };
 
 /**
- * `FLOOR_TARGET_DIRECTION`'s ceiling half, off `EV_DoCeiling`'s cases
- * (`p_ceilng.c`): `raiseToHighest` runs +1, while `lowerToFloor`,
- * `lowerAndCrush` and Boom's `lowerToLowest`/`lowerToMaxFloor` all run -1.
- * Note `lowestNeighborCeiling` is a *lowering* target here and a raising one
- * for floors, which is why the two tables can't be shared. Same default-only
+ * {@link FLOOR_TARGET_DIRECTION}'s ceiling half, off `EV_DoCeiling`'s cases (`p_ceilng.c`):
+ * `raiseToHighest` runs +1, while `lowerToFloor`, `lowerAndCrush` and Boom's
+ * `lowerToLowest`/`lowerToMaxFloor` all run -1. `lowestNeighborCeiling` is a *lowering* target here
+ * and a raising one for floors, which is why the two tables can't be shared. Same default-only
  * status, same `direction` override, same generalized-bit exemption.
  */
 const CEILING_TARGET_DIRECTION: Record<CeilingTarget, 'up' | 'down'> = {
@@ -132,7 +128,7 @@ function ceiling(
   return { kind: 'ceiling', speed, target, direction: options.direction ?? CEILING_TARGET_DIRECTION[target] };
 }
 
-/** `direction` overrides `FLOOR_TARGET_DIRECTION` — see that table for when a number needs to. */
+/** `direction` overrides {@link FLOOR_TARGET_DIRECTION}, which says when a number needs to. */
 function floor(
   target: MoveTarget,
   speed = FLOOR_SPEED,
@@ -149,11 +145,10 @@ function floor(
 }
 
 /**
- * Boom's silent teleport to a landing marker (207-210, 268/269). Every one is
- * monster-activatable — `p_spec.c`'s crossing allow-list and `p_switch.c`'s
- * use allow-list both name them — and every one clears its line only on
- * success, unlike vanilla 39. See docs/specials-teleporters.md § Silent and line-to-line
- * teleporters.
+ * Boom's silent teleport to a landing marker (207-210, 268/269). Every one is monster-activatable —
+ * `p_spec.c`'s crossing allow-list and `p_switch.c`'s use allow-list both name them — and every one
+ * clears its line only on success, unlike vanilla 39.
+ * See docs/specials-teleporters.md § Silent and line-to-line teleporters.
  */
 function silentTeleport(
   trigger: 'walk' | 'use',
@@ -465,15 +460,8 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
 
 /**
  * `Sector.special` values that animate light level rather than move geometry.
- * 4 ("STROBE FAST/DEATH SLIME") is *also* a damage floor — confirmed against
- * `P_SpawnSpecials`, which spawns the exact same `FASTDARK`, non-synced
- * strobe as sector type 2 and then explicitly restores `sector->special = 4`
- * afterward, specifically so `P_PlayerInSpecialSector`'s own read of
- * `sector->special` still sees 4 and deals damage. This engine never clears
- * `sector.special` after seeding a light pattern in the first place (unlike
- * vanilla, which only avoids doing so here because of that explicit
- * restore), so 4 living in both this table and `SECTOR_DAMAGE_SPECIALS`
- * "just works" without needing to reproduce that restore step.
+ * 4 ("STROBE FAST/DEATH SLIME") is *also* a damage floor, in {@link SECTOR_DAMAGE_SPECIALS} too —
+ * docs/specials.md § Damage floors.
  */
 export const SECTOR_LIGHT_SPECIALS: Record<number, LightPattern> = {
   1: 'blinkRandom',
@@ -486,10 +474,7 @@ export const SECTOR_LIGHT_SPECIALS: Record<number, LightPattern> = {
   17: 'flicker',
 };
 
-/**
- * Vanilla `P_PlayerInSpecialSector`'s damage-floor cases — see `DamageFloorEffect` for what `suit`
- * means.
- */
+/** Vanilla `P_PlayerInSpecialSector`'s damage-floor cases — see {@link DamageFloorEffect.suit}. */
 export const SECTOR_DAMAGE_SPECIALS: Record<number, DamageFloorEffect> = {
   7: { amount: 5, suit: 'blocks' }, // NUKAGE DAMAGE
   5: { amount: 10, suit: 'blocks' }, // HELLSLIME DAMAGE
@@ -505,24 +490,19 @@ export const SUIT_LEAK_CHANCE = 5 / 256;
 /**
  * Not vanilla's literal `leveltime&0x1f` (every 32 tics since level start, a
  * global clock) — a plain independent countdown instead. Unlike
- * `CRUSH_DAMAGE_INTERVAL`, this one genuinely can stay per-instance: there's
- * only ever one player, so there's no second simultaneous instance for an
- * unsynced phase to drift against. 32 tics at 35 tics/sec.
+ * `CRUSH_DAMAGE_INTERVAL`, this one genuinely can stay per-instance: each player slot has its own
+ * timer, so there's no second simultaneous instance for an unsynced phase to drift against.
+ * 32 tics at 35 tics/sec.
  */
 export const DAMAGE_FLOOR_INTERVAL = 32 * DOOM_TIC;
 
 /**
- * Boom's parameter lines: specials consumed once at level spawn
- * (`P_SpawnSpecials`) to configure a permanent per-line/per-sector behavior —
- * scrollers, friction, pushers, property transfers — rather than dispatched
- * from a trigger. `lookupSpecial` deliberately returns `null` for all of them:
- * they are `specials/forces.ts`'s, not the trigger funnel's. Listing them here
- * is what lets the inspect-wad coverage report tell "handled elsewhere" from
- * "unknown number".
- *
- * Everything in this set is implemented, by one of two owners: `forces.ts` for
- * the numbers that change how things move, `transfers.ts` for the ones that
- * change how a sector is drawn.
+ * Boom's parameter lines: specials consumed once at level spawn (`P_SpawnSpecials`) to configure a
+ * permanent per-line/per-sector behavior — scrollers, friction, pushers, property transfers —
+ * rather than dispatched from a trigger. {@link lookupSpecial} deliberately returns `null` for all
+ * of them: every one is implemented outside the trigger funnel, by `forces.ts` for the numbers that
+ * change how things move and `transfers.ts` for the ones that change how a sector is drawn. Listing
+ * them here is what lets the inspect-wad coverage report tell "handled elsewhere" from "unknown".
  * docs/specials-forces.md § Scrollers and conveyors, § Friction, § Pushers, § Render transfers.
  */
 export const PARAM_LINE_SPECIALS: Set<number> = new Set([
@@ -543,7 +523,7 @@ export const PARAM_LINE_SPECIALS: Set<number> = new Set([
 /**
  * Boom's extended (non-generalized, non-parameter) linedef numbers — the
  * 142-259 families `p_spec.c`/`p_switch.c` added beside the vanilla cases.
- * Kept apart from `LINE_SPECIALS` so the vanilla table's audit stays exactly
+ * Kept apart from {@link LINE_SPECIALS} so the vanilla table's audit stays exactly
  * what it claims; every entry here is transcribed from the Boom dispatch
  * switches (`P_CrossSpecialLine`, `P_UseSpecialLine`, `P_ShootSpecialLine`),
  * one case at a time. docs/specials.md § Scope.
@@ -707,11 +687,11 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
 
 /**
  * Numbers this engine resolves by *doing nothing*, on purpose — the effect they configure has no
- * counterpart in a top-down renderer, so nothing is missing. `lookupSpecial` returns null for them
- * like any unknown number; the set exists so the inspect-wad coverage report can call them "no-op"
- * instead of "UNKNOWN", while a number whose mechanism simply hasn't been built stays `unknown` and
- * keeps failing the gate. The one mechanism here is MBF's sky transfer (`p_spec.c`, killough 10/98,
- * 271 and 272), which this engine can never show: an `F_SKY1` ceiling is not built at all.
+ * counterpart in a top-down renderer, so nothing is missing. {@link lookupSpecial} returns null for
+ * them like any unknown number; the set exists so the inspect-wad coverage report can call them
+ * "no-op" instead of "UNKNOWN", while a number whose mechanism hasn't been built stays `unknown`
+ * and keeps failing the gate. The one mechanism here is MBF's sky transfer (`p_spec.c`, killough
+ * 10/98, 271 and 272), which this engine can never show: an `F_SKY1` ceiling is not built at all.
  * docs/specials.md § Scope.
  */
 export const NOOP_LINE_SPECIALS: Set<number> = new Set<number>([271, 272]);
@@ -724,7 +704,7 @@ export const NOOP_LINE_SPECIALS: Set<number> = new Set<number>([271, 272]);
 const generalizedCache = new Map<number, SpecialDef | null>();
 
 /**
- * Which family a linedef special belongs to — what `lookupSpecial` resolves
+ * Which family a linedef special belongs to — what {@link lookupSpecial} resolves
  * against, named. `'unknown'` is the one that matters: it is the Boom-compat
  * acceptance gate (`scripts/inspect-wad.ts`'s coverage report), so it lives
  * here beside the tables rather than in the script, where it could drift out
@@ -801,9 +781,10 @@ export const LOCKED_LINES: Record<string, string> = {
 };
 
 /**
- * The line a lock raises when it turns the player away, already resolved through `LOCKED_LINES` so
- * a patched string comes back instead. `kind` is vanilla's own door/object split, which only the
- * color locks have. See docs/items.md § Locked doors and use triggers.
+ * The line a lock raises when it turns the player away, resolved through {@link LOCKED_LINES} so a
+ * patched string comes back instead. docs/items.md § Locked doors and use triggers.
+ *
+ * @param kind  vanilla's own door/object split, which only the color locks have
  */
 export function lockedLine(lock: LockRule, kind: 'door' | 'switch'): string {
   switch (lock.kind) {

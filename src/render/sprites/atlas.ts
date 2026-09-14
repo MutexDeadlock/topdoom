@@ -97,7 +97,6 @@ export class SpriteAtlas {
   }
 }
 
-/** A page's texture. */
 function makePageTexture(data: Uint8Array, size: number, anisotropy: number): THREE.DataTexture {
   const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
   sampleAsSprite(texture, anisotropy);

@@ -18,7 +18,7 @@ export const SHIPPED_WAD_PATH = 'game/topdoom.wad';
 export const SHIPPED_GLDEFS = 'GLDEFS';
 export const SHIPPED_SECRET = 'SECRET';
 
-/** What `shippedLump` may be asked for — the file's own two, not any name a caller invents. */
+/** What {@link shippedLump} may be asked for — the file's own two, not a name a caller invents. */
 export type ShippedLump = typeof SHIPPED_GLDEFS | typeof SHIPPED_SECRET;
 
 /** Memoized: a fixed asset, and every level load would otherwise re-fetch and re-parse it. */

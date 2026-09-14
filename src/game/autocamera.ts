@@ -19,7 +19,7 @@ import { cos, sin } from '../util/fdlibm.ts';
 /** Which camera mode is active — a menu setting, see docs/menu.md § Persisted settings. */
 export type CameraMode = 'auto' | 'manual';
 
-/** The auto camera's dampers, as `snapshot()` hands them over — docs/replays.md § Camera state. */
+/** The dampers, as {@link AutoCamera.snapshot} hands them over — docs/replays.md § Camera state. */
 export interface AutoCameraSnapshot {
   spread: number;
   ahead: number;
@@ -44,7 +44,11 @@ export function setCameraMode(mode: CameraMode): void {
   writeStorage(CAMERA_MODE_STORAGE_KEY, mode);
 }
 
-/** A replay's pin on the mode, without touching the stored one; `null` puts that back. */
+/**
+ * A replay's pin on the mode, without touching the stored one.
+ *
+ * @param mode  `null` puts the stored one back
+ */
 export function overrideCameraMode(mode: CameraMode | null): void {
   cameraMode = mode ?? readStoredCameraMode();
 }
@@ -61,9 +65,8 @@ const OPENNESS_RAY_COUNT = 24;
 const OPENNESS_RANGE = 1280;
 
 /**
- * Clear distances that count as fully shut-in / fully open — tuned by feel.
- * The two aggregates need their own windows because they are different
- * statistics. docs/camera.md § Auto camera.
+ * Clear distances that count as fully shut-in / fully open, one window per aggregate —
+ * tuned by feel. docs/camera.md § Auto camera.
  */
 const SPREAD_NEAR = 60;
 const SPREAD_FAR = 600;
@@ -80,21 +83,21 @@ const OPENNESS_SNAP_EPS = 1e-3;
 
 /**
  * How near the framing will come for an occluder it cannot get in front of — tuned by feel, and
- * nearer than `AUTO_NARROW_DISTANCE`. A *floor*, not the answer: the camera backs off only as far
- * as the occluder demands. docs/camera.md § Framing past an occluder.
+ * nearer than {@link AUTO_NARROW_DISTANCE}. A *floor*, not the answer: the camera backs off only
+ * as far as the occluder demands. docs/camera.md § Framing past an occluder.
  */
 export const AUTO_OCCLUDED_DISTANCE = 250;
 
 /**
- * How far above drawn ground the camera's eye has to stay to count as clear, in map units — tuned
- * by feel, and deliberately not zero. docs/camera.md § The buried-eye rescue.
+ * How far above drawn ground the camera's eye has to stay to count as clear, in map units —
+ * tuned by feel, and deliberately not zero. docs/camera.md § The buried-eye rescue.
  */
 const CLEARANCE_MARGIN = 32;
 
 /**
  * How far short of an occluder the framing stops on the sightline, in map units — tuned by feel.
- * Its own dial rather than `CLEARANCE_MARGIN`, whose equal value is a coincidence: that one is a
- * vertical clearance above ground, this a horizontal stand-off along the ray.
+ * Its own dial rather than {@link CLEARANCE_MARGIN}, whose equal value is a coincidence: that one
+ * is a vertical clearance above ground, this a horizontal stand-off along the ray.
  */
 const OCCLUDER_STANDOFF = 32;
 
@@ -105,8 +108,8 @@ const OCCLUDER_STANDOFF = 32;
 const OCCLUDER_HEADROOM = 64;
 
 /**
- * How far apart the rescue tries candidate distances while backing off, in map units — tuned by
- * feel. docs/camera.md § The buried-eye rescue.
+ * How far apart the rescue tries candidate distances while backing off, in map units —
+ * tuned by feel. docs/camera.md § The buried-eye rescue.
  */
 const CLEARANCE_STEP = 24;
 
@@ -120,8 +123,8 @@ const CLEARANCE_OUT_RATE = 1.5;
 const CLEARANCE_SNAP_EPS = 0.01;
 
 /**
- * The fan's unit vectors, fixed in **world space** (every 15°) — a Q/E orbit
- * rotates the `ahead` weights, never the rays. docs/camera.md § Auto camera.
+ * The fan's unit vectors, fixed in **world space** (every 15°) — a Q/E orbit rotates the
+ * {@link Openness.ahead} weights, never the rays. docs/camera.md § Auto camera.
  */
 const RAY_DIRS: readonly { dx: number; dy: number }[] = Array.from({ length: OPENNESS_RAY_COUNT }, (_, i) => {
   const angle = (i / OPENNESS_RAY_COUNT) * Math.PI * 2;
@@ -159,9 +162,10 @@ export interface Openness {
 }
 
 /**
- * How open the space around `from` is, looking along `viewDeg` (DOOM-space degrees). Each fan ray
- * runs from the player's eye to the nearest line that `blocksProbe`, off live sector heights.
- * docs/camera.md § Auto camera.
+ * How open the space around `from` is. Each fan ray runs from the player's eye to the nearest line
+ * that {@link blocksProbe}, off live sector heights. docs/camera.md § Auto camera.
+ *
+ * @param viewDeg  the bearing the view looks along, in DOOM-space degrees
  */
 export function measureOpenness(world: World, from: Pos3, viewDeg: number): Openness {
   rayWorld = world;
@@ -206,21 +210,18 @@ export function measureOpenness(world: World, from: Pos3, viewDeg: number): Open
 
 /** How far the occlusion ray climbs over its length — its one extra piece of state. */
 let rayRise = 0;
-/**
- * The height an occluder has to reach for the camera not to be looking over it — see `standsOver`.
- */
+/** How high an occluder must reach for the camera not to look over it — {@link standsOver}. */
 let rayTopLimit = 0;
 /**
- * The level's render transfers, and one scratch record for the bands they
- * resolve — module scratch alongside the ray, for the same reason: the trace is
- * not reentrant and a visitor per line would allocate.
+ * The level's render transfers, and one scratch record for the bands they resolve — module scratch
+ * like the ray's, since the trace is not reentrant and a visitor per line would allocate.
  */
 let rayTransfers!: SectorTransfers;
 const rayBands = newDrawnBands();
 
 /**
- * The unit direction from the player's eye toward the camera's, written by `eyeDirection` — every
- * probe here places an eye at `playerEye + d * dir`. Module scratch so a tic allocates nothing.
+ * The unit direction from the player's eye toward the camera's, written by {@link eyeDirection} —
+ * every probe places an eye at `playerEye + d * dir`. Module scratch so a tic allocates nothing.
  */
 let eyeDirX = 0;
 let eyeDirY = 0;
@@ -234,9 +235,9 @@ export interface EyeLook {
 
 /**
  * How far out the nearest thing drawn facing the camera and standing up to its eye is on the
- * sightline, in map units — `Infinity` when nothing does within `distance`, the ordinary case. One
- * ray answers for every framing at once; why it returns a distance rather than a verdict is
- * docs/camera.md § Framing past an occluder.
+ * sightline, in map units — `Infinity` when nothing does within {@link EyeLook.distance}, the
+ * ordinary case. One ray answers for every framing at once; why it returns a distance rather than
+ * a verdict is docs/camera.md § Framing past an occluder.
  */
 export function nearestObstruction(
   world: World,
@@ -288,20 +289,20 @@ export function measureClearance(
 
 /**
  * How coarsely the buried-eye rescue searches tilts, in degrees — tuned by feel, the twin of
- * `CLEARANCE_STEP` for the other dial.
+ * {@link CLEARANCE_STEP} for the other dial.
  */
 const RESCUE_TILT_STEP = 5;
 
 /**
  * How much further off vertical the framing leans once the zoom is pulled all the way in to
- * `AUTO_OCCLUDED_DISTANCE`, in degrees — tuned by feel. docs/camera.md § Auto camera.
+ * {@link AUTO_OCCLUDED_DISTANCE}, in degrees — tuned by feel. docs/camera.md § Auto camera.
  */
 export const NEAR_TILT_LEAN = 10;
 
 /**
- * How far the framing leans off the mapped tilt at `distance` — nothing at `AUTO_NARROW_DISTANCE`
- * and above, the whole `NEAR_TILT_LEAN` at the occluded floor or nearer. A pure function of the
- * distance, so it cannot hunt. docs/camera.md § Auto camera.
+ * How far the framing leans off the mapped tilt at `distance` — nothing at
+ * {@link AUTO_NARROW_DISTANCE} and above, the whole {@link NEAR_TILT_LEAN} at the occluded floor or
+ * nearer. A pure function of the distance, so it cannot hunt. docs/camera.md § Auto camera.
  */
 export function nearTiltLean(distance: number): number {
   const span = AUTO_NARROW_DISTANCE - AUTO_OCCLUDED_DISTANCE;
@@ -317,7 +318,7 @@ export interface RescueRequest {
   yawDeg: number;
   /** The distance the dials asked for. */
   wanted: number;
-  /** The furthest out the search may pull, `MIN_RESCUE_DISTANCE` being the nearest. */
+  /** The furthest out the search may pull, {@link MIN_RESCUE_DISTANCE} being the nearest. */
   limit: number;
 }
 
@@ -329,10 +330,10 @@ export interface RescueFraming {
 
 /**
  * The framing **nearest the one the openness dials asked for** whose eye is not buried, searched
- * over *both* dials at once — distance from `MIN_RESCUE_DISTANCE` to `limit`, tilt across the
- * camera's whole envelope. Returns `wanted`/`mappedTilt` untouched whenever they are already clear,
- * which is nearly always; `measureClearance` is the fallback when nothing in the envelope clears.
- * The tilt half only ever leans further off vertical, never back toward top-down.
+ * over *both* dials at once — distance from {@link MIN_RESCUE_DISTANCE} to
+ * {@link RescueRequest.limit}, tilt across the camera's whole envelope but only ever further off
+ * vertical. The ask comes back untouched whenever it is already clear, which is nearly always;
+ * {@link measureClearance} is the fallback when nothing in the envelope clears.
  *
  * Why a search rather than one chosen direction, why the tilt is one-way, and how a degree is
  * weighed against a unit: docs/camera.md § The buried-eye rescue.
@@ -378,16 +379,15 @@ export function rescueFraming(world: World, from: Pos3, ask: RescueRequest, out:
 }
 
 /**
- * How far the occluder clamp has to pull the zoom in before `AutoCamera.readout` prints it, in map
- * units — tuned by feel, and a readout threshold only: nothing about the framing reads it.
+ * How far the occluder clamp must pull the zoom in before {@link AutoCamera.readout} prints it,
+ * in map units — tuned by feel, and a readout threshold only: nothing about the framing reads it.
  */
 const OCCL_READOUT_SLACK = 100;
 
 /**
- * Drives `TopDownCamera.targetDistance`/`targetTiltDeg` from the openness
- * around the player. Runs on the **tic clock only** — the camera's framing is
- * simulation state (the aim ray is cast through it), so it must never advance
- * on the render clock. Constructed per level, like `FogOfWar`.
+ * Drives {@link TopDownCamera.targetDistance}/{@link TopDownCamera.targetTiltDeg} from the
+ * openness around the player. Runs on the **tic clock only** — the camera's framing is simulation
+ * state, so it must never advance on the render clock. Constructed per level, like `FogOfWar`.
  */
 export class AutoCamera {
   private world: World;
@@ -459,7 +459,7 @@ export class AutoCamera {
 
   /**
    * This camera's own DEVMODE line: the two openness dials, then only a clamp genuinely reshaping
-   * the zoom they ask for — `Game.debugLines`' `cam` line already says where they landed.
+   * the zoom they ask for — `Presenter.debugLines`' `cam` line already says where they landed.
    * docs/camera.md § Auto camera.
    */
   readout(): string {
@@ -481,7 +481,7 @@ export class AutoCamera {
   /**
    * One unsmoothed measurement that *jumps* the camera to its mapped framing, so a level never
    * opens mid-zoom. Called on level load, after the spawn yaw is set and before the follow point's
-   * `snapTo` — docs/camera.md § Auto camera.
+   * {@link TopDownCamera.snapTo} — docs/camera.md § Auto camera.
    */
   seed(from: Pos3, camera: TopDownCamera): void {
     if (getCameraMode() !== 'auto') return;
@@ -492,10 +492,8 @@ export class AutoCamera {
 
   /**
    * One tic: measure, smooth and retarget the framing, then cap the zoom at what the occluder and
-   * the buried-eye rescue leave. A no-op in manual mode, so callers need not know the mode.
-   *
-   * `viewerAngleDeg` is the bearing *to* the camera, so the view looks along its opposite — reading
-   * the orbit rather than the player's facing is what keeps the mouse from twitching the framing.
+   * the buried-eye rescue leave. A no-op in manual mode, so callers need not know the mode. Looks
+   * along the orbit ({@link TopDownCamera.viewerAngleDeg}'s opposite), never the player's facing.
    */
   tick(from: Pos3, camera: TopDownCamera): void {
     if (getCameraMode() !== 'auto') return;
@@ -550,7 +548,7 @@ export class AutoCamera {
   /**
    * One smoothed dial, seeded rather than damped on the first tic — a level switched to auto
    * mid-level was never seeded, and every dial has to jump to its measurement rather than glide up
-   * from zero. Every damper in `tick` goes through here, so none can skip the guard.
+   * from zero. Every damper in {@link AutoCamera.tick} goes through here, so none can skip it.
    */
   private damp(current: number, target: number, rate: number, eps: number): number {
     return this.initialised ? dampen(current, target, rate, DOOM_TIC, eps) : target;
@@ -581,9 +579,9 @@ function traceRay(i: number): void {
 }
 
 /**
- * Whether this line ends the ray: its opening has to straddle the eye, so a ledge the player cannot
- * see over bounds the measurement. Deliberately not `World.blocksSight`, which is height-blind.
- * docs/camera.md § Auto camera.
+ * Whether this line ends the ray: its opening has to straddle the eye, so a ledge the player
+ * cannot see over bounds the measurement. Deliberately not {@link World.blocksSight}, which is
+ * height-blind. docs/camera.md § Auto camera.
  */
 function blocksProbe(i: number): boolean {
   if (!rayWorld.openingInto(i, rayOpening)) return true;
@@ -598,8 +596,8 @@ function toOpenness(distance: number, near: number, far: number): number {
 /**
  * Whether this line has geometry *drawn across* height `h`, **facing the camera**, and standing up
  * to the eye — together, whether it can hide the player, which is not whether it blocks anything in
- * the world. Which quads exist and how tall they stand is `mapmesh.ts`'s `twoSidedBands` to decide,
- * never this; height is `standsOver`'s half. All three tests, and why facing is the one easily left
+ * the world. Which quads exist and how tall they stand is {@link twoSidedBands}'s to decide, never
+ * this; height is {@link standsOver}'s half. All three tests, and why facing is the one easily left
  * out: docs/camera.md § Framing past an occluder.
  */
 function hidesFromCamera(i: number, h: number, cameraSide: number): boolean {
@@ -628,14 +626,14 @@ function hidesFromCamera(i: number, h: number, cameraSide: number): boolean {
 
 /**
  * Whether a band drawn from `bottom` to `top` is one the camera has to be got in front of: it has
- * to cross the sightline at `h` *and* reach to within `OCCLUDER_HEADROOM` of the eye.
+ * to cross the sightline at `h` *and* reach to within {@link OCCLUDER_HEADROOM} of the eye.
  * docs/camera.md § Framing past an occluder.
  */
 function standsOver(bottom: number, top: number, h: number): boolean {
   return h > bottom && h < top && top > rayTopLimit;
 }
 
-/** The occlusion ray's visitor, `traceRay`'s twin: same traversal, a different question. */
+/** The occlusion ray's visitor, {@link traceRay}'s twin: same traversal, a different question. */
 function traceObstruction(i: number): void {
   const ends = rayWorld.lineOverlapEnds;
   const e = i * 4;
@@ -646,7 +644,7 @@ function traceObstruction(i: number): void {
 }
 
 /**
- * The DOOM-space mirror of `render/camera.ts`'s `applyToCamera`, and it must stay one: where the
+ * The DOOM-space mirror of {@link TopDownCamera.applyToCamera}, and it must stay one: where the
  * two part company the probes answer for a pose the camera never takes.
  */
 function eyeDirection(tiltDeg: number, yawDeg: number): void {
@@ -660,8 +658,8 @@ function eyeDirection(tiltDeg: number, yawDeg: number): void {
 
 /**
  * Whether a camera eye here would sit inside drawn ground rather than above it — floor heights
- * alone, read live. Why only floors, and the known gap on void solids: docs/camera.md § The
- * buried-eye rescue.
+ * alone, read live. Why only floors, and the known gap on void solids:
+ * docs/camera.md § The buried-eye rescue.
  */
 function eyeBuried(world: World, x: number, y: number, h: number): boolean {
   const sector = world.sectorAt(x, y);

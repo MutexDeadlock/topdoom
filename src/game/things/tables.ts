@@ -39,14 +39,10 @@ export const THING_SPRITES: Record<number, string> = {};
 export const FUZZ_TYPES: Set<number> = new Set([ThingType.spectre]);
 
 /**
- * Doomednums of the "Monsters" block above — the things auto-aim (game/weapons.ts's
- * click-to-target, wired up in game.ts's `ThingLayer.pickMonster`) is willing to
- * snap a shot onto, minus `NO_AUTO_AIM_TYPES` below, and the set
- * `game/monsters/ai.ts`'s AI ticks. This table only
- * decides which doomednums count as a monster at all (for targeting, AI, and
- * every other `MONSTER_TYPES.has(...)` check across the game/ tree) — the AI
- * behavior itself (waking, chasing, attacking, infighting) lives in
- * `game/monsters/ai.ts`, not here.
+ * The doomednums that count as a monster at all: what auto-aim is willing to snap a shot onto
+ * (minus {@link NO_AUTO_AIM_TYPES}), the set `game/monsters/ai.ts` ticks, and every other
+ * `MONSTER_TYPES.has(...)` check across the game/ tree. The AI behavior itself (waking, chasing,
+ * attacking, infighting) lives in `game/monsters/ai.ts`, not here.
  */
 export const MONSTER_TYPES: Set<number> = new Set([
   ThingType.zombieman,
@@ -72,19 +68,19 @@ export const MONSTER_TYPES: Set<number> = new Set([
 ]);
 
 /**
- * `MONSTER_TYPES` members auto-aim refuses to lock onto — everything else about them is unchanged.
- * Only the Icon of Sin's brain (88), which sits in a recess whose one opening is *above* its whole
- * body, so a locked-on shot can never reach it and the lock only steals the player's aim. See
- * docs/combat.md § Auto-aim.
+ * {@link MONSTER_TYPES} members auto-aim refuses to lock onto — everything else about them is
+ * unchanged. Only the Icon of Sin's brain (88), which sits in a recess whose one opening is *above*
+ * its whole body, so a locked-on shot can never reach it and the lock only steals the player's aim.
+ * See docs/combat.md § Auto-aim.
  */
 export const NO_AUTO_AIM_TYPES: Set<number> = new Set([ThingType.bossBrain]);
 
 /**
- * Doomednums from the decoration/gore blocks above that carry vanilla's `MF_SOLID` flag, confirmed
- * against `linuxdoom-1.10/info.c`'s `mobjinfo` — membership is that flag, nothing else. Deliberate
- * absences: the exploding barrel (2035, has its own `ThingType.barrel` handling), the five
- * non-solid `GOR*` hangers (59-63), the plain candle (34, `flags: 0`) and every
- * dead-monster/blood-pool prop. See docs/movement.md § Solid decorations.
+ * Doomednums carrying vanilla's `MF_SOLID` flag, confirmed against `linuxdoom-1.10/info.c`'s
+ * `mobjinfo` — membership is that flag, nothing else. Deliberate absences: the exploding barrel
+ * (2035, has its own {@link ThingType.barrel} handling), the five non-solid `GOR*` hangers (59-63),
+ * the plain candle (34, `flags: 0`) and every dead-monster/blood-pool prop. See
+ * docs/movement.md § Solid decorations.
  */
 export const SOLID_DECORATION_TYPES: Set<number> = new Set([
   ThingType.floorLamp,
@@ -129,16 +125,15 @@ export const SOLID_DECORATION_TYPES: Set<number> = new Set([
 ]);
 
 /**
- * Vanilla `mobjinfo` radius shared by every entry in `SOLID_DECORATION_TYPES` except
- * `SOLID_DECORATION_RADIUS_OVERRIDE`'s keys — confirmed against `info.c`.
+ * Vanilla `mobjinfo` radius shared by every entry in {@link SOLID_DECORATION_TYPES} except
+ * {@link SOLID_DECORATION_RADIUS_OVERRIDE}'s keys — confirmed against `info.c`.
  */
 export const SOLID_DECORATION_RADIUS = 16;
 
 /**
- * The one `SOLID_DECORATION_TYPES` entry whose real vanilla radius isn't the shared 16 units: the
- * big tree (54, `MT_MISC76`) is 32 in `info.c`. Every other entry in the set genuinely does share
- * the 16-unit radius, so this stays a single-key override rather than promoting every entry to a
- * per-type table.
+ * The one {@link SOLID_DECORATION_TYPES} entry whose vanilla radius isn't
+ * {@link SOLID_DECORATION_RADIUS}: the big tree (54, `MT_MISC76`) is 32 in `info.c`. Every other
+ * entry shares it, so this stays a single-key override rather than a per-type table.
  */
 export const SOLID_DECORATION_RADIUS_OVERRIDE: Record<number, number> = {
   [ThingType.largeBrownTree]: 32,
@@ -177,10 +172,10 @@ export const CEILING_HUNG_HEIGHT: Record<number, number> = {
 };
 
 /**
- * Spawn-frame letters for the `MONSTER_TYPES` members whose `mobjinfo.spawnstate` **isn't** a walk
- * cycle, overriding `buildThingSprites`'s shared `MONSTER_WALK_FRAMES` default. Only `S_KEENSTND`
- * and `S_BRAIN` qualify, both single held frames whose walk-cycle letters would be death art.
- * Load-bearing even though neither animator advances today — docs/monster-ai.md § Commander Keen.
+ * Spawn-frame letters for {@link MONSTER_TYPES} members whose `mobjinfo.spawnstate` **isn't** a
+ * walk cycle, overriding `buildThingSprites`'s shared {@link MONSTER_WALK_FRAMES} default. Only
+ * `S_KEENSTND` and `S_BRAIN` qualify, both single held frames whose walk-cycle letters would be
+ * death art. Load-bearing though neither animator advances — docs/monster-ai.md § Commander Keen.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -191,7 +186,7 @@ export const MONSTER_IDLE_FRAMES: Record<number, string[]> = {};
  * The loop a dormant monster stands in: its `spawnstate` chain, the states `A_Look` runs on —
  * `S_SPID_STND`/`S_SPID_STND2` are `SPID` `A` and `B` for 10 tics each (`info.c`). Played while
  * the monster is not alerted (`SpriteAnimator.standing`). The cacodemon and pain elemental loop a
- * lone `A` and have no entry, nor do the two `MONSTER_IDLE_FRAMES` types.
+ * lone `A` and have no entry, nor do the two {@link MONSTER_IDLE_FRAMES} types.
  * docs/sprites.md § Pain, and attack/pain poses.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
@@ -200,8 +195,8 @@ export const MONSTER_IDLE_FRAMES: Record<number, string[]> = {};
 export const MONSTER_STAND_FRAMES: Record<number, { frames: string[]; frameSeconds: number }> = {};
 
 /**
- * DOOM's usual walk cycle: 4 frames (A-D), the same one `PLAY` uses, held by
- * every type absent from `MONSTER_WALK_FRAMES_OVERRIDE` below.
+ * DOOM's usual walk cycle: 4 frames (A-D), the same one `PLAY` uses, held by every type absent
+ * from {@link MONSTER_WALK_FRAMES_OVERRIDE}.
  */
 export const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
 
@@ -253,10 +248,10 @@ export const NOT_DEATHMATCH_TYPES: Set<number> = new Set([
 ]);
 
 /**
- * `MONSTER_TYPES` entries that carry vanilla's `MF_COUNTKILL` flag — every monster except the
- * lost soul (3006) and the Icon of Sin's brain (88), neither of which does in `info.c`'s
- * `mobjinfo` table. `MONSTER_TYPES` exists for targeting/AI and isn't the same list vanilla uses
- * for the level's kill total.
+ * {@link MONSTER_TYPES} entries that carry vanilla's `MF_COUNTKILL` flag — every monster except the
+ * lost soul (3006) and the Icon of Sin's brain (88), neither of which does in `info.c`'s `mobjinfo`
+ * table. {@link MONSTER_TYPES} exists for targeting/AI and isn't the same list vanilla uses for
+ * the level's kill total.
  */
 export const COUNTKILL_TYPES: Set<number> = new Set([
   ThingType.zombieman,
@@ -283,8 +278,7 @@ export const COUNTKILL_TYPES: Set<number> = new Set([
  * Doomednums with vanilla's `MF_COUNTITEM` flag, confirmed against `info.c`'s `mobjinfo` table —
  * health/armor bonus, soulsphere, invulnerability, berserk, invisibility, computer map, light
  * visor, megasphere. Deliberately excludes keys, the backpack, weapons, ammo, and the radiation
- * suit (2025): none of those carry the flag in vanilla, matching the well-known behavior that the
- * backpack doesn't count toward a level's item percentage.
+ * suit (2025): none of those carry the flag in vanilla.
  */
 export const COUNTITEM_TYPES: Set<number> = new Set([
   ThingType.healthBonus,
@@ -354,7 +348,7 @@ export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {};
  * `info.c` monster dies in its own sprite, and only the exploding barrel (`BARREL_CHAIN`) doesn't.
  * A DEHACKED patch fills it in — EPIC.WAD aims a hanging body's death at the imp's `TROO` gib
  * chain — and `enterDeathPose` hands the entry to `SpriteAnimator.die`'s sprite argument, the same
- * seam the barrel uses. docs/dehacked.md § Frames.
+ * seam the barrel uses.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -362,10 +356,9 @@ export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {};
 export const MONSTER_DEATH_SPRITE_OVERRIDE: Record<number, { death?: string; xdeath?: string }> = {};
 
 /**
- * Gib (XDeath) frame letters — the back of the same rotation-0 tail
- * `MONSTER_DEATH_FRAMES` takes its front from. **Only five stock types have
- * one at all** (the human grunts and the imp); everything else has no
- * `xdeathstate` in `mobjinfo` and always plays its plain death.
+ * Gib (XDeath) frame letters — the back of the same rotation-0 tail {@link MONSTER_DEATH_FRAMES}
+ * takes its front from. **Only five stock types have one at all** (the human grunts and the imp);
+ * everything else has no `xdeathstate` in `mobjinfo` and always plays its plain death.
  * `ThingLayer.damage` picks between the two by `P_KillMobj`'s overkill rule —
  * docs/death.md § Monster death.
  *
@@ -435,7 +428,7 @@ export function attackPoseLetters(type: number): string[] {
 
 /**
  * Pain (flinch) sprite frame letters, derived the same way and with the same WAD cross-check as
- * `MONSTER_ATTACK_POSE` above. One frame per type except the cacodemon, whose `S_HEAD_PAIN3` is a
+ * {@link MONSTER_ATTACK_POSE}. One frame per type except the cacodemon, whose `S_HEAD_PAIN3` is a
  * genuine second recoil frame. Played only when a hit rolls past the type's own `painChance` —
  * docs/sprites.md § Pain, and attack/pain poses.
  *
@@ -445,20 +438,18 @@ export function attackPoseLetters(type: number): string[] {
 export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {};
 
 /**
- * Flat per-frame duration for `MONSTER_PAIN_FRAMES` — the same "one uniform
- * rate instead of vanilla's own per-state tic count" simplification
- * `MONSTER_DEATH_FRAME_SECONDS` already makes, just faster: vanilla's pain
- * states mostly hold 3-10 tics (vs. death's 5-8), and a flinch reads as
- * snappier than a death collapse regardless. Also the fallback rate for
- * `attackPoseFrameSeconds` below.
+ * Flat per-frame duration for {@link MONSTER_PAIN_FRAMES} — the same one-uniform-rate
+ * simplification {@link MONSTER_DEATH_FRAME_SECONDS} makes, just faster: vanilla's pain states
+ * mostly hold 3-10 tics (vs. death's 5-8), and a flinch reads as snappier than a death collapse.
+ * Also the fallback rate for {@link attackPoseFrameSeconds}.
  */
 export const MONSTER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
 
 /**
- * How long each frame of an attack pose is held: the pose's own `tics`, scaled to fill
- * `attackSeconds` — the length of the attack it poses for. The factor is 1 whenever the attack runs
- * its full length, and is not when a volley's later shot re-enters a pose spanning only what is
- * left. Keeping vanilla's *proportions* is what puts the firing frame under the shot —
+ * How long each frame of an attack pose is held: the pose's own {@link AttackPose.tics}, scaled
+ * to fill `attackSeconds` — the length of the attack it poses for. The factor is 1 whenever the
+ * attack runs its full length, and is not when a volley's later shot re-enters a pose spanning
+ * only what is left. Keeping vanilla's *proportions* is what puts the firing frame under the shot —
  * docs/sprites.md § Pain, and attack/pain poses.
  *
  * The degenerate guard is not defensive tidiness: a zero rate would freeze the pose on its first
@@ -473,11 +464,11 @@ export function attackPoseFrameSeconds(pose: AttackPose, attackSeconds: number):
 
 /**
  * Resurrection frame letters — `mobjinfo.raisestate`, the arch-vile's `A_VileChase` target. Only 14
- * types have one; no entry means "not raisable", the same convention `MONSTER_XDEATH_FRAMES` uses.
- * **Not the reverse of `MONSTER_DEATH_FRAMES`** — every letter is read off `info.c`'s `S_*_RAISE*`
- * chains directly (docs/monster-archvile.md § Resurrection). Played via `playOnce` after `revive()`
- * undoes `die()`, reusing `MONSTER_DEATH_FRAME_SECONDS`, whose range vanilla's raise states sit
- * squarely inside.
+ * types have one; no entry means "not raisable", the same convention {@link MONSTER_XDEATH_FRAMES}
+ * uses. **Not the reverse of {@link MONSTER_DEATH_FRAMES}** — every letter is read off `info.c`'s
+ * `S_*_RAISE*` chains directly (docs/monster-archvile.md § Resurrection). Played via `playOnce`
+ * after `revive()` undoes `die()`, reusing {@link MONSTER_DEATH_FRAME_SECONDS}, whose range
+ * vanilla's raise states sit squarely inside.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -508,15 +499,9 @@ export const PLAYER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
 export const PLAYER_SPAWN_HEALTH = 100;
 
 /**
- * Item a monster leaves behind on death (doomednum of the pickup to spawn),
- * lifted straight from vanilla's `P_KillMobj` — only three `switch` cases
- * exist there at all, so only three monster types actually drop anything:
- * the zombieman and Wolfenstein SS both drop a clip, the shotgun guy a
- * shotgun, the chaingunner a chaingun. Every other monster, including ones
- * that feel like they obviously should (the imp, the demon), drops nothing
- * in vanilla and doesn't here either. A drop always spawns regardless of
- * *how* the kill happened — direct hit, splash, gib or not — matching
- * vanilla, which drops from the same `P_KillMobj` no matter the cause.
+ * Item a monster leaves behind on death (doomednum of the pickup to spawn), lifted straight from
+ * `P_KillMobj`'s three `switch` cases — every other monster drops nothing, and a drop spawns
+ * however the kill happened. docs/death.md § Monster death.
  */
 export const MONSTER_DROPS: Record<number, number> = {
   [ThingType.zombieman]: ThingType.clip,
@@ -532,7 +517,7 @@ export const MONSTER_DROPS: Record<number, number> = {
  * animation of more than one frame, or a corpse/gib prop whose fixed art isn't frame `'A'` —
  * docs/sprites.md § Which things spawn. An absent doomednum already matches the default.
  * `frameSeconds` is one flat rate standing in for vanilla's per-state tics, the same accepted
- * simplification `MONSTER_DEATH_FRAME_SECONDS` makes.
+ * simplification {@link MONSTER_DEATH_FRAME_SECONDS} makes.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -541,10 +526,10 @@ export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds:
 
 /**
  * Fills every table above from the walker's reading of vanilla's own `states[]`
- * (docs/dehacked.md § Frames). These are not transcribed any more: one `mobjinfo` row's eight
- * state pointers decide its sprite, its walk/idle/stand/death/pain/raise letters and both attack
- * poses, so walking the chains is what *defines* them here and `tests/fixtures/frametables.ts` is
- * the independent reading that pins the result.
+ * (docs/dehacked.md § Frames). Walked, not transcribed: one `mobjinfo` row's eight state pointers
+ * decide its sprite, its walk/idle/stand/death/pain/raise letters and both attack poses, so walking
+ * the chains is what *defines* them here and `tests/fixtures/frametables.ts` is the independent
+ * reading that pins the result.
  *
  * Runs at import, before `dehacked/apply.ts` snapshots these tables for `resetDehacked`. A patch
  * re-derives the same way and writes only what differs.
@@ -601,9 +586,9 @@ function sameLetters(a: readonly string[], b: readonly string[]): boolean {
 
 /**
  * Every `(sprite, letter)` vanilla draws at full light, as `SPRITE + LETTER` keys (`TREDA`,
- * `SKULB`): `FF_FULLBRIGHT` in `info.c`'s `states[]`. Read at draw time by `things.ts`,
+ * `SKULB`): {@link FF_FULLBRIGHT} in `info.c`'s `states[]`. Read at draw time by `things.ts`,
  * `spritefx.ts` and the player's `SpriteActor` to lift the sprite to light 255 whatever its sector
- * says, and rebuilt from a DEHACKED patch's `states[]` by `rebuildFullbrightFrames`.
+ * says, and rebuilt from a DEHACKED patch's `states[]` by {@link rebuildFullbrightFrames}.
  *
  * Keyed per `(sprite, letter)` rather than per state, because the animator knows no state; where
  * vanilla splits a letter across bright and dim states the states vote and a tie is bright.
@@ -612,13 +597,13 @@ function sameLetters(a: readonly string[], b: readonly string[]): boolean {
 export const FULLBRIGHT_FRAMES: Set<string> = new Set();
 
 /**
- * Refills `FULLBRIGHT_FRAMES` from a frame table — vanilla's own `STATES`, or a patched copy of it.
+ * Refills {@link FULLBRIGHT_FRAMES} from vanilla's own {@link STATES} or a patched copy of it.
  *
- * **Only vanilla's rows vote, plus the ones `written` names.** The states past `MBF_STATES_START`
- * are dummies nothing reaches until a `Frame` record writes one (docs/dehacked.md § Extended
- * states), and letting them vote unasked would change the unpatched game: MBF's grenade is a bright
- * `MISL A` against vanilla's one dim `S_ROCKET`, and a tie draws bright — the rocket in flight
- * would glow.
+ * **Only vanilla's rows vote, plus the ones `written` names.** The states past
+ * {@link MBF_STATES_START} are dummies nothing reaches until a `Frame` record writes one
+ * (docs/dehacked.md § Extended states), and letting them vote unasked would change the unpatched
+ * game: MBF's grenade is a bright `MISL A` against vanilla's one dim `S_ROCKET`, and a tie draws
+ * bright — the rocket in flight would glow.
  */
 export function rebuildFullbrightFrames(
   states: readonly StateRow[] = STATES,
@@ -649,7 +634,7 @@ export const BARREL_SPLASH_RADIUS = 128;
 export const BARREL_SPLASH_DAMAGE = 128;
 
 /**
- * The death overlay's middle line, in full, keyed by the `DamageCause` it answers — plus
+ * The death overlay's middle line, in full, keyed by the {@link DamageCause} it answers — plus
  * `'default'`, the fallback for an unattributed death. Only what can land a killing blow is listed:
  * every monster, plus the exploding barrel. Whole sentences rather than a name to interpolate —
  * docs/death.md § Who killed the player, docs/dehacked.md § Obituaries. Vanilla has no obituaries,
@@ -687,11 +672,10 @@ export const OBITUARIES: Record<number | string, string> = {
 };
 
 /**
- * The death overlay's middle line, or `''` when there is nothing to say — which the overlay then
- * draws exactly as it did before there was a line at all. `OBITUARIES` holds the text, so a patch
- * that replaced a line is read here without this having to know. A player (`targetOfSlot`'s
- * negative number) takes the `player` line with `nameOf`'s name in it.
- * See docs/death.md § Who killed the player.
+ * The death overlay's middle line, or `''` when there is nothing to say, which the overlay draws as
+ * no line at all. {@link OBITUARIES} holds the text, so a patch that replaced a line is read here
+ * without this having to know. A player (`targetOfSlot`'s negative number) takes the `player` line
+ * with `nameOf`'s name in it. See docs/death.md § Who killed the player.
  *
  * @param nameOf  a slot's name for a player cause; without one a player is nobody
  */

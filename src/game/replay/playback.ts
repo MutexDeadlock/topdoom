@@ -57,8 +57,8 @@ export class ReplayPlayback {
    */
   viewSlot = 0;
   /**
-   * Slot 0's player settings in force beside the session's — what `Game` pins through the owners
-   * before every tic, the local slot being 0. Events move it.
+   * Slot 0's player settings in force beside the session's — what `ReplayDriver.pinSettings` pins
+   * through the owners before every tic, the local slot being 0. Events move it.
    */
   settings: SimSettings;
   /** Every slot's player settings in force, by slot; events move them. */
@@ -71,8 +71,9 @@ export class ReplayPlayback {
    */
   readonly slotNames: string[];
   /**
-   * The tic a seek in progress is catching up to, null when none is. `Game` sets it and grinds
-   * the tics out a frame's worth at a time. docs/replays.md § Seeking.
+   * The tic a seek in progress is catching up to, null when none is. `ReplayDriver.seekTo` sets it
+   * and `ReplayDriver.advanceSeek` grinds the tics out a frame's worth at a time.
+   * docs/replays.md § Seeking.
    */
   seekTarget: number | null = null;
   /**
@@ -133,10 +134,8 @@ export class ReplayPlayback {
   }
 
   /**
-   * Where the watched slot's recording aimed during the tic being drawn. Interpolated between the
-   * last two tics' points for the same reason every sprite in the frame is: the record holds one
-   * per tic, and a reticle stepping 35 times a second under a camera moving at the refresh rate
-   * reads as stutter. docs/replays.md § Playback.
+   * Where the watched slot's recording aimed during the tic being drawn, interpolated between the
+   * last two tics' points. docs/replays.md § Playback.
    *
    * @param alpha  the fraction of the way through the tic being drawn
    * @returns null while nothing is aimed at
@@ -176,9 +175,7 @@ export class ReplayPlayback {
   }
 
   /**
-   * What `R` reloads on the level a jump to `frame` lands on, as playing through to it leaves them:
-   * the record's start on its first level, which is what a playback is built from, and on a level
-   * entered since, the keyframe laid down as it was entered — null where that one was refused.
+   * What `R` reloads on the level a jump to `frame` lands on, as playing through to it leaves them.
    * docs/savegames.md § The checkpoint.
    */
   reloadsAt(frame: Keyframe): ReloadStates {
@@ -197,7 +194,7 @@ export class ReplayPlayback {
    * Puts the stream at `tic`, re-seating what only ever walked forwards: the event cursor and the
    * settings, which are whatever the last event before `tic` left them (the check samples are
    * indexed by the tic, so they need nothing re-seated). Events stamped *for* `tic` stay pending,
-   * since `Game` applies those before running it. docs/replays.md § Seeking.
+   * since `ReplayDriver.beginTic` applies those before running it. docs/replays.md § Seeking.
    */
   seek(tic: number): void {
     const { data } = this.replay;
@@ -230,9 +227,7 @@ export class ReplayPlayback {
 
   /**
    * Compares the recording's sample for the tic about to run, if it took one, against every slot's
-   * live position and the random cursor; the first disagreement is kept and later ones ignored. The
-   * samples sit one per {@link CHECK_INTERVAL} from tic 0, so the tic indexes them and a seek needs
-   * no cursor of its own.
+   * live position and the random cursor; the first disagreement is kept and later ones ignored.
    */
   check(bodies: readonly Pos2[]): void {
     if (this.desyncedAt !== null || this.cursor % CHECK_INTERVAL !== 0) return;
@@ -246,7 +241,9 @@ export class ReplayPlayback {
     if (!agrees) this.desyncedAt = this.cursor;
   }
 
-  /** A settings or session event taking effect; a restore is `Game`'s to carry out. */
+  /**
+   * A settings or session event taking effect; a restore is left to `ReplayDriver.beginTic`.
+   */
   private applyEvent(event: ReplayEvent): void {
     if (event.kind === 'restore') return;
     if (event.kind === 'settings') this.slotSettings[event.slot] = event.settings;

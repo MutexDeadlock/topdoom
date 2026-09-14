@@ -16,29 +16,29 @@ import type { Pos2, Pos3 } from '../../types.ts';
 import { DOOM_TIC } from '../../constants.ts';
 
 /**
- * How far around the *player* to look for bodies they could bump into (`solidBodies`). A fixed
- * worst case is fine here: it must clear two spider masterminds with room for a frame's movement,
- * and it is paid once per frame for one body. `blockersFor` deliberately does **not** use it —
+ * How far around the *player* {@link ThingGrid.solidBodies} looks for bodies to bump into. A fixed
+ * worst case, clearing two spider masterminds with a frame's movement to spare, paid once per
+ * frame for one body. {@link ThingGrid.blockersFor} deliberately does **not** use it —
  * docs/monster-ai.md § Spatial indexing.
  */
 const BLOCKER_SEARCH_RADIUS = 320;
 
 /**
- * Cell size of the monster lookup grid (`blockerGrid`), deliberately much smaller than the
- * worst-case search box: the box is sized *per monster*, so small cells are what let an ordinary
- * 20-unit monster scan a handful of candidates. docs/monster-ai.md § Spatial indexing.
+ * Cell size of the solid-body grid, deliberately much smaller than the worst-case search box: the
+ * box is sized *per monster*, so small cells are what let an ordinary 20-unit monster scan a
+ * handful of candidates. docs/monster-ai.md § Spatial indexing.
  */
 const BLOCKER_GRID_CELL = 128;
 
 /**
- * One ray sweep for `ThingGrid.forEachMonsterAlongRay` — six numbers no positional list keeps
+ * One ray sweep for {@link ThingGrid.forEachMonsterAlongRay} — six numbers no positional list keeps
  * straight (docs/conventions.md § Named arguments).
  */
 export interface RayQuery {
   /**
    * Where the ray starts. A point object, not the `x`/`y` scalars the box queries take: this
    * signature allocates either way, so the exception those rely on buys nothing here. The sweep is
-   * flat, so only `x`/`y` are read — a caller's `Pos3` is assignable as it stands.
+   * flat, so only `x`/`y` are read — a caller's {@link Pos3} is assignable as it stands.
    */
   from: Pos2;
   /** Unit direction. */
@@ -50,25 +50,26 @@ export interface RayQuery {
   clearance: number;
   /**
    * How far past a body's own radius the caller still counts a hit — 0 for a bullet, a missile's
-   * radius for its step. What the per-cell skip adds to a cell's widest body; `clearance` sizes
-   * the sweep and stays as wide as it is. docs/monster-ai.md § Spatial indexing.
+   * radius for its step. What the per-cell skip adds to a cell's widest body, while
+   * {@link RayQuery.clearance} still sizes the whole sweep. docs/monster-ai.md § Spatial indexing.
    */
   ownReach: number;
 }
 
-/** The queries `createThingGrid` hands back — see each method's own doc. */
+/** The queries {@link createThingGrid} hands back. */
 export interface ThingGrid {
   /**
    * Re-buckets every thing from its current position. Called once per `ThingLayer.update`, ahead
    * of any query below, so a cell's contents are up to one frame stale — which `BLOCKER_MARGIN`
-   * covers for the cell box, and each body's own `PosedThing.moveBound` for the per-body tests:
-   * its chase step, a lost soul's charge, and a knockback tic only while it carries momentum or
-   * `mayCarry` says a conveyor could hand it some this tic. docs/monster-ai.md § Spatial indexing.
+   * covers for the cell box, and each body's own {@link PosedThing.moveBound} for the per-body
+   * tests. docs/monster-ai.md § Spatial indexing.
+   *
+   * @param mayCarry  whether a conveyor could hand a body momentum this tic
    */
   rebuild(mayCarry: boolean): void;
   /**
-   * A live body about to be moved further than any `moveBound` covers — a teleport — so the cell
-   * it was filed in can no longer be skipped past it. Call before the move.
+   * A live body about to be moved further than any {@link PosedThing.moveBound} covers — a
+   * teleport — so the cell it was filed in can no longer be skipped past it. Call before the move.
    */
   markDisplaced(p: PosedThing): void;
   /**
@@ -79,15 +80,17 @@ export interface ThingGrid {
   maxBodyRadius(): number;
   /**
    * Every living body in the grid cells covering `radius` around (x, y), skipping any cell whose
-   * bodies lie further than `ownReach` past their own radius from the point — `ownReach` being
-   * how far beyond a body's radius the caller's own test still accepts it.
+   * bodies lie further than `ownReach` past their own radius from the point.
+   *
+   * @param ownReach  how far beyond a body's radius the caller's own test still accepts it
    */
   forEachMonsterNear(x: number, y: number, radius: number, ownReach: number, visit: (p: PosedThing) => void): void;
   forEachMonsterAlongRay(ray: RayQuery, visit: (p: PosedThing) => void): void;
   /**
-   * The solid bodies within `probeReach` of `p`'s own reach — how far from `p`, per axis, the
-   * caller will probe with the list. A body further than `p`'s radius plus its own plus that
-   * cannot touch any probe, so it is left out without changing a verdict.
+   * The solid bodies within `probeReach` of `p`'s own reach. A body further than `p`'s radius plus
+   * its own plus that cannot touch any probe, so it is left out without changing a verdict.
+   *
+   * @param probeReach  how far from `p`, per axis, the caller will probe with the list
    */
   blockersFor(p: PosedThing, players: readonly (Pos3 | null)[], probeReach: number): readonly ThingBlocker[];
   findRaisableCorpse(x: number, y: number, vileRadius: number): RaiseCandidate | null;
@@ -96,8 +99,8 @@ export interface ThingGrid {
 
 /**
  * Builds the index over a level's live `posed` array. The array is held by reference and re-read
- * on every `rebuild`, so a thing spawned after load — a drop, a lost soul, the Icon's cube
- * monsters — is picked up with no extra bookkeeping.
+ * on every {@link ThingGrid.rebuild}, so a thing spawned after load — a drop, a lost soul, the
+ * Icon's cube monsters — is picked up with no extra bookkeeping.
  */
 export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
   // Taken off `World`, never passed beside it — docs/conventions.md § Named arguments.
@@ -112,11 +115,11 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
   const blockerCols = Math.max(1, Math.ceil((map.bounds.maxX - map.bounds.minX) / BLOCKER_GRID_CELL) + 1);
   const blockerRows = Math.max(1, Math.ceil((map.bounds.maxY - map.bounds.minY) / BLOCKER_GRID_CELL) + 1);
   /**
-   * The solid bodies filed by `BLOCKER_GRID_CELL` cell, in `posed` order — vanilla's blockmap,
-   * for vanilla's reason. A counting sort over `posed` each rebuild: cell `i`'s bodies are the
-   * slots `cellStart[i]..cellStart[i + 1]`, `slotThing` the body in each and `slotX`/`slotY`
-   * where it stood at the rebuild, laid out contiguously so a query's first refusal reads no body
-   * at all. docs/monster-ai.md § Spatial indexing has what it admits beyond monsters.
+   * The solid bodies filed by {@link BLOCKER_GRID_CELL} cell, in `posed` order — vanilla's
+   * blockmap, for vanilla's reason. A counting sort over `posed` each rebuild: cell `i`'s bodies
+   * are the slots `cellStart[i]..cellStart[i + 1]`, `slotThing` the body in each and
+   * `slotX`/`slotY` where it stood at the rebuild, laid out contiguously so a query's first refusal
+   * reads no body at all. docs/monster-ai.md § Spatial indexing has what it admits beyond monsters.
    */
   const cellStart = new Int32Array(blockerCols * blockerRows + 1);
   /** Each cell's body count while sorting, then its fill cursor. */
@@ -124,8 +127,8 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
   let slotX = new Float64Array(0);
   let slotY = new Float64Array(0);
   /**
-   * Each slot's `PosedThing.moveBound`, beside its position for the same read — `Infinity` once
-   * `markDisplaced` reports a teleport, the one move no bound covers.
+   * Each slot's {@link PosedThing.moveBound}, beside its position for the same read — `Infinity`
+   * once {@link markDisplaced} reports a teleport, the one move no bound covers.
    */
   let slotSlack = new Float32Array(0);
   const slotThing: PosedThing[] = [];
@@ -140,33 +143,33 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
 
   /**
    * Raisable corpses in the same cell grid, filled in the same `posed` pass. Backs
-   * `findRaisableCorpse`, deliberately not a linear scan however rare arch-viles seem —
+   * {@link findRaisableCorpse}, deliberately not a linear scan however rare arch-viles seem —
    * docs/monster-ai.md § Spatial indexing has the map that disproves it.
    */
   const corpseGrid: PosedThing[][] = new Array(blockerCols * blockerRows);
   /** Cells with anything in them, so a rebuild clears only those instead of the whole grid. */
   const corpseDirty: number[] = [];
-  /** Largest corpse radius in `corpseGrid`, sizing `findRaisableCorpse`'s box. */
+  /** Largest corpse radius in `corpseGrid`, sizing {@link findRaisableCorpse}'s box. */
   let maxCorpseRadius = 0;
-  /** Bumped per `forEachMonsterAlongRay` call; see `PosedThing.queryStamp`. */
+  /** Bumped per {@link forEachMonsterAlongRay} call; see {@link PosedThing.queryStamp}. */
   let monsterQueryStamp = 0;
-  /** Largest radius in `blockerGrid`, sizing `blockersFor`'s box to what this map contains. */
+  /** Largest filed body radius, sizing {@link blockersFor}'s box to this map's bodies. */
   let maxBlockerRadius = PLAYER_RADIUS;
 
   /**
-   * Reused storage for `blockersFor`'s result: `blockerPool` owns the objects and only grows,
+   * Reused storage for {@link blockersFor}'s result: `blockerPool` owns the objects and only grows,
    * `blockerScratch` is refilled with references, so a steady-state frame allocates nothing.
    *
    * **The tradeoff: the result is valid only until the next call** — hence `readonly`, and hence
-   * its one caller consuming it synchronously. `solidBodies` deliberately does *not* share this.
-   * docs/monster-ai.md § Spatial indexing.
+   * its one caller consuming it synchronously. {@link solidBodies} deliberately does *not* share
+   * this. docs/monster-ai.md § Spatial indexing.
    */
   const blockerPool: ThingBlocker[] = [];
   const blockerScratch: ThingBlocker[] = [];
 
   /**
-   * The collider `findRaisableCorpse` probes each candidate with, refilled rather than rebuilt:
-   * it sits inside that search's cell loop. See `makeCollider`.
+   * The collider {@link findRaisableCorpse} probes each candidate with, refilled rather than
+   * rebuilt: it sits inside that search's cell loop. See {@link makeCollider}.
    */
   const corpseCollider = makeCollider({ radius: 0, z: 0, height: 0, forMonster: true });
 
@@ -253,8 +256,7 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
   }
 
   /**
-   * Every living monster in the grid cells covering `radius` around (x, y). Narrows the
-   * candidates only — the caller still applies its own exact distance test. Padded by
+   * Narrows the candidates only — the caller still applies its own exact distance test. Padded by
    * `BLOCKER_MARGIN`, since the grid buckets each monster by where it stood at rebuild time.
    */
   function forEachMonsterNear(x: number, y: number, radius: number, ownReach: number, visit: (p: PosedThing) => void): void {
@@ -342,10 +344,10 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
    *
    * **The returned array is reused** — see `blockerScratch`.
    *
-   * The single hottest thing in monster AI, so the box is sized from the radii actually involved
-   * rather than a fixed worst case (docs/monster-ai.md § Spatial indexing) and stays 2D even
-   * though bodies have heights (docs/movement.md § Collision). Each blocker's `z` is read live off
-   * the `PosedThing`, so a flier's current float height is what the caller compares against.
+   * The single hottest thing in monster AI, so the box is sized from the radii involved rather
+   * than a fixed worst case (docs/monster-ai.md § Spatial indexing) and stays 2D even though
+   * bodies have heights (docs/movement.md § Collision). Each blocker's `z` is read live off the
+   * {@link PosedThing}, so a flier's current float height is what the caller compares against.
    */
   function blockersFor(p: PosedThing, players: readonly (Pos3 | null)[], probeReach: number): readonly ThingBlocker[] {
     blockerScratch.length = 0;
@@ -399,10 +401,10 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
 
   /**
    * The first corpse near (x, y) this arch-vile could raise, or null — `PIT_VileCheck`, and the
-   * `resurrect` callback `runChaseCall` takes. Grid-accelerated the same shape as `blockersFor`;
-   * which corpse wins when several qualify follows grid iteration order, as arbitrary as vanilla's
-   * own blockmap order. Deliberately skips `P_CheckPosition`'s re-test against other nearby
-   * things. docs/monster-archvile.md § Resurrection.
+   * `resurrect` callback `runChaseCall` takes. Grid-accelerated the same shape as
+   * {@link blockersFor}; which corpse wins when several qualify follows grid iteration order, as
+   * arbitrary as vanilla's own blockmap order. Deliberately skips `P_CheckPosition`'s re-test
+   * against other nearby things. docs/monster-archvile.md § Resurrection.
    */
   function findRaisableCorpse(x: number, y: number, vileRadius: number): RaiseCandidate | null {
     const reach = vileRadius + maxCorpseRadius + BLOCKER_MARGIN;
@@ -452,21 +454,22 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
 
   /**
    * Whether a query may leave a cell entirely unread: its nearest edge, per axis, lies further
-   * from the query point than anything in it could reach. `limit` is the caller's own reach past
-   * a body's radius, plus the cell's widest body (`cellMaxRadius`), plus the worst move any body
-   * in it can make this tic (`cellMaxSlack`, `Infinity` once one teleported). Exactly the bodies
-   * the caller's own test would refuse, so skipping changes nothing.
-   * docs/monster-ai.md § Spatial indexing.
+   * from the query point than anything in it could reach — exactly the bodies the caller's own
+   * test would refuse, so skipping changes nothing. docs/monster-ai.md § Spatial indexing.
+   *
+   * @param limit  the caller's own reach past a body's radius, plus the cell's widest body
+   *               (`cellMaxRadius`), plus the worst move any body in it can make this tic
+   *               (`cellMaxSlack`, `Infinity` once one teleported)
    */
   function cellSkipped(gapX: number, gapY: number, limit: number): boolean {
     return gapX > limit || gapY > limit;
   }
 
   /**
-   * `PosedThing.moveBound` for one live solid body: its own chase step, which covers the sub-step
-   * and the full-step fallback alike; a lost soul's charge; and one tic of momentum — only while
-   * it has some, or a conveyor could give it some before it moves. Every in-tic mover of a live
-   * body but a teleport, which `markDisplaced` covers.
+   * {@link PosedThing.moveBound} for one live solid body: its own chase step, which covers the
+   * sub-step and the full-step fallback alike; a lost soul's charge; and one tic of momentum — only
+   * while it has some, or a conveyor could give it some before it moves. Every in-tic mover of a
+   * live body but a teleport, which {@link markDisplaced} covers.
    */
   function moveBoundOf(p: PosedThing, mayCarry: boolean): number {
     const stats = p.stats;
@@ -492,9 +495,9 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
   }
 
   /**
-   * `blockersFor`'s per-candidate test: the pair's own summed radii plus the caller's probe reach,
-   * on live positions. The distance goes first — it refuses most candidates, and the other two
-   * reads are only paid for the few that pass.
+   * {@link blockersFor}'s per-candidate test: the pair's own summed radii plus the caller's probe
+   * reach, on live positions. The distance goes first — it refuses most candidates, and the other
+   * two reads are only paid for the few that pass.
    */
   function pushIfNear(p: PosedThing, other: PosedThing, ownRadius: number, probeReach: number): void {
     // Tighter than `reach`, which has to assume the map's largest monster and its longest step:
@@ -525,7 +528,7 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
   /**
    * Writes one blocker into the pooled result. Five scalars rather than a body object
    * (docs/conventions.md § Named arguments): taking one would mean allocating the very object the
-   * pool exists to avoid, and the player — which is not a `PosedThing` — goes through here too.
+   * pool exists to avoid, and the player — not a {@link PosedThing} — goes through here too.
    */
   function pushBlocker(x: number, y: number, z: number, radius: number, height: number): void {
     const i = blockerScratch.length;
@@ -559,13 +562,12 @@ export function createThingGrid(world: World, posed: PosedThing[]): ThingGrid {
 /**
  * Slack added to every blocker search, so narrowing it to the bodies that can actually touch can't
  * miss one: the longest probe step plus the worst one-frame grid staleness. The two maxima are
- * taken **independently and added**, never maximised as a per-type sum — docs/monster-ai.md §
- * Spatial indexing. Derived from the stat tables rather than hardcoded so it can't drift out of
- * sync with them, the nightmare table included.
+ * taken **independently and added**, never maximised as a per-type sum —
+ * docs/monster-ai.md § Spatial indexing. Derived from the stat tables, the nightmare table
+ * included, rather than hardcoded so it can't drift out of sync with them.
  *
- * Computed per grid rather than at import, because a DEHACKED patch may have rewritten either
- * table by then (docs/dehacked.md § Applying: reset, then patch). A grid is built once per level,
- * so the reduce costs nothing.
+ * Computed per grid rather than at import: a DEHACKED patch may have rewritten either table by
+ * then (docs/dehacked.md § Applying: reset, then patch). Once per level, the reduce costs nothing.
  */
 function blockerMargin(): number {
   const every = [...Object.values(MONSTER_STATS), ...Object.values(FAST_MONSTER_STATS)];

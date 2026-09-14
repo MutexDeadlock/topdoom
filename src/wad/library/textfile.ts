@@ -7,7 +7,7 @@
 /**
  * A WAD's sibling text file: what it is called, and how to read it. **Presence is the whole of the
  * question the menu asks** — the two WAD lists draw their info column from a source carrying one of
- * these, without reading a byte; `read` runs only when the player opens it.
+ * these, without reading a byte; {@link WadTextFile.read} runs only when the player opens it.
  */
 export interface WadTextFile {
   /** The file's own name, as it is spelled on disk — the popup's heading. */
@@ -16,10 +16,11 @@ export interface WadTextFile {
 }
 
 /**
- * Whether a file name is a candidate at all. The other half of the rule `siblingTextFile` finishes,
- * and exported for the same reason `acceptableWads` is (docs/wad.md § The player's own library):
- * the manifest scan, both library-scan paths and the upload pairing all have to admit the same
- * files, and a second, looser copy of the predicate is how they come to disagree.
+ * Whether a file name is a candidate at all. The other half of the rule {@link siblingTextFile}
+ * finishes, and exported for the same reason `acceptableWads` is
+ * (docs/wad.md § The player's own library): the manifest scan, both library-scan paths and the
+ * upload pairing all have to admit the same files, and a second, looser copy of the predicate is
+ * how they come to disagree.
  */
 export function isTextFile(name: string): boolean {
   return /\.txt$/i.test(name);
@@ -28,7 +29,7 @@ export function isTextFile(name: string): boolean {
 /**
  * A flat batch's text files, keyed by whatever the caller matches its WADs under — plain names for
  * an upload batch, paths relative to the library root for a picked folder, which is what scopes a
- * match to the WAD's own folder. `siblingTextFile` over the keys is the lookup.
+ * match to the WAD's own folder. {@link siblingTextFile} over the keys is the lookup.
  */
 export function textFileIndex<T>(files: readonly T[], keyOf: (file: T) => string): Map<string, T> {
   const index = new Map<string, T>();
@@ -51,10 +52,8 @@ export function siblingTextFile(wadName: string, names: Iterable<string>): strin
 }
 
 /**
- * Code page 437's upper half, `0x80`–`0xFF`. These files are DOS-era: the standard idgames template
- * is plain ASCII, but the banners and rules authors draw over it are CP437 box art, which no
- * `TextDecoder` label covers (the encoding standard dropped the page). Latin-1 would render every
- * one of those as a stray accented letter.
+ * Code page 437's upper half, `0x80`–`0xFF` — the box art DOS-era release notes draw, which no
+ * `TextDecoder` label covers (the encoding standard dropped the page).
  */
 const CP437_HIGH =
   'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ';
@@ -62,13 +61,9 @@ const CP437_HIGH =
 const UTF8 = new TextDecoder('utf-8', { fatal: true });
 
 /**
- * A text file's bytes as text. UTF-8 first and CP437 second, in that order because the two can't
- * both be guessed at: a file that decodes as UTF-8 at all was almost certainly written as one
- * (the high bytes of a CP437 banner are not valid sequences), while everything that fails is
- * DOS-era and is read through the table above.
- *
- * Line endings are normalised and the DOS end-of-file byte dropped, so a `<pre>` shows the file
- * rather than the file's transport.
+ * A text file's bytes as text: UTF-8 when they decode as that at all (a CP437 banner's high bytes
+ * are not valid sequences), else CP437 through the table above. Line endings are normalised and
+ * the DOS end-of-file byte dropped, so a `<pre>` shows the file rather than the file's transport.
  */
 export function decodeTextFile(bytes: ArrayBuffer | Uint8Array): string {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);

@@ -1,6 +1,6 @@
 /**
- * The arch-vile — the one monster that doesn't fit the data-driven `MONSTER_STATS` model: raising
- * corpses mid-chase and the sight-checked windup blast. Both `monsters/ai.ts` and
+ * The arch-vile — the one monster that doesn't fit the data-driven {@link MONSTER_STATS} model:
+ * raising corpses mid-chase and the sight-checked windup blast. Both `monsters/ai.ts` and
  * `monsters/attacks.ts` call into here. See docs/monster-archvile.md.
  */
 import { ThingType } from '../things/doomednums.ts';
@@ -27,15 +27,6 @@ import { DOOM_TIC } from '../../constants.ts';
 import { atan2, cos, sin } from '../../util/fdlibm.ts';
 
 /**
- * The arch-vile, the one monster type whose behavior does not fit the
- * data-driven `MONSTER_STATS` model every other type is expressed in. Both
- * halves are called from elsewhere — `monsters/ai.ts` for the chase side,
- * `monsters/attacks.ts` for the resolution side. docs/monster-archvile.md, which also
- * lists the three pieces of vile-specific behavior that deliberately stay
- * outside this file.
- */
-
-/**
  * Vanilla's S_VILE_HEAL1-3: the arch-vile holds still for 30 tics while the corpse it just found
  * rises.
  */
@@ -48,12 +39,11 @@ const VILE_HEAL_DURATION = 30 * DOOM_TIC;
 export type Resurrector = (x: number, y: number, vileRadius: number) => RaiseCandidate | null;
 
 /**
- * `A_VileChase`: raises a corpse instead of taking this chase call's ordinary
- * turn, matching vanilla exactly — a tic that finds one replaces `A_Chase`
- * outright, skipping the reactiontime/threshold aging and the
- * melee/missile/walk decisions rather than merely pre-empting them. Returns
- * null (and does nothing) for every type but the vile, so `runChaseCall` can
- * call it unconditionally.
+ * `A_VileChase`: raises a corpse instead of taking this chase call's ordinary turn — a tic that
+ * finds one replaces `A_Chase` outright. docs/monster-archvile.md § Resurrection.
+ *
+ * @returns null, doing nothing, for every type but the vile, so `runChaseCall` can call it
+ *          unconditionally
  */
 export function tryRaiseCorpse(
   body: MonsterBody,
@@ -75,11 +65,10 @@ export function tryRaiseCorpse(
 }
 
 /**
- * `A_VileAttack` (`atk.blast`): not a traced bolt at all — vanilla damages
- * `actor->target` directly (guaranteed, nothing to miss along), launches it
- * upward, then blasts a radius. No tracer or projectile sprite; the `FIRE`
- * spawned here is `MT_FIRE`'s final burst, taking over from `spawnWindupFire`'s.
- * See docs/monster-archvile.md.
+ * `A_VileAttack` (`atk.blast`): not a traced bolt at all — vanilla damages `actor->target` directly
+ * (guaranteed, nothing to miss along), launches it upward, then blasts a radius. No tracer or
+ * projectile sprite; the `FIRE` spawned here is `MT_FIRE`'s final burst, taking over from
+ * {@link spawnWindupFire}'s. See docs/monster-archvile.md.
  */
 export function resolveVileBlast(
   ctx: CombatContext,
@@ -120,11 +109,9 @@ export function resolveVileBlast(
 }
 
 /**
- * The warning flame, spawned when the windup starts — vanilla's `MT_FIRE`.
- * Reuses `SpriteFxLayer.spawn` but overrides the lifetime to the windup's own
- * length, so `resolveVileBlast`'s burst (or nothing, if the shot fizzles) takes
- * over with no explicit hand-off. Positioned up front, as `A_VileTarget` calls
- * `A_Fire` immediately after spawning. See docs/monster-archvile.md.
+ * The warning flame, spawned when the windup starts — vanilla's `MT_FIRE`, positioned up front, as
+ * `A_VileTarget` calls `A_Fire` immediately after spawning. Its lifetime is the windup's, so
+ * {@link resolveVileBlast}'s burst takes over with no hand-off. See docs/monster-archvile.md.
  */
 export function spawnWindupFire(
   ctx: CombatContext,
@@ -147,10 +134,10 @@ export function spawnWindupFire(
 }
 
 /**
- * `SpriteFxLayer`'s `VileFlameResolver`: where the flame belongs this frame, or
- * null if it should stay put. Lives here rather than in the effect layer
- * because the answer depends on live monster/player state (and on `A_Fire`'s
- * sightline rule) that the batch has no reason to know.
+ * {@link SpriteFxLayer}'s `VileFlameResolver`: where the flame belongs this frame.
+ * docs/monster-attacks.md § Resolving an attack.
+ *
+ * @returns null if it should stay put
  */
 export function vileFlameFor(ctx: CombatContext, vileId: number, targetId: number): Pos3 | null {
   const vile = ctx.things?.monsterById(vileId);
@@ -160,9 +147,9 @@ export function vileFlameFor(ctx: CombatContext, vileId: number, targetId: numbe
 }
 
 /**
- * Vanilla's `A_Fire`: 24 units in front of wherever the target is *currently
- * facing*, not toward the vile — contrast `vileBlastOffset`, which is
- * `A_VileAttack`'s genuinely different final reposition.
+ * Vanilla's `A_Fire`: {@link VILE_FIRE_OFFSET} in front of wherever the target is *currently
+ * facing*, not toward the vile — contrast {@link vileBlastOffset}, `A_VileAttack`'s different
+ * final reposition.
  */
 function fireFrontOf(target: Pos3 & { angle: number }): Pos3 {
   return {
@@ -173,11 +160,9 @@ function fireFrontOf(target: Pos3 & { angle: number }): Pos3 {
 }
 
 /**
- * `resolveVileBlast`'s one-time final reposition — `A_VileAttack` moves the
- * fire 24 units from the target back toward the shooter, a genuinely different
- * formula from the windup's target-facing one, not an inconsistency here. The
- * offset also keeps the flame from spawning at the target's exact x/y/z, where
- * two anchored billboards hide each other.
+ * {@link resolveVileBlast}'s one-time final reposition — `A_VileAttack` moves the fire
+ * {@link VILE_FIRE_OFFSET} from the target back toward the shooter. The offset also keeps the flame
+ * from spawning at the target's exact x/y/z, where two anchored billboards hide each other.
  */
 function vileBlastOffset(atk: MonsterAttackEvent, targetPos: Pos2): Pos2 {
   const towardVile = atan2(atk.y - targetPos.y, atk.x - targetPos.x);
@@ -185,12 +170,11 @@ function vileBlastOffset(atk: MonsterAttackEvent, targetPos: Pos2): Pos2 {
 }
 
 /**
- * How long the arch-vile's windup flame tracks its target — read off the
- * vile's own `startDelaySeconds` rather than duplicated, so the flame can't
- * drift away from the moment the real shot lands or fizzles. Derived from
- * `MONSTER_STATS` rather than sitting in `spritefx/tables.ts` beside the other
- * `VILE_FIRE_*` values: that file is otherwise free of `MONSTER_STATS`, and
- * keeping it that way is what lets this file import it.
+ * How long the arch-vile's windup flame tracks its target — read off the vile's own
+ * `startDelaySeconds` rather than duplicated, so the flame can't drift away from the moment the
+ * real shot lands or fizzles. Derived from {@link MONSTER_STATS} rather than sitting in
+ * `spritefx/tables.ts` beside the other `VILE_FIRE_*` values: that file is otherwise free of
+ * {@link MONSTER_STATS}, and keeping it that way is what lets this file import it.
  */
 function vileWindupTrackSeconds(): number {
   return MONSTER_STATS[ThingType.archVile].ranged?.startDelaySeconds ?? 0;

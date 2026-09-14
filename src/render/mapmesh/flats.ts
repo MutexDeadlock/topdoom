@@ -83,14 +83,14 @@ export function buildSolidCaps(build: Build): void {
 
 /**
  * Redecides every hole on the map, at the heights the sectors stand at now — the pass that has to
- * precede any `closedHoleFill`.
+ * precede any {@link closedHoleFill}.
  *
  * Running it over the whole map even for a mover, which rebuilds one sector's leaves alone, is a
  * **deliberate deviation** from GZDoom, whose hack is per frame over whatever the wall pass just
  * recorded. A region is seeded from the leaf that carries the missing texture, and that leaf need
  * not be in the sector being rebuilt: overboard.wad MAP02's sunken boat spans 16 sectors, every one
- * of them a mover, and only sector 112's leaves touch the sea it hides under. `holeSeedLeaves`
- * keeps the cost off the level's size.
+ * of them a mover, and only sector 112's leaves touch the sea it hides under.
+ * {@link holeSeedLeaves} keeps the cost off the level's size.
  */
 export function beginHoleFills(build: Build): void {
   const leafCount = build.polys.length;
@@ -130,7 +130,7 @@ export function beginHoleFills(build: Build): void {
 /**
  * The neighbouring sector a **leaf** closes itself over, or -1 where it is ordinary geometry: a
  * region of leaves ringed entirely by untextured drops is a hole the mapper never meant anyone to
- * look into, and this camera looks into every pit. Reads what `beginHoleFills` settled.
+ * look into, and this camera looks into every pit. Reads what {@link beginHoleFills} settled.
  * docs/render.md § Closed holes.
  */
 export function closedHoleFill(leaf: number): number {
@@ -138,15 +138,15 @@ export function closedHoleFill(leaf: number): number {
 }
 
 /**
- * Which fans one leaf draws and with what — every decision `processFlat` makes before a vertex
- * exists, written into `out` (grown as needed) and counted back. Split out from the emission so a
- * refresh can re-decide without re-dicing. docs/render.md § Mover meshes.
+ * Which fans one leaf draws and with what — every decision {@link processFlat} makes before a
+ * vertex exists. docs/render.md § Mover meshes.
+ * @returns how many specs were written into `out`, which grows as needed
  */
 export function flatSpecsOf(
   build: Build,
   poly: SubSectorPoly,
   ss: number,
-  /** The sector this leaf's own sector closes itself over (`closedHoleFill`), or -1. */
+  /** The sector this leaf's own sector closes itself over ({@link closedHoleFill}), or -1. */
   holeFill: number,
   out: FlatSpec[],
 ): number {
@@ -265,7 +265,7 @@ export function flatSpecsOf(
   return count;
 }
 
-/** `processFlat`'s spec buffer, reused across every leaf — see `flatSpecsOf`. */
+/** {@link processFlat}'s spec buffer, reused across every leaf — see {@link flatSpecsOf}. */
 export const flatSpecs: FlatSpec[] = [];
 
 export function processFlat(build: Build, poly: SubSectorPoly, ss: number, holeFill: number): void {
@@ -284,9 +284,9 @@ export function flatArt(kind: SurfaceKind, texName: string, size: SizeFn): Size 
 }
 
 /**
- * The leaf each of a cap's probes lands in, aligned with `SolidCap.probes` and -1 where the probe
- * resolved to none. A probe sits a map unit off one face, so it lands in the very leaf that face's
- * own wall quad is revealed with (docs/fogofwar.md § How reveal reaches the geometry).
+ * The leaf each of a cap's probes lands in, aligned with {@link SolidCap.probes} and -1 where the
+ * probe resolved to none. A probe sits a map unit off one face, so it lands in the very leaf that
+ * face's own wall quad is revealed with (docs/fogofwar.md § How reveal reaches the geometry).
  */
 function probeLeaves(build: Build, probes: Float64Array): Int32Array {
   const { subsectorAt, polys } = build;
@@ -366,11 +366,11 @@ interface Solids {
   /** Sector → the block cap every leaf of it draws, and what it draws it with. */
   blocks: Map<number, BlockDraw>;
   pockets: SolidPockets;
-  /** Per leaf, which subsectors reveal the block cap it draws — see `blockReveal`. */
+  /** Per leaf, which subsectors reveal the block cap it draws — see {@link blockReveal}. */
   reveal: Map<number, readonly number[]>;
 }
 
-/** One block's cap as the flat path draws it — `findSolidBlocks`, `capArt`, `blockReveal`. */
+/** A block's cap as drawn — {@link findSolidBlocks}, {@link capArt}, {@link blockReveal}. */
 interface BlockDraw {
   cap: SolidBlockCap;
   /** The flat a pocket under the block lends its top, where the block carries none of its own. */
@@ -402,13 +402,13 @@ function solidsOf(build: Build): Solids {
 }
 
 /**
- * What a cap is drawn with, in the order the answers get better. A **ceiling flat this camera never
+ * What a cap is drawn with, best answer first. A **ceiling flat this camera never
  * sees** is the best of them, and the caller names which: a solid block's own
- * (`SolidBlockCap.flat`), the flat of a pocket the structure encloses, which is the mapper's own
- * drawing of its top (`pocketsOf` — `lidFlat`), or, for a cap *under* a lid, the flat of the level
- * it closes, which vanilla draws right there. Failing that, the cap wears the structure's own wall
- * texture, anchored to it (`capTextureOrigin`); a flat keeps the world grid vanilla aligns one to.
- * docs/render-solids.md.
+ * ({@link SolidBlockCap.flat}), the flat of a pocket the structure encloses, which is the mapper's
+ * own drawing of its top ({@link pocketsOf} — {@link SolidPockets.lidFlat}), or, for a cap *under*
+ * a lid, the flat of the level it closes, which vanilla draws right there. Failing that, the cap
+ * wears the structure's own wall texture, anchored to it ({@link capTextureOrigin}); a flat keeps
+ * the world grid vanilla aligns one to. docs/render-solids.md.
  */
 function capArt(
   build: Build,
@@ -427,8 +427,8 @@ function capArt(
 
 /**
  * Which subsectors reveal the block cap one leaf draws: the leaves the block's probes land in near
- * it, as `revealSubsectors` picks them for a ring's lid. Memoized per leaf — probes and footprints
- * both hold still, and a mover asks this on every rebuild of its sector.
+ * it, as {@link revealSubsectors} picks them for a ring's lid. Memoized per leaf — probes and
+ * footprints both hold still, and a mover asks this on every rebuild of its sector.
  */
 function blockReveal(build: Build, solids: Solids, block: BlockDraw, poly: SectorPoly, ss: number): readonly number[] {
   const known = solids.reveal.get(ss);
@@ -495,14 +495,13 @@ interface HoleRegion {
   fill: number;
 }
 
-/** One list per map, weak on it like `bsp.ts`'s polygons — see `holeSeedLeaves`. */
+/** One list per map, weak on it like `bsp.ts`'s polygons — see {@link holeSeedLeaves}. */
 const holeSeeds = new WeakMap<DoomMap, Int32Array>();
 
 /**
  * Which leaves could seed a hole: those with a two-sided seg drawing no lower texture, the
- * `AddLowerMissingTexture` case GZDoom collects while it walks the walls. Whether that seg is a
- * *step* moves with the floors, but which segs are bare does not, so the list is built once — what
- * keeps a pass proportional to the candidates rather than to the level.
+ * `AddLowerMissingTexture` case GZDoom collects while it walks the walls. Which segs are bare holds
+ * still, so the list is built once — docs/render.md § What the pass costs.
  */
 function holeSeedLeaves(map: DoomMap): Int32Array {
   const cached = holeSeeds.get(map);
@@ -529,9 +528,9 @@ function holeSeedLeaves(map: DoomMap): Int32Array {
 }
 
 /**
- * `closedHoleFill`'s answers, one slot per leaf, as module scratch. `stamp` is what spares clearing
- * a map-sized array per pass: a leaf answered in an earlier pass reads as unanswered in this one.
- * The rest is what lets a pass be skipped — see `beginHoleFills`.
+ * {@link closedHoleFill}'s answers, one slot per leaf, as module scratch. `stamp` is what spares
+ * clearing a map-sized array per pass: a leaf answered in an earlier pass reads as unanswered in
+ * this one. The rest is what lets a pass be skipped — see {@link beginHoleFills}.
  */
 const holeFills = {
   fills: new Int32Array(0),
@@ -656,12 +655,12 @@ function rimSector(build: Build, sectorIndex: number): boolean {
   return build.rebuiltWithNeighbours || !build.movableSectors?.has(sectorIndex);
 }
 
-/** One flat fan's parameters — everything `addFlatFan` needs that isn't the footprint. */
+/** One flat fan's parameters — everything {@link addFlatFan} needs that isn't the footprint. */
 interface FlatSpec {
   texName: string;
   /**
    * Which bank that texture comes from: a solid structure's cap wears a *wall* texture where the
-   * map lends it no flat (`capArt`). 'flat' for everything else.
+   * map lends it no flat ({@link capArt}). 'flat' for everything else.
    */
   kind: SurfaceKind;
   height: number;
@@ -679,8 +678,8 @@ interface FlatSpec {
   baseAlpha?: number;
   /**
    * What a solid structure's cap carries and an ordinary flat does not: where its texture starts
-   * (`capTextureOrigin` — a flat keeps the world grid vanilla aligns one to) and every subsector
-   * that reveals it (`revealSubsectors`).
+   * ({@link capTextureOrigin} — a flat keeps the world grid vanilla aligns one to) and every
+   * subsector that reveals it ({@link revealSubsectors}).
    */
   cap?: { origin?: Pos2; reveal: readonly number[] };
 }
@@ -693,8 +692,8 @@ interface FlatSpec {
 const WATER_MIN_DEPTH = 8;
 
 /**
- * `processFlat`'s two loop bodies, hoisted out of a function a mover rebuild runs per subsector per
- * tic.
+ * What {@link flatSpecsOf}'s floor/ceiling loop walks, hoisted out of a function a mover rebuild
+ * runs per subsector per tic.
  */
 const FLOOR_ONLY = [false];
 const FLOOR_AND_CEILING = [false, true];
@@ -727,9 +726,9 @@ const FLAT_CELL_MIN_AREA = 0.05;
 /** What a flat's texture is aligned to: the map's own origin, as vanilla aligns one. */
 const WORLD_GRID: Pos2 = { x: 0, y: 0 };
 
-/** `diceOnGrid`'s ring box, reused for the same reason its clip buffers are. */
+/** {@link diceOnGrid}'s ring box, reused for the same reason its clip buffers are. */
 const ringBox: PolygonBounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-/** `diceOnGrid`'s clip buffers, reused across every flat on the map — see there. */
+/** {@link diceOnGrid}'s clip buffers, reused across every flat on the map — see there. */
 const stripLow: number[] = [];
 const stripHigh: number[] = [];
 const cellLow: number[] = [];
@@ -746,15 +745,15 @@ function reversedRing(points: ArrayLike<number>): number[] {
 }
 
 /**
- * Cuts a convex ring along the world-aligned `FLAT_GRID_LEN` grid and hands each cell to `fan`.
- * Convex in, convex out — which `SubSectorPoly.points` guarantees (`render/bsp.ts`) and which is
- * what lets each cell be fanned. docs/render.md § Flats are diced on a world grid.
+ * Cuts a convex ring along the world-aligned {@link FLAT_GRID_LEN} grid and hands each cell to
+ * `fan`. Convex in, convex out — which {@link SubSectorPoly.points} guarantees, and what lets each
+ * cell be fanned. docs/render.md § Flats are diced on a world grid.
  *
  * The buffers are module-level scratch, reused across every flat on the map; nothing here reenters.
  *
- * The cuts go through `util/geom.ts`'s `clipConvexPolygon`, which keeps the `cross <= 0` half-plane
- * of a line given as a point plus a direction. The four axis-aligned halves this needs are that
- * line's degenerate cases — with `at` the grid line:
+ * The cuts go through {@link clipConvexPolygon}, which keeps the `cross <= 0` half-plane of a line
+ * given as a point plus a direction. The four axis-aligned halves this needs are that line's
+ * degenerate cases — with `at` the grid line:
  *
  * | keep      | point     | direction |
  * |-----------|-----------|-----------|

@@ -23,10 +23,8 @@ export interface PatchedStates {
   mobjStates: readonly MobjStates[];
   weaponStates: readonly WeaponStates[];
   /**
-   * `misc1`/`misc2` per state, and only for the states a patch wrote them on. A side map rather
-   * than two more columns on {@link StateRow} because **`linuxdoom-1.10` has no such fields at
-   * all** — DeHackEd invented them and MBF gave them meanings, so vanilla's reading is "absent",
-   * not "zero in 967 rows". docs/dehacked.md § Action pointers.
+   * `misc1`/`misc2` per state, and only for the states a patch wrote them on — a side map rather
+   * than two more columns on {@link StateRow}. docs/dehacked.md § Action pointers.
    */
   args: ReadonlyMap<number, readonly number[]>;
   /**
@@ -41,7 +39,7 @@ export interface PatchedStates {
 interface Chain {
   /** The states visited, in order, `start` first. Empty when `start` is `S_NULL`. */
   indices: number[];
-  /** Position in `indices` the chain loops back to, or -1 when it doesn't loop. */
+  /** Position in {@link Chain.indices} the chain loops back to, or -1 when it doesn't loop. */
   cycleAt: number;
   /** Ended on a `tics: -1` state, which holds forever. */
   holds: boolean;
@@ -156,9 +154,7 @@ export interface MonsterFrames {
   rangedRefires: boolean;
   /**
    * The first damaging action each attack chain carries — what the attack *is*, as opposed to the
-   * timings around it. Null for a chain that fires nothing. A patch that repoints one of these is
-   * asking for a different attack, not a retimed one; `ATTACK_ACTION_SOURCES` is where the applier
-   * looks the new one's roll and projectile up. docs/dehacked.md § Action pointers.
+   * timings around it. Null for a chain that fires nothing. docs/dehacked.md § Action pointers.
    */
   meleeAction: string | null;
   rangedAction: string | null;
@@ -172,17 +168,17 @@ export interface MonsterFrames {
   rangedActions: readonly string[];
   /**
    * `misc1`/`misc2` of the state that firing action sits on, where the patch gave it any — MBF's
-   * `A_Scratch` reads its damage and its sound from them. Null everywhere in vanilla, which has no
-   * such fields at all.
+   * `A_Scratch` reads its damage and its sound from them. Null where no patch wrote them: vanilla
+   * leaves both zero on every state and reads neither.
    */
   meleeArgs: readonly number[] | null;
   rangedArgs: readonly number[] | null;
   /**
    * `A_PlaySound`'s `misc1` where the chain carries one — an `S_sfx[]` index that becomes this
-   * chain's own sound — or, for `meleeSound`, `A_Scratch`'s own `misc2` where the chain has no
-   * `A_PlaySound`. A chain's sound is a per-type property here (`MonsterSounds`), so *which* chain
-   * it sits in is all that is read; where in the chain is not. The two attack chains are kept
-   * apart because their sinks are: a swing plays `MonsterSounds.melee`, a shot `.attack`.
+   * chain's own sound — or, for {@link MonsterFrames.meleeSound}, `A_Scratch`'s own `misc2` where
+   * the chain has no `A_PlaySound`. A chain's sound is a per-type property here (`MonsterSounds`),
+   * so only *which* chain it sits in is read. The two attack chains are kept apart because their
+   * sinks are: a swing plays `MonsterSounds.melee`, a shot `.attack`.
    */
   meleeSound: number | null;
   rangedSound: number | null;
@@ -207,11 +203,8 @@ export interface WeaponFrames {
    */
   shots: number;
   /**
-   * The first firing action the pass carries — what the weapon *fires*, as opposed to how fast. A
-   * patch that repoints one is asking for a different shot, not a retimed one, and
-   * `WEAPON_ACTION_SOURCES` is where the applier looks the new one's roll and projectile up. Only
-   * the first counts: a `WeaponDef` holds one shot shape and not a per-shot schedule, the same
-   * reason {@link WeaponFrames.cooldown} is a mean over {@link WeaponFrames.shots}. Null for a
+   * The first firing action the pass carries — what the weapon *fires*, as opposed to how fast.
+   * Only the first counts: a `WeaponDef` holds one shot shape, not a per-shot schedule. Null for a
    * chain that fires nothing. docs/dehacked.md § Action pointers.
    */
   action: string | null;
@@ -251,8 +244,8 @@ export interface FrameTables {
   } | null;
   /**
    * `S_GIBS`' own art — the pool a crushed corpse becomes. Null where the chain draws nothing at
-   * all, which is a patch's doing: vanilla always has it. docs/specials-crushers.md § Crushed
-   * corpses.
+   * all, which is a patch's doing: vanilla always has it.
+   * docs/specials-crushers.md § Crushed corpses.
    */
   gibs: { sprite: string; frames: string[] } | null;
   /**
@@ -268,16 +261,10 @@ export interface FrameTables {
 type MutableStateRow = [sprite: number, frame: number, tics: number, action: string, next: number, name: string];
 
 /**
- * {@link STATES} and {@link MOBJ_STATES} with a patch's edits written in. Neither original is
- * touched.
- *
- * **A repointed action is written into the same copy the walk then reads**, which is the whole of
- * how an action pointer reaches this engine: the derivations already key off the action column, so
- * moving `A_CPosAttack` onto a chain changes that chain's shot count and windup for free.
- * docs/dehacked.md § Action pointers.
- *
- * The rows past {@link STATES} start out fresh, and every one a patch cares about is written by a
- * `Frame` record of its own. docs/dehacked.md § Extended states.
+ * {@link STATES} and {@link MOBJ_STATES} with a patch's edits written in; neither original is
+ * touched. **A repointed action is written into the same copy the walk then reads** —
+ * docs/dehacked.md § Action pointers. The rows past {@link STATES} start out fresh —
+ * docs/dehacked.md § Extended states.
  *
  * @param stateCount  how far the patch grew the table (`DehPatch.stateCount`)
  */
@@ -326,10 +313,8 @@ export function patchStates(
 /**
  * Which of vanilla's chains a state belongs to, memoized over the **pristine** table — what an
  * action's chain-scoped classification is decided against (`classifyDehackedPointer`), since a
- * patch writes its repoints against vanilla's chains and not against its own earlier edits.
- *
- * A state can belong to several: the imp's `S_TROO_ATK3` is both its melee and its missile chain,
- * which is exactly why membership is a list.
+ * patch writes its repoints against vanilla's chains and not against its own earlier edits. A
+ * state can belong to several (the imp's `S_TROO_ATK3`).
  */
 export function chainKindsOf(state: number): readonly ChainKind[] {
   chainIndex ??= buildChainIndex();
@@ -378,8 +363,7 @@ function chainsOf(states: readonly StateRow[], ms: MobjStates): Record<ChainKind
 
 /**
  * The filler rate a one-frame entry carries. A single held frame never advances, so its duration is
- * arbitrary; this matches `things/tables.ts`'s `MONSTER_DEATH_FRAME_SECONDS` so a derived entry is
- * byte-identical to the hand-written one it replaced, and a test pins the two equal. The flat
+ * arbitrary; a test pins it equal to `things/tables.ts`'s `MONSTER_DEATH_FRAME_SECONDS`. The flat
  * per-frame rates are the residual § Frames says the walker does not derive.
  */
 const HELD_FRAME_SECONDS = 6 * DOOM_TIC;
@@ -457,17 +441,16 @@ export function pristineFrameTables(): FrameTables {
 
 /**
  * `S_GIBS`' index, resolved by **name** off pristine {@link STATES}: no `mobjinfo` chain points at
- * that state, so {@link deriveFrameTables}' walk over {@link MOBJ_INFO} never reaches it the way it
- * reaches every other pose. The index is stable under a patch — {@link patchStates} rewrites a
- * row's columns, never its name, and a `Frame` record addresses rows by number. -1 only if the
- * table itself lost the state.
+ * that state, so {@link deriveFrameTables}' walk over {@link MOBJ_INFO} never reaches it. Stable
+ * under a patch — {@link patchStates} never rewrites a row's name. -1 only if the table itself lost
+ * the state.
  */
 const GIBS_STATE = STATES.findIndex((row) => row[5] === 'S_GIBS');
 
 /**
  * `S_GIBS`' chain off the patched table — one held frame in vanilla, and whatever a patch that
- * repoints its sprite or gives it a tail leaves behind. docs/specials-crushers.md § Crushed
- * corpses.
+ * repoints its sprite or gives it a tail leaves behind.
+ * docs/specials-crushers.md § Crushed corpses.
  */
 function deriveGibs(states: readonly StateRow[]): FrameTables['gibs'] {
   if (GIBS_STATE < 0) return null;
@@ -500,27 +483,18 @@ function deriveOneShot(states: readonly StateRow[], ms: MobjStates | undefined):
 
 /**
  * Which actions the walk loop, an attack chain and a fire chain each count, by the role
- * `dehacked/actions.ts` gives them: `'chase'` is `A_Chase` and the footstep wrappers that call it,
- * `'firing'` the actions that deal the damage or launch the missile (as opposed to the
- * `A_FaceTarget`/`A_VileStart`/`A_FatRaise` wind-up states around them), `'weaponFire'` the nine
- * that spend the ammo. The roles live in one table because a repointed action has to classify and
- * derive off the same reading — docs/dehacked.md § Action pointers, docs/weapons.md § Fire rates,
- * docs/monster-ai.md § The windup.
+ * `dehacked/actions.ts` gives them. The roles live in one table because a repointed action has to
+ * classify and derive off the same reading — docs/dehacked.md § Action pointers,
+ * docs/weapons.md § Fire rates, docs/monster-ai.md § The windup.
  */
 const isChase = (action: string): boolean => actionRole(action) === 'chase';
 const isFiring = (action: string): boolean => actionRole(action) === 'firing';
 const isWeaponFire = (action: string): boolean => actionRole(action) === 'weaponFire';
 
 /**
- * One weapon's fire rate, walked from its `atkstate`.
- *
- * The chain is summed **up to, and not including, its `A_ReFire` state**: `A_ReFire` runs on entry
- * and re-enters `atkstate` immediately while the trigger is down, so its own tics are only ever
- * spent on release. Where a chain fires more than once per pass — `S_SAW1`/`S_SAW2` and
- * `S_CHAIN1`/`S_CHAIN2` both carry a firing action — the rate is the pass divided by the number of
- * firing actions, because `WeaponDef` holds one interval and not a per-shot schedule. Vanilla
- * spaces both of those evenly (4 tics each), so the division is exact there and a mean only for a
- * patch that makes them uneven. docs/weapons.md § Fire rates.
+ * One weapon's fire rate, walked from its `atkstate`: summed **up to, and not including, its
+ * `A_ReFire` state**, then divided by the firing actions one pass carries, because `WeaponDef`
+ * holds one interval and not a per-shot schedule. docs/weapons.md § Fire rates.
  */
 function deriveWeapon(states: readonly StateRow[], w: WeaponStates): WeaponFrames {
   // `fireChainStates` carries the closing `A_ReFire` state, whose tics are only ever spent on
@@ -550,12 +524,9 @@ function deriveMissile(states: readonly StateRow[], ms: MobjStates): MissileFram
 }
 
 /**
- * Which {@link MOBJ_INFO} rows are monsters here — a row with both a pain and a death chain, which
- * in `info.c` is exactly the twenty types `MONSTER_STATS` and `INERT_SHOOTABLE` cover between them.
- *
- * Read off **pristine** {@link MOBJ_STATES}, never the patched copy: a row's kind decides which
- * tables it derives into, so a patch that clears a monster's `painstate` must still derive as a
- * monster rather than silently becoming a decoration.
+ * Which {@link MOBJ_INFO} rows are monsters here — a row with both a pain and a death chain, read
+ * off **pristine** {@link MOBJ_STATES} so a patch that clears a `painstate` still derives a
+ * monster. docs/dehacked.md § Frames.
  */
 function isMonsterRow(i: number): boolean {
   return MOBJ_STATES[i].pain !== 0 && MOBJ_STATES[i].death !== 0;
@@ -721,10 +692,7 @@ function firingOf(
 
 /**
  * Every damaging action of a chain's span, in order — what each shot of a volley *is*, where
- * {@link firingOf} gives only the first. A chain whose firing actions differ fires a sequence of
- * different attacks rather than the same one repeated: NoSp2.wad's cybruiser opens its missile
- * chain with `A_CyberAttack` and closes it with `A_BruisAttack`, a rocket and then a green `BAL7`
- * ball. docs/dehacked.md § Action pointers.
+ * {@link firingOf} gives only the first. docs/dehacked.md § Action pointers.
  */
 function firingActionsOf(states: readonly StateRow[], chain: Chain): string[] {
   return spanOf(states, chain)
@@ -791,8 +759,7 @@ function deriveAnim(states: readonly StateRow[], spawn: Chain): { frames: string
 }
 
 /**
- * A run's tics averaged to one flat per-frame rate, ties rounding down — how the hand-written
- * tables flattened the uneven ones (6/8 → 7, 6/7 → 6, 10/15/8/6 → 10).
+ * A run's tics averaged to one flat per-frame rate, ties rounding down — docs/dehacked.md § Frames.
  */
 function flatTics(states: readonly StateRow[], indices: readonly number[]): number {
   return Math.ceil(ticsOf(states, indices) / indices.length - 0.5);

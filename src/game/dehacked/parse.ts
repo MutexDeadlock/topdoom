@@ -1,8 +1,6 @@
 /**
- * The DEHACKED/BEX text parser: raw lump text in, a `DehPatch` out. Pure, with no `Wad`
- * dependency, so the tests and any tooling can drive it directly — the same split
- * `campaign/mapinfo.ts` uses. It never throws: anything it can't read becomes a warning and the
- * walk continues, because a patch that trips one line must not cost the level. See
+ * The DEHACKED/BEX text parser: raw lump text in, a {@link DehPatch} out. Pure, with no `Wad`
+ * dependency, and it never throws — anything it can't read becomes a warning. See
  * docs/dehacked.md § The record grammar.
  */
 import { DOOM_TIC } from '../../constants.ts';
@@ -26,7 +24,7 @@ import * as tables from './tables.ts';
 
 /**
  * One `key = value` line, as every field reader sees it: what it says, the record word a warning
- * about it is filed under, and the log it goes to. Built once per line, in `parseDehacked`.
+ * about it is filed under, and the log it goes to. Built once per line, in {@link parseDehacked}.
  */
 interface FieldLine {
   field: string;
@@ -38,9 +36,8 @@ interface FieldLine {
 }
 
 /**
- * The two `key = value` lines that carry no edit and belong to no record. A patch may repeat them
- * mid-file — EPIC.WAD switches from `Doom version = 21` to `19` halfway through — so they are
- * skipped wherever they appear rather than closing whatever record is open.
+ * The two `key = value` lines that carry no edit and belong to no record, skipped wherever they
+ * appear rather than closing the open record. docs/dehacked.md § The record grammar.
  */
 const HEADER_KEYS = new Set(['doom version', 'patch format']);
 
@@ -52,9 +49,8 @@ const SFX_MNEMONICS = new Set(tables.SFX_ORDER.filter((name) => name !== null).m
 
 /**
  * Collects warnings deduped by `(record, field, support)`, and the merge point across a set's
- * several lumps (`readDehacked`), so one dedupe key serves both. `support` is in the key because
- * one record word can land differently by index — a `Frame` on a muzzle flash has no target, one
- * past the table is unknown — and a row carries one class.
+ * several lumps (`readDehacked`), so one dedupe key serves both.
+ * docs/dehacked.md § The coverage report.
  */
 export class WarningLog {
   private rows = new Map<string, DehWarning>();
@@ -88,10 +84,9 @@ export class WarningLog {
 /**
  * Reads one DEHACKED or BEX patch.
  *
- * `titleLookup` resolves a normalized vanilla level title to the map lump it names, which is how a
- * vanilla `Text` substitution reaches a level: the patch says "the level called Entryway is called
- * something else now", and only `campaign/names.ts` knows that Entryway is `MAP01`. Passing it in
- * rather than importing it keeps this module free of any campaign knowledge.
+ * @param titleLookup  a normalized vanilla level title to the map lump it names — how a vanilla
+ *                     `Text` substitution reaches a level, since only `campaign/names.ts` knows
+ *                     Entryway is `MAP01`; passed in so this module holds no campaign knowledge
  */
 export function parseDehacked(
   text: string,
@@ -316,8 +311,7 @@ export function parseDehacked(
 
 /**
  * Above this, a `Width`/`Height`/missile `Speed` value is read as 16.16 fixed point, and below it
- * as plain map units. **A heuristic, not a vanilla rule** — the two ranges sit two orders of
- * magnitude apart with nothing between them. docs/dehacked.md § Units.
+ * as plain map units. **A heuristic, not a vanilla rule** — docs/dehacked.md § Units.
  */
 const FIXED_POINT_THRESHOLD = 4096;
 
@@ -367,7 +361,7 @@ class TextCursor {
   }
 }
 
-/** How a state index that names no row is reported — `StateTable.addressOrWarn`'s description half. */
+/** How a state index naming no row is reported — {@link StateTable.addressOrWarn}'s description. */
 interface StateMiss {
   /** The record as the patch spelled it: `Pointer`, `[CODEPTR]`. */
   record: string;
@@ -386,19 +380,13 @@ interface PendingState {
 }
 
 /**
- * How large this patch grows `states[]`, and every state index it names held against that size.
- *
- * The two halves are the format's own split. A `Frame`, `Pointer` or `[CODEPTR]` record
- * **addresses** a row, which is what grows the table (`dsda_GetDehState`); a `Thing`'s or
- * `Weapon`'s frame pointer and a `Frame`'s `Next frame` only **point** into it, and dsda follows
- * those long after the whole patch is read. So a pointer is checked at `settle` against the
- * finished table rather than the one that existed when its line was met — otherwise a `Weapon`
- * record naming a state its own patch defines further down would be rejected for a record order the
- * format doesn't require.
- * docs/dehacked.md § Extended states.
+ * How large this patch grows `states[]`, and every state index it names held against that size. A
+ * `Frame`, `Pointer` or `[CODEPTR]` record **addresses** a row, which grows the table
+ * (`dsda_GetDehState`); a frame pointer or `Next frame` only **points** into it, and is checked at
+ * {@link StateTable.settle} against the finished table. docs/dehacked.md § Extended states.
  */
 class StateTable {
-  /** Rows the patch has grown `states[]` to — `DehPatch.stateCount`. */
+  /** Rows the patch has grown `states[]` to — {@link DehPatch.stateCount}. */
   count = STATES.length;
   private pending: PendingState[] = [];
 
@@ -410,9 +398,9 @@ class StateTable {
   }
 
   /**
-   * `address`, reporting the miss for the three headers that address a row outside a `FieldLine` —
-   * a `Pointer` header, its `Codep Frame` and a `[CODEPTR]`'s `FRAME n`. The report's own three
-   * strings travel in `miss` rather than positionally: two of them are adjacent and a swap would
+   * {@link StateTable.address}, reporting the miss for the three headers that address a row outside
+   * a {@link FieldLine} — a `Pointer` header, its `Codep Frame` and a `[CODEPTR]`'s `FRAME n`. The
+   * report's strings travel in `miss` rather than positionally: two are adjacent and a swap would
    * typecheck (docs/conventions.md § Named arguments).
    */
   addressOrWarn(index: number, warnings: WarningLog, miss: StateMiss): boolean {
@@ -463,10 +451,9 @@ function assignment(line: string): { key: string; value: string } | null {
 }
 
 /**
- * A `Bits` value, in either form a real patch writes — EPIC.WAD uses both, `Bits = SOLID` on one
- * thing and `Bits = 768` on another. A value with no letters in it is the numeric mask; anything
- * else is a `+`/`|`/`,`-separated mnemonic list. Returns the mask and any mnemonic the flag table
- * doesn't know.
+ * A `Bits` value, in either form a real patch writes: a value with no letters is the numeric mask,
+ * anything else a `+`/`|`/`,`-separated mnemonic list, whose names the flag table doesn't know come
+ * back in `unknown`. docs/dehacked.md § Bits.
  */
 function parseBits(value: string): { mask: number; unknown: string[] } {
   if (/^[0-9][0-9\s]*$/.test(value.trim())) return { mask: Number(value.trim()) >>> 0, unknown: [] };
@@ -535,7 +522,7 @@ interface TextSinks {
 
 /**
  * A vanilla `Text <oldlen> <newlen>` record: two raw runs follow the header line, and the cursor
- * is jumped over exactly as many characters as it declares — see `TextCursor`.
+ * is jumped over exactly as many characters as it declares — see {@link TextCursor}.
  *
  * A four-to-four substitution whose old string is a sprite name is a sprite rename — checked
  * first, as `d_deh.c`'s `deh_procText` does (`fromlen==4 && tolen==4`, against `sprnames[]`),
@@ -605,9 +592,9 @@ function readSpriteRename(line: FieldLine, spriteRenames: Map<string, string>): 
 }
 
 /**
- * One `Thing` field, unit-converted into this engine's terms. Returns whether anything landed on
- * the edit, which is what tells `closeRecord` an otherwise-empty record is worth filing.
- * docs/dehacked.md § Units.
+ * One `Thing` field, unit-converted into this engine's terms. docs/dehacked.md § Units.
+ *
+ * @returns whether anything landed on the edit — what tells `closeRecord` a record is worth filing
  */
 function readThingField(edit: DehThingEdit, row: tables.MobjRow, line: FieldLine): boolean {
   const { field, value, label, warnings } = line;
@@ -679,9 +666,9 @@ function readThingField(edit: DehThingEdit, row: tables.MobjRow, line: FieldLine
 }
 
 /**
- * One `Frame` field, kept in vanilla's units (see `DehFrameEdit`). Only the ranges are checked
- * here: a `Next frame` past the table or a `Sprite number` past `sprnames[]` would index nothing,
- * and is reported rather than carried.
+ * One `Frame` field, kept in vanilla's units (see {@link DehFrameEdit}). Only the ranges are
+ * checked here: a `Next frame` past the table or a `Sprite number` past `sprnames[]` would index
+ * nothing, and is reported rather than carried.
  */
 function readFrameField(frame: DehFrameEdit, line: FieldLine): boolean {
   const { field, value, label, warnings } = line;
@@ -721,8 +708,9 @@ function readFrameField(frame: DehFrameEdit, line: FieldLine): boolean {
 /**
  * The state a `Pointer N (Frame mm)` header repoints: `mm`, the parenthesised index. `N` is
  * DeHackEd's own cross-reference number and names nothing here — `d_deh.c`'s `deh_procPointer`
- * reads the target off the parentheses too. Null where the header carries none or names no state,
- * which leaves the record's own `Codep Frame` line with nothing to write.
+ * reads the target off the parentheses too.
+ *
+ * @returns null where the header names no state, leaving its `Codep Frame` line nothing to write
  */
 function pointerTarget(headerLine: string, states: StateTable, warnings: WarningLog): number | null {
   // The word inside the parentheses is *not* checked: `deh_procPointer` scans `(%s %i)` and reads
@@ -740,11 +728,8 @@ function pointerTarget(headerLine: string, states: StateTable, warnings: Warning
 
 /**
  * A `Pointer` record's one field, `Codep Frame = yy`: the target state's action becomes whatever
- * action state `yy` carries.
- *
- * **Read off pristine `STATES`, never off an already-patched column** — `d_deh.c` copies from
- * `deh_codeptr[]`, a snapshot taken before any patch runs, so two repoints in sequence cannot
- * chain through each other. docs/dehacked.md § Action pointers.
+ * action state `yy` carries in **pristine** {@link STATES} (`d_deh.c`'s `deh_codeptr[]`), so two
+ * repoints cannot chain through each other. docs/dehacked.md § Action pointers.
  */
 function readPointerField(state: number | null, line: FieldLine, edits: DehPointerEdit[]): void {
   const { field, value, states, warnings } = line;
@@ -782,9 +767,10 @@ function readCodePointer(line: FieldLine, edits: DehPointerEdit[]): void {
 }
 
 /**
- * The action a state carries in **pristine** `STATES` — `d_deh.c`'s `deh_codeptr[]` snapshot, which
- * is what a `Pointer` record copies from and what a repoint is classified against. A row the patch
- * grew the table into carries none, the same `NULL` `dsda_ResetStates` leaves it with.
+ * The action a state carries in **pristine** {@link STATES} — `d_deh.c`'s `deh_codeptr[]`
+ * snapshot, which is what a `Pointer` record copies from and what a repoint is classified against.
+ * A row the patch grew the table into carries none, the same `NULL` `dsda_ResetStates` leaves it
+ * with.
  */
 function actionAt(state: number): string {
   return STATES[state]?.[3] ?? NO_ACTION;
@@ -811,9 +797,9 @@ function filePointer(
 
 /**
  * One `Weapon` field: the ammo type, or one of the five state pointers under the name
- * `WEAPON_STATE_FIELDS` maps it to. A pointer past `states[]` is reported rather than carried, on
- * the same deferred check a `Thing`'s frame pointers get (`StateTable`); 0 is `S_NULL` and is kept
- * as written.
+ * {@link tables.WEAPON_STATE_FIELDS} maps it to. A pointer past `states[]` is reported rather than
+ * carried, on the same deferred check a `Thing`'s frame pointers get ({@link StateTable}); 0 is
+ * `S_NULL` and is kept as written.
  */
 function readWeaponField(weapon: DehWeaponEdit, value: number, line: FieldLine): void {
   const pointer = tables.WEAPON_STATE_FIELDS[line.field.trim().toLowerCase()];

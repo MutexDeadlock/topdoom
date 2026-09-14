@@ -68,10 +68,8 @@ interface LabelledValue {
 }
 
 /**
- * The end-of-level popup: the same three counts the HUD strip carries, as vanilla's percentages
- * this time, then the frozen level time and how it compares to the level's best. Shown when a
- * level's exit fires and dismissed by a key, with the world frozen behind it — see docs/hud.md
- * § Intermission and § Best times.
+ * The end-of-level popup, shown when a level's exit fires and dismissed by a key, with the world
+ * frozen behind it — see docs/hud.md § Intermission and § Best times.
  *
  * One canvas per line (static markup in index.html), each drawn like `Hud.drawStatLine`: a red
  * label run, then a value run starting at a shared column so the numbers line up rather than

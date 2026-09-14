@@ -31,7 +31,9 @@ import { samePlayerSettings, sameSessionSettings } from './settings.ts';
  */
 export interface RecordingStart {
   capture: SaveCapture;
-  /** Each slot's camera for its first tic, by slot, already snapped — `Game.startRecording`. */
+  /**
+   * Each slot's camera for its first tic, by slot, already snapped — `ReplayDriver.startRecording`.
+   */
   poses: CameraPose[];
   /** Each slot's player settings, by slot. */
   players: PlayerSettings[];
@@ -95,8 +97,9 @@ export class ReplayRecorder {
   }
 
   /**
-   * Called by `Game` ahead of every tic: stamps a player or session settings change made since the
-   * last tic as an event for this one, and takes the desync sample when one is due.
+   * Called by `ReplayDriver.beginTic` ahead of every tic: stamps a player or session settings
+   * change made since the last tic as an event for this one, and takes the desync sample when
+   * one is due.
    *
    * @param bodies   every slot's position, by slot
    * @param players  every slot's player settings the tic will be read at, by slot
@@ -142,9 +145,8 @@ export class ReplayRecorder {
   }
 
   /**
-   * Whether a seek anchor is due at the tic about to run: an interval past the last one taken.
-   * `Game` asks before every tic and takes the keyframe only where the moment allows a capture at
-   * all, so a due one waits rather than being skipped. docs/replays.md § Seeking.
+   * Whether a seek anchor is due at the tic about to run: an interval past the last one taken, and
+   * still due while the moment refuses a capture. docs/replays.md § Seeking.
    */
   get keyframeDue(): boolean {
     const { keyframes } = this.data;
@@ -237,10 +239,7 @@ class SlotTap implements TicInput {
     return this.live.rightMousePressed(action);
   }
 
-  /**
-   * The sign alone: `WeaponSystem.handleSwitching` reads nothing else of a scroll, and the sign
-   * is what the record keeps — so the live tic sees exactly what the playback will.
-   */
+  /** The sign alone, what the record keeps: the live tic sees exactly what the playback will. */
   consumeWheel(): number {
     writeRowWheel(this.row, this.live.consumeWheel());
     return this.row.wheel;

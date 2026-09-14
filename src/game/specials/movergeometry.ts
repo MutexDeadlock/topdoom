@@ -1,9 +1,9 @@
 /**
  * The render-side half of the specials system: the per-sector meshes moving geometry is drawn
  * from, their occlusion faders, and rewriting vertex colours when a sector's light changes.
- * `SpecialsController` mutates the `DoomMap` directly and everything else picks that up on its
- * next query; this class exists for the one thing that does not — a sector's *drawn* geometry was
- * baked at load time. Nothing here knows what a door or a crusher is; it takes sector indices.
+ * `SpecialsController` mutates the {@link DoomMap} directly and everything else picks that up on
+ * its next query; this class exists for the one thing that does not — a sector's *drawn* geometry
+ * was baked at load time. Nothing here knows what a door or a crusher is; it takes sector indices.
  * See docs/render.md § Mover meshes and docs/specials-lights.md § Relighting mover geometry.
  */
 import * as THREE from 'three';
@@ -69,9 +69,9 @@ interface MoverEntry {
 const NO_SUBSECTORS: readonly number[] = [];
 
 /**
- * The renderer's `MoverIndex`: the subsectors grouped once from `polys` (their
- * *drawn* sector, which a self-referencing sector redirects — render/bsp.ts),
- * and the linedefs straight off `World`'s memoized `sec->lines[]`.
+ * The renderer's {@link MoverIndex}: the subsectors grouped once from `polys` (their *drawn*
+ * sector, which a self-referencing sector redirects — render/bsp.ts), and the linedefs straight
+ * off {@link sectorLines}' memoized `sec->lines[]`.
  */
 export function buildMoverIndex(map: DoomMap, polys: SubSectorPoly[]): MoverIndex {
   const subsectors: number[][] = Array.from({ length: map.sectors.length }, () => []);
@@ -82,13 +82,13 @@ export function buildMoverIndex(map: DoomMap, polys: SubSectorPoly[]): MoverInde
   };
 }
 
-/** What a `MoverGeometry` needs beside the `World` it draws over. */
+/** What a {@link MoverGeometry} needs beside the {@link World} it draws over. */
 export interface MoverGeometryOptions {
   bank: MaterialBank;
   scene: THREE.Scene | THREE.Group;
   fog: FogOfWar;
   built: BuiltMap;
-  /** Render preferences only — `movableSectors` below is merged in, and wins. */
+  /** Render preferences only; {@link MoverGeometryOptions.movableSectors} merges in and wins. */
   meshOptions: MapMeshOptions;
   /**
    * Which sectors get mover-owned geometry — **the same set the caller gave `buildMapMesh`**, so
@@ -106,17 +106,25 @@ export class MoverGeometry {
   private built: BuiltMap;
 
   private movableSectors: Set<number>;
-  /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
+  /**
+   * Movable sectors a given one's change rebuilds — sharing a linedef, a 242 control's dependents
+   * ({@link MoverGeometry.indexWaterDependents}) and block mates
+   * ({@link MoverGeometry.indexBlockMates}). {@link MoverGeometry.rebuildAround}.
+   */
   private movableNeighbors = new Map<number, Set<number>>();
-  /** `rebuildAround`'s working set, reused so a mid-stroke frame allocates nothing. */
+  /**
+   * {@link MoverGeometry.rebuildAround}'s working set, reused so a mid-stroke frame allocates
+   * nothing.
+   */
   private rebuildScratch = new Set<number>();
   private moverMeshes = new Map<number, MoverEntry>();
-  /** This frame's fade reach, refilled once per `collectFadeHits` — see `fadeReach`. */
+  /** {@link fadeReach}'s answer this frame, refilled by {@link MoverGeometry.collectFadeHits}. */
   private reach: FadeBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
   private sectorOccluders = new Map<number, BuiltMap['occluders']>();
   private sectorFlats = new Map<number, BuiltMap['flatSurfaces']>();
   /**
-   * Which mover meshes hold geometry coloured from a given sector's light — see `recolorSector`.
+   * Which mover meshes hold geometry coloured from a given sector's light — see
+   * {@link MoverGeometry.recolorSector}.
    */
   private moverLightTargets = new Map<number, Set<number>>();
 
@@ -172,9 +180,9 @@ export class MoverGeometry {
   }
 
   /**
-   * The second half of the pass `collectFadeHits` opens, over the frame's whole
-   * bag of stops rather than each mesh's own — plus the fog-of-war combine and
-   * the commit into the mover buffers.
+   * The second half of the pass {@link MoverGeometry.collectFadeHits} opens, over the frame's whole
+   * bag of stops rather than each mesh's own — plus the fog-of-war combine and the commit into the
+   * mover buffers.
    */
   updateFading(frame: FadeFrame, walls: FadeCrossings, flats: FadeCrossings): void {
     const revealed = this.fog.changedBounds();
@@ -206,16 +214,15 @@ export class MoverGeometry {
   }
 
   /**
-   * Rebuilds every mesh invalidated by a set of sectors having changed —
-   * whether that change was a height, a flat or a wall texture, and **the only
-   * way in**. It is never just those sectors: a two-sided line's *other* side
-   * is drawn from both sectors' heights, so a movable neighbour's own quads on
-   * a shared line go stale too (a switch mounted on the wall of the lift it
-   * operates is the common case — the switch's own sector owns that quad, but
-   * its height comes from the lift), and a Boom 242 sector draws from a control
-   * sector it shares no line with at all (`indexWaterDependents`). Static
-   * neighbours need no entry here: their side of such a line is built into this
-   * mover's mesh, not the static batch.
+   * Rebuilds every mesh invalidated by a set of sectors having changed — whether that change was a
+   * height, a flat or a wall texture, and **the only way in**. It is never just those sectors: a
+   * two-sided line's *other* side is drawn from both sectors' heights, so a movable neighbour's own
+   * quads on a shared line go stale too (a switch mounted on the wall of the lift it operates is
+   * the common case — the switch's own sector owns that quad, but its height comes from the lift),
+   * and a Boom 242 sector draws from a control sector it shares no line with at all
+   * ({@link MoverGeometry.indexWaterDependents}), and a solid block rebuilds whole
+   * ({@link MoverGeometry.indexBlockMates}). Static neighbours need no entry here: their side
+   * of such a line is built into this mover's mesh, not the static batch.
    */
   rebuildAround(dirty: Set<number>): void {
     if (dirty.size === 0) return;
@@ -231,8 +238,8 @@ export class MoverGeometry {
 
   /**
    * Relights every surface lit by `sectorIndex` to that sector's current `light` — the static
-   * batches (indexed once by `indexLightGeometry`) and any mover meshes holding its geometry,
-   * through `relightRange` (render/mapmesh.ts). docs/specials-lights.md § Light changes.
+   * batches (indexed once by {@link MoverGeometry.indexLightGeometry}) and any mover meshes holding
+   * its geometry, through {@link relightRange}. docs/specials-lights.md § Light changes.
    */
   recolorSector(sectorIndex: number): void {
     const sector = this.mover.map.sectors[sectorIndex];
@@ -270,11 +277,11 @@ export class MoverGeometry {
   }
 
   /**
-   * Indexes every sector's own occluders and flats out of `built` once, so `recolorSector` never
-   * re-scans the map. **Every sector, not just the ones with a load-time blink pattern**: the
-   * `lightChange` line specials can recolor any tag-matched sector on demand. Static batches only —
-   * mover-mesh geometry is reached through `moverLightTargets`.
-   * docs/specials-lights.md § Relighting mover geometry.
+   * Indexes every sector's own occluders and flats out of {@link MoverGeometry.built} once, so
+   * {@link MoverGeometry.recolorSector} never re-scans the map. **Every sector, not just the ones
+   * with a load-time blink pattern**: the `lightChange` line specials can recolor any tag-matched
+   * sector on demand. Static batches only — mover-mesh geometry is reached through
+   * {@link MoverGeometry.moverLightTargets}. docs/specials-lights.md § Relighting mover geometry.
    */
   private indexLightGeometry(): void {
     this.sectorOccluders.clear();
@@ -291,9 +298,7 @@ export class MoverGeometry {
     }
   }
 
-  /**
-   * Whether this frame's fade reach (`fadeReach`, filled into `reach`) overlaps a mesh's footprint.
-   */
+  /** Whether this frame's {@link MoverGeometry.reach} overlaps a mesh's footprint. */
   private reachesMesh(g: MoverEntry): boolean {
     return boxesOverlap(g.bounds, this.reach);
   }
@@ -331,11 +336,11 @@ export class MoverGeometry {
   }
 
   /**
-   * Brings exactly one sector's mesh up to date. Private, and the whole reason
-   * is the doc on `rebuildAround`: the set of meshes a changed sector
-   * invalidates is never just its own, so nothing outside may pick a sector to
-   * rebuild without going through the closure. Only a sector whose set of drawn
-   * quads changed pays for a fresh mesh — docs/render.md § Mover meshes.
+   * Brings exactly one sector's mesh up to date. Private, and the whole reason is the doc on
+   * {@link MoverGeometry.rebuildAround}: the set of meshes a changed sector invalidates is never
+   * just its own, so nothing outside may pick a sector to rebuild without going through the
+   * closure. Only a sector whose set of drawn quads changed pays for a fresh mesh —
+   * docs/render.md § Mover meshes.
    */
   private rebuild(sectorIndex: number): void {
     const old = this.moverMeshes.get(sectorIndex);
@@ -395,9 +400,9 @@ export class MoverGeometry {
   /**
    * The last rebuild edges that aren't adjacency: every sector of one solid block linked to every
    * other, so a block rebuilds whole. Its cap is one decision over all of it (`blockCapHeight`) and
-   * `rebuildAround` reaches one hop, so a light well two sectors in from the rim would otherwise
-   * keep the lid the rim just dropped — `movableBlocks`, which `game.ts` made the whole block
-   * mover-owned for. docs/render-solids.md § Blocks built out of a sector.
+   * {@link MoverGeometry.rebuildAround} reaches one hop, so a light well two sectors in from the
+   * rim would otherwise keep the lid the rim just dropped — {@link movableBlocks}, which `game.ts`
+   * made the whole block mover-owned for. docs/render-solids.md § Blocks built out of a sector.
    */
   private indexBlockMates(): void {
     for (const block of movableBlocks(this.mover.map, this.movableSectors)) {
@@ -418,9 +423,9 @@ export class MoverGeometry {
   }
 
   /**
-   * `recolorSector`'s mover-mesh half: geometry in a `moverMeshes` entry is not reachable through
-   * `sectorOccluders`/`sectorFlats`, and a sector's light must reach its geometry whether or not
-   * that geometry currently lives in a mover mesh. Repro: DOOM1 E1M5 sectors 2 and 32, the tag-1
+   * {@link MoverGeometry.recolorSector}'s mover-mesh half: geometry in a mover mesh is not
+   * reachable through {@link MoverGeometry.sectorOccluders}/{@link MoverGeometry.sectorFlats}, and
+   * a sector's light must reach it wherever it lives. Repro: DOOM1 E1M5 sectors 2 and 32, the tag-1
    * strobing lifts. docs/specials-lights.md § Relighting mover geometry.
    */
   private recolorMoverGeometry(sectorIndex: number, light: number): void {

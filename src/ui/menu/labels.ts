@@ -9,21 +9,20 @@ import { describeSupport, supportLevel, type SupportLevel } from '../../wad/supp
 
 /**
  * The three things a WAD row says about a file, kept apart so the two lists that have room for
- * columns can line them up down the list (docs/menu-wads.md § WAD Library) — `sourceColumnSpans`
- * below is what renders them. `describeSource` joins the same values into one line for the IWAD
- * select, which has room for nothing else, so the two can't disagree about what a file is — only
- * about how much room there is to say it.
+ * columns can line them up down the list (docs/menu-wads.md § WAD Library) —
+ * {@link sourceColumnSpans} renders them. {@link describeSource} joins the same values into one
+ * line for the IWAD select, which has room for nothing else, so the two can't disagree.
  *
- * The support verdict is deliberately **not** one of these: it is a coloured glyph, not text, and
- * the `<select>` holds only text. A game WAD's verdict is on its WAD Library row instead.
+ * The support verdict is deliberately **not** one of these: it is a coloured glyph, and the
+ * `<select>` holds only text. A game WAD's verdict is on its WAD Library row instead.
  */
 interface SourceColumns {
   size: string;
   /** What the file actually contains: its maps, or its lump count when it has none. */
   content: string;
   /**
-   * `DEH` or empty — abbreviated because the column is worth a hint, not a whole spelled-out
-   * word of row width; `sourceColumnSpans` puts the full name in its tooltip. Presence, not
+   * `DEH` or empty — abbreviated because the column is worth a hint, not a word of row width;
+   * {@link sourceColumnSpans} puts the full name in its tooltip. Presence, not
    * coverage: what a patch lands needs its bytes, and the menu lists a server file from the
    * build-time manifest alone.
    * docs/dehacked.md § The coverage report.
@@ -48,8 +47,8 @@ const SUPPORT_GLYPHS: Record<SupportLevel, string> = {
  * worth interrupting for, so it is the kind that carries the accent; the empty default is both the
  * plain wording and the spacer that keeps the columns behind it lined up.
  *
- * Here rather than at either call site for `sourceColumnSpans`' reason: the `badge`/`badge reason`
- * class names both `menu.css` and `library.css` target have one definition.
+ * Here rather than at either call site for {@link sourceColumnSpans}' reason: the
+ * `badge`/`badge reason` class names both `menu.css` and `library.css` target have one definition.
  */
 export function badge(text: string, kind: '' | 'reason' = ''): HTMLSpanElement {
   const span = document.createElement('span');
@@ -59,9 +58,8 @@ export function badge(text: string, kind: '' | 'reason' = ''): HTMLSpanElement {
 }
 
 /**
- * Which game a mapset is for, as the badge both WAD lists refuse it with — `library.ts: mapStyle`
- * put into words. Here so the two lists cannot word the same refusal differently, which they did:
- * the overlay said `DOOM II maps` where the New Game tab said `DOOM II`.
+ * Which game a mapset is for, as the badge both WAD lists refuse it with — {@link mapStyle} put
+ * into words, here so the two lists cannot word the same refusal differently.
  */
 export function mapStyleLabel(src: WadSource): string {
   return mapStyle(src) === 'doom1' ? 'DOOM 1' : 'DOOM II';
@@ -128,8 +126,10 @@ export function sourceColumnSpans(src: WadSource, onInfo: () => void): HTMLEleme
   return [metaSpan('size', size), metaSpan('content', content), deh, infoColumn(src, onInfo), support];
 }
 
-/** A WAD row's detail line, joined, for the one place too narrow to give each column its own space:
-    the IWAD `<select>`, whose options can hold only text. */
+/**
+ * A WAD row's detail line, joined, for the one place too narrow to give each column its own space:
+ * the IWAD `<select>`, whose options can hold only text.
+ */
 export function describeSource(src: WadSource): string {
   const { size, content, dehacked } = sourceColumns(src);
   const parts = [size, src.maps.length > 0 ? content : `no maps (${content})`];
@@ -160,8 +160,8 @@ export function describeMap(map: MergedMap, iwadLabel: string): string {
 
 /**
  * The info column's control, in the two lists that render one: a WAD shipped with a text file
- * beside it (`WadSource.textFile`) offers it here, anything else gets the empty span that keeps the
- * columns behind it lined up.
+ * beside it ({@link WadSource.textFile}) offers it here, anything else gets the empty span that
+ * keeps the columns behind it lined up.
  */
 function infoColumn(src: WadSource, onInfo: () => void): HTMLElement {
   const text = src.textFile;

@@ -1,7 +1,7 @@
 /**
  * Things as upright sprite billboards: decoded sprite lumps cached as textures
- * (`SpriteMaterialCache`), rotation-frame picking, and the per-thing animation/pose state
- * (`SpriteAnimator`, `SpriteActor`). See docs/sprites.md.
+ * ({@link SpriteMaterialCache}), rotation-frame picking, and the per-thing animation/pose state
+ * ({@link SpriteAnimator}, {@link SpriteActor}). See docs/sprites.md.
  */
 import * as THREE from 'three';
 import type { Bitmap, GraphicsBank } from '../wad/graphics.ts';
@@ -51,13 +51,11 @@ export interface SpriteSkin {
 }
 
 /**
- * Builds and caches billboard geometry/materials for sprite lumps, one per
- * (lump, mirrored) pair.
+ * Builds and caches billboard geometry/materials for sprite lumps, one per (lump, mirrored) pair.
  *
  * A thing is a flat plane fixed **upright** in the world, turning only around its vertical axis to
- * track the camera's yaw (`SpriteActor.setPose`'s `viewerAngleDeg`) — never a true camera-facing
- * billboard, which tips flat as this camera tilts toward straight down.
- * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
+ * track the camera's yaw ({@link SpriteActor.setPose}'s `viewerAngleDeg`) — never a true
+ * camera-facing billboard. docs/sprites.md § Why upright planes, not `THREE.Sprite`.
  */
 export class SpriteMaterialCache {
   private cache = new Map<string, LumpSprite | null>();
@@ -66,9 +64,9 @@ export class SpriteMaterialCache {
   private atlas: SpriteAtlas | null = null;
 
   /**
-   * `atlasLumps` names the sprite lumps to pack into the atlas the batches draw from — every one
-   * the set has, decoded here and now (28 ms for DOOM2's 1381). Without it nothing is packed and
-   * every lump draws from its own texture: the player-skin cache, whose one reader never batches.
+   * @param atlasLumps  the sprite lumps to pack into the atlas the batches draw from, decoded here
+   *                    and now; without it every lump draws from its own texture — the player-skin
+   *                    cache, whose one reader never batches
    */
   constructor(gfx: GraphicsBank, renderer?: THREE.WebGLRenderer, atlasLumps?: readonly string[]) {
     this.gfx = gfx;
@@ -132,40 +130,44 @@ export class SpriteMaterialCache {
 
 /**
  * The frame-cycle state of one animated sprite and its current-lump lookup, with no
- * `THREE.Object3D` of its own — the same animation logic serves both a standalone `SpriteActor`
- * mesh and `SpriteBatch`'s instances (docs/sprites.md § Batching). Animation is a plain
- * frame-letter cycle; `animFrames` defaults to a single held frame.
+ * `THREE.Object3D` of its own — the same animation logic serves both a standalone
+ * {@link SpriteActor} mesh and `SpriteBatch`'s instances (docs/sprites.md § Batching). Animation is
+ * a plain frame-letter cycle; {@link SpriteAnimator.animFrames} defaults to a single held frame.
  */
 export class SpriteAnimator {
   private lastKey = '';
   private cached: CachedSprite | null = null;
-  /** The inputs `cached` was resolved from — see `resolve`. */
+  /** The inputs {@link SpriteAnimator.cached} came from — see {@link SpriteAnimator.resolve}. */
   private lastLetter = '';
   private lastDigit = 0;
   private lastSpriteName = '';
   private lastSkin: SpriteSkin | null = null;
-  /** The material cache `cached` came from: a skin's, a fallback's, or this animator's own. */
+  /** {@link SpriteAnimator.cached}'s cache: a skin's, a fallback's, or this animator's own. */
   private lastMaterials: SpriteMaterialCache | null = null;
   private animIndex = 0;
   private animTimer = 0;
-  /** The cycle `animIndex` last indexed: `animFrames`, or `stand` while standing. */
+  /**
+   * The cycle {@link SpriteAnimator.animIndex} last indexed: {@link SpriteAnimator.animFrames}, or
+   * {@link SpriteAnimator.stand} while standing.
+   */
   private base: string[];
-  /** A loop to play while still and `standing`, and its per-frame rate — see `setStand`. */
+  /**
+   * A loop to play while still and {@link SpriteAnimator.standing}, and its per-frame rate — see
+   * {@link SpriteAnimator.setStand}.
+   */
   private stand: string[] | null = null;
   private standDuration = 0;
 
   /**
-   * Whether a still tic plays `stand` rather than holding `animFrames[0]` — the owner's to set each
-   * tic: a monster stands while dormant, and holds its first walk frame while it chases in place.
+   * Whether a still tic plays {@link SpriteAnimator.stand} rather than holding `animFrames[0]` —
+   * the owner's to set each tic: a monster stands while dormant.
    */
   standing = false;
 
   /**
-   * The logical `SPRITE + LETTER` the last `resolve` drew (`TROOA`, `BEXPC`), for the caller to
-   * test against `FULLBRIGHT_FRAMES` when picking the light. Rebuilt only when the resolved lump
-   * changes, in the same branch that re-fetches the material, so the steady state pays nothing.
-   * Logical, not the lump: a `[SPRITES]` rename changes which lump `SpriteBank` hands back, and
-   * the fullbright table is keyed by the name this animator was given.
+   * The logical `SPRITE + LETTER` the last {@link SpriteAnimator.resolve} drew (`TROOA`, `BEXPC`),
+   * for the caller to test against `FULLBRIGHT_FRAMES` when picking the light. Logical, not the
+   * lump — docs/sprites.md § Fullbright frames.
    */
   frameKey = '';
 
@@ -176,41 +178,34 @@ export class SpriteAnimator {
   private frameDuration: number;
 
   /**
-   * Permanently overrides the normal walk-cycle animation with a one-shot
-   * sequence that advances forward and then holds on its last frame forever
-   * — a corpse, not a loop. `advance` ignores its own `animating` parameter
-   * entirely while this is set: unlike the alive cycle (which idles by
-   * holding frame 0 and resumes from the start once moving again), a death
-   * animation has no "idle" state to fall back to and must never run in
-   * reverse or reset. Set via `die`.
+   * Permanently overrides the walk cycle with a one-shot sequence that plays forward and then holds
+   * its last frame forever — a corpse, not a loop. {@link SpriteAnimator.advance} ignores its own
+   * `animating` while this is set: a death has no idle state to fall back to and must never run in
+   * reverse or reset. Set via {@link SpriteAnimator.die}.
    */
   private death = new FrameSequence();
 
   /**
-   * A transient one-shot sequence (attack/pain) that plays forward over its
-   * own frames and then clears itself, handing back to the alive cycle —
-   * unlike `death`, which is permanent. `playOnce` re-arms it
-   * unconditionally, so a later call (e.g. a pain flinch landing mid-attack)
-   * simply replaces whatever was already playing, matching vanilla's own
-   * state machine: a new state transition always wins, there's no queueing.
+   * A transient one-shot sequence (attack/pain) that plays forward once and then clears itself,
+   * handing back to the alive cycle — unlike {@link SpriteAnimator.death}.
+   * {@link SpriteAnimator.playOnce} re-arms it unconditionally: a later call replaces whatever was
+   * playing, as vanilla's state machine does, with no queueing.
    */
   private override = new FrameSequence();
 
   /**
-   * Sprite name to resolve the death sequence's frames against, when it
-   * differs from `spriteName` — set only by `die`'s optional third argument.
-   * Every monster's death states reuse the same sprite name as its walk/
-   * attack states, so this is `null` for all of them; the exploding barrel
-   * is the one thing in the game whose death art (`BEXP`) is a genuinely
-   * different lump than its own idle art (`BAR1`), which `spriteName` alone
-   * can't express since it's fixed for this animator's whole life.
+   * Sprite name to resolve the death sequence's frames against, when it differs from
+   * {@link SpriteAnimator.spriteName} — set only by {@link SpriteAnimator.die}'s optional third
+   * argument: null for every monster, whose death reuses its own sprite — the exploding barrel
+   * (`BAR1` dying as `BEXP`) is the one thing that needs it.
    */
   private deathSpriteName: string | null = null;
 
   /**
    * Art drawn instead of this animator's own bank and sprite name, or null for its own. Unlike
-   * `deathSpriteName` it covers every sequence, death included — a corpse goes on holding the
-   * weapon it died with. `frameKey` stays this animator's own either way (see `resolve`).
+   * {@link SpriteAnimator.deathSpriteName} it covers every sequence, death included — a corpse
+   * goes on holding the weapon it died with. {@link SpriteAnimator.frameKey} stays this animator's
+   * own either way (see {@link SpriteAnimator.resolve}).
    */
   private skin: SpriteSkin | null = null;
 
@@ -230,11 +225,10 @@ export class SpriteAnimator {
   }
 
   /**
-   * Advances the frame cycle by `dt`. `animating` selects the cycle (e.g. the
-   * player only cycles legs while actually moving); while false the actor
-   * holds on `animFrames[0]` and the cycle resets, so motion always resumes
-   * from the first frame instead of wherever it happened to stop — unless it
-   * is `standing` with a `stand` loop, which plays instead.
+   * Advances the frame cycle by `dt`. `animating` selects the cycle (the player only cycles legs
+   * while moving); while false the actor holds on `animFrames[0]` and the cycle resets, so motion
+   * resumes from the first frame — unless it is {@link SpriteAnimator.standing} with a
+   * {@link SpriteAnimator.stand} loop, which plays instead.
    */
   advance(dt: number, animating: boolean): void {
     const stand = animating || !this.standing ? null : this.stand;
@@ -288,10 +282,8 @@ export class SpriteAnimator {
   }
 
   /**
-   * The geometry/material for the current frame as seen from `viewerAngleDeg`,
-   * or null if the WAD has no such lump. Memoized on the resolved lump name,
-   * so the steady state (a sprite whose frame and rotation digit haven't
-   * changed) costs one `SpriteBank` lookup and nothing else.
+   * The geometry/material for the current frame as seen from `viewerAngleDeg`, or null if the WAD
+   * has no such lump.
    */
   resolve(facingDeg: number, viewerAngleDeg: number): CachedSprite | null {
     const frames = this.death.frames ?? this.override.frames ?? this.base;
@@ -346,17 +338,17 @@ export class SpriteAnimator {
   }
 
   /**
-   * Draws from `skin`'s bank and sprite name from the next `resolve` on, or from this animator's
-   * own with null. Deliberately touches no sequence state: a weapon swapped mid-stride must not
-   * restart the walk cycle, one swapped mid-death must not restart the death chain.
+   * Draws from `skin`'s bank and sprite name from the next {@link SpriteAnimator.resolve} on, or
+   * from this animator's own with null. Deliberately touches no sequence state:
+   * docs/sprites.md § Weapon-matching player sprites.
    */
   setSkin(skin: SpriteSkin | null): void {
     this.skin = skin;
   }
 
   /**
-   * Gives this sprite a loop to play while still and `standing`, in place of holding
-   * `animFrames[0]` — a monster's stand art, `MONSTER_STAND_FRAMES`.
+   * Gives this sprite a loop to play while still and {@link SpriteAnimator.standing}, in place of
+   * holding `animFrames[0]` — a monster's stand art, `MONSTER_STAND_FRAMES`.
    */
   setStand(frames: string[], frameDuration: number): void {
     this.stand = frames;
@@ -364,14 +356,11 @@ export class SpriteAnimator {
   }
 
   /**
-   * Switches this sprite permanently into its one-shot death animation (see
-   * the `death` field doc). Idempotent-ish: calling it again just
-   * restarts the sequence, which nothing currently does since a monster/the
-   * player only dies once per life.
+   * Switches this sprite permanently into its one-shot death animation
+   * ({@link SpriteAnimator.death}); calling it again restarts the sequence.
    *
-   * `spriteName`, when given, resolves the death frames against that lump
-   * instead of this animator's own `spriteName` — see `deathSpriteName`'s
-   * doc for the one case (the exploding barrel) that needs it.
+   * @param spriteName  the sprite the death frames resolve against, where it is not this animator's
+   *                    own — {@link SpriteAnimator.deathSpriteName}
    */
   die(frames: string[], frameDuration: number, spriteName?: string): void {
     this.death.start(frames, frameDuration, true);
@@ -393,12 +382,11 @@ export class SpriteAnimator {
   }
 
   /**
-   * Plays `frames` forward once (see the `override` field doc), then
-   * automatically hands back to the alive cycle. No-op while dead — a corpse
-   * has no attack/pain animation to interrupt its held last death frame with.
+   * Plays `frames` forward once ({@link SpriteAnimator.override}), then hands back to the alive
+   * cycle. No-op while dead.
    *
-   * `durations` is one rate for every frame, or a per-frame list (an attack pose, whose frames
-   * carry vanilla's own uneven state tics).
+   * @param durations  one rate for every frame, or a per-frame list (an attack pose, whose frames
+   *                   carry vanilla's own uneven state tics)
    */
   playOnce(frames: string[], durations: number | readonly number[]): void {
     if (this.death.frames) return;
@@ -409,10 +397,7 @@ export class SpriteAnimator {
     this.animTimer = 0;
   }
 
-  /**
-   * Undoes `die`, back to the normal alive animation — used when a level restart brings the player
-   * back to life.
-   */
+  /** Undoes {@link SpriteAnimator.die}, back to the alive cycle — a player brought back to life. */
   revive(): void {
     this.death.stop();
     this.override.stop();
@@ -422,7 +407,7 @@ export class SpriteAnimator {
   }
 }
 
-/** What a `SpriteActor` draws, beyond the banks it draws through. */
+/** What a {@link SpriteActor} draws, beyond the banks it draws through. */
 export interface SpriteActorOptions {
   spriteName: string;
   /** Frame letters to cycle, `['A']` for a still sprite. */
@@ -440,40 +425,35 @@ export interface SpritePose {
   animating: boolean;
   viewerAngleDeg: number;
   tint: Tint | undefined;
-  /** Whether the actor stands under sky — see `skyScale` (`render/skytint.ts`). */
+  /** Whether the actor stands under sky — see {@link skyScale}. */
   sky: boolean;
 }
 
 /**
- * One sprite drawn as its own upright `THREE.Mesh`. The plane never tilts —
- * see SpriteMaterialCache's class doc — but does turn around its vertical
- * axis to keep facing the camera as it orbits, so posing an actor
- * repositions it, yaws it to the current viewer angle, and, if the facing
- * angle or animation frame now picks a different rotation frame, swaps in
- * that lump's geometry/material.
+ * One sprite drawn as its own upright `THREE.Mesh`. The plane never tilts — see
+ * {@link SpriteMaterialCache} — but turns around its vertical axis to keep facing the camera as it
+ * orbits, so posing an actor repositions it, yaws it to the current viewer angle, and swaps in the
+ * lump the facing angle and animation frame now pick.
  *
- * Used only for the **player**, the one sprite that genuinely wants its own
- * mesh. Everything else goes through `SpriteBatch` — map things via
- * `game/things.ts`, transient effects via `SpriteFxLayer` (`game/spritefx.ts`).
- * docs/sprites.md § Batching.
+ * Used only for the **player**, the one sprite that genuinely wants its own mesh. Everything else
+ * goes through `SpriteBatch` — map things via `game/things.ts`, transient effects via
+ * `SpriteFxLayer` (`game/spritefx.ts`). docs/sprites.md § Batching.
  */
 export class SpriteActor {
   readonly mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ visible: false }));
   private anim: SpriteAnimator;
 
   /**
-   * Current translucency (1 = the ordinary opaque material). Anything below 1
-   * draws through a per-actor **clone** of the shared cached material rather
-   * than the cached one itself: `SpriteMaterialCache` hands out one material
-   * per (lump, mirrored) pair for everything that draws that lump, so setting
-   * `opacity` on it directly would fade every other user of the same art too.
-   * Only the player ever uses this (partial invisibility, game/inventory.ts's
-   * `PINS` powerup), and `PLAY` happens to be the player's alone — but relying
-   * on that would make this a trap the first time something else reuses a lump.
+   * Current translucency (1 = the ordinary opaque material). Anything below 1 draws through a
+   * per-actor **clone** of the shared cached material: {@link SpriteMaterialCache} hands out one
+   * material per (lump, mirrored) pair for everything that draws that lump, so setting `opacity`
+   * on it directly would fade every other user of the same art too. Only the player uses this
+   * (partial invisibility, game/inventory.ts's `PINS` powerup), and `PLAY` is the player's alone —
+   * but relying on that would make this a trap the first time something else reuses a lump.
    */
   private opacity = 1;
   private translucent = new Map<THREE.MeshBasicMaterial, THREE.MeshBasicMaterial>();
-  /** The `(sprite, letter)` keys drawn at full light — see `SpriteActorOptions.brightFrames`. */
+  /** The `(sprite, letter)` keys drawn at full light — {@link SpriteActorOptions.brightFrames}. */
   private brightFrames: ReadonlySet<string>;
 
   constructor(bank: SpriteBank, materials: SpriteMaterialCache, options: SpriteActorOptions) {
@@ -483,8 +463,8 @@ export class SpriteActor {
 
   /**
    * The `SPRITE+LETTER` this actor last resolved — what `DynamicLights` keys a light off
-   * (docs/lights.md § The frame key). Empty until the first `setPose`, and one frame behind
-   * during a pose the caller has set but not yet drawn.
+   * (docs/lights.md § The frame key). Empty until the first {@link SpriteActor.setPose}, and one
+   * frame behind during a pose the caller has set but not yet drawn.
    */
   get frameKey(): string {
     return this.anim.frameKey;
@@ -529,16 +509,16 @@ export class SpriteActor {
   }
 
   /**
-   * Draws this actor at `opacity` (1 = normal) from the next `setPose` on — see the `opacity`
-   * field's doc.
+   * Draws this actor at `opacity` (1 = normal) from the next {@link SpriteActor.setPose} on — see
+   * {@link SpriteActor.opacity}.
    */
   setOpacity(opacity: number): void {
     this.opacity = opacity;
   }
 
   /**
-   * Draws this actor's frames from another file's art from the next `setPose` on — the player's
-   * weapon-matching skin — or from the loaded set's own with null.
+   * Draws this actor's frames from another file's art from the next {@link SpriteActor.setPose} on
+   * — the player's weapon-matching skin — or from the loaded set's own with null.
    * docs/sprites.md § Weapon-matching player sprites.
    */
   setSkin(skin: SpriteSkin | null): void {
@@ -558,9 +538,9 @@ export class SpriteActor {
   }
 
   /**
-   * Releases the translucent clones made by `setOpacity`. Their textures are
-   * shared with (and owned by) `SpriteMaterialCache`, so those are deliberately
-   * left alone — only the cloned materials are this actor's to free.
+   * Releases the translucent clones made by {@link SpriteActor.setOpacity}. Their textures are
+   * shared with (and owned by) {@link SpriteMaterialCache}, so only the cloned materials are this
+   * actor's to free.
    */
   dispose(): void {
     for (const m of this.translucent.values()) m.dispose();
@@ -582,16 +562,17 @@ export class SpriteActor {
 }
 
 /**
- * `SpriteMaterialCache`'s `CachedSprite`. The atlas rect and `bottomOffset` are settled at
- * lookup; the texture, plane and material behind them are built on the first read that wants
- * them — see `CachedSprite.material`. A class rather than an object literal over the lookup's
- * locals, so what a cached lump holds onto is the four fields below and not the whole of `get`.
+ * {@link SpriteMaterialCache}'s {@link CachedSprite}. The atlas rect and
+ * {@link LumpSprite.bottomOffset} are settled at lookup; the texture, plane and material behind
+ * them are built on the first read that wants them — see {@link CachedSprite.material}. A class
+ * rather than an object literal over the lookup's locals, so what a cached lump holds onto is the
+ * four fields below and not the whole of {@link SpriteMaterialCache.get}.
  */
 class LumpSprite implements CachedSprite {
   readonly atlas: AtlasSprite | null;
   /**
    * The plane's bottom edge sits at the thing's own z rather than at `top`, which this view has
-   * no floor clip to cover for; what `top` says is kept here instead — see `CachedSprite`.
+   * no floor clip to cover for; what `top` says is kept here instead — see {@link CachedSprite}.
    */
   readonly bottomOffset: number;
   private bmp: Bitmap;
@@ -657,11 +638,9 @@ class LumpSprite implements CachedSprite {
 }
 
 /**
- * A one-shot frame sequence, either holding on its last frame forever once
- * exhausted (`SpriteAnimator`'s death slot) or clearing itself and handing
- * control back to the caller (its attack/pain override slot) — the two only
- * differ in that one behavior, so both share this bookkeeping instead of each
- * carrying their own {frames, duration, index, timer} quadruple.
+ * A one-shot frame sequence, either holding on its last frame forever once exhausted
+ * ({@link SpriteAnimator}'s death slot) or clearing itself and handing control back to the caller
+ * (its attack/pain override slot) — the two differ only in that, so both share this bookkeeping.
  */
 class FrameSequence {
   frames: string[] | null = null;

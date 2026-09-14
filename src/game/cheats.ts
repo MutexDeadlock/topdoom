@@ -85,12 +85,12 @@ export class Cheats {
   used = false;
   private buffer = '';
   /**
-   * The characters typed since IDCLEV matched, until there are `WARP_PARAMS` of them; null when no
-   * code is waiting for its parameters. They do not reach `buffer`, the way `cht_GetParam` consumes
-   * the keys it collects.
+   * The characters typed since IDCLEV matched, until there are {@link WARP_PARAMS} of them; null
+   * when no code is waiting for its parameters. They do not reach {@link Cheats.buffer}, the way
+   * `cht_GetParam` consumes the keys it collects.
    */
   private params: string | null = null;
-  /** A completed IDCLEV's two characters, until `takeWarp` reads them. */
+  /** A completed IDCLEV's two characters, until {@link Cheats.takeWarp} reads them. */
   private warp: string | null = null;
 
   /** Whether any cheat is on at all. */
@@ -99,11 +99,9 @@ export class Cheats {
   }
 
   /**
-   * Whether what has been typed so far is the beginning of a code. Derived from the buffer rather
-   * than latched alongside it, so no edit to `type` can leave the two disagreeing. `game.ts` reads
-   * it to refuse a save or a keyframe over a half-typed code, which no snapshot carries.
-   * IDCLEV waiting for its two characters counts: they are buffer state as much as the code is.
-   * docs/cheats.md § Typing a code.
+   * Whether what has been typed so far is the beginning of a code, IDCLEV waiting for its two
+   * characters included — derived from the buffer rather than latched. `game.ts` reads it to refuse
+   * a save or a keyframe over a half-typed code. docs/cheats.md § Typing a code.
    */
   get typing(): boolean {
     if (this.params !== null) return true;
@@ -111,17 +109,15 @@ export class Cheats {
   }
 
   /**
-   * Takes the characters typed since the last tic and fires whatever code they completed, returning
-   * the response line to show (or null for a tic that completed none). `mode` is the loaded set's
-   * own (`wad/campaign/gamemode.ts`): IDKFA's weapon roster reads it.
-   *
-   * The match is a rolling suffix rather than vanilla's per-cheat cursor, which resets to the start
-   * of its sequence on any mismatched key and swallows the mismatched character with it — so
-   * vanilla misses `iiddqd` where this catches it. Strictly more forgiving, and it can't recognise
-   * anything vanilla wouldn't.
+   * Takes the characters typed since the last tic and fires whatever code they completed. The match
+   * is a rolling suffix, strictly more forgiving than vanilla's per-cheat cursor —
+   * docs/cheats.md § Typing a code.
    *
    * IDCLEV completes no effect and no line of its own: the two characters after it are swallowed
-   * as parameters (`cht_GetParam`) and left for `takeWarp`, whatever they are.
+   * as parameters (`cht_GetParam`) and left for {@link Cheats.takeWarp}, whatever they are.
+   *
+   * @param mode  the loaded set's own (`wad/campaign/gamemode.ts`): IDKFA's weapon roster reads it
+   * @returns the response line to show, or null for a tic that completed none
    */
   type(typed: string, inv: Inventory, mode: GameMode): string | null {
     let message: string | null = null;
@@ -166,8 +162,8 @@ export class Cheats {
   /**
    * The warp is happening: the code counts as used, and the toggles go — `G_DeferedInitNew` puts
    * every player in `PST_REBORN`, and `G_PlayerReborn`'s memset takes `player_t.cheats` with it.
-   * `used` outlives that memset here, being this engine's own record that the run cheated
-   * (docs/cheats.md § Saves and best times).
+   * {@link Cheats.used} outlives that memset here, being this engine's own record that the run
+   * cheated (docs/cheats.md § Saves and best times).
    */
   warped(): void {
     this.used = true;
@@ -175,8 +171,8 @@ export class Cheats {
   }
 
   /**
-   * A coop respawn: `G_PlayerReborn`'s memset takes the toggles, as a warp's does, and `used` stays
-   * — the run cheated all the same. docs/multiplayer-coop.md § Respawn.
+   * A coop respawn: `G_PlayerReborn`'s memset takes the toggles, as a warp's does, and
+   * {@link Cheats.used} stays — the run cheated all the same. docs/multiplayer-coop.md § Respawn.
    */
   reborn(): void {
     this.god = false;

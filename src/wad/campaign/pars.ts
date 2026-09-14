@@ -96,10 +96,8 @@ export interface ParSources {
  * The level's par time in seconds, or undefined if nothing knows one: what the set's DEHACKED
  * `[PARS]` says, else the vanilla table for the IWAD's mission.
  *
- * Unlike `levelTitleFor`, the vanilla table is **not** gated on the map coming from the IWAD. A
- * PWAD's `MAP01` is a different level, but a par time is a target rather than a name, and vanilla
- * itself applies `cpars` to whatever `MAP01` is loaded — there is no provenance check in
- * `G_DoCompleted`.
+ * Unlike `levelTitleFor`, the vanilla table is **not** gated on the map coming from the IWAD:
+ * `G_DoCompleted` has no provenance check (docs/wad.md § Par times).
  */
 export function parSecondsFor(mapName: string, sources: ParSources): number | undefined {
   const upper = mapName.toUpperCase();

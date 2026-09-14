@@ -22,17 +22,15 @@ import { writeStorageSoon } from '../util/storage.ts';
 
 /**
  * Sounds that may play at once. **Tuned by feel**, not vanilla: `snd_channels` defaults to 8, sized
- * for a first-person view, and this camera shows a whole room and part of the next. The eviction
- * rule they are allocated by is still vanilla's own (`allocate`). docs/audio.md § The mixer model.
+ * for a first-person view, and this camera shows a whole room and part of the next. Allocated by
+ * vanilla's own eviction rule ({@link AudioEngine.allocate}). docs/audio.md § The mixer model.
  */
 const CHANNELS = 32;
 
 /**
  * Copies of one sample that may *start* inside one tic. **Tuned by feel**, and not vanilla, which
  * limits nothing per sound: a whole region's monsters wake on a single frame, and a dozen copies of
- * a 1.2-second cry then own a third of `CHANNELS` for the length of it. Counting *starts per tic*
- * rather than voices in flight is what leaves a sound that layers across tics by design alone —
- * `plasma`, which carries no origin, stacks about six deep and never reaches this.
+ * a 1.2-second cry then own a third of {@link CHANNELS} for the length of it.
  * docs/audio.md § Same-tic bursts.
  */
 const MAX_STARTS_PER_TIC = 6;
@@ -40,7 +38,7 @@ const MAX_STARTS_PER_TIC = 6;
 /**
  * How long "one tic" lasts for that budget — vanilla's own tic (`constants.ts`). The frame loop
  * runs at display rate, not 35 Hz, so a wake vanilla would put in a single tic can straddle two
- * frames; one `DOOM_TIC` covers both.
+ * frames; one {@link DOOM_TIC} covers both.
  */
 const BURST_WINDOW = DOOM_TIC;
 
@@ -52,9 +50,10 @@ const BURST_WINDOW = DOOM_TIC;
 const BURST_STAGGER = 0.018;
 
 /**
- * How close in pan two copies of a sample must sit to crowd each other, softening `burstVictim`'s
- * crowding sum — and, at a distance of zero, what keeps that sum finite so loudness still separates
- * copies sharing one pan. **Tuned by feel**. docs/audio.md § Same-tic bursts.
+ * How close in pan two copies of a sample must sit to crowd each other, softening
+ * {@link burstVictim}'s crowding sum — and, at a distance of zero, what keeps that sum finite so
+ * loudness still separates copies sharing one pan. **Tuned by feel**.
+ * docs/audio.md § Same-tic bursts.
  */
 const CROWD_FALLOFF = 0.15;
 
@@ -94,12 +93,10 @@ const MASTER_VOLUME_STORAGE_KEY = 'masterVolume';
 
 /**
  * Sounds this engine ships itself, as lumps of its own WAD (`wad/shipped.ts`) → the priority they
- * take in the same channel pool `SFX` priorities are read on. Not lumps of the *loaded set*: a
- * secret's chime has no vanilla original at all (docs/audio.md § Player and
- * pickups), so it cannot be an `SfxId` without a made-up name in what is
- * otherwise `sounds.c` verbatim. Decoded once, when the context
- * comes up — long before a level's first secret, so the first one isn't the
- * one that plays silently.
+ * take in the same channel pool {@link SFX} priorities are read on. Not lumps of the *loaded set*:
+ * a secret's chime has no vanilla original, so it cannot be an {@link SfxId} —
+ * docs/audio.md § Player and pickups. Decoded once, when the context comes up — long before a
+ * level's first secret, so the first one isn't the one that plays silently.
  */
 const ASSETS = {
   /**
@@ -111,11 +108,11 @@ const ASSETS = {
 
 export type AssetSfxId = keyof typeof ASSETS;
 
-/** What one channel is started with — see `AudioEngine.start`. */
+/** What one channel is started with — see {@link AudioEngine.start}. */
 interface VoiceSpec {
-  /** `sampleGroup`'s key, which is what the same-tic start budget is spent from. */
+  /** {@link sampleGroup}'s key, which is what the same-tic start budget is spent from. */
   key: string;
-  /** `SFX`'s own priority, which is what a full pool evicts by. */
+  /** {@link SFX}'s own priority, which is what a full pool evicts by. */
   priority: number;
   /** Playback rate, vanilla's per-shot pitch wobble. */
   rate: number;
@@ -127,15 +124,18 @@ interface VoiceSpec {
 }
 
 interface Voice {
-  /** `SoundEmitter.play`'s origin key, or undefined for a positional sound with no origin. */
+  /** {@link SoundEmitter.play}'s origin key, or undefined for a positional sound with no origin. */
   origin: number | undefined;
-  /** This sfx's `SFX` priority, which is what `allocate` evicts by. */
+  /** This sfx's {@link SFX} priority, which is what {@link AudioEngine.allocate} evicts by. */
   priority: number;
-  /** `VoiceSpec.key`, and the gain and pan `burstVictim` rates this copy by. */
+  /** {@link VoiceSpec.key}, and the gain and pan {@link burstVictim} rates this copy by. */
   key: string;
   gain: number;
   pan: number;
-  /** When `play` raised this, in context time — *before* its stagger. `admitBurst`'s window. */
+  /**
+   * When {@link AudioEngine.play} raised this, in context time — *before* its stagger.
+   * {@link AudioEngine.admitBurst}'s window.
+   */
   raisedAt: number;
   /** This copy's place in its burst's stagger, inherited by whatever displaces it. */
   burstIndex: number;
@@ -150,13 +150,8 @@ interface Voice {
 /**
  * Which member of a same-tic burst is worth least, as an index into `members`: the highest
  * `crowding / gain`, where crowding sums `1 / (panDistance + CROWD_FALLOFF)` over every other
- * member. The sum, rather than the distance to the nearest neighbour alone, is what keeps a burst
- * spread: nearest-neighbour saturates once each side of the field holds two copies, and can no
- * longer tell a stack of three from a lone source. Gain divides it, so a crowd all in one
- * direction — where crowding is uniform — admits its nearest instead.
- *
- * Ties go to the **later** index, and `admitBurst` passes the newcomer last, so an over-budget
- * burst of copies that rate exactly alike turns nobody away for nothing.
+ * member — the sum, not the nearest neighbour alone, is load-bearing. Ties go to the **later**
+ * index, and {@link AudioEngine.admitBurst} passes the newcomer last.
  * docs/audio.md § Same-tic bursts.
  */
 export function burstVictim(members: readonly { pan: number; gain: number }[]): number {
@@ -180,8 +175,8 @@ export function burstVictim(members: readonly { pan: number; gain: number }[]): 
 /**
  * Plays the WAD's own sound lumps through Web Audio, reproducing vanilla's mixer model rather than
  * a 3D audio scene — docs/audio.md § The mixer model. Session-level, like `Viewport`: one
- * `AudioContext` outlives every level and every WAD set (`setBank` swaps the lumps), created lazily
- * on the first `resume` since a browser only lets one start from a user gesture.
+ * `AudioContext` outlives every level and WAD set ({@link AudioEngine.setBank} swaps the lumps),
+ * created on the first {@link AudioEngine.resume}, since only a user gesture may start one.
  */
 export class AudioEngine implements SoundEmitter {
   private ctx: AudioContext | null = null;
@@ -190,14 +185,14 @@ export class AudioEngine implements SoundEmitter {
   private master: GainNode | null = null;
   /**
    * Where sfx voices connect. A sibling of the music player's own bus under
-   * `master`, so the two volumes are independent — docs/music.md § Volume.
+   * {@link AudioEngine.master}, so the two volumes are independent — docs/music.md § Volume.
    */
   private sfxBus: GainNode | null = null;
 
   /**
-   * The level's music, on its own bus. Owned here because it needs this
-   * class's `AudioContext` and nothing else does; it stays silent until
-   * `attach` hands it one. See docs/music.md.
+   * The level's music, on its own bus. Owned here because it needs this class's `AudioContext` and
+   * nothing else does; it stays silent until {@link MusicPlayer.attach} hands it one. See
+   * docs/music.md.
    */
   readonly music = new MusicPlayer();
 
@@ -209,20 +204,20 @@ export class AudioEngine implements SoundEmitter {
    */
   private decoding = new Set<SfxId>();
   /**
-   * `ASSETS`' decoded buffers, null while one is still loading or failed to. Populated once per
-   * context.
+   * {@link ASSETS}' decoded buffers, null while one is still loading or failed to. Populated once
+   * per context.
    */
   private assetBuffers = new Map<AssetSfxId, AudioBuffer | null>();
 
   private voices: (Voice | null)[] = new Array(CHANNELS).fill(null);
-  /** Set while a replay's seek runs its tics — see `setSilent`. */
+  /** Set while a replay's seek runs its tics — see {@link AudioEngine.setSilent}. */
   private silent = false;
   /** Copies the same-tic budget has turned away since the level loaded — DEVMODE's status text. */
   private burstDropped = 0;
 
   private listenerX = 0;
   private listenerY = 0;
-  /** Listener facing as its own cosine/sine, so `play` needs no trig of its own. */
+  /** Listener facing as its own cosine/sine, so {@link AudioEngine.play} needs no trig. */
   private forwardCos = 0;
   private forwardSin = 1;
 
@@ -244,7 +239,7 @@ export class AudioEngine implements SoundEmitter {
     return this._masterVolume;
   }
 
-  /** Voices in flight, the pool they came from, and `burstDropped` — DEVMODE's status text. */
+  /** Voices in flight, the pool, and {@link AudioEngine.burstDropped} — DEVMODE's status text. */
   get channelUsage(): { playing: number; total: number; dropped: number } {
     let playing = 0;
     for (const voice of this.voices) {
@@ -254,11 +249,9 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * 0-1; persisted, so it survives a reload. There is no separate mute: 0 *is*
-   * the mute, so it does everything mute did — `play` short-circuits on it
-   * rather than starting inaudible sources, and reaching it cuts the voices
-   * already in flight instead of letting a long sound run out silently and
-   * resume mid-way if the slider comes back up.
+   * 0-1; persisted. There is no separate mute: 0 *is* the mute, so {@link AudioEngine.play}
+   * short-circuits on it and reaching it cuts the voices already in flight.
+   * docs/audio.md § Volume and the context.
    */
   setVolume(value: number): void {
     this._volume = Math.max(0, Math.min(1, value));
@@ -268,10 +261,10 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * 0-1; persisted, and the one slider that rides *everything* — it is `master`'s own gain, with
-   * the sfx and music buses hanging off it. 0 is the mute here too, and has to reach both buses to
-   * be one: the voices in flight are cut, and the music player is told so it stops rendering a chip
-   * nobody can hear rather than merely being turned down to nothing.
+   * 0-1; persisted, and the one slider that rides *everything* — {@link AudioEngine.master}'s own
+   * gain, with the sfx and music buses hanging off it. 0 is the mute on both buses: the voices in
+   * flight are cut, and the music player stops rendering a chip nobody can hear.
+   * docs/audio.md § Volume and the context.
    */
   setMasterVolume(value: number): void {
     this._masterVolume = Math.max(0, Math.min(1, value));
@@ -325,11 +318,8 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * Pausing. The sfx voices are cut, but the context is deliberately left
-   * running: music sits on its own bus and plays on behind the menu the way
-   * vanilla's does, and suspending the context would freeze it mid-bar. Nothing
-   * raises a sound while paused — the frame loop is stopped — so there is
-   * nothing else to silence. docs/music.md § Volume.
+   * Pausing: the sfx voices are cut, and the context is deliberately left running so the music
+   * plays on behind the menu. docs/music.md § Volume.
    */
   suspend(): void {
     this.stopAll();
@@ -380,10 +370,9 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * One of the engine's own sounds (`ASSETS`) rather than a WAD lump, played
-   * unattenuated and centred like a pickup: these announce something to the
-   * player instead of happening somewhere in the world. Silent while the file
-   * is still loading or failed to decode, the same way a missing lump is.
+   * One of the engine's own sounds ({@link ASSETS}) rather than a WAD lump, played unattenuated and
+   * centred like a pickup: these announce something to the player instead of happening somewhere in
+   * the world. Silent while the file is still loading or failed to decode, as a missing lump is.
    */
   playAsset(id: AssetSfxId): void {
     if (this.silent || this.sfxAudible === 0) return;
@@ -403,9 +392,8 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * The sfx slider goes on the sfx bus, not on `master`: music hangs off `master` too, and putting
-   * it there would have the sfx slider quietly ride the music as well. The master slider is the
-   * one that *is* `master`.
+   * The sfx slider goes on the sfx bus, not {@link AudioEngine.master}, which the music hangs off
+   * too; the master slider is the one that *is* {@link AudioEngine.master}.
    */
   private applyVolume(): void {
     if (this.sfxBus) this.sfxBus.gain.value = this._volume;
@@ -413,9 +401,9 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * Takes a channel for `buffer` and starts it — the half of `play` that has nothing left to
-   * decide. Two culls stand in front of the sound: the same-tic start budget (`admitBurst`) and
-   * then the pool itself (`allocate`), either of which may drop it.
+   * Takes a channel for `buffer` and starts it — the half of {@link AudioEngine.play} that has
+   * nothing left to decide. Two culls stand in front of the sound: the same-tic start budget
+   * ({@link AudioEngine.admitBurst}) and then the pool itself ({@link AudioEngine.allocate}).
    */
   private start(buffer: AudioBuffer, voice: VoiceSpec): void {
     const { key, priority, rate, gain, pan, origin } = voice;
@@ -458,12 +446,10 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * The same-tic start budget, run in front of `allocate`: this copy's place in its burst's
-   * stagger, or null to drop it. Under budget a copy queues behind the burst's existing members;
-   * at budget it gets in only by displacing whichever member `burstVictim` rates lowest, and
-   * inherits that member's place — so the burst keeps its even spacing however often it turns
-   * over. A displaced copy whose staggered start hasn't come round yet never sounds at all.
-   * docs/audio.md § Same-tic bursts.
+   * The same-tic start budget, run in front of {@link AudioEngine.allocate}: this copy's place in
+   * its burst's stagger, or null to drop it. Under budget a copy queues behind the burst's existing
+   * members; at budget it gets in only by displacing whichever member {@link burstVictim} rates
+   * lowest, and inherits that member's place. docs/audio.md § Same-tic bursts.
    */
   private admitBurst(voice: VoiceSpec, now: number): number | null {
     const { key, gain, pan, origin } = voice;
@@ -523,11 +509,10 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * The decoded buffer for `id`, or null while there isn't one — a lump the WAD
-   * set doesn't carry (stays null forever, see `SoundBank`) or a
-   * browser-container lump still decoding. `decodeAudioData` is asynchronous
-   * and there is nothing useful to do about that: the sound is dropped this
-   * once and plays from the cache from then on.
+   * The decoded buffer for `id`, or null while there isn't one — a lump the WAD set doesn't carry
+   * (stays null forever, see {@link SoundBank}) or a browser-container lump still decoding.
+   * `decodeAudioData` is asynchronous and there is nothing useful to do about that: the sound is
+   * dropped this once and plays from the cache from then on.
    */
   private bufferFor(id: SfxId): AudioBuffer | null {
     const cached = this.buffers.get(id);
@@ -568,9 +553,8 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * Decodes `ASSETS` out of the shipped WAD once the context exists. Failure is
-   * logged and cached as null, like an undecodable lump: the sound is simply
-   * never heard.
+   * Decodes {@link ASSETS} out of the shipped WAD once the context exists. Failure is logged and
+   * cached as null, like an undecodable lump: the sound is never heard.
    */
   private loadAssets(): void {
     const ctx = this.ctx;

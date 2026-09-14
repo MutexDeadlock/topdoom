@@ -94,10 +94,8 @@ export class SavegamesUi {
   private describe: (meta: SaveMeta) => SaveSetInfo;
   private session: MenuSession = 'none';
   /**
-   * Which of the two lists is on screen, and whether each still matches the
-   * store. Only the visible one is ever built: listing itself is a cheap meta
-   * read now, but rendering still means one thumbnail decode and one WAD-set
-   * resolution per row, which must not happen on a plain ESC pause or at boot.
+   * Which of the two lists is on screen, and whether each still matches the store. Only the visible
+   * one is ever built — docs/menu-saves.md § Save and Load tabs.
    */
   private visible: 'save' | 'load' | null = null;
   private stale = { save: true, load: true };
@@ -190,21 +188,17 @@ export class SavegamesUi {
   }
 
   /**
-   * Whether Save and Overwrite are live: a game to save, and a moment it would
-   * accept. Asked afresh each time rather than cached — it is three field reads
-   * behind the hook, and a stored copy would have to be refreshed before the
-   * rows are built.
+   * Whether Save and Overwrite are live: a game to save, and a moment it would accept. Asked afresh
+   * each time rather than cached — docs/menu-saves.md § Save and Load tabs.
    */
   private get canSave(): boolean {
     return this.session !== 'none' && this.hooks.saveRefusal() === null;
   }
 
   /**
-   * Rebuilds the visible list from the store, if it's stale. Async, so two hazards need the epoch
-   * ticket: a {@link SavegamesUi.refresh} or tab switch while the listing is in flight starts a
-   * newer render, and the older one must discard rather than paint over it —
-   * {@link SavegamesUi.stale} is only cleared by the render that actually painted, so a discarded
-   * one leaves the tab marked for the next look.
+   * Rebuilds the visible list from the store, if it's stale. Async, so a render that finds a newer
+   * one started while it awaited discards itself, leaving {@link SavegamesUi.stale} set for the
+   * next look — docs/menu-saves.md § Save and Load tabs.
    */
   private async renderVisible(): Promise<void> {
     const tab = this.visible;
@@ -349,9 +343,8 @@ export class SavegamesUi {
   }
 
   /**
-   * The name, editable in place: Enter or leaving the field commits, ESC
-   * reverts. ESC also stops there rather than bubbling to `main.ts`'s handler,
-   * which would otherwise close the whole menu on the same key.
+   * The name, editable in place: Enter or leaving the field commits, ESC reverts and stops there
+   * rather than bubbling to `main.ts`'s handler, which would close the whole menu on the same key.
    */
   private makeNameInput(meta: SaveMeta): HTMLInputElement {
     const input = document.createElement('input');
@@ -375,13 +368,9 @@ export class SavegamesUi {
   }
 
   /**
-   * Commits an edited name. An untouched field re-renders nothing — a plain
-   * focus and blur must not rebuild the list under a click heading for one of
-   * the row's own buttons. Nor does a successful rename: the name is the only
-   * thing that changed and it is already on screen, so the row is patched in
-   * place and only the *other* tab's list is marked stale. Re-listing here
-   * would redecode every row's thumbnail to redraw one string — and renaming
-   * several saves in a row is the one path a player repeats.
+   * Commits an edited name. An untouched field re-renders nothing, and a successful rename patches
+   * the row in place and marks only the *other* tab's list stale — re-listing would redecode every
+   * row's thumbnail to redraw one string. docs/menu-saves.md § Save and Load tabs.
    */
   private async rename(meta: SaveMeta, input: HTMLInputElement): Promise<void> {
     const trimmed = input.value.trim();

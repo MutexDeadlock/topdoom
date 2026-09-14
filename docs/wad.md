@@ -593,8 +593,8 @@ cannot do.
 
 `checksum.ts` gives a `WadFile` a **content ID**: a hash of its whole byte range, memoized in a
 `WeakMap` keyed on the underlying `ArrayBuffer` rather than on the `WadFile` — the same bytes get
-wrapped more than once (an upload hashes its own `WadFile`, `loadWadFiles` builds another over the
-same buffer, a restart re-wraps the memoized fetch), and a wrapper-keyed memo misses every time,
+wrapped more than once (`loadWadFiles` wraps the buffer an upload already hashed, a restart re-wraps
+the memoized fetch), and a wrapper-keyed memo misses every time,
 re-walking ~14 MB on the level-start path. **Everything that needs an ID goes through `idOf` (or
 `wadId`, which is `idOf` over the file's buffer), never `hashBytes` directly** — the menu hashes an
 upload's bytes long before the level start wraps that same buffer, and a direct call leaves the memo

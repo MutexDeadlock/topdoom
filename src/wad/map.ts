@@ -1,11 +1,10 @@
 /**
- * The map lumps decoded into a `DoomMap`: vertices, linedefs/sidedefs, sectors, the BSP
- * (nodes/segs/subsectors, any format `map/nodes.ts` knows) and THINGS. Everything but the
- * BSP, the two lumps a Hexen-format map re-encodes (`map/hexen.ts`) and a UDMF map's one
- * TEXTMAP lump (`map/udmf.ts`) is stored exactly as the WAD encodes it. This file is the
- * layer's one entry point (docs/conventions.md § File names): `map/` holds the records
- * themselves (`map/defs.ts`) and the three format seams, and nothing else reaches into it.
- * See docs/wad.md.
+ * The map lumps decoded into a {@link DoomMap}: vertices, linedefs/sidedefs, sectors, the BSP
+ * (nodes/segs/subsectors, any format `map/nodes.ts` knows) and THINGS. Everything but the BSP, the
+ * two lumps a Hexen-format map re-encodes (`map/hexen.ts`) and a UDMF map's one TEXTMAP lump
+ * (`map/udmf.ts`) is stored exactly as the WAD encodes it. This file is the layer's one entry
+ * point (docs/conventions.md § File names): `map/` holds the records themselves (`map/defs.ts`)
+ * and the three format seams, and nothing else reaches into it. See docs/wad.md.
  */
 import { MAP_MARKER, type Wad } from './wad.ts';
 import { records, type Reader } from './reader.ts';
@@ -57,9 +56,9 @@ export const MAP_LUMPS = [
 
 /**
  * Roughly how many binary `LINEDEFS` bytes a TEXTMAP byte stands for, keeping
- * `mapLinedefBytes`'s unit the same whichever format a map ships in: text encodes the whole
- * map at about ten times the binary size, of which linedefs are about a quarter. Tuned by
- * feel — it only ever moves a loading-screen estimate.
+ * {@link mapLinedefBytes}'s unit the same whichever format a map ships in: text encodes the whole
+ * map at about ten times the binary size, of which linedefs are about a quarter. Tuned by feel — it
+ * only ever moves a loading-screen estimate.
  */
 const TEXTMAP_BYTES_PER_LINEDEF_BYTE = 40;
 
@@ -183,8 +182,8 @@ type RawLump = (lumpName: string) => Uint8Array | undefined;
 
 /**
  * What a format seam yields: the records it decoded plus the BSP its own node lumps carry.
- * `loadMap` assembles the `DoomMap` from this alone, so the two seams share one tail rather
- * than each writing out the whole map.
+ * {@link loadMap} assembles the {@link DoomMap} from this alone, so the two seams share one tail
+ * rather than each writing out the whole map.
  */
 interface MapGeometry {
   format: MapFormat;

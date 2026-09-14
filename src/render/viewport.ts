@@ -13,11 +13,11 @@ export class Viewport {
   readonly camera: TopDownCamera;
   readonly input: Input;
   /**
-   * GPU time for the profiler overlay, measured around the render call — see docs/devmode.md §
-   * Profiling overlay.
+   * GPU time for the profiler overlay, measured around the render call —
+   * docs/devmode.md § Profiling overlay.
    */
   readonly gpuTimer: GpuTimer;
-  /** The post chain every draw goes through — see `present`. */
+  /** The post chain every draw goes through — see {@link Viewport.present}. */
   private bloom: Bloom;
 
   constructor(container: HTMLElement) {
@@ -80,8 +80,8 @@ export class Viewport {
   /**
    * A small JPEG of the frame, `width` pixels across — the savegame's thumbnail. The renderer runs
    * without `preserveDrawingBuffer`, so the pixels are only readable in the same task as a
-   * `present` call — hence the fresh synchronous one here rather than trusting whatever was last
-   * composited.
+   * {@link Viewport.present} call — hence the fresh synchronous one here rather than trusting
+   * whatever was last composited.
    */
   thumbnail(scene: THREE.Scene, width: number): string {
     this.present(scene, this.camera.camera);

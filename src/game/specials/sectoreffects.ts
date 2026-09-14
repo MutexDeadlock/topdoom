@@ -13,13 +13,13 @@ import { pRandom } from '../../util/random.ts';
 import type { SectorEffectsSnapshot } from '../snapshot.ts';
 
 /**
- * What one frame's `SectorEffects.update` did, for the caller to realize (sound, message, level
- * exit).
+ * What one frame's {@link SectorEffects.update} did, for the caller to realize (sound, message,
+ * level exit).
  */
 export interface SectorEffectResult {
   /**
-   * The player is standing on an `exitBelowHealth` floor at or below its threshold, dead or alive —
-   * end the level.
+   * The player stands on an {@link DamageFloorEffect.exitBelowHealth} floor at or below its
+   * threshold, dead or alive — end the level.
    */
   exit: boolean;
   /**
@@ -40,8 +40,8 @@ export class SectorEffects {
   /** Secret sectors on the map (special 9 or the Boom secret bit), counted once per level load. */
   readonly totalSecrets: number;
   /**
-   * How many of `totalSecrets` the player has entered so far — the HUD's and the intermission's
-   * tally.
+   * How many of {@link SectorEffects.totalSecrets} the player has entered so far — the HUD's and
+   * the intermission's tally.
    */
   secretsFound = 0;
   /**
@@ -61,10 +61,10 @@ export class SectorEffects {
   }
 
   /**
-   * Savegame restore. `totalSecrets` stays whatever this instance counted from
-   * the freshly loaded map — which is why a restoring `buildLevel`
-   * constructs this *before* applying the saved sector specials (a consumed
-   * secret zeroes its sector's `special`) — docs/savegames.md § Apply order.
+   * Savegame restore. {@link SectorEffects.totalSecrets} stays whatever this instance counted from
+   * the freshly loaded map — which is why a restoring `buildLevel` constructs this *before*
+   * applying the saved sector specials (a consumed secret zeroes its sector's `special`) —
+   * docs/savegames.md § Apply order.
    */
   restore(s: SectorEffectsSnapshot): void {
     this.secretsFound = s.secretsFound;
@@ -78,12 +78,10 @@ export class SectorEffects {
   }
 
   /**
-   * Whether dying at this point ends the level: the sector there is an `exitBelowHealth` floor,
-   * E1M8's sector 66 and nothing else in stock DOOM. A deliberate deviation — vanilla checks this
-   * only from `P_PlayerInSpecialSector`, which `P_PlayerThink` skips for a dead player, so a
-   * monster killing the player in the pit leaves them dead in it with the episode unfinished.
-   * Deliberately not gated on `player.z`, unlike the damage above: the sector's whole purpose is
-   * the ending, whether or not the corpse had landed. docs/specials.md § Damage floors.
+   * Whether dying at this point ends the level: the sector there is an
+   * {@link DamageFloorEffect.exitBelowHealth} floor, E1M8's sector 66 and nothing else in stock
+   * DOOM. A deliberate deviation, and deliberately not gated on `player.z` —
+   * docs/specials.md § Damage floors.
    */
   exitsOnDeath(world: World, at: Pos2): boolean {
     const sector = world.sectorAt(at.x, at.y);
@@ -91,10 +89,9 @@ export class SectorEffects {
   }
 
   /**
-   * Runs this frame's specials for the sector slot `slot`'s player is standing in and reports what
-   * they did — a secret being entered, and whether one of them ends the level (an
-   * `exitBelowHealth` floor). Gated on `player.z === sector.floorHeight` (vanilla's
-   * `mo->z != floorheight`), read off the local sector rather than `World.groundFloor`.
+   * Runs this frame's specials for the sector slot `slot`'s player stands in. Gated on
+   * `player.z === sector.floorHeight` (vanilla's `mo->z != floorheight`), read off the local sector
+   * rather than {@link World.groundFloor} — docs/specials.md § Damage floors.
    */
   update(
     dt: number,
@@ -139,10 +136,7 @@ export class SectorEffects {
   }
 }
 
-/**
- * Whether a worn radiation suit stops this damage floor's hit — see `DamageFloorEffect.suit` for
- * why the three types differ.
- */
+/** Whether a worn radiation suit stops this floor's hit — see {@link DamageFloorEffect.suit}. */
 function suitBlocks(effect: DamageFloorEffect, inv: Inventory): boolean {
   if (effect.suit === 'ignored' || !hasPower(inv, 'radiationSuit')) return false;
   // `P_PlayerInSpecialSector`'s `P_Random() < 5`, and `SUIT_LEAK_CHANCE` is that 5 over 256.

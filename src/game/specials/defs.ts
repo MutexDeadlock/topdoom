@@ -1,7 +1,7 @@
 /**
- * The record shapes every linedef/sector special is expressed as (`SpecialDef` and the `Effect`
- * union), plus the speeds, waits and damage amounts those shapes carry. `tables.ts` keys the
- * vanilla numbers onto them and `game/specials.ts` drives off the result.
+ * The record shapes every linedef/sector special is expressed as ({@link SpecialDef} and the
+ * {@link Effect} union), plus the speeds, waits and damage amounts those shapes carry. `tables.ts`
+ * keys the vanilla numbers onto them and `game/specials.ts` drives off the result.
  *
  * Timings/speeds approximate vanilla (`VDOORSPEED`/`PLATSPEED`/`FLOORSPEED`) rather than
  * reproducing it tic-for-tic. See docs/specials.md.
@@ -45,12 +45,12 @@ export const STAIR_SPEED_TURBO = FLOOR_SPEED * 4;
 export const STAIR_STEP = 8;
 export const STAIR_STEP_TURBO = 16;
 /**
- * Vanilla: a mover with `crush` set deals this much damage every `CRUSH_DAMAGE_INTERVAL` while
- * something is caught in its sector.
+ * Vanilla: a mover with `crush` set deals this much damage every {@link CRUSH_DAMAGE_INTERVAL}
+ * while something is caught in its sector.
  */
 export const CRUSH_DAMAGE = 10;
 /**
- * How often a crushing mover deals `CRUSH_DAMAGE` (vanilla's `leveltime&3`).
+ * How often a crushing mover deals {@link CRUSH_DAMAGE} (vanilla's `leveltime&3`).
  * Ticked as **one clock shared by every crusher on the map**, not a per-mover
  * countdown — `SpecialsController`'s `crushDamageTimer`/`crushDamageDue`, the
  * same shared-clock shape `MOVE_SOUND_INTERVAL` uses for the grind sound.
@@ -59,14 +59,14 @@ export const CRUSH_DAMAGE = 10;
 export const CRUSH_DAMAGE_INTERVAL = 4 * DOOM_TIC;
 /**
  * Vanilla `T_MoveCeiling`'s `ceiling->speed = CEILSPEED / 8` — see
- * `CrusherEffect.slowsWhenCrushing`.
+ * {@link CrusherEffect.slowsWhenCrushing}.
  */
 export const CRUSH_SLOWDOWN = 8;
 /**
  * How tall a corpse is against the living body's `mobjinfo.height` — `P_KillMobj`'s
  * `target->height >>= 2`. Only the squish test reads it (`squashCorpses`): a corpse blocks nothing
- * here, so nothing else in this engine cares how tall one is. docs/specials-crushers.md § Crushed
- * corpses.
+ * here, so nothing else in this engine cares how tall one is.
+ * docs/specials-crushers.md § Crushed corpses.
  */
 export const CORPSE_HEIGHT_FRACTION = 1 / 4;
 
@@ -77,12 +77,10 @@ export const DOOR_OPEN_GAP = 4;
 export const ELEVATOR_SPEED = FLOOR_SPEED * 4;
 
 /**
- * Vanilla hardcodes `35*30` tics (30 real seconds) in two unrelated places
- * that both end up meaning the same thing — "how long an already-open door
- * sits shut before it moves again": `close30ThenOpen`'s wait at the bottom
- * before it reopens (specials 16/76), and `P_SpawnDoorCloseIn30`'s wait
- * before a sector-type-10 door closes for the first and only time. Reused
- * for both rather than declared twice.
+ * Vanilla's hardcoded `35*30` tics (30 real seconds), in two unrelated places: `close30ThenOpen`'s
+ * wait at the bottom before it reopens (specials 16/76), and `P_SpawnDoorCloseIn30`'s wait before a
+ * sector-type-10 door closes for the first and only time. Reused for both rather than declared
+ * twice.
  */
 export const DOOR_CLOSE_WAIT_SECONDS = 30;
 /**
@@ -102,15 +100,13 @@ export const SWITCH_FLASH_SECONDS = 35 * DOOM_TIC;
 export const ORIG_FRICTION = 0xe800 / 0x10000;
 
 /**
- * What the floor under a body does to its movement, already converted out of
- * Boom's fixed-point `friction`/`movefactor` pair into this engine's own
- * movement model — produced by `specials/forces.ts: frictionUnder`, consumed by
- * `game/player.ts: update`.
+ * What the floor under a body does to its movement, already converted out of Boom's fixed-point
+ * `friction`/`movefactor` pair into this engine's own movement model — produced by
+ * `specials/forces.ts: frictionUnder`, consumed by `game/player.ts: update`.
  *
- * `friction` is the per-tic momentum multiplier, used directly. The other two
- * translate vanilla's thrust-against-friction model onto the exponential
- * approach `player.ts` actually runs on — see docs/movement.md § Friction for
- * the derivation.
+ * {@link FrictionEffect.friction} is the per-tic momentum multiplier, used directly. The other two
+ * translate vanilla's thrust-against-friction model onto the exponential approach `player.ts` runs
+ * on — see docs/movement.md § Friction for the derivation.
  */
 export interface FrictionEffect {
   friction: number;
@@ -124,11 +120,10 @@ export interface FrictionEffect {
 }
 
 /**
- * The normal-floor answer: what `frictionUnder` returns where no 223 line
- * applies and what `player.update` assumes when no caller names a floor. One
- * declaration for both, so "a map without a friction line moves exactly as it
- * did before friction existed" is an identity rather than two literals kept in
- * step. Never mutated.
+ * The normal-floor answer: what `frictionUnder` returns where no 223 line applies and what
+ * `player.update` assumes when no caller names a floor. One declaration for both, so a map without
+ * a friction line moving as vanilla does is an identity rather than two literals kept in step.
+ * Never mutated.
  */
 export const NO_FRICTION: Readonly<FrictionEffect> = { friction: ORIG_FRICTION, targetScale: 1, accelScale: 1 };
 
@@ -150,14 +145,9 @@ export type DoorMode =
   | 'openOnly'
   | 'closeOnly'
   /**
-   * Vanilla's `close30ThenOpen` (specials 16/76): closes immediately, same
-   * as `closeOnly`, but instead of stopping there, waits
-   * `DOOR_CLOSE_WAIT_SECONDS` at the bottom and reopens once — to wherever
-   * it already was (its *current* ceiling height at trigger time, not a
-   * freshly computed neighbor ceiling — confirmed against `p_doors.c`:
-   * `door->topheight = sec->ceilingheight;`, unlike every other `DoorMode`
-   * here), then stays open for good, matching vanilla's own
-   * `sector->specialdata = NULL` once the reopen completes.
+   * Vanilla's `close30ThenOpen` (specials 16/76): closes like `closeOnly`, waits
+   * `DOOR_CLOSE_WAIT_SECONDS` at the bottom, reopens once to its ceiling height at trigger
+   * time, then stays open for good. docs/specials-movers.md § Delayed doors.
    */
   | 'closeThenOpen';
 
@@ -167,18 +157,15 @@ export interface DoorEffect {
   waitSeconds: number;
   mode: DoorMode;
   /**
-   * `closeThenOpen` only: seconds shut before reopening. Absent means
-   * vanilla's hardcoded `DOOR_CLOSE_WAIT_SECONDS` (16/76); Boom's generalized
-   * CdO doors wait their own delay field instead (`EV_DoGenDoor`).
+   * `closeThenOpen` only: seconds shut before reopening. Absent means vanilla's hardcoded
+   * {@link DOOR_CLOSE_WAIT_SECONDS} (16/76); Boom's generalized CdO doors wait their own delay
+   * field instead (`EV_DoGenDoor`).
    */
   closeWaitSeconds?: number;
   /**
-   * Whether this trigger takes over a door that is still moving instead of
-   * being refused — `EV_VerticalDoor`'s reuse branch, which Boom narrowed to
-   * the five repeatable raise numbers it names literally (1/26-28/117), so
-   * this is set on exactly those and nothing else. Absent everywhere else on
-   * purpose: a generalized Push door is `manual` and `openClose` too, but
-   * falls outside that switch. See docs/specials-movers.md § Retriggering a door.
+   * Whether this trigger takes over a door still moving instead of being refused —
+   * `EV_VerticalDoor`'s reuse branch, which Boom narrowed to the five repeatable raise numbers it
+   * names literally (1/26-28/117). docs/specials-movers.md § Retriggering a door.
    */
   reverseWhenMoving?: true;
 }
@@ -268,7 +255,7 @@ export type MoveTarget =
 
 /**
  * Boom's generalized texture/type change (`p_genlin.c`): the moved sector
- * copies its surface texture — and per `type` its special — from a model
+ * copies its surface texture — and per {@link SurfaceChange.type} its special — from a model
  * sector, applied when the mover *arrives* (`T_MoveFloor`/`T_MoveCeiling`'s
  * `pastdest` gen cases), unlike vanilla's at-trigger "AndChange" family.
  * `'trigger'` models from the activating line's front sector; `'numeric'`
@@ -300,24 +287,20 @@ export interface FloorEffect {
    */
   direction: 'up' | 'down';
   /**
-   * Vanilla's "AndChange" specials (20/22/68/95 — `raiseToNearestAndChange`):
-   * on trigger, copy the *triggering linedef's own front-sector* floor
-   * texture onto the sector(s) about to move, and clear their `special`
-   * ("NO MORE DAMAGE, IF APPLICABLE" in vanilla's own source comment — a
-   * light-blink special already has its own independent thinker in this
-   * engine too, so clearing it here doesn't stop that, matching vanilla).
-   * Not the *target* sector's texture — the model is the switch/walkover
-   * line's own front side, which is how mappers control what a raised floor
-   * turns into.
+   * Vanilla's "AndChange" specials (20/22/68/95 — `raiseToNearestAndChange`): on trigger, copy the
+   * *triggering linedef's own front-sector* floor texture onto the sector(s) about to move, and
+   * clear their `special` ("NO MORE DAMAGE, IF APPLICABLE"). Not the *target* sector's texture —
+   * the model is the switch/walkover line's own front side, which is how mappers control what a
+   * raised floor turns into.
    */
   changeTexture: boolean;
   /**
-   * The 55/56/65/94 family (`raiseFloorCrush`): deals `CRUSH_DAMAGE` every
-   * `CRUSH_DAMAGE_INTERVAL` to anyone caught in the target sector while the
-   * floor is moving, same as the ceiling crushers below.
+   * The 55/56/65/94 family (`raiseFloorCrush`): deals {@link CRUSH_DAMAGE} every
+   * {@link CRUSH_DAMAGE_INTERVAL} to anyone caught in the target sector while the floor is moving,
+   * same as the ceiling crushers below.
    */
   crush: boolean;
-  /** Boom's arrival-time change — see `SurfaceChange`. Absent on every vanilla entry. */
+  /** Boom's arrival-time change — see {@link SurfaceChange}. Absent on every vanilla entry. */
   change?: SurfaceChange;
 }
 
@@ -329,10 +312,10 @@ export interface ExitEffect {
 }
 
 /**
- * Ceiling repeatedly lowers to floor+`EIGHT_UNIT_GAP`, then returns to its
- * start height, forever, dealing `CRUSH_DAMAGE` every `CRUSH_DAMAGE_INTERVAL`
- * to anyone it doesn't leave room for — **only while lowering**, never on the
- * way back up. docs/specials-crushers.md § Crushers.
+ * Ceiling repeatedly lowers to floor+{@link EIGHT_UNIT_GAP}, then returns to its start height,
+ * forever, dealing {@link CRUSH_DAMAGE} every {@link CRUSH_DAMAGE_INTERVAL} to anyone it doesn't
+ * leave room for — **only while lowering**, never on the way back up.
+ * docs/specials-crushers.md § Crushers.
  */
 export interface CrusherEffect {
   kind: 'crusher';
@@ -346,7 +329,7 @@ export interface CrusherEffect {
   silent: boolean;
   /**
    * While its descent is actually crushing something, the crusher grinds down
-   * at `CRUSH_SLOWDOWN`-th speed, restored to full at the bottom. Set on
+   * at {@link CRUSH_SLOWDOWN}-th speed, restored to full at the bottom. Set on
    * 25/49/73/141 and deliberately not on the fast pair 6/77. Not cosmetic — it
    * multiplies the damage a single stroke deals by eight.
    * docs/specials-crushers.md § Crushers.
@@ -356,7 +339,7 @@ export interface CrusherEffect {
    * Boom's generalized silent crusher is *fully* silent: unlike vanilla 141,
    * which clacks `pstop` at each end of its stroke, `genSilentCrusher` is in
    * neither of `T_MoveCeiling`'s end-sound cases. Only meaningful with
-   * `silent`; absent = vanilla 141's end clacks.
+   * {@link CrusherEffect.silent}; absent = vanilla 141's end clacks.
    */
   noEndClack?: boolean;
 }
@@ -403,11 +386,9 @@ export interface TeleportEffect {
 }
 
 /**
- * A teleport landing spot: where to put the thing and which way it faces on
- * arrival (`angle`, radians — see `Placement`), plus what the Boom silent
- * family needs on top. The two optional fields are absent for a vanilla
- * teleport, which is exactly its old behavior.
- * See docs/specials-teleporters.md § Silent and line-to-line teleporters.
+ * A teleport landing spot: where to put the thing and which way it faces on arrival
+ * ({@link Placement.angle}, radians), plus what the Boom silent family needs on top — both absent
+ * for a vanilla teleport. See docs/specials-teleporters.md § Silent and line-to-line teleporters.
  */
 export interface TeleportDest extends Placement {
   /**
@@ -419,18 +400,17 @@ export interface TeleportDest extends Placement {
    */
   silent?: boolean;
   /**
-   * How far the arrival turned the body, in radians. `angle` above already has
-   * it applied; this is here so the caller can turn the body's *momentum*
-   * through the same angle, which is what makes a silent teleport read as
-   * walking through a doorway. Absent means vanilla's landing, which sets an
-   * absolute facing and zeroes momentum outright.
+   * How far the arrival turned the body, in radians. {@link Placement.angle} already has it
+   * applied; this is here so the caller can turn the body's *momentum* through the same angle,
+   * which is what makes a silent teleport read as walking through a doorway. Absent means
+   * vanilla's landing, which sets an absolute facing and zeroes momentum outright.
    */
   rotateBy?: number;
 }
 
 /**
  * Raises a chain of adjacent sectors sharing the trigger sector's floor
- * texture, each `stepHeight` higher than the last, all starting at once. There
+ * texture, each {@link StairsEffect.stepHeight} higher than the last, all starting at once. There
  * is no crush field: **no stair special deals crush damage**, including the
  * 16-unit pair the wiki misnames "...and Crush" (`tables.ts` at 100/127).
  */
@@ -474,12 +454,11 @@ export type CeilingTarget =
   | 'shortestUpperTextureDown';
 
 /**
- * A one-way ceiling mover: moves once to `target`, then stops — no hold, no
- * reversal, unlike `DoorEffect`/`CrusherEffect`. Two specials reach it,
+ * A one-way ceiling mover: moves once to {@link CeilingEffect.target}, then stops — no hold, no
+ * reversal, unlike {@link DoorEffect}/{@link CrusherEffect}. Two vanilla specials reach it,
  * `raiseToHighest` (40) and `lowerAndCrush` (44/72), and **neither deals crush
- * damage** despite the latter's name — so this shape carries no `crush` field
- * and `game/specials.ts`'s `CeilingMover` has no damage handling. Special 40's
- * *floor* half is faithfully omitted (`tables.ts`).
+ * damage** despite the latter's name — only Boom's generalized ceilings set
+ * {@link CeilingEffect.crush}. Special 40's *floor* half is faithfully omitted (`tables.ts`).
  * docs/specials-movers.md § One-way ceiling movers has the source for both.
  */
 export interface CeilingEffect {
@@ -487,7 +466,7 @@ export interface CeilingEffect {
   speed: number;
   target: CeilingTarget;
   /**
-   * `ceiling->direction`, the mirror of `FloorEffect.direction` and fixed the
+   * `ceiling->direction`, the mirror of {@link FloorEffect.direction} and fixed the
    * same way — by the `EV_DoCeiling` case this number belongs to
    * (`p_ceilng.c`), never re-derived from the height being chased.
    * docs/specials-movers.md § Inverted plane moves.
@@ -503,8 +482,8 @@ export interface CeilingEffect {
    */
   crush?: boolean;
   /**
-   * Boom's arrival-time change — see `SurfaceChange`; ceilings copy `ceilTex`. Absent on every
-   * vanilla entry.
+   * Boom's arrival-time change — see {@link SurfaceChange}; ceilings copy `ceilTex`. Absent on
+   * every vanilla entry.
    */
   change?: SurfaceChange;
 }
@@ -524,7 +503,7 @@ export interface ChangeOnlyEffect {
 
 /**
  * Boom's elevator (`p_floor.c: EV_DoElevator`, linedefs 227-232): floor and
- * ceiling move in lockstep, preserving the sector's gap, at `ELEVATOR_SPEED`,
+ * ceiling move in lockstep, preserving the sector's gap, at {@link ELEVATOR_SPEED},
  * to the next floor up, the next floor down, or the activating line's own
  * front-sector floor height. Never crushes — a blocked plane stalls the pair
  * (`T_MoveElevator` moves the ceiling first going down, the floor first going
@@ -548,12 +527,10 @@ export interface RaiseToTextureEffect {
 }
 
 /**
- * Vanilla's `lowerAndChange` (37/84): lowers to the lowest neighboring floor,
- * then copies the texture and `special` of whichever neighbor already sits at
- * that height — **on arrival, not at trigger time** (`T_MoveFloor`'s `pastdest`
- * branch). A genuinely different texture-source rule from
- * `FloorEffect.changeTexture`'s. See docs/specials-movers.md § raiseToTexture,
- * lowerAndChange.
+ * Vanilla's `lowerAndChange` (37/84): lowers to the lowest neighboring floor, then copies the
+ * texture and `special` of whichever neighbor already sits at that height — **on arrival, not at
+ * trigger time** (`T_MoveFloor`'s `pastdest` branch), a different texture-source rule from
+ * {@link FloorEffect.changeTexture}'s. docs/specials-movers.md § raiseToTexture, lowerAndChange.
  */
 export interface LowerAndChangeEffect {
   kind: 'lowerAndChange';
@@ -634,10 +611,10 @@ export type LockRule =
   | { kind: 'slot'; slot: KeySlot };
 
 /**
- * Who is activating a line. Distinct from `SpecialDef.monsterCanTrigger`/
- * `monsterActivate`, which say who a *number* admits — this says who is at the
- * line right now, so `trigger` can gate and route (a monster's teleport is
- * returned to the caller, the player's goes through `onTeleport`).
+ * Who is activating a line. Distinct from {@link SpecialDef.monsterCanTrigger} and
+ * {@link SpecialDef.monsterActivate}, which say who a *number* admits — this says who is at the
+ * line right now, so `trigger` can gate and route (a monster's teleport is returned to the caller,
+ * the player's goes through `onTeleport`).
  *
  * **`'monster'` means "any non-player body"**, which is `P_CrossSpecialLine`'s
  * own distinction — its allow-list branch is `if (!thing->player)` and excludes
@@ -659,7 +636,7 @@ export interface SpecialDef {
    * `line->backsector`).
    */
   manual?: boolean;
-  /** What the line demands before it acts — see `LockRule`. Absent = never locked. */
+  /** What the line demands before it acts — see {@link LockRule}. Absent = never locked. */
   lock?: LockRule;
   /**
    * The line does nothing without a tag. Boom requires one on every
@@ -687,20 +664,15 @@ export interface SpecialDef {
    */
   monsterActivate?: boolean;
   /**
-   * Only meaningful for `trigger: 'shoot'`. Vanilla's `P_ShootSpecialLine`
-   * rejects every shoot-triggered special from a non-player shooter except
-   * one hardcoded exception — `case 46: ok = 1;` in its own `!thing->player`
-   * gate, with the source comment "46 is the only special that can be
-   * activated by a corpse or item that touches or shoots it" (loosely; a
-   * monster's own hitscan/projectile is what actually exercises this here,
-   * this engine has no corpse-sliding). This is a property of the specific
-   * number, not of being shoot-triggered in general, so it's data on the
-   * def rather than something `trigger === 'shoot'` implies on its own.
+   * Only meaningful for `trigger: 'shoot'`: whether a non-player's shot fires this number.
+   * `P_ShootSpecialLine`'s `!thing->player` gate rejects every shoot special but
+   * `case 46: ok = 1;`, so it is a property of the number, not of being shoot-triggered.
+   * docs/combat.md § Shoot-triggered specials.
    */
   monsterCanTrigger?: boolean;
   effect: Effect;
   /**
-   * A second effect run over the same tag-matched sectors after `effect` —
+   * A second effect run over the same tag-matched sectors after {@link SpecialDef.effect} —
    * Boom's three "raise ceiling, lower floor" numbers (151/166/186), the only
    * dispatch cases in the whole switch that call two `EV_` helpers. Each pass
    * covers every target before the next begins, matching the real order.
@@ -720,12 +692,10 @@ export interface SpecialDef {
  * Vanilla `P_PlayerInSpecialSector`'s damage-floor cases — a sustained per-tic
  * hazard, not a mover's crush hit. Player-only, as in vanilla.
  *
- * **`suit` is deliberately not uniform**, matching vanilla: blocked outright,
- * leaking `SUIT_LEAK_CHANCE` of hits, or ignored entirely for E1M8's finale
- * type, which is scripted to end the level rather than survived.
- * `exitBelowHealth` is that same finale quirk — tested every frame the player
- * stands there and down to 0 health, so the pulse that kills them still exits.
- * See docs/specials.md § Damage floors.
+ * **{@link DamageFloorEffect.suit} is deliberately not uniform**, matching vanilla: blocked
+ * outright, leaking `SUIT_LEAK_CHANCE` of hits, or ignored entirely for E1M8's finale type, which
+ * is scripted to end the level rather than survived; {@link DamageFloorEffect.exitBelowHealth} is
+ * that same finale quirk. docs/specials.md § Damage floors.
  */
 export interface DamageFloorEffect {
   amount: number;

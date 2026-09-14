@@ -1,8 +1,8 @@
 /**
- * The key codes a simulation tic can ask `TicInput.held`/`pressed` about, and the bit each one
- * takes in a replay's per-tic masks. A code missing here would be recorded as never pressed —
- * `tests/game/replay-keys.test.ts` pins the table against every literal the tree asks for.
- * docs/replays.md § The record.
+ * The key codes a simulation tic can ask {@link TicInput.held}/{@link TicInput.pressed} about, and
+ * the bit each one takes in a replay's per-tic masks. A code missing here would be recorded as
+ * never pressed — `tests/game/replay-keys.test.ts` pins the table against every literal the tree
+ * asks for. docs/replays.md § The record.
  */
 import type { TicInput } from '../input.ts';
 

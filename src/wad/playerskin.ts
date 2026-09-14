@@ -46,9 +46,9 @@ export function setPlayerSpriteMode(mode: PlayerSpriteMode): void {
 const PLAYER_SPRITE_LUMP = /^PLAY[A-W][0-8]/;
 
 /**
- * `hashBytes` of vanilla's own `PLAYA1` and `PLAYE1` — the walk and attack frames. Both lumps are
- * byte-identical in `DOOM1.WAD` and `DOOM2.WAD` and differ in `freedoom2.wad`, which is what lets
- * this tell an IWAD drawing vanilla's marine from one drawing its own.
+ * {@link hashBytes} of vanilla's own `PLAYA1` and `PLAYE1` — the walk and attack frames. Both lumps
+ * are byte-identical in `DOOM1.WAD` and `DOOM2.WAD` and differ in `freedoom2.wad`, which is what
+ * lets this tell an IWAD drawing vanilla's marine from one drawing its own.
  */
 const VANILLA_PLAYER_ART: Record<string, string> = {
   PLAYA1: 'f694e36ce2d43dc8',

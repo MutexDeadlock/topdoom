@@ -1,7 +1,7 @@
 /**
  * Where a player enters a level and where a dead one comes back: the four player starts a map
  * places (doomednums 1–4), the level-start pick, `G_DoReborn`'s spot, and a deathmatch's random
- * draw over its own starts (doomednum 11). Pure over a `World`; the collision test is the caller's.
+ * draw over its own starts (doomednum 11). Pure over a {@link World}; collision is the caller's.
  * docs/multiplayer-coop.md § Starts and § Respawn, docs/multiplayer-deathmatch.md § Starts.
  */
 import { ThingType } from './things/doomednums.ts';
@@ -19,8 +19,8 @@ const START_TYPES = [ThingType.playerStart, ThingType.playerStart2, ThingType.pl
 
 /**
  * Each slot's start as the map places it, null where it places none — vanilla's
- * `playerstarts[type - 1]` (`World.placedStart`). Slot 0's is `World.playerStart`, map-centre
- * fallback included.
+ * `playerstarts[type - 1]` ({@link World.placedStart}). Slot 0's is {@link World.playerStart},
+ * map-centre fallback included.
  */
 export function coopStarts(world: World): (Placement | null)[] {
   const starts: (Placement | null)[] = [world.playerStart()];
@@ -31,8 +31,9 @@ export function coopStarts(world: World): (Placement | null)[] {
 /**
  * Where `slot` enters the level: its own start, with no occupancy test (`P_SpawnPlayer`). A map
  * placing no start for it — where vanilla spawns no body at all — gives it the first start no
- * earlier slot took, and player 1's when every one is taken. `taken` is where the earlier slots
- * stand. docs/multiplayer-coop.md § Starts.
+ * earlier slot took, and player 1's when every one is taken. docs/multiplayer-coop.md § Starts.
+ *
+ * @param taken  where the earlier slots stand
  */
 export function levelStartFor(starts: readonly (Placement | null)[], slot: number, taken: readonly Pos2[]): Placement {
   const own = starts[slot];
@@ -51,8 +52,9 @@ export function spotTaken(taken: readonly Pos2[], at: Pos2): boolean {
 /**
  * `G_DoReborn`'s spot for a coop respawn: `own` when `blocked` refuses nothing there, else the
  * first start in slot order that is free — arriving the way that start faces — else `own` anyway
- * ("he's going to be inside something. Too bad."). `blocked` is `G_CheckSpot`'s
- * `P_CheckPosition`. docs/multiplayer-coop.md § Respawn.
+ * ("he's going to be inside something. Too bad."). docs/multiplayer-coop.md § Respawn.
+ *
+ * @param blocked  `G_CheckSpot`'s `P_CheckPosition`
  */
 export function rebornSpot(
   starts: readonly (Placement | null)[],
@@ -84,7 +86,7 @@ export function deathmatchStarts(world: World): Placement[] {
  * **Deviation:** any number of starts is played, where vanilla refuses fewer than four; a map with
  * none is a coop-starts game. docs/multiplayer-deathmatch.md § Starts.
  *
- * @param draw  the random draw, `pRandom` unless a test supplies one
+ * @param draw  the random draw, {@link pRandom} unless a test supplies one
  */
 export function deathmatchSpot(
   starts: readonly Placement[],

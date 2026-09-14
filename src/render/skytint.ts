@@ -24,14 +24,14 @@ export const STRENGTH = 0.45;
 const LIMIT = 0.3;
 
 /**
- * What a sky with no colour of its own lends instead — a cool daylight, at luminance 1. **Tuned by
- * feel, and the one invented value here** — docs/render-lighting.md § Outdoor sky tint.
+ * What a sky with no colour of its own lends instead — a cool daylight, at luminance 1.
+ * **Tuned by feel, and the one invented value here** — docs/render-lighting.md § Outdoor sky tint.
  */
 const COLOURLESS_SKY: readonly [number, number, number] = [0.9, 0.99, 1.3];
 
 /**
  * How much colour a sky needs before it speaks for itself rather than blending toward
- * `COLOURLESS_SKY`, as the spread between its strongest and weakest channel. Tuned by feel.
+ * {@link COLOURLESS_SKY}, as the spread between its strongest and weakest channel. Tuned by feel.
  */
 const CHROMA_FULL = 0.25;
 
@@ -96,8 +96,9 @@ export function skyScale(sky: boolean): THREE.Color {
 
 /**
  * The multiplier a sky lends, at luminance 1 so it shifts colour without brightening: the average
- * of the lump's opaque pixels, blended toward `COLOURLESS_SKY` by how little colour it has, carried
- * `STRENGTH` of the way from neutral and clamped to `LIMIT`. Exported for the test.
+ * of the lump's opaque pixels, blended toward {@link COLOURLESS_SKY} by how little colour it has,
+ * carried {@link STRENGTH} of the way from neutral and clamped to {@link LIMIT}. Exported for the
+ * test.
  */
 export function skyTintOf(sky: Bitmap | null): [number, number, number] {
   const average = averageColor(sky);

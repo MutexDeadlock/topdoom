@@ -103,10 +103,10 @@ export class ProjectileLayer {
   }
 
   /**
-   * Turns one fired {@link Shot} (game/weapons.ts) into a tracer line or a flying projectile
-   * sprite. It starts at the player's own fire height, never the target's, and slopes toward the
-   * locked-on monster's mid-body: `shotPath` resolves a pellet's slope and where it gets to,
-   * `aimSlope` a missile's slope alone. A missile leaves four units lower than a bullet.
+   * Turns one fired {@link Shot} into a tracer line or a flying projectile sprite. It starts at the
+   * player's own fire height, never the target's, and slopes toward the locked-on monster's
+   * mid-body: `shotPath` resolves a pellet's slope and where it gets to, `aimSlope` a missile's
+   * slope alone.
    *
    * **Hit-or-miss is settled here only for a hitscan pellet** — a projectile leaves with no target
    * and re-tests what it has run into every frame ({@link ProjectileLayer.update}).
@@ -324,10 +324,8 @@ export class ProjectileLayer {
   }
 
   /**
-   * Vanilla's `P_CheckMissileSpawn` (`p_mobj.c`): a missile is moved half a tic of its own momentum
-   * forward the instant it is spawned, before anything draws or tests it, so it leaves the
-   * shooter's body instead of appearing inside it. A wall within that half tic stops it there, as
-   * vanilla's `P_TryMove` failing does. docs/combat.md § Where a missile starts.
+   * Vanilla's `P_CheckMissileSpawn` (`p_mobj.c`): moves a new missile half a tic of its momentum
+   * forward, before anything draws or tests it. docs/combat.md § Where a missile starts.
    */
   private checkMissileSpawn(p: Projectile): void {
     const nudge = (p.speed * DOOM_TIC) / 2;
@@ -350,9 +348,7 @@ export class ProjectileLayer {
 
   /**
    * Moves a straight flight up to `step` further along its launch line, against the lines as they
-   * stand this tic: the step is probed a radius further than it moves, and a line refusing the
-   * missile there ends the flight a radius short of the plane, never back past where the step
-   * began — as `P_TryMove` refuses a move whose box would touch the line.
+   * stand this tic, ending a radius short of a line that refuses it.
    * docs/combat.md § Where an impact sits.
    *
    * @param from  written with where the step began
@@ -379,13 +375,9 @@ export class ProjectileLayer {
    * curve — and resolves what it ran into on the way, against the walls and bodies as they stand
    * this tic. On arrival it removes the shot, plays its {@link IMPACT_EFFECTS} explosion and
    * applies `p.splash` whether or not a body was hit; one that flew into the sky just vanishes.
-   * **Every projectile, the player's own included, re-tests live bodies each tic**, swept across
-   * the whole step rather than sampled at its end (docs/monster-attacks.md § Monster projectiles in
-   * flight, docs/combat.md § Where an impact sits).
+   * docs/monster-attacks.md § Monster projectiles in flight, docs/combat.md § Where an impact sits.
    *
-   * Must run inside the caller's {@link SpriteFxLayer.beginFrame}/{@link SpriteFxLayer.endFrame}
-   * pair: it both draws through the batch and pushes this frame's new explosions and smoke puffs on
-   * for {@link ProjectileLayer.draw}.
+   * Draws nothing — {@link ProjectileLayer.draw} is the other half.
    */
   update(dt: number): void {
     if (this.projectiles.length === 0) return;
@@ -502,8 +494,8 @@ export class ProjectileLayer {
   /**
    * Draws every missile still in flight, `alpha` of the way along the step its last
    * {@link ProjectileLayer.update} took. Must run inside the caller's
-   * {@link SpriteFxLayer.beginFrame}/{@link SpriteFxLayer.endFrame} pair, same as
-   * {@link ProjectileLayer.update}. docs/frameloop.md § Interpolation.
+   * {@link SpriteFxLayer.beginFrame}/{@link SpriteFxLayer.endFrame} pair.
+   * docs/frameloop.md § Interpolation.
    */
   draw(alpha: number): void {
     for (const p of this.projectiles) {
@@ -538,10 +530,9 @@ export class ProjectileLayer {
 
   /**
    * Which player this tic's step carried a missile into first, and how far along the step (0 to 1)
-   * — vanilla's `PIT_CheckThing` against `MT_PLAYER`, swept over the step rather than sampled at
-   * its end; a player's own reaches the others only under {@link CombatContext.pvp}. Contact is the
-   * player's own 16-unit box widened by the missile's `mobjinfo.radius`, and the height band is
-   * `PIT_CheckThing`'s asymmetric over/under pair, not a tolerance either side of the feet.
+   * — vanilla's `PIT_CheckThing` against `MT_PLAYER`, swept over the step; a player's own reaches
+   * the others only under {@link CombatContext.pvp}.
+   * docs/combat.md § How a projectile finds its target.
    */
   private playerStruckBy(p: Projectile, from: Pos3, at: Pos3): { slot: number; t: number } | null {
     const { world, slots } = this.ctx;
@@ -566,8 +557,7 @@ export class ProjectileLayer {
    * What this tic's step carried the projectile into, and how far along the step (0 to 1), or null
    * if it hit nothing. A non-null result always ends the flight; `id` is who takes the direct
    * damage, or **null for a same-species body that stops the missile without being hurt by it** (a
-   * monster's shot only — the player is nobody's species). Candidates resolve first-along-the-step,
-   * the swept equivalent of vanilla's blockmap order. See docs/monster-ai.md § Infighting.
+   * monster's shot only — the player is nobody's species). See docs/monster-ai.md § Infighting.
    */
   private bodyStruckBy(p: Projectile, from: Pos3, at: Pos3): { id: number | null; t: number } | null {
     let nearest: { id: number | null; t: number } | null = null;
@@ -590,10 +580,9 @@ export class ProjectileLayer {
   /**
    * One frame of the revenant's `A_Tracer` homing ({@link Projectile.homing}): turns `headingRad`
    * toward the target's current bearing, integrates position from it, eases height toward the
-   * target and spawns the smoke trail. **A homing missile has no flight-distance budget** — each
-   * step is checked against the geometry it actually crossed (`projectileStepBlocker`), and forcing
-   * `p.traveled` to `p.maxDist` is how arrival is signalled to {@link ProjectileLayer.update}. See
-   * docs/monster-attacks.md § The revenant's homing missile.
+   * target and spawns the smoke trail. Each step is checked against the geometry it crossed, and
+   * forcing `p.traveled` to `p.maxDist` is how arrival is signalled to
+   * {@link ProjectileLayer.update}. See docs/monster-attacks.md § The revenant's homing missile.
    */
   private advanceHoming(p: Projectile, dt: number): Pos3 {
     const { world, slots } = this.ctx;
@@ -647,10 +636,9 @@ export class ProjectileLayer {
   }
 
   /**
-   * Vanilla's `A_BFGSpray`, fired once when the player's BFG ball arrives. The rays trace from the
-   * player's **current** position rather than the impact point. Each ray is an independent,
-   * undiminished hit with no dedupe against a body several rays already caught, and each spawns an
-   * `MT_EXTRABFG` burst. No-op once the player is dead. See docs/combat.md § Splash and the BFG.
+   * Vanilla's `A_BFGSpray`, fired once when the player's BFG ball arrives: rays traced from the
+   * player's **current** position, each an independent, undiminished hit. No-op once the player is
+   * dead. See docs/combat.md § Splash and the BFG.
    *
    * @param travelAngleRad  the ball's fixed flight angle
    */

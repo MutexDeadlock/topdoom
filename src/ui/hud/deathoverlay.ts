@@ -7,7 +7,7 @@ import { PLAYER_DEATH_FRAME_SECONDS } from '../../game/things/tables.ts';
 import { drawText } from './hud.ts';
 import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 
-/** The heading, which never changes — the two lines under it are what `show` is told. */
+/** The heading; the two lines under it are what {@link DeathOverlay.show} is told. */
 const TITLE = 'You died';
 
 /**
@@ -15,8 +15,8 @@ const TITLE = 'You died';
  * is being played out of, or reload the level itself (its checkpoint where there is one, a plain
  * restart otherwise — a distinction the player has no reason to care about) — and `none`, for a
  * death nobody in front of the screen can answer: a replay's, where `R` belongs to the record.
- * Which applies is the game layer's to know, so `show` is told that and this layer keeps the
- * wording. docs/death.md § Player death.
+ * Which applies is the game layer's to know, so {@link DeathOverlay.show} is told that and this
+ * layer keeps the wording. docs/death.md § Player death.
  */
 export type DeathHint = 'restart' | 'reload-save' | 'respawn' | 'none';
 

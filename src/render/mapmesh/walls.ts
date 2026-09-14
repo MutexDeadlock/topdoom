@@ -16,9 +16,8 @@ import { WALL_CHUNK_LEN, type SectorTransfers } from './defs.ts';
 const STORAGE_KEY = 'ceilingTrims';
 
 /**
- * Whether thin ceiling steps are left out at all. On by default, and read once per level
- * (`trimIndex`): a trim is baked into the static batches, so a toggle mid-level would leave a
- * mover rebuild disagreeing with them. docs/render.md § Ceiling trims.
+ * Whether thin ceiling steps are left out at all — read once per level, by {@link trimIndex}.
+ * docs/render.md § Ceiling trims.
  */
 let enabled = readStorage(STORAGE_KEY, true);
 
@@ -31,19 +30,22 @@ export function setCeilingTrims(on: boolean): void {
   writeStorage(STORAGE_KEY, on);
 }
 
-/** The two solid tiers one side of a two-sided line draws — see `twoSidedBands`. */
+/** The two solid tiers one side of a two-sided line draws — see {@link twoSidedBands}. */
 export interface DrawnBands {
   /** The lower step, drawn when `lowerTop > lowerBot`. */
   lowerBot: number;
   lowerTop: number;
-  /** The upper step, drawn when `upperTop > upperBot`, not `skyPair` and not `upperTrimmed`. */
+  /**
+   * The upper step, drawn when `upperTop > upperBot`, not {@link DrawnBands.skyPair} and not
+   * {@link DrawnBands.upperTrimmed}.
+   */
   upperBot: number;
   upperTop: number;
   /** Two sky ceilings, between which vanilla draws no upper at all. */
   skyPair: boolean;
   /**
-   * A thin ceiling step over an opening the player walks under, which this engine draws as
-   * nothing. Never true with `skyPair`; a deliberate deviation, docs/render.md § Ceiling trims.
+   * A thin ceiling step over an opening the player walks under, drawn as nothing — a deliberate
+   * deviation, docs/render.md § Ceiling trims. Never true with {@link DrawnBands.skyPair}.
    */
   upperTrimmed: boolean;
 }
@@ -55,13 +57,12 @@ export function newDrawnBands(): DrawnBands {
 
 /**
  * **Which bands one side of a two-sided line draws, and how tall** — the heights resolved through
- * Boom's 242 transfers rather than read off the two sectors. Exported because the auto camera asks
- * the same question (`autocamera.ts`'s `hidesFromCamera`), and the one owner of the rule so the
- * two cannot drift; written into a caller's record, so neither allocates.
+ * Boom's 242 transfers rather than read off the two sectors. Shared with the auto camera
+ * (`autocamera.ts`'s `hidesFromCamera`) and written into the caller's record, so neither allocates.
  *
- * `wallHeightCap` is deliberately *not* applied here: no occlusion question wants a wall shortened
- * by a build option. `upperTrimmed` is the opposite case and belongs here — a trimmed upper is a
- * quad that does not exist, which no occlusion question may believe in either.
+ * {@link Build.wallHeightCap} is deliberately *not* applied: no occlusion question wants a wall
+ * shortened by a build option. {@link DrawnBands.upperTrimmed} is the opposite case — a trimmed
+ * upper is a quad that does not exist, which no occlusion question may believe in either.
  * docs/render.md § Mesh building and § Ceiling trims.
  */
 export function twoSidedBands(
@@ -175,14 +176,14 @@ export function processLine(build: Build, line: LineDef, lineIndex: number): voi
 }
 
 /**
- * The two map-wide questions a trim asks, in one pass over the linedefs, built once: a mover
- * rebuilds through here every tic it runs and neither answer moves with a height. A sector no
- * linedef names has no extent at all, which keeps its upper.
+ * The two map-wide questions a trim asks, in one pass over the linedefs, built once per map. A
+ * sector no linedef names has no extent at all, which keeps its upper.
  *
- * `signs` is what keeps an **exit sign**, and needs the art the map does not carry: a sign is a
- * texture drawn at exactly the texture's own height everywhere it appears, where material is
+ * {@link TrimIndex.signs} is what keeps an **exit sign**, and needs the art the map does not carry:
+ * a sign is drawn at exactly its texture's own height everywhere it appears, where material is
  * cropped or tiled to whatever band it fills. Measured off the sectors' own heights, not the drawn
  * ones — a 242 transfer changes what a wall draws, not what the mapper sized the texture for.
+ * docs/render.md § Ceiling trims.
  */
 export function trimIndex(map: DoomMap, size: SizeFn): TrimIndex {
   const cached = trimIndexes.get(map);
@@ -279,9 +280,9 @@ const TRIM_MIN_OPENING = 56;
 
 /**
  * How wide the sector whose ceiling drops may be and still be a **sign** hung from the ceiling
- * rather than a room the step runs around — the other half of the exemption `TrimIndex.signs` is
- * the first half of. **Tuned by feel**, on DOOM's 64-unit grid: every `EXITSIGN` in both id IWADs
- * hangs in a sector no wider than this. docs/render.md § Ceiling trims.
+ * rather than a room the step runs around — the other half of the exemption
+ * {@link TrimIndex.signs} is the first half of. **Tuned by feel**, on DOOM's 64-unit grid: every
+ * `EXITSIGN` in both id IWADs hangs in a sector no wider than this. docs/render.md § Ceiling trims.
  */
 const TRIM_MAX_SIGN = 64;
 
@@ -298,7 +299,7 @@ interface WallSpec {
   /** World height at which texture row 0 sits (DOOM's "pegging"). */
   pegRef: number;
   light: number;
-  /** Sector whose light level `light` was read from — carried onto the occluder record. */
+  /** Sector whose light level {@link WallSpec.light} was read from — carried onto the occluder. */
   sector: number;
   /**
    * Linedef this quad belongs to, and whether it's the front (right) side — carried onto the
@@ -312,9 +313,9 @@ interface WallSpec {
 
 /**
  * True when the quad was drawn — what vanilla's `toptexture`/`bottomtexture` being non-zero decides
- * (see `addTwoSidedSide`'s midtexture clip). `bandVertically` off keeps the wall one quad tall
- * however high it is, which a wall whose height can move must be: `Build.holdsStill` decides it,
- * and `WALL_CHUNK_LEN` says why.
+ * (see {@link addTwoSidedSide}'s midtexture clip). `bandVertically` off keeps the wall one quad
+ * tall however high it is, which a wall whose height can move must be: {@link Build.holdsStill}
+ * decides it, and {@link WALL_CHUNK_LEN} says why.
  */
 function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean {
   const dim = wallTextureSize(build, spec);
@@ -404,10 +405,11 @@ function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean
 }
 
 /**
- * The art `addWall` would draw this quad with, or null where it draws nothing at all — which is
- * also **vanilla's** answer for whether the tier exists, its `toptexture`/`bottomtexture` being
- * non-zero over a real span. `addTwoSidedSide` asks it without emitting for a ceiling trim, whose
- * midtexture clip has to follow vanilla rather than this engine (§ What cuts a midtexture).
+ * The art {@link addWall} would draw this quad with, or null where it draws nothing at all — which
+ * is also **vanilla's** answer for whether the tier exists, its `toptexture`/`bottomtexture` being
+ * non-zero over a real span. {@link addTwoSidedSide} asks it without emitting for a ceiling trim,
+ * whose midtexture clip has to follow vanilla rather than this engine
+ * (docs/render.md § What cuts a midtexture).
  */
 function wallTextureSize(build: Build, spec: WallSpec): Size | null {
   if (spec.topH <= spec.botH) return null;
@@ -423,19 +425,19 @@ function touchesAny(map: DoomMap, line: LineDef, sectors: Set<number>): boolean 
   return (front !== undefined && sectors.has(front.sector)) || (back !== undefined && sectors.has(back.sector));
 }
 
-/** What both sides of a two-sided line share — resolved once per line by `processLine`. */
+/** What both sides of a two-sided line share — resolved once per line by {@link processLine}. */
 interface LineView {
   index: number;
   flags: number;
   /** `MapMeshOptions.wallHeightCap` applied: the height a wall in a sector is clipped to. */
   cap: (sec: Sector, top: number) => number;
-  /** Whether these quads may be diced vertically — see `Build.holdsStill`. */
+  /** Whether these quads may be diced vertically — see {@link Build.holdsStill}. */
   bandVertically: boolean;
 }
 
 /**
- * One side of a two-sided line as `addTwoSidedSide` looks at it: the sidedef doing the drawing and
- * the sector across from it. The two calls a line makes differ only in this.
+ * One side of a two-sided line as {@link addTwoSidedSide} looks at it: the sidedef doing the
+ * drawing and the sector across from it. The two calls a line makes differ only in this.
  */
 interface SideView {
   /** The line's ends, ordered so the quads face right of a→b — this side's outward normal. */
@@ -459,7 +461,7 @@ function ceilingFacing(transfers: SectorTransfers, other: Sector, otherIndex: nu
   return transfers.heightSec(viewerSector) >= 0 ? other.ceilHeight : transfers.drawnCeiling(otherIndex);
 }
 
-/** Both ceilings are sky, which draws no upper between them — see `twoSidedBands`. */
+/** Both ceilings are sky, which draws no upper between them — see {@link twoSidedBands}. */
 function skyCeilings(a: Sector, b: Sector): boolean {
   return a.ceilTex === SKY_FLAT && b.ceilTex === SKY_FLAT;
 }
@@ -471,9 +473,8 @@ function skyCeilings(a: Sector, b: Sector): boolean {
  * they are the drawn ones. Ordered cheapest first: the map-wide index is only consulted for a step
  * the heights already admit, and its extent only for a step already wearing a sign.
  *
- * The index is read, never built, so a caller with no mesh behind it — the auto camera's rays
- * before a build, tests, tools — hangs no signs and trims every thin step. `beginBuild` seeds it,
- * which is what keeps the camera's verdict the one the mesh actually drew.
+ * The index is read, never built — `beginBuild` seeds it — so a caller with no mesh behind it (the
+ * auto camera's rays before a build, tests, tools) hangs no signs and trims every thin step.
  */
 function trimsCeiling(map: DoomMap, bands: DrawnBands, otherIndex: number, upper: string): boolean {
   if (bands.skyPair) return false;
@@ -486,7 +487,7 @@ function trimsCeiling(map: DoomMap, bands: DrawnBands, otherIndex: number, upper
   return !(index.signs.has(upper) && index.extent[otherIndex] <= TRIM_MAX_SIGN);
 }
 
-/** What deciding a trim needs to know about the whole map — see `trimIndex`. */
+/** What deciding a trim needs to know about the whole map — see {@link trimIndex}. */
 interface TrimIndex {
   /** Whether the setting was on when this level built — off leaves every upper standing. */
   trims: boolean;
@@ -496,10 +497,10 @@ interface TrimIndex {
   extent: Float64Array;
 }
 
-/** One index per map, weak on it like `bsp.ts`'s polygons — see `trimIndex`. */
+/** One index per map, weak on it like `bsp.ts`'s polygons — see {@link trimIndex}. */
 const trimIndexes = new WeakMap<DoomMap, TrimIndex>();
 
-/** `addTwoSidedSide`'s own scratch — it is not reentrant, so one record serves every side. */
+/** {@link addTwoSidedSide}'s own scratch — it is not reentrant, so one record serves every side. */
 const sideBands = newDrawnBands();
 
 /**

@@ -1,8 +1,8 @@
 /**
  * The "who is standing in this mover" answers `SpecialsController` reaches the level's bodies
- * through (`Occupancy`): crush damage, the corpse squish, and the two obstruction tests that stall
- * or reverse a mover. The controller owns the moving geometry and knows only a sector index — plus,
- * for the two obstruction tests, the height its next step would put the plane at. See
+ * through ({@link Occupancy}): crush damage, the corpse squish, and the two obstruction tests that
+ * stall or reverse a mover. The controller owns the moving geometry and knows only a sector
+ * index — plus, for the two obstruction tests, the height its next step would put the plane at. See
  * docs/specials-crushers.md § Crushers, § Crushed corpses and § Every other mover stops instead.
  */
 import type { DoomMap, Sector } from '../../wad/map.ts';
@@ -17,29 +17,25 @@ import { CORPSE_HEIGHT_FRACTION, CRUSH_DAMAGE } from './defs.ts';
 
 /**
  * The three "who is in this mover" answers `SpecialsController` asks per tic, plus the corpse
- * squish it commands. It owns the moving geometry and reaches the level's bodies through this; the
- * rig in `tests/fixtures/specialsrig.ts` supplies its own to drive a mover into an obstruction with
- * no body anywhere near the sector.
+ * squish it commands. The rig in `tests/fixtures/specialsrig.ts` supplies its own to drive a mover
+ * into an obstruction with no body anywhere near the sector.
  * docs/specials-crushers.md § Crushers, § Crushed corpses and § Every other mover stops instead.
  */
 export interface Occupancy {
-  /** A closing door or lowering ceiling — see `blocksCeilingLower`. */
+  /** A closing door or lowering ceiling — see {@link blocksCeilingLower}. */
   blocksCeilingLower(sectorIndex: number, ceilingHeight: number): boolean;
-  /** A rising lift or floor — see `blocksFloorRise`. */
+  /** A rising lift or floor — see {@link blocksFloorRise}. */
   blocksFloorRise(sectorIndex: number, floorHeight: number): boolean;
   /**
-   * Deals `CRUSH_DAMAGE` when `dealDamage`, and reports vanilla's `nofit` either way — the crusher
-   * slowdown keys off it every tic, not only on a damage one. See `applyCrushDamage`.
+   * Deals {@link CRUSH_DAMAGE} when `dealDamage`, and reports vanilla's `nofit` either way — the
+   * crusher slowdown keys off it every tic, not only on a damage one. See {@link applyCrushDamage}.
    */
   crush(sectorIndex: number, dealDamage: boolean): boolean;
-  /**
-   * Crunches to giblets whatever corpse the sector's planes have left no room for —
-   * `squashCorpses`.
-   */
+  /** Crunches whatever corpse the sector's planes have left no room for — {@link squashCorpses}. */
   squash(sectorIndex: number): void;
 }
 
-/** Where `MoverOccupancy` finds the bodies a mover could catch. */
+/** Where {@link MoverOccupancy} finds the bodies a mover could catch. */
 export interface OccupancySources {
   /**
    * The thing layer, as a getter: `game.ts`'s `loadMap` builds it *after* the
@@ -62,7 +58,7 @@ export interface OccupancySources {
   sprayBlood: (at: Pos3) => void;
 }
 
-/** The `Occupancy` of a level with nothing in it — `SpecialsOptions.occupants`' default. */
+/** The {@link Occupancy} of a level with nothing in it — `SpecialsOptions.occupants`' default. */
 export const NOBODY: Occupancy = {
   blocksCeilingLower: () => false,
   blocksFloorRise: () => false,
@@ -70,15 +66,16 @@ export const NOBODY: Occupancy = {
   squash: () => {},
 };
 
-/** Per map, per sector: `crushNeighborhood`'s answer, memoized as `world.ts`'s `sectorLines` is. */
+/** Per map, per sector: {@link crushNeighborhood}'s answer, memoized as {@link sectorLines} is. */
 const neighborhoods = new WeakMap<DoomMap, Map<number, Set<Sector>>>();
 
 /**
- * What `Occupancy.crush` does: deals `CRUSH_DAMAGE` to the player and to every crushable body the
- * sector's moving plane has left without the headroom to stand in, and sprays blood out of each.
- * Gated on `crushed` rather than on merely standing in the sector, so a crusher parked at the top
- * of its travel deals none. Monsters and barrels share one loop, matching `PIT_ChangeSector`
- * treating any shootable mobj the same. docs/specials-crushers.md § Crushers.
+ * What {@link Occupancy.crush} does: deals {@link CRUSH_DAMAGE} to the player and to every
+ * crushable body the sector's moving plane has left without the headroom to stand in, and sprays
+ * blood out of each. Gated on {@link crushed} rather than on merely standing in the sector, so a
+ * crusher parked at the top of its travel deals none. Monsters and barrels share one loop,
+ * matching `PIT_ChangeSector` treating any shootable mobj the same.
+ * docs/specials-crushers.md § Crushers.
  */
 export function applyCrushDamage(
   world: World,
@@ -159,7 +156,7 @@ export function squashCorpses(world: World, things: ThingLayer | null, sectorInd
   }
 }
 
-/** `Occupancy` over a real level: the functions above, bound to whoever is in it. */
+/** {@link Occupancy} over a real level: the functions above, bound to whoever is in it. */
 export class MoverOccupancy implements Occupancy {
   private world: World;
   private sources: OccupancySources;
@@ -205,11 +202,10 @@ function blocksCeilingLower(
 
 /**
  * A rising lift or non-crushing `FloorMover`. Every body here is measured against
- * `groundCeiling`'s straddle-aware overhead — the lowest ceiling its *box* meets — and never
- * against the rising sector's own: standing half on the rising sector and half in a
- * lower-ceilinged neighbor, `groundFloor` already pins the body's `z` to this sector's rising
- * floor, so the neighbor's own (unmoving) ceiling is what would actually crush it. Without this
- * the mover carries the body up into that neighbor and pins it there.
+ * {@link World.groundCeiling}'s straddle-aware overhead — the lowest ceiling its *box* meets — and
+ * never against the rising sector's own: standing half on the rising sector and half in a
+ * lower-ceilinged neighbor, {@link World.groundFloor} already pins the body's `z` to this sector's
+ * rising floor, so the neighbor's own (unmoving) ceiling is what would actually crush it.
  * docs/specials-movers.md § Every other mover stops instead.
  */
 function blocksFloorRise(
@@ -240,7 +236,7 @@ function blocksFloorRise(
 
 /**
  * The lowest ceiling {@link World.groundCeiling} could return for a body overlapping `sectorIndex`:
- * the lowest over {@link crushNeighborhood}. `blocksFloorRise`'s pre-filter alone.
+ * the lowest over {@link crushNeighborhood}. {@link blocksFloorRise}'s pre-filter alone.
  */
 function lowestCeilingAround(world: World, sectorIndex: number): number {
   let lowest = Infinity;
@@ -250,20 +246,19 @@ function lowestCeilingAround(world: World, sectorIndex: number): number {
   return lowest;
 }
 
-/** `boxOverlapsSector`'s scratch list — the answer is read and dropped inside the one call. */
+/** {@link boxOverlapsSector}'s scratch list — read and dropped inside the one call. */
 const touched: number[] = [];
 
 /**
  * Whether a `radius`-box at (x, y) overlaps `sectorIndex` at all, not just whichever sector its
- * bare centre point resolves to: `World.sectorsTouching`, vanilla's own `touching_sectorlist`,
- * through the same box-vs-line pair the movement code clips with
+ * bare centre point resolves to: {@link World.sectorsTouching}, vanilla's own
+ * `touching_sectorlist`, through the same box-vs-line pair the movement code clips with
  * (docs/world.md § Sectors under a body).
  *
- * A plain point test misses the player standing half in a doorway. Sampling the box's rim instead
- * — the eight corners and edge midpoints, which this used to do — misses a sector *narrower* than
- * the sampling step: GoingDown.wad MAP08's crate-lift is an 8-unit ring (sector 1) around its
- * inner sector, so every rim point of a demon beside it landed either outside the crate or in the
- * middle of it, and the lift read as unobstructed while it carried the demon up.
+ * A plain point test misses the player standing half in a doorway; sampling the box's rim misses
+ * a sector *narrower* than the sampling step (GoingDown.wad MAP08: the 8-unit crate-lift ring,
+ * sector 1).
+ * docs/specials-movers.md § Every other mover stops instead.
  */
 function boxOverlapsSector(world: World, x: number, y: number, radius: number, sectorIndex: number): boolean {
   return world.sectorsTouching(x, y, radius, touched).includes(sectorIndex);
@@ -277,11 +272,11 @@ interface SectorSlot {
 }
 
 /**
- * Whether someone standing in `sectorIndex` doesn't fit in the vertical gap the
- * mover's next step would leave — `blocksCeilingLower`'s test, where the plane
- * coming down is this sector's own. Each body is measured against its **own**
- * height (`MonsterRef.height`), so a door closes on a cyberdemon well before it
- * would on an imp. docs/specials-movers.md § Every other mover stops instead.
+ * Whether someone standing in `sectorIndex` doesn't fit in the vertical gap the mover's next step
+ * would leave — {@link blocksCeilingLower}'s test, where the plane coming down is this sector's
+ * own. Each body is measured against its **own** height (`MonsterRef.height`), so a door closes on
+ * a cyberdemon well before it would on an imp.
+ * docs/specials-movers.md § Every other mover stops instead.
  */
 function headroomBlocked(world: World, things: ThingLayer | null, players: readonly Pos2[], slot: SectorSlot): boolean {
   const { sectorIndex, floorHeight, ceilingHeight } = slot;
@@ -337,17 +332,17 @@ function crushNeighborhood(world: World, sectorIndex: number): ReadonlySet<Secto
   return sectors;
 }
 
-/** `crushNeighborhood`'s scratch line list — read and dropped inside the one call. */
+/** {@link crushNeighborhood}'s scratch line list — read and dropped inside the one call. */
 const nearLines: number[] = [];
 
 /**
  * `PIT_ChangeSector`'s two questions about one body: does the headroom `P_ThingHeightClip` gives it
  * here fall short of its own height, and is the mover's sector what took that headroom away.
- * Measured against the openings its box spans (`World.headroom`), never the sector's gap at its
- * centre point — a body pinned half under a descending ceiling is crushed. Height first: it rejects
- * everyone in an ordinary room for one box walk. docs/specials-crushers.md § Crushers.
+ * Measured against the openings its box spans ({@link World.headroom}), never the sector's gap at
+ * its centre point — a body pinned half under a descending ceiling is crushed. Height first: it
+ * rejects everyone in an ordinary room for one box walk. docs/specials-crushers.md § Crushers.
  *
- * The box stays **scalars**, matching `world.headroom` and `boxOverlapsSector` — the
+ * The box stays **scalars**, matching {@link World.headroom} and {@link boxOverlapsSector} — the
  * coordinate exception in docs/conventions.md § Named arguments; a record here would only move the
  * boundary one call deeper.
  */

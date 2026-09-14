@@ -146,9 +146,8 @@ export async function listReplays(): Promise<ReplayListEntry[]> {
 }
 
 /**
- * Every replay served from `public/game/replay/`, newest first — the ones the engine ships rather
- * than the ones this browser recorded. Read through the store's own degradation, so a stock file
- * this build can't play lists with the sentence saying why. docs/replays.md § Stock replays.
+ * Every replay served from `public/game/replay/`, newest first; a stock file this build can't play
+ * lists with the sentence saying why. docs/replays.md § Stock replays.
  */
 export async function listStockReplays(): Promise<ReplayListEntry[]> {
   const entries = await fetchStockManifest();
@@ -166,8 +165,7 @@ export function versionRefusal(version: unknown): string {
 
 /**
  * The whole replay, or a thrown, user-readable refusal — from the store, or from the served folder
- * for a stock row (docs/replays.md § Stock replays). One id space, so nothing above this call has
- * to know which of the two a replay came from.
+ * for a stock row, in the one id space both share (docs/replays.md § Stock replays).
  */
 export async function readReplay(id: string): Promise<Replay> {
   if (isStockReplay(id)) return readStock(id);
@@ -279,10 +277,11 @@ export function unpackData(data: ReplayData): ReplayData {
 }
 
 /**
- * A stored record's bytes back as the record they frame, read a line at a time — still in the
- * stored form, its smooth columns packed ({@link unpackData} undoes that) — or null where the lines
- * frame none, a record in an earlier layout included. Throws where the bytes are not gzip or a line
- * is not JSON. docs/replays.md § Storage.
+ * A stored record's bytes as the record they frame, still in the stored form: its smooth columns
+ * packed ({@link unpackData} undoes that). Throws where the bytes are not gzip or a line is not
+ * JSON. docs/replays.md § Storage.
+ *
+ * @returns null where the lines frame none, a record in an earlier layout included
  */
 export async function decodeRecord(bytes: Uint8Array<ArrayBuffer>): Promise<Record<string, unknown> | null> {
   let head: RecordHead | null = null;
@@ -318,10 +317,7 @@ export async function importReplay(text: string): Promise<ReplayMeta> {
   return stored;
 }
 
-/**
- * Carries a name entered on one replay over to the next recording. Blank is not remembered:
- * clearing one row's credit drops that row's, not the name every later replay would carry.
- */
+/** Carries a name entered on one replay over to the next recording; blank is not remembered. */
 function rememberPlayerName(name: string): void {
   if (!name || name === playerName) return;
   playerName = name;
@@ -341,11 +337,12 @@ async function readStock(id: string): Promise<Replay> {
 }
 
 /**
- * A download file validated into a replay: the import's path and a stock file's, which are the two
- * ways a record reaches this build from outside the store. `message` is what a shape this build
- * cannot read is called where the caller stands — a foreign file is "not a TopDoom replay", a
- * served one is damaged — while a version mismatch says so in its own words either way. The
- * returned `data` is still the stored form; `id` is the caller's to settle.
+ * A download file validated into a replay — the import's path and a stock file's.
+ *
+ * @param message  what a shape this build cannot read is called where the caller stands: a foreign
+ *                 file is "not a TopDoom replay", a served one damaged. A version mismatch says so
+ *                 in its own words either way.
+ * @returns `data` still in the stored form; `id` is the caller's to settle
  */
 async function decodeFile(
   text: string,
@@ -484,10 +481,7 @@ const readMeta = (id: string): Promise<unknown> => readStoredMeta(store(), 'repl
 const putReplay = (meta: ReplayMeta, data: StoredState): Promise<void> => putStored(store(), 'replay', meta, data);
 const freshId = (): Promise<string> => freshStoredId(store());
 
-/**
- * Serialized without the savegames' float rounding: a replay's snapshots must restore the exact
- * state the recording ran on, and a shortest-roundtrip double reads back bit-identical.
- */
+/** Serialized without the savegames' float rounding, bit-exact — docs/replays.md § The record. */
 async function encodeData(id: string, data: ReplayData): Promise<StoredState> {
   return { id, encoding: STATE_ENCODING, bytes: await compressLines(recordLines(data)) };
 }
@@ -499,9 +493,8 @@ async function encodeData(id: string, data: ReplayData): Promise<StoredState> {
 type RecordHead = Omit<ReplayData, 'slots' | 'snapshots'> & { slots: number; snapshots: number };
 
 /**
- * `data` as a stored record's lines: its {@link RecordHead}, every slot with its smooth columns
- * packed ({@link packTics}), then every snapshot — a JSON document a line, so nothing on the way to
- * the store is a string larger than one slot or one snapshot. docs/replays.md § Storage.
+ * `data` as a stored record's lines, a JSON document each: its {@link RecordHead}, every slot with
+ * its smooth columns packed ({@link packTics}), then every snapshot. docs/replays.md § Storage.
  */
 function* recordLines(data: ReplayData): Generator<string> {
   const { slots, snapshots, ...rest } = data;

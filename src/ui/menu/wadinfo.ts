@@ -43,8 +43,8 @@ export class WadInfoUi implements MenuOverlay {
   }
 
   /**
-   * Closes the popup, reporting whether it *was* open — the same explicit hand-off `AboutUi.close`
-   * and `LibraryUi.close` get, so one ESC dismisses one thing (docs/menu-wads.md § WAD Library).
+   * Closes the popup, so one ESC dismisses one thing (docs/menu-wads.md § WAD Library).
+   * @returns whether it *was* open
    */
   close(): boolean {
     if (!this.shell.hide()) return false;

@@ -25,10 +25,7 @@ import {
   type WadFontRecolor,
 } from './wadfont.ts';
 
-/**
- * The kill/item/secret totals the level-stats strip shows — see `WadFont`'s doc and
- * docs/hud.md § Level stats.
- */
+/** The kill/item/secret totals the level-stats strip shows — docs/hud.md § Level stats. */
 export interface LevelStats {
   kills: number;
   totalKills: number;
@@ -37,33 +34,27 @@ export interface LevelStats {
   secrets: number;
   totalSecrets: number;
   /**
-   * Wall-clock seconds spent in the level so far — see `Hud.drawTimer`'s doc for when this stops
-   * advancing.
+   * Simulated seconds spent in the level so far (`Level.time`) — see {@link Hud.drawTimer}'s doc
+   * for when this stops advancing.
    */
   elapsedSeconds: number;
 }
 
 /**
- * Sampled from `ARM1A0` (the green armor pickup) — there's no vanilla precedent for
- * highlighting a *completed* kill/item/secret category (vanilla's intermission screen prints
- * every percentage in the same font/color regardless of value), so this is a UI addition tuned
- * by feel; only the choice of color is WAD-derived, for the same reason `COLOR_YELLOW` is.
- *
- * Exported for `ui/hud/intermission.ts`, which applies the same complete-category cue to its
- * percentages.
+ * Sampled from `ARM1A0` (the green armor pickup) for a completed kill/item/secret category — a UI
+ * addition with no vanilla precedent, tuned by feel; only the choice of color is WAD-derived, for
+ * the same reason {@link COLOR_YELLOW} is. docs/hud.md § Level stats.
  */
 export const LEVEL_STATS_GREEN: readonly [number, number, number] = [111, 239, 103];
 
 /**
  * How much health/armor is left, read as a color: over 100 blue, then green, then yellow, and
- * `STTNUM`'s own undyed red once it's low enough to be the thing you're watching. Vanilla prints
- * both in that red whatever the number says, so — like `LEVEL_STATS_GREEN`'s completion cue — the
- * tiers are this engine's addition and **tuned by feel**; only the colors are WAD-derived
- * (`ARM2A0`, `ARM1A0`, `STYSNUM1`), the convention every other color in this HUD follows. The top
- * tier is shared with the crosshair, which reports the same over-100 state (`COLOR_BLUE`).
+ * `STTNUM`'s own undyed red once it's low enough to be the thing you're watching. The tiers are
+ * this engine's addition and **tuned by feel**; only the colors are WAD-derived (`ARM2A0`,
+ * `ARM1A0`, `STYSNUM1`). docs/hud.md § The HUD.
  *
- * Ordered high to low: `TieredNumbers` takes the first tier the value reaches, and the undyed red
- * below all of them.
+ * Ordered high to low: {@link TieredNumbers} takes the first tier the value reaches, and the undyed
+ * red below all of them.
  */
 const VALUE_TIERS: readonly { atLeast: number; recolor: WadFontRecolor }[] = [
   { atLeast: 101, recolor: COLOR_BLUE },
@@ -84,13 +75,11 @@ export function formatClock(elapsedSeconds: number): string {
 }
 
 /**
- * One of the intermission's three percentages. Truncating rather than rounding is
- * `wi_stuff.c`'s own `plrs[me].skills * 100 / wbs->maxkills` — C integer division — so 99 of 100
- * kills reads 99%, not 100%.
+ * One of the intermission's three percentages. Truncating rather than rounding is `wi_stuff.c`'s
+ * own `plrs[me].skills * 100 / wbs->maxkills` — C integer division — so 99 of 100 kills reads 99%.
  *
- * A total of 0 reads 100%: vanilla would divide by zero there (no map it shipped has a zero
- * total), and "nothing to find, so you found it all" is the same rule the HUD strip's
- * `found >= total` completion cue already applies.
+ * A total of 0 reads 100%, where vanilla would divide by zero: "nothing to find, so you found it
+ * all" is the rule the HUD strip's `found >= total` completion cue already applies.
  */
 export function percentOf(found: number, total: number): number {
   return total <= 0 ? 100 : Math.floor((found * 100) / total);
@@ -110,10 +99,8 @@ const KEY_ICONS: Record<KeyColor, string> = {
 };
 
 /**
- * The skull keys' own pickup sprites — shown in a color's slot when only the
- * skull of that color is owned. Cards and skulls are separate pickups because
- * Boom's generalized locks tell them apart; a color's panel lights for either.
- * docs/hud.md § The HUD.
+ * The skull keys' own pickup sprites — shown in a color's slot when only the skull of that color is
+ * owned. docs/hud.md § The HUD.
  */
 const KEY_SKULL_ICONS: Record<KeyColor, string> = {
   blue: 'BSKUA0',
@@ -122,8 +109,8 @@ const KEY_SKULL_ICONS: Record<KeyColor, string> = {
 };
 
 /**
- * The two slot names per color, pre-built: `update` runs every frame and must not compose them per
- * call.
+ * The two slot names per color, pre-built: {@link Hud.update} runs every frame and must not
+ * compose them per call.
  */
 const KEY_SLOTS_BY_COLOR: Record<KeyColor, { card: KeySlot; skull: KeySlot }> = {
   blue: { card: 'blueCard', skull: 'blueSkull' },
@@ -132,16 +119,10 @@ const KEY_SLOTS_BY_COLOR: Record<KeyColor, { card: KeySlot; skull: KeySlot }> = 
 };
 
 /**
- * Each powerup's own ground-pickup sprite, the same convention every other
- * icon here already follows. A powerup has no other on-screen presence at all
- * — unlike health or ammo there's no number that changes, and unlike a key
- * there's no door that opens — so this strip is the only way to know one is
- * running, and (for the timed ones) how much of it is left.
- *
- * Berserk is the one exception: it never gets a row in the strip at all (see
- * `STRIP_POWER_IDS`) since it already has an on-screen presence — the health
- * icon itself swaps to `PSTRA0` while it's held, the same idea as the armor
- * icon already swapping between green/blue by type.
+ * Each powerup's own ground-pickup sprite, the same convention every other icon here follows: the
+ * powerup strip is the only way to know one is running. Berserk never gets a row
+ * ({@link STRIP_POWER_IDS}) — its sprite swaps in for the health icon instead.
+ * docs/hud.md § The HUD.
  */
 const POWER_ICONS: Record<PowerId, string> = {
   invulnerability: 'PINVA0',
@@ -154,7 +135,7 @@ const POWER_ICONS: Record<PowerId, string> = {
 
 /**
  * The powerup strip's own rows — every power except berserk, which swaps the health icon instead
- * (see `POWER_ICONS`'s doc).
+ * (see {@link POWER_ICONS}'s doc).
  */
 const STRIP_POWER_IDS = POWER_IDS.filter((p) => p !== 'berserk');
 
@@ -165,12 +146,11 @@ const STRIP_POWER_IDS = POWER_IDS.filter((p) => p !== 'berserk');
 const BACKPACK_ICON = 'BPAKA0';
 
 /**
- * Draws a WAD picture lump into a canvas at its native pixel size; CSS scales
- * it up with `image-rendering: pixelated`. Reusing the same pickup-sprite
- * graphics the world renders items with (rather than hand-drawn icons) keeps
- * the HUD visually consistent with whichever WAD is loaded. Returns whether the
- * lump was there to draw — `ui/hud/levelcard.ts` shares this to blit a level-name
- * patch, and falls back to its own text when it isn't.
+ * Draws a WAD picture lump into a canvas at its native pixel size; CSS scales it up with
+ * `image-rendering: pixelated`. docs/hud.md § The HUD.
+ *
+ * @returns whether the lump was there to draw — `ui/hud/levelcard.ts` shares this to blit a
+ *          level-name patch, and falls back to its own text when it isn't
  */
 export function drawIcon(canvas: HTMLCanvasElement, gfx: GraphicsBank, lump: string): boolean {
   const bmp = gfx.picture(lump);
@@ -183,10 +163,10 @@ export function drawIcon(canvas: HTMLCanvasElement, gfx: GraphicsBank, lump: str
 }
 
 /**
- * Draws one line of `WadFont` text into a canvas sized to fit it exactly, at native pixel size for
- * CSS to scale like `drawIcon`'s art. The shared half of every card and popup that prints a line —
- * `ui/hud/intermission.ts`, `ui/hud/levelcard.ts`, `ui/hud/endcard.ts`, `ui/hud/deathoverlay.ts` —
- * which is why it sits here beside `drawIcon` rather than in any one of them. See docs/hud.md.
+ * Draws one line of {@link WadFont} text into a canvas sized to fit it exactly, at native pixel
+ * size for CSS to scale like {@link drawIcon}'s art. The shared half of every card and popup that
+ * prints a line, which is why it sits here beside {@link drawIcon} rather than in any one of them.
+ * See docs/hud.md.
  */
 export function drawText(canvas: HTMLCanvasElement, font: WadFont, text: string): void {
   canvas.width = Math.max(1, font.measure(text));
@@ -197,16 +177,14 @@ export function drawText(canvas: HTMLCanvasElement, font: WadFont, text: string)
 }
 
 /**
- * How many digit cells every readout in `#game-hud` reserves — vanilla's own `ST_HEALTHWIDTH` /
- * `ST_ARMORWIDTH` / `ST_AMMOWIDTH` (`st_stuff.c`), all 3. Reserving the block rather than sizing
- * it to the current value is also what keeps a panel from resizing — and shuffling every panel
- * beside it — when a count crosses 10 or 100, the same rule `.hud-weapon`'s fixed column follows.
+ * How many digit cells every readout in `#game-hud` reserves, whatever the value — vanilla's own
+ * `ST_HEALTHWIDTH` / `ST_ARMORWIDTH` / `ST_AMMOWIDTH` (`st_stuff.c`), all 3. docs/hud.md § The HUD.
  */
 const NUMBER_CELLS = 3;
 
 /**
- * What a `NumberField` draws through: `WadNumbers` itself where the readout prints in one color,
- * `TieredNumbers` for health and armor, which pick theirs from the value.
+ * What a {@link NumberField} draws through: {@link WadNumbers} itself where the readout prints in
+ * one color, {@link TieredNumbers} for health and armor, which pick theirs from the value.
  */
 interface NumberSource {
   readonly height: number;
@@ -215,9 +193,9 @@ interface NumberSource {
 }
 
 /**
- * The tall digits, colored by `VALUE_TIERS`. A recolor bakes into the glyphs, so this holds one
- * built `WadNumbers` per tier and picks between them per value; all of them measure the same,
- * being the same lumps retinted, so the choice stays inside here and callers see one digit set.
+ * The tall digits, colored by {@link VALUE_TIERS}. A recolor bakes into the glyphs, so this holds
+ * one built {@link WadNumbers} per tier and picks between them per value; all of them measure the
+ * same, so the choice stays inside here and callers see one digit set.
  */
 class TieredNumbers implements NumberSource {
   readonly height: number;
@@ -249,10 +227,9 @@ class TieredNumbers implements NumberSource {
 
 /**
  * One sprite-digit readout: its canvas, the digit set it draws with, and the value last drawn
- * into it. `Hud.update` runs every frame while almost none of these change from one to the next,
- * so the memo is what keeps the rasterizing to the numbers that actually moved. A `null` value
- * hides the canvas — the powerup strip's one `Infinity`-duration row has no countdown to show,
- * and a blank three-cell block would still reserve its width beside the icon.
+ * into it. {@link Hud.update} runs every frame while almost none of these change from one to the
+ * next, so the memo is what keeps the rasterizing to the numbers that actually moved. A `null`
+ * value hides the canvas rather than leaving a blank block (docs/hud.md § The HUD).
  */
 class NumberField {
   private ctx: CanvasRenderingContext2D;
@@ -296,8 +273,8 @@ export class Hud {
   private itemsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-items')!;
   private secretsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-secrets')!;
   /**
-   * Mirrors `levelStatsRoot`: a plain sibling of `#game-hud` inside `#hud-bar`, on its right this
-   * time.
+   * Mirrors {@link Hud.levelStatsRoot}: a plain sibling of `#game-hud` inside `#hud-bar`, on its
+   * right this time.
    */
   private timerCanvas = document.getElementById('hud-timer') as HTMLCanvasElement;
   private recordingEl = document.getElementById('hud-recording')!;
@@ -436,7 +413,9 @@ export class Hud {
     this.powerPanel.classList.toggle('hidden', !anyPower);
   }
 
-  /** One hidden icon (+ its countdown slot) in the powerup strip, in STRIP_POWER_IDS order. */
+  /**
+   * One hidden icon (+ its countdown slot) in the powerup strip, in {@link STRIP_POWER_IDS} order.
+   */
   private addPowerRow(gfx: GraphicsBank, lump: string): { row: HTMLElement; value: NumberField } {
     const row = document.createElement('div');
     row.className = 'hidden';
@@ -452,12 +431,8 @@ export class Hud {
 
   /**
    * Composes one `hud-levelstats` line — a red `"<label>: "` run, then a `"<found>/<total>"` run
-   * starting at `labelColumnWidth` rather than wherever this line's own (proportionally-spaced,
-   * so differently-wide) label happens to end, so the three lines' numbers form a flush column
-   * instead of drifting with each label's width. The number run switches from yellow to green
-   * once `found` reaches `total` — a hit-your-goal cue with no vanilla equivalent (see
-   * `LEVEL_STATS_GREEN`'s doc). Same "canvas sized to its content, CSS scales it" pattern
-   * `drawIcon` uses for a WAD picture lump.
+   * starting at {@link Hud.labelColumnWidth} so the three lines' numbers form a flush column.
+   * The number run switches to green once `found` reaches `total` ({@link LEVEL_STATS_GREEN}).
    */
   private drawStatLine(canvas: HTMLCanvasElement, label: string, found: number, total: number): void {
     const redText = `${label}: `;
@@ -472,8 +447,10 @@ export class Hud {
 
   /**
    * Draws the level clock, right of `#game-hud`, in the same native STCFN red as the strip's
-   * labels. `elapsedSeconds` is `Game`'s to freeze (on death or level completion) — this method
-   * only ever formats whatever it's handed.
+   * labels.
+   *
+   * @param elapsedSeconds  `Game`'s to freeze (on death or level completion) — this method only
+   *                        ever formats whatever it's handed
    */
   private drawTimer(elapsedSeconds: number): void {
     const text = formatClock(elapsedSeconds);

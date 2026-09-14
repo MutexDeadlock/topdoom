@@ -1,6 +1,6 @@
 /**
- * `FlatFader`: the overhanging floors and ceilings a camera→target sightline pierces, dissolved so
- * the target under them stays visible. See docs/render-occlusion.md.
+ * {@link FlatFader}: the overhanging floors and ceilings a camera→target sightline pierces,
+ * dissolved so the target under them stays visible. See docs/render-occlusion.md.
  */
 import * as THREE from 'three';
 import type { FlatSurface } from '../mapmesh.ts';
@@ -28,22 +28,22 @@ export class FlatFader {
   private meshes: Map<string, THREE.Mesh>;
   /**
    * Damped occlusion factor per drawn *vertex*, not per fan, so a big platform fades around the
-   * sightline instead of whole. `vertexStart` indexes into it.
+   * sightline instead of whole. {@link FlatFader.vertexStart} indexes into it.
    */
   private alpha: Float32Array;
-  /** What `commit` last wrote per vertex — `WallFader.lastCombined`'s twin. */
+  /** What {@link FlatFader.commit} last wrote per vertex — `WallFader.lastCombined`'s twin. */
   private lastCombined: Float32Array;
   /**
-   * Where each surface's vertices start in `alpha`/`lastCombined`, plus the count the layout was
-   * built from (a mover rebuild can repoint a fan at a differently-shaped one).
+   * Where each surface's vertices start in {@link FlatFader.alpha}/{@link FlatFader.lastCombined},
+   * plus the count the layout was built from (a mover rebuild can reshape a fan).
    */
   private vertexStart: Int32Array;
   private vertexCount: Int32Array;
   /** This surface's target alpha per vertex, folded across pierce points before damping. */
   private scratch = new Float64Array(0);
   /**
-   * `WallFader.crossings`'s twin — `update`'s own bag, for a flat fader that stands alone, and
-   * allocated on first use for the same reason.
+   * `WallFader.crossings`'s twin — {@link FlatFader.update}'s own bag, for a flat fader that stands
+   * alone, and allocated on first use for the same reason.
    */
   private pierces: FadeCrossings | null = null;
   /** This frame's per-target hole dials and cut planes — `WallFader` keeps the twin. */
@@ -56,29 +56,29 @@ export class FlatFader {
   private boundY = new Float64Array(0);
   private boundR = new Float64Array(0);
   /**
-   * Which way each fan's ring winds, memoised beside the bound circles: `segmentMeetsConvexPolygon`
-   * needs it, and a shoelace per fan per target per frame is pure repeat over rings that only a
-   * mover rebuild reshapes.
+   * Which way each fan's ring winds, memoised beside the bound circles:
+   * {@link segmentMeetsConvexPolygon} needs it, and a shoelace per fan per target per frame is pure
+   * repeat over rings that only a mover rebuild reshapes.
    */
   private windSign = new Int8Array(0);
   /**
-   * Whether `update` moved any of a fan's vertices this frame — with a fan diced to hundreds of
-   * vertices, a settled one must cost nothing to re-commit.
+   * Whether {@link FlatFader.update} moved any of a fan's vertices this frame — with a fan diced to
+   * hundreds of vertices, a settled one must cost nothing to re-commit.
    */
   private moved = new Uint8Array(0);
   /**
    * Whether any of a fan's vertices is currently below 1 — a fan that is neither faded nor pierced
-   * this frame has nothing to damp, and `update` skips its vertices entirely.
+   * this frame has nothing to damp, and {@link FlatFader.update} skips its vertices entirely.
    */
   private faded = new Uint8Array(0);
-  /** How many entries of `faded` are set, so `idle` costs no scan. */
+  /** How many {@link FlatFader.faded} entries are set, so {@link FlatFader.idle} costs no scan. */
   private fadedCount = 0;
   /**
-   * The base x fog scale `commit` last applied per fan, so a fog change still reaches a settled
-   * one.
+   * The base x fog scale {@link FlatFader.commit} last applied per fan, so a fog change still
+   * reaches a settled one.
    */
   private lastScale = new Float64Array(0);
-  /** Fans a sightline could reach at all this frame, refilled per `collectPierces` — see there. */
+  /** Fans a sightline could reach at all, refilled per {@link FlatFader.collectPierces}. */
   private candidates = new Int32Array(0);
   /**
    * `WallFader.maxAlphaByKey`'s twin, same opt-in — the two are read together, since one mesh can
@@ -87,7 +87,10 @@ export class FlatFader {
   readonly maxAlphaByKey = new Map<string, number>();
   /** `WallFader.dirtyBuffers`'s twin, reused for the same reason. */
   private dirtyBuffers = new Set<THREE.BufferAttribute>();
-  /** `WallFader.attrs`'s twin, re-resolved by `buildLayout` and `invalidateWritten`. */
+  /**
+   * `WallFader.attrs`'s twin, re-resolved by {@link FlatFader.buildLayout} and
+   * {@link FlatFader.invalidateWritten}.
+   */
   private attrs: (THREE.BufferAttribute | undefined)[] = [];
   private trackVisibility: boolean;
 
@@ -109,7 +112,7 @@ export class FlatFader {
    *
    * A target's crossing point depends only on the height, so the first fan to claim one settles
    * that height for that target. `WallFader.collectCrossings`'s twin, appending to a bag the whole
-   * frame shares for the same reason; pairs with `applyPierces`, and runs first.
+   * frame shares for the same reason; pairs with {@link FlatFader.applyPierces}, and runs first.
    */
   collectPierces(frame: FadeFrame, out: FadeCrossings): void {
     const { camX, camY, camZ, targets } = frame;
@@ -204,14 +207,9 @@ export class FlatFader {
   }
 
   /**
-   * Camera position in DOOM (x, y, height) coordinates, and every point a
-   * floor between the camera and it should fade for — see `WallFader.update`'s
-   * doc for why this is a list rather than just the player.
-   *
-   * Two passes, the same split `WallFader` runs on: `collectPierces` finds
-   * where the view is genuinely blocked, then a ball around each of those
-   * points dissolves every fan **at that height** it reaches. Over this fader's
-   * own pierces alone, for the reason `WallFader.update`'s doc gives.
+   * Both passes over this fader's own pierces alone, for the reason `WallFader.update`'s doc gives:
+   * {@link FlatFader.collectPierces} finds where the view is genuinely blocked, then a ball around
+   * each of those points dissolves every fan **at that height** it reaches.
    */
   update(frame: FadeFrame): void {
     const bag = (this.pierces ??= new FadeCrossings());
@@ -221,12 +219,12 @@ export class FlatFader {
   }
 
   /**
-   * Pass two, over every pierce the frame filed — this fader's own and every
-   * other flat fader's: a ball around each of them dissolves every fan **at
-   * that height** it reaches. `WallFader.applyCrossings`'s twin.
+   * Pass two, over every pierce the frame filed — this fader's own and every other flat fader's: a
+   * ball around each of them dissolves every fan **at that height** it reaches.
+   * `WallFader.applyCrossings`'s twin.
    *
-   * Runs after `collectPierces`, which is what refreshes the vertex layout the
-   * walk below indexes through.
+   * Runs after {@link FlatFader.collectPierces}, which is what refreshes the vertex layout the walk
+   * below indexes through.
    */
   applyPierces(frame: FadeFrame, hits: FadeCrossings): void {
     const { dt, camX, camY, targets } = frame;
@@ -332,8 +330,8 @@ export class FlatFader {
   }
 
   /**
-   * `WallFader.invalidateWritten`'s twin — `moved` and `lastScale` are this fader's own record of
-   * what the buffers hold.
+   * `WallFader.invalidateWritten`'s twin — {@link FlatFader.moved} and {@link FlatFader.lastScale}
+   * are this fader's own record of what the buffers hold.
    */
   invalidateWritten(): void {
     this.lastCombined.fill(NaN);
@@ -470,7 +468,7 @@ export class FlatFader {
  * How much fog of war lets a fan through. An ordinary flat is one leaf's own floor and answers with
  * its own subsector; a solid structure's cap belongs to no leaf and is revealed by any side of the
  * structure being seen, so it takes the **most** revealed of the leaves its ring borders
- * (`FlatSurface.revealedBy`, docs/render-solids.md).
+ * ({@link FlatSurface.revealedBy}, docs/render-solids.md).
  */
 function fogAlpha(surface: FlatSurface, fogAlphaOf: (subsector: number) => number): number {
   const also = surface.revealedBy;

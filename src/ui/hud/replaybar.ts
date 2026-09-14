@@ -49,8 +49,8 @@ const SKIP_SECONDS = 5;
 
 /**
  * How long a desync holds the panel open. Long enough to catch the eye of someone watching the
- * middle of the screen, short enough not to sit over the level for the rest of the run — tuned by
- * feel. The verdict itself stays in the status text either way; this is only what makes it
+ * middle of the screen, short enough not to sit over the level for the rest of the run —
+ * tuned by feel. The verdict itself stays in the status text either way; this is only what makes it
  * noticed. docs/replays.md § Playback.
  */
 const DESYNC_ALERT_MS = 6000;

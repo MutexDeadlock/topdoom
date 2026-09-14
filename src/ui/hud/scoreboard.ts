@@ -24,8 +24,8 @@ const NAME_SHADE = 5;
 
 /**
  * The least HSL lightness a name is drawn at, lifting the dark ramps (red's sixth shade is
- * `#7f1b1b`) to where they read as text on the board; hue and saturation stay the ramp's. Tuned by
- * feel.
+ * `#7f1b1b`) to where they read as text on the board; hue and saturation stay the ramp's.
+ * Tuned by feel.
  */
 const NAME_MIN_LIGHTNESS = 0.55;
 

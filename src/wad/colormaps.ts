@@ -20,16 +20,10 @@ export interface ColorTint {
 }
 
 /**
- * The colour cast of the colormap lump called `name`, or null when the WAD has
- * no such lump or it is the wrong size (in which case the name is an ordinary
- * texture — Boom decides the same way, `p_setup.c: P_LoadSideDefs2`).
- *
- * The cast is read off **row 0**, the unlit-by-distance row, as the ratio of
- * the summed channel through the remap to the summed channel without it. A
- * water colormap maps the whole palette toward its blues, so its red and green
- * sums shrink while blue holds — which is exactly the multiply the view wants.
- * Reproducing the full remap would mean a per-pixel palette lookup this
- * renderer has no place for; the cast is the part that survives into RGB.
+ * The colour cast of the colormap lump called `name`, or null when the WAD has no such lump or it
+ * is the wrong size (in which case the name is an ordinary texture — Boom decides the same way,
+ * `p_setup.c: P_LoadSideDefs2`). The cast is read off **row 0**, the unlit-by-distance row, as a
+ * per-channel ratio — docs/wad.md § Colormap lumps.
  */
 export function colormapTint(wad: Wad, name: string): ColorTint | null {
   const trimmed = name.trim();

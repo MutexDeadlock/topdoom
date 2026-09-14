@@ -19,8 +19,8 @@ const CHANNELS_PER_BANK = 9;
  * Two-operator channels. **Deliberately not the hardware's 18** (the OPL3's two banks of nine):
  * four banks are instantiated instead, because 18 is where a busy score starts losing notes — the
  * same reasoning as `CHANNELS` = 32 in `audio/audio.ts`, and it costs nothing, since an idle
- * channel is skipped in `render`. Nothing above this cares: `channelRegisters` addresses the extra
- * banks the way the OPL3 addresses its second. See docs/music.md § The chip.
+ * channel is skipped in {@link OplChip.render}. Nothing above this cares: {@link channelRegisters}
+ * addresses the extra banks the way the OPL3 addresses its second. See docs/music.md § The chip.
  */
 export const OPL_CHANNELS = 36;
 
@@ -113,7 +113,7 @@ const DC_BLOCK_HZ = 15;
 const WAVE_STEPS = 1024;
 const WAVES = buildWaves();
 
-/** Gain for an attenuation in `ATTEN_UNIT_DB` units, silent past the envelope's 96 dB. */
+/** Gain for an attenuation in {@link ATTEN_UNIT_DB} units, silent past the envelope's 96 dB. */
 const GAIN = buildGainTable();
 
 /**
@@ -155,13 +155,16 @@ class Operator {
   phaseStep = 0;
 
   state: EnvelopeState = 'off';
-  /** Attenuation in `ATTEN_UNIT_DB` units: 0 is full volume, `MAX_ATTEN` silence. */
+  /** Attenuation in {@link ATTEN_UNIT_DB} units: 0 is full volume, {@link MAX_ATTEN} silence. */
   envelope = MAX_ATTEN;
   /** Per-sample factor for the attack's exponential approach, and the linear steps for the rest. */
   attackFactor = 0;
   decayStep = 0;
   releaseStep = 0;
-  /** `sustainLevel` in attenuation units, and `totalLevel` plus key scaling in the same. */
+  /**
+   * {@link Operator.sustainLevel} in attenuation units, and {@link Operator.totalLevel} plus key
+   * scaling in the same.
+   */
   sustainAtten = 0;
   fixedAtten = 0;
 
@@ -184,10 +187,10 @@ class Channel {
   /** The OPL3's stereo gates (register 0xC0 bits 4 and 5) — a channel is on a side or it isn't. */
   leftGate = true;
   rightGate = true;
-  /** Where the channel sits between the two, as a constant-power pair — see `setPan`. */
+  /** Where the channel sits between the two, as a constant-power pair — see {@link OplChip.setPan}. */
   panLeft = Math.SQRT1_2;
   panRight = Math.SQRT1_2;
-  /** The two multiplied together, so `render` needs neither branch nor lookup. */
+  /** The two multiplied together, so {@link OplChip.render} needs neither branch nor lookup. */
   gainLeft = Math.SQRT1_2;
   gainRight = Math.SQRT1_2;
 }
@@ -206,23 +209,18 @@ export class OplChip {
   private operatorAt = new Map<number, { op: Operator; channel: Channel }>();
 
   /**
-   * Samples per second of *output*, which is the `AudioContext`'s rate and not
-   * the chip's own `OPL_RATE`. Rendering straight at the destination rate is
-   * what keeps the browser from resampling every scheduled buffer separately —
-   * that reset its interpolator at each chunk edge and left an audible seam
-   * four times a second. Register semantics are unaffected: an F-number still
-   * means the frequency `OPL_RATE` says it does, and only the per-sample steps
-   * derived from it change. docs/music.md § The chip.
+   * Samples per second of *output*, which is the `AudioContext`'s rate and not the chip's own
+   * {@link OPL_RATE} — rendering straight at the destination rate keeps the browser from resampling
+   * every scheduled buffer separately. Register semantics are unaffected: an F-number still means
+   * the frequency {@link OPL_RATE} says it does. docs/music.md § The chip.
    */
   private rate: number;
   /** `OPL_RATE / rate`, the one factor that carries the chip's timebase into this one. */
   private timebase: number;
 
   /**
-   * The channels `render` actually has to sum, rebuilt at the top of each call
-   * rather than tested per sample: a silent channel can only come alive through
-   * a register write, and those land between calls. Kept as a field so a render
-   * allocates nothing. See docs/music.md § The chip.
+   * The channels {@link OplChip.render} actually has to sum, rebuilt at the top of each call; a
+   * field so a render allocates nothing. See docs/music.md § The chip.
    */
   private live: Channel[] = [];
 
@@ -230,7 +228,7 @@ export class OplChip {
   private vibratoPhase = 0;
   private tremoloDepth = TREMOLO_DB[0];
   private vibratoDepth = VIBRATO_CENTS[0];
-  /** One-pole DC blocker state, per side — see `DC_BLOCK_HZ`. */
+  /** One-pole DC blocker state, per side — see {@link DC_BLOCK_HZ}. */
   private dcInLeft = 0;
   private dcOutLeft = 0;
   private dcInRight = 0;
@@ -276,7 +274,7 @@ export class OplChip {
   /**
    * One register write, addressed as the chip is: the high byte selects a bank
    * of nine channels (0x000 the first, 0x100 the second, as on the OPL3, and on
-   * up through this chip's extra ones — see `OPL_CHANNELS`), the low byte the
+   * up through this chip's extra ones — see {@link OPL_CHANNELS}), the low byte the
    * register within it. The OPL3 enable bit (0x105) and percussion mode (0xBD
    * bits 0-5) are accepted and ignored: this always runs as a melodic chip.
    */
@@ -338,9 +336,8 @@ export class OplChip {
     const { op, channel } = slot;
     // Each operator group spans 0x20 of address space, not 0x10: slots 0x10-0x15
     // (channels 6-8) cross the nibble, putting their writes at 0x30-0x35,
-    // 0x50-0x55, 0x70-0x75, 0x90-0x95 and 0xF0-0xF5. Dispatching on `low & 0xf0`
-    // dropped every one of those — a third of the chip never received a patch
-    // and stayed silent at its power-up attack rate of 0.
+    // 0x50-0x55, 0x70-0x75, 0x90-0x95 and 0xF0-0xF5 — so the dispatch masks with
+    // `low & 0xe0`; `low & 0xf0` would leave a third of the chip unpatched.
     switch (low & 0xe0) {
       case 0x20:
         op.tremolo = (value & 0x80) !== 0;
@@ -379,13 +376,10 @@ export class OplChip {
    * Where a channel sits in the stereo image: 0 hard left, 1 hard right, as a
    * constant-power pair of gains.
    *
-   * **Deliberately finer than the chip's own pan**, which is the two gate bits
-   * above and nothing else — DMX therefore quantizes a score's pan to hard
-   * left, hard right or centre, and that is audible as damage rather than as
-   * width: E1M1's two guitars ask for 24 and 104 of 127, and the gate puts one
-   * entirely in each ear, so each side is left with a riff full of holes. The
-   * gates still apply on top of this, so a bank that writes them keeps its
-   * meaning. docs/music.md § From notes to registers.
+   * **Deliberately finer than the chip's own pan**, which is the two gate bits above and nothing
+   * else — DMX therefore quantizes a score's pan to hard left, hard right or centre, audible as
+   * damage rather than width (E1M1's two guitars). The gates still apply on top of this, so a bank
+   * that writes them keeps its meaning. docs/music.md § From notes to registers.
    */
   setPan(index: number, pan: number): void {
     const channel = this.channels[index];
@@ -397,12 +391,10 @@ export class OplChip {
   }
 
   /**
-   * How far below full scale whatever is left on a channel currently sits, in
-   * the envelope's own attenuation units — `Infinity` once nothing reaches the
-   * output at all. A read-only peek for `OplSynth.allocate`, which re-keys the
-   * *least audible* free channel so a still-ringing release tail isn't the one
-   * that gets cut (docs/music.md § From notes to registers). Real DMX had no
-   * such view into the chip; an emulated one does.
+   * How far below full scale whatever is left on a channel currently sits, in the envelope's own
+   * attenuation units — `Infinity` once nothing reaches the output at all. A read-only peek for
+   * `OplSynth.allocate`; real DMX had no such view into the chip, an emulated one does.
+   * docs/music.md § From notes to registers.
    */
   channelAttenuation(index: number): number {
     const channel = this.channels[index];
@@ -494,16 +486,14 @@ export class OplChip {
   }
 
   /**
-   * Key-on restarts the phase and re-enters attack from wherever the envelope
-   * currently sits — the chip does not reset it to silence first, which is what
-   * makes a retriggered note continue rather than click.
+   * Key-on restarts the phase and re-enters attack from wherever the envelope currently sits — the
+   * chip does not reset it to silence first, which is what makes a retriggered note continue rather
+   * than click.
    *
-   * The feedback history is cleared with the phase, and that is load-bearing
-   * rather than tidiness: an operator only writes `out`/`prevOut` on the samples
-   * its channel is *live* for, so a note keyed on after a silence would
-   * otherwise open with whatever the last note through that channel left there
-   * — a value that depends on where the render calls happened to fall.
-   * Rendering has to be identical however the output is cut into chunks.
+   * The feedback history is cleared with the phase, and that is load-bearing: an operator only
+   * writes {@link Operator.out}/{@link Operator.prevOut} on the samples its channel is *live* for,
+   * so rendering would otherwise depend on how the output is cut into chunks.
+   * docs/music.md § The chip.
    */
   private key(op: Operator, on: boolean): void {
     if (on) {
@@ -536,10 +526,8 @@ export class OplChip {
   }
 
   /**
-   * Envelope rates, which key-scale off the note: the 6-bit rate index is
-   * `4 * R + ksr`, where `ksr` is two bits taken from the block and the
-   * F-number's top bit — all four of them when `KSR` is set, the block's top two
-   * otherwise. See docs/music.md § Envelopes.
+   * Envelope rates, which key-scale off the note: the 6-bit rate index is `4 * R + ksr`.
+   * See docs/music.md § Envelopes.
    */
   private updateRates(op: Operator, channel: Channel): void {
     const fnumTop = (channel.fnum >> 9) & 1;

@@ -393,9 +393,10 @@ Three things about that patch:
   `tests/render/lights-shader.test.ts` pins the ordering against three's own resolved source.
 - Fog needs nothing: it is mixed into `gl_FragColor` later regardless, so a lit surface fogs like
   any other.
-- It adds to the *multiplier*, not the texel: `diffuseColor.rgb + sampledDiffuseColor.rgb *
-  dynLight`, clamped at 1. That reproduces the fullbright ceiling instead of overbrightening the
-  texture past it. Vertex colours here are linear-light (docs/render-lighting.md § Sector lighting),
+- It adds to the *multiplier*, not the texel:
+  `diffuseColor.rgb += sampledDiffuseColor.rgb * dynLight`, left unclamped (§ Bloom). Three's tone
+  mapping then reproduces the fullbright ceiling instead of overbrightening the texture past it.
+  Vertex colours here are linear-light (docs/render-lighting.md § Sector lighting),
   and GLDEFS colours are treated as linear multipliers to match.
 - `customProgramCacheKey` is **required**: three.js keys its program cache on material parameters,
   so without it a patched material can be served the program compiled for an unpatched one — the
@@ -477,7 +478,7 @@ Two consequences to know:
   fireworks, and a tight cap instead makes lights pop in and out as the ranking shuffles under a
   moving camera. What bounds it is not per-pixel cost — the fragment loop runs to the live count
   — but shader uniform slots, two rows per light against the 224 fragment uniform vectors WebGL 2
-  guarantees. Its declaration in `render/lights.ts` carries that arithmetic.
+  guarantees.
 
 The fragment loop walks the leaf's slot list (§ How the answer reaches a fragment), bounded by
 `min(uLightCount, MAX_LIGHTS_PER_LEAF)` rather than by the leaf capacity with only the empty-slot

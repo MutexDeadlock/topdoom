@@ -37,11 +37,11 @@ export function sectorTypeUnderstood(d: DecodedSectorType): boolean {
 export interface DecodedSectorType {
   lightPattern: LightPattern | null;
   damage: DamageFloorEffect | null;
-  /** Consuming it differs by era — see `consumeSecret`. */
+  /** Consuming it differs by era — see {@link consumeSecret}. */
   secret: boolean;
-  /** Boom sector friction enable — gates `Forces.frictionUnder` (docs/specials-forces.md §
-  Friction). */ friction: boolean;
-  /** Boom sector pusher enable — gates `Forces.pushForBody` (docs/specials-forces.md § Pushers). */
+  /** Gates `Forces.frictionUnder` — docs/specials-forces.md § Friction. */
+  friction: boolean;
+  /** Gates `Forces.pushForBody` — docs/specials-forces.md § Pushers. */
   push: boolean;
   doorTimer: SectorDoorTimer | null;
 }

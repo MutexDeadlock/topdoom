@@ -1,6 +1,6 @@
 /**
- * What a WAD the menu can offer looks like — `WadSource`, the `index.json` row a served one is
- * built from, and the pure rules over those shapes: which folder a file is served under, which
+ * What a WAD the menu can offer looks like — {@link WadSource}, the `index.json` row a served one
+ * is built from, and the pure rules over those shapes: which folder a file is served under, which
  * game its maps belong to, and which add-ons a game WAD leaves standing.
  * See docs/wad.md and docs/menu-wads.md.
  */
@@ -43,8 +43,8 @@ export interface WadSource {
    */
   support?: WadSupport;
   /**
-   * Level titles this file's MAPINFO defines, keyed by map lump name — see docs/wad.md § Level
-   * names.
+   * Level titles this file's MAPINFO defines, gaps filled from its DEHACKED patch, keyed by map
+   * lump name — see docs/wad.md § Level names.
    */
   levelNames: Record<string, string>;
   size: number;
@@ -63,24 +63,21 @@ export interface WadSource {
   folder?: string;
   /**
    * The text file sitting beside this WAD, when there is one — `SCYTHE.TXT` next to `SCYTHE.WAD`.
-   * Its presence is known without reading anything (the manifest carries the name, a library scan
-   * and an upload pair the two by name), which is what lets both WAD lists draw their info column
-   * off the same listing they draw the rest of the row from. docs/wad.md § The text file beside a
-   * WAD.
+   * Its presence is known without reading anything. docs/wad.md § The text file beside a WAD.
    */
   textFile?: WadTextFile;
   /**
-   * `onProgress` is reported as the bytes arrive, and only by a source that actually downloads —
-   * a file already in memory has nothing to report and calls it not at all. It is ignored on every
-   * call after the first, which is what the memo hands back.
+   * @param onProgress  reported as the bytes arrive, and only by a source that actually
+   *                    downloads — a file already in memory calls it not at all. Ignored on every
+   *                    call after the first, which is what the memo hands back.
    */
   bytes(onProgress?: DownloadProgress): Promise<ArrayBuffer>;
 }
 
 /**
- * How many of a source's `size` bytes have arrived. A source that is going to download calls this
- * with 0 before it starts — that first call is what declares it, so `loadWadFiles` can total up
- * everything that will download before any of it arrives. One already in memory never calls it.
+ * How many of a source's {@link WadSource.size} bytes have arrived. A source that will download
+ * calls this with 0 before it starts, so `loadWadFiles` can total up everything that will download
+ * before any of it arrives. One already in memory never calls it.
  */
 export type DownloadProgress = (loaded: number) => void;
 
@@ -94,8 +91,8 @@ export type Progress = (done: number, total: number) => void;
 /**
  * One `index.json` row — the manifest's wire format, declared **here and only here**. The
  * build-time producer (`plugins/wad-manifest.ts`) imports this same interface rather than restating
- * it: the two had drifted on `folder` alone, and a shape the consumer casts raw JSON to is one the
- * producer must be checked against. See docs/wad.md § The `public/game/` manifest.
+ * it: a shape the consumer casts raw JSON to is one the producer must be checked against.
+ * See docs/wad.md § The `public/game/` manifest.
  */
 export interface ManifestEntry {
   file: string;
@@ -103,7 +100,7 @@ export interface ManifestEntry {
    * Where the file sits under `public/game/`, relative to it and `/`-separated — also the URL path
    * it is served under. A root on its own (`pwad`), or a subfolder below one (`pwad/megawads`):
    * both roots are scanned recursively, so a collection can be filed the way it would be on disk
-   * and the menu shows it as a tree. `servedFolder` is what splits the root back off.
+   * and the menu shows it as a tree. {@link servedFolder} is what splits the root back off.
    */
   folder: string;
   size: number;
@@ -116,16 +113,14 @@ export interface ManifestEntry {
       needs the bytes, which the menu hasn't downloaded. docs/dehacked.md § The coverage report. */
   dehacked?: boolean;
   /**
-   * The support verdict, written on every row. Optional for the same reason `id` is, and only that
-   * reason: an `index.json` cached from before the field reads as unknown — docs/wad.md § Will it
-   * run?
+   * The support verdict, written on every row. Optional for the same reason
+   * {@link ManifestEntry.id} is, and only that reason: an `index.json` cached from before the
+   * field reads as unknown — docs/wad.md § Will it run?
    */
   support?: WadSupport;
   /**
    * `hashBytes` content ID, so the menu knows a file's identity without downloading it — what a
-   * savegame's WAD set is matched against (docs/savegames.md § WAD-set identity). Computed at build
-   * time because those bytes are already in memory; the alternative is fetching every WAD in the
-   * library just to draw the save list.
+   * savegame's WAD set is matched against (docs/savegames.md § WAD-set identity).
    *
    * Optional because a cached `index.json` can predate the field, which is what `serverSource`'s
    * `?? ''` degrades to: a source with no ID matches no savegame rather than matching wrongly.
@@ -138,17 +133,17 @@ export interface ManifestEntry {
   textFile?: string;
   /**
    * Each map's title, so the menu can name levels without downloading the file — the same reason
-   * `maps` is here. What the file's own MAPINFO defines, and where it defines nothing, what its
-   * `DEHACKED` patch names. Absent when it has neither, which is most of them.
+   * {@link ManifestEntry.maps} is here. What the file's own MAPINFO defines, and where it defines
+   * nothing, what its `DEHACKED` patch names. Absent when it has neither, which is most of them.
    */
   levelNames?: Record<string, string>;
 }
 
 /**
- * Splits a served file's `folder` into the root it was served from and the path below it — the one
- * place that knows the first segment *is* the root (docs/wad.md § The `public/game/` manifest), so
- * the menu can group by both halves without decoding the path itself. The fallback covers a source
- * carrying no folder at all: its own signature is the root it would have been served from.
+ * Splits a served file's {@link WadSource.folder} into the root it was served from and the path
+ * below it — the one place that knows the first segment *is* the root
+ * (docs/wad.md § The `public/game/` manifest). The fallback covers a source carrying no folder at
+ * all: its own signature is the root it would have been served from.
  */
 export function servedFolder(source: WadSource): { root: string; under: string } {
   const path = source.folder ?? (source.type === 'IWAD' ? 'iwad' : 'pwad');
@@ -160,10 +155,10 @@ export function servedFolder(source: WadSource): { root: string; under: string }
  * Which DOOM's map-naming convention a single map lump name follows, if any. DOOM names maps
  * `E<episode>M<mission>`, DOOM II `MAP<nn>`, and anything else belongs to neither.
  *
- * **The one spelling of the two schemes**: `mapStyle` reads a file's own maps through it, and the
- * stand-in game WAD a save resolves to is picked with it against the map *name* the save stored
- * (docs/savegames.md § A stand-in game WAD) — a second copy is how the picker comes to accept a
- * file the level list then names nothing in.
+ * **The one spelling of the two schemes**: {@link mapStyle} reads a file's own maps through it,
+ * and the stand-in game WAD a save resolves to is picked with it against the map *name* the save
+ * stored (docs/savegames.md § A stand-in game WAD) — a second copy is how the picker comes to
+ * accept a file the level list then names nothing in.
  */
 export function mapNameStyle(map: string): 'doom1' | 'doom2' | null {
   if (/^E\dM\d$/.test(map)) return 'doom1';
@@ -202,8 +197,8 @@ export function fitsGameWad(iwad: WadSource | null, pwad: WadSource): boolean {
 }
 
 /**
- * The add-ons a game WAD leaves standing: the ones it can be merged with (`fitsGameWad`), minus the
- * file that *is* the game WAD, which cannot also be an add-on to itself.
+ * The add-ons a game WAD leaves standing: the ones it can be merged with ({@link fitsGameWad}),
+ * minus the file that *is* the game WAD, which cannot also be an add-on to itself.
  *
  * **What a set costs to pick, in one statement.** The menu applies it to its own selection and the
  * WAD Library previews it against the draft the player is assembling; two copies is how the overlay

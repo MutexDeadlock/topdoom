@@ -51,7 +51,7 @@ export const CHECK_INTERVAL = 35;
  */
 export const KEYFRAME_INTERVAL = 35 * 60;
 
-/** The playback speeds the bar's slider steps through, 1× at index 3. */
+/** The playback speeds the bar's slider steps through, 1× at {@link NORMAL_SPEED_INDEX}. */
 export const SPEED_STEPS: readonly number[] = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
 
 export const NORMAL_SPEED_INDEX = 3;
@@ -74,10 +74,7 @@ export function quantizePose(pose: CameraPose): CameraPose {
   };
 }
 
-/**
- * The tic count {@link TicColumns.buttons} bit for the left button being down, and for the right
- * button's edge.
- */
+/** The {@link TicColumns.buttons} bit for the left button being down, and for the right button's edge. */
 export const BUTTON_FIRE = 1;
 export const BUTTON_RIGHT_EDGE = 2;
 
@@ -156,11 +153,9 @@ export interface TicColumns {
 }
 
 /**
- * The columns whose values crawl rather than jump — the aim point and the camera pose, both
- * quantized coordinates. On disk they are stored as **second** differences: the camera and the aim
- * point glide, so their acceleration is smaller than their velocity, and what gzip sees is a
- * column of near-zeros. The mask columns are left alone, where differencing measured *worse*.
- * docs/replays.md § The record.
+ * The columns whose values crawl rather than jump — the aim point and the camera pose — stored on
+ * disk as **second** differences. The mask columns, where differencing measured *worse*, are left
+ * alone. docs/replays.md § The record.
  */
 const DELTA_COLUMNS = ['aimX', 'aimY', 'poseYaw', 'poseX', 'poseY', 'poseZ', 'poseDistance', 'poseTilt'] as const;
 
@@ -189,11 +184,8 @@ export function poseAt(tics: TicColumns, tic: number): CameraPose | null {
 /**
  * The desync samples as columns, one entry per {@link CHECK_INTERVAL} tics from tic 0 —
  * {@link checkTic} is the tic an index stands for, so no tic column is stored. Every slot's
- * position is **rounded to whole map units**: the cursor beside it is exact, and it is the cursor
- * that moves on every diverging random draw, so what rounding can hide is a drift below half a
- * unit that has not yet drawn — which the next sample a second later no longer hides. Rounded
- * rather than hashed because a hash costs the same bytes and answers only yes/no, where these
- * still say where the run was and by how much it drifted. docs/replays.md § The record.
+ * position is **rounded to whole map units**, the cursor beside it exact — rounded rather than
+ * hashed, so a drift still says where and by how much. docs/replays.md § The record.
  */
 export interface CheckColumns {
   /** Each slot's `player.x`, rounded — by slot, then by sample. */
@@ -216,9 +208,8 @@ export function checkCoord(v: number): number {
 
 /**
  * A moment the playback can jump to: the world as a savegame holds it, on the map it belongs to.
- * `[0]` is the recording's own start. The camera is not here — it is in the tic columns, one pose
- * per tic (§ Camera state), and a jump reads the pose of the tic it lands on.
- * docs/replays.md § Seeking.
+ * `[0]` is the recording's own start. No camera — the tic columns hold one pose per tic
+ * (§ Camera state). docs/replays.md § Seeking.
  */
 export interface Keyframe {
   tic: number;
@@ -258,7 +249,7 @@ export interface ReplayData {
   /** Every slot's record, by slot — as many as `snapshots[0].players`. docs/multiplayer-coop.md. */
   slots: SlotRecord[];
   events: ReplayEvent[];
-  /** The desync samples, one per {@link CHECK_INTERVAL} tics — {@link CheckColumns}. */
+  /** The desync samples. */
   checks: CheckColumns;
 }
 
@@ -384,12 +375,9 @@ function snapToLattice(v: number): number {
 }
 
 /**
- * {@link DELTA_COLUMNS} against a linear prediction from the two values before (`pack`), or that
- * undone. The prediction is `2 * p1 - p2`, so a column moving at a constant rate stores zeros;
- * both directions carry the same two-value state, which is what makes the round trip exact in
- * integers.
- * A null — the tics the pointer missed the aim plane — carries no value and leaves the prediction
- * where it was.
+ * {@link DELTA_COLUMNS} against the linear prediction `2 * p1 - p2` (`pack`), or that undone. Both
+ * directions carry the same two-value state, which is what makes the round trip exact in integers;
+ * a null carries no value and leaves the prediction where it was.
  */
 function walkColumns(tics: TicColumns, pack: boolean): TicColumns {
   const out: TicColumns = { ...tics };

@@ -157,8 +157,8 @@ sector's own `ceilHeight` instead of up from `floorHeight` for these — the sam
 mover" trick a floor decoration already gets, just off the opposite surface, so a crusher or
 closing door carries a hanging corpse along too.
 
-**They must not become shootable in the process.** `blockerGrid` also backs `raycastMonster` and
-`monstersNear` (hitscans and projectile splash), and those two explicitly skip
+**They must not become shootable in the process.** The solid-body grid (`ThingGrid`) also backs
+`raycastMonster` and `monstersNear` (hitscans and projectile splash), and those two explicitly skip
 `SOLID_DECORATION_TYPES` — vanilla's `PIT_ShootTraverse`/`PIT_RadiusAttack` only test
 `MF_SHOOTABLE`, which no decoration in this set carries (unlike the barrel, which is both
 `MF_SOLID` and `MF_SHOOTABLE`). Movement blocking and shot blocking read the same grid but are two

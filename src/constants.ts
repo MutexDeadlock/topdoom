@@ -97,7 +97,7 @@ export const PICKUP_SCALE: Partial<Record<number, number>> = {
  * **The WAD set a player sees on their very first start** — nothing stored, no `?wad=` in the URL.
  * Without it the menu falls to whatever game WAD the manifest happens to list first, which is a
  * curator's decision left to file order. A name no `public/game/` file answers to is skipped, so a
- * stripped deployment falls back to that first-listed WAD as before.
+ * stripped deployment falls back to that first-listed WAD.
  * docs/menu-wads.md § The first start.
  */
 export const FIRST_RUN_WADS: { iwad: string; pwads: {

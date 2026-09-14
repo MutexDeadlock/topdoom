@@ -18,10 +18,7 @@ import { pristineFrameTables, type OneShotFrames } from '../dehacked/frames.ts';
  * {@link OneShotFrames.frames} is empty only where a patch left the chain drawing nothing.
  */
 export const TELEPORT_FOG: OneShotFrames = structuredClone(pristineFrameTables().teleportFog!);
-/**
- * Vanilla spawns the destination fog 20 units ahead of the landing spot, along the direction it
- * faces.
- */
+/** How far ahead of the landing spot, along its facing, vanilla spawns the destination fog. */
 export const TFOG_SPAWN_OFFSET = 20;
 
 /**
@@ -49,13 +46,10 @@ export const MONSTER_TRACER_COLOR = 0xff4433;
  */
 export const PROJECTILE_FRAMES: Record<string, string[]> = {};
 /**
- * Each missile's own `mobjinfo.radius`, keyed by flight sprite the same way
- * {@link IMPACT_EFFECTS} is. Half of `PIT_CheckThing`'s `blockdist = thing->radius +
- * tmthing->radius` — the other half is the body it's testing against
- * (`MonsterRef.radius`) — so this is what makes an arachnotron's fat plasma
- * ball a wider threat than an imp's fireball. From `info.c`: `MT_TROOPSHOT`,
- * `MT_HEADSHOT`, `MT_BRUISERSHOT` and `MT_FATSHOT` 6; `MT_TRACER` and
- * `MT_ROCKET` 11; `MT_PLASMA`, `MT_BFG` and `MT_ARACHPLAZ` 13.
+ * Each missile's own `mobjinfo.radius` (`info.c`), keyed by flight sprite as {@link IMPACT_EFFECTS}
+ * is. Half of `PIT_CheckThing`'s `blockdist = thing->radius + tmthing->radius` — the other half is
+ * the body it's testing against (`MonsterRef.radius`) — so this is what makes an arachnotron's fat
+ * plasma ball a wider threat than an imp's fireball.
  */
 export const PROJECTILE_RADIUS: Record<string, number> = {
   MISL: 11, // MT_ROCKET — the player's rocket and the cyberdemon's alike
@@ -183,9 +177,9 @@ export const PUFF_MELEE_FRAMES = ['C', 'D'];
 export const PUFF_WALL_OFFSET = 4;
 
 /**
- * Vanilla's `MT_EXTRABFG` (`S_BFGEXP1`-`4`) — the green burst `A_BFGSpray`
- * spawns on every monster a spray ray connects with, distinct from `BFE1`
- * above (the ball's own impact). `BFE2A0`-`D0` confirmed against `DOOM2.WAD`.
+ * The green burst `A_BFGSpray` spawns on every monster a spray ray connects with — vanilla's
+ * `MT_EXTRABFG` (`S_BFGEXP1`-`4`), distinct from the ball's own `BFE1` impact. `BFE2A0`-`D0`
+ * confirmed against `DOOM2.WAD`.
  */
 export const BFG_SPRAY_HIT_FRAMES = ['A', 'B', 'C', 'D'];
 

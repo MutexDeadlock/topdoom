@@ -18,9 +18,8 @@ import { WadFont, COLOR_YELLOW, type WadFontRecolor } from './wadfont.ts';
 const MESSAGE_SECONDS = 3;
 
 /**
- * Shown with the engine's own `secret` sound (`public/game/secret.ogg`, not a WAD lump at all), so
- * both the message and the sound are this engine's own. Vanilla announces a secret nowhere at all:
- * the status bar's `S` count just ticks up. Lives here rather than with the
+ * Shown with the engine's own `secret` sound, so both the message and the sound are this engine's
+ * own: vanilla announces a secret nowhere at all. Lives here rather than with the
  * `specials/sectoreffects.ts` rule that detects one, because it is a line of display text and this
  * is the module that displays them. `game.ts` raises it. docs/hud.md § Center messages.
  */
@@ -41,8 +40,8 @@ export function missingArtMessage(types: number): string {
 
 /**
  * Each key color's own text color, sampled from that key's pickup sprite the same way
- * `COLOR_YELLOW` and `ui/hud/hud.ts`'s `LEVEL_STATS_GREEN` are — `RKEYA0`'s and `YKEYA0`'s
- * brightest pixel exactly.
+ * {@link COLOR_YELLOW} and {@link LEVEL_STATS_GREEN} are — `RKEYA0`'s and `YKEYA0`'s brightest
+ * pixel exactly.
  *
  * Blue is the one that isn't: `BKEYA0`'s brightest pixel is the palette's pure `0,0,255`
  * (index 200), which is unreadable as text over a dark playfield at `#hud-message`'s 0.75
@@ -56,15 +55,16 @@ const KEY_TEXT_COLORS: Record<KeyColor, WadFontRecolor> = {
 };
 
 /**
- * One stretch of a message: a bare string draws in `COLOR_YELLOW`, otherwise in the color given.
+ * One stretch of a message: a bare string draws in {@link COLOR_YELLOW}, otherwise in the color
+ * given.
  */
 export type MessageRun = string | { text: string; color: WadFontRecolor };
 
 /**
  * The words a message draws in a color of their own rather than the message's. The three key
- * colors are `KEY_TEXT_COLORS`; `green` is the only other color this repo has a WAD-derived value
- * for (`hud.ts`'s `LEVEL_STATS_GREEN`, sampled from `ARM1A0`) and is here for a **patched** line —
- * no vanilla or Boom string names it, since DOOM has no green key.
+ * colors are {@link KEY_TEXT_COLORS}; `green` is the only other color this repo has a WAD-derived
+ * value for ({@link LEVEL_STATS_GREEN}, sampled from `ARM1A0`) and is here for a **patched**
+ * line — no vanilla or Boom string names it, since DOOM has no green key.
  */
 const COLOR_WORDS: Record<string, WadFontRecolor> = {
   blue: KEY_TEXT_COLORS.blue,
@@ -73,7 +73,7 @@ const COLOR_WORDS: Record<string, WadFontRecolor> = {
   green: LEVEL_STATS_GREEN,
 };
 
-/** Built from `COLOR_WORDS` rather than spelled twice; whole words only, so "redo" stays plain. */
+/** Built from {@link COLOR_WORDS}; whole words only, so "redo" stays plain. */
 const COLOR_WORD = new RegExp(`\\b(?:${Object.keys(COLOR_WORDS).join('|')})\\b`, 'gi');
 
 /**
@@ -81,10 +81,9 @@ const COLOR_WORD = new RegExp(`\\b(?:${Object.keys(COLOR_WORDS).join('|')})\\b`,
  * `specials/tables.ts`'s `LOCKED_LINES`, which is where the vanilla/Boom wording and its `PD_*`
  * mnemonics live, and where a DEH patch will have replaced it.
  *
- * The one departure from those strings is presentational and applies to whatever text comes back:
- * a color word is drawn in that color instead of the message's. Splitting the finished line rather
- * than composing it from colored fragments is what lets a patched line keep the effect — a patch
- * writes one string ("You need a blue card"), not the pieces to assemble it from.
+ * The one departure from those strings is presentational: a color word is drawn in that color,
+ * split out of the finished line rather than composed from colored fragments so a patched line
+ * keeps the effect. docs/hud.md § Center messages.
  */
 export function lockedLineMessage(lock: LockRule, kind: 'door' | 'switch'): MessageRun[] {
   const line = lockedLine(lock, kind);
@@ -100,15 +99,13 @@ export function lockedLineMessage(lock: LockRule, kind: 'door' | 'switch'): Mess
 }
 
 /**
- * A short line of WAD-font text over the middle of the view — the secret announcement and the
- * locked-door line. Vanilla prints its messages in the top-left in `STCFN`'s own red
- * (`hu_stuff.c`); this engine puts them center-screen in `COLOR_YELLOW` instead, where a top-down
- * player is already looking. See docs/hud.md § Center messages.
+ * A short line of WAD-font text over the middle of the view; docs/hud.md § Center messages lists
+ * what raises one. Vanilla prints its messages in the top-left in `STCFN`'s own red
+ * (`hu_stuff.c`); this engine puts them center-screen in {@link COLOR_YELLOW} instead, where a
+ * top-down player is already looking.
  *
- * Same "canvas sized to its content, CSS scales it" pattern `Hud` uses — this class builds its own
- * recolored glyph sets rather than sharing `Hud`'s, which keeps the two independent about what
- * color each draws in. One `WadFont` per color, built on first use and kept for the level: a font
- * decodes all 63 `STCFN` patches, far too much to redo per message.
+ * One {@link WadFont} per color, built on first use and kept for the level: a font decodes all 63
+ * `STCFN` patches, far too much to redo per message.
  */
 export class CenterMessage {
   private gfx: GraphicsBank;

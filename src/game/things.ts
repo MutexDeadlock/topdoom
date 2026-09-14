@@ -146,9 +146,8 @@ const KNOCKBACK_STOP_SPEED = 1;
  * How often an unalerted monster re-checks line of sight to the player — vanilla's idle `A_Look`
  * runs every 10 tics, not every tic. Counted off the level clock for the whole layer rather than
  * accumulated per monster, so a restore re-derives the cadence instead of resetting it to a phase
- * the run was never in (docs/replays.md § Seeking). 11 tics rather than vanilla's 10 is the 0.3 s
- * accumulator this replaced, kept to the tic so no existing recording moves.
- * docs/monster-ai.md § Waking up.
+ * the run was never in (docs/replays.md § Seeking). 11 tics rather than vanilla's 10 is 0.3 s to
+ * the tic, kept so no existing recording moves. docs/monster-ai.md § Waking up.
  */
 const LOOK_INTERVAL_TICS = 11;
 
@@ -167,8 +166,8 @@ const RESPAWN_ROLL_INTERVAL_TICS = 32;
 
 /**
  * How far off the floor a monster's death drop is *drawn*, and how far it bobs either side of that
- * over {@link DROP_BOB_SECONDS}. Render-only: nothing in `tryPickup` reads it. All three tuned by
- * feel; docs/items.md § Making monster drops readable.
+ * over {@link DROP_BOB_SECONDS}. Render-only: nothing in `tryPickup` reads it. All three
+ * tuned by feel; docs/items.md § Making monster drops readable.
  */
 const DROP_HOVER = 13;
 const DROP_BOB = 3;
@@ -1662,9 +1661,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /**
    * `A_VileChase`'s resurrection branch: restores a corpse to full health and rejoins combat
    * immediately, with no "coming back to life" delay. {@link PosedThing.attackPause} is set to the
-   * raise animation's length, so {@link stepMonsterAI}'s existing "don't walk or attack while
-   * {@link PosedThing.attackPause} runs" gate holds the monster still until it finishes.
-   * docs/monster-archvile.md § Resurrection.
+   * raise animation's length, so {@link stepMonsterAI}'s attack-pause gate holds the monster still
+   * until it finishes. docs/monster-archvile.md § Resurrection.
    */
   function reviveCorpse(p: PosedThing): void {
     // Deliberate deviation: a raised monster adds one to the level's kill *total*, following

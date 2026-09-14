@@ -31,9 +31,9 @@ cycle:
 - `spritefx/tables.ts` imports **nothing** from the `monsters/` folder. `vileWindupTrackSeconds()`,
   which reads `MONSTER_STATS`, lives in `monsters/vile.ts` for that reason rather than
   beside the other `VILE_FIRE_*` values.
-- **`defs.ts` imports nothing from its three siblings.** That is what makes it the folder's leaf,
-  and it is why `VILE_KNOCKUP_SPEED` sits in `defs.ts` rather than with the rest of the vile's
-  constants: `MONSTER_STATS` reads it, and the table cannot depend on `vile.ts`.
+- **`defs.ts` imports nothing from its siblings.** That is what makes it the folder's leaf.
+  `VILE_KNOCKUP_SPEED` sits in `tables.ts` rather than with the rest of the vile's constants:
+  `MONSTER_STATS` reads it, and the table cannot depend on `vile.ts`, which imports it.
 
 `SpriteFxLayer.spawnWallPuff` is on the effect layer rather than in `projectiles.ts` for the same
 reason — a monster's bolt needs it, and reaching into `projectiles.ts` for a value would cycle.

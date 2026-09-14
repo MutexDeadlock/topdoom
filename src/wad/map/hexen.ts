@@ -26,13 +26,14 @@ const BLOCKING = 0x0001;
 const SHARED_THING_FLAGS = 0x000f;
 /** `MTF_SINGLE` — set when a thing appears in single player, where Doom states the opposite. */
 const SINGLE = 0x0100;
-/** Doom's `MTF_NOTSINGLE`, the bit `SINGLE`'s absence maps onto. */
+/** Doom's `MTF_NOTSINGLE`, the bit {@link SINGLE}'s absence maps onto. */
 const NOTSINGLE = 0x0010;
 
 /**
- * `special` and `tag` come out 0: a Hexen action special is a ZDoom number in a namespace
- * of its own, so the raw number and its args are parked in `LineDef.action` instead of
- * reaching the Doom tables. docs/wad.md § What a Hexen map does not get.
+ * {@link LineDef.special} and {@link LineDef.tag} come out 0: a Hexen action special is a ZDoom
+ * number in a namespace of its own, so the raw number and its args are parked in
+ * {@link LineDef.action} instead of reaching the Doom tables.
+ * docs/wad.md § What a Hexen map does not get.
  */
 export function readLinedefs(data: Uint8Array | undefined): LineDef[] {
   return records(data, 0, LINEDEF_SIZE, (r) => {
@@ -54,7 +55,7 @@ export function readLinedefs(data: Uint8Array | undefined): LineDef[] {
   });
 }
 
-/** The `tid`, `z` and per-thing action special are read past — nothing consumes them yet. */
+/** The `tid`, `z` and per-thing action special are read past — nothing consumes them. */
 export function readThings(data: Uint8Array | undefined): Thing[] {
   return records(data, 0, THING_SIZE, (r) => {
     r.u16();
@@ -76,7 +77,7 @@ export function readThings(data: Uint8Array | undefined): Thing[] {
  * layouts disagree, so those bits are dropped rather than copied.
  *
  * Deliberate deviation: `ML_BLOCK_PLAYERS` and `ML_BLOCKEVERYTHING` both become plain
- * `BLOCKING`, there being no `LF` bit for "blocks the player but not monsters".
+ * {@link BLOCKING}, there being no `LF` bit for "blocks the player but not monsters".
  * docs/wad.md § Flags are translated, not copied.
  */
 function lineFlags(flags: number): number {

@@ -1,11 +1,11 @@
 /**
- * `sin`, `cos`, `atan2`, `exp` and `log` in software, so that a tic comes out bit-identical on
- * every JavaScript engine — ECMA-262 leaves exactly these five approximated, and V8 rounds a fifth
- * of the simulation's `atan2` calls differently from one Chrome release to the next. A
- * transcription of Sun's fdlibm as FreeBSD's `msun` carries it (`s_sin.c`, `s_cos.c`, `k_sin.c`,
- * `k_cos.c`, `e_rem_pio2.c`, `s_atan.c`, `e_atan2.c`, `e_exp.c`, `e_log.c`), unchanged but for the
- * word access C does with macros. Everything else the simulation computes is `+ - * /` and
- * `sqrt`/`round`/`floor`, which IEEE-754 and ECMA-262 both pin exactly.
+ * {@link sin}, {@link cos}, {@link atan2}, {@link exp} and {@link log} in software, so that a tic
+ * comes out bit-identical on every JavaScript engine — ECMA-262 leaves exactly these five
+ * approximated, and V8 rounds a fifth of the simulation's `atan2` calls differently from one Chrome
+ * release to the next. A transcription of Sun's fdlibm as FreeBSD's `msun` carries it (`s_sin.c`,
+ * `s_cos.c`, `k_sin.c`, `k_cos.c`, `e_rem_pio2.c`, `s_atan.c`, `e_atan2.c`, `e_exp.c`, `e_log.c`),
+ * unchanged but for the word access C does with macros. Everything else the simulation computes is
+ * `+ - * /` and `sqrt`/`round`/`floor`, which IEEE-754 and ECMA-262 both pin exactly.
  * The render layer keeps the native `Math`. docs/replays.md § What breaks determinism.
  */
 
@@ -30,7 +30,8 @@ const LOW = 1 - HIGH;
 
 /**
  * `__ieee754_rem_pio2`'s second return value, which C passes back through a `double y[2]`: the
- * reduced argument and its tail. Written by `remPio2`, read by the `sin`/`cos` that called it.
+ * reduced argument and its tail. Written by {@link remPio2}, read by the {@link sin}/{@link cos}
+ * that called it.
  */
 let remY0 = 0;
 let remY1 = 0;
@@ -258,7 +259,7 @@ const AT = [
   4.97687799461593236017e-2, -3.65315727442169155270e-2, 1.62858201153657823623e-2,
 ];
 
-/** `s_atan.c`, the arctangent `atan2` reduces to; not exported, since no caller wants it alone. */
+/** `s_atan.c`, the arctangent {@link atan2} reduces to. */
 function atan(x: number): number {
   const hx = highWord(x);
   const ix = hx & 0x7fffffff;
@@ -324,7 +325,7 @@ const C4 = -2.75573143513906633035e-7;
 const C5 = 2.08757232129817482790e-9;
 const C6 = -1.13596475577881948265e-11;
 
-/** `k_cos.c`, the cosine twin of `kernelSin`. */
+/** `k_cos.c`, the cosine twin of {@link kernelSin}. */
 function kernelCos(x: number, y: number): number {
   const z = x * x;
   const zz = z * z;
@@ -344,11 +345,11 @@ const PIO2_3 = 2.02226624871116645580e-21;
 const PIO2_3T = 8.47842766036889956997e-32;
 
 /**
- * `e_rem_pio2.c`: `x` reduced into [-pi/4, pi/4] as `remY0` + `remY1`, returning how many
- * quarter-turns came off. **Only the paths up to `2**20 * pi/2` are here** — every angle the
+ * `e_rem_pio2.c`: `x` reduced into [-pi/4, pi/4] as {@link remY0} + {@link remY1}, returning how
+ * many quarter-turns came off. **Only the paths up to `2**20 * pi/2` are here** — every angle the
  * simulation forms is a heading in radians, and the huge-argument path (`__kernel_rem_pio2`'s
- * multiprecision reduction) exists to keep accuracy where no heading reaches. Past that bound this
- * stays on the medium path: less accurate than C, and still the same answer on every engine.
+ * multiprecision reduction) exists to keep accuracy where no heading reaches. Past that bound it
+ * reduces by `x % TWO_PI` first: less accurate than C, and still the same answer on every engine.
  */
 function remPio2(x: number): number {
   // Past `2**20 * pi/2` the C switches to a multiprecision reduction this does not carry (see

@@ -39,7 +39,7 @@ const GENMIDI_RECORD_SIZE = 36;
 export const PERCUSSION_FIRST_NOTE = 35;
 export const PERCUSSION_LAST_NOTE = PERCUSSION_FIRST_NOTE + GENMIDI_PERCUSSION - 1;
 
-/** `flags` bit 0: play `fixedNote` whatever note arrives — every percussion entry sets it. */
+/** `flags` bit 0: play {@link GenMidiInstrument.fixedNote} whatever note arrives. */
 const FLAG_FIXED_PITCH = 0x0001;
 /** `flags` bit 2: the entry's second voice is meant to sound alongside the first. */
 const FLAG_TWO_VOICE = 0x0004;
@@ -79,9 +79,9 @@ export interface GenMidiInstrument {
   fixedPitch: boolean;
   /** Voice 2's detune, 0x80 being none — a fine offset, not a semitone count. */
   fineTuning: number;
-  /** The note a `fixedPitch` entry always plays, whatever the score asked for. */
+  /** The note a {@link GenMidiInstrument.fixedPitch} entry always plays. */
   fixedNote: number;
-  /** One voice, or two when the record's `FLAG_TWO_VOICE` is set — never empty. */
+  /** One voice, or two when the record's {@link FLAG_TWO_VOICE} is set — never empty. */
   voices: GenMidiVoice[];
 }
 
@@ -106,14 +106,14 @@ export function parseGenMidi(bytes: Uint8Array): GenMidiInstrument[] | null {
 }
 
 /**
- * The loaded WAD set's music: a `D_*` track by lump name, and the `GENMIDI`
- * bank behind it. A PWAD replaces either one by name collision alone, like
- * every other lump (docs/wad.md § Loading and merging) — which is how a music
- * PWAD works, and how the DMXOPL instrument banks people ship work too.
+ * The loaded WAD set's music: a `D_*` track by lump name, and the `GENMIDI` bank behind it. A PWAD
+ * replaces either one by name collision alone, like every other lump
+ * (docs/wad.md § Loading and merging) — which is how a music PWAD works, and how the DMXOPL
+ * instrument banks people ship work too.
  *
- * A set with no `GENMIDI` (a bare PWAD loaded on its own, most Doom-engine
- * shovelware) leaves `genmidi` null, and `MusicPlayer` then plays only the
- * tracks the browser decodes itself. See docs/music.md § Lumps.
+ * A set with no `GENMIDI` (a bare PWAD loaded on its own, most Doom-engine shovelware) leaves
+ * {@link MusicBank.genmidi} null, and `MusicPlayer` then plays only the tracks the browser decodes
+ * itself. See docs/music.md § Lumps.
  */
 export class MusicBank {
   private wad: Wad;

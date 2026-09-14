@@ -1,8 +1,8 @@
 /**
- * One tic's input as a row: `TicColumns` for a single tic plus the characters it typed, how a
+ * One tic's input as a row: {@link TicColumns} for a single tic plus the characters it typed, how a
  * recording appends one and a playback reads one back, the array a network game sends one as, and
- * `RowInput`, the `TicInput` that serves one. The one codec the recorder, the playback and the
- * network share. docs/replays.md § The record.
+ * {@link RowInput}, the {@link TicInput} that serves one. The one codec the recorder, the playback
+ * and the network share. docs/replays.md § The record.
  */
 import { AIM_QUANTUM, type RightMouseAction, type TicInput } from '../input.ts';
 import type { CameraPose, TopDownCamera } from '../../render/camera.ts';
@@ -10,12 +10,12 @@ import type { Pos2 } from '../../types.ts';
 import { BUTTON_FIRE, BUTTON_RIGHT_EDGE, POSE_QUANTUM, type TicColumns } from './defs.ts';
 import { heldMask, maskHas, pressedMask } from './keys.ts';
 
-/** One tic of `TicColumns`, in the same units, and what it typed (`''` for nothing). */
+/** One tic of {@link TicColumns}, in the same units, and what it typed (`''` for nothing). */
 export type TicRow = { [K in keyof TicColumns]: TicColumns[K][number] } & { typed: string };
 
 /**
- * One tic's row as it travels: the twelve `TicColumns` of a tic in order. What was typed is not
- * carried — cheats stay out of a network game (`ST_Responder`'s `!netgame`).
+ * One tic's row as it travels: the twelve {@link TicColumns} of a tic in order. What was typed is
+ * not carried — cheats stay out of a network game (`ST_Responder`'s `!netgame`).
  * docs/multiplayer-net.md § Protocol.
  */
 export type WireRow = [
@@ -51,7 +51,7 @@ export function emptyColumns(): TicColumns {
   };
 }
 
-/** A row holding, pressing, typing and aiming at nothing — what `readRow` answers past the end. */
+/** A row holding, pressing, typing and aiming at nothing — what {@link readRow} answers past the end. */
 export function emptyRow(): TicRow {
   return {
     held: 0,
@@ -72,9 +72,8 @@ export function emptyRow(): TicRow {
 
 /**
  * The keys, buttons and typed characters `live` answers this tic, into `row` — the half a recording
- * samples at the tic's end. The right-button edge is asked under `rightMouse`, the binding in
- * force. The wheel and the aim point are written by whoever read them during the tic, the pose by
- * `writeRowPose`.
+ * samples at the tic's end; the wheel and the aim point are written by whoever read them during the
+ * tic, the pose by {@link writeRowPose}.
  */
 export function sampleInput(live: TicInput, rightMouse: RightMouseAction, row: TicRow): void {
   row.buttons = (live.mouseDown ? BUTTON_FIRE : 0) | (live.rightMousePressed(rightMouse) ? BUTTON_RIGHT_EDGE : 0);
@@ -98,7 +97,11 @@ export function writeRowWheel(row: TicRow, delta: number): void {
   row.wheel = delta > 0 ? 1 : delta < 0 ? -1 : 0;
 }
 
-/** The aim point on `AIM_QUANTUM`'s lattice into `row`; null is the pointer above the horizon. */
+/**
+ * The aim point on {@link AIM_QUANTUM}'s lattice into `row`.
+ *
+ * @param point  null for the pointer above the horizon
+ */
 export function writeRowAim(row: TicRow, point: Pos2 | null): void {
   row.aimX = point ? Math.round(point.x / AIM_QUANTUM) : null;
   row.aimY = point ? Math.round(point.y / AIM_QUANTUM) : null;
@@ -138,7 +141,7 @@ export function copyRow(from: TicRow, into: TicRow): void {
   into.typed = from.typed;
 }
 
-/** `writeRowPose` undone: the pose a row was read at. */
+/** {@link writeRowPose} undone: the pose a row was read at. */
 export function rowPose(row: TicRow): CameraPose {
   return {
     yaw: row.poseYaw * POSE_QUANTUM,
@@ -219,7 +222,7 @@ export interface RowInputOptions {
   rightMouse: RightMouseAction;
 }
 
-/** A row served as a tic's input. The owner rewrites `row` before each tic; `endTic` does nothing. */
+/** A row served as a tic's input; the owner rewrites {@link RowInput.row} before each tic. */
 export class RowInput implements TicInput {
   readonly row: TicRow = emptyRow();
   rightMouse: RightMouseAction;

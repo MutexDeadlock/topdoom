@@ -7,10 +7,8 @@
 import { MAPINFO_END, type MapInfo } from './mapinfo.ts';
 
 /**
- * Where one of a level's two exits leads. The three cases are deliberately distinct: vanilla
- * *ending the game* and vanilla *having no rule for this name* were both a bare null once, and the
- * load-order fallback that is right for a PWAD's own naming sent MAP30 to MAP31.
- * See docs/wad.md § Level progression.
+ * Where one of a level's two exits leads. The three cases are deliberately distinct: collapsing
+ * the last two into one null sends MAP30 to MAP31. See docs/wad.md § Level progression.
  */
 export type NextLevel =
   /** A level to load next. */
@@ -44,18 +42,18 @@ const SECRET_LEVEL_RETURN: Record<string, number> = { '1': 4, '2': 6, '3': 7, '4
 /** DOOM II's own secret levels, and the map each one's normal exit returns to (`MAP16`). */
 const DOOM2_SECRET_LEVELS = ['MAP31', 'MAP32'];
 const DOOM2_SECRET_RETURN = 'MAP16';
-/** The only DOOM II level whose secret exit leads anywhere, and where it leads. */
+/** The DOOM II levels whose secret exit leads anywhere, and where each leads. */
 const DOOM2_SECRET_EXITS: Record<string, string> = { MAP15: 'MAP31', MAP31: 'MAP32' };
 
-/** The two trivial `NextLevel`s, so the table below reads as a table. */
+/** The two trivial {@link NextLevel}s, so the table below reads as a table. */
 const toMap = (name: string): NextLevel => ({ kind: 'map', name });
 const UNKNOWN: NextLevel = { kind: 'unknown' };
 
 /**
  * Vanilla's next level for `mapName`: a map, the end of the campaign (`E<x>M8`, `MAP30`), or
  * nothing at all for a name in neither naming scheme. Pure table lookup — whether the level it
- * names actually exists in the loaded set is `LevelProgression`'s question, not this one, and that
- * includes the following episode an episode end names.
+ * names actually exists in the loaded set is {@link LevelProgression}'s question, not this one,
+ * and that includes the following episode an episode end names.
  */
 export function vanillaNextMap(mapName: string, secret: boolean): NextLevel {
   const doom2 = DOOM2_MAP.exec(mapName);
@@ -89,16 +87,12 @@ export function vanillaNextMap(mapName: string, secret: boolean): NextLevel {
   return toMap(`E${episode}M${mission + 1}`);
 }
 
-/**
- * Where each of a level's two exits leads, for one loaded WAD set. Built once per `Game` for the
- * same reason `LevelNames` is: which maps the set provides depends on the file set, not on which
- * map is loaded.
- */
+/** Where each of a level's two exits leads, for one loaded WAD set; built once per `Game`. */
 export class LevelProgression {
   private mapInfo: MapInfo;
   /**
-   * The loaded set's maps, upper-cased for lookup but kept in their own spelling: what `nextMap`
-   * returns has to be a name `Game` can find in its own list.
+   * The loaded set's maps, upper-cased for lookup but kept in their own spelling: what
+   * {@link LevelProgression.nextMap} returns has to be a name `Game` can find in its own list.
    */
   private known: Map<string, string>;
 
@@ -109,11 +103,8 @@ export class LevelProgression {
 
   /**
    * Where an exit out of `mapName` leads, resolved against the maps the loaded set actually
-   * provides (docs/wad.md § Level progression).
-   *
-   * A map named by MAPINFO wins over the vanilla table, and a name neither the set nor the table
-   * can place is skipped rather than trusted: a `next` the loaded WADs don't provide would
-   * otherwise strand the player on a level with no way out.
+   * provides: MAPINFO over the vanilla table, and a name the set doesn't provide skipped rather
+   * than trusted (docs/wad.md § Level progression).
    */
   nextMap(mapName: string, secret: boolean): NextLevel {
     const upper = mapName.toUpperCase();

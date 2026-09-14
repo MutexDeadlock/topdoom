@@ -34,10 +34,6 @@ export interface HoldConfirm {
  * About stays the menu's only reader popup (docs/menu.md § About). Where
  * {@link HoldConfirm.required} says no hold is wanted, a plain click acts instead and nothing
  * sweeps.
- *
- * The label moves into a `.label` span so the `.fill` bar can sit behind it, and the fill's own
- * duration is handed to CSS as `--hold-time` — one number, so the bar can't finish at a different
- * moment than the timer.
  */
 export function confirmOnHold(button: HTMLButtonElement, confirm: HoldConfirm): void {
   const { hint, setStatus, action } = confirm;

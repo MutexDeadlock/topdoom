@@ -49,16 +49,14 @@ export function setSaveBackend(replacement: SaveStoreBackend): void {
  */
 export interface SaveWad {
   /**
-   * What the file was called when the save was made. Purely for the player —
-   * it names the file to go and find when one is missing, and no lookup keys
+   * What the file was called when the save was made, for the player to go and find; nothing keys
    * through it, so a renamed WAD is still found.
    */
   name: string;
   /**
    * {@link wadId} content hash — **the file's identity**, and what a load matches the library
-   * against. Deliberately not the name or a library key: those are addresses that change under a
-   * rename or when the same bytes arrive from disk instead of the server. docs/savegames.md
-   * § WAD-set identity.
+   * against; deliberately not the name or a library key, which a rename or another source changes.
+   * docs/savegames.md § WAD-set identity.
    */
   id: string;
 }
@@ -129,10 +127,9 @@ export function saveFileName(name: string): string {
 }
 
 /**
- * Which entries of a save's set a load actually requires back, positionally: the game WAD (`[0]`),
- * the file `mapWad` names, and any file carrying a `DEHACKED` lump, since a patch rewrites the stat
- * tables a restore re-derives every monster from. Everything else supplied art or sound at most.
- * Releasing the game WAD needs the library and is `Menu.resolveSaveWads`'s answer, not this one.
+ * Which entries of a save's set a load requires back, positionally: the game WAD (`[0]`), the file
+ * `mapWad` names, and any file carrying a `DEHACKED` lump. Releasing the game WAD needs the library
+ * and is `Menu.resolveSaveWads`'s answer, not this one.
  * docs/savegames.md § WAD-set identity, § A stand-in game WAD.
  *
  * @param patchWads  the DEHACKED-carrying files' IDs; empty for a save written before the field
@@ -144,13 +141,9 @@ export function requiredWads(wads: SaveWad[], mapWad: string, patchWads: readonl
 
 /**
  * Whether another game WAD may stand in for `wads[0]` — true exactly when the map came from
- * something else, so nothing the snapshot indexes through (sector, `posed`, subsector) was read
- * out of the game WAD at all and it supplied art, sounds and music alone. A `mapWad` that is blank
- * or unmatched keeps the whole-set rule and so is never substitutable.
- *
- * It says nothing about *which* file may stand in: that is the caller's, since it needs the
- * candidate's own maps to answer (`Menu.substituteIwad`, via `mapNameStyle`). What this rules out
- * is the case where the answer could never be safe. docs/savegames.md § A stand-in game WAD.
+ * something else, so nothing the snapshot indexes through was read out of the game WAD at all. A
+ * blank or unmatched `mapWad` keeps the whole-set rule. *Which* file may stand in is the caller's
+ * (`Menu.substituteIwad`). docs/savegames.md § A stand-in game WAD.
  */
 export function substitutableIwad(wads: SaveWad[], mapWad: string): boolean {
   return !requiresWholeSet(wads, mapWad) && wads[0]?.id !== mapWad;
@@ -160,21 +153,16 @@ export function substitutableIwad(wads: SaveWad[], mapWad: string): boolean {
 export interface StandInBlocker {
   map: string;
   /**
-   * Whether the game WAD is what supplies that level — the stand-in would run *its* version, and
-   * the file this save was made with is the fix. False is the other reason a map blocks a stand-in:
-   * the assembled set supplies it nowhere, so the record played it from a file that is simply gone
-   * and no choice of game WAD helps. The two are one refusal and two different sentences.
+   * Whether the game WAD is what supplies that level, so the stand-in would run *its* version;
+   * false is a map the assembled set supplies nowhere, which no choice of game WAD helps.
    */
   fromIwad: boolean;
 }
 
 /**
- * The first map of `maps` that stops a stand-in game WAD being taken, or null when none does —
- * **the one thing that makes a stand-in unsafe** rather than merely different-looking. Which of
- * the two reasons it found is {@link StandInBlocker.fromIwad}'s, because only one of them is fixed
- * by loading the game WAD back and a single sentence for both would misstate the other.
- * Both the load gate and the menu's pick ask this rather than spelling the rule twice.
- * docs/savegames.md § A stand-in game WAD.
+ * The first map of `maps` that stops a stand-in game WAD being taken, or null when none does, with
+ * which of the two reasons ({@link StandInBlocker.fromIwad}). The load gate and the menu's pick
+ * both ask this rather than spelling the rule twice. docs/savegames.md § A stand-in game WAD.
  *
  * @param providerOf  the file supplying a map in the set being assembled, under whatever identity
  *                    the caller can compare — a content ID for the load gate, a library label for
@@ -194,9 +182,8 @@ export function standInBlocker(
 }
 
 /**
- * Why the assembled set can't play this save, or null when it can — **the load gate itself**, as
- * one function over plain facts rather than over a {@link Wad}, so the format module owns the rule
- * and nothing has to re-derive it. `main.ts` asks it over a loaded set through
+ * Why the assembled set can't play this save, or null when it can — **the load gate itself**, over
+ * plain facts rather than a {@link Wad}. `main.ts` asks it over a loaded set through
  * {@link loadedSetRefusal} and throws the message. docs/savegames.md § WAD-set identity.
  *
  * @param actual      {@link wadSetId}'s list for the set in hand
@@ -272,28 +259,23 @@ export interface MissingWad {
    */
   required: boolean;
   /**
-   * The file standing in for this one, when the set resolved to one — only ever a game WAD
-   * ({@link substitutableIwad}), and then {@link MissingWad.required} is false because the load
-   * proceeds on it. A stand-in under this file's *own* name is left out: that is the file in
-   * another version, which {@link MissingWad.wrongVersion} already says. docs/savegames.md § A
-   * stand-in game WAD.
+   * The file standing in for this one — only ever a game WAD ({@link substitutableIwad}), and then
+   * {@link MissingWad.required} is false. A stand-in under this file's *own* name is left out:
+   * {@link MissingWad.wrongVersion} already says that. docs/savegames.md § A stand-in game WAD.
    */
   substitute?: string;
   /**
-   * Why no stand-in was taken, where a candidate was otherwise there to take: the map that stopped
-   * it and which of {@link standInBlocker}'s two reasons it is. Set only alongside
-   * {@link MissingWad.required} — one of those reasons is what makes this file required back, the
-   * other is a level nothing loaded supplies. docs/savegames.md § A stand-in game WAD.
+   * Why no stand-in was taken where a candidate was there to take: the map that stopped it, and
+   * which of {@link standInBlocker}'s two reasons. Set only alongside {@link MissingWad.required}.
+   * docs/savegames.md § A stand-in game WAD.
    */
   blockedBy?: StandInBlocker;
 }
 
 /**
  * What a file the library can't supply is called in a **save row**: which file, and what is wrong
- * with it, in no more than a few words plus the name. The row ellipsizes every line it can't fit on
- * one (docs/menu-saves.md § Save and Load tabs), and the label column is only ~55 characters wide,
- * so the advice lives in {@link missingWadText} instead — where the surfaces showing it have the
- * room.
+ * with it, in a few words. The row ellipsizes (docs/menu-saves.md § Save and Load tabs), so the
+ * advice lives in {@link missingWadText}.
  */
 export function missingWadLabel(file: MissingWad): string {
   if (file.substitute) return `Stand-in for ${file.name}: ${file.substitute}`;
@@ -302,11 +284,9 @@ export function missingWadLabel(file: MissingWad): string {
 }
 
 /**
- * The label plus what to *do* about it: the load error and the row's tooltip, both of which have a
- * whole line's width. An optional file's clause says outright that the save loads — the label alone
- * would read as a refusal for something that works. A stand-in is the one case with nothing to add,
- * and says only its label. Built *from* {@link missingWadLabel} rather than written out again, so a
- * row and its own tooltip cannot name the same file two ways. docs/savegames.md § WAD-set identity.
+ * {@link missingWadLabel} plus what to *do* about it, for the load error and the row's tooltip. An
+ * optional file's clause says outright that the save loads — the label alone would read as a
+ * refusal. docs/savegames.md § WAD-set identity.
  */
 export function missingWadText(file: MissingWad): string {
   // A stand-in carries no advice at either length: the label already names the file that stood in,
@@ -371,20 +351,15 @@ export interface SaveMeta {
    */
   wads: SaveWad[];
   /**
-   * Content ID of the file that supplied {@link SaveMeta.map}'s lumps. **This, with the game WAD,
-   * is what a load requires** — every index a snapshot keys through (sector, `posed`, subsector)
-   * comes from that one map, so an add-on which supplied none of it can be absent without the save
-   * meaning anything else.
-   *
-   * `''` names no provider, and then the whole set is required back ({@link requiresWholeSet}).
-   * docs/savegames.md § WAD-set identity.
+   * Content ID of the file that supplied {@link SaveMeta.map}'s lumps — **with the game WAD, what
+   * a load requires**. `''` names no provider, and then the whole set is required back
+   * ({@link requiresWholeSet}). docs/savegames.md § WAD-set identity.
    */
   mapWad: string;
   /**
-   * Content IDs of the files in {@link SaveMeta.wads} that carry a `DEHACKED` lump, if any.
-   * Optional: **absent means no patch was applied**, which is what every save written before this
-   * field existed meant, so an older save keeps exactly today's looser rule. docs/savegames.md
-   * § WAD-set identity, docs/dehacked.md § Savegames and patched tables.
+   * Content IDs of the files in {@link SaveMeta.wads} that carry a `DEHACKED` lump. **Absent means
+   * no patch was applied**, which is what every save written before the field meant.
+   * docs/savegames.md § WAD-set identity, docs/dehacked.md § Savegames and patched tables.
    */
   patchWads?: string[];
   levelTime: number;
@@ -397,10 +372,9 @@ export interface SaveGame extends SaveMeta {
 }
 
 /**
- * What `Game.captureSave` produces — everything but the store's own bookkeeping.
- * {@link SaveMeta.wads} and {@link SaveMeta.mapWad} need nothing added: a save identifies its files
- * by content, which is exactly what {@link wadSetId} and {@link wadId} hand back, so `Game` never
- * has to know which library the files were picked from.
+ * What `Game.captureSave` produces — everything but the store's own bookkeeping. Its files are
+ * identified by content ({@link wadSetId}, {@link wadId}), so `Game` never has to know which
+ * library they were picked from.
  */
 export type SaveCapture = Omit<SaveGame, 'id' | 'version' | 'at' | 'name'>;
 
@@ -423,11 +397,9 @@ export const asNumber = (v: unknown): number => (typeof v === 'number' && Number
 export const asSkill = (v: unknown): Skill => (v === 1 || v === 2 || v === 3 || v === 4 || v === 5 ? v : 3);
 
 /**
- * One stored WAD entry, each field degraded on its own. Deliberately *mapped* rather than filtered:
- * {@link SaveMeta.wads} is in load order and `[0]` is the game WAD, so dropping a damaged entry
- * would silently shift every file after it into the wrong role. A blanked entry instead fails
- * loudly — an empty ID matches nothing in the library, so the file is reported as one to go and
- * find.
+ * One stored WAD entry, each field degraded on its own — deliberately *mapped* rather than
+ * filtered, since dropping an entry would shift every later file of {@link SaveMeta.wads} into the
+ * wrong role. docs/savegames.md § WAD-set identity.
  */
 export const asWad = (v: unknown): SaveWad => {
   const w = isRecord(v) ? v : {};
@@ -514,10 +486,9 @@ export async function overwriteSave(id: string, capture: SaveCapture): Promise<S
 }
 
 /**
- * Renames a save in place, leaving its {@link SaveMeta.at} — so the list doesn't reorder under the
- * cursor — untouched, and never rewriting the state record at all: the name is the only field the
- * menu lets anyone edit, and renaming several saves in a row is the one path a player repeats. A
- * row too damaged to parse is refused rather than replaced by a bare `{ name }`.
+ * Renames a save in place: meta only, {@link SaveMeta.at} untouched so the list doesn't reorder
+ * under the cursor. A row too damaged to parse is refused rather than replaced by a bare
+ * `{ name }`.
  */
 export async function renameSave(id: string, name: string): Promise<void> {
   const trimmed = name.trim();
@@ -532,13 +503,10 @@ export async function deleteSave(id: string): Promise<void> {
 }
 
 /**
- * The download file, tab-indented: the meta fields stay something a person can open and read,
- * while `state` travels as the stored gzip bytes, base64'd — compressed-plus-base64 is still far
- * smaller than the snapshot's plain JSON. Deliberately *not* {@link readSave}, and deliberately no
- * decompression: downloading is how an unsupported-version — or even undecompressable — save
- * escapes to disk, so the bytes are handed over verbatim with their `stateEncoding` and the stored
- * `version` intact (only {@link importSave} ever stamps {@link SAVE_VERSION}). Only a save whose
- * state record is missing outright has nothing to hand over.
+ * The download file, tab-indented: the meta fields in the clear, `state` as the stored gzip bytes,
+ * base64'd. Deliberately not {@link readSave} and no decompression, so an unsupported-version or
+ * undecompressable save escapes to disk verbatim, its `version` intact (only {@link importSave}
+ * stamps {@link SAVE_VERSION}). docs/savegames.md § Download and import.
  */
 export async function exportSave(id: string): Promise<string> {
   const rawMeta = await readMeta(id);
@@ -553,11 +521,9 @@ export async function exportSave(id: string): Promise<string> {
 }
 
 /**
- * Validates a downloaded save's JSON and stores it under a fresh ID (never the embedded one —
- * importing the same file twice must not overwrite). Same version strictness as {@link readSave}:
- * an old-format file is refused with both versions named, not stored as a dead row. The embedded
- * state is fully decoded here — the one moment a foreign file's bytes are in hand — and then stored
- * *as decoded*, byte-exact, rather than recompressed.
+ * Validates a downloaded save's JSON and stores it under a fresh ID, never the embedded one; the
+ * same version strictness as {@link readSave}. The decoded state is stored byte-exact rather than
+ * recompressed. docs/savegames.md § Download and import.
  */
 export async function importSave(text: string): Promise<SaveMeta> {
   const refusal = (): Error => new Error('that file is not a TopDoom save');

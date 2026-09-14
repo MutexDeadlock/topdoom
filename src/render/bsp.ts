@@ -16,7 +16,7 @@ import { SectorProbe, selfReferencing } from './sectorprobe.ts';
 
 /**
  * A convex floor patch and the sector whose flat it wears — all a flat needs to
- * be drawn, and so what the mesh builder and `findSolidCaps` take. `SubSectorPoly`
+ * be drawn, and so what the mesh builder and `findSolidCaps` take. {@link SubSectorPoly}
  * is this plus what gameplay needs on top.
  */
 export interface SectorPoly {
@@ -58,15 +58,12 @@ export interface LeafGraph {
 /**
  * Least slack, in map units, on the clip against a seg whose line the cell is already
  * cut along: how far the node-clipped cell may stick out past that line before the
- * overhang is cut away. Without it, a seg line that disagrees with the partition it
- * shares an edge with by a rounding error shaves a sliver off the cell that the
- * neighbouring subsector doesn't fill — a visible crack in the floor.
- * docs/render-bsp.md § Cracks between subsectors.
+ * overhang is cut away. docs/render-bsp.md § Cracks between subsectors.
  */
 const SEG_CLIP_TOLERANCE = 4;
 
 /**
- * Most slack `segClipTolerance` will hand one seg. Both bounds are measured, not tuned —
+ * Most slack {@link segClipTolerance} will hand one seg. Both bounds are measured, not tuned —
  * docs/render-bsp.md § Cracks between subsectors.
  */
 const SEG_CLIP_MAX_TOLERANCE = 32;
@@ -81,10 +78,10 @@ const SEG_CLIP_MAX_TOLERANCE = 32;
 const PARTITION_MATCH = 2;
 
 /**
- * How far past an edge the neighbour probes sample, in map units — `buildLeafGraph`'s and
- * `buildIslands`'. **Tuned by feel**: a robustness value, far enough out to clear the clip's float
- * noise and the overhang `segClipTolerance` leaves, short enough not to step over a sliver leaf
- * whole.
+ * How far past an edge the neighbour probes sample, in map units — {@link buildLeafGraph}'s and
+ * {@link buildIslands}'. **Tuned by feel**: a robustness value, far enough out to clear the clip's
+ * float noise and the overhang {@link segClipTolerance} leaves, short enough not to step over a
+ * sliver leaf whole.
  */
 const NEIGHBOUR_PROBE = 0.5;
 
@@ -97,18 +94,16 @@ const NEIGHBOUR_PROBE = 0.5;
  */
 const built = new WeakMap<DoomMap, SubSectorPoly[]>();
 
-/** One rebuild per map, like `buildSubSectorPolys`, and weak on it for the same reason. */
+/** One rebuild per map, like {@link buildSubSectorPolys}, and weak on it for the same reason. */
 const graphs = new WeakMap<DoomMap, LeafGraph>();
 
-/** One rebuild per map, like `buildLeafGraph`, and weak on it for the same reason. */
+/** One rebuild per map, like {@link buildLeafGraph}, and weak on it for the same reason. */
 const islands = new WeakMap<DoomMap, Int32Array>();
 
 /**
- * SEGS only stores edges that lie on real linedefs; the edges introduced by BSP
- * splits are missing. So each subsector is rebuilt by taking a large starting quad
- * and clipping it against every partition line on the path from the root to the
- * leaf, and finally against each of the subsector's segs — the GL minisegs among
- * them skipped, below. Treat the result as read-only: it is shared between callers.
+ * Each subsector's convex floor polygon, clipped out of a large starting quad by every partition
+ * on the path from the root and then by its own segs — docs/render-bsp.md. Treat the result as
+ * read-only: it is shared between callers.
  */
 export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
   const cached = built.get(map);
@@ -131,7 +126,7 @@ export function sectorOfSubSector(map: DoomMap, ssIndex: number): number {
   return 0;
 }
 
-/** Vanilla's `R_PointInSubsector`, or -1 on a tree the descent can't finish. */
+/** The leaf a point lies in (`R_PointInSubsector`), or -1 on a tree the descent can't finish. */
 export function subsectorAtPoint(map: DoomMap, x: number, y: number): number {
   if (map.nodes.length === 0) return map.subsectors.length > 0 ? 0 : -1;
   let child = map.nodes.length - 1;
@@ -150,10 +145,8 @@ export function subsectorAtPoint(map: DoomMap, x: number, y: number): number {
 }
 
 /**
- * Which leaves touch which. Vanilla SEGS carry no minisegs, so a leaf's splits into the rest of
- * its own sector have no edge to read the neighbour off; this recovers them geometrically instead,
- * probing a map unit's half past the midpoint of every polygon edge and descending the tree there.
- * docs/render-bsp.md § Leaf adjacency.
+ * Which leaves touch which, recovered geometrically: vanilla SEGS carry no minisegs to read a
+ * neighbour off. docs/render-bsp.md § Leaf adjacency.
  */
 export function buildLeafGraph(map: DoomMap): LeafGraph {
   const cached = graphs.get(map);
@@ -166,9 +159,8 @@ export function buildLeafGraph(map: DoomMap): LeafGraph {
 /**
  * Which connected region each leaf belongs to, as an island per subsector: two leaves share one
  * where a two-sided line or a BSP split joins them, so a map is usually a single island and a
- * second is space only a teleporter reaches. Both union rules below err toward joining, since a
- * link too many only fails to hide something while a link missing is a hole in the view.
- * docs/render-bsp.md § Islands, docs/fogofwar.md § Islands for what reads it.
+ * second is space only a teleporter reaches. docs/render-bsp.md § Islands, docs/fogofwar.md
+ * § Islands for what reads it.
  */
 export function buildIslands(map: DoomMap): Int32Array {
   const cached = islands.get(map);
@@ -180,8 +172,8 @@ export function buildIslands(map: DoomMap): Int32Array {
 
 /**
  * How many connected regions the map came apart into, which `game.ts` reports at level load — one
- * on every stock map, more where a teleporter is the only way in. `rebuildIslands` hands out dense
- * ids, so the highest plus one is the count. docs/render-bsp.md § Islands.
+ * on every stock map, more where a teleporter is the only way in. {@link rebuildIslands} hands out
+ * dense ids, so the highest plus one is the count. docs/render-bsp.md § Islands.
  */
 export function islandCount(map: DoomMap): number {
   const island = buildIslands(map);
@@ -206,7 +198,7 @@ interface Wall {
   lineB: Vertex;
   /** The SEGS record itself, so the repairs below can ask what sector its side names. */
   seg: Seg;
-  /** Filed into the child on the wrong side of its own line — `wallFacesAwayFromCell`. */
+  /** Filed into the child on the wrong side of its own line — {@link wallFacesAwayFromCell}. */
   wrongSide: boolean;
 }
 
@@ -350,7 +342,7 @@ function rebuildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
 /**
  * The seg's linedef, oriented the seg's way — the wall's line, where a split seg's
  * own endpoints are rounded off it — or null where the linedef or a vertex of it is
- * missing. `Seg.direction` is the one record of which way the seg runs.
+ * missing. {@link Seg.direction} is the one record of which way the seg runs.
  * docs/render-bsp.md § Cracks between subsectors.
  */
 function linedefLine(map: DoomMap, seg: Seg): [Vertex, Vertex] | null {
@@ -390,9 +382,10 @@ function wallFacesAwayFromCell(cell: number[], a: Vertex, b: Vertex): boolean {
 
 /**
  * The cell clipped against every seg of the leaf that really bounds it, in seg order.
- * `spare` skips the segs `wallFacesAwayFromCell` flagged; run with it false, the result
- * is bit-identical to never having detected one — which is what the reality check on the
- * sparing falls back to. docs/render-bsp.md § Segs on the wrong side of their leaf.
+ *
+ * @param spare Skips the segs {@link wallFacesAwayFromCell} flagged. False is bit-identical to
+ *   never having detected one, which the sparing's reality check falls back to —
+ *   docs/render-bsp.md § Segs on the wrong side of their leaf.
  */
 function clipBy(probe: () => SectorProbe, poly: number[], walls: Wall[], sector: number, spare: boolean): number[] {
   let cell = poly;
@@ -417,7 +410,7 @@ const SEG_SPAN_SLACK = 4;
 
 /**
  * How far past a wall's end, and how far off its line, the ground beyond it is
- * probed. Tuned by feel between the same two bounds as `SEG_SPAN_SLACK`: enough
+ * probed. Tuned by feel between the same two bounds as {@link SEG_SPAN_SLACK}: enough
  * to clear the line itself, little enough to stay in whatever is immediately
  * around the corner.
  */
@@ -527,15 +520,10 @@ function lineCoverage(walls: Wall[], index: number): { min: number; max: number 
 }
 
 /**
- * Slack for one seg's clip: how far past its own endpoints the seg's line has to be
- * extrapolated to reach `cell`, in multiples of the seg's own length, clamped between
- * the two tolerances above. That ratio is how far the line can have drifted by the
- * time it gets there — docs/render-bsp.md § Cracks between subsectors.
- *
- * **Only a seg the cell is already cut along gets any slack.** Where the cell has no
- * boundary on the seg's line, the seg is the only thing bounding it there and the
- * drift the slack pays for cannot have happened, so the clip is exact; any slack
- * there is floor standing past the wall, which this camera sees over.
+ * Slack for one seg's clip: how far past its own endpoints the seg's line has to be extrapolated to
+ * reach `cell`, in multiples of the seg's own length, clamped between the two tolerances above.
+ * That ratio is how far the line can have drifted by the time it gets there. **Only a seg the cell
+ * is already cut along gets any slack**; any other clips exact.
  * docs/render-bsp.md § Cracks between subsectors.
  */
 function segClipTolerance(cell: number[], a: Vertex, b: Vertex): number {
@@ -554,10 +542,10 @@ function segClipTolerance(cell: number[], a: Vertex, b: Vertex): number {
 
 /**
  * Whether `cell` is already cut along this seg's own line — an edge of it running
- * within `PARTITION_MATCH` of both the seg's endpoints, which is what a node
+ * within {@link PARTITION_MATCH} of both the seg's endpoints, which is what a node
  * partition built from the seg's linedef leaves. Only then is the seg's line and
  * the cell's boundary the *same* boundary, disagreeing by rounding, which is the
- * case `segClipTolerance` hands slack to.
+ * case {@link segClipTolerance} hands slack to.
  */
 function cellCutAlong(cell: number[], a: Vertex, b: Vertex): boolean {
   const n = cell.length / 2;

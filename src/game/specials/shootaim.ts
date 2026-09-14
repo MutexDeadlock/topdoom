@@ -25,25 +25,24 @@ export interface ShootAim extends Pos3 {
 const PICK_TOLERANCE = 16;
 
 /**
- * How far inside a band's edges the aim point is kept, in map units — tuned by
- * feel. The shot is traced along its own line from the player, so its height
+ * How far inside a band's edges the aim point is kept, in map units —
+ * tuned by feel. The shot is traced along its own line from the player, so its height
  * where it crosses is only as exact as that arithmetic: aiming *at* a band edge
  * risks landing a unit the wrong side of it and passing straight through the line.
  */
 const BAND_INSET = 4;
 
 /**
- * Which of `lines` the pointer is over and where on it to aim, or null. `ray` is
- * the cursor ray in three.js space (`TopDownCamera.rayFor`), `aimAt` the point on the aim plane
- * it was cast toward, and `fireZ` the height the shot leaves the player at; `lines` is every
- * shoot-trigger line still able to fire.
+ * Which of `lines` the pointer is over and where on it to aim, or null. The ray is tested against
+ * each line's shootable **bands**, not its whole face, so the pointer over a window's opening picks
+ * nothing and the shot goes through it as aimed. The nearest band hit wins, and the aim height is
+ * then taken from whichever band of that line sits closest to `fireZ` — the flattest shot that
+ * still strikes the line, since a steeper one only offers more geometry in between to run into.
  *
- * The ray is tested against each line's shootable **bands**, not its whole face,
- * so the pointer over a window's opening picks nothing and the shot goes through
- * it as aimed. The nearest band hit wins, and the aim height is then taken from
- * whichever band of that line sits closest to `fireZ` — the flattest shot that
- * still strikes the line, since a steeper one only offers more geometry in
- * between to run into.
+ * @param ray    the cursor ray, in three.js space (`TopDownCamera.rayFor`)
+ * @param aimAt  the point on the aim plane the ray was cast toward
+ * @param lines  every shoot-trigger line still able to fire
+ * @param fireZ  the height the shot leaves the player at
  */
 export function pickShootAim(
   world: World,

@@ -7,7 +7,7 @@ Features and improvements
     like ksutra MAP04's mouse hole
 
 Fixed bugs
-
+  - items more than 8 units below the player's feet are now out of reach
 
 
 ===============================================================================

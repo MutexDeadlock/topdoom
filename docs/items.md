@@ -133,6 +133,14 @@ either is taken. Without it EPIC.WAD MAP02's green armor is uncollectable: it si
 player's box comes is 44 units — outside the 36-unit reach box standing still, inside it while
 running.
 
+**A whole tic reaches further than vanilla does, and that is accepted.** Vanilla halves a move past
+`MAXMOVE/2` a tic, but ramps up so slowly that a run from a short or medium distance meets a ledge
+unhalved; this engine's feel-tuned `ACCELERATION` is at full speed within a few tics, so vanilla's
+halving here would halve nearly every run. Taking it made EPIC.WAD MAP02's armor (sector 325, from
+the south) reachable only by straferunning. The cost of not taking it: ksutra.wad MAP01's super
+shotgun and shells (sector 32, 32 units past the ledge at x = 64) are collected by straferunning
+at the ledge, which GZDoom does not allow.
+
 Sampling those two endpoints is a deliberate simplification of vanilla, which runs `P_CheckPosition`
 — and so the pickup — at *every* position `P_SlideMove` probes, not just the two ends. It cannot
 miss an item between them at any speed this engine reaches: the two 72-wide boxes only separate
@@ -178,8 +186,11 @@ time, and is silent after.
 
 **`tryPickup`'s `z` check** exists because 2D distance alone lets a player standing at the *base* of
 a not-yet-lowered pillar collect an item still on top of it — DOOM2 MAP04's blue key does exactly
-this. Matching `PIT_CheckThing`'s overhead gate, a pickup more than `PLAYER_HEIGHT` above or below
-the player is skipped regardless of 2D range. That in turn requires a thing's height to track its
+this. Matching `P_TouchSpecialThing`'s own pair (`p_inter.c`), a pickup more than `PLAYER_HEIGHT`
+above the collector's feet or more than `PICKUP_REACH_BELOW` below them is skipped regardless of 2D
+range. The band is lopsided: a player whose box still spans a ledge stands on its high side
+(docs/movement.md § Collision), and an item on the floor below waits until they step down. That in
+turn requires a thing's height to track its
 sector's *live* `floorHeight` rather than a value cached at load: `PosedThing` stores the `Sector`
 reference itself (the same mutable object `SpecialsController` writes `floorHeight`/`light` onto)
 instead of a frozen `z`, and both `ThingLayer.update` and `tryPickup` read `sector.floorHeight`

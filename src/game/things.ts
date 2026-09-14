@@ -136,6 +136,13 @@ import { decayOverTics } from '../util/damping.ts';
 import { cos, sin } from '../util/fdlibm.ts';
 
 /**
+ * How far below the collector's feet an item stays in reach — `P_TouchSpecialThing`'s
+ * `delta < -8*FRACUNIT` (`p_inter.c`); above them, the collector's own height is the limit.
+ * docs/items.md § Collecting things.
+ */
+const PICKUP_REACH_BELOW = 8;
+
+/**
  * Vanilla's per-tic XY friction, `P_XYMovement`'s `FRICTION = 0xE800/0x10000`. `applyKnockback`
  * spreads it over the tics a step covers ({@link decayOverTics}) — docs/movement.md § Knockback.
  */
@@ -774,9 +781,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       // destination before rejecting the move. docs/items.md § Collecting things.
       const settled = bodiesOverlap(from, p, blockdist);
       if (!settled && !bodiesOverlap(to, p, blockdist)) continue;
-      // `PIT_CheckThing`'s overhead/underneath gate: a thing on a not-yet-lowered pillar is in
-      // 2D range but out of reach (DOOM2 MAP04's blue key). docs/items.md § Collecting things.
-      if (Math.abs((p.sector?.floorHeight ?? 0) - from.z) > PLAYER_HEIGHT) continue;
+      // Out of reach in height: a thing on a not-yet-lowered pillar is in 2D range but not
+      // collected (DOOM2 MAP04's blue key). docs/items.md § Collecting things.
+      const rise = (p.sector?.floorHeight ?? 0) - from.z;
+      if (rise > PLAYER_HEIGHT || rise < -PICKUP_REACH_BELOW) continue;
       // The attempted end alone reaches a whole tic past where the collector stands, so unlike
       // vanilla's own stepping it can land deep inside sealed geometry. Only that end is gated —
       // the settled box is vanilla's, walls and all. docs/items.md § Collecting things.

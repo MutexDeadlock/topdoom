@@ -10,7 +10,7 @@
 import { ThingType } from './game/things/doomednums.ts';
 
 /** Shown on the start menu. */
-export const VERSION = '0.20.0-test1';
+export const VERSION = '0.20.0';
 
 /**
  * Set VITE_DEVMODE=true in .env.local to default the three Debug / Dev settings on. It gates

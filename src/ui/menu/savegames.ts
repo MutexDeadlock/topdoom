@@ -93,6 +93,8 @@ export class SavegamesUi {
   private setStatus: StatusLine;
   private describe: (meta: SaveMeta) => SaveSetInfo;
   private session: MenuSession = 'none';
+  /** Whether a running network game refuses every Load — `refresh`'s, like `session`. */
+  private startRefused = false;
   /**
    * Which of the two lists is on screen, and whether each still matches the store. Only the visible
    * one is ever built — docs/menu-saves.md § Save and Load tabs.
@@ -149,11 +151,14 @@ export class SavegamesUi {
   /**
    * Marks both lists stale and rebuilds whichever is on screen; called on every menu open and after
    * each store mutation.
-   * @param session  defaults to the last value `Menu.open` gave, so a refresh from elsewhere (an
-   *                 upload) doesn't have to carry it
+   * @param session       defaults to the last value `Menu.open` gave, so a refresh from elsewhere
+   *                      (an upload) doesn't have to carry it
+   * @param startRefused  whether `MenuHooks.startRefusal` refuses every Load, its reason in the
+   *                      tab's hint; defaults the same way
    */
-  refresh(session = this.session): void {
+  refresh(session = this.session, startRefused = this.startRefused): void {
     this.session = session;
+    this.startRefused = startRefused;
     this.saveButton.disabled = !this.canSave;
     // A disabled button shows no tooltip, so the reason has to be on screen.
     this.refusalHint.textContent = this.hooks.saveRefusal() ?? '';
@@ -306,8 +311,10 @@ export class SavegamesUi {
       load.textContent = 'Load';
       // Greyed for a file the load would refuse over, the same courtesy Save and
       // Overwrite get: the row's red line beside it already names the file, and a
-      // disabled button shows no tooltip of its own. `loadSave` stays the gate.
-      load.disabled = entry.refusal !== null || blockingWad(set.missing) !== undefined;
+      // disabled button shows no tooltip of its own. `loadSave` stays the gate. A running network
+      // game greys every row alike, its one reason in the tab's hint.
+      load.disabled =
+        entry.refusal !== null || blockingWad(set.missing) !== undefined || this.startRefused;
       // Only asked for over a run of the player's own, which a load throws away — Start new game's
       // own conditional hold (docs/menu-saves.md § Save and Load tabs). The tooltip follows the
       // hold: from the launcher, and over a replay, this is an ordinary button with nothing to warn

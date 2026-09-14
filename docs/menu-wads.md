@@ -324,7 +324,9 @@ the filter, choosing a folder, and the one status line.
   one-off folder; `error` red for what failed. No kind is `info`; `attempt` reports a throw as
   `error`.
 - **The menu's empty line is a hint, never blank**: `setStatus('')` — a tab switch, a hold that
-  landed, a level start — shows what the player can do on that tab instead, always `info`.
+  landed, a level start — shows what the player can do on that tab instead, as `info`; on a tab
+  whose start a running network game refuses, that reason in amber (`tabHint`, docs/menu.md § One
+  screen, two jobs). A hint on screen is redrawn as the room changes (`redrawHint`).
   `TAB_HINTS` holds one per tab, none on New Game (its footer always holds Start new game);
   `MultiplayerUi.statusHint` follows the room. The overlay's line has no hint.
 

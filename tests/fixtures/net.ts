@@ -102,17 +102,20 @@ export interface HookLog {
   starts: { game: NetGame; restore: NetRestore | null }[];
   ended: string[];
   changes: number;
+  /** How often the room's game ended back into its lobby. */
+  lobbies: number;
   /** What `setRefusal` answers, null unless a test says otherwise. */
   refusal: string | null;
 }
 
 export function hookLog(): { hooks: NetHooks; log: HookLog; clock: { now: number } } {
   const clock = { now: 0 };
-  const log: HookLog = { starts: [], ended: [], changes: 0, refusal: null };
+  const log: HookLog = { starts: [], ended: [], changes: 0, lobbies: 0, refusal: null };
   const hooks: NetHooks = {
     setRefusal: () => log.refusal,
     startGame: (game, restore) => log.starts.push({ game, restore }),
     changed: () => log.changes++,
+    backInLobby: () => log.lobbies++,
     ended: (reason) => log.ended.push(reason),
     now: () => clock.now,
   };

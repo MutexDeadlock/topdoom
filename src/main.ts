@@ -84,6 +84,11 @@ async function boot(): Promise<void> {
   let game: Game | null = null;
   /** The network session this browser sits in, or null — docs/multiplayer-net.md § The session. */
   let net: NetSession | null = null;
+  /**
+   * Bumped by every level the session asks for and every return to its lobby: a level still loading
+   * for a game that has ended since starts nothing (docs/multiplayer-net.md § Leaving).
+   */
+  let netStarts = 0;
 
   /**
    * What the menu is opened over: nothing, a run of the player's own, or a replay. The difference
@@ -99,8 +104,14 @@ async function boot(): Promise<void> {
    */
   const startLevel = async (selection: Selection, from: LevelSource = {}): Promise<void> => {
     const { save = null, replay = null, net: netGame = null, restore: netRestore = null } = from;
-    // A start of the player's own leaves a network game behind; the session's own starts are the
-    // one exception (docs/multiplayer-net.md § Leaving).
+    // Which of the session's levels this is, read before the first `await`: the `startGame` hook
+    // has just bumped it.
+    const netStart = netStarts;
+    // The menu greys every start of the player's own while a network game runs; this is the gate.
+    const refused = netGame ? null : startRefusal();
+    if (refused) throw new Error(refused);
+    // A start of the player's own leaves a lobby behind; the session's own starts are the one
+    // exception (docs/multiplayer-net.md § Leaving).
     if (net && netGame !== net) {
       leaveNet();
     }
@@ -129,6 +140,11 @@ async function boot(): Promise<void> {
       // A session that ended while its level loaded has no level to start (docs/multiplayer-net.md
       // § Leaving); the level running meanwhile, if any, stays.
       if (netGame && netGame !== net) throw new Error(netGame.endReason ?? 'you left the room');
+      // Nor has a game the host ended meanwhile: its room is back in the lobby the menu shows.
+      if (netGame && netStart !== netStarts) {
+        loading.hide();
+        return;
+      }
       disposeGame();
       // `?pos=`, `?coop=` and `?deathmatch=` are for a fresh start only: a load, a replay and a
       // network game carry their own position and players.
@@ -147,10 +163,15 @@ async function boot(): Promise<void> {
         net: netGame,
         autoSave: () => withCapture((capture) => savegames.writeSave(capture, takeOverSaveName(replay, capture))),
         onCampaignEnd: () => {
+          if (game?.networked) {
+            // Every browser in the game reaches this tic: the host's `endGame` takes the room back
+            // to its lobby, and a peer's level ends ahead of the host's word
+            // (docs/multiplayer-net.md § Leaving).
+            net?.endGame();
+            endNetLevel();
+            return;
+          }
           disposeGame();
-          // Every browser in the game reaches this tic together; the host takes the room back to
-          // its lobby (docs/multiplayer-net.md § Leaving).
-          net?.endGame();
           menu.open('none');
         },
         gldefsText,
@@ -220,6 +241,23 @@ async function boot(): Promise<void> {
     );
 
   /**
+   * Why a start of the player's own — New Game, Load, a replay — is refused: while a network game
+   * runs, it would end that game for this player. docs/multiplayer-net.md § Leaving.
+   */
+  const startRefusal = (): string | null => (net?.gameRunning ? 'Multiplayer game running' : null);
+
+  /**
+   * The room's game is over and its lobby kept: the level it runs, if one does, ends and the menu
+   * opens on the Multiplayer tab, saying so. docs/multiplayer-net.md § Leaving.
+   */
+  const endNetLevel = (): void => {
+    if (!game?.networked) return;
+    disposeGame();
+    menu.open(session(), 'multiplayer');
+    menu.setStatus('The game is over — everyone is back in the lobby.');
+  };
+
+  /**
    * Leaves the room, and ends the level it runs, if one does: nobody plays a network game's level
    * on alone. The caller puts the menu right. docs/multiplayer-net.md § Leaving.
    */
@@ -272,18 +310,22 @@ async function boot(): Promise<void> {
     },
     startGame: (netGame, restore) => {
       if (!net) return;
+      netStarts++;
       void startNetGame(net, netGame, restore);
     },
     changed: () => menu.refreshMultiplayer(),
+    // Wherever the game's level still runs — a peer short of the last tic too, whose frame would
+    // otherwise hold forever — it ends here (docs/multiplayer-net.md § Leaving).
+    backInLobby: () => {
+      netStarts++;
+      endNetLevel();
+    },
     ended: (reason) => {
       const inGame = game?.networked ?? false;
       leaveNet();
       // Back to the launcher on the tab the room was on, the reason in its status line; a level of
       // the player's own behind a lobby is left alone.
-      if (inGame) {
-        menu.open(session());
-        menu.showTab('multiplayer', session());
-      }
+      if (inGame) menu.open(session(), 'multiplayer');
       menu.setStatus(reason, 'error');
     },
   };
@@ -333,6 +375,7 @@ async function boot(): Promise<void> {
   const menu: Menu = new Menu(audio, {
     onStart: (selection) => startLevel(selection),
     onResume: resumeGame,
+    startRefusal,
     saves: {
       onSave: (name) => withCapture((capture) => savegames.writeSave(capture, name)),
       onOverwrite: (id) => withCapture((capture) => savegames.overwriteSave(id, capture)),
@@ -390,6 +433,7 @@ async function boot(): Promise<void> {
         net = NetSession.join(transport, netHooks, { ...identity(name), code });
       },
       start: () => net?.start(),
+      endGame: () => net?.endGame(),
       kick: (member) => net?.kick(member),
       recheckWads: () => net?.recheckSet(),
       // From the open menu, which drops "Return to game" where the level went with the room.

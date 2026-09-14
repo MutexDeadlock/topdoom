@@ -315,7 +315,8 @@
   white-space: nowrap;
 }
 
-#menu #net-leave {
+#menu #net-leave,
+#menu #net-close {
   margin-left: auto;
 }
 

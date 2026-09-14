@@ -38,6 +38,7 @@ import {
 import { readStorage, writeStorage } from '../../util/storage.ts';
 import { DOOM_TIC, VERSION } from '../../constants.ts';
 import { attempt, emptyLine, fillFacts, markChip, noteLine, type StatusLine } from './actions.ts';
+import { confirmOnHold } from './hold.ts';
 import type { SaveSetInfo } from './savegames.ts';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -66,6 +67,8 @@ export interface MultiplayerHooks {
   announce(): Promise<boolean>;
   /** The host starts the game. */
   start(): void;
+  /** The host ends the running game and takes everyone back to the lobby. */
+  endGame(): void;
   /** The host puts relay member `member` out of the room. */
   kick(member: number): void;
   /** This browser's WADs changed: a peer's answer on the host's set is asked again. */
@@ -110,6 +113,8 @@ export class MultiplayerUi {
   private delaySelect = el<HTMLSelectElement>('net-delay');
   private startButton = el<HTMLButtonElement>('net-start');
   private leaveButton = el<HTMLButtonElement>('net-leave');
+  private closeButton = el<HTMLButtonElement>('net-close');
+  private endButton = el<HTMLButtonElement>('net-end');
   private tabButton = el<HTMLButtonElement>('tab-button-multiplayer');
 
   private hooks: MultiplayerHooks;
@@ -167,11 +172,25 @@ export class MultiplayerUi {
     this.joinButton.addEventListener('click', () => void this.join());
     this.startButton.addEventListener('click', () => this.hooks.start());
     this.leaveButton.addEventListener('click', () => {
-      // The host leaving takes the room with it (docs/multiplayer-net.md § Leaving).
-      const hosting = this.hooks.session()?.isHost ?? false;
       this.hooks.leave();
-      this.setStatus(hosting ? 'Room closed.' : 'Room left.');
-      this.refresh();
+      this.setStatus('Room left.');
+    });
+    // Held while it costs anyone else: the host leaving takes the room with it
+    // (docs/multiplayer-net.md § Leaving).
+    confirmOnHold(this.closeButton, {
+      hint: 'Hold Close room to end the room for everyone.',
+      setStatus: this.setStatus,
+      action: () => {
+        this.hooks.leave();
+        this.setStatus('Room closed.');
+      },
+      required: () => this.closeNeedsHold,
+    });
+    // Held: it throws the level away on every browser at once. The room stays.
+    confirmOnHold(this.endButton, {
+      hint: 'Hold End game to take everyone back to the lobby.',
+      setStatus: this.setStatus,
+      action: () => this.hooks.endGame(),
     });
   }
 
@@ -206,11 +225,9 @@ export class MultiplayerUi {
   statusHint(): string {
     const session = this.hooks.session();
     if (!session) return "Host a game by opening a new room, or join one with the code its host gave you.";
-    // The host leaving takes the room with it, which is why its button is Close.
-    if (session.phase === 'ended') return `${session.isHost ? 'Close' : 'Leave'} the room to host or join another.`;
-    if (session.phase !== 'lobby') {
+    if (session.gameRunning) {
       return session.isHost
-        ? 'Close ends the network game for everyone.'
+        ? 'End game takes everyone back to the lobby; Close room ends the room for everyone.'
         : 'Leave takes you out of the network game; your player stands idle.';
     }
     return session.isHost
@@ -296,11 +313,18 @@ export class MultiplayerUi {
    * filled while its game loads or runs, off outside a room.
    */
   private refreshTabLight(): void {
-    const phase = this.hooks.session()?.phase;
-    const inGame = phase === 'loading' || phase === 'playing';
+    const session = this.hooks.session();
+    const phase = session?.phase;
+    const inGame = session?.gameRunning ?? false;
     this.tabButton.classList.toggle('net-lobby', phase === 'lobby');
     this.tabButton.classList.toggle('net-game', inGame);
     this.tabButton.title = phase === 'lobby' ? 'In a lobby' : inGame ? 'In a network game' : '';
+  }
+
+  /** Whether Close room costs anyone but the host: a game under way, or a lobby with company. */
+  private get closeNeedsHold(): boolean {
+    const session = this.hooks.session();
+    return session !== null && (session.phase !== 'lobby' || session.peers.length > 1);
   }
 
   private render(): void {
@@ -325,13 +349,17 @@ export class MultiplayerUi {
     this.recolorRow.classList.toggle('hidden', session.phase !== 'lobby');
     this.renderFacts(session);
     this.renderPeers(session);
-    // Start is the lobby host's, like the rules row the delay stands in; a running game shows the
-    // roster and Leave.
+    // Start is the lobby host's, like the rules row the delay stands in.
     this.delaySelect.value = String(session.delay);
     this.startButton.classList.toggle('hidden', !hosting);
     this.startButton.disabled = !session.canStart || this.announcing;
-    // The host leaving takes the room with it (docs/multiplayer-net.md § Leaving).
-    this.leaveButton.textContent = session.isHost ? 'Close' : 'Leave';
+    // The host's Leave is Close: the room goes with it (docs/multiplayer-net.md § Leaving).
+    this.leaveButton.classList.toggle('hidden', session.isHost);
+    this.closeButton.classList.toggle('hidden', !session.isHost);
+    // The tooltip follows the hold: a lobby the host has alone closes on a click.
+    this.closeButton.title = this.closeNeedsHold ? 'Hold to close the room; everyone in it is sent out' : '';
+    // Where Start stood: the running game's host takes everyone back to the lobby.
+    this.endButton.classList.toggle('hidden', !(session.isHost && session.gameRunning));
   }
 
   private renderConnect(): void {

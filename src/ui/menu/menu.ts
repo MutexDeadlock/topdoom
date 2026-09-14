@@ -84,6 +84,11 @@ export interface MenuHooks {
   onStart(selection: Selection): void | Promise<void>;
   /** "Return to game": closes the menu onto the level paused behind it. */
   onResume(): void;
+  /**
+   * Why a start of the player's own — Start new game, a Load, a replay's Play — is refused right
+   * now, or null: a network game running. docs/menu.md § One screen, two jobs.
+   */
+  startRefusal(): string | null;
   /** The Save and Load tabs' requests ({@link SavegamesUi}). */
   saves: SaveHooks;
   /** The Replays tab's ({@link ReplaysUi}). */
@@ -111,10 +116,9 @@ const SKILL_STORAGE_KEY = 'skill';
 const SELECTION_STORAGE_KEY = 'selection';
 
 /**
- * What an otherwise empty status line says on each tab: what the player can do there, always as
- * `info`. None on New Game, whose footer always holds Start new game. The Multiplayer tab's
- * follows the room, so {@link MultiplayerUi.statusHint} says it —
- * docs/menu-wads.md § The status line.
+ * What an otherwise empty status line says on each tab: what the player can do there, as `info`.
+ * None on New Game, whose footer always holds Start new game. The Multiplayer tab's follows the
+ * room, so {@link MultiplayerUi.statusHint} says it — docs/menu-wads.md § The status line.
  */
 const TAB_HINTS: Record<Exclude<MenuTab, 'multiplayer'>, string> = {
   newgame: '',
@@ -123,6 +127,13 @@ const TAB_HINTS: Record<Exclude<MenuTab, 'multiplayer'>, string> = {
   replays: 'Pick a replay to watch, or import one from your disk. Record from here while a game runs.',
   settings: 'Changes made here take effect immediately, unless otherwise specified.',
 };
+
+/**
+ * The tabs that start something of the player's own — Start new game, Load, a replay's Play — and
+ * so say why in place of their hint while {@link MenuHooks.startRefusal} refuses it.
+ * docs/menu.md § One screen, two jobs.
+ */
+const START_TABS: ReadonlySet<MenuTab> = new Set<MenuTab>(['newgame', 'load', 'replays']);
 
 /**
  * What {@link Menu.saveSelection} writes: {@link WadSource.key}s plus the level, for every source
@@ -211,6 +222,13 @@ export class Menu {
   private savegames: SavegamesUi;
   private replays: ReplaysUi;
   private multiplayer: MultiplayerUi;
+  /**
+   * {@link MenuHooks.startRefusal} as of the last open or room change: what Start new game, the
+   * save and replay rows and the hint go by.
+   */
+  private startRefused: string | null = null;
+  /** Whether the status line shows the tab's hint rather than a message — a hint follows the room. */
+  private showingHint = true;
   private recordToggle = el<HTMLButtonElement>('record-toggle');
   /**
    * Whether the next game starts recording; session-only, so it can't outlive the tab it was set
@@ -401,8 +419,9 @@ export class Menu {
    * they were on.
    * @param session  anything but `'none'` says a level is loaded and paused behind the menu: the
    *                 backdrop turns translucent and "Return to game" appears
+   * @param tab      the tab to open on instead
    */
-  open(session: MenuSession = 'none'): void {
+  open(session: MenuSession = 'none', tab?: MenuTab): void {
     const inGame = session !== 'none';
     this.root.classList.remove('hidden');
     this.root.classList.toggle('ingame', inGame);
@@ -414,20 +433,35 @@ export class Menu {
     // the resume button. Whoever was *on* it when the game ended is moved off
     // rather than left staring at a hidden tab's panel.
     this.tabButtons.save.classList.toggle('hidden', !inGame);
-    if (!inGame && this.activeTab === 'save') {
-      this.setTab('newgame');
-    }
-    this.savegames.refresh(session);
-    this.replays.refresh(session);
+    // Before `setTab`, whose hint reads it.
+    this.startRefused = this.hooks.startRefusal();
+    // Switched before the lists refresh, so a list the menu is not opening on is not read.
+    const onTab = tab ?? (!inGame && this.activeTab === 'save' ? 'newgame' : null);
+    if (onTab) this.setTab(onTab);
+    this.savegames.refresh(session, this.startRefused !== null);
+    this.replays.refresh(session, this.startRefused !== null);
     this.multiplayer.refresh();
     this.refreshButtons();
+    this.redrawHint();
   }
 
   /**
-   * The Multiplayer tab redrawn from its session — what the session reports every change through.
+   * The Multiplayer tab redrawn from its session — what the session reports every change through —
+   * and every start of the player's own greyed or freed as the room's game begins or ends.
    */
   refreshMultiplayer(): void {
     this.multiplayer.refresh();
+    // A closed menu is brought up to date by `open`.
+    if (!this.isOpen) return;
+    const refusal = this.hooks.startRefusal();
+    if (refusal !== this.startRefused) {
+      this.startRefused = refusal;
+      this.refreshButtons();
+      // Their rows are built with Load and Play greyed or not.
+      this.savegames.refresh(this.session, refusal !== null);
+      this.replays.refresh(this.session, refusal !== null);
+    }
+    this.redrawHint();
   }
 
   /**
@@ -579,7 +613,7 @@ export class Menu {
    * The menu's status line — or the WAD Library's, while that overlay is up: it covers `#menu`
    * completely, and a message raised behind it would go to a line nobody can see.
    * docs/menu-wads.md § WAD Library.
-   * @param text  '' for the tab's own hint ({@link TAB_HINTS}) rather than a blank line
+   * @param text  '' for the tab's own hint ({@link Menu.tabHint}) rather than a blank line
    * @param kind  what the message is, and so its colour — docs/menu-wads.md § The status line
    */
   setStatus(text: string, kind: StatusKind = 'info'): void {
@@ -587,12 +621,13 @@ export class Menu {
       this.library.showStatus(text, kind);
       return;
     }
-    const shown = text || this.tabHint();
+    this.showingHint = text === '';
+    // The hint carries its own kind, whatever came along with nothing to say.
+    const [shown, shownKind] = text ? [text, kind] : this.tabHint();
     this.statusEl.textContent = shown;
     // Clamped to two lines (menu.css), so the whole of a long one lives in the tooltip.
     this.statusEl.title = shown;
-    // The hint is `info` whatever kind came along with nothing to say.
-    this.statusEl.dataset.kind = text ? kind : 'info';
+    this.statusEl.dataset.kind = shownKind;
   }
 
   /**
@@ -632,9 +667,22 @@ export class Menu {
     this.multiplayer.setVisible(tab === 'multiplayer');
   }
 
-  /** What {@link Menu.setStatus} shows in place of nothing, on the tab in front. */
-  private tabHint(): string {
-    return this.activeTab === 'multiplayer' ? this.multiplayer.statusHint() : TAB_HINTS[this.activeTab];
+  /**
+   * What {@link Menu.setStatus} shows in place of nothing, on the tab in front: its hint as `info`,
+   * or in amber why the start the tab offers is refused ({@link MenuHooks.startRefusal}) — a
+   * disabled button shows no tooltip.
+   */
+  private tabHint(): [string, StatusKind] {
+    const tab = this.activeTab;
+    if (this.startRefused && START_TABS.has(tab)) return [this.startRefused, 'caution'];
+    return [tab === 'multiplayer' ? this.multiplayer.statusHint() : TAB_HINTS[tab], 'info'];
+  }
+
+  /** The hint again, where the line is showing one: what it says follows the room. */
+  private redrawHint(): void {
+    if (this.showingHint && !this.library.isOpen) {
+      this.setStatus('');
+    }
   }
 
   /**
@@ -1309,7 +1357,8 @@ export class Menu {
   }
 
   private refreshButtons(): void {
-    this.startButton.disabled = !this.isReady;
+    // Greyed while a network game runs, the reason in the tab's hint (`tabHint`).
+    this.startButton.disabled = !this.isReady || this.startRefused !== null;
     // The hold is only asked for over a run of the player's own (`confirmOnHold`'s `required`), so
     // the tooltip is too.
     this.startButton.title = this.session === 'game' ? 'Hold to abandon the game you are running' : '';

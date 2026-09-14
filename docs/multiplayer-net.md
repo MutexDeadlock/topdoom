@@ -58,7 +58,7 @@ sees it — a malformed one is dropped, never half-applied:
 | `sync {atTic, joining}` | host | stop before `atTic`; a snapshot follows |
 | `snapshot {restore}` | host | the level at `atTic`: map, state, slots |
 | `drop {slot, atTic}` | host | the slot's rows are idle from `atTic` |
-| `ended` | host | the campaign is over; back to the lobby |
+| `ended` | host | the game is over — End game, or the campaign's end; back to the lobby |
 
 `NetGame` is `{set: SaveWadSet, skill}` — the WAD set by content ID, exactly what a save records
 (docs/savegames.md § WAD-set identity), read off the loaded set when the host opens the room.
@@ -80,11 +80,12 @@ stay out of a network game (`ST_Responder`'s `!netgame`, `st_stuff.c`).
 `NetSession` is one browser's seat, built by `main.ts` on Host or Join and handed to `Game` as
 `GameOptions.net`. Its `NetHooks` are `main.ts`'s: `setRefusal` (the menu's WAD gate over the
 host's set), `startGame` (the level, fresh or from a snapshot), `changed` (the tab redraws),
-`ended` (the room closed, the connection dropped, a refusal).
+`backInLobby` (the game is over, the room kept), `ended` (the room closed, the connection dropped,
+a refusal).
 
 Phases: `lobby` → `loading` (`start` or a join's snapshot; the level is building) → `playing`
-(`NetSeat.bind` calls `attach`) → `ended`. `endGame` (the host, at the campaign's end) puts the
-room back in `lobby`.
+(`NetSeat.bind` calls `attach`) → `ended`. `gameRunning` is `loading` or `playing`. `endGame` (the
+host's End game, or the campaign's end) puts the room back in `lobby` (§ Leaving).
 
 **The lobby.** The host's `peers` list is the room; every `lobby` message mirrors it. A joiner
 sends `hello`, gets `lobby`, resolves the set through `Menu.resolveSaveWads` and answers `ready` — and again
@@ -189,15 +190,23 @@ the feed says so once the level is rebuilt.
   same path — out of the lobby, or dropped from the game — and the peer's own session ends on
   `kicked`, with the host's reason where it gave one. Nothing keeps it from joining again with the code.
 - **The host leaving** closes the room (`closed`): every peer's session ends, and its level with it.
-- **A session ending ends its level** — the menu's Leave or Close, the room closed, a kick, a
+- **A session ending ends its level** — the menu's Leave or Close room, the room closed, a kick, a
   drop, the connection lost, a snapshot of a map these WADs lack (`NetSession.end`): `main.ts`'s
   `leaveNet` disposes the `Game` (`Game.networked`) and the menu opens as a launcher; an end the
   player did not choose lands on the Multiplayer tab, the reason in the status line. Nobody plays
   a network game's level on alone. A session that ends while its level loads starts none; a level
   of the player's own behind a lobby is left alone. A start of the player's own (New Game, Load, a
-  replay) leaves the room first.
-- **The campaign's end** reaches every browser on the same tic; the host's `endGame` takes the
-  room back to its lobby.
+  replay) leaves a lobby first; **while the game runs (`gameRunning`) it is refused** — `main.ts`'s
+  `startRefusal`, greyed in the menu with `Multiplayer game running` as the tab's hint
+  (docs/menu.md § One screen, two jobs).
+- **Back to the lobby**: the host's **End game** (the Multiplayer tab, held) and the campaign's end
+  are one `ended` (`endGame`). Every session goes back to `lobby`, and `backInLobby` disposes the
+  level wherever it still runs — a peer short of the host's last tic included, whose frame would
+  otherwise hold forever on a scheduler that is gone — and opens the menu on the Multiplayer tab.
+  The room, its code and its players stay; the host picks the next game on the New Game tab
+  (§ The Multiplayer tab). A level still loading for the ended game starts nothing (`netStarts`,
+  `main.ts`). A deathmatch's limits end a level, not the game (docs/multiplayer-deathmatch.md
+  § Limits).
 
 ## Settings
 
@@ -245,8 +254,11 @@ the feed says so once the level is rebuilt.
   friendly fire for coop, the frag and time limits for a deathmatch (`game/rules.ts`,
   docs/multiplayer-deathmatch.md § Settings), stored like every setting, each change announced at
   once (`announce`; a session-only change resets no readiness) — and the host's input delay, all
-  in one row with **Leave** (a peer, status line "Room left.") or **Close** (the host, "Room
-  closed.") and then **Start** (`canStart`) at its far end.
+  in one row with **Leave** (a peer, status line "Room left.") or **Close room** (the host, "Room
+  closed.") and then **Start** (`canStart`) at its far end. During a game the host's **End game**
+  stands where Start did. Both of the host's are held to confirm (`confirmOnHold`): each throws
+  away what everyone else is in — § Leaving. Close room in a lobby the host has alone
+  (`closeNeedsHold`) and a peer's Leave are plain clicks.
 - `phaseText` beside the code also says what Start waits on — a second player, a peer's check —
   or a desync being resynced, in red while it holds anything up: no line of its own, the tab being
   short of height.

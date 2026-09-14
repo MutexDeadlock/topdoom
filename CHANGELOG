@@ -17,6 +17,9 @@ Features and improvements
     - the host needs a second player to start
     - leaving a game, or the host closing the room, ends it and returns
       to the menu
+    - the host can end a running game and take everyone back to the lobby;
+      the end of the campaign lands there too
+    - New Game, Load and replays are locked while a network game runs
     - your colour can be changed in the lobby
   - menu: 
     - reworked status messages

@@ -143,7 +143,9 @@ friendly fire reaches no board.
 ## Limits
 
 `Game.checkDeathmatchLimits`, where `P_UpdateSpecials` checks both, before a pending exit is
-consumed; either sets `pendingExit = 'normal'`, and the intermission follows with the scoreboard:
+consumed; either sets `pendingExit = 'normal'`, and the intermission follows with the scoreboard,
+then the next level — only the campaign's end takes a network game back to its lobby
+(docs/multiplayer-net.md § Leaving):
 
 - **Time limit** (`p_spec.c`'s `levelTimer`, `-timer`): `Level.time` in tics ≥ `timeLimit` ×
   `TICS_PER_MINUTE` — the clock runs while any player lives (docs/multiplayer.md § Player slots).

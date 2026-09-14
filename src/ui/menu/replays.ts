@@ -102,6 +102,8 @@ export class ReplaysUi {
   private setStatus: StatusLine;
   private describe: (meta: SaveWadSet) => SaveSetInfo;
   private session: MenuSession = 'none';
+  /** Whether a running network game refuses every Play — `refresh`'s, like `session`. */
+  private startRefused = false;
   private visible = false;
   private stale = true;
   /** Monotonic ticket for {@link ReplaysUi.renderVisible} — the `SavegamesUi` rule. */
@@ -145,9 +147,14 @@ export class ReplaysUi {
     });
   }
 
-  /** Marks the list stale and rebuilds it if on screen; called on every menu open and mutation. */
-  refresh(session = this.session): void {
+  /**
+   * Marks the list stale and rebuilds it if on screen; called on every menu open and mutation.
+   * @param startRefused  whether `MenuHooks.startRefusal` refuses every Play, its reason in the
+   *                      tab's hint; like `session`, defaults to the last value given
+   */
+  refresh(session = this.session, startRefused = this.startRefused): void {
     this.session = session;
+    this.startRefused = startRefused;
     this.refreshRecordButton();
     this.stale = true;
     void this.renderVisible();
@@ -408,7 +415,8 @@ export class ReplaysUi {
     const play = document.createElement('button');
     play.className = 'primary';
     play.textContent = 'Play';
-    play.disabled = this.blockedReason(entry) !== null;
+    // A running network game greys it too, its reason in the tab's hint rather than the panel's.
+    play.disabled = this.blockedReason(entry) !== null || this.startRefused;
     // Held to confirm over a run of the player's own, which playing this one throws away — Load's
     // rule and Start new game's (docs/menu-saves.md § Save and Load tabs). Not over a replay: the
     // one being watched can be watched again.

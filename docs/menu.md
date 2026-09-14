@@ -36,6 +36,12 @@ a `MenuSession` of `'none'`, `'game'` or `'replay'` — `main.ts` reads it off t
   the session — Start new game, Load, a replay's Play — are ordinary buttons: a watched replay is
   still in the store and can be watched again, so there is nothing to confirm losing. The Save tab,
   Return to game and Record from here go by the level being loaded, so they behave as in a game.
+- **A running network game refuses all three** (`MenuHooks.startRefusal`, over
+  `NetSession.gameRunning`): each would end that game for this player, so Start new game, every
+  Load and a replay's Play are greyed, and the New Game, Load and Replays tabs' hint says
+  `Multiplayer game running` in amber. It is the one greyed Load or Play whose reason is not beside
+  the row — one reason for every row. `refreshMultiplayer` greys or frees them, rows rebuilt, as the
+  room's game begins or ends. From a lobby the three start as ever, and leave the room.
 - **`Start new game` is shown only while the New Game tab is up** (`setTab`): it acts on what that
   tab holds. The footer carries a `min-height` of that button's own box, so the row it leaves keeps
   its height and the panel's bottom edge doesn't move on a tab switch — `visibility` on the button

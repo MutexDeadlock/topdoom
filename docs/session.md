@@ -33,7 +33,7 @@ Rules that hold this together:
   the end card's continue key has nowhere left to go (docs/hud.md
   § End card). The handler nulls `game` *before* disposing it — the call arrives from inside that
   very `Game`'s tic — and reopens the menu with `open('none')`, as a launcher: there is no returning
-  to a run that is over.
+  to a run that is over. A network game's lands on the Multiplayer tab, over the room's lobby.
 - **A reload during a run of the player's own is confirmed** (`beforeunload`, armed only while
   `session()` is `'game'` and the menu is closed): nothing in a running level survives it — the
   checkpoint is kept in memory, and a recording sits in its recorder until a teardown
@@ -60,8 +60,9 @@ Rules that hold this together:
 - **A network game is the same `startLevel` too**, given the session (`LevelSource.net`) and, for
   a joiner, the host's snapshot (`restore`): the host's set is verified like a save's and `Game`
   gets the session as `net` (docs/multiplayer-net.md § The session). A start of the player's own
-  — New Game, Load, a replay — leaves the room first; the campaign's end hands the room back to
-  its lobby (`endGame`). The session ending — left, closed, lost — disposes its level and reopens
+  — New Game, Load, a replay — leaves a lobby first and is refused while the game runs
+  (`startRefusal`); End game and the campaign's end hand the room back to its lobby (`endGame`,
+  `backInLobby`), the menu on the Multiplayer tab. The session ending — left, closed, lost — disposes its level and reopens
   the menu as a launcher (`leaveNet`, docs/multiplayer-net.md § Leaving).
 - **A load is the same `startLevel`**, given the save (`LevelSource.save`): it verifies the
   assembled set's game WAD and map provider against the save's own IDs (`verifySaveWads`, over

@@ -1,7 +1,8 @@
 /**
  * Press-and-hold confirm: a destructive button that fills over {@link HOLD_MS} and only acts when
  * the fill lands. Shared by the save list's Delete and Overwrite, the WAD Library's Forget folder,
- * and Start new game, Load and a replay's Play while a run of the player's own is going.
+ * the Multiplayer tab's End game, and Start new game, Load, a replay's Play and Close room while
+ * they cost a run of the player's own or somebody else's.
  * See docs/menu-saves.md § Save and Load tabs.
  */
 import type { StatusLine } from './actions.ts';

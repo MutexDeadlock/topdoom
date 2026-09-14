@@ -194,6 +194,43 @@ describe('Network · session', () => {
     assert.equal(guest.session.desyncedAt, null);
   });
 
+  test("the host's End game takes every browser back to the lobby and keeps the room", () => {
+    const hub = new Hub();
+    const host = hostSession(hub, 'host', 1);
+    const guest = joinSession(hub, 'ROOM1');
+    host.session.endGame();
+    hub.flush();
+    assert.equal(host.log.lobbies + guest.log.lobbies, 0, 'a lobby has no game to end');
+
+    host.session.start();
+    hub.flush();
+    attached(host.session, guest.session);
+    assert.ok(host.session.gameRunning && guest.session.gameRunning);
+    const seen = new Map([
+      [host.session, [] as number[][]],
+      [guest.session, [] as number[][]],
+    ]);
+    for (let tic = 0; tic < 5; tic++) runTic(hub, [host.session, guest.session], seen);
+    guest.session.endGame();
+    hub.flush();
+    assert.equal(host.session.phase, 'playing', "a peer's End game does nothing");
+
+    host.session.endGame();
+    hub.flush();
+    for (const { session, log } of [host, guest]) {
+      assert.equal(session.phase, 'lobby');
+      assert.ok(!session.gameRunning);
+      assert.equal(log.lobbies, 1);
+      assert.deepEqual(log.ended, [], 'nobody left the room');
+      assert.ok(!session.readyForTic(), 'no rows are served any more');
+    }
+    assert.deepEqual(guest.session.peers.map((p) => p.name), ['host', 'guest']);
+    assert.ok(host.session.canStart, 'the room can start again');
+    host.session.start();
+    hub.flush();
+    assert.equal(guest.log.starts.length, 2, 'the next game starts on every browser');
+  });
+
   test('a settings change rides the row and lands on every browser at the same tic', () => {
     const hub = new Hub();
     const host = hostSession(hub, 'host', 1);

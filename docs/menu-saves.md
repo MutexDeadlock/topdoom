@@ -75,6 +75,8 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   reason (CLAUDE.md § Project-wide rules). The row renders dimmed via its own `unsupported` class
   rather than `.disabled` (a child can't undo a parent's opacity, and its download/delete buttons
   must stay live); only Load is refused.
+- **A running network game greys every Load**, and a replay's Play: one reason for the whole tab,
+  so it is the tab's amber hint rather than a line per row (docs/menu.md § One screen, two jobs).
 - **What the rows share with the Replays tab lives in `actions.ts`**: the refusal contract every
   store call runs under (`attempt`: anything thrown becomes the status line), the red/amber line
   beside a row (`noteLine`), the heading's filter field (`installFilter`, `matchesFilter`,

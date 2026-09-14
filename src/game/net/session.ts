@@ -55,6 +55,11 @@ export interface NetHooks {
   /** Something the lobby shows changed. */
   changed(): void;
   /**
+   * The room's game is over and the room is back in its lobby — the host's End game, or the
+   * campaign's end. A level running in it ends here (docs/multiplayer-net.md § Leaving).
+   */
+  backInLobby(): void;
+  /**
    * The session is over — the room closed, the connection dropped, a refusal — and why. A level
    * running in it ends with it (docs/multiplayer-net.md § Leaving).
    */
@@ -235,6 +240,11 @@ export class NetSession {
     return this.scheduler?.tic ?? 0;
   }
 
+  /** Whether this browser is in the room's game: its level loading or running. */
+  get gameRunning(): boolean {
+    return this.phase === 'loading' || this.phase === 'playing';
+  }
+
   /**
    * Whether the host may start: someone besides the host is in the room, and everyone can play the
    * set. docs/multiplayer-net.md § The session.
@@ -327,9 +337,12 @@ export class NetSession {
     this.handle({ ...message, from: this.member });
   }
 
-  /** The campaign is over: the host takes the room back to its lobby. */
+  /**
+   * The host ends the running game — its End game, or the campaign's end — and takes the room back
+   * to its lobby on every browser. docs/multiplayer-net.md § Leaving.
+   */
   endGame(): void {
-    if (!this.host || this.phase === 'ended') return;
+    if (!this.host || !this.gameRunning) return;
     this.transport.send({ type: 'ended' });
     this.handle({ type: 'ended', from: this.member });
   }
@@ -457,10 +470,7 @@ export class NetSession {
     this.scheduler?.seek(restore?.tic ?? this.tic);
     this.restoreAt = null;
     this.pendingSync = null;
-    this.hostChecks.clear();
-    this.ownChecks.clear();
-    this.desyncedAt = null;
-    this.desyncReported = false;
+    this.clearChecks();
     this.hooks.changed();
     if (this.host) this.processJoinQueue();
   }
@@ -726,8 +736,19 @@ export class NetSession {
     this.pendingSync = null;
     this.restoreAt = null;
     this.joinQueue.length = 0;
+    this.clearChecks();
+    this.stalledSince = null;
     this.phase = 'lobby';
+    this.hooks.backInLobby();
     this.hooks.changed();
+  }
+
+  /** Forgets every desync check and verdict: a restore, or a game ended, compares from scratch. */
+  private clearChecks(): void {
+    this.hostChecks.clear();
+    this.ownChecks.clear();
+    this.desyncedAt = null;
+    this.desyncReported = false;
   }
 
   private memberLeft(member: number): void {

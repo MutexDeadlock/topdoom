@@ -44,13 +44,6 @@ export function compatDrift(compat: number): 'older' | 'newer' | null {
 /** One desync sample per second of simulation (35 tics). */
 export const CHECK_INTERVAL = 35;
 
-/**
- * How often a recording lays down a seek anchor: one a minute of simulation. The interval is what
- * a seek costs — a jump runs the tics from the anchor it lands on — traded against the ~4 kB each
- * keyframe adds to the file. docs/replays.md § Seeking.
- */
-export const KEYFRAME_INTERVAL = 35 * 60;
-
 /** The playback speeds the bar's slider steps through, 1× at {@link NORMAL_SPEED_INDEX}. */
 export const SPEED_STEPS: readonly number[] = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
 

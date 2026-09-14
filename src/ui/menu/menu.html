@@ -109,6 +109,7 @@
           <button class="tab" id="settings-tab-button-visuals" data-tab="visuals">Visuals</button>
           <button class="tab" id="settings-tab-button-controls" data-tab="controls">Controls</button>
           <button class="tab" id="settings-tab-button-audio" data-tab="audio">Audio</button>
+          <button class="tab" id="settings-tab-button-replays" data-tab="replays">Replays</button>
         </div>
 
         <div class="tab-panels">
@@ -316,6 +317,23 @@
                 <input type="range" id="music-volume-slider" min="0" max="100" step="1" />
                 <span class="value" id="music-volume-value"></span>
               </div>
+            </section>
+          </div>
+
+          <div class="tab-panel" id="settings-tab-replays">
+            <section>
+              <h2>Keyframe interval</h2>
+              <select id="keyframeinterval-select">
+                <option value="30">30 seconds</option>
+                <option value="120">120 seconds (default)</option>
+                <option value="0">None</option>
+              </select>
+              <p class="hint setting-note">
+                If you want to record crowded slaughter maps, or simply want to seek faster inside a
+                replay, and don't care about replay file size, set it to <strong>30 seconds</strong>.<br>
+                Or choose <strong>None</strong> if you don't care about seeking, or simply
+                prefer the smallest possible replay files.
+              </p>
             </section>
           </div>
         </div>

@@ -194,10 +194,11 @@ touched the control.
 
 ## Settings tab
 
-The tab is split in four by its own row of **sub-tabs** (`.tabs.subtabs` inside `#tab-settings`,
+The tab is split in five by its own row of **sub-tabs** (`.tabs.subtabs` inside `#tab-settings`,
 `Menu.setSettingsTab`), in the order **General** — what is left over, the settings that are none of
-the other three — **Visuals**, everything that changes how the running level looks, **Controls**,
-the key list and everything bound to it, and **Audio**, everything you hear. Controls sits third
+the other four — **Visuals**, everything that changes how the running level looks, **Controls**,
+the key list and everything bound to it, **Audio**, everything you hear, and **Replays**, how a
+recording is written. Controls sits third
 because it is the one a player opens to read rather than to change, so the two tabs they open to
 *change* something sit together at the front. The sub-panels are the same
 `.tab-panels`/`.tab-panel` grid-cell stack the top-level tabs use, nested one level — so Audio being
@@ -263,6 +264,12 @@ off, and 0 on it stops both of them the way each channel's own 0 stops itself
 (docs/audio.md § Volume and the context). The master and sfx sliders preview themselves with
 `itemup` as they are dragged; the music slider needs no preview, riding the track already playing
 behind the menu (docs/music.md § Volume).
+
+**Replays is one select, `Keyframe interval`** (`#keyframeinterval-select`), whose `<option>` values
+are the seconds themselves (`30`, `120` — the default — and `0` for none), with a `.setting-note`
+under it saying what to pick each for. Its own tab rather than a row on General: what it trades,
+seek speed against file size, is the Replays tab's subject, not how the game plays. Read per tic,
+so it applies to the recording already running (docs/replays.md § Seeking).
 
 **Collision** is one checkbox, `Infinite tall actors (vanilla)` — off by default (docs/movement.md §
 Collision); `Level start`'s `Pistol start every level` and `Weapons`' `Switch weapons automatically`
@@ -384,6 +391,7 @@ a setting touches one module.
 | `pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
 | `deathmatch`, `friendlyFire`, `fragLimit`, `timeLimit` | `game/rules.ts` (`get*`/`set*`) | docs/multiplayer-deathmatch.md § Settings |
 | `autoSwitchWeapon` | `game/inventory.ts` (`getAutoSwitchWeapon`/`setAutoSwitchWeapon`) | docs/weapons.md § Automatic weapon switching |
+| `keyframeInterval` | `game/replay/recorder.ts` (`getKeyframeInterval`/`setKeyframeInterval`) | docs/replays.md § Seeking |
 | `playerName` | `game/replay.ts` (written by `describeReplay` and the Multiplayer tab's `setPlayerName`) | docs/replays.md § Recording |
 | `playerColor` | `wad/playercolor.ts` (`getPlayerColor`/`setPlayerColor`) | docs/sprites.md § Player colours |
 | `relayUrl` | `ui/menu/multiplayer.ts` | docs/multiplayer-net.md § The Multiplayer tab |

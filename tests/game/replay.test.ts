@@ -1,11 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIM_QUANTUM, quantizeAim, type TicInput } from '../../src/game/input.ts';
-import { ReplayRecorder } from '../../src/game/replay/recorder.ts';
+import { ReplayRecorder, getKeyframeInterval, setKeyframeInterval } from '../../src/game/replay/recorder.ts';
 import { ReplayPlayback } from '../../src/game/replay/playback.ts';
 import {
   CHECK_INTERVAL,
-  KEYFRAME_INTERVAL,
   REPLAY_VERSION,
   SPEED_STEPS,
   checkTic,
@@ -40,6 +39,9 @@ import {
   splitSettings,
   type ScriptedRow,
 } from '../fixtures/replay.ts';
+
+// The keyframe interval a recorder runs under with nothing stored, in tics.
+const KEYFRAME_INTERVAL = replayTics(getKeyframeInterval());
 
 /**
  * A recording is what the tic read, tic for tic, and a playback serves exactly that back — the
@@ -289,6 +291,24 @@ describe('Replays · recording and playing back', () => {
         { tic: KEYFRAME_INTERVAL + 1, map: 'E1M2', snapshot: 1 },
       ],
     );
+  });
+
+  test('the keyframe interval is a setting read per tic, and none lays no interval anchor', () => {
+    assert.equal(getKeyframeInterval(), 120, 'the default');
+    const recorder = new ReplayRecorder([scriptedInput([])], recordingStart());
+    const input = recorder.input(0);
+    try {
+      setKeyframeInterval(30);
+      for (let i = 0; i < replayTics(30) - 1; i++) input.endTic();
+      assert.equal(recorder.keyframeDue, false);
+      input.endTic();
+      assert.equal(recorder.keyframeDue, true, 'a change reaches the recording already running');
+      setKeyframeInterval(0);
+      for (let i = 0; i < KEYFRAME_INTERVAL * 2; i++) input.endTic();
+      assert.equal(recorder.keyframeDue, false, 'none, however long the run');
+    } finally {
+      setKeyframeInterval(120);
+    }
   });
 
   test('a seek re-seats the settings and the check cursor, forwards and back', () => {

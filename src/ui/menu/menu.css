@@ -235,6 +235,13 @@
   color: var(--fg-faint);
 }
 
+/* A sentence or two under a setting's control, on what to pick it for. */
+#menu p.setting-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /*
  * A list's heading row: the `<h2>` and its hint on the left, the filter field on the right — the
  * WAD Library header's shape (library.css), one panel down. The heading takes the slack, so a long

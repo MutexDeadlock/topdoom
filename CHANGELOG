@@ -1,10 +1,12 @@
-v0.20.1 (2026-09-1?)
+v0.20.1 (2026-09-15)
 
 Features and improvements
   - fog of war no longer shows what hides behind a fake wall (a solid
     midtexture), like GoingDown MAP02's monster closet
   - fog of war no longer draws sound channels and vents inside walls,
     like ksutra MAP04's mouse hole
+  - settings: a Replays tab with the keyframe interval (30 s, 120 s or
+    none); the new default is 120 s instead of 60 s
 
 Fixed bugs
   - items more than 8 units below the player's feet are now out of reach

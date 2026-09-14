@@ -324,8 +324,9 @@ the slots and the snapshots, plus how many of each), then a line per slot, then 
 (`recordLines`, `decodeRecord`, over `savestore.ts`'s `compressLines`/`decompressLines`). Both ways
 run a line at a time, so no string is larger than one slot's columns or one snapshot. The whole
 record as one string hits the engine's string-length limit (~536 M characters in V8) on a long run
-over a huge map — a NUTS.WAD keyframe is ~4 MB of JSON, one a minute — failing the store at the end
-of the run. A record in the earlier one-document layout frames nothing and reads as damaged.
+over a huge map — a NUTS.WAD keyframe is ~4 MB of JSON, one every two minutes by default —
+failing the store at the end of the run. A record in the earlier one-document layout frames nothing
+and reads as damaged.
 
 `exportReplay` writes `<name>.topdoomreplay.json` (`replayFileName`, over the saves'
 `downloadFileName` — docs/savegames.md § Download and import): the meta in the clear, `data` as the stored
@@ -439,18 +440,28 @@ would move the HUD for a hover; the label is held clear of both screen edges); a
 while the pointer wanders off the track's few pixels. The level's name is the level card's
 (`LevelNames.nameFor`), which is what the track markers carry too.
 
-A recording lays down a **keyframe** every `KEYFRAME_INTERVAL` tics — the world as a savegame holds
-it, and the map it belongs to. No camera: the pose of the tic being landed on is already in the tic
+A recording lays down a **keyframe** every keyframe interval — the world as a savegame holds it,
+and the map it belongs to. No camera: the pose of the tic being landed on is already in the tic
 columns (§ Camera state), and a jump snaps both cameras to it. `ReplayData.keyframes[0]` is the
-recording's own start, which is what a playback builds its level from. A keyframe is only taken where the moment allows a capture at all (`saveRefusal`, and no
-cheat half typed); a refused one waits for the next tic rather than being skipped, so the anchors
-drift later but never go missing.
+recording's own start, which is what a playback builds its level from. A keyframe is only taken
+where the moment allows a capture at all (`saveRefusal`, and no cheat half typed); a refused one
+waits for the next tic rather than being skipped, so the anchors drift later but never go missing.
+
+**The interval is the player's setting** (Settings › Replays, `keyframeInterval`, owned by
+`replay/recorder.ts`): 30 seconds, 120 (the default) or none. It trades the seek's catch-up — up to
+an interval of tics run, which a crowded slaughter map makes slow — against a snapshot per anchor in
+the file. `ReplayRecorder.keyframeDue` reads it per tic, so a change applies to the recording
+already running. Nothing about the playback depends on it: a replay carries its anchors, whatever
+interval laid them. It is not a tic's input, so `COMPAT` does not move with it.
 
 **Every level entered lays one down too**, at the level's first tic — `Game.runEnterLevel`, right
 after the entry checkpoint (docs/savegames.md § The checkpoint), on the same capture rules as the
 interval anchor. It shares its tic with the level's track marker, so a jump to a marker lands on
 the level itself instead of restoring an anchor in the level before it and catching up through a
 level end and two map builds. The interval is measured from the last keyframe of either kind.
+**An interval of none still lays these**: `ReplayPlayback.reloadsAt` finds a level's checkpoint
+through its entry anchor, so without one `R` after a jump into a later level would reload the
+wrong state.
 
 `ReplayDriver.seekTo` restores the last keyframe at or before the target and then **runs the tics** from
 there — a jump that stays ahead of the current position and passes no keyframe skips the reload and
@@ -501,6 +512,6 @@ now saved (docs/weapons.md § Automatic weapon switching). The general check is
 `ThingLayer`/`Player`/`WeaponSystem` state that no snapshot field carries: run the playback to a
 keyframe's tic, restore that keyframe, and diff the live objects.
 
-The cost is the interval. A jump of a minute of recording is a few frames of catch-up on an
-ordinary level, and a level swap inside the span adds a map build. Keyframes cost about 4 kB
+The cost is the interval: a jump runs up to one interval of tics. A minute of recording is a few
+frames of catch-up on an ordinary level, and a level swap inside the span adds a map build. Keyframes cost about 4 kB
 gzipped each, nearly all of it the snapshot.

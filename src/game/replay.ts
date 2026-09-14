@@ -71,7 +71,6 @@ export {
   BUTTON_RIGHT_EDGE,
   CHECK_INTERVAL,
   COMPAT,
-  KEYFRAME_INTERVAL,
   NORMAL_SPEED_INDEX,
   POSE_QUANTUM,
   REPLAY_VERSION,
@@ -90,7 +89,13 @@ export {
 } from './replay/defs.ts';
 export { BOUND_KEYS, maskHas } from './replay/keys.ts';
 export { ReplayPlayback, type ReloadStates } from './replay/playback.ts';
-export { ReplayRecorder, type RecordingStart } from './replay/recorder.ts';
+export {
+  ReplayRecorder,
+  getKeyframeInterval,
+  setKeyframeInterval,
+  type KeyframeInterval,
+  type RecordingStart,
+} from './replay/recorder.ts';
 export { ReplayDriver, type ReplayHost } from './replay/driver.ts';
 export {
   GLOBAL_PLAYER_SETTINGS,

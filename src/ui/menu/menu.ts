@@ -39,7 +39,12 @@ import { getAutoSwitchWeapon, getPistolStart, setAutoSwitchWeapon, setPistolStar
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { ReplaysUi, type ReplayHooks } from './replays.ts';
 import { MultiplayerUi, type MultiplayerHooks } from './multiplayer.ts';
-import { isReplayFileName } from '../../game/replay.ts';
+import {
+  getKeyframeInterval,
+  isReplayFileName,
+  setKeyframeInterval,
+  type KeyframeInterval,
+} from '../../game/replay.ts';
 import { readStorage, readStorageObject, writeStorage } from '../../util/storage.ts';
 import {
   requiredWads,
@@ -110,7 +115,7 @@ export type MenuTab = 'newgame' | 'save' | 'load' | 'multiplayer' | 'replays' | 
 export type MenuSession = 'none' | 'game' | 'replay';
 
 /** The Settings tab's own sub-tabs, in the order they are shown. */
-type SettingsTab = 'general' | 'controls' | 'visuals' | 'audio';
+type SettingsTab = 'general' | 'controls' | 'visuals' | 'audio' | 'replays';
 
 const SKILL_STORAGE_KEY = 'skill';
 const SELECTION_STORAGE_KEY = 'selection';
@@ -176,6 +181,7 @@ export class Menu {
   private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
   private playerSpritesSelect = el<HTMLSelectElement>('playersprites-select');
   private hudMessagesSelect = el<HTMLSelectElement>('hudmessages-select');
+  private keyframeIntervalSelect = el<HTMLSelectElement>('keyframeinterval-select');
   private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private dynLightsCheckbox = el<HTMLInputElement>('dynlights-checkbox');
   private voidFogCheckbox = el<HTMLInputElement>('voidfog-checkbox');
@@ -212,12 +218,14 @@ export class Menu {
     controls: el<HTMLButtonElement>('settings-tab-button-controls'),
     visuals: el<HTMLButtonElement>('settings-tab-button-visuals'),
     audio: el<HTMLButtonElement>('settings-tab-button-audio'),
+    replays: el<HTMLButtonElement>('settings-tab-button-replays'),
   };
   private settingsTabPanels = {
     general: el<HTMLDivElement>('settings-tab-general'),
     controls: el<HTMLDivElement>('settings-tab-controls'),
     visuals: el<HTMLDivElement>('settings-tab-visuals'),
     audio: el<HTMLDivElement>('settings-tab-audio'),
+    replays: el<HTMLDivElement>('settings-tab-replays'),
   };
   private savegames: SavegamesUi;
   private replays: ReplaysUi;
@@ -344,6 +352,7 @@ export class Menu {
     this.installToggle(this.bloomCheckbox, getBloom, setBloom);
     this.installPlayerSprites();
     this.installHudMessages();
+    this.installKeyframeInterval();
     this.installPistolStart();
     this.installAutoSwitch();
     this.installFps();
@@ -835,6 +844,17 @@ export class Menu {
     this.hudMessagesSelect.value = getHudMessageMode();
     this.hudMessagesSelect.addEventListener('change', () => {
       setHudMessageMode(this.hudMessagesSelect.value as HudMessageMode);
+    });
+  }
+
+  /**
+   * How often a recording lays down a seek anchor — every 120 seconds by default — read per tic, so
+   * a change applies to the recording already running. docs/replays.md § Seeking.
+   */
+  private installKeyframeInterval(): void {
+    this.keyframeIntervalSelect.value = String(getKeyframeInterval());
+    this.keyframeIntervalSelect.addEventListener('change', () => {
+      setKeyframeInterval(Number(this.keyframeIntervalSelect.value) as KeyframeInterval);
     });
   }
 

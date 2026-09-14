@@ -10,11 +10,12 @@ import type { GameSnapshot } from '../snapshot.ts';
 import type { Pos2 } from '../../types.ts';
 import type { CameraPose, TopDownCamera } from '../../render/camera.ts';
 import { getRandomCursors } from '../../util/random.ts';
+import { readStorage, writeStorage } from '../../util/storage.ts';
 import { slotColor, type PlayerColor } from '../../wad/playercolor.ts';
 import {
   CHECK_INTERVAL,
-  KEYFRAME_INTERVAL,
   checkCoord,
+  replayTics,
   type LevelMarker,
   type PlayerSettings,
   type ReplayCapture,
@@ -42,6 +43,33 @@ export interface RecordingStart {
   /** Each slot's player name, by slot, null where none is known — a network game's roster. */
   names: (string | null)[];
   session: SessionSettings;
+}
+
+const KEYFRAME_INTERVAL_STORAGE_KEY = 'keyframeInterval';
+
+/**
+ * The seconds between two seek anchors a recording may lay down, `0` for none. A shorter interval
+ * is a faster seek — a jump runs the tics from the anchor it lands on — traded against a snapshot
+ * per anchor in the file. docs/replays.md § Seeking.
+ */
+const KEYFRAME_INTERVALS = [30, 120, 0] as const;
+export type KeyframeInterval = (typeof KEYFRAME_INTERVALS)[number];
+
+const DEFAULT_KEYFRAME_INTERVAL: KeyframeInterval = 120;
+
+/**
+ * Read per tic by {@link ReplayRecorder.keyframeDue}, so a change reaches a recording already
+ * running.
+ */
+let keyframeInterval: KeyframeInterval = readStoredKeyframeInterval();
+
+export function getKeyframeInterval(): KeyframeInterval {
+  return keyframeInterval;
+}
+
+export function setKeyframeInterval(interval: KeyframeInterval): void {
+  keyframeInterval = interval;
+  writeStorage(KEYFRAME_INTERVAL_STORAGE_KEY, interval);
 }
 
 export class ReplayRecorder {
@@ -146,11 +174,13 @@ export class ReplayRecorder {
 
   /**
    * Whether a seek anchor is due at the tic about to run: an interval past the last one taken, and
-   * still due while the moment refuses a capture. docs/replays.md § Seeking.
+   * still due while the moment refuses a capture; never at an interval of none.
+   * docs/replays.md § Seeking.
    */
   get keyframeDue(): boolean {
+    if (keyframeInterval === 0) return false;
     const { keyframes } = this.data;
-    return this.ticCount >= keyframes[keyframes.length - 1].tic + KEYFRAME_INTERVAL;
+    return this.ticCount >= keyframes[keyframes.length - 1].tic + replayTics(keyframeInterval);
   }
 
   /** The anchor {@link ReplayRecorder.keyframeDue} asked for, at the tic about to run. */
@@ -261,4 +291,9 @@ class SlotTap implements TicInput {
     row.aimY = null;
     this.live.endTic();
   }
+}
+
+function readStoredKeyframeInterval(): KeyframeInterval {
+  const stored = readStorage(KEYFRAME_INTERVAL_STORAGE_KEY, DEFAULT_KEYFRAME_INTERVAL);
+  return KEYFRAME_INTERVALS.find((i) => i === stored) ?? DEFAULT_KEYFRAME_INTERVAL;
 }

@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRooms, type RoomMember } from '../../server/rooms.ts';
+import { createRooms, MAX_MEMBERS, type RoomMember } from '../../server/rooms.ts';
 import { MAX_PLAYERS } from '../../src/game/playerstarts.ts';
 
 /**
@@ -146,6 +146,55 @@ describe('Relay · rooms', () => {
     assert.equal(stranger.got.length, 0, 'no seat, nobody to tell');
   });
 
+  test("a member's own report of its round trip is told to the room; it is never forwarded", () => {
+    const r = rooms();
+    const host = member();
+    const guest = member();
+    const stranger = member();
+    r.join(host, null);
+    r.join(guest, 'AAAAA');
+    assert.equal(r.receive(guest, { type: 'latency', ms: 30.4 }), true);
+    assert.deepEqual(host.got.at(-1), { type: 'latency', member: 1, ms: 30 });
+    assert.deepEqual(guest.got.at(-1), { type: 'latency', member: 1, ms: 30 });
+    const heard = host.got.length;
+    assert.equal(r.receive(guest, { type: 'latency', ms: 'fast' }), true);
+    assert.equal(host.got.length, heard, 'a report without a number is dropped');
+    assert.equal(r.receive(stranger, { type: 'latency', ms: 5 }), true, 'a report before a seat closes nothing');
+    assert.deepEqual(stranger.got, []);
+  });
+
+  test('a relay that forgot its rooms seats everyone again from their seats, and hands no id out twice', () => {
+    const before = rooms();
+    const host = member();
+    const a = member();
+    const b = member();
+    before.join(host, null);
+    before.join(a, 'AAAAA');
+    before.join(b, 'AAAAA');
+    before.leave(b);
+    assert.deepEqual(before.seatOf(a), { code: 'AAAAA', member: 1, next: 3 });
+    assert.equal(before.seatOf(b), null);
+
+    const after = rooms();
+    const heard = host.got.length;
+    after.restore([host, a].map((m) => ({ member: m, seat: before.seatOf(m)! })));
+    assert.equal(host.got.length, heard, 'nobody is told');
+    assert.equal(after.roomCount, 1);
+    after.relay(a, { type: 'input', tic: 1 });
+    assert.deepEqual(host.got.at(-1), { type: 'input', tic: 1, from: 1 });
+    assert.deepEqual(after.join(member(), 'AAAAA'), { code: 'AAAAA', member: 3, host: false });
+  });
+
+  test('a room restored without its host is closed', () => {
+    const r = rooms();
+    const guest = member();
+    r.restore([{ member: guest, seat: { code: 'AAAAA', member: 1, next: 2 } }]);
+    assert.deepEqual(guest.got, [{ type: 'closed' }]);
+    assert.ok(guest.closed);
+    assert.equal(r.roomCount, 0);
+    assert.equal(r.seatOf(guest), null);
+  });
+
   test('a fresh room never reuses a code still in use', () => {
     const r = rooms(['AAAAA', 'AAAAA', 'BBBBB']);
     r.join(member(), null);
@@ -153,7 +202,7 @@ describe('Relay · rooms', () => {
   });
 
   test('the relay seats as many as the engine has slots', () => {
-    // `server/relay.ts` states its own 4, being dependency-free; this is what keeps the two equal.
-    assert.equal(MAX_PLAYERS, 4);
+    // `server/rooms.ts` states its own, being dependency-free; this is what keeps the two equal.
+    assert.equal(MAX_MEMBERS, MAX_PLAYERS);
   });
 });

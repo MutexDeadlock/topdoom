@@ -106,7 +106,8 @@ assets/        the sources that WAD is built from: gldefs.txt, secret.ogg, playe
 scripts/       headless inspection of a WAD (inspect-wad.ts), of a savegame file
                (inspect-save.ts) and of a replay (inspect-replay.ts); building assets/
                playerskins.wad (build-playerskins.ts)
-server/        the WebSocket relay a network game runs through — its own package (`npm run relay`)
+server/        the WebSocket relay a network game runs through — its own package (`npm run relay`),
+               and the same rooms as a Cloudflare Worker (cloudflare/)
 ```
 
 ## Subsystem documentation

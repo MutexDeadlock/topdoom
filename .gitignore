@@ -2,6 +2,7 @@
 .env.local
 node_modules
 dist
+.wrangler
 
 public/game/iwad/DOOM.WAD
 public/game/iwad/DOOM2.WAD

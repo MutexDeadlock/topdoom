@@ -8,12 +8,16 @@
   },
   "scripts": {
     "start": "node relay.ts",
-    "typecheck": "tsc -p ."
+    "worker": "wrangler dev --config cloudflare/wrangler.jsonc",
+    "deploy": "wrangler deploy --config cloudflare/wrangler.jsonc",
+    "typecheck": "tsc -p . && tsc -p cloudflare"
   },
   "dependencies": {
     "ws": "^8.21.3"
   },
   "devDependencies": {
-    "@types/ws": "^8.18.1"
+    "@cloudflare/workers-types": "^5.20260914.1",
+    "@types/ws": "^8.18.1",
+    "wrangler": "^4.131.2"
   }
 }

@@ -525,8 +525,8 @@ static markup that outlives any one `Game` (the same reason `Hud`'s panels `repl
 - **Kills are the slot's own this level**: `PlayerSlot.kills` (docs/multiplayer-coop.md § Items and
   kills), zeroed by every level start as `P_SetupLevel` zeroes `killcount`. A player joining a
   running game starts at 0 (`Game.freshSlotSnapshot`).
-- **Ping** is the player's round trip to the relay in milliseconds, as the relay measures it
-  (docs/multiplayer-net.md § The relay).
+- **Ping** is the player's round trip to the relay in milliseconds, as the relay measures it or,
+  where it cannot, as the player's browser reports it (docs/multiplayer-net.md § The relay).
 - **A name is drawn in its armour colour**: the ramp's sixth shade in the loaded PLAYPAL, the shade
   the menu's swatch shows, its HSL lightness raised to `NAME_MIN_LIGHTNESS` (tuned by feel) — red's
   `#7f1b1b` does not read as text on the board.

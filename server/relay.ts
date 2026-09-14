@@ -4,12 +4,9 @@
  * host browser is the arbiter. `npm run relay` starts it. docs/multiplayer-net.md § The relay.
  */
 import { WebSocketServer, type WebSocket } from 'ws';
-import { createRooms, type RoomMember } from './rooms.ts';
+import { createRooms, MAX_MEMBERS, type RoomMember } from './rooms.ts';
 
 const PORT = Number(process.env.PORT ?? 8765);
-
-/** `MAX_PLAYERS` (`src/game/playerstarts.ts`); `tests/server/rooms.test.ts` pins the two equal. */
-const MAX_PLAYERS = 4;
 
 /**
  * How often every socket is pinged; the round trip of its answer is the player's ping. Tuned by
@@ -23,7 +20,7 @@ const SILENT_MS = 20_000;
 /** A level snapshot for a large map is a few megabytes of JSON. */
 const MAX_PAYLOAD = 64 * 1024 * 1024;
 
-const rooms = createRooms({ capacity: MAX_PLAYERS });
+const rooms = createRooms({ capacity: MAX_MEMBERS });
 const server = new WebSocketServer({ port: PORT, maxPayload: MAX_PAYLOAD });
 
 server.on('connection', (socket: WebSocket, req) => {
@@ -55,6 +52,7 @@ server.on('connection', (socket: WebSocket, req) => {
   socket.on('message', (data) => {
     let message: unknown;
     try {
+      // A client's keepalive `ping` is not JSON and ends here.
       message = JSON.parse(String(data));
     } catch {
       return;

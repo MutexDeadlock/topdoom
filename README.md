@@ -182,7 +182,8 @@ where one actually diverged. See [docs/replays.md](docs/replays.md).
 Coop or deathmatch for up to four, each in their own browser, through a small relay you run yourself:
 
 ```bash
-npm run relay        # ws://localhost:8765; PORT= picks another
+npm run relay                    # ws://localhost:8765; PORT= picks another
+npm --prefix server run deploy   # or on Cloudflare's free plan, after `npx wrangler login` in server/
 ```
 
 On the menu's **Multiplayer** tab the host enters the relay's address and a name, picks the rules

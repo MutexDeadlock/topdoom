@@ -26,19 +26,54 @@ dependency-free so `tests/server/rooms.test.ts` and the client's loopback fixtur
   dropped. The relay enforces it, so a peer ignoring the host cannot stay seated.
 - A member leaving is `left {member}` to the rest; **the host leaving is `closed`** to everyone,
   and the room is gone.
-- **Every socket is pinged each `PING_MS`**, its send time riding the ping: the round trip of the
-  answer goes to the whole room, the member included, as `latency {member, ms}` —
-  `RosterEntry.pingMs`, the scoreboard's ping (docs/hud.md § Scoreboard). A socket that has answered
-  nothing for `SILENT_MS` is dropped. A relay without `latency` leaves every ping blank; a client
-  without it drops the message unread.
+- **A member's round trip goes to the whole room**, the member included, as `latency {member, ms}`
+  — `RosterEntry.pingMs`, the scoreboard's ping (docs/hud.md § Scoreboard). `relay.ts` measures
+  it: every socket is pinged each `PING_MS`, its send time riding the ping, and a socket that has
+  answered nothing for `SILENT_MS` is dropped. A relay without `latency` leaves every ping blank; a
+  client without it drops the message unread.
+- **`latency {ms}` from a member is the second message the relay reads**: the room hears it as that
+  member's `latency`, as if measured (§ Keepalive). One without a number is dropped; one before a
+  seat closes nothing.
 - Codes are five of `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` — no `I`/`O`/`0`/`1`.
 
-`server/` is its own package (`ws` is the one dependency), typechecked by its own `tsconfig`, and
-runs `relay.ts` directly, so it needs a Node that strips types unflagged (`engines`: 22.18+ or 23.6+);
-`server/rooms.ts` is typechecked by the root too, through the test that imports it. `npm run relay`
-starts it; `MAX_PLAYERS` is stated there as `4` and the test pins it to the engine's. The relay's own
-messages, the join and the kick are typed in `rooms.ts` (`RelayMessage`, `JoinRequest`, `KickRequest`); `net/defs.ts` takes
-them by `import type`, so nothing of `server/` reaches the bundle.
+`server/` is its own package (`ws` the one dependency, `wrangler` for § The relay on Cloudflare),
+typechecked by its own `tsconfig`, and runs `relay.ts` directly, so it needs a Node that strips
+types unflagged (`engines`: 22.18+ or 23.6+); `server/rooms.ts` is typechecked by the root too,
+through the test that imports it. `npm run relay` starts it. `MAX_MEMBERS` (`rooms.ts`) is a room's
+size, and the test pins it to the engine's `MAX_PLAYERS`. The relay's own messages, the join, the
+kick and the latency report are typed in `rooms.ts` (`RelayMessage`, `JoinRequest`, `KickRequest`,
+`LatencyReport`); `net/defs.ts` and `net/transport.ts` take them by `import type`, so nothing of
+`server/` reaches the bundle.
+
+## Keepalive
+
+`WebSocketTransport` sends the text `ping` each `PING_MS` — not JSON, so `relay.ts` drops it
+unread. A relay that answers `pong` gets the round trip back as `latency {ms}`, timed from the
+oldest unanswered ping. The ping also keeps a quiet lobby's socket under Cloudflare's idle close.
+The two texts are typed in `rooms.ts` (`KeepalivePing`, `KeepalivePong`).
+
+## The relay on Cloudflare
+
+`server/cloudflare/` runs the same rooms as a Worker: `worker.ts`, `wrangler.jsonc`, and a
+`tsconfig` of its own — the Workers types and Node's don't mix. `npm --prefix server run worker`
+serves it on `ws://localhost:8787`; after `npx wrangler login` in `server/`,
+`npm --prefix server run deploy` puts it on `wss://topdoom-relay.<account>.workers.dev`.
+
+- **One Durable Object holds every room** (`Relay`, by the name `relay`): the Worker hands it each
+  WebSocket before any code is known.
+- **Hibernation**: accepted with `acceptWebSocket`, an idle object leaves memory and keeps its
+  sockets. Each socket's attachment is its `RoomSeat` (`Rooms.seatOf`), written after every join
+  and cleared when the relay closes the socket; a waking object `restore`s every room from them.
+  The seat carries the room's `next` id — without it a restored room hands a departed member's id
+  to a newcomer. A room restored without its host is closed.
+- **It cannot ping**: the runtime answers `ping` with `pong` without waking the object
+  (`setWebSocketAutoResponse`), and the room hears the member's own `latency {ms}` (§ Keepalive).
+  No `SILENT_MS`: a client gone quiet is left to Cloudflare's idle close.
+- **A message over 32 MiB closes the socket** — Cloudflare's limit, below `relay.ts`'s 64 MiB.
+- **The free plan** (2026-09): 100,000 requests and 13,000 GB-s a day; one object connected around
+  the clock stays under the GB-s. An incoming WebSocket message counts 1/20 of a request (the
+  pricing page states it under Paid only), and a player sends an `input` every tic: about 16
+  player-hours of play a day.
 
 ## Protocol
 

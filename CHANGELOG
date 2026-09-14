@@ -21,6 +21,7 @@ Features and improvements
       the end of the campaign lands there too
     - New Game, Load and replays are locked while a network game runs
     - your colour can be changed in the lobby
+    - the relay also runs on Cloudflare's free plan (server/cloudflare/)
   - menu: 
     - reworked status messages
     - select arrows and number steppers in the menu's own colours

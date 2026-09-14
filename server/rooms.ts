@@ -1,7 +1,8 @@
 /**
  * The relay's rooms: who is in which, the code to join one by, and forwarding between members.
  * Pure — no sockets — so `tests/server/rooms.test.ts` and the client's loopback fixture drive it
- * directly; `relay.ts` puts it behind WebSockets. docs/multiplayer-net.md § The relay.
+ * directly; `relay.ts` and `cloudflare/worker.ts` put it behind WebSockets.
+ * docs/multiplayer-net.md § The relay.
  */
 
 /** One connection, as a room sees it: what it is sent arrives already serialized. */
@@ -16,13 +17,32 @@ export interface JoinRequest {
   code: string | null;
 }
 
-/** The host putting `member` out of its room — the one later message the relay reads rather than forwards. */
+/** The host putting `member` out of its room — one of the two messages the relay reads. */
 export interface KickRequest {
   type: 'kick';
   member: number;
   /** What the kicked member is told, passed on unread; absent for a plain kick. */
   reason?: string;
 }
+
+/**
+ * A member's own round trip, told to its room as if the relay had measured it — the other message
+ * the relay reads. docs/multiplayer-net.md § Keepalive.
+ */
+export interface LatencyReport {
+  type: 'latency';
+  /** Milliseconds from the member's `ping` to the relay's `pong`. */
+  ms: number;
+}
+
+/**
+ * The text a client sends to keep a quiet socket open. Not JSON, so a relay that reads messages
+ * drops it unread.
+ */
+export type KeepalivePing = 'ping';
+
+/** The answer a relay that times a {@link KeepalivePing} sends back. */
+export type KeepalivePong = 'pong';
 
 /** What the relay itself says to a member. The client's guard is `isRelayMessage` (`src/game/net/defs.ts`). */
 export type RelayMessage =
@@ -34,8 +54,16 @@ export type RelayMessage =
   | { type: 'refused'; reason: string }
   | { type: 'latency'; member: number; ms: number };
 
+/** Where a seated member sits: enough to seat it again in a relay that has forgotten its rooms. */
+export interface RoomSeat {
+  code: string;
+  member: number;
+  /** The id the room's next joiner gets: an id is never handed out twice in one room. */
+  next: number;
+}
+
 export interface RoomsOptions {
-  /** Members a room holds at most — the engine's `MAX_PLAYERS`; `relay.ts` states 4 and the test pins them equal. */
+  /** Members a room holds at most — {@link MAX_MEMBERS} outside the tests. */
   capacity: number;
   /** The code a new room gets; injectable so the test can name its rooms. */
   makeCode?: () => string;
@@ -46,9 +74,9 @@ export type JoinResult = { code: string; member: number; host: boolean } | { ref
 
 export interface Rooms {
   /**
-   * Whatever `member` sent: its join while it has no seat, forwarded once it has one — a kick
-   * excepted. False where the connection is to be closed — a refused join, or a first message that
-   * was not one.
+   * Whatever `member` sent: its join while it has no seat, forwarded once it has one — a kick and a
+   * latency report excepted. False where the connection is to be closed: a refused join, or
+   * anything but a join or a latency report before a seat.
    */
   receive(member: RoomMember, message: Record<string, unknown>): boolean;
   /** `member` opens a room (`code` null) or joins one; what it is told is also returned. */
@@ -67,8 +95,18 @@ export interface Rooms {
    * room — `member` included. Nothing for a connection with no seat.
    */
   latency(member: RoomMember, ms: number): void;
+  /** Where `member` sits; null without a seat. */
+  seatOf(member: RoomMember): RoomSeat | null;
+  /**
+   * Seats each member where its seat says, nobody told — a relay rebuilding its rooms. A room left
+   * without its host is closed, as the host leaving closes it.
+   */
+  restore(seats: readonly { member: RoomMember; seat: RoomSeat }[]): void;
   readonly roomCount: number;
 }
+
+/** Members a room holds at most: the engine's `MAX_PLAYERS`, which the rooms test pins equal. */
+export const MAX_MEMBERS = 4;
 
 /**
  * Letters a code is drawn from — no `I`, `O`, `0` or `1`, which read as each other when a code is
@@ -91,6 +129,12 @@ export function createRooms(options: RoomsOptions): Rooms {
   const seats = new Map<RoomMember, { room: Room; id: number }>();
 
   function receive(member: RoomMember, message: Record<string, unknown>): boolean {
+    if (message.type === 'latency') {
+      if (typeof message.ms === 'number' && Number.isFinite(message.ms)) {
+        latency(member, message.ms);
+      }
+      return true;
+    }
     if (seats.has(member)) {
       if (message.type !== 'kick') {
         relay(member, message);
@@ -160,16 +204,10 @@ export function createRooms(options: RoomsOptions): Rooms {
     room.members.delete(id);
     if (id === 0) {
       // The host is the game's arbiter; without one the room has nothing to run on.
-      for (const conn of room.members.values()) {
-        say(conn, { type: 'closed' });
-        seats.delete(conn);
-        conn.close();
-      }
-      room.members.clear();
-    } else {
-      for (const conn of room.members.values()) say(conn, { type: 'left', member: id });
+      closeRoom(room);
+      return;
     }
-    if (room.members.size === 0) rooms.delete(room.code);
+    for (const conn of room.members.values()) say(conn, { type: 'left', member: id });
   }
 
   function latency(member: RoomMember, ms: number): void {
@@ -179,6 +217,29 @@ export function createRooms(options: RoomsOptions): Rooms {
     // Serialized once for the whole room, as `relay` does: every socket's pong lands here.
     const text = JSON.stringify(message);
     for (const conn of seat.room.members.values()) conn.send(text);
+  }
+
+  function seatOf(member: RoomMember): RoomSeat | null {
+    const seat = seats.get(member);
+    if (!seat) return null;
+    return { code: seat.room.code, member: seat.id, next: seat.room.nextMember };
+  }
+
+  function restore(entries: readonly { member: RoomMember; seat: RoomSeat }[]): void {
+    for (const { member, seat } of entries) {
+      if (seats.has(member)) continue;
+      let room = rooms.get(seat.code);
+      if (!room) {
+        room = { code: seat.code, members: new Map(), nextMember: 0 };
+        rooms.set(seat.code, room);
+      }
+      room.members.set(seat.member, member);
+      room.nextMember = Math.max(room.nextMember, seat.next, seat.member + 1);
+      seats.set(member, { room, id: seat.member });
+    }
+    for (const room of rooms.values()) {
+      if (!room.members.has(0)) closeRoom(room);
+    }
   }
 
   function refuse(member: RoomMember, reason: string): JoinResult {
@@ -192,6 +253,17 @@ export function createRooms(options: RoomsOptions): Rooms {
     return code;
   }
 
+  /** Every member still in `room` hears `closed` and is closed; the code is free again. */
+  function closeRoom(room: Room): void {
+    for (const conn of room.members.values()) {
+      say(conn, { type: 'closed' });
+      seats.delete(conn);
+      conn.close();
+    }
+    room.members.clear();
+    rooms.delete(room.code);
+  }
+
   return {
     receive,
     join,
@@ -199,6 +271,8 @@ export function createRooms(options: RoomsOptions): Rooms {
     kick,
     leave,
     latency,
+    seatOf,
+    restore,
     get roomCount() {
       return rooms.size;
     },

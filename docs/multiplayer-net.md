@@ -57,7 +57,7 @@ The two texts are typed in `rooms.ts` (`KeepalivePing`, `KeepalivePong`).
 `server/cloudflare/` runs the same rooms as a Worker: `worker.ts`, `wrangler.jsonc`, and a
 `tsconfig` of its own — the Workers types and Node's don't mix. `npm --prefix server run worker`
 serves it on `ws://localhost:8787`; after `npx wrangler login` in `server/`,
-`npm --prefix server run deploy` puts it on `wss://topdoom-relay.<account>.workers.dev`.
+`npm --prefix server run deploy` puts it on `wss://relay.<account subdomain>.workers.dev`.
 
 - **One Durable Object holds every room** (`Relay`, by the name `relay`): the Worker hands it each
   WebSocket before any code is known.

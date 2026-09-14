@@ -38,7 +38,7 @@ export const STALL_NOTICE_MS = 400;
 export const DROP_TIMEOUT_MS = 30_000;
 
 /** Where the relay runs when nothing else is entered — `npm run relay` on this machine. */
-export const DEFAULT_RELAY_URL = 'ws://localhost:8765';
+export const DEFAULT_RELAY_URL = 'wss://relay.topdoom.workers.dev';
 
 /** The fewest characters a player's name has, trimmed — tuned by feel. */
 export const MIN_NAME_LENGTH = 3;

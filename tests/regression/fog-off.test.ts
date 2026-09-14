@@ -19,7 +19,7 @@ describe('Regressions · fog of war off', () => {
   const poolRoom = at(1240, -1060);
 
   test('everything is visible and drawn, the detached island included, and nothing changes', () => {
-    const fog = new FogOfWar(world, [], [start], 0, undefined, 'off');
+    const fog = new FogOfWar(world, [], [start], 0, { mode: 'off' });
     assert.ok(fog.isVisible(poolRoom));
     assert.ok(fog.isDrawn(poolRoom));
     assert.equal(fog.alphaOf(poolRoom), 1);

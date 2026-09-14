@@ -1,6 +1,20 @@
+v0.20.1 (2026-09-1?)
+
+Features and improvements
+  - fog of war no longer shows what hides behind a fake wall (a solid
+    midtexture), like GoingDown MAP02's monster closet
+  - fog of war no longer draws sound channels and vents inside walls,
+    like ksutra MAP04's mouse hole
+
+Fixed bugs
+
+
+
+===============================================================================
+
 v0.20.0 (2026-09-14)
 
-Deathmatch is the last major feature before v1.0, 
+Deathmatch is the last major feature before v1.0,
 so until then, only polish and fixes.
 
 And yes: Replays broke again. BUT you can now record hours of gameplay in

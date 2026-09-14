@@ -75,6 +75,7 @@ import { addBlockMates, scanSectors } from './game/specials/mapscan.ts';
 import type { ShootAim } from './game/specials/shootaim.ts';
 import { Forces } from './game/specials/forces.ts';
 import { transfersOf } from './game/specials/transfers.ts';
+import { MidCover } from './render/midcover.ts';
 import { VoodooDolls } from './game/specials/voodoo.ts';
 import { colormapTint } from './wad/colormaps.ts';
 import { readAnimated } from './wad/animated.ts';
@@ -1533,15 +1534,16 @@ export class Game {
     // One fog for everyone: every player's start is revealed at once.
     const bodies = this.slots.map((slot) => slot.player);
     // None at all in a deathmatch — docs/multiplayer-deathmatch.md § Fog.
-    const fogOfWar = new FogOfWar(
-      world,
-      built.occluders,
-      bodies,
-      this.viewed.index,
+    const fogOfWar = new FogOfWar(world, built.occluders, bodies, this.viewed.index, {
       movableSectors,
-      this.deathmatch ? 'off' : 'sweep',
-    );
-    if (restore) fogOfWar.restoreExplored(restore.fog);
+      mode: this.deathmatch ? 'off' : 'sweep',
+      // The set's own art, so only the draw gate reads it; nothing to gate with the fog off.
+      // docs/fogofwar.md § Covering midtextures.
+      cover: this.deathmatch
+        ? undefined
+        : new MidCover(world, (texture) => this.gfx.texture(texture), { transfers, movableSectors }),
+    });
+    if (restore) fogOfWar.restoreExplored(restore.fog, restore.fogUndrawn);
     const specials = new SpecialsController(world, {
       bank: this.materials,
       scene: this.scene,

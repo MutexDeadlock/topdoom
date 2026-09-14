@@ -29,6 +29,7 @@ export type LevelSnapshot = Pick<
   | 'specials'
   | 'sectorEffects'
   | 'fog'
+  | 'fogUndrawn'
   | 'soundAlerted'
   | 'things'
   | 'icon'
@@ -115,6 +116,7 @@ export class Level {
       specials: this.specials.snapshot(),
       sectorEffects: this.sectorEffects.snapshot(),
       fog: this.fogOfWar.snapshotExplored(),
+      fogUndrawn: this.fogOfWar.snapshotUndrawn(),
       soundAlerted: this.world.snapshotSoundAlerted(),
       things: this.things.snapshot(),
       icon: this.icon.snapshot(),

@@ -11,7 +11,9 @@ import { scanSectors } from './specials/mapscan.ts';
 import { VIEW_DISTANCE } from '../constants.ts';
 import type { Pos2 } from '../types.ts';
 import { wallProbePoint, type WallOccluder } from '../render/mapmesh.ts';
-import type { World } from './world.ts';
+import { NO_SIDE } from '../wad/map.ts';
+import type { MidCover } from '../render/midcover.ts';
+import type { Opening, World } from './world.ts';
 
 /** Exponential smoothing rate (1/seconds) for the reveal, gentler than wall occlusion. */
 const FADE_SPEED = 3;
@@ -47,6 +49,14 @@ const MAX_SIGHT_TESTS_PER_TIC = 350;
  * docs/fogofwar.md § Sight testing.
  */
 const MAX_SIGHT_WORK_PER_TIC = 150000;
+
+/**
+ * Cap on {@link FogOfWar.redraw}'s rays in one tic, in the units of
+ * {@link MAX_SIGHT_WORK_PER_TIC} (tuned by feel): a leaf explored past a covering midtexture is
+ * looked at again every tic until something sees it cleanly, and a level can hold many that
+ * nothing ever does. docs/fogofwar.md § Covering midtextures.
+ */
+const MAX_REDRAW_WORK_PER_TIC = 20000;
 
 /**
  * Width of one distance ring in the counting sort that orders the sweep nearest-first
@@ -93,6 +103,23 @@ interface SubSectorSight {
   radius: number;
 }
 
+/** What a {@link FogOfWar} is built with beyond the level and its players. */
+export interface FogOptions {
+  /**
+   * Sectors a special can drive ({@link scanSectors}' `movable`). `game.ts` has already run that
+   * scan for the mesh build; derived when absent, so a caller with no reason to care (a test, a
+   * tool) still gets the right answer rather than a silently permissive one.
+   */
+  movableSectors?: ReadonlySet<number>;
+  /** `'off'` for a level with no fog — see {@link FogMode}. */
+  mode?: FogMode;
+  /**
+   * The midtextures that hide what is past them, read by the draw gate only; absent, nothing is
+   * hidden that way. docs/fogofwar.md § Covering midtextures.
+   */
+  cover?: MidCover;
+}
+
 /**
  * Per-subsector reveal state, sticky on sight, with sight as the only rule (no special case for
  * secret-flagged sectors) and only the player's own island drawn — each of those four choices is
@@ -122,6 +149,25 @@ export class FogOfWar {
    * {@link FogOfWar.closedTarget}'s waiver. docs/fogofwar.md § Closed sectors.
    */
   private movableSectors: ReadonlySet<number>;
+  /** {@link FogOptions.cover}, or null. */
+  private cover: MidCover | null;
+  /**
+   * Per leaf, where it sits in {@link FogOfWar.undrawnList}, or -1: an undrawn leaf is one explored
+   * only along rays that crossed a covering midtexture — explored for everything a tic reads, and
+   * not drawn. Nothing a tic reads is derived from it. docs/fogofwar.md § Covering midtextures.
+   */
+  private undrawnSlot: Int32Array;
+  /** The undrawn leaves, packed — what {@link FogOfWar.redraw} walks. */
+  private undrawnList: Int32Array;
+  private undrawnCount = 0;
+  /** Round-robin resume point into {@link FogOfWar.undrawnList}. */
+  private redrawCursor = 0;
+  /**
+   * Leaves of a sector too small to be a place — a sound channel or a vent through the wall mass
+   * ({@link findHoleSectors}): explored like any other, never drawn.
+   * docs/fogofwar.md § Holes in the wall.
+   */
+  private hole: Uint8Array;
   /** {@link FogMode} `'off'`: the readers answer through the tables below, which never change. */
   private readonly off: boolean;
 
@@ -200,6 +246,13 @@ export class FogOfWar {
   private rayY2 = 0;
   private rayBlocked = false;
   /**
+   * Whether that ray crossed a covering midtexture — never a stop, only what
+   * {@link FogOfWar.redraw} refuses to count as clean; see {@link FogOfWar.testBlocker}.
+   */
+  private rayCovered = false;
+  /** Scratch for {@link FogOfWar.coverHidesRay}. */
+  private coverOpening: Opening = { top: 0, bottom: 0 };
+  /**
    * What is left of this tic's {@link MAX_SIGHT_WORK_PER_TIC}; {@link FogOfWar.sightClear} charges
    * what each ray cost.
    */
@@ -218,32 +271,33 @@ export class FogOfWar {
    */
   private orderRings: Int32Array;
 
-  /**
-   * @param mode  `'off'` for a level with no fog — see {@link FogMode}
-   */
   constructor(
     world: World,
     occluders: WallOccluder[],
     starts: readonly Pos2[],
     drawn: number,
-    movableSectors?: ReadonlySet<number>,
-    mode: FogMode = 'sweep',
+    options: FogOptions = {},
   ) {
     this.world = world;
     this.drawn = drawn;
-    this.off = mode === 'off';
+    this.off = options.mode === 'off';
     const map = world.map;
-    // Passed in by `game.ts`, which has already run this scan for the mesh
-    // build; derived here only so a caller that has no reason to care (a test,
-    // a tool) still gets the right answer rather than a silently permissive one.
-    this.movableSectors = movableSectors ?? scanSectors(map).movable;
+    this.movableSectors = options.movableSectors ?? scanSectors(map).movable;
+    this.cover = options.cover ?? null;
     const polys = buildSubSectorPolys(map);
 
     this.sights = new Array(polys.length).fill(null);
     this.explored = new Uint8Array(polys.length);
     this.alpha = new Float32Array(polys.length);
+    this.undrawnSlot = new Int32Array(polys.length).fill(-1);
+    this.undrawnList = new Int32Array(polys.length);
     this.sectorOf = new Int32Array(polys.length);
-    for (let ss = 0; ss < polys.length; ss++) this.sectorOf[ss] = polys[ss].sector;
+    this.hole = new Uint8Array(polys.length);
+    const holes = findHoleSectors(world, this.movableSectors);
+    for (let ss = 0; ss < polys.length; ss++) {
+      this.sectorOf[ss] = polys[ss].sector;
+      this.hole[ss] = holes[polys[ss].sector] ?? 0;
+    }
 
     this.blockStamp = new Int32Array(map.linedefs.length);
     this.blockFlag = new Uint8Array(map.linedefs.length);
@@ -367,9 +421,11 @@ export class FogOfWar {
     // black on frame one: unbounded on both caps, so this one call reveals
     // everything visible from spawn rather than leaving some of it to fade in
     // over the first few tics. The alpha snap below skips the fade itself.
+    this.scanId++;
     for (let slot = 0; slot < starts.length; slot++) {
       this.sweep(slot, starts[slot].x, starts[slot].y, Infinity, Infinity);
     }
+    this.redraw(starts, Infinity);
     this.snapAlpha();
   }
 
@@ -381,11 +437,22 @@ export class FogOfWar {
   }
 
   /**
+   * The undrawn leaves ({@link FogOfWar.undrawnSlot}) as a bitmap, run-length encoded the same way
+   * — draw state riding along in a save. docs/fogofwar.md § Covering midtextures.
+   */
+  snapshotUndrawn(): number[] {
+    return encodeRuns(Uint8Array.from(this.undrawnSlot, (at) => (at >= 0 ? 1 : 0)));
+  }
+
+  /**
    * Overwrites the exploration state wholesale — not ORed in, so a restore reproduces the save
    * exactly even over the constructor's own spawn-seeded reveal. {@link FogOfWar.pending} is
    * recounted and the visual alpha snapped to match, the same snap the constructor ends on.
+   *
+   * @param undrawn  {@link FogOfWar.snapshotUndrawn}'s runs; absent — a save from before it — draws
+   *                 every explored leaf
    */
-  restoreExplored(runs: number[]): void {
+  restoreExplored(runs: number[], undrawn?: number[]): void {
     // A deathmatch save's runs say everything, which is what the level already shows.
     if (this.off) return;
     this.explored.set(decodeRuns(runs, this.explored.length));
@@ -393,6 +460,15 @@ export class FogOfWar {
     for (let ss = 0; ss < this.sights.length; ss++) {
       if (this.sights[ss] && !this.explored[ss]) {
         this.pending++;
+      }
+    }
+    this.clearAllUndrawn();
+    if (undrawn) {
+      const bits = decodeRuns(undrawn, this.undrawnSlot.length);
+      for (let ss = 0; ss < bits.length; ss++) {
+        if (bits[ss] && this.explored[ss] && this.sights[ss]) {
+          this.markUndrawn(ss);
+        }
       }
     }
     this.snapAlpha();
@@ -409,12 +485,14 @@ export class FogOfWar {
    */
   tick(points: readonly Pos2[]): void {
     if (this.off || points.length === 0) return;
+    this.scanId++;
     const tests = Math.ceil(MAX_SIGHT_TESTS_PER_TIC / points.length);
     const work = Math.ceil(MAX_SIGHT_WORK_PER_TIC / points.length);
     for (let slot = 0; slot < points.length; slot++) {
       const at = points[slot];
       this.sweep(slot, at.x, at.y, tests, work);
     }
+    this.redraw(points, MAX_REDRAW_WORK_PER_TIC);
   }
 
   /**
@@ -508,8 +586,10 @@ export class FogOfWar {
   }
 
   /**
-   * Whether a subsector is drawn: explored, and in the drawn slot's island — what a sprite or an
-   * effect is shown by. Never a tic's question. docs/fogofwar.md § Islands.
+   * Whether a subsector is drawn: explored, not seen only past a covering midtexture, not a
+   * hole in the wall, and in the drawn slot's island — what a sprite or an effect is shown by.
+   * Never a tic's question.
+   * docs/fogofwar.md § Islands, § Covering midtextures, § Holes in the wall.
    */
   isDrawn(subsector: number): boolean {
     return this.drawnAt(subsector, this.drawnIsland());
@@ -529,12 +609,13 @@ export class FogOfWar {
    * Marks the whole level explored — the computer area map powerup (vanilla's `pw_allmap`, which
    * here reveals the play view itself). Only {@link FogOfWar.explored} is set, not
    * {@link FogOfWar.alpha}, so the level fades in rather than snapping on; the island gate still
-   * applies, so it reveals the region the player is in.
+   * applies, so it reveals the region the player is in — past covering midtextures too.
    * See docs/items.md § Powerups and the backpack.
    */
   revealAll(): void {
     this.explored.fill(1);
     this.pending = 0;
+    this.clearAllUndrawn();
   }
 
   /**
@@ -576,6 +657,8 @@ export class FogOfWar {
         this.explored[currentSS] = 1;
         this.pending--;
       }
+      // Standing in a leaf is seeing it, whatever hung between it and where it was first seen from.
+      this.clearUndrawn(currentSS);
     }
     if (this.pending <= 0) return;
     // The island a reveal here proves connected to what it reaches: the one this player stands in.
@@ -583,7 +666,6 @@ export class FogOfWar {
 
     this.ensureOrder(anchor, playerX, playerY);
 
-    this.scanId++;
     this.workLeft = workBudget;
     const order = anchor.order;
     const n = anchor.count;
@@ -593,14 +675,9 @@ export class FogOfWar {
       const ss = order[k];
       const s = this.explored[ss] ? undefined : this.sights[ss];
       if (!s) continue;
-      // Reveal reaches exactly as far as the player can see, so the bound is
-      // `VIEW_DISTANCE` itself. docs/fogofwar.md § Reveal radius. Squared, so
-      // the subsectors this rejects never pay for a root. Kept though `order` is already cut to
-      // range: that cutoff is anchored, this one answers for the live position.
-      const dx = s.cx - playerX;
-      const dy = s.cy - playerY;
-      const reach = VIEW_DISTANCE + s.radius;
-      if (dx * dx + dy * dy > reach * reach) continue;
+      // Kept though `order` is already cut to range: that cutoff is anchored, this one answers for
+      // the live position.
+      if (!inReach(s, playerX, playerY)) continue;
 
       budget--;
       this.rayTargetSector = this.closedTarget(ss);
@@ -610,6 +687,8 @@ export class FogOfWar {
         if (this.sightClear(playerX, playerY, s.samples[i], s.samples[i + 1])) {
           this.explored[ss] = 1;
           this.pending--;
+          // Explored all the same: a covering midtexture only keeps it off the screen.
+          if (this.rayCovered) this.markUndrawn(ss);
           // A ray reached it, so the two are one place and the partition was wrong: the only
           // merge rule there is, docs/fogofwar.md § Islands.
           const reached = this.island[ss];
@@ -738,6 +817,7 @@ export class FogOfWar {
     this.rayX2 = tx;
     this.rayY2 = ty;
     this.rayBlocked = false;
+    this.rayCovered = false;
     this.workLeft -= this.world.forEachLineAlongSegment(px, py, tx, ty, this.testBlocker);
     return !this.rayBlocked;
   }
@@ -756,7 +836,16 @@ export class FogOfWar {
       this.blockStamp[i] = this.scanId;
       this.blockFlag[i] = this.world.blocksSight(i) ? 1 : 0;
     }
-    if (this.blockFlag[i] === 0) return;
+    if (this.blockFlag[i] === 0) {
+      // Sight passes. A covering midtexture still hides what is past it from the draw gate, so the
+      // ray is only noted covered: the walk decides what a tic reads, and art never stops it.
+      // docs/fogofwar.md § Covering midtextures.
+      const cover = this.cover;
+      if (cover !== null && !this.rayCovered && cover.candidate(i) && this.coverHidesRay(cover, i)) {
+        this.rayCovered = true;
+      }
+      return;
+    }
     // `World.lineOverlapEnds` carries the shared-vertex overhang every ray-vs-wall
     // test in the engine needs — see `WALL_OVERLAP`, docs/fogofwar.md § Sight testing.
     const e = i * 4;
@@ -783,18 +872,107 @@ export class FogOfWar {
     );
   }
 
+  /**
+   * Whether line `i`, which sight passes, crosses the ray being walked with a midtexture that hides
+   * its opening from the eye's side. docs/fogofwar.md § Covering midtextures.
+   */
+  private coverHidesRay(cover: MidCover, i: number): boolean {
+    const e = i * 4;
+    const ends = this.world.lineOverlapEnds;
+    const t = segmentCrossT(this.rayX1, this.rayY1, this.rayX2, this.rayY2, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
+    if (t < 0) return false;
+    const o = this.coverOpening;
+    if (!this.world.openingInto(i, o)) return false;
+    return cover.hides(i, this.world.pointOnLineSide(this.rayX1, this.rayY1, i), o.bottom, o.top);
+  }
+
+  /**
+   * Draws again every undrawn leaf some point now sees with nothing in the way, covering
+   * midtextures included. It spends a budget of its own and writes nothing but the undrawn list.
+   * Shares the tic's {@link FogOfWar.scanId} with the sweep before it.
+   * docs/fogofwar.md § Covering midtextures.
+   *
+   * @param points  each slot's body, as {@link FogOfWar.tick} takes them
+   */
+  private redraw(points: readonly Pos2[], workBudget: number): void {
+    if (this.undrawnCount === 0) return;
+    this.workLeft = workBudget;
+    let k = this.redrawCursor;
+    // A pass clears at most one leaf per step, so the list never runs out before `steps` does.
+    for (let steps = this.undrawnCount; steps > 0 && this.workLeft > 0; steps--) {
+      if (k >= this.undrawnCount) k = 0;
+      const ss = this.undrawnList[k];
+      // A cleared leaf's slot takes the list's last entry, so `k` stays put to test that one next.
+      if (this.seenClean(ss, points)) {
+        this.clearUndrawn(ss);
+      } else {
+        k++;
+      }
+    }
+    this.redrawCursor = k;
+  }
+
+  /**
+   * Whether any of `points` reaches some sample of leaf `ss` along a ray nothing stops and no
+   * covering midtexture crosses.
+   */
+  private seenClean(ss: number, points: readonly Pos2[]): boolean {
+    const s = this.sights[ss];
+    if (!s) return true;
+    this.rayTargetSector = this.closedTarget(ss);
+    for (let p = 0; p < points.length; p++) {
+      const px = points[p].x;
+      const py = points[p].y;
+      if (!inReach(s, px, py)) continue;
+      for (let i = 0; i < s.samples.length; i += 2) {
+        if (this.sightClear(px, py, s.samples[i], s.samples[i + 1]) && !this.rayCovered) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Files leaf `ss` as undrawn. */
+  private markUndrawn(ss: number): void {
+    if (this.undrawnSlot[ss] >= 0) return;
+    this.undrawnSlot[ss] = this.undrawnCount;
+    this.undrawnList[this.undrawnCount++] = ss;
+  }
+
+  /** Takes leaf `ss` off the undrawn list, moving the list's last entry into its slot. */
+  private clearUndrawn(ss: number): void {
+    const at = this.undrawnSlot[ss];
+    if (at < 0) return;
+    const last = this.undrawnList[--this.undrawnCount];
+    this.undrawnList[at] = last;
+    this.undrawnSlot[last] = at;
+    this.undrawnSlot[ss] = -1;
+  }
+
+  /** Empties the undrawn list. */
+  private clearAllUndrawn(): void {
+    for (let k = 0; k < this.undrawnCount; k++) this.undrawnSlot[this.undrawnList[k]] = -1;
+    this.undrawnCount = 0;
+    this.redrawCursor = 0;
+  }
+
   /** The island the drawn slot stands in, {@link NO_ISLAND} before it stood in any. */
   private drawnIsland(): number {
     return this.anchors[this.drawn]?.island ?? NO_ISLAND;
   }
 
   /**
-   * {@link FogOfWar.isDrawn}'s answer: explored **and** in the drawn slot's island.
+   * {@link FogOfWar.isDrawn}'s answer: explored, not undrawn ({@link FogOfWar.undrawnSlot}), not a
+   * {@link FogOfWar.hole}, **and** in the drawn slot's island.
    *
    * @param drawnIsland  {@link FogOfWar.drawnIsland}'s answer, read once by a caller's loop
    */
   private drawnAt(subsector: number, drawnIsland: number): boolean {
-    return this.explored[subsector] !== 0 && inIsland(this.island[subsector], drawnIsland);
+    return (
+      this.explored[subsector] !== 0 &&
+      this.undrawnSlot[subsector] < 0 &&
+      this.hole[subsector] === 0 &&
+      inIsland(this.island[subsector], drawnIsland)
+    );
   }
 
   /** What {@link FogOfWar.updateFade} damps toward: {@link FogOfWar.drawnAt} as an alpha. */
@@ -846,6 +1024,100 @@ export class FogOfWar {
  */
 function inIsland(id: number, gate: number): boolean {
   return id === NO_ISLAND || id === gate;
+}
+
+/**
+ * Whether a leaf's sight `s` can be in reveal range of a point at (px, py): reveal reaches exactly
+ * as far as the player can see, so the bound is `VIEW_DISTANCE` itself. Squared, so a leaf this
+ * rejects never pays for a root. docs/fogofwar.md § Reveal radius.
+ */
+function inReach(s: SubSectorSight, px: number, py: number): boolean {
+  const dx = s.cx - px;
+  const dy = s.cy - py;
+  const reach = VIEW_DISTANCE + s.radius;
+  return dx * dx + dy * dy <= reach * reach;
+}
+
+/**
+ * A hole in the wall is lower than this (tuned by feel: an 8-high sound channel is one, a 24-high
+ * crawlspace is not) — the first of {@link findHoleSectors}' limits.
+ * docs/fogofwar.md § Holes in the wall.
+ */
+const HOLE_BELOW_HEIGHT = 16;
+/** …no wider than this across its bounding box (tuned by feel)… */
+const HOLE_MAX_WIDTH = 16;
+/** …walled in, by one-sided or shut lines, for at least this share of its boundary (tuned by feel)… */
+const HOLE_MIN_WALLED = 0.5;
+/** …and has no opening line this long, a body's width (tuned by feel). */
+const HOLE_OPENING_BELOW = 32;
+
+/**
+ * The sectors too small to be a place — within all four `HOLE_*` limits, roofed (its ceiling below
+ * that of every open neighbour a body fits in, so the top of a block standing just under a ceiling
+ * is not one), and nothing a special drives. Read off the heights the map loads with.
+ * docs/fogofwar.md § Holes in the wall.
+ *
+ * @returns per sector, 1 for a hole
+ */
+function findHoleSectors(world: World, movable: ReadonlySet<number>): Uint8Array {
+  const map = world.map;
+  const n = map.sectors.length;
+  const minX = new Float64Array(n).fill(Infinity);
+  const minY = new Float64Array(n).fill(Infinity);
+  const maxX = new Float64Array(n).fill(-Infinity);
+  const maxY = new Float64Array(n).fill(-Infinity);
+  const perimeter = new Float64Array(n);
+  const walled = new Float64Array(n);
+  const wideOpening = new Uint8Array(n);
+  const roof = new Float64Array(n).fill(Infinity);
+  for (let i = 0; i < map.linedefs.length; i++) {
+    const line = map.linedefs[i];
+    const a = map.vertexes[line.v1];
+    const b = map.vertexes[line.v2];
+    const front = map.sidedefs[line.right]?.sector ?? -1;
+    const back = line.left === NO_SIDE ? -1 : (map.sidedefs[line.left]?.sector ?? -1);
+    // Sides by index rather than over a pair array: this runs per line of the map at level load.
+    for (let side = 0; side < 2; side++) {
+      const s = side === 0 ? front : back;
+      if (s < 0) continue;
+      minX[s] = Math.min(minX[s], a.x, b.x);
+      minY[s] = Math.min(minY[s], a.y, b.y);
+      maxX[s] = Math.max(maxX[s], a.x, b.x);
+      maxY[s] = Math.max(maxY[s], a.y, b.y);
+    }
+    // A line with the same sector on both sides runs through the sector, not round it.
+    if (front < 0 || front === back) continue;
+    const len = vecLength(b.x - a.x, b.y - a.y);
+    if (back < 0) {
+      perimeter[front] += len;
+      walled[front] += len;
+      continue;
+    }
+    const shut = world.blocksSight(i);
+    for (let side = 0; side < 2; side++) {
+      const s = side === 0 ? front : back;
+      const other = map.sectors[side === 0 ? back : front];
+      perimeter[s] += len;
+      if (shut) {
+        walled[s] += len;
+        continue;
+      }
+      if (len >= HOLE_OPENING_BELOW) wideOpening[s] = 1;
+      // A neighbour too low for a body is the same channel carrying on, not a room over it.
+      if (other.ceilHeight - other.floorHeight >= HOLE_BELOW_HEIGHT) roof[s] = Math.min(roof[s], other.ceilHeight);
+    }
+  }
+  const holes = new Uint8Array(n);
+  for (let s = 0; s < n; s++) {
+    const sector = map.sectors[s];
+    const height = sector.ceilHeight - sector.floorHeight;
+    if (height <= 0 || height >= HOLE_BELOW_HEIGHT || movable.has(s) || wideOpening[s]) continue;
+    if (sector.ceilHeight >= roof[s]) continue;
+    if (Math.min(maxX[s] - minX[s], maxY[s] - minY[s]) > HOLE_MAX_WIDTH) continue;
+    if (perimeter[s] === 0 || walled[s] < perimeter[s] * HOLE_MIN_WALLED) continue;
+    holes[s] = 1;
+  }
+  return holes;
 }
 
 /**

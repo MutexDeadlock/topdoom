@@ -140,7 +140,8 @@ per-sector mover slots Boom keeps apart. **That one is read back by `mover.kind`
 field it arrived in**: a save written before the split holds every kind in `movers`, so sorting on
 restore covers both shapes without a bump (docs/specials.md § One mover per sector)),
 secrets found + every slot's damage-floor timer (an older save's `dollTimer` beside it, from the removed
-per-doll damage pass, is simply ignored), fog of war's `explored`, sound-alerted
+per-doll damage pass, is simply ignored), fog of war's `explored` and the optional `fogUndrawn`
+(absent draws every explored leaf, docs/fogofwar.md § Covering midtextures), sound-alerted
 sectors, every thing, the Icon of Sin, projectiles in flight, the optional `voodoo` block — where
 each of the level's dolls has been carried to and the momentum it is carrying, absent in any save
 from before dolls existed, which leaves them standing on their own player starts exactly as a fresh

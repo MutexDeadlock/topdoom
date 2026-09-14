@@ -294,6 +294,57 @@ solid mass split across several subsectors lights only the near one. The BSP spl
 minisegs, which are not blockers at all, and the camera hangs above: the player looks down on the
 whole cap of a block at once, so lighting part of it is the same hole this section exists to close.
 
+## Covering midtextures
+
+**A midtexture opaque over a two-sided line's whole opening hides what is past it, from the draw
+gate only** (`render/midcover.ts: MidCover`, `FogOfWar.undrawnSlot`). At eye level such a line is a
+wall whatever gap it hangs in; a mapper fences a monster closet with one because sound only
+crosses a line with an opening (`P_RecursiveSound`'s `openrange <= 0` skip, `p_enemy.c`). Repro:
+GoingDown MAP02 line 566 (MODWALL1 over a 48-unit gap) in front of sectors 123/129, seen from 436.
+
+- **The test**: the side facing the eye (`World.pointOnLineSide`), its midtexture hung as
+  `R_RenderMaskedSegRange` hangs it (`r_segs.c`; `mapmesh/walls.ts` hangs it the same way), every
+  row the live opening shows opaque across the texture's full width. Grates, bars and railings
+  have transparent rows and hide nothing; neither does a texture short of the opening, nor a 260
+  translucent or suppressed one.
+- **Line flags are not the test.** `ML_SECRET`/`ML_DONTDRAW` on blocking two-sided lines also sit on
+  see-through midtextures (DOOM2 MAP17 line 223's MIDGRATE, Plutonia MAP11's A-RAIL1, GoingDown
+  MAP02's MIDBRN1) and on bare openings (49 in TNT MAP29).
+- **`explored` never reads it.** It is texture art, which never decides a tic (CLAUDE.md), and
+  `explored` gates hitscans (`raycastMonster`) and click-to-target: a monster past a fake wall stays
+  shootable and lockable, as vanilla's hitscans and autoaim reach through one. A sweep's ray crosses
+  a covering line exactly as before and only notes it, so the leaf is explored and filed `undrawn`.
+- **`undrawn` is a second look, not a verdict.** `redraw` retests the filed leaves every tic from
+  every slot, a ray past a covering line not counting, and draws any that something now sees cleanly —
+  from around the fake wall, or from inside. It spends `MAX_REDRAW_WORK_PER_TIC`, never the
+  sweep's budgets. The spawn seed runs it unbounded; standing in a leaf and `revealAll` clear it.
+- **Saved as the optional `fogUndrawn`**, or a load would show the closet again; absent means
+  nothing is undrawn, what a save from before it restores to.
+
+## Holes in the wall
+
+**A sector too small to be a place is explored and never drawn** (`findHoleSectors`,
+`FogOfWar.hole`): a sound channel or vent a mapper runs through the wall mass so noise reaches a
+monster, whose floor the overhead camera would otherwise show as a strip across the void. Repro:
+ksutra MAP04 sector 187, a 2×344 channel 8 high between sectors 116 and 188, lit from the passage
+between 115 and 116 at x ≈ −50.
+
+- **The test**, on the heights the map loads with and for a sector nothing drives: lower than
+  `HOLE_BELOW_HEIGHT`, no wider than `HOLE_MAX_WIDTH` across its bounding box, walled in by
+  one-sided or shut lines for at least `HOLE_MIN_WALLED` of its boundary, no opening line as long as
+  `HOLE_OPENING_BELOW`, and **roofed**: its ceiling below that of every open neighbour a body fits
+  in. Without the roof test the top of a block standing just under a ceiling goes dark — TNT MAP11
+  sector 186's crate, DOOM2 MAP13 sector 202's ledge.
+- **Height alone is not the test.** Low sectors are also blood and lava pools, water detail and sky
+  hacks open to the room around them (E4M8 135/202, E4M3 35, TNT MAP16 67–87); the width limit
+  keeps out the large walled-in ones, whose purpose cannot be told from geometry (Plutonia MAP25
+  95, a 65×1117 lava channel).
+- **Nor is a low opening.** Hiding what is seen *past* one hides ordinary rooms seen over a sill
+  (TNT MAP31, Plutonia MAP07). Only the hole's own leaves and walls go dark; sight still passes
+  through it.
+- **Draw gate only**, as § Covering midtextures: `explored`, `isVisible` and the save are untouched.
+  It holds in every mode, a deathmatch's `off` included.
+
 ## Islands
 
 **Only the region the drawn player is standing in is drawn.** `explored` is ANDed with an island

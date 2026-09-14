@@ -448,6 +448,13 @@ export interface GameSnapshot {
   sectorEffects: SectorEffectsSnapshot;
   /** {@link encodeRuns} of the fog-of-war `explored` bitmap. */
   fog: number[];
+  /**
+   * {@link encodeRuns} of the fog's `undrawn` bitmap — explored leaves seen only past a covering
+   * midtexture, a draw state. Optional because it was added without a `SAVE_VERSION` bump: absent
+   * means every explored leaf is drawn, exactly what a save from before it restored to.
+   * docs/fogofwar.md § Covering midtextures.
+   */
+  fogUndrawn?: number[];
   /** `[sectorIndex, slot]` for every sector a noise reached — `World.snapshotSoundAlerted`. */
   soundAlerted: [sector: number, slot: number][];
   things: ThingsSnapshot;

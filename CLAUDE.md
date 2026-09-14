@@ -64,7 +64,8 @@ src/wad/       WAD files, merged lump directory, content IDs (checksum), map lum
                game mode, the level progression (campaign/)
 src/render/    BSP polygon reconstruction (bsp, sectorprobe), the solids a map draws as void
                (solids), mesh building (mapmesh/), sector light + depth falloff (sectorlight),
-               materials + texture animation, occlusion fading (occlusion/), Boom's scrolling
+               materials + texture animation, occlusion fading (occlusion/), the midtextures that
+               hide what is past them from the fog's draw gate (midcover), Boom's scrolling
                surfaces (scroller), sprite billboards + batching (sprites/), drawable player skins
                (playerskin), the blob shadow (playershadow), wall contact shading (wallshadow), the
                sky tint (skytint), the void fog (voidfloor), bloom, GLDEFS dynamic lights (lights/),

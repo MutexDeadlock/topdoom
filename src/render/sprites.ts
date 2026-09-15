@@ -196,15 +196,16 @@ export class SpriteAnimator {
   /**
    * Sprite name to resolve the death sequence's frames against, when it differs from
    * {@link SpriteAnimator.spriteName} — set only by {@link SpriteAnimator.die}'s optional third
-   * argument: null for every monster, whose death reuses its own sprite — the exploding barrel
-   * (`BAR1` dying as `BEXP`) is the one thing that needs it.
+   * argument: null for a death in the thing's own sprite — the exploding barrel (`BAR1` dying as
+   * `BEXP`) and a crushed corpse (`POL5`) are the ones that aren't.
    */
   private deathSpriteName: string | null = null;
 
   /**
    * Art drawn instead of this animator's own bank and sprite name, or null for its own. Unlike
    * {@link SpriteAnimator.deathSpriteName} it covers every sequence, death included — a corpse
-   * goes on holding the weapon it died with. {@link SpriteAnimator.frameKey} stays this animator's
+   * goes on holding the weapon it died with — except a death in another sprite, which is not the
+   * skin's art. {@link SpriteAnimator.frameKey} stays this animator's
    * own either way (see {@link SpriteAnimator.resolve}).
    */
   private skin: SpriteSkin | null = null;
@@ -308,8 +309,9 @@ export class SpriteAnimator {
     this.lastSkin = skin;
     // A frame the skin has no lump for is looked up along its fallbacks, then in the animator's own
     // art: a partial skin file draws the player's colour, or the set's sprite, rather than nothing.
-    // docs/sprites.md § Weapon-matching player sprites.
-    let from = skin;
+    // docs/sprites.md § Weapon-matching player sprites. A death in another sprite skips the skin,
+    // which would otherwise answer the pool's letter with its own `PLAY` frame.
+    let from = spriteName === this.spriteName ? skin : null;
     let found: ReturnType<SpriteBank['lookup']> = undefined;
     for (; from !== null; from = from.fallback) {
       found = from.bank.lookup(from.spriteName, letter, digit);
@@ -525,8 +527,8 @@ export class SpriteActor {
     this.anim.setSkin(skin);
   }
 
-  die(frames: string[], frameDuration: number): void {
-    this.anim.die(frames, frameDuration);
+  die(frames: string[], frameDuration: number, spriteName?: string): void {
+    this.anim.die(frames, frameDuration, spriteName);
   }
 
   playOnce(frames: string[], durations: number | readonly number[]): void {

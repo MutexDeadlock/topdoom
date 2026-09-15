@@ -405,6 +405,12 @@ export interface PlayerSlotSnapshot {
    */
   gibbed?: boolean;
   /**
+   * The corpse ({@link PlayerSlotSnapshot.dead}) crunched to a pool of blood by a mover, written
+   * only then: absent is a corpse no plane has reached, a living slot, a save from before the pool.
+   * No tic reads it. docs/specials-crushers.md § Crushed corpses.
+   */
+  crushed?: boolean;
+  /**
    * The cheats switched on, written only while one is: an honest slot saves nothing, and absent
    * means neither cheat. docs/cheats.md § Saves and best times.
    */

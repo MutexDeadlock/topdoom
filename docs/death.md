@@ -136,7 +136,8 @@ chain and the cry — `slop` for a gib (`A_XScream`), else `pdiehi` below −50 
 and `pldeth` otherwise (`A_PlayerScream`, docs/audio.md § Player and pickups). `PlayerSlot.die`
 plays the chain, and a snapshot carries the gib (`PlayerSlotSnapshot.gibbed`, optional: absent is
 the plain corpse, and no tic reads it). Both chains run at `PLAYER_DEATH_FRAME_SECONDS`, the flat
-rate the monster tables use; the death overlay waits out the one the corpse plays.
+rate the monster tables use; the death overlay waits out the one the corpse plays. A mover can
+still crunch the corpse to a pool — docs/specials-crushers.md § Crushed corpses.
 
 `Inventory.applyDamage` is vanilla's `P_DamageMobj` armor formula — green armor absorbs a third of
 the damage, blue half, in C's integer division (`damage/3`, `damage/2`) so armor and health stay

@@ -29,6 +29,7 @@ import { headingYawDeg, latticeYaw, TopDownCamera } from './render/camera.ts';
 import {
   bodiesOverlap,
   buildThingSprites,
+  hasCorpseGibArt,
   monstersTelefrag,
   TELEFRAG_DAMAGE,
   targetOfSlot,
@@ -1590,10 +1591,13 @@ export class Game {
       // the bodies and nothing else — `things` as a getter because it is built further down.
       occupants: {
         things: () => this.level.things,
-        players: bodies,
+        slots: this.slots,
         // A crusher over a voodoo doll kills the player it stands for.
         dolls: voodoo.dolls,
         damageSlot: (slot, amount) => this.damageSlot(this.slots[slot], amount, { cause: 'crush' }),
+        squashSlot: (slot) => {
+          if (hasCorpseGibArt(this.spriteBank)) this.slots[slot].squash();
+        },
         sprayBlood: (at) => this.effects.spawnCrushBlood(at),
       },
       playersAt: bodies,

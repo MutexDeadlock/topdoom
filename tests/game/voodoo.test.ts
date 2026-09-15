@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addControlLine, gridMap } from '../fixtures/gridmap.ts';
-import { crushSources, specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { crushSources, occupant, specialsRig, TIC } from '../fixtures/specialsrig.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
 import { VoodooDolls } from '../../src/game/specials/voodoo.ts';
 import { SectorEffects } from '../../src/game/specials/sectoreffects.ts';
@@ -164,7 +164,7 @@ describe('Specials · voodoo dolls', () => {
       world,
       crushSources({
         // The player is somewhere else entirely.
-        players: [{ ...grid.centre(2, 0), z: 0 }],
+        slots: [occupant({ ...grid.centre(2, 0), z: 0 })],
         dolls: dolls.dolls,
         damageSlot: (_slot, amount) => (dealt += amount),
         sprayBlood: () => assert.fail('a doll is drawn as nothing and sprays nothing'),

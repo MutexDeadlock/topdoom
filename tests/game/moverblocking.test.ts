@@ -8,7 +8,7 @@ import { PLAYER_HEIGHT } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
-import { AWAY, crushSources } from '../fixtures/specialsrig.ts';
+import { AWAY, crushSources, occupant } from '../fixtures/specialsrig.ts';
 import type { Pos3 } from '../../src/types.ts';
 
 /**
@@ -60,7 +60,7 @@ describe('Specials · the bodies a mover reaches', () => {
     let dealt = 0;
     const occupancy = new MoverOccupancy(
       world,
-      crushSources({ players: [{ ...stands, z: 0 }], dolls: dolls.dolls, damageSlot: (_slot, amount) => (dealt += amount) }),
+      crushSources({ slots: [occupant({ ...stands, z: 0 })], dolls: dolls.dolls, damageSlot: (_slot, amount) => (dealt += amount) }),
     );
     assert.equal(occupancy.crush(sector, true), true);
     assert.ok(dealt > 0, 'the doll’s crushing should have reached the real player');
@@ -72,7 +72,7 @@ describe('Specials · the bodies a mover reaches', () => {
     grid.map.sectors[sector].ceilHeight = 64;
     const world = new World(grid.map);
     const player: Pos3 = { ...AWAY };
-    const occupancy = new MoverOccupancy(world, crushSources({ players: [player] }));
+    const occupancy = new MoverOccupancy(world, crushSources({ slots: [occupant(player)] }));
     // A floor this high leaves a standing player less than `PLAYER_HEIGHT` under the ceiling.
     const tooHigh = 64 - PLAYER_HEIGHT + 1;
     assert.equal(occupancy.blocksFloorRise(sector, tooHigh), false, 'nobody is standing there yet');
@@ -84,5 +84,20 @@ describe('Specials · the bodies a mover reaches', () => {
     assert.equal(occupancy.blocksFloorRise(sector, 0), false, 'a rise the player still fits under');
     assert.equal(occupancy.blocksCeilingLower(sector, PLAYER_HEIGHT - 1), true);
     assert.equal(occupancy.blocksCeilingLower(sector, 64), false);
+  });
+
+  test('a dead player is caught by no mover and in no mover’s way', () => {
+    const { grid, sector } = crushingRoom();
+    const world = new World(grid.map);
+    const slot = occupant({ ...grid.centre(1, 1), z: 0 });
+    const occupancy = new MoverOccupancy(world, crushSources({ slots: [slot], damageSlot: () => {} }));
+    assert.equal(occupancy.crush(sector, false), true, 'alive, it is caught');
+    assert.equal(occupancy.blocksCeilingLower(sector, 0), true, 'and holds a closing door');
+    assert.equal(occupancy.blocksFloorRise(sector, 7), true, 'and a rising floor');
+
+    slot.dead = true;
+    assert.equal(occupancy.crush(sector, false), false, 'a corpse slows no crusher');
+    assert.equal(occupancy.blocksCeilingLower(sector, 0), false);
+    assert.equal(occupancy.blocksFloorRise(sector, 7), false);
   });
 });

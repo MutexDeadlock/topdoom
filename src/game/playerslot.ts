@@ -13,6 +13,7 @@ import type { AutoCamera } from './autocamera.ts';
 import { makeTouchCache, type SectorTouchCache } from './world.ts';
 import { deserializeInventory, serializeInventory, type PlayerSlotSnapshot } from './snapshot.ts';
 import {
+  CORPSE_GIB,
   PLAYER_DEATH_FRAME_SECONDS,
   PLAYER_DEATH_FRAMES,
   PLAYER_SPAWN_HEALTH,
@@ -108,6 +109,12 @@ export class PlayerSlot {
    */
   gibbed = false;
   /**
+   * Whether a mover has since crunched this player's corpse to a pool of blood, while
+   * {@link PlayerSlot.dead} — {@link PlayerSlot.squash}. No tic reads it.
+   * docs/specials-crushers.md § Crushed corpses.
+   */
+  crushed = false;
+  /**
    * The kills this player made this level — vanilla's `player_t.killcount`, which `P_SetupLevel`
    * zeroes and `Game.buildLevel` does too. Counted in a netgame only; what the scoreboard shows.
    * docs/multiplayer-coop.md § Items and kills.
@@ -180,6 +187,7 @@ export class PlayerSlot {
     this.dead = false;
     this.deathCause = undefined;
     this.gibbed = false;
+    this.crushed = false;
     this.actor.revive();
   }
 
@@ -194,15 +202,26 @@ export class PlayerSlot {
     this.dead = true;
     this.deathCause = cause;
     this.gibbed = gibbed;
-    this.actor.die(this.deathFrames, PLAYER_DEATH_FRAME_SECONDS);
+    this.pose();
   }
 
   /**
-   * The chain {@link PlayerSlot.die} plays, each frame {@link PLAYER_DEATH_FRAME_SECONDS} long:
-   * `PLAY`'s xdeath where {@link PlayerSlot.gibbed}, its plain death otherwise — what the death
-   * overlay waits out. docs/death.md § Player death.
+   * The corpse crunched to a pool of blood by a mover that left it no room — `PIT_ChangeSector`'s
+   * `S_GIBS` — and a snapshot's pool laid down again. docs/specials-crushers.md § Crushed corpses.
+   */
+  squash(): void {
+    if (!this.dead || this.crushed) return;
+    this.crushed = true;
+    this.pose();
+  }
+
+  /**
+   * The chain the corpse plays, each frame {@link PLAYER_DEATH_FRAME_SECONDS} long: the pool where
+   * {@link PlayerSlot.crushed}, else `PLAY`'s xdeath where {@link PlayerSlot.gibbed} and its plain
+   * death otherwise — what the death overlay waits out. docs/death.md § Player death.
    */
   get deathFrames(): string[] {
+    if (this.crushed) return CORPSE_GIB.frames;
     return this.gibbed ? PLAYER_XDEATH_FRAMES : PLAYER_DEATH_FRAMES;
   }
 
@@ -268,6 +287,7 @@ export class PlayerSlot {
       ...(this.frags.some((n) => n !== 0) ? { frags: [...this.frags] } : {}),
       ...(this.deathCause !== undefined ? { deathCause: this.deathCause } : {}),
       ...(this.gibbed ? { gibbed: true } : {}),
+      ...(this.crushed ? { crushed: true } : {}),
     };
   }
 
@@ -288,5 +308,14 @@ export class PlayerSlot {
     // inventory it is handed, and `beginLevel` only saw the outgoing one.
     this.weapons.restore(saved.weapons, this.inventory);
     if (saved.dead) this.die(asDamageCause(saved.deathCause), saved.gibbed === true);
+    if (saved.crushed) this.squash();
+  }
+
+  /**
+   * The billboard laid down in {@link PlayerSlot.deathFrames}, from the pool's own sprite once
+   * {@link PlayerSlot.crushed} — frames and sprite picked together, as `enterDeathPose` does.
+   */
+  private pose(): void {
+    this.actor.die(this.deathFrames, PLAYER_DEATH_FRAME_SECONDS, this.crushed ? CORPSE_GIB.sprite : undefined);
   }
 }

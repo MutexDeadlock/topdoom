@@ -10,7 +10,7 @@ import { DOOM_TIC } from '../../src/constants.ts';
 import type { ThingsSnapshot } from '../../src/game/snapshot.ts';
 import { addControlLine, gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { MATERIALS, recordingBank } from '../fixtures/spritestubs.ts';
-import { crushSources, specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { AWAY, crushSources, occupant, specialsRig, TIC } from '../fixtures/specialsrig.ts';
 import { savedThing } from '../fixtures/snapshot.ts';
 
 /**
@@ -36,7 +36,7 @@ function room(restore?: ThingsSnapshot) {
     /** Drops the ceiling to `gap` above the floor and runs `P_ChangeSector` over the sector. */
     squashAt(gap: number) {
       map.sectors[sectorIndex].ceilHeight = map.sectors[sectorIndex].floorHeight + gap;
-      squashCorpses(world, things, sectorIndex);
+      squashCorpses(world, crushSources({ things: () => things }), sectorIndex);
     },
     /** What the demon's billboard is drawn as right now. */
     drawn() {
@@ -85,6 +85,34 @@ describe('Death · corpses under a mover', () => {
     fx.squashAt(8);
     assert.equal(crushed(fx.things), false);
     assert.notEqual(fx.drawn(), POOL);
+  });
+
+  test('a player’s corpse is crunched too, at a quarter of the player’s height', () => {
+    const grid = gridMap(['###', '#.#', '###'], { cell: 128 });
+    const sectorIndex = grid.index(1, 1);
+    const world = new World(grid.map);
+    const corpse = occupant({ ...grid.centre(1, 1), z: 0 });
+    const squashed: number[] = [];
+    // Slot 1 lies in the room; slot 0 is somewhere else entirely.
+    const sources = crushSources({
+      slots: [occupant(AWAY), corpse],
+      squashSlot: (slot) => void squashed.push(slot),
+    });
+    const squashAt = (gap: number) => {
+      grid.map.sectors[sectorIndex].ceilHeight = grid.map.sectors[sectorIndex].floorHeight + gap;
+      squashCorpses(world, sources, sectorIndex);
+    };
+    squashAt(8);
+    assert.deepEqual(squashed, [], 'a living player is the crush damage’s business');
+    corpse.dead = true;
+    // `PLAYER_HEIGHT` is 56, quartered by `P_KillMobj` like any other corpse's.
+    squashAt(20);
+    assert.deepEqual(squashed, [], 'a corpse still fits 20 units');
+    squashAt(12);
+    assert.deepEqual(squashed, [1], 'the slot lying there, and nobody else');
+    corpse.crushed = true;
+    squashAt(8);
+    assert.deepEqual(squashed, [1], 'a pool is passed over');
   });
 
   test('a squashed corpse reloads as the pool it was, not as the corpse it started as', () => {

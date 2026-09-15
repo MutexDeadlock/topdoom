@@ -270,6 +270,16 @@ export interface ThingLayerOptions {
   onItemRespawn?: (at: Pos3) => void;
 }
 
+/**
+ * Whether the set draws `CORPSE_GIB`, the pool a crushed corpse becomes. A set without it keeps the
+ * corpse it has, monster's or player's, rather than drawing nothing — the same "no art, don't pose
+ * it" rule `pushThing` applies at spawn. docs/specials-crushers.md § Crushed corpses.
+ */
+export function hasCorpseGibArt(bank: SpriteBank): boolean {
+  const { sprite, frames } = tables.CORPSE_GIB;
+  return frames.length > 0 && Boolean(bank.lookup(sprite, frames[0], 1));
+}
+
 /** One static upright plane per map THING whose type is a known, visible sprite. */
 export function buildThingSprites(world: World, options: ThingLayerOptions): ThingLayer {
   const {
@@ -935,9 +945,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   function crushCorpse(id: number): void {
     const p = posed[id];
     if (!p || p.crushed) return;
-    // A set without the pool's own art would draw nothing where the corpse was, so the corpse is
-    // left as it is — the same "no art, don't pose it" rule `pushThing` applies at spawn.
-    if (!tables.CORPSE_GIB.frames.length || !bank.lookup(tables.CORPSE_GIB.sprite, tables.CORPSE_GIB.frames[0], 1)) return;
+    if (!hasCorpseGibArt(bank)) return;
     p.crushed = true;
     // `deadTime` deliberately keeps running: the corpse has been lying there just as long, which
     // is what the arch-vile's settle gate and the nightmare respawn delay both measure.

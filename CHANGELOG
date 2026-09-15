@@ -1,3 +1,16 @@
+v0.20.2 (2026-09-1?)
+
+Features and improvements
+
+Fixed bugs
+  - a dead player no longer bleeds under a crusher, slows it down or
+    blocks a door or lift
+  - a mover now crushes a dead player's corpse into a pool of blood,
+    like vanilla
+
+
+===============================================================================
+
 v0.20.1 (2026-09-15)
 
 Features and improvements

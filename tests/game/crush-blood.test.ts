@@ -13,7 +13,7 @@ import type { SpriteBank } from '../../src/wad/sprites.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS, ROT0_BANK, drawnLumps, drawnSprites, fxLayer } from '../fixtures/spritestubs.ts';
-import { AWAY, crushSources } from '../fixtures/specialsrig.ts';
+import { AWAY, crushSources, occupant } from '../fixtures/specialsrig.ts';
 import { stepFor } from '../fixtures/tics.ts';
 
 /**
@@ -32,10 +32,15 @@ function crushingRoom(type?: number) {
   const world = new World(grid.map);
   const things = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
   const sprayed: Pos3[] = [];
-  const pulse = (dealDamage = true, player = AWAY) =>
+  const pulse = (dealDamage = true, player = AWAY, dead = false) =>
     applyCrushDamage(
       world,
-      crushSources({ things: () => things, players: [player], damageSlot: () => {}, sprayBlood: (at) => void sprayed.push(at) }),
+      crushSources({
+        things: () => things,
+        slots: [occupant(player, dead)],
+        damageSlot: () => {},
+        sprayBlood: (at) => void sprayed.push(at),
+      }),
       sectorIndex,
       dealDamage,
     );
@@ -73,6 +78,15 @@ describe('Death · a crusher sprays blood', () => {
     assert.ok(room.pulse(true, player), 'the player is caught');
     assert.equal(room.sprayed.length, 1);
     assert.equal(room.sprayed[0].z, PLAYER_HEIGHT / 2);
+  });
+
+  test('but never out of a dead player, whose corpse is no longer shootable', () => {
+    const room = crushingRoom();
+    const corpse = { ...room.centre, z: 0 };
+    // `P_KillMobj` strips `MF_SHOOTABLE`, and `PIT_ChangeSector` returns for a corpse before
+    // `nofit`.
+    assert.equal(room.pulse(true, corpse, true), false, 'not caught, so no slowdown either');
+    assert.deepEqual(room.sprayed, []);
   });
 });
 

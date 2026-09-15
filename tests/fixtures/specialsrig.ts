@@ -17,7 +17,7 @@ import { buildMapMesh, type BuiltMap } from '../../src/render/mapmesh.ts';
 import type { DoomMap } from '../../src/wad/map.ts';
 import type { MaterialBank } from '../../src/render/textures.ts';
 import type { SfxId, SoundEmitter } from '../../src/audio/sfx.ts';
-import type { Pos2 } from '../../src/types.ts';
+import type { Pos2, Pos3 } from '../../src/types.ts';
 import type { CrossingBody } from '../../src/game/things/defs.ts';
 import { NO_INPUT, USE_INPUT } from './input.ts';
 
@@ -42,6 +42,11 @@ export const BANK = {
  */
 export const AWAY = { x: -1000, y: -1000, z: 0 };
 
+/** A player slot as `OccupancySources.slots` reads one, uncrushed; mutable so a test can kill it. */
+export function occupant(player: Pos3, dead = false): { player: Pos3; dead: boolean; crushed: boolean } {
+  return { player, dead, crushed: false };
+}
+
 /**
  * The `OccupancySources` an `applyCrushDamage`/`MoverOccupancy` test needs, with the members it
  * isn't about defaulted to "nobody there, and nothing should reach me". Override only what the
@@ -50,9 +55,10 @@ export const AWAY = { x: -1000, y: -1000, z: 0 };
 export function crushSources(over: Partial<OccupancySources> = {}): OccupancySources {
   return {
     things: () => null,
-    players: [AWAY],
+    slots: [occupant(AWAY)],
     dolls: [],
     damageSlot: () => assert.fail('nothing in this test should damage the player'),
+    squashSlot: () => {},
     sprayBlood: () => {},
     ...over,
   };

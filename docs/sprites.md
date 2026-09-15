@@ -598,7 +598,8 @@ green; the colour's own `PLAY` skin, and green, fall back on the set's atlas.
 
 `setSkin` touches no sequence state: a weapon swapped mid-stride must not restart the walk cycle,
 one swapped mid-death must not restart the death chain (§ The animation index must always be valid).
-A corpse goes on holding the weapon it died with.
+A corpse goes on holding the weapon it died with — until a mover crunches it to a pool, a death in
+another sprite, which skips the skin (docs/specials-crushers.md § Crushed corpses).
 
 ### When the skins apply
 

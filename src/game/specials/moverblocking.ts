@@ -35,6 +35,19 @@ export interface Occupancy {
   squash(sectorIndex: number): void;
 }
 
+/** What a mover reads of a player slot. `PlayerSlot` (`game/playerslot.ts`) satisfies it. */
+export interface OccupantSlot {
+  /** The live body. `z` is the feet height the crusher's spray is measured up from. */
+  readonly player: Pos3;
+  /**
+   * A corpse: caught by no mover, bleeding under none and in no mover's way — only
+   * {@link squashCorpses} still reaches it. docs/specials-crushers.md § Crushed corpses.
+   */
+  readonly dead: boolean;
+  /** A corpse already crunched to a pool, which {@link squashCorpses} passes over. */
+  readonly crushed: boolean;
+}
+
 /** Where {@link MoverOccupancy} finds the bodies a mover could catch. */
 export interface OccupancySources {
   /**
@@ -42,15 +55,14 @@ export interface OccupancySources {
    * `SpecialsController`, so an instance passed at construction would be the null one forever.
    */
   things: () => ThingLayer | null;
-  /**
-   * The live player bodies by slot — read every tic, so they must be the player objects
-   * themselves. `z` is the feet height the crusher's spray is measured up from.
-   */
-  players: readonly Pos3[];
+  /** The player slots, read every tic — so the slots themselves, never a copy. */
+  slots: readonly OccupantSlot[];
   /** The level's voodoo dolls (`voodoo.ts`): a crusher catching one hurts player 1. */
   dolls: readonly Pos2[];
   /** Crush damage to one player. The cause is fixed per wiring site, so the caller binds it. */
   damageSlot: (slot: number, amount: number) => void;
+  /** `PIT_ChangeSector`'s `S_GIBS` for a player's corpse — `PlayerSlot.squash`. */
+  squashSlot: (slot: number) => void;
   /**
    * `PIT_ChangeSector`'s blood spray, at the caught body's middle —
    * `SpriteFxLayer.spawnCrushBlood`, which lives in `game.ts` like every other effect.
@@ -70,7 +82,7 @@ export const NOBODY: Occupancy = {
 const neighborhoods = new WeakMap<DoomMap, Map<number, Set<Sector>>>();
 
 /**
- * What {@link Occupancy.crush} does: deals {@link CRUSH_DAMAGE} to the player and to every
+ * What {@link Occupancy.crush} does: deals {@link CRUSH_DAMAGE} to every living player and to every
  * crushable body the sector's moving plane has left without the headroom to stand in, and sprays
  * blood out of each. Gated on {@link crushed} rather than on merely standing in the sector, so a
  * crusher parked at the top of its travel deals none. Monsters and barrels share one loop,
@@ -83,7 +95,7 @@ export function applyCrushDamage(
   sectorIndex: number,
   dealDamage: boolean,
 ): boolean {
-  const { players, dolls, damageSlot, sprayBlood } = sources;
+  const { slots, dolls, damageSlot, sprayBlood } = sources;
   const things = sources.things();
   const map = world.map;
   const sector = map.sectors[sectorIndex];
@@ -108,8 +120,10 @@ export function applyCrushDamage(
       caught = true;
       if (dealDamage) damageSlot(0, CRUSH_DAMAGE);
     }
-    for (let slot = 0; slot < players.length; slot++) {
-      const player = players[slot];
+    for (let slot = 0; slot < slots.length; slot++) {
+      const { player, dead } = slots[slot];
+      // A corpse is `squashCorpses`' alone: it neither bleeds nor slows the crusher.
+      if (dead) continue;
       if (!crushed(world, player.x, player.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) continue;
       caught = true;
       if (dealDamage) {
@@ -138,18 +152,27 @@ export function applyCrushDamage(
 
 /**
  * `PIT_ChangeSector`'s corpse branch: every corpse the sector's planes have left less room than a
- * corpse's own height is crunched to a pool of blood. Unlike crush damage this is not rationed on
- * the damage clock and not the crushers' alone — vanilla runs it from `P_ChangeSector` after *any*
- * plane move, which is what squashes a body under an ordinary closing door.
- * docs/specials-crushers.md § Crushed corpses.
+ * corpse's own height is crunched to a pool of blood, a player's as well as a monster's. Unlike
+ * crush damage this is not rationed on the damage clock and not the crushers' alone — vanilla runs
+ * it from `P_ChangeSector` after *any* plane move, which is what squashes a body under an ordinary
+ * closing door. docs/specials-crushers.md § Crushed corpses.
  */
-export function squashCorpses(world: World, things: ThingLayer | null, sectorIndex: number): void {
-  if (!things) return;
+export function squashCorpses(world: World, sources: OccupancySources, sectorIndex: number): void {
+  const { slots, squashSlot } = sources;
   const map = world.map;
   const sector = map.sectors[sectorIndex];
   // The same cheap pre-filter `applyCrushDamage` opens with, against the shortest corpse this
   // mover could be squeezing rather than the tallest body.
   if (sector.ceilHeight - sector.floorHeight >= TALLEST_BODY_HEIGHT * CORPSE_HEIGHT_FRACTION) return;
+  const playerCorpseHeight = PLAYER_HEIGHT * CORPSE_HEIGHT_FRACTION;
+  for (let slot = 0; slot < slots.length; slot++) {
+    const { player, dead, crushed: pooled } = slots[slot];
+    // A pool is passed over before its box walk, as `ThingLayer.corpsesInSectors` passes one over.
+    if (!dead || pooled) continue;
+    if (crushed(world, player.x, player.y, PLAYER_RADIUS, playerCorpseHeight, sectorIndex, false)) squashSlot(slot);
+  }
+  const things = sources.things();
+  if (!things) return;
   for (const m of things.corpsesInSectors(crushNeighborhood(world, sectorIndex))) {
     if (!crushed(world, m.x, m.y, m.radius, m.height * CORPSE_HEIGHT_FRACTION, sectorIndex, true)) continue;
     things.crushCorpse(m.id);
@@ -167,13 +190,11 @@ export class MoverOccupancy implements Occupancy {
   }
 
   blocksCeilingLower(sectorIndex: number, ceilingHeight: number): boolean {
-    const { things, players } = this.sources;
-    return blocksCeilingLower(this.world, things(), players, sectorIndex, ceilingHeight);
+    return blocksCeilingLower(this.world, this.sources, sectorIndex, ceilingHeight);
   }
 
   blocksFloorRise(sectorIndex: number, floorHeight: number): boolean {
-    const { things, players } = this.sources;
-    return blocksFloorRise(this.world, things(), players, sectorIndex, floorHeight);
+    return blocksFloorRise(this.world, this.sources, sectorIndex, floorHeight);
   }
 
   crush(sectorIndex: number, dealDamage: boolean): boolean {
@@ -181,7 +202,7 @@ export class MoverOccupancy implements Occupancy {
   }
 
   squash(sectorIndex: number): void {
-    squashCorpses(this.world, this.sources.things(), sectorIndex);
+    squashCorpses(this.world, this.sources, sectorIndex);
   }
 }
 
@@ -191,13 +212,12 @@ export class MoverOccupancy implements Occupancy {
  */
 function blocksCeilingLower(
   world: World,
-  things: ThingLayer | null,
-  players: readonly Pos2[],
+  sources: OccupancySources,
   sectorIndex: number,
   ceilingHeight: number,
 ): boolean {
   const floorHeight = world.map.sectors[sectorIndex].floorHeight;
-  return headroomBlocked(world, things, players, { sectorIndex, floorHeight, ceilingHeight });
+  return headroomBlocked(world, sources, { sectorIndex, floorHeight, ceilingHeight });
 }
 
 /**
@@ -210,8 +230,7 @@ function blocksCeilingLower(
  */
 function blocksFloorRise(
   world: World,
-  things: ThingLayer | null,
-  players: readonly Pos2[],
+  sources: OccupancySources,
   sectorIndex: number,
   floorHeight: number,
 ): boolean {
@@ -220,14 +239,15 @@ function blocksFloorRise(
   // by the mapper precisely where the script needs it and is usually meant to be
   // crushed there — having it silently jam the level's own machinery is the
   // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
-  for (const player of players) {
+  for (const { player, dead } of sources.slots) {
+    if (dead) continue;
     if (!boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) continue;
     if (floorHeight + PLAYER_HEIGHT > world.groundCeiling(player.x, player.y, PLAYER_RADIUS)) return true;
   }
   // `headroomBlocked`'s early-out, widened to the sectors a box walk can actually reach: this
   // sector's own gap clearing the tallest body says nothing about a neighbor's.
   if (floorHeight + TALLEST_BODY_HEIGHT <= lowestCeilingAround(world, sectorIndex)) return false;
-  for (const m of things?.monstersInSectors(crushNeighborhood(world, sectorIndex)) ?? []) {
+  for (const m of sources.things()?.monstersInSectors(crushNeighborhood(world, sectorIndex)) ?? []) {
     if (!boxOverlapsSector(world, m.x, m.y, m.radius, sectorIndex)) continue;
     if (floorHeight + m.height > world.groundCeiling(m.x, m.y, m.radius, true)) return true;
   }
@@ -278,18 +298,18 @@ interface SectorSlot {
  * a cyberdemon well before it would on an imp.
  * docs/specials-movers.md § Every other mover stops instead.
  */
-function headroomBlocked(world: World, things: ThingLayer | null, players: readonly Pos2[], slot: SectorSlot): boolean {
+function headroomBlocked(world: World, sources: OccupancySources, slot: SectorSlot): boolean {
   const { sectorIndex, floorHeight, ceilingHeight } = slot;
   if (floorHeight + PLAYER_HEIGHT > ceilingHeight) {
-    for (const player of players) {
-      if (boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) return true;
+    for (const { player, dead } of sources.slots) {
+      if (!dead && boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) return true;
     }
   }
   // Nothing in the game is taller than this, so a gap that clears it clears
   // everyone — worth the early-out because it skips the sector query entirely,
   // which is the expensive half and runs per mover per tic.
   if (floorHeight + TALLEST_BODY_HEIGHT <= ceilingHeight) return false;
-  for (const m of things?.monstersInSectors(crushNeighborhood(world, sectorIndex)) ?? []) {
+  for (const m of sources.things()?.monstersInSectors(crushNeighborhood(world, sectorIndex)) ?? []) {
     if (!boxOverlapsSector(world, m.x, m.y, m.radius, sectorIndex)) continue;
     if (floorHeight + m.height > ceilingHeight) return true;
   }

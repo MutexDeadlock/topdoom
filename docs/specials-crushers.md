@@ -1,6 +1,7 @@
 # Specials: crushers
 
-`src/game/specials.ts`, `src/game/specials/moverblocking.ts`, `src/game/things.ts`
+`src/game/specials.ts`, `src/game/specials/moverblocking.ts`, `src/game/things.ts`,
+`src/game/playerslot.ts`
 
 The one mover family that damages what is in its way instead of stopping for it, plus the
 corpse-squashing branch *every* mover shares with it. The movers it is one of are
@@ -45,8 +46,8 @@ references `PosedThing.sector` was seeded from, the same trick `tryPickup`'s liv
 on.
 
 **Every damage pulse also sprays blood**, `PIT_ChangeSector`'s `P_SpawnMobj(…, MT_BLOOD)` beside its
-`P_DamageMobj` call — out of the body's middle (`z + height/2`), for the player as readily as for a
-monster, and never on a tic that only measures `nofit`. Two departures, both narrow:
+`P_DamageMobj` call — out of the body's middle (`z + height/2`), for a living player as readily as
+for a monster, and never on a tic that only measures `nofit`. Two departures, both narrow:
 
 - **A barrel sprays nothing.** Vanilla checks no flag here, so its barrels do bleed; this follows
   `ThingLayer.bleeds` (`MF_NOBLOOD`) as ZDoom's `P_DoCrunch` does, so a barrel goes on taking a puff
@@ -163,7 +164,8 @@ feel that matters for a crusher reading as a hazard.
 `PIT_ChangeSector`'s first branch, ahead of every crush rule above: a **corpse** the moved plane
 leaves without headroom is crunched to a pool of blood (`S_GIBS`, sprite `POL5`) instead of being
 damaged, and never counts toward `nofit`. `squashCorpses` (`specials/moverblocking.ts`) is that
-branch, over `ThingLayer.corpsesInSectors`/`crushCorpse`.
+branch, over `ThingLayer.corpsesInSectors`/`crushCorpse` and every `OccupancySources.slots` entry
+`dead` and not yet `crushed`.
 
 Three properties come from it running in `P_ChangeSector` rather than in the crush path:
 
@@ -172,14 +174,16 @@ Three properties come from it running in `P_ChangeSector` rather than in the cru
   the sectors whose plane moved this tic.
 - **No damage clock.** It lands on the tic the plane reaches the corpse, not on `leveltime&3`.
 - **A corpse never blocks or stalls the mover it is under**, in any direction — the branch returns
-  before `nofit` is set.
+  before `nofit` is set. A dead player's included: `applyCrushDamage` and both obstruction tests
+  skip a dead slot (`OccupantSlot.dead`), which `P_KillMobj` has stripped of `MF_SHOOTABLE` anyway. Without the
+  skip the corpse bleeds every pulse, slows every stroke to an eighth and holds a closing door open.
 
 **A corpse is a quarter of its living height** (`P_KillMobj`'s `target->height >>= 2`,
 `CORPSE_HEIGHT_FRACTION`), so an imp's corpse squashes at a 14-unit gap where the live imp is caught
 at 56. That fraction is the squish test's alone: corpses block nothing here, so nothing else needs a
 corpse height.
 
-Three deliberate departures from `PIT_ChangeSector`:
+Two deliberate departures from `PIT_ChangeSector`:
 
 - **Radius and height are left alone** where vanilla zeroes both. Nothing here reads a corpse's
   radius for blocking, and zeroing it would leak into the nightmare respawn's fit test and into the
@@ -188,14 +192,19 @@ Three deliberate departures from `PIT_ChangeSector`:
   (`p_enemy.c`, "fix Ghost bug"). `crushed` is cleared by both `reviveCorpse` and `respawnCorpse`.
 - **Barrel debris is not squashed**, though vanilla's `health <= 0` branch catches it: it is a
   transient that removes itself a few tics later (docs/death.md § Exploding barrels).
-- **The player's corpse is not squashed either.** It is the slot's `PlayerSlot.actor`, not one of
-  `ThingLayer`'s bodies, and the player is looking at the death overlay by then
-  (docs/death.md § Player death).
 
 The pool is entered through `enterDeathPose`, the single owner of every death pose, so a save
 restores holding it. `PosedThing.crushed` is a new `MONSTER_SAVE_KEYS` field defaulting to false —
 absent from an older save, which reads back as an uncrushed corpse (docs/savegames.md § The format
-and its version). A WAD set with no `POL5` art keeps the corpse it has rather than drawing nothing.
+and its version). A WAD set with no `POL5` art keeps the corpse it has rather than drawing nothing
+(`hasCorpseGibArt`, which the player's corpse asks too).
+
+**A player's corpse is squashed the same way** — the branch tests `health <= 0` on any mobj, and
+this view shows the corpse where vanilla's first-person one doesn't. `squashCorpses` measures it at
+a quarter of `PLAYER_HEIGHT` and calls `OccupancySources.squashSlot` → `PlayerSlot.squash`, which
+plays the pool on `PlayerSlot.actor` from `CORPSE_GIB`'s sprite, never the weapon skin's `PLAY`
+(`SpriteAnimator.resolve` skips the skin for a death in another sprite). `PlayerSlotSnapshot.crushed`
+is optional: absent is a corpse no plane has reached.
 
 `CORPSE_GIB` (`things/tables.ts`) is that sprite and frame, **walked out of the state table** like
 every other pose rather than transcribed — but reached by *name*, since no `mobjinfo` chain points

@@ -13,6 +13,10 @@ Fixed bugs
   - a monster finishes an attack whose target died mid-attack, like
     vanilla: an arch-vile blasts a player killed during its windup
   - a player's sliding corpse triggers walk lines, like vanilla
+  - the player no longer gets stuck between a step and a low ceiling
+    that each fit on their own
+  - a used-up trigger line no longer stops a use press from reaching the
+    switch behind it
 
 
 ===============================================================================

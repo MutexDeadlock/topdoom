@@ -1523,6 +1523,7 @@ export class World {
     const bottom = y - radius;
     const top = y + radius;
     const zFinite = Number.isFinite(z);
+    let spansOpening = false;
     // The `+ 1` is broadphase slop only; `boxOverlapsLine` below is exact.
     this.linesNearInto(x, y, radius + 1, checkLines);
     for (const i of checkLines) {
@@ -1567,10 +1568,16 @@ export class World {
         out.floorZ = openBottom;
       }
       if (openTop < out.ceilingZ) out.ceilingZ = openTop;
+      spansOpening = true;
       if (openingRefuses(openTop, openBottom, z, zFinite)) {
         out.blocked = true;
         if (stopOnBlock) return out;
       }
+    }
+    // `P_TryMove`'s "doesn't fit" over the whole box: two openings that each fit can leave no room
+    // between them. Inside a single sector the player is exempt — docs/movement.md § Collision.
+    if (spansOpening && out.ceilingZ - out.floorZ < PLAYER_HEIGHT) {
+      out.blocked = true;
     }
     return out;
   }

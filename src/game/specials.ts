@@ -2542,7 +2542,9 @@ export class SpecialsController {
     hits.sort((p, q) => p.t - q.t);
     for (const h of hits) {
       const line = this.map.linedefs[h.line];
-      const special = this.lineSpecial(h.line);
+      // A spent one-shot is a plain line: vanilla zeroes its `line->special` — docs/specials.md
+      // § The use trace.
+      const special = this.usedOnce.has(h.line) ? 0 : this.lineSpecial(h.line);
       if (special === 0) {
         // `P_LineOpening`'s range, exactly as `PTR_UseTraverse` reads it: a gap a
         // body could stand in lets the press carry on past this line, anything

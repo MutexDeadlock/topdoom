@@ -87,6 +87,18 @@ general narrowing.
 monsters). `checkPosition` measures every gate against `PLAYER_HEIGHT`; a monster's real
 `stats.height` is applied separately by `monsters/ai.ts: testStep`.
 
+**"Doesn't fit" is box-wide, not per opening.** Vanilla compares the `tmceilingz`/`tmfloorz`
+accumulated over every line the box spans, so two openings that each fit refuse together when one
+raises the floor and the other lowers the ceiling. `checkPosition` asks that window once after the
+walk. Without it the player stepped onto such a straddle, `groundFloor` lifted `z` onto the high
+floor, and the low ceiling then refused every direction — frozen for good. It is only asked once
+the box spans an opening, which keeps the player's exemption inside a single crushed sector
+(docs/monster-ai.md § Movement). The other two gates need no box-wide pass: a maximum floor or
+minimum ceiling fails them exactly when one opening does.
+
+**Repro: rush.wad MAP01** (936, -1026): line 2118's opening into sector 373 (floor 160, ceiling
+224) and the 8×8 step sector 381 (floor 184), 24 units apart. `tests/regression/straddle-no-headroom.test.ts`.
+
 **Thing-vs-thing collision has the same class of deadlock, and the same shape of fix.**
 `blockedByThings` (used by `checkPosition`, and through it by `slideMove`) takes an optional `from`,
 the mover's current position: a blocker already overlapped there only refuses the move if it presses

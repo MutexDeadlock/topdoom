@@ -137,6 +137,10 @@ first. What each line does to the trace is the whole rule, and the two branches 
   modelled a press went straight through it into the SR lift switch (linedef 1110) behind, which
   the map means to be reachable only once the wall is down. `LF.BLOCKING` is not consulted — a
   fence or grate over a real opening passes the trace, as it does in vanilla.
+- **A spent one-shot counts as no special.** Vanilla zeroes `line->special` when a W1/S1/G1/D1 line
+  fires (`P_ChangeSwitchTexture`, `P_CrossSpecialLine`); this engine keeps the number and records
+  `usedOnce`, so the trace reads that set. Without it a shot G1 door line kept shadowing the switch
+  behind it. **Repro: D5DA3.wad MAP05**, from lift sector 32: G1 line 129 in front of SR switch 119.
 - **Any special at all.** The line stops the trace whether or not it fires, so a walk-only number, a
   line met from its back side and a switch whose `EV_` helper refused all shadow what is behind them
   exactly as a switch that worked does. It fires only if it is a `use` special *and* the player is

@@ -317,9 +317,11 @@ It measures against the monster's own `stats.height`, vanilla's real 56-110. Onl
 half of the rule (`world.ts: openingRefuses`, which `checkPosition` runs per crossed linedef) still
 measures every body against the shared `PLAYER_HEIGHT` of 56 — a deviation that can only matter for
 a crossing between 56 and the taller species' own height, and a crusher closes far below either
-figure. **The player is deliberately not subject to the fit rule at all**: vanilla applies it to
-every mobj, so a player under a crusher is pinned too, but being unable to move with no on-screen
-explanation reads as a frozen game from a top-down camera that may not even be showing the ceiling.
+figure. **The player is deliberately not subject to the fit rule inside a single sector**: vanilla
+applies it to every mobj, so a player under a crusher is pinned too, but being unable to move with no
+on-screen explanation reads as a frozen game from a top-down camera that may not even be showing the
+ceiling. Once the box spans an opening, `checkPosition` asks the box-wide window for every body
+(docs/movement.md § Collision).
 The momentum paths — a lost soul's charge and knockback — don't carry it either, both being brief
 and self-cancelling.
 

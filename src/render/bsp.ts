@@ -12,6 +12,8 @@
  */
 import { NO_LINE, NO_SIDE, segSide, SUBSECTOR_BIT, type DoomMap, type Seg, type Vertex } from '../wad/map.ts';
 import { clipConvexPolygon as clip, polygonCentroid, vecLength } from '../util/geom.ts';
+import { UnionFind } from '../util/unionfind.ts';
+import type { Pos2 } from '../types.ts';
 import { SectorProbe, selfReferencing } from './sectorprobe.ts';
 
 /**
@@ -79,7 +81,7 @@ const PARTITION_MATCH = 2;
 
 /**
  * How far past an edge the neighbour probes sample, in map units — {@link buildLeafGraph}'s and
- * {@link buildIslands}'. **Tuned by feel**: a robustness value, far enough out to clear the clip's
+ * {@link probeBeside}'s. **Tuned by feel**: a robustness value, far enough out to clear the clip's
  * float noise and the overhang {@link segClipTolerance} leaves, short enough not to step over a
  * sliver leaf whole.
  */
@@ -182,6 +184,45 @@ export function islandCount(map: DoomMap): number {
     if (island[i] > highest) highest = island[i];
   }
   return highest + 1;
+}
+
+/**
+ * The leaf {@link NEIGHBOUR_PROBE} past the midpoint of `a`–`b`: on its left, walking from `a` to
+ * `b`, for `side` 1, and on its right for -1.
+ *
+ * @returns -1 where the probe lands nowhere or `a`–`b` has no length
+ */
+export function probeBeside(map: DoomMap, a: Pos2, b: Pos2, side: 1 | -1): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = vecLength(dx, dy);
+  if (length < 1e-6) return -1;
+  const step = (NEIGHBOUR_PROBE / length) * side;
+  return subsectorAtPoint(map, (a.x + b.x) / 2 - dy * step, (a.y + b.y) / 2 + dx * step);
+}
+
+/**
+ * Visits every two-sided seg with the leaf it is filed under and what {@link probeBeside} finds on
+ * its left and right, -1 where a probe lands nowhere. Neither need be the filed leaf: a seg can sit
+ * anywhere along its line. docs/render-bsp.md § Islands.
+ */
+export function forEachSegCrossing(
+  map: DoomMap,
+  visit: (leaf: number, line: number, left: number, right: number) => void,
+): void {
+  for (let ss = 0; ss < map.subsectors.length; ss++) {
+    const { first, count } = map.subsectors[ss];
+    for (let k = first; k < first + count; k++) {
+      const seg = map.segs[k];
+      if (!seg || seg.linedef === NO_LINE) continue;
+      const line = map.linedefs[seg.linedef];
+      if (!line || line.left === NO_SIDE || line.right === NO_SIDE) continue;
+      const a = map.vertexes[seg.v1];
+      const b = map.vertexes[seg.v2];
+      if (!a || !b) continue;
+      visit(ss, seg.linedef, probeBeside(map, a, b, 1), probeBeside(map, a, b, -1));
+    }
+  }
 }
 
 /** One of a leaf's segs, endpoints as the VERTEXES records the map already holds. */
@@ -634,48 +675,13 @@ function rebuildLeafGraph(map: DoomMap): LeafGraph {
 
 function rebuildIslands(map: DoomMap): Int32Array {
   const polys = buildSubSectorPolys(map);
-  const parent = new Int32Array(polys.length);
-  for (let i = 0; i < polys.length; i++) parent[i] = i;
-  const find = (a: number): number => {
-    while (parent[a] !== a) {
-      parent[a] = parent[parent[a]];
-      a = parent[a];
-    }
-    return a;
-  };
-  const union = (a: number, b: number): void => {
-    const ra = find(a);
-    const rb = find(b);
-    if (ra !== rb) parent[ra] = rb;
-  };
+  const sets = new UnionFind(polys.length);
 
-  // Every two-sided seg joins what lies across it. Both sides are probed because a seg can sit
-  // anywhere along its line, so the leaf it was filed under need not be either of them.
-  for (let ss = 0; ss < map.subsectors.length; ss++) {
-    const { first, count } = map.subsectors[ss];
-    for (let k = first; k < first + count; k++) {
-      const seg = map.segs[k];
-      if (!seg || seg.linedef === NO_LINE) continue;
-      const line = map.linedefs[seg.linedef];
-      if (!line || line.left === NO_SIDE || line.right === NO_SIDE) continue;
-      const a = map.vertexes[seg.v1];
-      const b = map.vertexes[seg.v2];
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const length = vecLength(dx, dy);
-      if (length < 1e-6) continue;
-      const step = NEIGHBOUR_PROBE / length;
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
-      for (let side = -1; side <= 1; side += 2) {
-        const other = subsectorAtPoint(map, mx - dy * step * side, my + dx * step * side);
-        if (other >= 0 && other !== ss) {
-          union(ss, other);
-        }
-      }
-    }
-  }
+  // Every two-sided seg joins what lies across it, on both sides.
+  forEachSegCrossing(map, (ss, _line, left, right) => {
+    if (left >= 0) sets.union(ss, left);
+    if (right >= 0) sets.union(ss, right);
+  });
 
   // Which sector pairs a two-sided line joins anywhere on the map: what tells the pass below a
   // leaf boundary inside one room from the void between two of them.
@@ -699,21 +705,9 @@ function rebuildIslands(map: DoomMap): Int32Array {
       const j = graph.leaves[k];
       const sj = polys[j].physicalSector;
       if (si === sj || joined.has(si * sectorCount + sj)) {
-        union(i, j);
+        sets.union(i, j);
       }
     }
   }
-
-  const result = new Int32Array(polys.length);
-  const ids = new Map<number, number>();
-  for (let i = 0; i < polys.length; i++) {
-    const root = find(i);
-    let id = ids.get(root);
-    if (id === undefined) {
-      id = ids.size;
-      ids.set(root, id);
-    }
-    result[i] = id;
-  }
-  return result;
+  return sets.ids();
 }

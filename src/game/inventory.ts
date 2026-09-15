@@ -432,6 +432,11 @@ export function pickupLine(type: number, inv: Inventory): string | null {
   return mnemonic === undefined ? null : PICKUP_LINES[mnemonic];
 }
 
+/** Whether a thing type is something a player picks up: every type {@link pickupLine} has a line for. */
+export function isPickup(type: number): boolean {
+  return type === ThingType.medikit || PICKUP_LINE_OF[type] !== undefined;
+}
+
 /**
  * The sound a collected item makes — `P_TouchSpecialThing` starts from `itemup` and overrides it
  * per sprite: `getpow` for the six powerups plus the soulsphere and megasphere, `wpnup` for the

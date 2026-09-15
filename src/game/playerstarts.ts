@@ -15,7 +15,7 @@ import type { Placement, Pos2 } from '../types.ts';
 export const MAX_PLAYERS = 4;
 
 /** The doomednum of each slot's start, by slot. */
-const START_TYPES = [ThingType.playerStart, ThingType.playerStart2, ThingType.playerStart3, ThingType.playerStart4];
+export const START_TYPES: readonly number[] = [ThingType.playerStart, ThingType.playerStart2, ThingType.playerStart3, ThingType.playerStart4];
 
 /**
  * Each slot's start as the map places it, null where it places none — vanilla's

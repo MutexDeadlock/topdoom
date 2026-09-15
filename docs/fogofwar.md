@@ -1,7 +1,7 @@
 # Fog of war
 
-`src/game/fogofwar.ts`, `src/render/occlusion.ts` + `occlusion/`, `src/render/mapmesh.ts` +
-`mapmesh/`
+`src/game/fogofwar.ts` + `fogofwar/`, `src/render/occlusion.ts` + `occlusion/`,
+`src/render/mapmesh.ts` + `mapmesh/`
 
 The dollhouse camera can see the entire level at once, including rooms the player hasn't reached and
 secrets a wide top-down view would spoil. `FogOfWar` reveals a region once the player has line of
@@ -343,7 +343,7 @@ between 115 and 116 at x ≈ −50.
   (TNT MAP31, Plutonia MAP07). Only the hole's own leaves and walls go dark; sight still passes
   through it.
 - **Draw gate only**, as § Covering midtextures: `explored`, `isVisible` and the save are untouched.
-  It holds in every mode, a deathmatch's `off` included.
+  It holds in both modes (`fogofwar/holes.ts`).
 
 ## Islands
 
@@ -473,14 +473,45 @@ Specials); hearing a teleport you can't see is vanilla, seeing it is not. Projec
 tracers are also left ungated on purpose: both are incoming fire, and a missile or tracer coming out
 of an unexplored room is the warning that something is shooting from there.
 
-## Off
+## Arena
 
-`FogOfWar`'s `mode` `'off'` (`FogMode`) is a deathmatch's (docs/multiplayer-deathmatch.md § Fog):
-the constructor marks everything `explored`, every island `NO_ISLAND` and snaps the alpha, so
-`isVisible`, `isDrawn` and `alphaOf` answer "shown" through their ordinary reads with no branch
-added; `tick`, `updateFade` and `restoreExplored` return at once. The snapshot shape is untouched —
-`snapshotExplored` writes the all-explored runs. `revealAll` alone is not this: the island gate
-would still hide a detached region.
+`FogMode` `'arena'` is a deathmatch's (docs/multiplayer-deathmatch.md § Fog). Nothing sweeps: the
+constructor marks every leaf `explored` and fills the gameplay island table (`island`) with
+`NO_ISLAND`, so `isVisible` answers "shown" everywhere and no tic reads anything below. Not drawn:
+
+- **The backstage** (`fogofwar/backstage.ts: findBackstage`), filed `undrawn` at load. `redraw`
+  draws a leaf once any slot sees it cleanly (§ Covering midtextures) — a closet opening, or a place
+  the search got wrong — and a slot standing in one draws it (`follow`).
+- **Every island but the drawn slot's** (§ Islands), read from `drawIsland`: `follow` moves each
+  slot's island every tic, and no sight ray merges two.
+- **Holes in the wall** (§ Holes in the wall).
+
+**The backstage is every place the players don't reach.** A place is the leaves sight flows between
+at load: joined across two-sided lines that neither block sight nor carry a covering midtexture,
+and across the BSP splits inside one sector. Reached:
+
+1. every place holding a player start, a deathmatch start or a slot's body;
+2. across a shut line whose mover is **opened on purpose** — a use or shoot line targets it
+   anywhere, or any line on its own boundary does. A walk line elsewhere is an ambush's trigger and
+   opens nothing: GoingDown MAP01 sector 77, raised by W1 line 412, is backstage;
+3. through a player teleporter (not `monsterOnly`): the marker's place, or the places beside a
+   line-to-line exit;
+4. **a place holding a pickup** that spawns in a deathmatch, along the shortest way of any kind,
+   with whatever opens or teleports on from it: GoingDown MAP03's west half sits behind W1 doors,
+   NUTS MAP01's arena behind an S1 door;
+5. a permanently solid leaf beside a reached place (§ Closed sectors).
+
+**Places, never walking**: steps, headroom and lifts are not asked — a ledge out of reach is still
+in the camera's view, and Boom's deep water breaks any height rule. **No sight rays either**: a
+place is all sight could reach, so sweeping from every reached leaf finds the same set at seconds of
+cost on a large map.
+
+Accepted, both undone by `redraw` once someone looks: a place with no pickup behind a door only a
+walk line opens stays dark until it opens; a monster closet behind a switch door is drawn.
+
+**No snapshot carries the search**: every client derives it from the map, and it is draw state. A
+save's `fog` runs say everything and are ignored; its `fogUndrawn` draws whatever it no longer
+holds undrawn (`keepUndrawn`), and absent keeps the load's backstage.
 
 ## What gameplay reads
 

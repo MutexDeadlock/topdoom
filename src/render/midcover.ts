@@ -111,6 +111,14 @@ export class MidCover {
   }
 
   /**
+   * Whether a midtexture on either side of line `lineIndex` hides an opening from `bottom` to `top`
+   * — {@link MidCover.hides} from both sides, for a question no eye is on one side of.
+   */
+  hidesEitherSide(lineIndex: number, bottom: number, top: number): boolean {
+    return this.hides(lineIndex, 0, bottom, top) || this.hides(lineIndex, 1, bottom, top);
+  }
+
+  /**
    * Whether line `lineIndex` can ever hide its opening: always where a mover may change that
    * opening, otherwise only if a side hides the opening the load left it.
    *
@@ -123,7 +131,7 @@ export class MidCover {
     if (!movable || movable.has(sidedefs[line.right].sector) || movable.has(sidedefs[line.left].sector)) {
       return true;
     }
-    return o.top > o.bottom && (this.hides(lineIndex, 0, o.bottom, o.top) || this.hides(lineIndex, 1, o.bottom, o.top));
+    return o.top > o.bottom && this.hidesEitherSide(lineIndex, o.bottom, o.top);
   }
 }
 

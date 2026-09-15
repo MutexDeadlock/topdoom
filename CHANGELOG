@@ -3,6 +3,9 @@ v0.20.2 (2026-09-1?)
 Features and improvements
   - a monster buried under a closed hole's lid no longer fades the lid
     away and shows through the floor
+  - deathmatch: monster closets, control sectors and the like stay dark
+    until a player sees into them, and a place only a teleporter reaches
+    shows only while a player is in it
 
 Fixed bugs
   - a dead player no longer bleeds under a crusher, slows it down or

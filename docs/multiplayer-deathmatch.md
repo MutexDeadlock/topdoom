@@ -2,8 +2,8 @@
 
 `src/game/rules.ts` (the rules and `fragSum`), `deathmatchStarts`/`deathmatchSpot` in
 `src/game/playerstarts.ts`, `raycastPlayers` in `src/game/combat.ts`, the item queue in
-`src/game/things.ts`, the `deathmatch` branches in `src/game.ts`, the fog's `'off'` mode
-(`src/game/fogofwar.ts`), the Rules group in `src/ui/menu/multiplayer.ts`
+`src/game/things.ts`, the `deathmatch` branches in `src/game.ts`, the fog's `'arena'` mode
+(`src/game/fogofwar.ts`, `fogofwar/backstage.ts`), the Rules group in `src/ui/menu/multiplayer.ts`
 
 A deathmatch is a netgame (docs/multiplayer-coop.md § Netgame) whose players shoot each other. Every
 deathmatch here runs vanilla's `-altdeath` rules (`deathmatch == 2`) with `-nomonsters`; there is
@@ -69,9 +69,10 @@ unlimited `deathmatchstarts` (`prboom p_mobj.c`, killough 1/11/98) rather than v
 
 ## Fog
 
-None: `FogOfWar` is built `'off'` (docs/fogofwar.md § Off) — everything explored, no island gate,
-no sweep — so every player and every item is drawn wherever the camera reaches, and auto-aim is
-never fog-gated. A deathmatch save's `fog` runs say everything and are ignored on restore.
+`FogOfWar` is built `'arena'` (docs/fogofwar.md § Arena): everything explored and no sweep, so
+auto-aim and hitscans are never fog-gated and no tic reads the fog. Drawn is everything but the
+backstage — monster closets, control sectors, a room only an ambush's walk line opens — and the
+islands no player stands in; a backstage leaf is drawn once a player sees into it.
 
 ## Player versus player
 

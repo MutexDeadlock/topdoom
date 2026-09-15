@@ -1535,15 +1535,13 @@ export class Game {
     if (this.view.camera !== this.viewed.simCamera) this.view.camera.copyFrom(this.viewed.simCamera);
     // One fog for everyone: every player's start is revealed at once.
     const bodies = this.slots.map((slot) => slot.player);
-    // None at all in a deathmatch — docs/multiplayer-deathmatch.md § Fog.
+    // A deathmatch sweeps nothing and hides only its backstage.
+    // docs/multiplayer-deathmatch.md § Fog.
     const fogOfWar = new FogOfWar(world, built.occluders, bodies, this.viewed.index, {
       movableSectors,
-      mode: this.deathmatch ? 'off' : 'sweep',
-      // The set's own art, so only the draw gate reads it; nothing to gate with the fog off.
-      // docs/fogofwar.md § Covering midtextures.
-      cover: this.deathmatch
-        ? undefined
-        : new MidCover(world, (texture) => this.gfx.texture(texture), { transfers, movableSectors }),
+      mode: this.deathmatch ? 'arena' : 'sweep',
+      // The set's own art, so only the draw gate reads it. docs/fogofwar.md § Covering midtextures.
+      cover: new MidCover(world, (texture) => this.gfx.texture(texture), { transfers, movableSectors }),
     });
     if (restore) fogOfWar.restoreExplored(restore.fog, restore.fogUndrawn);
     const specials = new SpecialsController(world, {

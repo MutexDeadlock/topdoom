@@ -91,7 +91,8 @@ src/util/      helpers shared across layers: 2D geometry plus the aim ray's box 
                smoothing curves (damping: the damped-lerp approach and the Hermite ease), GLSL
                float literals (glsl), per-frame profiling, IndexedDB request plumbing (idb, shared
                by the save store and the WAD library), the one localStorage object every setting
-               is a field of (storage), raw DEFLATE (inflate, for compressed nodes), the five
+               is a field of (storage), raw DEFLATE (inflate, for compressed nodes), union-find
+               (unionfind, the islands' and the fog backstage's leaf partitions), the five
                approximated Math functions in software so a tic runs the same on every engine
                (fdlibm), vanilla's random table — the engine's only entropy source
 src/constants.ts   cross-cutting values, feel dials and deployment defaults (the constants rule below)

@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildMapMesh, buildMoverMesh, type FlatSurface } from '../../src/render/mapmesh.ts';
+import { underHoleLid } from '../../src/render/mapmesh/flats.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
 import { buildMoverIndex } from '../../src/game/specials/movergeometry.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
@@ -95,6 +96,22 @@ describe('Rendering · closed holes', () => {
     const { grid, lids } = pit();
     assert.equal(lids().length, 1);
     assert.equal(lids(new Set([grid.index(1, 0)])).length, 0);
+  });
+
+  test('a body under the lid is reported as buried, one poking out above it or on the rim is not', () => {
+    const { grid, centre, rim, lids } = pit();
+    assert.equal(lids().length, 1, 'the pass has run');
+    const body = 56;
+    assert.equal(underHoleLid(grid.map, centre, -DEPTH + body / 2), true, 'a monster on the pit floor');
+    assert.equal(underHoleLid(grid.map, centre, 32), false, 'a middle above the lid is what vanilla shows');
+    assert.equal(underHoleLid(grid.map, rim[0], body / 2), false, 'the rim is ordinary floor');
+  });
+
+  test('a textured step buries nobody — there is no lid to hide behind', () => {
+    const { grid, centre, lids } = pit();
+    sideFacing(grid.map, grid.westEdge(1, 1), centre).lower = 'STEP1';
+    assert.equal(lids().length, 0);
+    assert.equal(underHoleLid(grid.map, centre, -DEPTH + 28), false);
   });
 });
 

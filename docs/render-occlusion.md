@@ -313,6 +313,11 @@ fade a no-op for exactly the case it exists for (a wall genuinely hiding a nearb
 `MoverGeometry.updateFading` (doors, lifts — reached through `SpecialsController.fadeParticipant`)
 takes the same target list, reusing the identical machinery for its own meshes.
 
+**A monster under a closed hole's lid is not a target at all** (`Presenter.fadeBodies` →
+`underHoleLid`): the lid stands in for what vanilla's first-person view never shows, so fading it
+reveals a monster the mapper buried — docs/render.md § Closed holes has the case. Only monsters are
+dropped; a player who fell into the pit still opens a hole and stays visible.
+
 **Each target carries its own strength** (`FadeTarget.fadeFloor`, how far down it alone pulls what
 hides it). The player is always `FADE_ALPHA`; a monster's eases linearly from that at the player's
 own position back to 1 — no fade at all — at `MONSTER_FADE_RANGE`. Two dozen awake monsters

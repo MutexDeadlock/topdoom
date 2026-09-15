@@ -20,6 +20,7 @@ import { DynamicLights, playerEmitterId } from '../render/lights.ts';
 import { beginViewDepth } from '../render/sectorlight.ts';
 import { skyLitSector } from '../render/skytint.ts';
 import { collectFadeTargets } from '../render/occlusion.ts';
+import { underHoleLid } from '../render/mapmesh/flats.ts';
 import type { PlayerSkins } from '../render/playerskin.ts';
 import type { AnimatedTextures } from '../render/textureanim.ts';
 import type { Hud } from '../ui/hud/hud.ts';
@@ -293,10 +294,16 @@ export class Presenter {
 
   /**
    * What walls fade for besides the drawn player: the awake monsters and every other living slot.
+   * A monster under a closed hole's lid is left out — the lid hides what vanilla hides, and fading
+   * it would show a monster the mapper buried (docs/render.md § Closed holes). A player who fell in
+   * is still a target, so they stay visible.
    */
   private fadeBodies(): StandingBody[] {
     const { level, slots, viewed } = this.host;
-    const bodies = level.things.awakeMonsters();
+    const { world } = level;
+    const bodies = level.things
+      .awakeMonsters()
+      .filter((m) => !underHoleLid(world.map, world.subsectorAt(m.x, m.y), m.z + m.height / 2));
     for (const slot of slots) {
       if (slot === viewed || slot.dead) continue;
       const { x, y, z } = slot.player;

@@ -404,6 +404,12 @@ something else:
   the viewpoint is *below* the fill height; baked geometry cannot. What covers the case is that the
   lid is an ordinary `FlatSurface`, so `FlatFader` dissolves it out of the way of a body underneath
   exactly as it does a solid structure's lid — a player who falls into the pit stays visible.
+  **A monster under the lid opens no hole**: `Presenter.fadeBodies` drops it from the fade
+  targets (`underHoleLid`), because the lid hides exactly what vanilla hides — a monster the mapper
+  buried for a pop-up (`19` W1 snapping the pit's floor up to the rim). Fading the lid for it
+  showed the monster through the floor: GoingDown.wad MAP02 sector 99, the chaingunner under the
+  desk at (237, -744), and the test is `tests/render/holes.test.ts`. Once the floor has risen the
+  hole is gone and the monster is an ordinary target again.
 
 Nor is GZDoom's fallback path reproduced: where the flood gives up, GZDoom projects the floor
 through the gap from the viewpoint (`CreateFloodPoly`, per frame, through a stencil) and this engine

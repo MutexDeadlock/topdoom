@@ -1,6 +1,8 @@
 v0.20.2 (2026-09-1?)
 
 Features and improvements
+  - a monster buried under a closed hole's lid no longer fades the lid
+    away and shows through the floor
 
 Fixed bugs
   - a dead player no longer bleeds under a crusher, slows it down or

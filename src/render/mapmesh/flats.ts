@@ -138,6 +138,17 @@ export function closedHoleFill(leaf: number): number {
 }
 
 /**
+ * Whether a body standing in `leaf` with the middle of its sprite at `z` is under a closed hole's
+ * lid — what `Presenter.fadeBodies` drops from the fade targets, since the lid hides exactly what
+ * vanilla hides. Reads what {@link beginHoleFills} last settled, like {@link closedHoleFill}.
+ * docs/render.md § Closed holes.
+ */
+export function underHoleLid(map: DoomMap, leaf: number, z: number): boolean {
+  const fill = closedHoleFill(leaf);
+  return fill >= 0 && map.sectors[fill].floorHeight > z;
+}
+
+/**
  * Which fans one leaf draws and with what — every decision {@link processFlat} makes before a
  * vertex exists. docs/render.md § Mover meshes.
  * @returns how many specs were written into `out`, which grows as needed

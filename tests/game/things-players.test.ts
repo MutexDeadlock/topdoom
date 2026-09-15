@@ -23,17 +23,19 @@ import { MATERIALS, ROT0_BANK, fxLayer } from '../fixtures/spritestubs.ts';
  * `null`. The run below is pinned against the literals the single-player code produced before the
  * change — the random cursor every 50 tics, the final cursor, and two `ThingsSnapshot`s byte for
  * byte. Every monster's `lastlook` is restored to 0 first: vanilla's rotation, which came with
- * coop, is the one thing since that moves a single-player tic, and at 0 it looks exactly where
- * that code did. docs/multiplayer.md § Player slots, § Slot addressing; docs/monster-ai.md §
+ * coop, moves a single-player tic, and at 0 it looks exactly where that code did. The one other
+ * change since is an attack outliving its target (docs/monster-ai.md § Losing the target): the
+ * zombieman is mid-attack on the imp when it dies at tic 500, so from there the literals are that
+ * rule's. docs/multiplayer.md § Player slots, § Slot addressing; docs/monster-ai.md §
  * Waking up.
  */
 
 /** The random cursor after every 50th tic of the three-monster run, as the one-player code drew it. */
-const TRACE = [54, 100, 147, 183, 216, 237, 245, 23, 52, 76, 104, 129, 139, 150];
+const TRACE = [54, 100, 147, 183, 216, 237, 245, 23, 52, 76, 100, 129, 139, 150];
 /** The cursor after the two-monster run's 200 tics. */
 const INFIGHT_CURSOR = 111;
 /** `layer.snapshot()` after the run: two corpses, a drop, and every `targetId` back at its default. */
-const END = '{"clock":19.999999999999936,"stats":{"totalKills":3,"kills":2,"totalItems":0,"items":0},"changed":[[0,{"type":3004,"x":280.16241555550334,"y":311.0094978463168,"z":0,"facingDeg":174.17730019571033,"monster":{"homingBias":false,"health":17,"spawnX":704,"spawnY":448,"spawnAngle":180,"alerted":true,"attackPause":0.48571428571428565,"burstLeft":1,"burstTimer":0.028571428571428522,"movedir":2,"justAttacked":true}}],[1,{"type":3001,"x":237.49999999999812,"y":320,"z":0,"facingDeg":180,"monster":{"homingBias":false,"health":0,"spawnX":704,"deadTime":5.68571428571427,"alerted":true,"attackPause":0.3999999999999999,"burstLeft":1,"burstTimer":0.22857142857142848,"swinging":true,"reactionTicks":2}}],[2,{"type":9,"x":246.49401337142635,"y":330.7213189714275,"z":0,"facingDeg":-168.86961101369786,"monster":{"homingBias":false,"health":0,"spawnX":704,"spawnY":192,"spawnAngle":180,"deadTime":2.8285714285714225,"alerted":true,"attackPause":0.31428571428571406,"movedir":1,"justAttacked":true}}],[3,{"type":2001,"x":246.49401337142635,"y":330.7213189714275,"z":0,"facingDeg":-168.86961101369786,"dropped":true}]],"lastlook":"000"}';
+const END = '{"clock":19.999999999999936,"stats":{"totalKills":3,"kills":2,"totalItems":0,"items":0},"changed":[[0,{"type":3004,"x":280.16241555550334,"y":311.0094978463168,"z":0,"facingDeg":174.17730019571033,"monster":{"homingBias":false,"health":17,"spawnX":704,"spawnY":448,"spawnAngle":180,"alerted":true,"attackPause":0.5142857142857142,"burstLeft":1,"burstTimer":0.05714285714285709,"movedir":2,"justAttacked":true}}],[1,{"type":3001,"x":237.49999999999812,"y":320,"z":0,"facingDeg":180,"monster":{"homingBias":false,"health":0,"spawnX":704,"deadTime":5.68571428571427,"alerted":true,"attackPause":0.3999999999999999,"burstLeft":1,"burstTimer":0.22857142857142848,"swinging":true,"reactionTicks":2}}],[2,{"type":9,"x":246.49401337142635,"y":330.7213189714275,"z":0,"facingDeg":-168.86961101369786,"monster":{"homingBias":false,"health":0,"spawnX":704,"spawnY":192,"spawnAngle":180,"deadTime":2.8285714285714225,"alerted":true,"attackPause":0.31428571428571406,"movedir":1,"justAttacked":true}}],[3,{"type":2001,"x":246.49401337142635,"y":330.7213189714275,"z":0,"facingDeg":-168.86961101369786,"dropped":true}]],"lastlook":"000"}';
 /** The same at tic 200 of a two-monster run, the zombieman still hunting the imp (`targetId: 1`). */
 const INFIGHT = '{"clock":5.714285714285698,"stats":{"totalKills":2,"kills":0,"totalItems":0,"items":0},"changed":[[0,{"type":3004,"x":486.83420573613853,"y":384.8930326663284,"z":0,"facingDeg":135,"monster":{"homingBias":false,"health":17,"spawnX":704,"spawnY":448,"spawnAngle":180,"alerted":true,"targetId":1,"movedir":3,"movecount":2,"chaseTimer":0.05714285714285714,"threshold":83}}],[1,{"type":3001,"x":320.1371428571406,"y":320,"z":0,"facingDeg":180,"monster":{"homingBias":true,"spawnX":704,"alerted":true,"movedir":4,"movecount":11,"chaseTimer":0.02857142857142857}}]],"lastlook":"00"}';
 

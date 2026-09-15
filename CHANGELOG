@@ -5,8 +5,14 @@ Features and improvements
 Fixed bugs
   - a dead player no longer bleeds under a crusher, slows it down or
     blocks a door or lift
-  - a mover now crushes a dead player's corpse into a pool of blood,
-    like vanilla
+  - a mover now crushes a dead player's corpse into a pool of blood
+  - an invulnerable player is finally launched by an arch-vile
+  - a dead player's corpse slides, falls and rides conveyors, and an
+    arch-vile's blast launches it
+  - IDCLIP: hits no longer push the player
+  - a monster finishes an attack whose target died mid-attack, like
+    vanilla: an arch-vile blasts a player killed during its windup
+  - a player's sliding corpse triggers walk lines, like vanilla
 
 
 ===============================================================================

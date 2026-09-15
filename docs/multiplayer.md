@@ -103,14 +103,15 @@ slots where a step was per player.
 3. Hotkeys and the audio listener — local only.
 4. Per live slot: `simCamera.applyYawInput`.
 5. `specials.beginTic` (the clocks, the movers, the corpses they crunched); `specials.activate`
-   per living slot (use press, walk triggers, `prev` reseed) — a corpse uses and crosses nothing;
+   per slot (use press, walk triggers, `prev` reseed) — a corpse's fed `IDLE_TIC_INPUT`, so it
+   crosses lines but uses none;
    `specials.endTic` (switch flashes, light patterns — **after every trigger**, so a light a switch
    lit this tic draws from the table this tic). Then `forces.tick` and the dolls (slot 0's).
 6. Per slot: `consumeLockedLine(slot)`; the message is the local slot's.
 7. The exit. Then a corpse's one input: the local `R` in single player (`restart`), use or the slot's
    own `R` in a netgame (`respawnSlot`, docs/multiplayer-coop.md § Respawn).
-8. Per slot: `applyToCamera(1)` and `updateLivingPlayer` while alive, then the camera ticks for
-   a live slot.
+8. Per slot: `applyToCamera(1)` and `updateLivingPlayer` while alive, `moveBody` for a corpse
+   (docs/death.md § Player death), then the camera ticks for a live slot.
 9. `Level.time` while any slot is alive; `refillBodies`; the fog from every slot's body; things
    (`players`: every slot's body, `null` where dead); effects.
 10. `endTic` on every slot's input, then a playback's cursor.

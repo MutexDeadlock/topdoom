@@ -379,7 +379,8 @@ arithmetic:
   a weapon pickup's own ammo grant respects the raised cap too. It is always consumed, even at full
   ammo, unlike every other ammo pickup.
 - **Invulnerability** is checked in `applyDamage`, in the same place and with the same
-  `damage < 1000` threshold `P_DamageMobj` uses.
+  `damage < 1000` threshold `P_DamageMobj` uses — after the knockback, so the player is still
+  shoved and an arch-vile still launches them (docs/death.md § Player death).
 - **Radiation suit** gates `SectorEffects.update`'s damage through `suitBlocks`, and vanilla is
   deliberately not uniform here: `DamageFloorEffect.suit` is per sector type — nukage/hellslime are
   blocked outright, the two 20-damage slimes share a `case` reading `!pw_ironfeet || (P_Random()<5)`

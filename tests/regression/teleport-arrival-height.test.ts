@@ -50,7 +50,7 @@ describe('Regressions · teleport arrival height', () => {
     layer.damage(0, 1, { from: start });
     const player = { x: start.x, y: start.y, z: 0 };
     const step = () => {
-      layer.update(TIC, [player], undefined, (prev, mover) => rigged.specials.crossMonster(prev, mover, new Set()));
+      layer.update(TIC, [player], { crossLines: (prev, mover) => rigged.specials.crossMonster(prev, mover, new Set()) });
       rigged.tick();
     };
     return { grid, layer, step, pad: grid.centre(4, 1) };

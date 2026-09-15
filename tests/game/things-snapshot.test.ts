@@ -335,9 +335,11 @@ describe('Savegames · a restored monster crosses lines from where the save left
       restore: saved,
     });
     const from: { x: number; y: number }[] = [];
-    restored.update(DOOM_TIC, [player], undefined, (prev) => {
-      from.push({ x: prev.x, y: prev.y });
-      return null;
+    restored.update(DOOM_TIC, [player], {
+      crossLines: (prev) => {
+        from.push({ x: prev.x, y: prev.y });
+        return null;
+      },
     });
     assert.equal(from.length, 1, 'the restored imp walked and tested the lines it walked over');
     assert.ok(

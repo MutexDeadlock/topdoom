@@ -87,10 +87,12 @@ describe('Thing grid · the per-cell skip answers exactly as the unskipped sweep
     let landing: Pos3 | null = null;
     for (let tic = 1; tic <= TICS; tic++) {
       landing = null;
-      things.update(DOOM_TIC, [player], undefined, (_prev, mover) => {
-        if (!TELEPORT_TICS.has(tic) || mover.id !== teleported) return null;
-        landing = { x: mover.x + HOP, y: mover.y, z: 0 };
-        return { x: landing.x, y: landing.y, angle: 0 };
+      things.update(DOOM_TIC, [player], {
+        crossLines: (_prev, mover) => {
+          if (!TELEPORT_TICS.has(tic) || mover.id !== teleported) return null;
+          landing = { x: mover.x + HOP, y: mover.y, z: 0 };
+          return { x: landing.x, y: landing.y, angle: 0 };
+        },
       });
       const refs = all(things);
       // Box queries, centred on bodies and on fixed points, at three radii. On a teleport tic the

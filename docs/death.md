@@ -143,26 +143,39 @@ still crunch the corpse to a pool — docs/specials-crushers.md § Crushed corps
 the damage, blue half, in C's integer division (`damage/3`, `damage/2`) so armor and health stay
 whole, spending armor points 1-for-1 with whatever it absorbed and falling back to
 bare once it runs out mid-hit — reused for the player specifically since monsters have no armor. It
-returns the body's unclamped health, `null` while invulnerability blocked the hit outright
+returns the body's unclamped health, `null` while invulnerability or IDDQD blocked the hit outright
 (`INVULNERABLE_DAMAGE_LIMIT`); `damageSlot` uses the null to skip the pain flash and flinch animation
-for a hit that did nothing, which a first version didn't check, so an invulnerable player flashed
-red on every hit that was landing on nothing.
+— without it an invulnerable player flashes red on every hit.
+
+**Invulnerability blocks the damage, never the shove.** `P_DamageMobj` applies its thrust before the
+`pw_invulnerability`/`CF_GODMODE` return — skipping it only for an `MF_NOCLIP` target, so IDCLIP is
+never shoved — and `A_VileAttack` sets `momz` after the call whatever it did. So `damageSlot` pushes
+before `applyDamage`, and `resolveVileBlast` launches unconditionally: a rocket still shoves an
+invulnerable player, and an arch-vile launches an invulnerable player and a corpse alike. Gating
+either on the damage keeps the player on the ground.
+
+**A player's corpse keeps moving.** `P_MobjThinker` runs `P_XYMovement`/`P_ZMovement` on a dead
+player's mobj like any other; only `P_MovePlayer` stops, as `P_PlayerThink` hands off to
+`P_DeathThink`. `game.ts: moveBody` is the body's tic for both, fed `IDLE_TIC_INPUT` for a corpse:
+it slides out its momentum, falls, rides conveyors and pushers, takes the floor's friction and lands
+with `oof`. Without it a corpse freezes where the killing blow left it, and one the arch-vile launched
+hangs in the air.
 
 Health hitting 0 sets `PlayerSlot.dead`, which freezes only the input-driven half of `frame` —
-movement/aim/firing/pickups. Everything else keeps running: fog of war, effects, faders and
+aim, the player's own movement, firing and pickups; the body still moves (above). Everything else keeps running: fog of war, effects, faders and
 rendering, and monster AI — but AI follows vanilla's own rule for it, not a blanket freeze.
 `P_KillMobj` strips the player's `MF_SHOOTABLE`/`MF_SOLID` on death, so `Game.updateThings` passes
 `ThingLayer.update` `null` in that slot's place once `PlayerSlot.dead` (`game/things.ts`'s
 `blockersFor` takes the `(Pos3 | null)[]` this produces, and `resolveTarget` reads it as `look.players`). A monster already mid-infight with another
-monster is unaffected and keeps fighting; one whose target *was* the player looks all around for
-another living player it can see (`resolveTarget` → `lookForPlayers`), and with none reverts to idle
-right there — `p.alerted = false`, `movedir`/`movecount` cleared — the same as `A_Chase`'s own "no
+monster is unaffected and keeps fighting; one whose target *was* the player first plays out the
+attack it was under against the corpse (`ThingTickOptions.bodies`, docs/monster-ai.md § Losing the
+target), then looks all around for another living player it can see (`resolveTarget` →
+`lookForPlayers`), and with none reverts to idle — `p.alerted = false`, `movedir`/`movecount` cleared — the same as `A_Chase`'s own "no
 shootable target" branch falling through to `P_SetMobjState(spawnstate)`. It wakes again the way any
-other dormant monster does: a look, or `damage`'s unconditional re-alert. A rocket or vile blast already in flight still lands and can still deal splash (or,
-for the vile's knockup, do nothing beyond the first killing blow — `resolveVileBlast` gates its
-knockup on `damageSlot`'s return, and `resolveBullet` skipping a dead slot for the hitscan
-equivalent) — a dead player can still be "hit" for nothing to happen, matching `damageSlot`'s own
-early return.
+other dormant monster does: a look, or `damage`'s unconditional re-alert. A rocket or vile blast already in flight still lands and can still deal splash, but a corpse takes
+no damage and no knockback from it — `damageSlot`'s early return, and `resolveBullet` skipping a
+dead slot for the hitscan equivalent. The vile's knockup is the exception: it launches the corpse
+(above).
 
 The death itself shows `#death-overlay` (`ui/hud/deathoverlay.ts`) — three `WadFont` canvases in the
 `EndCard` arrangement, the IWAD's own type rather than DOM text: the heading in STCFN's native HUD
@@ -175,7 +188,9 @@ delay (`R` answers throughout, since `tic` reads `PlayerSlot.dead`, not the over
 `DeathOverlay.clear` inside the window means the overlay is never seen at all, which is what § Dying
 on the way out needs. Vanilla has no overlay here, so none of this is a fidelity claim.
 
-A corpse uses no line and crosses none (`specials.activate` skips a dead slot). In a netgame it
+A corpse uses no line but crosses them as it slides: `P_CrossSpecialLine` never tests a player's
+health, so `specials.activate` runs a dead slot's walk triggers, fed `IDLE_TIC_INPUT` — a door
+opens, a teleporter takes the corpse, an exit line ends the level. In a netgame it
 respawns in place on use or `R` instead of reloading anything (docs/multiplayer-coop.md § Respawn); in
 single player `R` calls `restart`, which reloads the level from one of three states, in this order.
 

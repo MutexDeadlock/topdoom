@@ -844,12 +844,27 @@ Three vanilla rules keep it from degenerating:
   — `posed` index 0 is a valid monster ID, and `if (reachedPlayer || struck || …)` treated a hit on
   it as no hit.
 
-A target that dies — a monster, or the player it hunted — drops `threshold` and sends the monster
-looking all around for a player it can see (`resolveTarget` → `lookForPlayers`), `A_Chase`'s
-fallback once the target is no longer shootable. Finding none, `resolveTarget` reports no target
-and the monster reverts to idle instead of turning on a corpse (`game/things.ts`'s per-tic update
-loop, docs/death.md § Player death). A monster already infighting someone else is unaffected by
-the player's death and fights on regardless.
+## Losing the target
+
+A target that dies — a monster, or the player it hunted — is noticed only in `A_Chase`
+(`!(target->flags & MF_SHOOTABLE)`), which no pain, attack or charge state calls. While
+`outsideChase` holds — pain, an attack chain or its windup, a charge, a refire loop —
+`resolveTarget` keeps handing the monster the body (a player's from `ThingTickOptions.bodies`) with
+`MonsterStep.targetDead` set, and the attack plays out against it:
+
+- a claw or a blast lands on the corpse for nothing (`P_DamageMobj` returns on `health <= 0`),
+  except the arch-vile's knockup, which launches it (docs/monster-archvile.md § The attack);
+- shots and missiles aim at the body — `targetMonster` includes a corpse; only the revenant's
+  homing wants a living target (`A_Tracer`);
+- a refire loop breaks (`A_CPosRefire`/`A_SpidRefire` test `health <= 0`), a charging lost soul
+  makes no contact, and nothing new starts.
+
+Then `threshold` drops and the monster looks all around for a player it can see (`resolveTarget` →
+`lookForPlayers`); finding none, it reverts to idle rather than turning on a corpse
+(`game/things.ts`'s per-tic update loop, docs/death.md § Player death). Without the hold a monster
+dropped its attack the tic its target died — an arch-vile never blasted a player killed during its
+windup — and, gone idle, kept the unfired shots for its next wake. A monster already infighting
+someone else is unaffected by the player's death and fights on regardless.
 
 ## The lost soul: a charge, not a projectile
 

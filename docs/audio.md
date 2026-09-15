@@ -275,7 +275,8 @@ game only (`A_PlayerScream`'s `gamemode == commercial`), and `slop` for a gib in
 at 0 — `applyDamage`'s return, which `playerDeath` reads; docs/death.md § Player death.
 
 `oof` on a landing harder than vanilla's `momz < -8` units/tic (`HARD_LANDING_SPEED`,
-`game/player.ts`), read off `Player.landingSpeed`.
+`game/player.ts`), read off `Player.landingSpeed` — a corpse's too, as `P_ZMovement` tests
+`mo->player` and not its health (docs/death.md § Player death).
 
 Pickups follow `P_TouchSpecialThing` (`inventory.ts: pickupSound`): `getpow` for the six
 powerups plus the soulsphere and megasphere, `wpnup` for the seven weapons, `itemup` for

@@ -36,7 +36,6 @@ import {
   ITEM_RESPAWN_TICS,
   TELEFRAG_DAMAGE,
   type BarrelExplosion,
-  type CarryQuery,
   type CrossingBody,
   type DamageHit,
   type LevelKillItemStats,
@@ -44,6 +43,7 @@ import {
   type PosedThing,
   type StandingBody,
   type ThingLayer,
+  type ThingTickOptions,
   type ThingUpdateResult,
   hitBy,
   slotOfTarget,
@@ -91,6 +91,7 @@ import { INERT_SHOOTABLE, monsterStatsFor } from './monsters/tables.ts';
 import {
   commitTarget,
   lookForPlayers,
+  outsideChase,
   reactToDamage,
   shouldRetarget,
   stepMonsterAI,
@@ -354,6 +355,10 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /** Who a look can find this tic — {@link update} refills both halves before any monster looks. */
   const lookSubsectors = new Int32Array(MAX_PLAYERS);
   const look: PlayerLook = { players: [], subsectors: lookSubsectors };
+  /** {@link ThingTickOptions.bodies} for this tic, or the living players where none were given. */
+  let bodies: readonly (Pos3 | null)[] = [];
+  /** Set by {@link resolveTarget}: whether the target it just returned is a body that has died. */
+  let targetDead = false;
   /** `MonsterStep.retarget`, which only a netgame has. */
   const retarget = netgame ? retargetAllAround : undefined;
 
@@ -456,14 +461,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     return s;
   }
 
-  function update(
-    dt: number,
-    players: readonly (Pos3 | null)[],
-    fogVisible?: (subsector: number) => boolean,
-    crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
-    useLines?: (mover: CrossingBody, tryX: number, tryY: number) => TeleportDest | null,
-    carry?: CarryQuery,
-  ): ThingUpdateResult {
+  function update(dt: number, players: readonly (Pos3 | null)[], options: ThingTickOptions = {}): ThingUpdateResult {
+    const { fogVisible, crossLines, useLines, carry } = options;
     const attacks: MonsterAttackEvent[] = [];
     const barrelExplosions: BarrelExplosion[] = [];
     // Built once per tic rather than per monster: `stepMonsterAI` hands back the very record it
@@ -501,6 +500,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     // Who a look can find, and where each stands: one BSP descent per player for the whole sweep —
     // a player moves once a tic rather than once per monster.
     look.players = players;
+    bodies = options.bodies ?? players;
     for (let slot = 0; slot < players.length; slot++) {
       const body = players[slot];
       lookSubsectors[slot] = body ? world.subsectorAt(body.x, body.y) : -1;
@@ -625,6 +625,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
               target,
               targetRadius,
               targetHeight,
+              targetDead,
               blockersFor: blockersNear,
               resurrect: grid.findRaisableCorpse,
               useLines: useBlockingLines,
@@ -874,6 +875,11 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     const p = posed[id];
     if (!p || p.dead || !p.isMonster) return null;
     return monsterRef(p);
+  }
+
+  function bodyById(id: number): MonsterRef | null {
+    const p = posed[id];
+    return p?.isMonster ? monsterRef(p) : null;
   }
 
   function drawnFrameKey(id: number): string {
@@ -1317,6 +1323,14 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     const fromX = hit?.from?.x;
     const fromY = hit?.from?.y;
     const isBarrel = p.type === ThingType.barrel;
+    // `A_VileAttack` sets `momz` after `P_DamageMobj` whatever it did, so a corpse flies too.
+    // docs/monster-archvile.md § The attack.
+    if (knockUpSpeed && p.isMonster) {
+      p.velZ = knockUpSpeed;
+      // Nudges z off the floor so the airborne check engages next frame, instead of the
+      // ground-snap branch zeroing `velZ` before it ever takes effect.
+      p.z += 1;
+    }
     if (p.dead || amount <= 0 || !(isBarrel || p.isMonster)) return;
     // The two AI-less shootables: no stats to roll pain against and no target to retarget, so
     // they take the health subtraction and their own `A_Pain`/`A_Scream` and skip the rest.
@@ -1345,12 +1359,6 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       return;
     }
 
-    if (knockUpSpeed) {
-      p.velZ = knockUpSpeed;
-      // Nudges z off the floor so `stepMonsterAI`'s airborne check engages next frame, instead
-      // of the ground-snap branch zeroing `velZ` before it ever takes effect.
-      p.z += 1;
-    }
     if (fromX !== undefined && fromY !== undefined) {
       // `P_DamageMobj`'s horizontal thrust — see `thrustSpeed`'s doc.
       const mass = isBarrel ? BARREL_MASS : p.stats?.mass ?? 100;
@@ -1628,19 +1636,25 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   /**
    * Where a monster should currently be heading. {@link PosedThing.targetId} names a monster only
    * after something other than a player hurt it ({@link damageThing} → {@link shouldRetarget}). A
-   * target gone — a dead monster, a dead player — is `A_Chase`'s case: the threshold drops, and the
-   * monster looks all around for a player it can see ({@link lookForPlayers}) and goes after the
-   * one it finds. docs/monster-ai.md § Infighting.
+   * target gone — a dead monster, a dead player — is `A_Chase`'s case, so while
+   * {@link outsideChase} holds the monster keeps the body; after that the threshold drops, and it
+   * looks all around for a player it can see ({@link lookForPlayers}) and goes after the one it
+   * finds. docs/monster-ai.md § Infighting, § Losing the target.
    *
    * @returns null if it has nobody left to want
    */
   function resolveTarget(p: PosedThing): Pos3 | null {
-    if (p.targetId < 0) {
-      const player = look.players[slotOfTarget(p.targetId)];
-      if (player) return player;
-    } else {
-      const other = posed[p.targetId];
-      if (other && !other.dead) return other;
+    const slot = p.targetId < 0 ? slotOfTarget(p.targetId) : -1;
+    const other = slot < 0 ? posed[p.targetId] : undefined;
+    const living = slot >= 0 ? look.players[slot] : other && !other.dead ? other : null;
+    targetDead = false;
+    if (living) return living;
+    // A dead target is `A_Chase`'s to notice, so what is under way plays out against the body.
+    // docs/monster-ai.md § Losing the target.
+    const body = slot >= 0 ? bodies[slot] : other;
+    if (body && outsideChase(p)) {
+      targetDead = true;
+      return body;
     }
     p.threshold = 0;
     return retargetAllAround(p) ? look.players[slotOfTarget(p.targetId)] : null;
@@ -1871,6 +1885,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     monstersNear,
     monstersAlongStep,
     monsterById,
+    bodyById,
     drawnFrameKey,
     bleeds,
     awakeMonsterCount,

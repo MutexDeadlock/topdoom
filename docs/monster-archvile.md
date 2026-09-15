@@ -54,7 +54,8 @@ why.
 `A_VileAttack` is `AttackStats.blast`: guaranteed un-rolled direct damage
 (`diceSides: 1, diceMult: 20` — `rollDamage` with one side always returns the multiplier, encoding
 vanilla's literal unrolled `20`) plus an upward launch (`Player.launchUpward`/`ThingLayer.damage`'s
-`knockUpSpeed`, vanilla's `momz = 1000*FRACUNIT/mass` using the default mass 100), followed by a
+`knockUpSpeed`, vanilla's `momz = 1000*FRACUNIT/mass` using the default mass 100 — set whatever the
+damage did, so an invulnerable player and a corpse fly too), followed by a
 separate radius blast (`P_RadiusAttack(fire, actor, 70)`) centered near the *victim*.
 
 Two things make its timing different from every other ranged monster:

@@ -368,10 +368,11 @@ export class Game {
    */
   private players: (Pos3 | null)[] = [];
   /**
-   * Every slot's body, the dead included, as the fog sweeps from them — refilled like
+   * Every slot's body, the dead included, as the fog sweeps from them and as a monster's attack
+   * under way still aims at a corpse (`ThingTickOptions.bodies`) — refilled like
    * {@link Game.players}.
    */
-  private fogPoints: Pos2[] = [];
+  private fogPoints: Pos3[] = [];
   /**
    * Whether the session runs as a netgame: {@link GameOptions.players}, or the restored snapshot's
    * own. Decided once, since which things spawn depends on it. docs/multiplayer-coop.md.
@@ -1813,20 +1814,20 @@ export class Game {
   /**
    * Applies armor-mitigated damage ({@link applyDamage}) to one player, transitioning to the death
    * animation once health hits 0. See docs/death.md § Player death.
-   *
-   * @returns whether the hit landed — false for a corpse and for invulnerability alike, so a
-   *          caller with a follow-up effect (`resolveVileBlast`'s knockup) can gate on it
    */
-  private damageSlot(slot: PlayerSlot, rawAmount: number, hit: PlayerHit = {}): boolean {
-    if (slot.dead || rawAmount <= 0) return false;
+  private damageSlot(slot: PlayerSlot, rawAmount: number, hit: PlayerHit = {}): void {
+    if (slot.dead || rawAmount <= 0) return;
     const { player, inventory } = slot;
     // Before anything reads it — knockback and the pain flash included, exactly as in vanilla.
     const amount = playerDamageAtSkill(rawAmount, this.skill);
+    // Ahead of the invulnerability gate and never under IDCLIP, as `P_DamageMobj`'s thrust block
+    // tests `MF_NOCLIP`. docs/death.md § Player death, docs/cheats.md § IDCLIP.
+    if (hit.from && !player.noclip) {
+      player.applyDamageThrust(thrustSpeed(amount, PLAYER_MASS), hit.from.x, hit.from.y);
+    }
     // Unclamped — vanilla's `target->health`, which the gib and the death cry read.
-    // docs/death.md § Player death.
     const health = applyDamage(inventory, amount, slot.cheats.god);
-    if (health === null) return false;
-    if (hit.from) player.applyDamageThrust(thrustSpeed(amount, PLAYER_MASS), hit.from.x, hit.from.y);
+    if (health === null) return;
     // The flash is the local player's own eyes, and the overlay below their own screen.
     if (slot === this.viewed) this.screenEffects.addPain(amount);
     if (health <= 0) {
@@ -1850,22 +1851,16 @@ export class Game {
       // `levelEnding` then keeps from being armed at all. docs/specials.md § Damage floors.
       const { sectorEffects, world } = this.level;
       if (sectorEffects.exitsOnDeath(world, player)) this.pendingExit = 'normal';
-      // `player.update` stops running from here on, so it never writes `prev*`
-      // again: leaving the window open would have every frame lerp the corpse
-      // somewhere else between the last two live tics. docs/frameloop.md §
-      // Interpolation.
-      player.syncInterpolation();
       // docs/audio.md § Player and pickups.
       this.audio.play(death.sound, player, playerOrigin(slot.index));
       // The hint depends on what `R` will actually do — reload a savegame or restart the level —
       // and under a playback `R` is the record's rather than the viewer's, so there is nothing to
       // offer (docs/death.md § Player death).
       if (slot === this.viewed) this.armDeathOverlay();
-      return true;
+      return;
     }
     this.audio.play('plpain', player, playerOrigin(slot.index));
     slot.actor.playOnce(PLAYER_PAIN_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
-    return true;
   }
 
   /**
@@ -2375,10 +2370,11 @@ export class Game {
       const { specials } = this.level;
       specials.beginTic(DOOM_TIC);
       for (const slot of this.slots) {
-        // A corpse uses no line and crosses none — `P_DeathThink` runs instead of
-        // `P_MovePlayer` — and in a netgame its use press is the respawn's.
-        if (slot.dead) continue;
-        specials.activate(slot.index, slot.player, slot.input, slot.inventory.keys, slot.player.noclip);
+        // A corpse crosses lines as it slides, since `P_CrossSpecialLine` never tests a player's
+        // health, but uses none: `P_UseLines` sits past `P_DeathThink`'s return, and in a netgame
+        // its use press is the respawn's. docs/death.md § Player death.
+        const input = slot.dead ? IDLE_TIC_INPUT : slot.input;
+        specials.activate(slot.index, slot.player, input, slot.inventory.keys, slot.player.noclip);
       }
       specials.endTic(DOOM_TIC);
       // After the movers, not before: a displacement scroller's rate is the
@@ -2452,8 +2448,9 @@ export class Game {
     }
 
     for (const slot of this.slots) {
-      // Auto-aim, movement, firing and pickups freeze once a player is dead; fog of war, things
-      // and effects below keep ticking, so a rocket fired just before dying finishes its flight.
+      // Auto-aim, the player's own movement, firing and pickups freeze once a player is dead, but
+      // the corpse still slides, falls and rides the floor (`moveBody`); fog of war, things and
+      // effects below keep ticking, so a rocket fired just before dying finishes its flight.
       // Re-posed at alpha 1 so the ray is cast through the previous tic's exact camera rather than
       // the last frame's interpolated one, which is what keeps aim framerate-independent. Must sit
       // immediately before the ray — `draw` overwrites the pose. docs/frameloop.md § Posing for the
@@ -2462,6 +2459,8 @@ export class Game {
       if (!slot.dead) {
         slot.simCamera.applyToCamera(1);
         cursor = this.updateLivingPlayer(slot, DOOM_TIC);
+      } else {
+        this.profiler.time('Player', () => this.moveBody(slot, DOOM_TIC, IDLE_TIC_INPUT, null, 0));
       }
       // After movement (the probe runs from this tic's position) and before
       // camera.tick, whose damping advances toward the fresh target.
@@ -2548,47 +2547,61 @@ export class Game {
         m || !ray || !aimAt
           ? null
           : this.level.specials.pickShootTarget(ray, aimAt, player.z + AIM_HEIGHT_OFFSET);
-      const at = m ?? line ?? onPlane;
-      // Whatever the world is pushing the player with this tic — a conveyor
-      // underfoot — onto the same momentum channel a hit's knockback uses.
-      // Applied before the move, as `T_Scroll` runs before `P_PlayerThink`. None of the three floor
-      // forces reaches a noclipping player: `T_Scroll`, `T_Pusher` and `P_GetFriction` all skip
-      // `MF_NOCLIP` (docs/cheats.md § IDCLIP).
-      const forces = player.noclip ? null : this.level.forces;
-      const carry = forces?.carryForBody(player, PLAYER_RADIUS, slot.touch);
-      if (carry) player.applyForce(carry.x, carry.y);
-      // Wind, current and point pushers, which unlike a conveyor reach the
-      // player alone (`Forces.pushForBody`). "On the ground" is vanilla's
-      // `thing->z > thing->floorz` test, which `groundFloor` answers here — a
-      // full `checkPosition`, so it is only asked for where a pusher exists.
-      if (forces && forces.pusherCount > 0) {
-        const onGround = player.z <= this.level.world.groundFloor(player.x, player.y, PLAYER_RADIUS);
-        const push = forces.pushForBody(player, PLAYER_RADIUS, onGround, slot.touch);
-        if (push) player.applyForce(push.x, push.y);
-      }
-      // What the floor underfoot does to the player's own movement — ice, mud,
-      // or (on every map with no 223 line) nothing at all.
-      const ground = forces
-        ? forces.frictionUnder(player, {
-            radius: PLAYER_RADIUS,
-            speed: vecLength(player.velX, player.velY),
-            cache: slot.touch,
-          })
-        : NO_FRICTION;
-      // Monsters are solid: the player walks around them, not through them.
-      player.update(dt, input, at, camera.viewerAngleDeg + 180, this.solidBodiesAround(player, slot), ground);
+      this.moveBody(slot, dt, input, m ?? line ?? onPlane, camera.viewerAngleDeg + 180);
       return { monster: m, shootLine: line, cursor: onPlane };
     });
 
     this.profiler.time('Weapons', () => this.fireWeapons(slot, monster, shootLine));
     this.profiler.time('Player', () => this.collectPickupsAndSectorEffects(slot, dt));
 
-    // Hard landings, and the weapon bookkeeping that has to run after every
-    // switch source (`fireWeapons`' `handleSwitching`, a pickup) has had its
-    // say — both belong to a living player only.
-    if (player.landingSpeed > HARD_LANDING_SPEED) this.audio.play('oof', player, playerOrigin(slot.index));
+    // The weapon bookkeeping has to run after every switch source (`fireWeapons`'
+    // `handleSwitching`, a pickup) has had its say.
     slot.weapons.update(dt, input.mouseDown, inventory, this.audio, player);
     return cursor;
+  }
+
+  /**
+   * The body's own tic, a living player's and a corpse's alike: the floor forces,
+   * {@link Player.update} and a hard landing's `oof`. `P_MobjThinker` runs `P_XYMovement` and
+   * `P_ZMovement` on a dead player's mobj as on any other — only `P_MovePlayer` stops, since
+   * `P_PlayerThink` hands off to `P_DeathThink`. docs/death.md § Player death.
+   *
+   * @param input  the slot's own while alive; a corpse's is {@link IDLE_TIC_INPUT}
+   * @param aim    the point the body turns to face, or null to keep its facing
+   */
+  private moveBody(slot: PlayerSlot, dt: number, input: TicInput, aim: Pos2 | null, forwardDeg: number): void {
+    const { player } = slot;
+    // Whatever the world is pushing the player with this tic — a conveyor
+    // underfoot — onto the same momentum channel a hit's knockback uses.
+    // Applied before the move, as `T_Scroll` runs before `P_PlayerThink`. None of the three floor
+    // forces reaches a noclipping player: `T_Scroll`, `T_Pusher` and `P_GetFriction` all skip
+    // `MF_NOCLIP` (docs/cheats.md § IDCLIP).
+    const forces = player.noclip ? null : this.level.forces;
+    const carry = forces?.carryForBody(player, PLAYER_RADIUS, slot.touch);
+    if (carry) player.applyForce(carry.x, carry.y);
+    // Wind, current and point pushers, which unlike a conveyor reach the player alone
+    // (`Forces.pushForBody`) — a corpse too, since `T_Pusher` tests `thing->player` and not its
+    // health. "On the ground" is vanilla's `thing->z > thing->floorz` test, which `groundFloor`
+    // answers here — a full `checkPosition`, so it is only asked for where a pusher exists.
+    if (forces && forces.pusherCount > 0) {
+      const onGround = player.z <= this.level.world.groundFloor(player.x, player.y, PLAYER_RADIUS);
+      const push = forces.pushForBody(player, PLAYER_RADIUS, onGround, slot.touch);
+      if (push) player.applyForce(push.x, push.y);
+    }
+    // What the floor underfoot does to the player's own movement — ice, mud,
+    // or (on every map with no 223 line) nothing at all.
+    const ground = forces
+      ? forces.frictionUnder(player, {
+          radius: PLAYER_RADIUS,
+          speed: vecLength(player.velX, player.velY),
+          cache: slot.touch,
+        })
+      : NO_FRICTION;
+    // Monsters are solid: the player walks around them, not through them.
+    player.update(dt, input, aim, forwardDeg, this.solidBodiesAround(player, slot), ground);
+    // `P_ZMovement`'s, which tests `mo->player` and not its health: a corpse landing hard says it
+    // too.
+    if (player.landingSpeed > HARD_LANDING_SPEED) this.audio.play('oof', player, playerOrigin(slot.index));
   }
 
   /**
@@ -2781,14 +2794,13 @@ export class Game {
     const thingUpdate = this.profiler.time(
       'Monsters',
       () =>
-        this.level.things.update(
-          dt,
-          players,
-          (subsector) => this.level.fogOfWar.isVisible(subsector),
-          (prev, mover) => this.thingCrossedLines(prev, mover),
-          (mover, tryX, tryY) => this.thingUsedLines(mover, tryX, tryY),
-          this.level.forces.carriesAnything() ? this.carryForBody : undefined,
-        ),
+        this.level.things.update(dt, players, {
+          bodies: this.fogPoints,
+          fogVisible: (subsector) => this.level.fogOfWar.isVisible(subsector),
+          crossLines: (prev, mover) => this.thingCrossedLines(prev, mover),
+          useLines: (mover, tryX, tryY) => this.thingUsedLines(mover, tryX, tryY),
+          carry: this.level.forces.carriesAnything() ? this.carryForBody : undefined,
+        }),
     );
     this.profiler.time('Monsters', () => {
       this.monsterAttacks.resolve(thingUpdate.attacks);

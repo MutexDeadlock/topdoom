@@ -77,12 +77,8 @@ export interface CombatContext {
    * friendly fire on. docs/multiplayer-deathmatch.md § Player versus player.
    */
   readonly pvp: boolean;
-  /**
-   * Armor-mitigated damage to one player.
-   *
-   * @returns whether the hit actually landed (`false` covers both a corpse hit and invulnerability)
-   */
-  damageSlot(slot: number, amount: number, hit?: PlayerHit): boolean;
+  /** Armor-mitigated damage to one player, and its knockback; a corpse takes neither. */
+  damageSlot(slot: number, amount: number, hit?: PlayerHit): void;
   /**
    * Fires a shoot-triggered line special, with whatever keys the shooting player is carrying.
    *
@@ -121,17 +117,17 @@ export function fallbackPlayer(ctx: CombatContext, targetId: number): Player {
 }
 
 /**
- * The monster `targetId` names.
+ * The monster `targetId` names, dead or alive — an attack already under way plays out against a
+ * corpse (docs/monster-ai.md § Losing the target).
  *
- * @returns null for a slot's ID, or a monster that can no longer be found
+ * @returns null for a slot's ID, or a stale one
  */
 export function targetMonster(ctx: CombatContext, targetId: number): MonsterRef | null {
-  return targetId < 0 ? null : (ctx.things?.monsterById(targetId) ?? null);
+  return targetId < 0 ? null : (ctx.things?.bodyById(targetId) ?? null);
 }
 
 /**
- * The body `targetId` names: the slot's player, dead or alive, or the monster while it can still be
- * found.
+ * The body `targetId` names, dead or alive: the slot's player, or {@link targetMonster}'s monster.
  */
 export function targetBody(ctx: CombatContext, targetId: number): Player | MonsterRef | null {
   return targetId < 0 ? ctx.slots[slotOfTarget(targetId)].player : targetMonster(ctx, targetId);

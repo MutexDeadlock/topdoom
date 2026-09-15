@@ -381,6 +381,10 @@ Vanilla calls `P_DamageMobj` with a null inflictor for damage floors and crusher
 whole thrust block — reproduced here simply by never passing a `from` at those two call
 sites (`applyCrushDamage`/`SectorEffects.update`), rather than a special-cased exemption.
 
+The same block skips an `MF_NOCLIP` target, so `damageSlot` gives an IDCLIP player no thrust. It
+runs before the invulnerability return, so an invulnerable player is still shoved, and a corpse,
+which `P_DamageMobj` returns on first, is not (docs/death.md § Player death).
+
 **`monsters/defs.ts: thrustSpeed(damage, mass)`** is the shared formula
 (`(damage/8) * (100/mass) * 35` — the `×35` the same "vanilla's per-tic figure survives conversion
 intact" reasoning `MonsterStats.speed` relies on), fed a real per-species `mass` from `info.c`'s

@@ -589,7 +589,9 @@ export class ProjectileLayer {
     const homing = p.homing!;
     const step = p.speed * dt;
     const target: Pos3 | null =
-      homing.targetId < 0 ? livingPlayer(slots[slotOfTarget(homing.targetId)]) : targetMonster(this.ctx, homing.targetId);
+      homing.targetId < 0
+        ? livingPlayer(slots[slotOfTarget(homing.targetId)])
+        : (this.ctx.things?.monsterById(homing.targetId) ?? null);
     if (target) {
       const bearing = atan2(target.y - homing.y, target.x - homing.x);
       homing.headingRad = turnToward(homing.headingRad, bearing, REVENANT_TRACER_TURN_RATE_RAD * dt);

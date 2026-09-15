@@ -50,7 +50,8 @@ same condition and under the same `damage < 1000` limit as the invulnerability s
 a telefrag's 10000 (docs/death.md § Telefrag).
 
 Nothing else changes: monsters still see, chase and shoot at a god-mode player, damage floors still
-"hurt" them, and crushers still push them around.
+"hurt" them, crushers still push them around, and knockback and the arch-vile's launch still
+move them (docs/death.md § Player death).
 
 ## IDKFA
 
@@ -88,7 +89,7 @@ Toggles `MF_NOCLIP` on the player. `Player.noclip` is the flag every reader goes
 `game.ts` writes it once at the top of the tic, beside the code-matching itself: a `Player` is
 rebuilt by every level load and the cheat outlives it, so the value has to be re-pushed — and
 pushing it before any system runs is what keeps specials and movement from disagreeing within one
-tic. From there it reaches four places:
+tic. From there it reaches five places:
 
 - **Movement.** `Player.moveBy` returns the requested displacement instead of routing it through
   `slideMove`, so no wall or solid body clips it, and each channel reads its velocity back
@@ -105,6 +106,9 @@ tic. From there it reaches four places:
 - **Floor forces.** Conveyors, pushers and ice or mud leave the player alone: `game.ts` asks
   `Forces` nothing for a noclipping slot, as Boom's `T_Scroll`, `T_Pusher`/`PIT_PushThing` and
   `P_GetFriction` each skip a thing with the flag (docs/specials-forces.md).
+- **Knockback.** `damageSlot` gives a hit no thrust, as `P_DamageMobj`'s thrust block tests
+  `MF_NOCLIP`. The arch-vile's launch still lands: `A_VileAttack` sets `momz` itself
+  (docs/death.md § Player death).
 
 Walking out past the map's edge is as unmapped here as in vanilla: the BSP resolves a point in the
 void to whatever leaf it lands in, and the floor comes back from that sector.

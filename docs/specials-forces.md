@@ -58,7 +58,8 @@ teleporter that loops it back to the start, and without this the eye rides off t
 the arrival says it should — a loud `P_Teleport` zeroes it, a silent one rotates it — so the cargo
 comes out of the far end still moving.
 
-Corpses ride belts too — `P_KillMobj` strips `MF_NOGRAVITY`, so `sc_carry`'s gate admits them. That
+Corpses ride belts too, a player's included (`game.ts: moveBody`, docs/death.md § Player death) —
+`P_KillMobj` strips `MF_NOGRAVITY`, so `sc_carry`'s gate admits them. That
 is what finally made a dead thing's velocity load-bearing here: before conveyors nothing could move
 one, so it sat as inert unread data (docs/movement.md § Knockback).
 
@@ -190,7 +191,8 @@ again), the radius as `magnitude << 1`, and `P_AproxDistance` — vanilla's octa
 estimate, reproduced rather than replaced with a true hypotenuse because both the reach and the
 falloff are *defined* in terms of it.
 
-**Pushers reach the player only** (voodoo dolls included — they are player mobjs). Boom's own
+**Pushers reach the player only** (voodoo dolls included — they are player mobjs — and a player's
+corpse, since `T_Pusher` tests `thing->player` and not its health). Boom's own
 `T_Pusher` skips every non-player outright, and `PIT_PushThing` widens to monsters only under
 `mbf_features`, which complevel 9 — the Boom target — does not set. A conveyor's carry has no such
 gate and moves every body on the belt (`T_Scroll`'s `sc_carry`). The asymmetry is Boom's, not this

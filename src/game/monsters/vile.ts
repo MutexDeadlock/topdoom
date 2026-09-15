@@ -82,11 +82,10 @@ export function resolveVileBlast(
   const at = victim ? { x: victim.x, y: victim.y, z: victim.z } : { x: player.x, y: player.y, z: player.z };
   const source = { id: atk.sourceId, type: atk.sourceType };
   if (atk.targetId < 0) {
-    // A no-op hit (already dead, or invulnerable) reports false — see
-    // `CombatContext.damageSlot` — and skips the knockup along with it.
-    if (ctx.damageSlot(slotOfTarget(atk.targetId), atk.damage, { from: atk, cause: atk.sourceType, source })) {
-      player.launchUpward(atk.blast.knockUpSpeed);
-    }
+    ctx.damageSlot(slotOfTarget(atk.targetId), atk.damage, { from: atk, cause: atk.sourceType, source });
+    // `A_VileAttack` sets `momz` whatever `P_DamageMobj` did: an invulnerable player flies, and so
+    // does a corpse. docs/monster-archvile.md § The attack.
+    player.launchUpward(atk.blast.knockUpSpeed);
   } else {
     ctx.things?.damage(atk.targetId, atk.damage, {
       source,

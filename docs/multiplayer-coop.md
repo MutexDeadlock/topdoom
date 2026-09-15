@@ -69,8 +69,8 @@ resync laid a guest's body down again.
 4. The same `Player` stood up there (`respawnAt`), `specials.reseatSlot`, and the slot's cameras cut
    to it, facing its way.
 
-A corpse uses no line and crosses none: `specials.activate` skips a dead slot, in single player too
-(`P_DeathThink` runs instead of `P_MovePlayer`).
+A corpse uses no line — `P_UseLines` sits past `P_DeathThink`'s return, and its use press is the
+respawn — but crosses them as it slides (docs/death.md § Player death).
 
 **Deviations:** the press is an edge, not vanilla's held `BT_USE`, which respawns a player holding
 use the tic after they die. The corpse is not left lying: one billboard per slot. The respawn lands

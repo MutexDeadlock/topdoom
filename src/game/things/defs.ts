@@ -406,6 +406,43 @@ export interface DamageHit {
   from?: Pos2;
 }
 
+/** The handles {@link ThingLayer.update} takes for one tic beside the players, all optional. */
+export interface ThingTickOptions {
+  /**
+   * Every player slot's body by index, dead or alive — the corpse an attack already under way plays
+   * out against once its target has died (docs/monster-ai.md § Losing the target). Absent, a dead
+   * player's body is unknown and a monster after it looks around at once.
+   */
+  bodies?: readonly (Pos3 | null)[];
+  /** Hides things in an unrevealed subsector. */
+  fogVisible?: (subsector: number) => boolean;
+  /**
+   * Gets each alerted monster and where it stepped from, so the caller can fire the walk triggers
+   * in between and resolve a teleport landing's telefrag (docs/specials-teleporters.md §
+   * Teleporters).
+   */
+  crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null;
+  /**
+   * `P_Move`'s `spechit` pass for a monster whose step to `(tryX, tryY)` was refused — the door it
+   * walked into, opened (`SpecialsController.useMonster`). Same split as
+   * {@link ThingTickOptions.crossLines}, down to returning a teleport landing for this layer to
+   * apply. docs/monster-ai.md § Opening doors.
+   */
+  useLines?: (mover: CrossingBody, tryX: number, tryY: number) => TeleportDest | null;
+  /**
+   * This tic's conveyor impulse for each body — {@link CarryQuery}. A callback rather than a
+   * `Forces` reference for the same reason {@link ThingTickOptions.crossLines} is one: this layer
+   * owns bodies, not specials. `cache` is the body's own {@link PosedThing.touch}, threaded
+   * through so the query can skip its sector walk for a body that hasn't moved. **Absent means
+   * the level has no conveyor at all** (`Forces.carriesAnything`), not merely that this caller
+   * declines the query: `ThingGrid.rebuild` reads its presence as `mayCarry` and widens every
+   * still body's move bound by a tic of conveyor push on the strength of it. Passing `undefined`
+   * on a level that does carry makes the grid's cell skip unsound — a body moves further than its
+   * bound and a query silently misses it. docs/monster-ai.md § Spatial indexing.
+   */
+  carry?: CarryQuery;
+}
+
 export interface ThingLayer {
   group: THREE.Group;
   count: number;
@@ -454,34 +491,9 @@ export interface ThingLayer {
    *                 none alive every monster freezes in place; otherwise {@link PosedThing.z}
    *                 refreshes from the sector's live height, the "ride a mover" trick
    *                 (docs/movement.md § Solid decorations)
-   * @param fogVisible  hides things in an unrevealed subsector
-   * @param crossLines  gets each alerted monster and where it stepped from, so the caller can fire
-   *                    the walk triggers in between and resolve a teleport landing's telefrag
-   *                    (docs/specials-teleporters.md § Teleporters)
-   * @param useLines  `P_Move`'s `spechit` pass for a monster whose step to `(tryX, tryY)` was
-   *                  refused — the door it walked into, opened (`SpecialsController.useMonster`).
-   *                  Same split as `crossLines`, down to returning a teleport landing for this
-   *                  layer to apply. docs/monster-ai.md § Opening doors.
-   * @param carry  this tic's conveyor impulse for each body — {@link CarryQuery}. A callback rather
-   *               than a `Forces` reference for the same reason `crossLines` is one: this layer
-   *               owns bodies, not specials. `cache` is the body's own {@link PosedThing.touch},
-   *               threaded through so the query can skip its sector walk for a body that hasn't
-   *               moved. **Absent means the level has no conveyor at all**
-   *               (`Forces.carriesAnything`), not merely that this caller declines the query:
-   *               `ThingGrid.rebuild` reads its presence as `mayCarry` and widens every still
-   *               body's move bound by a tic of conveyor push on the strength of it. Passing
-   *               `undefined` on a level that does carry makes the grid's cell skip unsound — a
-   *               body moves further than its bound and a query silently misses it.
-   *               docs/monster-ai.md § Spatial indexing.
+   * @param options  the tic's handles — {@link ThingTickOptions}
    */
-  update(
-    dt: number,
-    players: readonly (Pos3 | null)[],
-    fogVisible?: (subsector: number) => boolean,
-    crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
-    useLines?: (mover: CrossingBody, tryX: number, tryY: number) => TeleportDest | null,
-    carry?: CarryQuery,
-  ): ThingUpdateResult;
+  update(dt: number, players: readonly (Pos3 | null)[], options?: ThingTickOptions): ThingUpdateResult;
   /**
    * Fills the sprite batches from the state {@link ThingLayer.update} left, with every position
    * interpolated from the previous tic to the current one. Presentation only — nothing the
@@ -547,6 +559,11 @@ export interface ThingLayer {
    * Lets a shot fired at a monster keep tracking it across frames.
    */
   monsterById(id: number): MonsterRef | null;
+  /**
+   * The monster `id` names, dead or alive — what an attack already under way aims at once its
+   * target has died (docs/monster-ai.md § Losing the target). Null only for a stale ID.
+   */
+  bodyById(id: number): MonsterRef | null;
   /**
    * The `SPRITE+LETTER` this thing was last *drawn* on ({@link SpriteAnimator.frameKey}), or '' for
    * a stale ID. Art, not simulation — deliberately off {@link MonsterRef} so no tic can read a pose

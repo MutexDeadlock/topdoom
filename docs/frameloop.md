@@ -211,10 +211,11 @@ Five rules:
 - **Anything that stops being simulated must not be left mid-window.** Interpolation assumes another
   tic is coming; when none is, the last two tics stay apart forever while `alpha` — the leftover
   accumulator — keeps changing every frame, so the still subject jitters between them at frame
-  cadence. Two cases exist and each closes it at its own scope: the **intermission** freezes the
-  whole simulation, so `frame` draws it at `alpha` 1 outright (the tic-exact pose); a **dead
-  player** freezes only `player.update`, which is what writes `prev*`, so `damageSlot` collapses
-  that one window with `syncInterpolation` on the killing hit. Both shipped as a visible shake.
+  cadence. The **intermission** freezes the whole simulation, so `frame` draws it at `alpha` 1
+  outright (the tic-exact pose) — shipped as a visible shake. A **dead player** is not such a case:
+  `game.ts: moveBody` keeps running `player.update` on the corpse (docs/death.md § Player death),
+  so its window closes like a living one's, and collapsing it on the killing hit would stall the
+  corpse for a tic.
 
 **Movers interpolate through the map itself.** Doors, lifts, floors and crushers write
 `sector.floorHeight`/`ceilHeight` per tic; `SpecialsController.moverLerp` keeps each moving

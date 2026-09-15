@@ -53,14 +53,10 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
     const layer = buildThingSprites(rigged.world, { bank: BANK, materials: MATERIALS, skill: 3 });
     const step = () => {
       forces.tick();
-      layer.update(
-        TIC,
-        [null],
-        undefined,
-        (prev, mover) => rigged.specials.crossMonster(prev, mover, new Set()),
-        undefined,
-        (pos, radius, cache) => forces.carryForBody(pos, radius, cache),
-      );
+      layer.update(TIC, [null], {
+        crossLines: (prev, mover) => rigged.specials.crossMonster(prev, mover, new Set()),
+        carry: (pos, radius, cache) => forces.carryForBody(pos, radius, cache),
+      });
       rigged.tick();
     };
     return { grid, layer, step, pad: grid.centre(3, 1), start: grid.centre(1, 1) };
@@ -96,7 +92,7 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
     const startX = changedThing(layer.snapshot(), 0).x;
     for (let i = 0; i < 100; i++) {
       forces.tick();
-      layer.update(TIC, [null], undefined, undefined, undefined, (pos, radius, cache) => forces.carryForBody(pos, radius, cache));
+      layer.update(TIC, [null], { carry: (pos, radius, cache) => forces.carryForBody(pos, radius, cache) });
     }
     const after = layer.snapshot();
     assert.equal(after.stats.kills, 1, 'the imp should have died before the belt ran');
@@ -115,7 +111,7 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
     const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
     for (let i = 0; i < 200; i++) {
       forces.tick();
-      layer.update(TIC, [null], undefined, undefined, undefined, (pos, radius, cache) => forces.carryForBody(pos, radius, cache));
+      layer.update(TIC, [null], { carry: (pos, radius, cache) => forces.carryForBody(pos, radius, cache) });
     }
     const eye = changedThing(layer.snapshot(), 0);
     // Carried east out of the belt sector and stopped by the corridor's end wall.

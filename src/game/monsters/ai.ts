@@ -53,6 +53,13 @@ export interface MonsterStep {
   targetRadius: number;
   targetHeight: number;
   /**
+   * The target has died, and this call only plays out what {@link outsideChase} kept going against
+   * its body: a refire loop breaks, a charge meets nothing, and nothing new starts. Vanilla notices
+   * a dead target in `A_Chase` alone, which no attack state calls. docs/monster-ai.md § Losing the
+   * target.
+   */
+  targetDead?: boolean;
+  /**
    * The solid bodies a step can bump into, asked for on the first probe rather than handed in: a
    * planted or flinching monster probes nothing, and the list costs a grid sweep. `probeReach` is
    * how far from the body, per axis, this call's probes go — one chase step.
@@ -284,6 +291,15 @@ export function commitTarget(body: MonsterBody): void {
 }
 
 /**
+ * Whether the body is in a state that never calls `A_Chase` — pain, an attack chain or its windup,
+ * a charge, a refire loop — so a target that died is not noticed yet and stays its target.
+ * docs/monster-ai.md § Losing the target.
+ */
+export function outsideChase(body: MonsterBody): boolean {
+  return body.painTimer > 0 || body.attackPause > 0 || body.burstLeft > 0 || body.chargeTimer > 0 || body.refiring;
+}
+
+/**
  * Advances one already-alerted monster by `step.dt`: re-routes and closes on the target, fires
  * whichever attack is in range and off cooldown, and returns it for the caller to realize.
  *
@@ -310,6 +326,7 @@ export function stepMonsterAI(
     target: step.target,
     targetRadius: step.targetRadius,
     targetHeight: step.targetHeight,
+    targetDead: step.targetDead ?? false,
     blockersFor: step.blockersFor,
     resurrect: step.resurrect,
     useLines: step.useLines,
@@ -395,13 +412,21 @@ export function stepMonsterAI(
 
   // The refire loop (`A_CPosRefire`/`A_SpidRefire`) jumps straight back into the attack without
   // returning to `A_Chase`, bypassing the chase-call cadence and every gate on it. It breaks only
-  // on losing sight. docs/monster-ai.md § Attacking.
+  // on losing sight or on the target's death (`target->health <= 0`). docs/monster-ai.md §
+  // Attacking.
   if (!attack && body.refiring) {
-    if (ranged && canSee(c)) {
+    if (ranged && !c.targetDead && canSee(c)) {
       attack = beginRangedAttack(c);
     } else {
       body.refiring = false;
     }
+  }
+
+  // What outlived its target is over, and the chase call that would notice is `ThingLayer.update`'s
+  // look next tic rather than one run against a corpse. docs/monster-ai.md § Losing the target.
+  if (c.targetDead) {
+    settleVertical(c);
+    return attack;
   }
 
   if (!attack) {
@@ -650,7 +675,8 @@ function stepCharge(c: Chase): MonsterAttack | null {
     return null;
   }
   body.chargeTimer = Math.max(0, body.chargeTimer - dt);
-  if (c.dist <= SKULL_CONTACT_RANGE) {
+  // A corpse is no contact: `PIT_CheckThing` passes a body that is neither solid nor shootable.
+  if (!c.targetDead && c.dist <= SKULL_CONTACT_RANGE) {
     body.chargeTimer = 0;
     // Contact damage, so 'melee': the caller draws no tracer and spawns no projectile, which is
     // right — the monster itself was the missile.

@@ -42,7 +42,6 @@ import {
   PLAYER_ACTION_FRAME_SECONDS,
   PLAYER_ATTACK_FRAMES,
   PLAYER_PAIN_FRAMES,
-  obituary,
 } from './game/things/tables.ts';
 import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
@@ -70,7 +69,7 @@ import {
 import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
-import { AutoCamera } from './game/autocamera.ts';
+import { AutoCamera, handleHotkeys } from './game/autocamera.ts';
 import { SectorEffects, SpecialsController, type TeleportDest } from './game/specials.ts';
 import { addBlockMates, scanSectors } from './game/specials/mapscan.ts';
 import type { ShootAim } from './game/specials/shootaim.ts';
@@ -83,32 +82,14 @@ import { readAnimated } from './wad/animated.ts';
 import { readSwitches, switchPairs, type SwitchPairLookup } from './wad/switches.ts';
 import { NO_FRICTION, switchPairTexture } from './game/specials/defs.ts';
 import { IconOfSin } from './game/monsters/iconofsin.ts';
-import { Hud } from './ui/hud/hud.ts';
-import { Crosshair } from './ui/hud/crosshair.ts';
-import { ReplayBar } from './ui/hud/replaybar.ts';
-import { Intermission, INTERMISSION_INPUT_DELAY, type ContinueHint } from './ui/hud/intermission.ts';
-import { EndCard, type EndScope } from './ui/hud/endcard.ts';
-import { LevelCard } from './ui/hud/levelcard.ts';
+import { INTERMISSION_INPUT_DELAY, type ContinueHint } from './ui/hud/intermission.ts';
+import type { EndScope } from './ui/hud/endcard.ts';
 import { LevelNames, titleLookupFor } from './wad/campaign/names.ts';
 import { parSecondsFor } from './wad/campaign/pars.ts';
 import { readDehacked, describeDehacked, type LoadedDehacked } from './game/dehacked.ts';
 import { applyDehacked, resetDehacked } from './game/dehacked/apply.ts';
 import { LevelProgression } from './wad/campaign/progression.ts';
-import {
-  CenterMessage,
-  lockedLineMessage,
-  missingArtMessage,
-  SECRET_MESSAGE,
-  killsLeftMessage,
-  timeLeftMessage,
-} from './ui/hud/message.ts';
-import { HudMessages, deathLine, presenceLine } from './ui/hud/messages.ts';
-import type { TextRun, WadFontRecolor } from './ui/hud/wadfont.ts';
-import type { PlayerColor } from './wad/playercolor.ts';
-import { handleHotkeys } from './ui/devmode/debughud.ts';
-import { ScreenEffects } from './ui/hud/screeneffects.ts';
-import { DeathOverlay, type DeathHint } from './ui/hud/deathoverlay.ts';
-import { Scoreboard, nameColors, rankByKills, type ScoreRow } from './ui/hud/scoreboard.ts';
+import type { DeathHint } from './ui/hud/deathoverlay.ts';
 import { FrameProfiler } from './util/profiler.ts';
 import { clearRandom, getRandomCursors, setRandomCursors } from './util/random.ts';
 import {
@@ -133,13 +114,13 @@ import {
   type NetCapture,
   type NetRestore,
   type NetSession,
+  type RosterEntry,
   type SlotAssignment,
 } from './game/net.ts';
 import { playerDamageAtSkill, type Skill } from './game/skill.ts';
 import {
   applyDamage,
   applyPickup,
-  pickupLine,
   createInventory,
   finishLevel,
   getPistolStart,
@@ -157,7 +138,7 @@ import { gameModeOf, type GameMode } from './wad/campaign/gamemode.ts';
 import { ThingType } from './game/things/doomednums.ts';
 import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
-import { playerOrigin, type SfxId } from './audio/sfx.ts';
+import { playerOrigin } from './audio/sfx.ts';
 import {
   FORCED_RESPAWN_TICS,
   PlayerSlot,
@@ -166,7 +147,8 @@ import {
   type SlotSource,
 } from './game/playerslot.ts';
 import { Level, type LevelParts } from './game/level.ts';
-import { Presenter } from './game/presenter.ts';
+import { Presenter, type PresentHost } from './game/presenter.ts';
+import { Overlays, type EndPopup, type OverlayHost } from './game/overlays.ts';
 import {
   coopStarts,
   deathmatchSpot,
@@ -377,7 +359,8 @@ export class Game {
   /**
    * This browser's seat in the network game the level runs in ({@link GameOptions.net}), or null.
    * While set, every slot reads its rows and the local slot's simulation camera is separate from
-   * the drawn one, as under a playback. The session ending ends this {@link Game} too (`main.ts`).
+   * the drawn one, as under a playback. The session ending ends this {@link Game} too
+   * (`session/room.ts`).
    * docs/multiplayer-net.md § What a tic does, docs/multiplayer-net.md § Leaving.
    */
   private readonly net: NetSeat | null;
@@ -455,7 +438,7 @@ export class Game {
    * key. Not {@link Game.pause}, which is the menu's — a popup has to keep reading input.
    * docs/hud.md § Intermission.
    */
-  private popup: 'intermission' | 'endcard' | null = null;
+  private popup: EndPopup | null = null;
   /**
    * Seconds the popup has been up, for {@link INTERMISSION_INPUT_DELAY}. The only thing that
    * still advances while it is. Shared by both popups, and restarted when the card takes over so
@@ -500,24 +483,10 @@ export class Game {
   private audio: AudioEngine;
   private wad: Wad;
   private skill: Skill;
-  private hud: Hud;
-  private crosshair: Crosshair;
-  /** The playback bar; hidden outside a replay. docs/replays.md § Playback. */
-  private replayBar: ReplayBar;
   /**
    * The session's savegame writer, called when a replay is taken over — see {@link GameOptions}.
    */
   private autoSave: (() => Promise<unknown>) | null;
-  /** Center-screen text — docs/hud.md § Center messages. */
-  private message: CenterMessage;
-  /** The feed over the bar: pickups, joins, deaths — docs/hud.md § HUD messages. */
-  private messages: HudMessages;
-  /** The "Entering / <level name>" card every map load raises — see ui/hud/levelcard.ts. */
-  private levelCard: LevelCard;
-  /** The end-of-level popup — see ui/hud/intermission.ts and {@link Game.popup}. */
-  private intermission: Intermission;
-  /** The campaign-over card the popup hands over to — see ui/hud/endcard.ts and {@link Game.popup}. */
-  private endCard: EndCard;
   /**
    * The set's DEHACKED/BEX patch, or null for a set with none. Read once per {@link Game} like the
    * banks beside it: which patch applies depends on the file set, not on the current map.
@@ -541,12 +510,11 @@ export class Game {
   private profiler = new FrameProfiler();
   /** What a frame draws, and how (game/presenter.ts). docs/frameloop.md § What runs in a frame. */
   private readonly presenter: Presenter;
-  private screenEffects: ScreenEffects;
-  private deathOverlay: DeathOverlay;
-  /** The board Tab holds up — {@link Game.scoreboardRows}, docs/hud.md § Scoreboard. */
-  private scoreboard: Scoreboard;
-  /** Each armour colour's name colour on a message ({@link Game.slotName}), the board's own. */
-  private nameColors: Record<PlayerColor, WadFontRecolor>;
+  /**
+   * The 2D layers over the level, and what the tic tells them (game/overlays.ts). Whose screen a
+   * message lands on is theirs to decide; this class only reports what happened to which slot.
+   */
+  private readonly overlays: Overlays;
   readonly title: string;
 
   /**
@@ -682,26 +650,10 @@ export class Game {
       palette: gfx.palette,
       renderer: view.renderer,
     });
-    this.hud = new Hud(gfx);
-    this.message = new CenterMessage(gfx);
-    this.messages = new HudMessages(gfx, this.netgame);
-    this.levelCard = new LevelCard(gfx);
-    this.intermission = new Intermission(gfx);
-    this.endCard = new EndCard(gfx);
-    this.deathOverlay = new DeathOverlay(gfx);
-    this.scoreboard = new Scoreboard(gfx.palette);
-    this.nameColors = nameColors(gfx.palette);
     // Session-scoped like the banks above: which titles apply depends on the loaded file set
     // (its MAPINFO lumps and which IWAD it is), not on the current map.
     this.levelNames = new LevelNames(wad, mapInfo, this.dehacked);
-    this.crosshair = new Crosshair(view.renderer.domElement);
     this.autoSave = autoSave;
-    this.replayBar = new ReplayBar({
-      takeOver: () => this.driver.takeOver(),
-      watch: (slot) => this.driver.watch(slot),
-      seek: (tic) => this.driver.seekTo(tic),
-      levelName: (map) => this.levelNames.nameFor(map),
-    });
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
     this.gameMode = gameModeOf(this.mapNames);
@@ -724,13 +676,8 @@ export class Game {
           rebindInputs: () => this.driver.rebind(),
           captureState: (joining) => this.captureState(joining),
           restoreLevel: (restore) => this.restoreFromNet(restore),
-          say: (text) => this.message.show(text),
-          notice: ({ name, color, event }) => {
-            // Heard only with the line: a mode that hides the feed silences it too.
-            if (this.messages.show(...presenceLine({ text: name, color: this.nameColors[color] }, event))) {
-              this.audio.playCue(this.messageCue);
-            }
-          },
+          say: (text) => this.overlays.say(text),
+          notice: (notice) => this.overlays.notice(notice),
         })
       : null;
     const game = this;
@@ -754,16 +701,16 @@ export class Game {
       reloadLevel: (state) => this.reloadLevel(state),
       restoreKeyframe: (map, state, reloads) => this.restoreKeyframe(map, state, reloads),
       bodies: () => this.bodies(),
-      showLevelCard: () => this.showLevelCard(this.currentMap),
+      showLevelCard: () => this.overlays.showLevelCard(this.currentMap),
       takenOver: () => this.takenOver(),
-      drawBar: () => this.presenter.drawBar(),
+      drawBar: () => this.overlays.drawBar(),
       runTic: () => {
         this.beginTic();
         return this.tic();
       },
-      tickOverlays: (dt) => this.presenter.tickOverlayClocks(dt),
+      tickOverlays: (dt) => this.overlays.tickClocks(dt),
       silence: (on) => this.audio.setSilent(on),
-      clearPain: () => this.screenEffects.clearPain(),
+      clearPain: () => this.overlays.clearPain(),
       resyncClock: () => this.resyncClock(),
       drawLanding: (rawDt) => {
         this.profiler.beginFrame();
@@ -816,9 +763,8 @@ export class Game {
       hasPower(this.slots[slot].inventory, 'invisibility'),
     );
 
-    // The local player's own eyes: the tints are theirs.
-    this.screenEffects = new ScreenEffects(view.renderer);
-    this.presenter = new Presenter({
+    // One host for the frame and the layers over it: the getters are what changes under them.
+    const host: PresentHost & OverlayHost = {
       view,
       scene: this.scene,
       slots: this.slots,
@@ -834,6 +780,12 @@ export class Game {
       get recording() {
         return game.recording;
       },
+      get levelEnding() {
+        return game.levelEnding;
+      },
+      get popup() {
+        return game.popup;
+      },
       title,
       audio,
       lights: this.lights,
@@ -843,23 +795,28 @@ export class Game {
       playerSkins: this.playerSkins,
       setDrawsPlayer: this.setDrawsPlayer,
       profiler: this.profiler,
-      overlays: {
-        hud: this.hud,
-        crosshair: this.crosshair,
-        replayBar: this.replayBar,
-        message: this.message,
-        messages: this.messages,
-        levelCard: this.levelCard,
-        screenEffects: this.screenEffects,
-        deathOverlay: this.deathOverlay,
-        intermission: this.intermission,
-        scoreboard: this.scoreboard,
-      },
-      scoreboardRows: () => this.scoreboardRows(),
-      intermissionScoreRows: () => this.intermissionScoreRows(),
+      netgame: this.netgame,
+      deathmatch: this.deathmatch,
+      gameMode: this.gameMode,
+      levelNames: this.levelNames,
+      roster: () => this.roster(),
+      holdsBoard: () => this.holdsBoard(),
+      continueHint: () => this.continueHint,
+      deathHint: () => this.deathHint(),
       respawnCountdown: () => this.overlayCountdown(),
       timeLeft: () => this.hudTimeLeft(),
+    };
+    this.overlays = new Overlays(host, {
+      gfx,
+      renderer: view.renderer,
+      bar: {
+        takeOver: () => this.driver.takeOver(),
+        watch: (slot) => this.driver.watch(slot),
+        seek: (tic) => this.driver.seekTo(tic),
+        levelName: (map) => this.levelNames.nameFor(map),
+      },
     });
+    this.presenter = new Presenter(host, this.overlays);
 
     const start = this.mapNames.indexOf(startMap.toUpperCase());
     // The first-map fallback is fine for a fresh start, but a restore's things
@@ -871,7 +828,7 @@ export class Game {
     // was mid-glide, and its settings are the run's. docs/replays.md § Camera state.
     if (playback) {
       this.driver.startPlayback(playback);
-      this.crosshair.detach(true);
+      this.overlays.playbackStarted();
     }
   }
 
@@ -947,7 +904,7 @@ export class Game {
   }
 
   /**
-   * Whether this level runs in a network session ({@link GameOptions.net}), which `main.ts` ends
+   * Whether this level runs in a network session ({@link GameOptions.net}), which the session ends
    * it with. docs/multiplayer-net.md § Leaving.
    */
   get networked(): boolean {
@@ -1010,33 +967,23 @@ export class Game {
    * docs/replays.md § Playback.
    */
   private takenOver(): void {
-    this.crosshair.detach(false);
     // The run up to here was the recording's, so nothing from it may set a best time.
     this.cheated = true;
-    // Taking over mid-death or on the intermission hands those keys back to the viewer, and the
-    // popup on screen was drawn without their hint. docs/replays.md § Playback.
-    this.deathOverlay.setHint(this.deathHint());
-    this.intermission.setContinueHint(this.continueHint);
-    this.endCard.setContinueHint(this.continueHint);
+    this.overlays.takenOver();
     void this.saveTakeOver();
   }
 
   /**
    * The view brought onto {@link Game.viewed} once it moved — a playback's camera picker onto
    * another player, a take-over back to the local one: the fog draws that player's island, the
-   * drawn camera cuts to their pose, the damage flash and center message raised for the player
-   * before are dropped, and the death overlay is the new player's — up over a corpse, killer and
-   * all. docs/replays.md § Playback.
+   * drawn camera cuts to their pose, and the overlays are the new player's.
+   * docs/replays.md § Playback.
    */
   private viewSwitched(): void {
     const { viewed } = this;
     this.level.fogOfWar.setDrawn(viewed.index);
     if (this.view.camera !== viewed.simCamera) this.view.camera.copyFrom(viewed.simCamera);
-    this.screenEffects.clearPain();
-    this.message.clear();
-    this.messages.clear();
-    this.deathOverlay.clear();
-    this.armDeathOverlay();
+    this.overlays.viewSwitched();
   }
 
   /**
@@ -1050,9 +997,9 @@ export class Game {
     if (!this.autoSave || this.blockedMoment() !== null) return;
     try {
       await this.autoSave();
-      this.messages.show('game saved');
+      this.overlays.note('game saved');
     } catch (err) {
-      this.message.show((err as Error).message);
+      this.overlays.say((err as Error).message);
     }
   }
 
@@ -1137,12 +1084,11 @@ export class Game {
     if (net?.menuUp) {
       net.menuUp = false;
       this.view.input.reset();
-      this.replayBar.setKeysActive(true);
+      this.overlays.setMenuUp(false);
       return;
     }
     if (this.running) return;
-    // The bar's `Space` is the viewer's again, now that the menu is not reading keys.
-    this.replayBar.setKeysActive(true);
+    this.overlays.setMenuUp(false);
     // Reached from the Start button or ESC, i.e. from a real user gesture —
     // which is the only way a browser lets an AudioContext start.
     this.audio.resume();
@@ -1164,15 +1110,13 @@ export class Game {
     if (net && this.running) {
       net.menuUp = true;
       this.view.input.reset();
-      this.replayBar.setKeysActive(false);
+      this.overlays.setMenuUp(true);
       return;
     }
     if (this.paused) return; // a second call would leave two `stillFrame` loops running
-    this.replayBar.setKeysActive(false);
+    this.overlays.setMenuUp(true);
     this.stop();
     this.paused = true;
-    // The menu opens over the board Tab may be holding up, and no frame runs to take it down.
-    this.scoreboard.clear();
     // ESC landing in the one frame a parked load waits out: the pause screen is about to show the
     // level behind it, so build that level now rather than leaving the overlay covering the menu.
     this.flushPendingLoad();
@@ -1184,17 +1128,14 @@ export class Game {
     this.stop();
     this.driver.dispose();
     this.net?.dispose();
-    this.crosshair.detach(false);
-    this.replayBar.dispose();
     // The engine is session-level and the next Game sets its own bank; this
     // only makes sure nothing from this level is left holding a channel.
     this.audio.stopAll();
     // The music would otherwise keep playing over the menu once this level is gone.
     this.audio.music.stop();
-    this.screenEffects.reset();
-    // Like `screenEffects`, these elements outlive the Game that drove them — without
-    // this the menu (and the next level started from it) inherits the line.
-    this.clearOverlays();
+    // The overlays' elements outlive the Game that drove them — without this the menu (and the
+    // next level started from it) inherits the line.
+    this.overlays.dispose();
     for (const slot of this.slots) {
       slot.actor.dispose();
       slot.shadow.dispose();
@@ -1206,58 +1147,18 @@ export class Game {
     this.playerSkins.dispose();
   }
 
-  /** Clears the per-level 2D overlays, shared by {@link Game.dispose} and every map load. */
-  private clearOverlays(): void {
-    this.deathOverlay.clear();
-    this.message.clear();
-    this.messages.clear();
-    this.levelCard.clear();
-    this.intermission.clear();
-    this.endCard.clear();
-    this.scoreboard.clear();
+  /**
+   * Whether the viewer holds the board up this frame: Tab with the menu closed, and not over the
+   * intermission, which shows its own. docs/hud.md § Scoreboard.
+   */
+  private holdsBoard(): boolean {
+    if (this.paused || this.net?.menuUp || this.popup === 'intermission') return false;
+    return this.view.input.viewerHolds('Tab');
   }
 
-  /**
-   * What the board Tab holds up shows this frame: {@link Game.scoreRows} while the viewer holds Tab
-   * with the menu closed; null otherwise, and over the intermission, which shows its own.
-   * docs/hud.md § Scoreboard.
-   */
-  private scoreboardRows(): ScoreRow[] | null {
-    if (this.paused || this.net?.menuUp || this.popup === 'intermission') return null;
-    return this.view.input.viewerHolds('Tab') ? this.scoreRows() : null;
-  }
-
-  /**
-   * What the intermission's board shows above its panel: {@link Game.scoreRows} while that popup
-   * is up. docs/hud.md § Scoreboard.
-   */
-  private intermissionScoreRows(): ScoreRow[] | null {
-    const rows = this.popup === 'intermission' ? this.scoreRows() : null;
-    // A deathmatch's result: ranked, its winner marked.
-    return rows && this.deathmatch ? rankByKills(rows) : rows;
-  }
-
-  /**
-   * Every slot's row on the scoreboard. Names and pings are the network session's roster, where
-   * there is one.
-   *
-   * @returns null for a game of one player, unless over the network — no board shows then
-   */
-  private scoreRows(): ScoreRow[] | null {
-    const net = this.net;
-    if (!net && this.slots.length < 2) return null;
-    const roster = net?.session.roster();
-    return this.slots.map((slot) => {
-      const entry = roster?.find((r) => r.slot === slot.index);
-      return {
-        name: entry?.name ?? `Player ${slot.index + 1}`,
-        color: slot.drawColor(),
-        kills: this.deathmatch ? slot.netFrags() : slot.kills,
-        pingMs: entry?.pingMs ?? null,
-        local: slot.local,
-        present: entry?.present ?? true,
-      };
-    });
+  /** The network session's roster, null outside a network game. */
+  private roster(): RosterEntry[] | null {
+    return this.net?.session.roster() ?? null;
   }
 
   /**
@@ -1288,30 +1189,9 @@ export class Game {
     return this.netgame && !this.deathmatch;
   }
 
-  /** A slot's name as the board shows it: {@link Game.rosterName}, else its player number. */
-  private playerName(index: number): string {
-    return this.rosterName(index) ?? `Player ${index + 1}`;
-  }
-
-  /** A slot's name as a message draws it: {@link Game.playerName}, in the slot's armour colour. */
-  private slotName(slot: PlayerSlot): TextRun {
-    return { text: this.playerName(slot.index), color: this.nameColors[slot.drawColor()] };
-  }
-
   /** A slot's name in the network session's roster, null outside a network game. */
   private rosterName(index: number): string | null {
-    return this.net?.session.roster().find((entry) => entry.slot === index)?.name ?? null;
-  }
-
-  /**
-   * Takes the death overlay down when the level starts ending under a corpse — the intermission is
-   * what the player should be looking at. Idempotent and self-guarded, so every place the level can
-   * start ending calls it unconditionally. docs/death.md § Dying on the way out.
-   */
-  private endingOverCorpse(): void {
-    if (!this.viewed.dead || !this.levelEnding) return;
-    this.deathOverlay.clear();
-    this.screenEffects.clearPain();
+    return this.roster()?.find((entry) => entry.slot === index)?.name ?? null;
   }
 
   /**
@@ -1407,8 +1287,7 @@ export class Game {
     this.audio.stopAll();
     // A fresh map always starts with living players, however it was entered.
     for (const slot of this.slots) slot.standUp();
-    this.clearOverlays();
-    this.screenEffects.clearPain();
+    this.overlays.beginLevel();
     this.popup = null;
     this.pendingEnd = null;
     const at = this.wrapIndex(index);
@@ -1658,7 +1537,7 @@ export class Game {
       onBossDeath: (type) => {
         this.level.specials.notifyBossDeath(type, anyPlayerAlive(this.slots));
         this.level.icon.notifyBossDeath(type);
-        this.endingOverCorpse();
+        this.overlays.endingOverCorpse();
       },
       restore: restore?.things,
       // `spawnTeleportFog` plays the `telept` that goes with each, exactly as a teleport does.
@@ -1718,14 +1597,14 @@ export class Game {
       for (const slot of this.slots) slot.restore(restore.players[slot.index]);
       // A corpse restored — a keyframe's, a network sync's — is a death already under way: its
       // overlay goes back up, killer and all.
-      this.armDeathOverlay();
+      this.overlays.armDeathOverlay();
     }
 
     // Raised last: this method clears every overlay at its top, so a card shown any earlier than
     // here would be wiped by its own load. A restore shows none — "Entering …" announces arriving
     // at a level, and loading a save resumes one already under way — the level-entry checkpoint
     // `restart` reloads included, which is a load like any other.
-    if (!restore) this.showLevelCard(name);
+    if (!restore) this.overlays.showLevelCard(name);
 
     // Dead last, after every construction-time pRandom draw above (light-state
     // seeds, pushThing's homingBias) has happened and been overwritten: the
@@ -1754,17 +1633,9 @@ export class Game {
     }
     if (things.missingArt.length > 0) {
       console.warn('things skipped, no sprite in this WAD set:', things.missingArt.join(', '));
-      // Said on screen too, not only in the console: a skipped thing is simply absent from the
-      // level, and nothing else explains why. Survives this load because `clearOverlays` runs
-      // ahead of the build, and sits clear of the level card's own band
-      // (docs/hud.md § Center messages).
-      this.message.show(missingArtMessage(things.missingArt.length));
+      // Survives this load because `beginLevel` cleared the layers ahead of the build.
+      this.overlays.reportMissingArt(things.missingArt.length);
     }
-  }
-
-  /** The "Entering" card for `map` — raised by every arrival at a level. */
-  private showLevelCard(map: string): void {
-    this.levelCard.show(this.levelNames.nameFor(map), this.levelNames.graphicFor(map));
   }
 
   /**
@@ -1862,8 +1733,7 @@ export class Game {
     // Unclamped — vanilla's `target->health`, which the gib and the death cry read.
     const health = applyDamage(inventory, amount, slot.cheats.god);
     if (health === null) return;
-    // The flash is the local player's own eyes, and the overlay below their own screen.
-    if (slot === this.viewed) this.screenEffects.addPain(amount);
+    this.overlays.hurt(slot, amount);
     if (health <= 0) {
       const death = playerDeath(health, this.gameMode);
       // The cause is kept on the slot, whoever is drawn: the overlay can go up long after the
@@ -1877,11 +1747,8 @@ export class Game {
           if (killer !== slot.index) this.announceKillsLeft(this.slots[killer]);
         }
       }
-      // Everyone's feed, in a game with someone else to read it; the overlay below is the victim's.
-      if (this.netgame) {
-        const killer = hit.slot !== undefined && hit.slot !== slot.index ? this.slotName(this.slots[hit.slot]) : null;
-        this.messages.show(...deathLine(this.slotName(slot), killer));
-      }
+      const killer = hit.slot !== undefined && hit.slot !== slot.index ? this.slots[hit.slot] : null;
+      this.overlays.deathLine(slot, killer);
       // Dying on an `exitBelowHealth` floor ends the level whatever killed the player, not only
       // when that floor's own damage did it — E1M8's pit is the ending, and a baron finishing the
       // job there must not leave the episode unwon. Set before the overlay below, which
@@ -1890,10 +1757,8 @@ export class Game {
       if (sectorEffects.exitsOnDeath(world, player)) this.pendingExit = 'normal';
       // docs/audio.md § Player and pickups.
       this.audio.play(death.sound, player, playerOrigin(slot.index));
-      // The hint depends on what `R` will actually do — reload a savegame or restart the level —
-      // and under a playback `R` is the record's rather than the viewer's, so there is nothing to
-      // offer (docs/death.md § Player death).
-      if (slot === this.viewed) this.armDeathOverlay();
+      // The overlay is the victim's own screen. docs/death.md § Player death.
+      if (slot === this.viewed) this.overlays.armDeathOverlay();
       return;
     }
     this.audio.play('plpain', player, playerOrigin(slot.index));
@@ -1921,10 +1786,7 @@ export class Game {
       camera.snapTo(slot.player.followPoint());
     });
     slot.autoCamera.seed(slot.player, slot.simCamera);
-    if (slot === this.viewed) {
-      this.deathOverlay.clear();
-      this.screenEffects.clearPain();
-    }
+    this.overlays.respawned(slot);
   }
 
   /**
@@ -2002,14 +1864,10 @@ export class Game {
   }
 
   /**
-   * The cue a message announces itself with — vanilla's chat message's: `hu_stuff.c` plays
-   * `sfx_radio` in a commercial game and `sfx_tink` otherwise. docs/audio.md § Cues.
+   * Which line the death overlay offers: what `R` will actually do — reload a savegame or restart
+   * the level — and nothing under a playback, where `R` is the record's rather than the viewer's
+   * (docs/death.md § Player death).
    */
-  private get messageCue(): SfxId {
-    return this.gameMode === 'commercial' ? 'radio' : 'tink';
-  }
-
-  /** Which line the death overlay offers — nothing under a playback, where `R` is the record's. */
   private deathHint(): DeathHint {
     if (this.playback) return 'none';
     if (this.netgame) return 'respawn';
@@ -2027,19 +1885,6 @@ export class Game {
   }
 
   /**
-   * Arms the death overlay over {@link Game.viewed}'s corpse, naming what killed them
-   * ({@link PlayerSlot.deathCause}) — nothing while that player lives, once the level is on its way
-   * out, or over an end-of-level popup, which outlives that window (docs/death.md § Dying on the
-   * way out).
-   */
-  private armDeathOverlay(): void {
-    const { viewed } = this;
-    if (!viewed.dead || this.levelEnding || this.popup !== null) return;
-    const killer = obituary(viewed.deathCause, (slot) => this.playerName(slot));
-    this.deathOverlay.show(killer, this.deathHint(), viewed.deathFrames);
-  }
-
-  /**
    * Whatever was typed this tic, the one response a completed code prints, and the level an
    * IDCLEV asked for.
    *
@@ -2051,7 +1896,7 @@ export class Game {
     if (!typed) return;
     const response = slot.cheats.type(typed, slot.inventory, this.gameMode);
     if (response) {
-      if (slot === this.viewed) this.message.show(response);
+      this.overlays.cheatResponse(slot, response);
       this.cheated = true;
     }
     const warp = slot.cheats.takeWarp();
@@ -2069,7 +1914,7 @@ export class Game {
     const targets = warpTargets(warp, this.currentMap);
     const index = targets.map((name) => this.mapNames.indexOf(name)).find((at) => at >= 0);
     if (index === undefined) {
-      this.message.show(`No such level: ${targets[0]}`);
+      this.overlays.say(`No such level: ${targets[0]}`);
       return;
     }
     slot.cheats.warped();
@@ -2188,15 +2033,8 @@ export class Game {
    * can't carry straight through this one. docs/hud.md § End card.
    */
   private showEndCard(scope: EndScope): void {
-    this.intermission.clear();
-    this.endCard.show({
-      scope,
-      // Still the level just finished — `enterLevel` is what moves on, and it hasn't run yet.
-      episodeGraphic: this.levelNames.episodeGraphicFor(this.currentMap),
-      subtitle: this.title,
-      continues: this.nextMapIndex >= 0,
-      hint: this.continueHint,
-    });
+    // Still the level just finished — `enterLevel` is what moves on, and it hasn't run yet.
+    this.overlays.showEndCard(scope, this.currentMap, this.nextMapIndex >= 0);
     this.popup = 'endcard';
     this.intermissionTime = 0;
     // `F_StartFinale`'s own music change, over the intermission track that is playing by now.
@@ -2246,8 +2084,8 @@ export class Game {
     this.recorder?.restore(restore.map, restore.state);
     this.buildLevel(index, restore.state);
     this.cheated = restore.state.cheated;
-    // After the build, whose `clearOverlays` would take it straight down again.
-    if (joinEndsRecording) this.messages.show('recording ended: a player joined');
+    // After the build, whose `beginLevel` would take it straight down again.
+    if (joinEndsRecording) this.overlays.note('recording ended: a player joined');
     return true;
   }
 
@@ -2310,7 +2148,7 @@ export class Game {
     // holds rather than owing tics (docs/multiplayer-net.md § Lockstep).
     const playback = this.playback;
     const stalled = this.net !== null && !this.net.ready();
-    // A restore that ended the session has had `main.ts` dispose this `Game` meanwhile.
+    // A restore that ended the session has had `session/room.ts` dispose this `Game` meanwhile.
     if (this.disposed) return;
     const held = stalled || (playback !== null && (playback.paused || playback.ended));
     this.accumulator += held ? 0 : rawDt * (playback?.speed ?? 1);
@@ -2389,7 +2227,7 @@ export class Game {
         return false;
       }
       // Nothing follows the card on the last level of a set: the session is over, and the callback
-      // (main.ts) tears this `Game` down and reopens the menu.
+      // (`session/session.ts`) tears this `Game` down and reopens the menu.
       if (this.nextMapIndex < 0) {
         this.onCampaignEnd?.();
         return true;
@@ -2460,13 +2298,10 @@ export class Game {
       }
     });
     // The `oof` a refused keyed line already played is raised inside `specials`; the message that
-    // says *which* key it wants is this layer's, since that controller has no HUD — and the local
-    // player's own screen.
+    // says *which* key it wants is the overlays', since that controller has no HUD.
     for (const slot of this.slots) {
       const locked = this.level.specials.consumeLockedLine(slot.index);
-      if (locked && slot === this.viewed) {
-        this.message.show(...lockedLineMessage(locked.lock, locked.kind));
-      }
+      if (locked) this.overlays.lockedLine(slot, locked);
     }
     this.checkDeathmatchLimits();
     // Deferred from the exit trigger's callback (`pendingExit`): the popup goes up on the level as
@@ -2476,20 +2311,11 @@ export class Game {
       // Before `pendingExit` is cleared, which is half of what `levelEnding` reads. Catches a
       // death that beat the exit here rather than at the boss-death fan-out: an exit-line
       // walk-over is queued and consumed with nothing in between, but a crusher can kill between.
-      this.endingOverCorpse();
+      this.overlays.endingOverCorpse();
       this.pendingExit = null;
-      // A center message goes with the level it was raised on, not over its result.
-      this.message.clear();
       // The cheated popup reads the *same* flag that already refuses a best time — a run that
       // can't set one has nothing worth stating (docs/cheats.md § Saves and best times).
-      this.intermission.setContinueHint(this.continueHint);
-      // A deathmatch's result is the board alone (docs/multiplayer-deathmatch.md § Scoreboard and
-      // the overlay).
-      if (this.deathmatch) {
-        this.intermission.showDeathmatch();
-      } else {
-        this.intermission.show(this.level.stats(), this.recordCompletion(), this.parFor(), this.cheated);
-      }
+      this.overlays.showIntermission(this.recordCompletion(), this.parFor(), this.cheated);
       // Vanilla's own `S_ChangeMusic(mus_inter)` at the intermission, keeping
       // the level's track when the set has no intermission lump.
       const between = this.levelMusic.intermissionTrackFor(this.currentMap);
@@ -2777,10 +2603,8 @@ export class Game {
       if (!left || sound === 'wpnup') {
         this.audio.play(sound);
       }
-      // After `applyPickup`, which the medikit's line reads the health left by.
-      const line = pickupLine(type, slot.inventory);
-      if (line !== null) this.messages.show(line);
     }
+    if (taken) this.overlays.pickedUp(slot, type);
     return taken && !left;
   }
 
@@ -2800,12 +2624,8 @@ export class Game {
       (amount) => this.damageSlot(slot, amount, { cause: 'slime' }),
       slot.index,
     );
-    // The count is the level's; the announcement is the local player's own screen.
-    if (sectorEffect.secretFound && slot === this.viewed) {
-      this.message.show(SECRET_MESSAGE);
-      // Unattenuated, like a pickup: it's an announcement to the player, not a sound in the world.
-      this.audio.playCue('secret');
-    }
+    // The count is the level's; the announcement is the finder's own screen.
+    if (sectorEffect.secretFound) this.overlays.secretFound(slot);
     // A damage floor that ends the level never leads to the secret exit
     // (vanilla's sector type 11 calls `G_ExitLevel`, not `G_SecretExitLevel`).
     if (sectorEffect.exit) this.pendingExit = 'normal';
@@ -2858,23 +2678,17 @@ export class Game {
   private announceTimeLeft(): void {
     if (this.levelEnding) return;
     const countdown = timeLimitCountdown(this.levelTics, this.timeLimit);
-    if (countdown !== null) this.announce(timeLeftMessage(countdown));
+    if (countdown !== null) this.overlays.announceTimeLeft(countdown);
   }
 
   /**
-   * The center message a kill that brought `slot` within reach of the kill limit raises — the
-   * viewer's own in the second person. docs/multiplayer-deathmatch.md § Limits.
+   * A kill that brought `slot` within reach of the kill limit is announced.
+   * docs/multiplayer-deathmatch.md § Limits.
    */
   private announceKillsLeft(slot: PlayerSlot): void {
     const left = killsToLimit(slot.netFrags(), this.fragLimit);
     if (left === null || this.levelEnding) return;
-    this.announce(...killsLeftMessage(slot === this.viewed ? null : this.slotName(slot), left));
-  }
-
-  /** A center message with its tick ({@link Game.messageCue}): how a deathmatch's limits speak. */
-  private announce(...runs: TextRun[]): void {
-    this.message.show(...runs);
-    this.audio.playCue(this.messageCue);
+    this.overlays.announceKillsLeft(slot, left);
   }
 
   /** What the HUD clock reads in place of the time spent: a deathmatch time limit's time left. */

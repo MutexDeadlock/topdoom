@@ -95,7 +95,7 @@ a note is keyed on and the rendered samples are measured, which is how "a releas
   `SpriteAnimator.resolve`, so a stubbed run would test the stubs. Test at `shotPath`/`aimSlope`
   level, or through `tests/fixtures/shotrig.ts` (§ Shared helpers), whose stub bank resolves the
   sprites it fires.
-- **`src/render/` (anything that needs a GL context), `src/ui/`, `main.ts`, `game.ts`,
+- **`src/render/` (anything that needs a GL context), `src/ui/`, `main.ts`, `session/`, `game.ts`,
   `audio/audio.ts`, `audio/music.ts`** — need a DOM or a renderer. Three carve-outs: `render/bsp.ts`
   *is* covered, being pure geometry despite where it lives; so is any pure helper a DOM module
   happens to export — `tests/ui/hud.test.ts` covers `hud.ts`'s `formatClock`/`percentOf` while `Hud`

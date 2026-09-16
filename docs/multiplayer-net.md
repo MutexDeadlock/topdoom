@@ -2,7 +2,7 @@
 
 `src/game/net.ts` over `src/game/net/` — `defs.ts` (the peer messages, the dials),
 `transport.ts`, `lockstep.ts`, `session.ts`, `seat.ts` (the level's side of a session, `NetSeat`);
-the seam in `src/game.ts` and `src/main.ts`; the tab
+the seam in `src/game.ts` and `src/session/room.ts`; the tab
 in `src/ui/menu/multiplayer.ts`; the relay in `server/`
 
 Coop across browsers: every browser runs the whole simulation (docs/multiplayer-coop.md) in
@@ -84,7 +84,7 @@ sees it — a malformed one is dropped, never half-applied:
 |---|---|---|
 | `hello {name, color, settings, build, compat}` | joiner | who this is; a `compat` ≠ the host's is refused, a name `nameRefusal` rejects kicked (§ The session) |
 | `lobby {game, session, delay, peers, playing}` | host | the room as it stands, after every change |
-| `ready {refusal}` | joiner | whether its library can play `game`'s set (`main.ts`'s `setRefusal`) |
+| `ready {refusal}` | joiner | whether its library can play `game`'s set (`Room`'s `setRefusal`) |
 | `color {color}` | joiner | its armour colour, picked again in the lobby |
 | `start {slots, session, delay}` | host | the game begins: who holds which slot |
 | `input {slot, tic, row, settings?}` | everyone | one row for `tic`, with the slot's player settings when they changed |
@@ -112,11 +112,11 @@ stay out of a network game (`ST_Responder`'s `!netgame`, `st_stuff.c`).
 
 ## The session
 
-`NetSession` is one browser's seat, built by `main.ts` on Host or Join and handed to `Game` as
-`GameOptions.net`. Its `NetHooks` are `main.ts`'s: `setRefusal` (the menu's WAD gate over the
-host's set), `startGame` (the level, fresh or from a snapshot), `changed` (the tab redraws),
-`backInLobby` (the game is over, the room kept), `ended` (the room closed, the connection dropped,
-a refusal).
+`NetSession` is one browser's seat, built by the `Room` (`session/room.ts`) on Host or Join and
+handed to `Game` as `GameOptions.net`. Its `NetHooks` are the `Room`'s: `setRefusal` (the menu's
+WAD gate over the host's set), `startGame` (the level, fresh or from a snapshot), `changed` (the
+tab redraws), `backInLobby` (the game is over, the room kept), `ended` (the room closed, the
+connection dropped, a refusal).
 
 Phases: `lobby` → `loading` (`start` or a join's snapshot; the level is building) → `playing`
 (`NetSeat.bind` calls `attach`) → `ended`. `gameRunning` is `loading` or `playing`. `endGame` (the
@@ -226,12 +226,12 @@ the feed says so once the level is rebuilt.
   `kicked`, with the host's reason where it gave one. Nothing keeps it from joining again with the code.
 - **The host leaving** closes the room (`closed`): every peer's session ends, and its level with it.
 - **A session ending ends its level** — the menu's Leave or Close room, the room closed, a kick, a
-  drop, the connection lost, a snapshot of a map these WADs lack (`NetSession.end`): `main.ts`'s
-  `leaveNet` disposes the `Game` (`Game.networked`) and the menu opens as a launcher; an end the
+  drop, the connection lost, a snapshot of a map these WADs lack (`NetSession.end`): the `Room`'s
+  `leave` disposes the `Game` (`Game.networked`) and the menu opens as a launcher; an end the
   player did not choose lands on the Multiplayer tab, the reason in the status line. Nobody plays
   a network game's level on alone. A session that ends while its level loads starts none; a level
   of the player's own behind a lobby is left alone. A start of the player's own (New Game, Load, a
-  replay) leaves a lobby first; **while the game runs (`gameRunning`) it is refused** — `main.ts`'s
+  replay) leaves a lobby first; **while the game runs (`gameRunning`) it is refused** — `Room`'s
   `startRefusal`, greyed in the menu with `Multiplayer game running` as the tab's hint
   (docs/menu.md § One screen, two jobs).
 - **Back to the lobby**: the host's **End game** (the Multiplayer tab, held) and the campaign's end
@@ -239,8 +239,8 @@ the feed says so once the level is rebuilt.
   level wherever it still runs — a peer short of the host's last tic included, whose frame would
   otherwise hold forever on a scheduler that is gone — and opens the menu on the Multiplayer tab.
   The room, its code and its players stay; the host picks the next game on the New Game tab
-  (§ The Multiplayer tab). A level still loading for the ended game starts nothing (`netStarts`,
-  `main.ts`). A deathmatch's limits end a level, not the game (docs/multiplayer-deathmatch.md
+  (§ The Multiplayer tab). A level still loading for the ended game starts nothing
+  (`Room.starts`). A deathmatch's limits end a level, not the game (docs/multiplayer-deathmatch.md
   § Limits).
 
 ## Settings
@@ -261,7 +261,7 @@ the feed says so once the level is rebuilt.
 
 ## The Multiplayer tab
 
-`ui/menu/multiplayer.ts` (`MultiplayerUi`), `MultiplayerHooks` in `main.ts`
+`ui/menu/multiplayer.ts` (`MultiplayerUi`), `MultiplayerHooks` in `session/room.ts` (`Room.hooks`)
 (docs/session.md § Session lifecycle); the tab sits between Load and Replays:
 
 - **Relay URL**, **Your name** and **Color** fields; the relay URL is the `relayUrl` setting
@@ -276,7 +276,7 @@ the feed says so once the level is rebuilt.
   (`netGameOf`: `wadSetOf`, as `captureSave` reads it), then the room. **Back on the tab, a host
   in the lobby hands the room the New Game tab's pick again** (`announce` → `NetSession.setGame`):
   another set or skill has every peer check it again, a session setting alone is only shown, an
-  unchanged pick sends nothing — `main.ts` reads the WADs again only when the sources, level or
+  unchanged pick sends nothing — the `Room` reads the WADs again only when the sources, level or
   skill changed (`pickKey`), and Start waits meanwhile. A check, not a vote: a player who doesn't
   want to play it leaves. A game under way keeps what it started with. **Room code** + **Join**.
 - The room: its code, `phaseText`, the facts (level, skill, WADs, rules — deathmatch, its limits,

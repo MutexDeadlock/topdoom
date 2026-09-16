@@ -128,7 +128,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   `installDropTarget` routes `.json` to the importer and everything else to `addFiles` as before.
 - Every failure — quota, version, missing WAD — lands in the shared `#menu-status` line;
   `SavegamesUi` never touches the running game. The three hooks (`onSave`, `onOverwrite`, `onLoad`)
-  are `main.ts`'s (docs/session.md § Session lifecycle), which owns the `Game` instance and
+  are the `Session`'s (docs/session.md § Session lifecycle), which owns the `Game` instance and
   the selection the save records; the first two share one `withCapture` body, which hands its store
   call to `Game.saveVia` — the capture, the write and what a stored save makes `R` reload all belong
   to `Game` (docs/death.md § Player death), so the session layer contributes only the writer. A

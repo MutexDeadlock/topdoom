@@ -2,7 +2,7 @@
  * {@link NetSession}: one browser's seat in a network game — the lobby through the relay, then the
  * lockstep run: every slot's rows served as its input, the local slot's sampled and sent ahead, the
  * host's desync samples, and the snapshot a join or a resync lands on. `game.ts` reads it per tic;
- * `main.ts` builds it and answers its hooks. docs/multiplayer-net.md.
+ * `session/room.ts` builds it and answers its hooks. docs/multiplayer-net.md.
  */
 import type { TicInput } from '../input.ts';
 import { CHECK_INTERVAL, checkCoord, type PlayerSettings } from '../replay/defs.ts';
@@ -43,7 +43,7 @@ import type { Transport } from './transport.ts';
  */
 export type NetPhase = 'lobby' | 'loading' | 'playing' | 'ended';
 
-/** What the session needs from the page around it — `main.ts` answers these. */
+/** What the session needs from the page around it — `session/room.ts` answers these. */
 export interface NetHooks {
   /** Why this browser cannot play `game`'s set, or null — the menu's own WAD gate. */
   setRefusal(game: NetGame): string | null;

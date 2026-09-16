@@ -57,7 +57,7 @@ import {
 } from '../../game/savegames.ts';
 import { getProfilerVisible, setProfilerVisible } from '../hud/profiler.ts';
 import { getHudMessageMode, setHudMessageMode, type HudMessageMode } from '../hud/messages.ts';
-import { getDebugInfo, getFpsVisible, setDebugInfo, setFpsVisible } from '../devmode/debughud.ts';
+import { getDebugInfo, getFpsVisible, setDebugInfo, setFpsVisible } from '../hud/debug.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import { FIRST_RUN_WADS, VERSION } from '../../constants.ts';
 
@@ -78,8 +78,8 @@ export interface MenuDefaults {
 }
 
 /**
- * What the menu's owner (main.ts) does with what the player asks of it — the menu itself never
- * touches the running game.
+ * What the menu's owner (session/session.ts) does with what the player asks of it — the menu
+ * itself never touches the running game.
  */
 export interface MenuHooks {
   /**
@@ -108,9 +108,9 @@ const el =<T extends HTMLElement>(id: string) => document.getElementById(id) as 
 export type MenuTab = 'newgame' | 'save' | 'load' | 'multiplayer' | 'replays' | 'settings';
 
 /**
- * What is running behind the menu, as `main.ts` tells {@link Menu.open} and the tabs it. `'replay'`
- * is a level like `'game'` in every way but one: a replay can be watched again, so nothing that
- * replaces it is held to confirm. docs/menu.md § One screen, two jobs.
+ * What is running behind the menu, as the session tells {@link Menu.open} and the tabs it.
+ * `'replay'` is a level like `'game'` in every way but one: a replay can be watched again, so
+ * nothing that replaces it is held to confirm. docs/menu.md § One screen, two jobs.
  */
 export type MenuSession = 'none' | 'game' | 'replay';
 
@@ -1495,8 +1495,8 @@ export class Menu {
     if (!selection) return Promise.resolve();
     // Reached synchronously, before the first `await`, while the click's transient activation is
     // still live: a browser refuses a file-permission prompt raised any later, and the set may
-    // include a library file whose folder needs re-granting. The same trick `main.ts` uses for
-    // `audio.resume()` — docs/session.md § Session lifecycle.
+    // include a library file whose folder needs re-granting. The same trick
+    // `Session.startLevel` uses for `audio.resume()` — docs/session.md § Session lifecycle.
     const access = this.needsLibraryAccess() ? wadlib.ensureLibraryAccess() : Promise.resolve(true);
     this.startButton.disabled = true;
     // The level being replaced is disposed part-way through this, so there is

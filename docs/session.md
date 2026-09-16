@@ -1,19 +1,19 @@
 # Session lifecycle and the loading screen
 
-`src/main.ts`, `src/ui/loading.ts` + `loading.html` + `loading.css`, `src/game.ts`
+`src/main.ts`, `src/session/session.ts` + `room.ts`, `src/ui/loading.ts` + `loading.html` +
+`loading.css`, `src/game.ts`
 
-What `boot()` builds once for the whole page, and what every level start tears down and replaces.
-The frame loop inside a running `Game` is docs/frameloop.md; the menu that starts one is
-docs/menu.md.
+What `boot()` builds once for the whole page, what the `Session` does at every level start, and
+what a start tears down and replaces. The frame loop inside a running `Game` is docs/frameloop.md;
+the menu that starts one is docs/menu.md.
 
-## Session lifecycle (`main.ts`)
+## Boot (`main.ts`)
 
 `boot()` creates everything that must outlive a level exactly once — `Viewport` (one WebGL context
-and one canvas for the whole page), `AudioEngine` (one `AudioContext`), the `Menu`, and the `ESC`
-listener — and holds a single mutable `game: Game | null`. A `Game` is per-WAD-set/per-level and is
-built to be thrown away and replaced.
-
-Rules that hold this together:
+and one canvas for the whole page), `AudioEngine` (one `AudioContext`), the `LoadingScreen` and the
+`Session` (which builds the `Menu` and the network `Room`) — parses the URL parameters
+(docs/menu.md § URL parameters), binds the page's own keys (`ESC`, Tab, F2/F3/F4, the reload
+confirmation) and hands the screen to the menu or to a `?map=` deep link.
 
 - **The page boots showing `#loading`, not the HUD.** Every other overlay is in the markup already
   `hidden`; the boot screen (`ui/loading.html`) is the one that starts visible, because the static
@@ -29,13 +29,29 @@ Rules that hold this together:
   on `Loading …` forever, which reads as "hung" rather than "your browser can't run this". The
   GPU-specific message is only shown when the error actually looks like a WebGL failure, so an
   unrelated bug isn't misreported as a GPU problem.
+- **`ESC` is one window listener**, which asks `Menu.closeTopOverlay()` before pausing the level
+  and opening the menu, or resuming (docs/menu.md § The overlays over the menu); F2/F3/F4 open one
+  tab the same way (docs/menu.md § Hotkeys). The session exposes what those need —
+  `menuSession`, `pauseGame`, `openMenu`, `resumeGame` — and nothing else about the level.
+
+## Session lifecycle (`session/session.ts`)
+
+`Session` holds a single mutable `game: Game | null` — a `Game` is per-WAD-set/per-level and is
+built to be thrown away and replaced — the `Menu`, whose hooks it answers, and the `Room`
+(`session/room.ts`), which answers the Multiplayer tab's and the network session's
+(docs/multiplayer-net.md § The session). Every start — New Game, a load, a replay, a network
+game — is one `startLevel`.
+
+Rules that hold this together:
+
 - **A finished campaign ends the session.** `Game` takes an `onCampaignEnd` port, called when
   the end card's continue key has nowhere left to go (docs/hud.md
-  § End card). The handler nulls `game` *before* disposing it — the call arrives from inside that
-  very `Game`'s tic — and reopens the menu with `open('none')`, as a launcher: there is no returning
-  to a run that is over. A network game's lands on the Multiplayer tab, over the room's lobby.
+  § End card). `Session.campaignEnded` nulls `game` *before* disposing it — the call arrives from
+  inside that very `Game`'s tic — and reopens the menu with `open('none')`, as a launcher: there is
+  no returning to a run that is over. A network game's (`Room.campaignEnded`) lands on the
+  Multiplayer tab, over the room's lobby.
 - **A reload during a run of the player's own is confirmed** (`beforeunload`, armed only while
-  `session()` is `'game'` and the menu is closed): nothing in a running level survives it — the
+  `menuSession()` is `'game'` and the menu is closed): nothing in a running level survives it — the
   checkpoint is kept in memory, and a recording sits in its recorder until a teardown
   stores it (docs/replays.md § Recording). The guard catches a missed F3/F4 mid-fight; with the
   menu open a reload is deliberate and goes straight through, even over a paused level. The browser
@@ -48,7 +64,7 @@ Rules that hold this together:
   constructor that throws (a WAD with no maps, a mesh build failure) would otherwise leave `game`
   pointing at a *disposed* instance, and both "Return to game" and the `ESC` handler key off it
   being non-null — resuming it restarts a render loop over released GPU resources. On failure the
-  menu stays open, shows the error, and is re-synced with `open(session())` so it stops offering a
+  menu stays open, shows the error, and is re-synced with `openMenu()` so it stops offering a
   return.
 - **"Return to game" is disabled for the duration of a start** (`startWithSkill`), since the level
   it would return to is disposed part-way through.
@@ -61,9 +77,10 @@ Rules that hold this together:
   a joiner, the host's snapshot (`restore`): the host's set is verified like a save's and `Game`
   gets the session as `net` (docs/multiplayer-net.md § The session). A start of the player's own
   — New Game, Load, a replay — leaves a lobby first and is refused while the game runs
-  (`startRefusal`); End game and the campaign's end hand the room back to its lobby (`endGame`,
-  `backInLobby`), the menu on the Multiplayer tab. The session ending — left, closed, lost — disposes its level and reopens
-  the menu as a launcher (`leaveNet`, docs/multiplayer-net.md § Leaving).
+  (`Room.startRefusal`); End game and the campaign's end hand the room back to its lobby
+  (`Room.endLevel`), the menu on the Multiplayer tab. The session ending — left, closed, lost —
+  disposes its level and reopens the menu as a launcher (`Room.leave`,
+  docs/multiplayer-net.md § Leaving).
 - **A load is the same `startLevel`**, given the save (`LevelSource.save`): it verifies the
   assembled set's game WAD and map provider against the save's own IDs (`verifySaveWads`, over
   `wadSetRefusal` — docs/savegames.md § WAD-set identity) and hands `Game` the snapshot instead of
@@ -119,9 +136,9 @@ know. Four rules follow:
 
 - **The load is parked, not awaited.** `pendingLoad` holds the caller's own body as a thunk; the tic
   ends, the browser paints, and the next `frame` runs it. Merely awaiting would let the loop keep
-  simulating tics into a level about to be replaced. `main.ts` has no loop of its own yet, so its
-  own first load uses `LoadingScreen.painted` instead — the same "let it paint first" rule, one
-  frame at a time rather than one load.
+  simulating tics into a level about to be replaced. `Session.startLevel` has no loop of its own
+  yet, so its own first load uses `LoadingScreen.painted` instead — the same "let it paint first"
+  rule, one frame at a time rather than one load.
 - **That frame runs ahead of the FPS cap**, or a capped frame would skip it and leave the overlay up
   for nothing.
 - **It resyncs the frame clock afterwards** (`resyncClock`, shared with `resume`): build time is not

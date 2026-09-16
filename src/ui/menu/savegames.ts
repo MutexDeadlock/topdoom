@@ -36,7 +36,7 @@ import type { MenuSession } from './menu.ts';
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /**
- * What the menu's owner (main.ts) does with a save request/pick — the UI itself
+ * What the menu's owner (session/session.ts) does with a save request/pick — the UI itself
  * never touches the running game. A refusal is a thrown `Error` whose message
  * is shown in the status line, the same contract the store itself uses.
  */

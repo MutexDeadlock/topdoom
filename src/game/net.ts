@@ -11,6 +11,7 @@ export {
   nameRefusal,
   type LobbyPeer,
   type NetGame,
+  type NetNotice,
   type NetRestore,
   type NetRules,
   type SlotAssignment,

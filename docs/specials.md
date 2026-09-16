@@ -322,7 +322,7 @@ the case that matters on E1M8's own sector 66 — a full-health player, whose 10
 walk straight down through 20 to 0, exits on the pulse that kills them. Requiring them to still be
 alive left that player dead in the pit with the level never ending, which is the one way most
 players meet this sector. The corpse still gets its exit: `pendingExit` is queued on the same frame
-and `Game.endingOverCorpse` takes the death overlay back down (docs/death.md § Dying on the way
+and `Overlays.endingOverCorpse` takes the death overlay back down (docs/death.md § Dying on the way
 out).
 
 **A death from anything else in that sector ends the level too** — `SectorEffects.exitsOnDeath`,

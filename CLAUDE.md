@@ -70,8 +70,11 @@ src/render/    BSP polygon reconstruction (bsp, sectorprobe), the solids a map d
                (playerskin), the blob shadow (playershadow), wall contact shading (wallshadow), the
                sky tint (skytint), the void fog (voidfloor), bloom, GLDEFS dynamic lights (lights/),
                shot tracers, camera, viewport, the GPU's own frame time (gputimer)
-src/game/      the loaded level (level), what a frame draws (presenter), spatial queries +
-               collision, player controller, player slots (playerslot), input, where players start
+src/session/   what outlives a level: the menu, the running Game, every level start (session),
+               the network room as the page runs it (room)
+src/game/      the loaded level (level), what a frame draws (presenter), the 2D layers the tic
+               raises over it (overlays), spatial queries + collision, player controller, player
+               slots (playerslot), input, where players start
                (playerstarts), the auto camera, what each skill level changes (skill), thing world
                state, monsters (AI, attacks, the
                arch-vile), fog of war, inventory/pickups, weapons and firing, shots in flight +
@@ -84,9 +87,8 @@ src/audio/     vanilla's sound table, the emitter game systems raise sounds thro
 src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens);
                hud/ the in-game overlays (status bar, crosshair, level card, intermission, end
                card, death overlay, center message, the message feed, screen effects, the replay
-               bar), menu/ the
-               launcher and pause screen (WAD Library, Save/Load, Replays, settings), devmode/ the
-               status text and debug hotkeys
+               bar, the debug status text), menu/ the
+               launcher and pause screen (WAD Library, Save/Load, Replays, settings)
 src/util/      helpers shared across layers: 2D geometry plus the aim ray's box test (geom), the
                smoothing curves (damping: the damped-lerp approach and the Hermite ease), GLSL
                float literals (glsl), per-frame profiling, IndexedDB request plumbing (idb, shared
@@ -119,7 +121,7 @@ and aren't. A row naming a family links its lead doc, which names the siblings.
 | [wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD override rules, level names, the `public/game/` manifest |
 | [dehacked.md](docs/dehacked.md) | DEHACKED/BEX patches: the record grammar, the index bridges, units, `Bits`, the unsupported corners |
 | [menu.md](docs/menu.md) → docs/menu-wads.md, docs/menu-saves.md | Launcher and pause screen, panel sizing, settings and their storage, URL parameters; the WAD Library and what a set is; the Save/Load/Replays tabs |
-| [session.md](docs/session.md) | `main.ts`: boot, what a level start tears down, the loading screen |
+| [session.md](docs/session.md) | `main.ts` and `session/`: boot, what a level start tears down, the loading screen |
 | [devmode.md](docs/devmode.md) | `DEVMODE`, the FPS counter, the profiling overlay and the GPU timer |
 | [frameloop.md](docs/frameloop.md) | `game.ts`'s frame: the delta, the FPS cap, pausing |
 | [render.md](docs/render.md) | Mesh building, mover meshes, closed holes, deep water, what a frame costs, view distance, texture animation |

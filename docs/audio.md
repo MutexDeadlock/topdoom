@@ -298,8 +298,8 @@ the same every time. That is a **deviation** where vanilla has the sound at all:
 | Entering a secret sector, beside the center message (docs/hud.md § Center messages) | `secret` |
 | The master and sfx sliders, dragged (docs/menu.md § Settings tab) | `itemup` |
 
-**The message cue** (`Game.messageCue`) is vanilla's chat message's: `hu_stuff.c` plays `sfx_radio`
-in a commercial game and `sfx_tink` otherwise.
+**The message cue** (`Overlays.messageCue`) is vanilla's chat message's: `hu_stuff.c` plays
+`sfx_radio` in a commercial game and `sfx_tink` otherwise.
 
 **The `secret` chime** is this engine's own addition — vanilla plays no sound for a secret at all.
 It is a lump of the WAD the engine ships, not of any game WAD: `audio.ts`'s `ASSETS` table maps it

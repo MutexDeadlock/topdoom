@@ -68,8 +68,8 @@ const NO_LEVEL_TOOLTIP = 'Nothing to record yet — start or load a level first.
 const STOCK_HINT = 'Ships with TopDoom; it cannot be edited or deleted.';
 
 /**
- * What the menu's owner (main.ts) does with a replay request — the UI never touches the running
- * game. A refusal is a thrown `Error` whose message is shown in the status line.
+ * What the menu's owner (session/session.ts) does with a replay request — the UI never touches
+ * the running game. A refusal is a thrown `Error` whose message is shown in the status line.
  */
 export interface ReplayHooks {
   /** Tears down the current session and plays `replay` from its start. */

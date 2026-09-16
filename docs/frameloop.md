@@ -177,6 +177,14 @@ Presentation only — it advances no gameplay state. The camera pose, the sprite
 overlays, the occlusion and fog *fades*, the texture scroller and animator, and the render call.
 These take `rawDt`, not `DOOM_TIC`: they are measuring real frames.
 
+**The 2D layers are `Overlays` (`game/overlays.ts`)**: the status bar, the crosshair, the playback
+bar, the messages, the level card, the popups, the death overlay, the scoreboard and the screen
+effects. `Presenter.draw` updates them once the camera is posed (`Overlays.update`); the tic
+raises them through `Overlays`' own methods — `secretFound`, `deathLine`, `showIntermission` —
+which decide whose screen a line lands on (the viewed player's), so `game.ts` reports what
+happened to which slot and never asks who is watching. Raising is one-way: nothing in a tic reads
+an overlay back.
+
 ## Interpolation
 
 Everything drawn carries where it was at the end of the previous tic, and `draw` emits

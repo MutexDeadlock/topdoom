@@ -162,7 +162,7 @@ pressed Record is told about recording rather than about saving).
 Started by the New Game tab's "Record a replay" (`Selection.record`, right after construction and
 before the first tic) or the pause menu's "Record from here". Ended by "Stop recording", or by the
 session — a new start, the campaign's end — which stores whatever was still recording before the
-`Game` is disposed (`main.ts: storeRecording`). Each restore event that targets a new snapshot
+`Game` is disposed (`Session.storeRecording`). Each restore event that targets a new snapshot
 embeds it whole; the same snapshot restored twice is stored once.
 
 **"Cancel recording" is the same end with the capture dropped** (`onCancelRecording`, hold to

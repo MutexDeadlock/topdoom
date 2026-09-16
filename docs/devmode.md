@@ -1,6 +1,6 @@
 # Dev mode, the status text and the profiling overlay
 
-`src/constants.ts: DEVMODE`, `src/ui/devmode/debughud.ts`, `src/ui/hud/profiler.ts`,
+`src/constants.ts: DEVMODE`, `src/ui/hud/debug.ts`, `src/ui/hud/profiler.ts`,
 `src/util/profiler.ts`, `src/render/gputimer.ts`
 
 The three diagnostics drawn over a running level — the fps counter, the debug block behind it and
@@ -17,7 +17,8 @@ needed).
 a dev build opens with all three on, a shipped one with none — and a stored choice overrides it
 either way, so every diagnostic here is reachable in any build. No key, no cheat and no game
 behavior is behind it: jumping to another map is IDCLEV (docs/cheats.md § IDCLEV), and the camera's
-`+`/`-` and `[`/`]` are player-facing framing controls `handleHotkeys` holds for every build.
+`+`/`-` and `[`/`]` are player-facing framing controls, held for every build beside the camera mode
+they read (docs/camera.md § Auto camera).
 
 ## FPS counter
 
@@ -26,14 +27,14 @@ behavior is behind it: jumping to another map is IDCLEV (docs/cheats.md § IDCLE
 sound channels, camera. Either one alone keeps the element up, and with the counter off the debug
 block simply omits its figure (`Presenter.debugLines` takes `fps: number | null`).
 
-Both are `debughud.ts`'s own (`fps`, `getFpsVisible`/`setFpsVisible`; `debuginfo`,
+Both are `debug.ts`'s own (`fps`, `getFpsVisible`/`setFpsVisible`; `debuginfo`,
 `getDebugInfo`/`setDebugInfo`), both **default to `DEVMODE`**, and both are memoized: `DebugHud.update`
 asks each every frame. That is the rule the profiling overlay follows too, and for the same reason:
 all three are diagnostics a player may want and none should be on top of a shipped game unasked.
 
 `applyHudVisible` is the single writer of `#hud`'s `visible` class and reads both settings, called by
 `DebugHud`'s constructor to seed it for the level starting and by either checkbox to change it live;
-debughud.css shows the element by that same class, and **`DebugHud.update` early-returns on it**, so
+debug.css shows the element by that same class, and **`DebugHud.update` early-returns on it**, so
 a hidden text costs no per-frame DOM write and never runs the `details` closure. The frame
 *counting* ahead of that return is not gated — three arithmetic operations, and skipping them would
 make a counter switched on mid-level read a rate built from its first half second.
@@ -143,8 +144,8 @@ scheduling), and an unsmoothed bar graph would flicker faster than it could be r
 branching around, the same call the fps counter already makes. The `visible` class is the only skip,
 and `ProfilerHud.update` takes the `FrameProfiler` rather than its `samples()` so that a hidden
 panel does not build the array and its per-label objects every frame — which is the default outside
-dev mode. `Presenter.debugLines` is a closure for the same shape of reason, but a DEVMODE one: its body
-walks the BSP for the player's sector and must not run when the *debug* text is off.
+dev mode. `Presenter.debugLines` is a closure for the same shape of reason: its body walks the
+BSP for the player's sector and must not run when the *debug* text is off.
 
 **The checkbox alone decides whether the panel is up** — General's `Debug / Dev` section
 (`#profiler-checkbox`), in every build, since the overlay covers the top-right corner of the level.
@@ -155,8 +156,8 @@ either way. `applyProfilerVisible` is the single writer of `#profiler-hud`'s `vi
 by `ProfilerHud`'s constructor to seed it for the level starting and by the checkbox to change it
 live. **That class is also what `ProfilerHud.update` early-returns on**, so a hidden panel costs no
 per-frame DOM writes and the CSS and the render path can't disagree about whether the overlay is up.
-`Game` owns the `ProfilerHud` directly — not `DebugHud`, which is DEVMODE's — and reads the same
-setting to decide whether to run the GPU timer query at all.
+`Presenter` owns both this panel and the status text beside it, and reads the same setting to
+decide whether to run the GPU timer query at all.
 
 `ProfilerHud` renders each category as a horizontal bar sized against one 60fps frame's budget
 (16.6ms) rather than against each other — a bar reaching full width means that category *alone*

@@ -249,7 +249,7 @@ did before the line existed.
 (`PlayerSlot.deathCause`), and a snapshot carries it (`PlayerSlotSnapshot.deathCause`, optional:
 absent is an unattributed death, and no tic reads it). The overlay can go up over a corpse long
 after the blow — a replay's view switched onto it (docs/replays.md § Playback), a keyframe or a
-network sync restoring one — and `Game.armDeathOverlay` is the one place any of them raises it.
+network sync restoring one — and `Overlays.armDeathOverlay` is the one place any of them raises it.
 
 A cause is either a doomednum, another player as `targetOfSlot`'s negative number — `obituary`
 takes a name lookup and fills `OBITUARIES.player`'s `{name}` with the roster's name, `Player n`
@@ -290,7 +290,7 @@ is now notified over a corpse and the exit fires either way.
 **The overlay must not appear in front of the exit.** `Game.levelEnding` — a queued `pendingExit`,
 or `IconOfSin.exiting` while the `BRAIN_DEATH_TO_EXIT` death cascade runs — is the window in which
 the level is over but hasn't finished saying so, and it is several seconds wide for the icon.
-`Game.armDeathOverlay` arms none inside it, and a death that got in first is taken back down by
+`Overlays.armDeathOverlay` arms none inside it, and a death that got in first is taken back down by
 `endingOverCorpse`, which every site that can open the window calls unconditionally. The window
 closes once the exit is handled, but the corpse stays under the intermission and the end card, so
 `armDeathOverlay` also arms none while a popup is up — a replay's view switched onto a corpse

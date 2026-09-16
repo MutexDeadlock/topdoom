@@ -717,8 +717,8 @@ Three rules that are easy to get wrong:
   from the memo alone. `ensureLibraryAccess` is what actually asks, and **must be reached from a
   user gesture** — a browser refuses a file-permission request outside one. That is why
   `Menu.startWithSkill` calls it synchronously before its first `await`, the same
-  transient-activation trick `main.ts` uses for `audio.resume()` (docs/session.md § Session
-  lifecycle).
+  transient-activation trick `Session.startLevel` uses for `audio.resume()`
+  (docs/session.md § Session lifecycle).
 - **Boot rescans, but only where the permission already stands.** `Menu.init` chains
   `rescanIfPermitted` onto the restore, so a WAD dropped into the folder between visits is listed
   without the player opening the overlay first — the memo made the stale-until-rescanned list the

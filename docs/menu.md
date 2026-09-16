@@ -6,8 +6,8 @@
 The menu as launcher and pause screen, its overlays, and every persisted setting. Four docs carry
 the rest: the WAD Library and what a WAD set is composed of are docs/menu-wads.md, the Save, Load
 and Replays tabs docs/menu-saves.md, the Multiplayer tab docs/multiplayer-net.md § The Multiplayer
-tab, and what `main.ts` does around the whole thing — boot, level starts, the loading screen —
-docs/session.md. The two overlays the Settings tab switches on are docs/devmode.md.
+tab, and what `main.ts` and the `Session` do around the whole thing — boot, level starts, the
+loading screen — docs/session.md. The two overlays the Settings tab switches on are docs/devmode.md.
 
 The menu is plain DOM: every element is static markup in `src/ui/menu/menu.html` (pulled into the
 page by `index.html`'s `@include` list — docs/styles.md § Assembling the page), looked up by ID in
@@ -17,7 +17,7 @@ Only the WAD lists, the level list and the difficulty options are built in JS.
 ## One screen, two jobs
 
 `Menu` is both the launcher and the pause screen. `open(session)` is what distinguishes them, over
-a `MenuSession` of `'none'`, `'game'` or `'replay'` — `main.ts` reads it off the `Game`
+a `MenuSession` of `'none'`, `'game'` or `'replay'` — `Session.menuSession` reads it off the `Game`
 (`watchingReplay`) at every open:
 
 - Anything but `'none'` puts the `ingame` class on `#menu`, swapping the opaque radial gradient for a
@@ -375,7 +375,7 @@ a setting touches one module.
 | `rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
 | `cameraMode` | `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) | docs/camera.md § Auto camera |
 | `fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
-| `fps` | `ui/devmode/debughud.ts` (`getFpsVisible`/`setFpsVisible`) | docs/devmode.md § FPS counter |
+| `fps` | `ui/hud/debug.ts` (`getFpsVisible`/`setFpsVisible`) | docs/devmode.md § FPS counter |
 | `profiler` | `ui/hud/profiler.ts` (`getProfilerVisible`/`setProfilerVisible`) | docs/devmode.md § Profiling overlay |
 | `hudMessages` | `ui/hud/messages.ts` (`getHudMessageMode`/`setHudMessageMode`) | docs/hud.md § HUD messages |
 | `dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |

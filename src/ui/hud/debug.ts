@@ -1,23 +1,11 @@
 /**
- * The top-left status text, the fps counter behind it, and the camera framing keys — the text
- * collapsing to "`N` fps" without the debug-info setting. Both whether it shows and how much it
- * says are the player's own settings, each defaulting to {@link DEVMODE}.
+ * The top-left status text and the fps counter behind it — the text collapsing to "`N` fps"
+ * without the debug-info setting. Both whether it shows and how much it says are the player's own
+ * settings, each defaulting to {@link DEVMODE}.
  * See docs/devmode.md § Dev mode and § FPS counter.
  */
-import type { TicInput } from '../../game/input.ts';
-import type { TopDownCamera } from '../../render/camera.ts';
-import { getCameraMode } from '../../game/autocamera.ts';
 import { DEVMODE } from '../../constants.ts';
 import { readStorage, writeStorage } from '../../util/storage.ts';
-
-/**
- * The camera framing keys: player-facing controls ({@link TopDownCamera.applyFramingKeys}), not
- * gated on {@link DEVMODE}. They act in manual camera mode only and are inert while the auto camera
- * drives the framing — docs/camera.md § Auto camera.
- */
-export function handleHotkeys(input: TicInput, camera: TopDownCamera): void {
-  if (getCameraMode() === 'manual') camera.applyFramingKeys(input);
-}
 
 const FPS_STORAGE_KEY = 'fps';
 
@@ -104,7 +92,7 @@ export class DebugHud {
 }
 
 /**
- * Puts the two settings on `#hud`'s class — what debughud.css shows the text by and what
+ * Puts the two settings on `#hud`'s class — what debug.css shows the text by and what
  * {@link DebugHud.update} reads to skip its work, so the three can't disagree. Either one alone
  * keeps the element up: the debug block is not the counter's to hide. Safe to call before any
  * {@link DebugHud} exists: the element is static markup.

@@ -21,6 +21,7 @@ src/ui/loading.*      #loading and its panel (#loading-title, #loading-bar/#load
                       too, and the one element in the markup that starts visible
                       (docs/session.md § The loading screen)
 src/ui/hud/           everything drawn over the running level (docs/hud.md's own file list)
+    debug.*           #hud — the debug status text (docs/devmode.md § FPS counter)
     hud.*             #hud-bar, #game-hud, #hud-levelstats, #hud-run (#hud-timer,
                       #hud-recording)
     screeneffects.*   #screen-tint, #colormap-tint, #pain-flash
@@ -48,8 +49,6 @@ src/ui/menu/
     wadinfo.*         #wadinfo, the popup reading the .txt beside a WAD, over both WAD lists
                       (docs/menu-wads.md § The text file popup)
     hold.css          .hold/.holding, the press-and-hold confirm on any #menu button
-src/ui/devmode/
-    debughud.*        #hud
 ```
 
 The one thing that doesn't live in a module's own file is a **shared class** — `.hidden`,

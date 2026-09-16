@@ -1,8 +1,9 @@
 /**
  * {@link Presenter}: what one rendered frame is — the camera posed `alpha` through the last tic,
  * the sprites, effects and movers drawn there, the fades and animators advanced on real time, the
- * 2D layers over it all, and the render call. Advances no gameplay state. `Game` holds one and
- * hands it what it draws through {@link PresentHost}. docs/frameloop.md § What runs in a frame.
+ * {@link Overlays} updated over it all, and the render call. Advances no gameplay state. `Game`
+ * holds one and hands it what it draws through {@link PresentHost}.
+ * docs/frameloop.md § What runs in a frame.
  */
 import * as THREE from 'three';
 import type { Level } from './level.ts';
@@ -23,18 +24,10 @@ import { collectFadeTargets } from '../render/occlusion.ts';
 import { underHoleLid } from '../render/mapmesh/flats.ts';
 import type { PlayerSkins } from '../render/playerskin.ts';
 import type { AnimatedTextures } from '../render/textureanim.ts';
-import type { Hud } from '../ui/hud/hud.ts';
-import type { Crosshair } from '../ui/hud/crosshair.ts';
-import type { ReplayBar } from '../ui/hud/replaybar.ts';
-import type { CenterMessage } from '../ui/hud/message.ts';
-import type { HudMessages } from '../ui/hud/messages.ts';
-import type { LevelCard } from '../ui/hud/levelcard.ts';
-import type { DeathOverlay } from '../ui/hud/deathoverlay.ts';
-import type { Intermission } from '../ui/hud/intermission.ts';
-import type { ScoreRow, Scoreboard } from '../ui/hud/scoreboard.ts';
-import { invisibilityOpacity, type ScreenEffects } from '../ui/hud/screeneffects.ts';
+import type { Overlays } from './overlays.ts';
+import { invisibilityOpacity } from '../ui/hud/screeneffects.ts';
 import { getProfilerVisible, ProfilerHud } from '../ui/hud/profiler.ts';
-import { DebugHud } from '../ui/devmode/debughud.ts';
+import { DebugHud } from '../ui/hud/debug.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import type { FrameProfiler } from '../util/profiler.ts';
 import type { ColorTint } from '../wad/colormaps.ts';
@@ -47,20 +40,6 @@ import type { Pos2 } from '../types.ts';
  * nothing.
  */
 const AIM_SCRATCH = new THREE.Vector3();
-
-/** The 2D layers a frame updates over the level — `Game` builds them, and raises most itself. */
-export interface Overlays {
-  readonly hud: Hud;
-  readonly crosshair: Crosshair;
-  readonly replayBar: ReplayBar;
-  readonly message: CenterMessage;
-  readonly messages: HudMessages;
-  readonly levelCard: LevelCard;
-  readonly screenEffects: ScreenEffects;
-  readonly deathOverlay: DeathOverlay;
-  readonly intermission: Intermission;
-  readonly scoreboard: Scoreboard;
-}
 
 /**
  * What a frame draws, as `Game` hands it over — one object literal; {@link PresentHost.level} and
@@ -87,37 +66,12 @@ export interface PresentHost {
   /** Whether the loaded set draws the player its own way — `setDrawsOwnPlayer`. */
   readonly setDrawsPlayer: boolean;
   readonly profiler: FrameProfiler;
-  readonly overlays: Overlays;
-  /**
-   * What the board Tab holds up shows this frame. docs/hud.md § Scoreboard.
-   *
-   * @returns null while it is down
-   */
-  scoreboardRows(): readonly ScoreRow[] | null;
-  /**
-   * What the intermission's board shows above its panel this frame.
-   *
-   * @returns null while it is down
-   */
-  intermissionScoreRows(): readonly ScoreRow[] | null;
-  /**
-   * The seconds the death overlay counts down over the viewed corpse this frame.
-   * docs/multiplayer-deathmatch.md § Forced respawn.
-   *
-   * @returns null where no respawn is forced
-   */
-  respawnCountdown(): number | null;
-  /**
-   * What the HUD clock reads in place of the time spent this frame.
-   * docs/multiplayer-deathmatch.md § Limits.
-   *
-   * @returns null where no time limit counts down
-   */
-  timeLeft(): number | null;
 }
 
 export class Presenter {
   private readonly host: PresentHost;
+  /** The 2D layers over the level, updated after the camera is posed. */
+  private readonly overlays: Overlays;
   private readonly profilerHud = new ProfilerHud();
   private readonly debugHud = new DebugHud();
   /**
@@ -130,8 +84,9 @@ export class Presenter {
   /** `FogOfWar.isDrawn` for the sprites, bound once for the same reason. */
   private readonly fogDrawn = (subsector: number) => this.host.level.fogOfWar.isDrawn(subsector);
 
-  constructor(host: PresentHost) {
+  constructor(host: PresentHost, overlays: Overlays) {
     this.host = host;
+    this.overlays = overlays;
   }
 
   /**
@@ -147,7 +102,7 @@ export class Presenter {
     // above. docs/render-lighting.md § Distance lighting.
     camera.applyToCamera(alpha);
     beginViewDepth(camera.camera);
-    this.updateOverlays(rawDt, alpha);
+    this.overlays.update(rawDt, this.replayAimNdc(alpha), this.viewColormap());
     level.fogOfWar.updateFade(rawDt);
     // Opened before anything draws: each draw pass below offers its sprites as emitters as it goes,
     // and `commit` closes the set once they all have (docs/lights.md § What reaches the shader).
@@ -180,41 +135,6 @@ export class Presenter {
 
     this.profilerHud.update(profiler, gpu?.ms ?? null);
     this.debugHud.update(rawDt, (fps) => this.debugLines(fps));
-  }
-
-  /**
-   * The timed overlays' clocks: the center message, the feed, the level card and the death
-   * overlay. Every frame's, and a seek's catch-up tics', which draw no frame.
-   * docs/replays.md § Seeking.
-   */
-  tickOverlayClocks(dt: number): void {
-    const { message, messages, levelCard, deathOverlay } = this.host.overlays;
-    message.update(dt);
-    messages.update(dt);
-    levelCard.update(dt);
-    deathOverlay.update(dt);
-  }
-
-  /** The playback bar alone, with no reticle — what a seek draws on the frames it owns. */
-  drawBar(): void {
-    this.host.overlays.replayBar.update(this.host.playback, null, this.host.viewed.inventory.health);
-  }
-
-  /** The 2D layers over the level — every one of the {@link Overlays}. */
-  private updateOverlays(dt: number, alpha: number): void {
-    const { inventory } = this.host.viewed;
-    const { hud, crosshair, replayBar, screenEffects, intermission, scoreboard } = this.host.overlays;
-    hud.update(inventory, this.host.level.stats(), this.host.recording, this.host.timeLeft());
-    crosshair.update(inventory.health);
-    replayBar.update(this.host.playback, this.replayAimNdc(alpha), inventory.health);
-    this.tickOverlayClocks(dt);
-    this.host.overlays.deathOverlay.setCountdown(this.host.respawnCountdown());
-    // After the clocks, which may have raised the overlay this very frame.
-    this.host.overlays.message.setCovered(this.host.overlays.deathOverlay.up);
-    screenEffects.update(dt, inventory);
-    screenEffects.setColormapTint(this.viewColormap());
-    scoreboard.update(this.host.scoreboardRows());
-    intermission.showScores(this.host.intermissionScoreRows());
   }
 
   /**

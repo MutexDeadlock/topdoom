@@ -50,8 +50,9 @@ const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as
 const RELAY_URL_STORAGE_KEY = 'relayUrl';
 
 /**
- * What the menu's owner (main.ts) does with the tab's requests — the UI never touches the session
- * it is handed beyond reading it. A refusal is a thrown `Error`, shown in the status line.
+ * What the menu's owner (session/room.ts) does with the tab's requests — the UI never touches
+ * the session it is handed beyond reading it. A refusal is a thrown `Error`, shown in the status
+ * line.
  */
 export interface MultiplayerHooks {
   /** The session in progress, or null. */

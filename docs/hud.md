@@ -2,7 +2,8 @@
 
 `src/ui/hud/hud.ts`, `src/ui/hud/wadfont.ts`, `src/ui/hud/levelcard.ts`,
 `src/ui/hud/intermission.ts`, `src/ui/hud/message.ts`, `src/ui/hud/messages.ts`, `src/ui/hud/crosshair.ts`,
-`src/ui/hud/screeneffects.ts`, `src/ui/hud/scoreboard.ts`, `src/game/besttimes.ts`, `src/game.ts`
+`src/ui/hud/screeneffects.ts`, `src/ui/hud/scoreboard.ts`, `src/game/besttimes.ts`,
+`src/game/overlays.ts`, `src/game.ts`
 
 Everything on screen that isn't the world. What the readouts *report* — the inventory, pickups and
 powerups behind them — is docs/items.md. The two other things drawn over a running level are
@@ -437,7 +438,7 @@ the line: once it has faded, the next one is `x1` again.
 **A player's name is drawn in their armour colour**: `show` takes the center message's runs
 (`TextRun`, drawn through the same `RunFonts`, § Center messages), a bare string in the red and a
 name in `nameColors` (`ui/hud/scoreboard.ts`) — the board's own colour (§ Scoreboard), which
-`Game.slotName` looks up. The death line's names and the join/leave line's name; a line's runs,
+`Overlays.slotName` looks up. The death line's names and the join/leave line's name; a line's runs,
 colours included, are what the count compares. What it prints:
 
 - **every pickup the viewed player takes** — `pickupLine(type, inventory)` (`game/inventory.ts`),
@@ -459,7 +460,7 @@ colours included, are what the count compares. What it prints:
   something did not happen is not a setting's to hide. A moment that refuses the save raises
   nothing.
 - **`recording ended: a player joined`** (`Game.restoreFromNet`), shown after the level is rebuilt
-  from the snapshot, whose `clearOverlays` would take it straight down
+  from the snapshot, whose `Overlays.beginLevel` would take it straight down
   (docs/multiplayer-net.md § Joining a game).
 
 **Which games show it is a setting**: `getHudMessageMode` (`ui/hud/messages.ts`, field
@@ -468,8 +469,8 @@ colours included, are what the count compares. What it prints:
 so a change applies to the level already running, and `update` takes the lines up down once the
 mode no longer shows them.
 
-The clocks tick from `Presenter.tickOverlayClocks` like the center message's, so a paused game
-doesn't burn a line's time behind the menu; `clearOverlays` and a view switch clear the feed.
+The clocks tick from `Overlays.tickClocks` like the center message's, so a paused game
+doesn't burn a line's time behind the menu; `Overlays.beginLevel` and a view switch clear the feed.
 Same rung as the bar (`--z-hud`): it is part of the bar, not a message over the view. Its
 `bottom` pair tracks `#hud-bar`'s, so it lifts with the bar over the replay bar's expanded panel.
 
@@ -479,22 +480,22 @@ Same rung as the bar (`--z-hud`): it is part of the bar, not a message over the 
 the view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
 holds at dead center), for 3 seconds. Its callers:
 
-- the secret announcement — `Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` (this
-  module's own, since it is display text) and plays the `secret` chime on the frame
-  `SectorEffects.update` reports `secretFound`;
-- a cheat's response — `Game.applyCheats` shows whatever line the code that just fired returns
-  (docs/cheats.md), in the message's own yellow like the secret announcement; IDCLEV raises one only
-  when it names a map the set hasn't got (docs/cheats.md § IDCLEV);
+- the secret announcement — `Overlays.secretFound` shows `SECRET_MESSAGE` (this module's own,
+  since it is display text) and plays the `secret` chime on the frame `SectorEffects.update`
+  reports `secretFound` to `Game.collectPickupsAndSectorEffects`;
+- a cheat's response — `Overlays.cheatResponse` shows whatever line the code that just fired
+  returns (docs/cheats.md), in the message's own yellow like the secret announcement; IDCLEV
+  raises one only when it names a map the set hasn't got (docs/cheats.md § IDCLEV);
 - the locked door/switch line — `lockedLineMessage(lock, kind)` resolves the `LockedLine`
   `Game.tic` drained out of `specials` through `specials/tables.ts`'s `LOCKED_LINES`, where
   vanilla's and Boom's `PD_*` text lives and where a DEH patch will have replaced it (docs/items.md
   § Locked doors and use triggers, docs/dehacked.md § Locked-door lines); its `oof` was already
   played there;
-- things the WAD set has no art for — `buildLevel` shows `missingArtMessage(n)` when
-  `ThingLayer.missingArt` is non-empty, so a monster the set could not draw and therefore did not
-  spawn is not simply absent with nothing to explain it (docs/wad.md § Art a WAD set doesn't have).
-  Raised at level load, which `clearOverlays` precedes, and it sits in its own band clear of the
-  level card's (30% vs. 40%);
+- things the WAD set has no art for — `buildLevel` shows `missingArtMessage(n)`
+  (`Overlays.reportMissingArt`) when `ThingLayer.missingArt` is non-empty, so a monster the set
+  could not draw and therefore did not spawn is not simply absent with nothing to explain it
+  (docs/wad.md § Art a WAD set doesn't have). Raised at level load, which `Overlays.beginLevel`
+  precedes, and it sits in its own band clear of the level card's (30% vs. 40%);
 - the network stall notice (`NetHost.say`) and a take-over save the store refused
   (`Game.saveTakeOver`) — both § HUD messages;
 - a deathmatch's limits — a time limit's last seconds (`Game.announceTimeLeft`) and a kill that
@@ -524,27 +525,27 @@ in the middle of the view outstays its welcome faster than text in a corner. Its
 glyph height, roughly the level-stats strip's own) and `opacity: 0.75` are **tuned by feel** — it
 sits over the playfield, so it reads as an overlay rather than competing with what's under it.
 
-The timeout is ticked from `Presenter.tickOverlayClocks`, so a paused game doesn't burn a message's
+The timeout is ticked from `Overlays.tickClocks`, so a paused game doesn't burn a message's
 display time behind the menu; `buildLevel` and `dispose` both `clear()` it, since the element is
 static markup that outlives any one `Game` (the same reason `Hud`'s panels `replaceChildren()`).
 
 **The death overlay covers it**: while the overlay is up the line is hidden and its clock runs on
-(`CenterMessage.setCovered`, set every frame by `Presenter.updateOverlays` from `DeathOverlay.up`,
+(`CenterMessage.setCovered`, set every frame by `Overlays.update` from `DeathOverlay.up`,
 written only on a change) — the overlay stands
 above it but its panel is translucent, so the line would show over the heading.
 
 ## Scoreboard
 
 `src/ui/hud/scoreboard.ts`, over two elements wearing `.scoreboard`: `#scoreboard` and the one inside
-`#intermission`. The rows are `Game.scoreRows`, drawn every frame by `Presenter.updateOverlays`.
+`#intermission`. The rows are `Overlays.scoreRows`, drawn every frame by `Overlays.update`.
 
 - **A game with a board** has more than one slot, or runs over the network.
-- **`#scoreboard` is up while Tab is held** (`Game.scoreboardRows`), never behind the menu
+- **`#scoreboard` is up while Tab is held** (`Game.holdsBoard`), never behind the menu
   (`Game.pause` takes it down, `NetSeat.menuUp` keeps it down) and never over the intermission. Tab is read off the live
   keyboard (`Input.viewerHolds`), never through a `TicInput`, so no replay records it and no tic
   sees it. `main.ts` keeps Tab from moving the page's focus while a game runs with the menu closed.
 - **The intermission shows its own above its panel**, no key held, for as long as it is up
-  (`Game.intermissionScoreRows`, `Intermission.showScores`); `#intermission` is a column for it.
+  (`Overlays.intermissionScoreRows`, `Intermission.showScores`); `#intermission` is a column for it.
 - **One row per slot, in slot order**: name, kills — **net frags in a deathmatch**, under the same
   `Kills` heading (docs/multiplayer-deathmatch.md § Frags) — ping. **A deathmatch's intermission
   ranks them** (`rankByKills`): most kills first, slot order among equals, and a sole leader marked
@@ -561,7 +562,8 @@ above it but its panel is translucent, so the line would show over the heading.
   messages): the ramp's sixth shade in the loaded PLAYPAL, the shade the menu's swatch shows, its
   HSL lightness raised to `NAME_MIN_LIGHTNESS` (tuned by feel) — red's `#7f1b1b` does not read as
   text on the board.
-- The rows are rebuilt only when they change. `clearOverlays` takes the board down with the rest.
+- The rows are rebuilt only when they change. `Overlays.beginLevel` takes the board down with the
+  rest.
 
 ## `WadFont` and `WadNumbers` (`src/ui/hud/wadfont.ts`)
 

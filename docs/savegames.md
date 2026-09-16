@@ -494,7 +494,7 @@ sounds. That is a visible difference the player can see and fix (load the file, 
 refusing was an invisible one they could not.
 
 `Menu.resolveSaveWads` resolves the **whole set at once**, in load order, and is the only place that
-happens: the save row (`describeSave`) and the load path (`main.ts`'s `loadSave`) both call it, so a
+happens: the save row (`describeSave`) and the load path (`Session.loadSave`) both call it, so a
 row reporting no problem can't be followed by a load that fails on one. It also does the
 *diagnosis*: no ID match, but a file of the same name present, means the same WAD in a different
 version. The wording for every outcome — required or not — comes from this module and nowhere else,
@@ -516,8 +516,9 @@ in the same way the Save/Overwrite disabling is (docs/menu-saves.md § Save and 
 rather than a `Wad` — the save, `wadSetId`'s list for the set in hand, and a lookup naming that
 set's provider for a map (a lookup, not one provider, because a replay's stand-in gate asks about
 every level it visited — § A stand-in game WAD) — so the rule lives in the format module with the
-field it reads, and returns the refusal message or null. `verifySaveWads` (`main.ts`, on the shared `startLevel` path — see
-docs/session.md § Session lifecycle) throws what it returns, feeding it freshly re-hashed bytes (`wadSetId`, `mapProvider` in `wad/checksum.ts`) even though
+field it reads, and returns the refusal message or null. `verifySaveWads` (`session/session.ts`, on
+the shared `startLevel` path — see docs/session.md § Session lifecycle) throws what it returns,
+feeding it freshly re-hashed bytes (`wadSetId`, `mapProvider` in `wad/checksum.ts`) even though
 resolution already matched IDs: a manifest ID is a build-time claim, and re-hashing what is
 actually in hand is what catches a manifest left stale by a changed file.
 

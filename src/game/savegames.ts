@@ -183,7 +183,7 @@ export function standInBlocker(
 
 /**
  * Why the assembled set can't play this save, or null when it can — **the load gate itself**, over
- * plain facts rather than a {@link Wad}. `main.ts` asks it over a loaded set through
+ * plain facts rather than a {@link Wad}. `session/session.ts` asks it over a loaded set through
  * {@link loadedSetRefusal} and throws the message. docs/savegames.md § WAD-set identity.
  *
  * @param actual      {@link wadSetId}'s list for the set in hand

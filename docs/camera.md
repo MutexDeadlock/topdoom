@@ -169,8 +169,9 @@ the camera down to `AUTO_NARROW_DISTANCE`/`AUTO_NARROW_TILT` (350u / 50°), open
 to `AUTO_WIDE_DISTANCE`/`AUTO_WIDE_TILT` (720u / 70°). The "Camera mode" menu setting
 (the `cameraMode` setting, owned by `game/autocamera.ts`) switches between `auto` and `manual`;
 manual keeps the 480u / 60° constructor defaults and the `+ - [ ]` keys. **The framing keys are
-inert in auto mode** — they act only while the mode is manual, the same inert-not-error shape the
-DEVMODE map keys have outside dev mode.
+inert in auto mode** — they act only while the mode is manual. `handleHotkeys` is that gate, and
+sits with the setting it reads rather than at its two call sites, the tic's and
+`NetSeat.tickViewCamera`'s.
 
 **The probe** (`measureOpenness`) casts `OPENNESS_RAY_COUNT` (24) rays from the player, every 15°
 at **fixed world angles**. Each ray walks the linedef grid

@@ -1,4 +1,4 @@
-/* The status text and the fps counter behind it — src/ui/devmode/debughud.ts. */
+/* The status text and the fps counter behind it — src/ui/hud/debug.ts. */
 
 #hud {
   display: none;

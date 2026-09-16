@@ -12,6 +12,7 @@ import { dampen } from '../util/damping.ts';
 import { segmentCrossT } from '../util/geom.ts';
 import { readStorage, writeStorage } from '../util/storage.ts';
 import { NO_SIDE } from '../wad/map.ts';
+import type { TicInput } from './input.ts';
 import { EYE_HEIGHT } from './player.ts';
 import type { Opening, World } from './world.ts';
 import { cos, sin } from '../util/fdlibm.ts';
@@ -51,6 +52,15 @@ export function setCameraMode(mode: CameraMode): void {
  */
 export function overrideCameraMode(mode: CameraMode | null): void {
   cameraMode = mode ?? readStoredCameraMode();
+}
+
+/**
+ * The camera framing keys ({@link TopDownCamera.applyFramingKeys}): player-facing controls that
+ * act in manual camera mode only and are inert while the auto camera drives the framing.
+ * docs/camera.md § Auto camera.
+ */
+export function handleHotkeys(input: TicInput, camera: TopDownCamera): void {
+  if (getCameraMode() === 'manual') camera.applyFramingKeys(input);
 }
 
 // The framing endpoints the two smoothed opennesses lerp between — all tuned by feel; the

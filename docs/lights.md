@@ -672,7 +672,7 @@ pool in blue as `DIFOG1`-`3` — `A`-`C` at `DTFOG2`'s size, `D` at `DTFOG3`'s, 
 sized to the frames as `TFOG`'s are. It lights the deathmatch respawn fog at full size and the pickup
 puff at its draw scale (§ Dimming one offer). Kept at the end so the stock part stays a prefix to
 re-sync against. It is the `GLDEFS` lump of the WAD the engine ships
-(docs/wad.md § The WAD the engine ships), fetched once per session by `main.ts` and parsed as the
+(docs/wad.md § The WAD the engine ships), fetched by `Session.startLevel` and parsed as the
 base. Every `GLDEFS` and `DOOMDEFS` lump in the loaded WAD set then layers over it in
 lump order, a later definition of the same light name or frame binding replacing the earlier —
 GZDoom reads all such lumps rather than the first (`gldefs.cpp: LoadGLDefs`), unlike the MAPINFO

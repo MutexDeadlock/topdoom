@@ -8,6 +8,7 @@ import type { NetNotice, NetRestore, SlotAssignment } from './defs.ts';
 import type { PlayerSlot } from '../playerslot.ts';
 import { IDLE_TIC_INPUT } from '../input.ts';
 import { aimPlaneZ } from '../player.ts';
+import { handleHotkeys } from '../autocamera.ts';
 import {
   GLOBAL_PLAYER_SETTINGS,
   applySessionSettings,
@@ -22,7 +23,6 @@ import {
 } from '../replay.ts';
 import { TopDownCamera } from '../../render/camera.ts';
 import type { Viewport } from '../../render/viewport.ts';
-import { handleHotkeys } from '../../ui/devmode/debughud.ts';
 import { DOOM_TIC } from '../../constants.ts';
 import type { Pos2 } from '../../types.ts';
 

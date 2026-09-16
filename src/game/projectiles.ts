@@ -21,7 +21,7 @@ import { rollDamage } from '../util/random.ts';
 import { applyRadiusDamage, fallbackPlayer, livingPlayer, raycastBody, targetMonster, type CombatContext } from './combat.ts';
 import type { ProjectileSnapshot } from './snapshot.ts';
 import type { SpriteFxLayer } from './spritefx.ts';
-import { stepTouchesBody, turnToward, type Projectile } from './spritefx/defs.ts';
+import { PROJECTILE_HEIGHT, stepTouchesBody, turnToward, type Projectile } from './spritefx/defs.ts';
 import { BFG_SPRAY_HIT_FRAMES, IMPACT_EFFECTS, IMPACT_FRAME_SECONDS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_RADIUS_DEFAULT, PROJECTILE_SOUNDS, REVENANT_TRACER_TURN_RATE_RAD, SMOKE_TRAIL_FRAME_SECONDS, SMOKE_TRAIL_FRAMES, SMOKE_TRAIL_INTERVAL, TRACER_COLOR, TRACER_HOMING_Z_OFFSET } from './spritefx/tables.ts';
 import type { Pos3 } from '../types.ts';
 import { hitBy, slotOfTarget, targetOfSlot, type MonsterRef } from './things/defs.ts';
@@ -359,7 +359,7 @@ export class ProjectileLayer {
     const dirY = sin(p.angleRad);
     const next = Math.min(p.traveled + step, p.maxDist);
     pointAlong(p, p.traveled, dirX, dirY, from);
-    const wall = this.ctx.world.projectileStepBlocker(from, pointAlong(p, next + p.radius, dirX, dirY, out));
+    const wall = this.ctx.world.projectileStepBlocker(from, pointAlong(p, next + p.radius, dirX, dirY, out), PROJECTILE_HEIGHT);
     if (wall) {
       const reach = vecLength(wall.x - from.x, wall.y - from.y);
       endFlightAt(p, p.traveled + Math.max(0, reach - p.radius), wall.lineIndex);
@@ -411,10 +411,17 @@ export class ProjectileLayer {
       const wallLine = arrived ? p.lineIndex : null;
       const hitWall = wallLine !== null;
       // A missile meeting the floor or ceiling explodes against it, every missile including the
-      // player's own; a wall beats the floor on the tic both would answer to.
+      // player's own; a wall beats the floor on the tic both would answer to. The first clause is
+      // `P_MobjThinker`'s own gate on calling `P_ZMovement` at all (`z != floorz || momz`), which
+      // is what lets a level shot ride a floor exactly at its own height; the ceiling is met by the
+      // missile's *top*, as `P_ZMovement`'s own `z + height > ceilingz` is.
       // docs/combat.md § Where an impact sits, docs/monster-attacks.md § Monster projectiles in
       // flight.
-      const hitGround = !hitWall && !!sector && (at.z <= sector.floorHeight || at.z >= sector.ceilHeight);
+      const hitGround =
+        !hitWall &&
+        !!sector &&
+        (at.z !== from.z || at.z !== sector.floorHeight) &&
+        (at.z <= sector.floorHeight || at.z + PROJECTILE_HEIGHT > sector.ceilHeight);
       // A player's missile reaches the other players only where they are shootable at all
       // (`CombatContext.pvp`); a monster's always did. Whichever body the step touches first,
       // player or monster, takes it.
@@ -606,7 +613,7 @@ export class ProjectileLayer {
     const fromZ = homing.z;
     homing.x += cos(homing.headingRad) * step;
     homing.y += sin(homing.headingRad) * step;
-    const wall = world.projectileStepBlocker({ x: fromX, y: fromY, z: fromZ }, { x: homing.x, y: homing.y, z: homing.z });
+    const wall = world.projectileStepBlocker({ x: fromX, y: fromY, z: fromZ }, { x: homing.x, y: homing.y, z: homing.z }, PROJECTILE_HEIGHT);
     if (wall) {
       // The standoff `stepStraight` gives a straight flight, applied to the plane
       // `projectileStepBlocker` reports. Never back past where this step began. Height is

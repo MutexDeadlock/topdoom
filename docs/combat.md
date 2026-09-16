@@ -709,6 +709,29 @@ before `P_ZMovement`, and `P_ExplodeMissile` clears `MF_MISSILE` — the flag ga
 `P_ZMovement`'s explosion branches (`p_mobj.c`). Only a wall arrival wins that way: range simply
 running out is not something that stopped the missile, so it does not suppress the floor test.
 
+**A level missile riding a floor exactly at its own height does not burst on it.** `P_MobjThinker`
+calls `P_ZMovement` only when `z != floorz || momz` (`p_mobj.c`), so a missile with no vertical
+momentum sitting *on* the floor never reaches the `z <= floorz` branch; `hitGround` carries that
+gate. Without it every shot fired level over a window sill `MISSILE_HEIGHT_OFFSET` high exploded on
+the sill — the sill and the fire height are both 32. Repro: GoingDown MAP02, the imps in sector 82
+firing west through the sector 45/66 window at a player in sector 77, all floors at 0.
+
+**A missile is a body `P_TryMove` moves, not a ray `PTR_ShootTraverse` traces, so it meets a line
+by different rules than a bullet does.** `World.blocksMissile` is that second predicate — the
+missile-only twin of `blocksShot`, which a bullet must keep — and carries `P_TryMove`'s three
+refusals: the opening is shorter than the missile, its **top** does not clear the missile's top
+(`tmceilingz - z < height`), or the step up is more than `MAX_STEP_UP`
+(`tmfloorz - z > 24`). Every missile in `info.c` is 8 units tall (`PROJECTILE_HEIGHT`,
+`spritefx/defs.ts`, shared with the over/under contact band).
+
+Two things follow that measuring the centre point got wrong. A fireball no longer passes a slit its
+body cannot clear, and it no longer carries 8 units into a ceiling. And a missile meeting a step
+within 24 units **climbs** it — it crosses the line and bursts on the floor beyond, where a bullet
+strikes the step's face. Stopping it at the line instead put the explosion on the wrong side and
+fired a shoot-triggered special on a line vanilla's missile would have crossed.
+
+`tests/regression/missile-floor-ceiling.test.ts` pins each rule on its own.
+
 ## Blood
 
 **Blood is spawned by a trace hitting a body, not by damage** — vanilla puts `P_SpawnBlood` in

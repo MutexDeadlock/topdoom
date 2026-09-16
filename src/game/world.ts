@@ -1702,6 +1702,24 @@ export class World {
   }
 
   /**
+   * {@link World.blocksShot} for a *missile*, which unlike a bullet is a body `P_TryMove` moves
+   * rather than a ray `PTR_ShootTraverse` traces — so both halves differ (`p_map.c`). The opening
+   * has to clear the missile's **top** (`tmceilingz - z < height`), and at the bottom a missile
+   * *climbs* a step up to {@link MAX_STEP_UP} (`tmfloorz - z > 24`) instead of striking its face
+   * the way a bullet does — it crosses the line and `ProjectileLayer.update`'s floor test bursts it
+   * on the step beyond. docs/combat.md § Where an impact sits.
+   */
+  blocksMissile(lineIndex: number, z: number, height: number): boolean {
+    const line = this.map.linedefs[lineIndex];
+    if (!line || line.left === NO_SIDE || line.right === NO_SIDE) return true;
+    if (!this.openingInto(lineIndex, this.openingScratch)) return true;
+    const { top, bottom } = this.openingScratch;
+    // `P_TryMove`'s three refusals in order: the gap is shorter than the missile, its top does not
+    // clear, the step up is too big.
+    return top - bottom < height || z + height > top || bottom - z > MAX_STEP_UP;
+  }
+
+  /**
    * How far the ray from `from` through `through` gets before it passes **into the ground**, as a
    * distance from `from`, or `Infinity` where nothing along {@link World.mapSpan} puts it under one
    * — the bound on auto-aim's two picks. Only floors stop it, the stretch up to `through` is not
@@ -1739,14 +1757,17 @@ export class World {
    * against the lines as they stand this tic, since a door can open or shut under a missile in
    * flight. docs/combat.md § Where an impact sits.
    *
-   * Blocking is {@link World.blocksShot} at the height the step is at where it crosses each line.
-   * A crossing within {@link SELF_HIT_MARGIN} of the start is skipped for the reason
+   * Blocking is {@link World.blocksMissile} at the height the step is at where it crosses each
+   * line. A crossing within {@link SELF_HIT_MARGIN} of the start is skipped for the reason
    * {@link World.hasLineOfSight} skips one: a missile that just cleared an opening starts the next
    * step sitting essentially on it.
+   *
+   * @param height  the flying missile's own `mobjinfo.height`, which the opening has to clear
    */
   projectileStepBlocker(
     from: Pos3,
     to: Pos3,
+    height: number,
   ): { x: number; y: number; z: number; lineIndex: number } | null {
     const dist = vecLength(to.x - from.x, to.y - from.y);
     if (dist === 0) return null;
@@ -1757,7 +1778,7 @@ export class World {
       const ends = this.lineOverlapEnds;
       const t = segmentCrossT(from.x, from.y, to.x, to.y, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
       if (t < 0 || t >= nearestT || t * dist <= SELF_HIT_MARGIN) return;
-      if (!this.blocksShot(i, from.z + (to.z - from.z) * t)) return;
+      if (!this.blocksMissile(i, from.z + (to.z - from.z) * t, height)) return;
       nearestT = t;
       hitLine = i;
     });

@@ -171,13 +171,14 @@ export interface Projectile {
 }
 
 /**
- * Every missile in `info.c` is 8 units tall, so one constant covers the lower
- * half of `PIT_CheckThing`'s over/under test: a shot passes *underneath* when
- * `missile.z + height < target.z` and *overhead* when `missile.z > target.z +
- * target.height`. That band is deliberately asymmetric about the target's feet
- * — see docs/monster-attacks.md § Monster projectiles in flight.
+ * Every missile in `info.c` is 8 units tall, so one constant covers both places its own body is
+ * measured. The lower half of `PIT_CheckThing`'s over/under test: a shot passes *underneath* when
+ * `missile.z + height < target.z` and *overhead* when `missile.z > target.z + target.height` — that
+ * band is deliberately asymmetric about the target's feet, see docs/monster-attacks.md § Monster
+ * projectiles in flight. And `P_ZMovement`'s ceiling branch, `z + height > ceilingz`
+ * (docs/combat.md § Where an impact sits).
  */
-const PROJECTILE_HEIGHT = 8;
+export const PROJECTILE_HEIGHT = 8;
 
 /**
  * Turns `from` toward `to` by at most `maxDelta`, the short way around — the continuous equivalent

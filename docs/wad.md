@@ -289,7 +289,7 @@ types are read and which are skipped.
 ## The WAD the engine ships
 
 Three things no game WAD provides — GZDoom's stock light definitions, the secret chime
-(docs/audio.md § Player and pickups), and the weapon-matching player sprites
+(docs/audio.md § Cues), and the weapon-matching player sprites
 (docs/sprites.md § Weapon-matching player sprites) — ship as one PWAD, `topdoom.wad`, fetched once
 per session by `wad/shipped.ts`.
 

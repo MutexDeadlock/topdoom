@@ -733,7 +733,7 @@ export class Menu {
       });
     };
     // The pickup blip: short, unmissable, and the sound a player hears most.
-    const blip = () => this.audio.play('itemup');
+    const blip = () => this.audio.playCue('itemup');
     bind(this.masterSlider, this.masterValue, this.audio.masterVolume, (v) => this.audio.setMasterVolume(v), blip);
     bind(this.volumeSlider, this.volumeValue, this.audio.volume, (v) => this.audio.setVolume(v), blip);
     bind(this.musicSlider, this.musicValue, this.audio.music.volume, (v) => this.audio.music.setVolume(v));

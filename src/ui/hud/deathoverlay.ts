@@ -1,6 +1,7 @@
 /**
- * The full-screen panel raised a moment after the player dies: the killer line and
- * what `R` will do. See docs/death.md § Player death.
+ * The full-screen panel raised a moment after the player dies: the killer line, what `R` will do,
+ * and in a deathmatch the countdown to the respawn that needs no press. See docs/death.md § Player
+ * death.
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import { PLAYER_DEATH_FRAME_SECONDS } from '../../game/things/tables.ts';
@@ -29,11 +30,22 @@ const HINTS: Record<DeathHint, string> = {
   none: '',
 };
 
+/**
+ * The line under the overlay while a deathmatch corpse waits out its forced respawn
+ * (docs/multiplayer-deathmatch.md § Forced respawn).
+ *
+ * @param seconds  whole seconds left
+ */
+export function respawnLine(seconds: number): string {
+  return seconds === 1 ? 'Respawn in 1 second' : `Respawn in ${seconds} seconds`;
+}
+
 export class DeathOverlay {
   private rootEl = document.getElementById('death-overlay')!;
   private titleCanvas = this.rootEl.querySelector<HTMLCanvasElement>('.title')!;
   private killerCanvas = this.rootEl.querySelector<HTMLCanvasElement>('.killer')!;
   private hintCanvas = this.rootEl.querySelector<HTMLCanvasElement>('.hint')!;
+  private countdownCanvas = this.rootEl.querySelector<HTMLCanvasElement>('.countdown')!;
   private redFont: WadFont;
   private yellowFont: WadFont;
   /** Seconds until the armed overlay is raised; negative once it is up, or when none is armed. */
@@ -42,12 +54,16 @@ export class DeathOverlay {
   private killer = '';
   /** Which hint the armed overlay will carry — see {@link DeathOverlay.show} and {@link DeathHint}. */
   private hint: DeathHint = 'restart';
+  /** The seconds the countdown line reads, null for none — see {@link DeathOverlay.setCountdown}. */
+  private countdown: number | null = null;
+  /** Whether the overlay is up: raised, not merely armed. */
+  up = false;
 
   /**
    * The IWAD's own `STCFN*` type, the same three-canvas arrangement `EndCard` uses: the heading in
-   * the font's native HUD red, the killer line in the yellow this UI reads as "the thing you came
-   * here to know" ({@link COLOR_YELLOW}, as on the intermission's values), the hint dimmed by
-   * `deathoverlay.css`. The title never changes, so it is drawn once here.
+   * the font's native HUD red, the killer line and the countdown in the yellow this UI reads as
+   * "the thing you came here to know" ({@link COLOR_YELLOW}, as on the intermission's values), the
+   * hint dimmed by `deathoverlay.css`. The title never changes, so it is drawn once here.
    */
   constructor(gfx: GraphicsBank) {
     this.redFont = new WadFont(gfx);
@@ -65,6 +81,7 @@ export class DeathOverlay {
       drawText(this.hintCanvas, this.redFont, HINTS[this.hint]);
       this.hintCanvas.classList.toggle('blank', this.hint === 'none');
       this.rootEl.classList.remove('hidden');
+      this.up = true;
     }
   }
 
@@ -101,11 +118,26 @@ export class DeathOverlay {
     this.hintCanvas.classList.toggle('blank', hint === 'none');
   }
 
+  /**
+   * The countdown line under the overlay, every frame: the viewed corpse's own clock, so it reads
+   * what the tic will do. Redrawn only when the second changes.
+   *
+   * @param seconds  whole seconds left ({@link respawnLine}), or null for no line
+   */
+  setCountdown(seconds: number | null): void {
+    if (seconds === this.countdown) return;
+    this.countdown = seconds;
+    drawText(this.countdownCanvas, this.yellowFont, seconds === null ? '' : respawnLine(seconds));
+    this.countdownCanvas.classList.toggle('blank', seconds === null);
+  }
+
   /** Takes the overlay down — armed or already up. Every map (re)load starts from here. */
   clear(): void {
     this.delay = -1;
     this.killer = '';
     this.hint = 'restart';
+    this.setCountdown(null);
     this.rootEl.classList.add('hidden');
+    this.up = false;
   }
 }

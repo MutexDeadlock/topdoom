@@ -94,8 +94,8 @@ const MASTER_VOLUME_STORAGE_KEY = 'masterVolume';
 /**
  * Sounds this engine ships itself, as lumps of its own WAD (`wad/shipped.ts`) → the priority they
  * take in the same channel pool {@link SFX} priorities are read on. Not lumps of the *loaded set*:
- * a secret's chime has no vanilla original, so it cannot be an {@link SfxId} —
- * docs/audio.md § Player and pickups. Decoded once, when the context comes up — long before a
+ * a secret's chime has no vanilla original, so it cannot be an {@link SfxId}, and no name here is
+ * one — docs/audio.md § Cues. Decoded once, when the context comes up — long before a
  * level's first secret, so the first one isn't the one that plays silently.
  */
 const ASSETS = {
@@ -341,6 +341,41 @@ export class AudioEngine implements SoundEmitter {
   }
 
   play(id: SfxId, at?: Pos2 | null, origin?: number): void {
+    this.emit(id, at, origin, true);
+  }
+
+  /**
+   * A sound played to the player rather than somewhere in the world: unattenuated, centred and
+   * without the random wobble, so a cue that repeats sounds the same every time. A loaded set's
+   * sound, or one of the engine's own ({@link ASSETS}) — silent while that is still loading or
+   * failed to decode, as a missing lump is. docs/audio.md § Cues.
+   */
+  playCue(id: SfxId | AssetSfxId): void {
+    if (!isAsset(id)) {
+      this.emit(id, null, undefined, false);
+      return;
+    }
+    if (this.silent || this.sfxAudible === 0) return;
+    const buffer = this.assetBuffers.get(id);
+    if (!buffer) return;
+    const { priority } = ASSETS[id];
+    // Prefixed: `ASSETS`' names and `sampleGroup`'s are separate spaces that share this one key.
+    const key = `asset:${id}`;
+    this.start(buffer, { key, priority, rate: 1, gain: 1, pan: 0, origin: undefined });
+  }
+
+  /**
+   * What an sfx actually comes out at: the two sliders multiplied, and the thing 0 is tested on.
+   */
+  private get sfxAudible(): number {
+    return this._volume * this._masterVolume;
+  }
+
+  /**
+   * {@link AudioEngine.play} and {@link AudioEngine.playCue}: attenuated and panned from `at` where
+   * one is given, at {@link randomPlaybackRate} where `wobble` is set.
+   */
+  private emit(id: SfxId, at: Pos2 | null | undefined, origin: number | undefined, wobble: boolean): void {
     if (this.silent || this.sfxAudible === 0) return;
     const ctx = this.ctx;
     // Not started yet, or paused: dropping the sound is right either way —
@@ -365,30 +400,9 @@ export class AudioEngine implements SoundEmitter {
 
     const buffer = this.bufferFor(id);
     if (!buffer) return;
-    const rate = randomPlaybackRate(id);
+    // Drawn past every early out, so a sound that never starts spends no pitch draw.
+    const rate = wobble ? randomPlaybackRate(id) : 1;
     this.start(buffer, { key: sampleGroup(id), priority: SFX[id], rate, gain, pan, origin });
-  }
-
-  /**
-   * One of the engine's own sounds ({@link ASSETS}) rather than a WAD lump, played unattenuated and
-   * centred like a pickup: these announce something to the player instead of happening somewhere in
-   * the world. Silent while the file is still loading or failed to decode, as a missing lump is.
-   */
-  playAsset(id: AssetSfxId): void {
-    if (this.silent || this.sfxAudible === 0) return;
-    const buffer = this.assetBuffers.get(id);
-    if (!buffer) return;
-    const { priority } = ASSETS[id];
-    // Prefixed: `ASSETS`' names and `sampleGroup`'s are separate spaces that share this one key.
-    const key = `asset:${id}`;
-    this.start(buffer, { key, priority, rate: 1, gain: 1, pan: 0, origin: undefined });
-  }
-
-  /**
-   * What an sfx actually comes out at: the two sliders multiplied, and the thing 0 is tested on.
-   */
-  private get sfxAudible(): number {
-    return this._volume * this._masterVolume;
   }
 
   /**
@@ -593,4 +607,9 @@ export class AudioEngine implements SoundEmitter {
     this.loadAssets();
     return this.ctx;
   }
+}
+
+/** Whether `id` names one of {@link ASSETS}, whose names no {@link SfxId} carries. */
+function isAsset(id: SfxId | AssetSfxId): id is AssetSfxId {
+  return Object.prototype.hasOwnProperty.call(ASSETS, id);
 }

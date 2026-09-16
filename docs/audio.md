@@ -63,7 +63,7 @@ and one stereo panner per voice, both computed the way `S_AdjustSoundParams` com
 - **Pan**: `S_STEREO_SWING`, 96 of the 128 units either side of centre, so a sound beside you
   still carries a quarter of its volume in the far ear.
 - **Pitch**: every instance gets vanilla's random wobble — ±16/128 of playback rate, ±8 for
-  the chainsaw's four sounds, none for `itemup` and `tink`. Length varies with it, as it does
+  the chainsaw's four sounds, none for `itemup`, `tink` and a cue (§ Cues). Length varies with it, as it does
   in vanilla's own mixer. This is the engine's **only** `mRandom` draw: `S_StartSoundAtVolume`
   uses `M_Random`, the cursor *outside* the play simulation, so that a sound playing or not
   can never shift a damage roll. The sight/death sound *variant* pick (`randomVariant`) goes the
@@ -150,8 +150,9 @@ emitter, so a headless script or a browser with no `AudioContext` needs no branc
 | `game/specials.ts` | Doors, lifts, floors, ceilings, crushers, switches, a locked door's grunt |
 | `game/weapons.ts` | The chainsaw's bring-up and idle rattle (`updateSounds`) |
 | `game/spritefx.ts` | `telept`, on both fog puffs of every teleport |
-| `game.ts` | Weapon fire, the player's own pain/death/landing, pickups, entering a secret |
+| `game.ts` | Weapon fire, the player's own pain/death/landing, pickups; every cue but the menu's (§ Cues) |
 | `game/projectiles.ts` | Projectile launches and impacts |
+| `ui/menu/menu.ts` | The volume sliders' preview cue |
 
 ## Monsters
 
@@ -282,13 +283,28 @@ Pickups follow `P_TouchSpecialThing` (`inventory.ts: pickupSound`): `getpow` for
 powerups plus the soulsphere and megasphere, `wpnup` for the seven weapons, `itemup` for
 everything else — all **unattenuated**, as vanilla plays them, since you are standing on it.
 
-Entering a secret sector plays the **`secret` chime**, also unattenuated, alongside the
-center-screen message. Vanilla plays no sound for a secret at all, so this is a deliberate
-addition, not a fidelity reproduction — docs/hud.md § Center messages.
+## Cues
 
-It is the one sound that comes from **no game WAD**: `audio.ts`'s `ASSETS` table maps it to the
-`SECRET` lump of the WAD the engine ships (`assets/secret.ogg`, docs/wad.md § The WAD the engine
-ships), and `playAsset` starts it. It can't be an `SfxId` — `SFX` is `sounds.c`
+A **cue** is a sound played to the player rather than somewhere in the world —
+`AudioEngine.playCue`: unattenuated, centred and **without the wobble**, so one that repeats sounds
+the same every time. That is a **deviation** where vanilla has the sound at all:
+`S_StartSoundAtVolume` wobbles `radio` like any sound, and a countdown's ticks drifted in pitch.
+
+| Cue | Sound |
+|---|---|
+| A deathmatch time limit's last seconds, once each (docs/multiplayer-deathmatch.md § Limits) | the message cue |
+| A kill that nears the kill limit (docs/multiplayer-deathmatch.md § Limits) | the message cue |
+| A player joining or leaving a network game, with the feed's line — none where the feed is hidden (docs/hud.md § HUD messages) | the message cue |
+| Entering a secret sector, beside the center message (docs/hud.md § Center messages) | `secret` |
+| The master and sfx sliders, dragged (docs/menu.md § Settings tab) | `itemup` |
+
+**The message cue** (`Game.messageCue`) is vanilla's chat message's: `hu_stuff.c` plays `sfx_radio`
+in a commercial game and `sfx_tink` otherwise.
+
+**The `secret` chime** is this engine's own addition — vanilla plays no sound for a secret at all.
+It is a lump of the WAD the engine ships, not of any game WAD: `audio.ts`'s `ASSETS` table maps it
+to `SECRET` (`assets/secret.ogg`, docs/wad.md § The WAD the engine ships), and `playCue` takes that
+name beside an `SfxId`, the two name spaces disjoint. It can't be an `SfxId` — `SFX` is `sounds.c`
 verbatim and a name vanilla never had would quietly turn that table into an approximation — and
 sourcing it from a lump would mean either a made-up `DS*` name no WAD carries or borrowing an
 unrelated one (`DSRADIO`, DOOM 2's inter-level chatter, which is what this used to play and which

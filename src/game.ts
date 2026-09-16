@@ -86,7 +86,7 @@ import { IconOfSin } from './game/monsters/iconofsin.ts';
 import { Hud } from './ui/hud/hud.ts';
 import { Crosshair } from './ui/hud/crosshair.ts';
 import { ReplayBar } from './ui/hud/replaybar.ts';
-import { Intermission, INTERMISSION_INPUT_DELAY } from './ui/hud/intermission.ts';
+import { Intermission, INTERMISSION_INPUT_DELAY, type ContinueHint } from './ui/hud/intermission.ts';
 import { EndCard, type EndScope } from './ui/hud/endcard.ts';
 import { LevelCard } from './ui/hud/levelcard.ts';
 import { LevelNames, titleLookupFor } from './wad/campaign/names.ts';
@@ -99,12 +99,16 @@ import {
   lockedLineMessage,
   missingArtMessage,
   SECRET_MESSAGE,
+  killsLeftMessage,
+  timeLeftMessage,
 } from './ui/hud/message.ts';
-import { HudMessages, deathLine } from './ui/hud/messages.ts';
+import { HudMessages, deathLine, presenceLine } from './ui/hud/messages.ts';
+import type { TextRun, WadFontRecolor } from './ui/hud/wadfont.ts';
+import type { PlayerColor } from './wad/playercolor.ts';
 import { handleHotkeys } from './ui/devmode/debughud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { DeathOverlay, type DeathHint } from './ui/hud/deathoverlay.ts';
-import { Scoreboard, type ScoreRow } from './ui/hud/scoreboard.ts';
+import { Scoreboard, nameColors, rankByKills, type ScoreRow } from './ui/hud/scoreboard.ts';
 import { FrameProfiler } from './util/profiler.ts';
 import { clearRandom, getRandomCursors, setRandomCursors } from './util/random.ts';
 import {
@@ -153,8 +157,14 @@ import { gameModeOf, type GameMode } from './wad/campaign/gamemode.ts';
 import { ThingType } from './game/things/doomednums.ts';
 import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
-import { playerOrigin } from './audio/sfx.ts';
-import { PlayerSlot, playerDeath, type SlotSource } from './game/playerslot.ts';
+import { playerOrigin, type SfxId } from './audio/sfx.ts';
+import {
+  FORCED_RESPAWN_TICS,
+  PlayerSlot,
+  playerDeath,
+  respawnCountdown,
+  type SlotSource,
+} from './game/playerslot.ts';
 import { Level, type LevelParts } from './game/level.ts';
 import { Presenter } from './game/presenter.ts';
 import {
@@ -166,7 +176,16 @@ import {
   rebornSpot,
   spotTaken,
 } from './game/playerstarts.ts';
-import { TICS_PER_MINUTE, fragCredit, getFragLimit, getFriendlyFire, getTimeLimit } from './game/rules.ts';
+import {
+  TICS_PER_MINUTE,
+  fragCredit,
+  getFragLimit,
+  getFriendlyFire,
+  getTimeLimit,
+  killsToLimit,
+  timeLimitCountdown,
+  timeLimitLeft,
+} from './game/rules.ts';
 import { IDLE_TIC_INPUT, respawnPressed, type TicInput } from './game/input.ts';
 import { SoundBank } from './wad/sound.ts';
 import { MusicBank } from './wad/music.ts';
@@ -526,6 +545,8 @@ export class Game {
   private deathOverlay: DeathOverlay;
   /** The board Tab holds up — {@link Game.scoreboardRows}, docs/hud.md § Scoreboard. */
   private scoreboard: Scoreboard;
+  /** Each armour colour's name colour on a message ({@link Game.slotName}), the board's own. */
+  private nameColors: Record<PlayerColor, WadFontRecolor>;
   readonly title: string;
 
   /**
@@ -669,6 +690,7 @@ export class Game {
     this.endCard = new EndCard(gfx);
     this.deathOverlay = new DeathOverlay(gfx);
     this.scoreboard = new Scoreboard(gfx.palette);
+    this.nameColors = nameColors(gfx.palette);
     // Session-scoped like the banks above: which titles apply depends on the loaded file set
     // (its MAPINFO lumps and which IWAD it is), not on the current map.
     this.levelNames = new LevelNames(wad, mapInfo, this.dehacked);
@@ -703,7 +725,12 @@ export class Game {
           captureState: (joining) => this.captureState(joining),
           restoreLevel: (restore) => this.restoreFromNet(restore),
           say: (text) => this.message.show(text),
-          notice: (text) => this.messages.show(text),
+          notice: ({ name, color, event }) => {
+            // Heard only with the line: a mode that hides the feed silences it too.
+            if (this.messages.show(...presenceLine({ text: name, color: this.nameColors[color] }, event))) {
+              this.audio.playCue(this.messageCue);
+            }
+          },
         })
       : null;
     const game = this;
@@ -830,6 +857,8 @@ export class Game {
       },
       scoreboardRows: () => this.scoreboardRows(),
       intermissionScoreRows: () => this.intermissionScoreRows(),
+      respawnCountdown: () => this.overlayCountdown(),
+      timeLeft: () => this.hudTimeLeft(),
     });
 
     const start = this.mapNames.indexOf(startMap.toUpperCase());
@@ -987,8 +1016,8 @@ export class Game {
     // Taking over mid-death or on the intermission hands those keys back to the viewer, and the
     // popup on screen was drawn without their hint. docs/replays.md § Playback.
     this.deathOverlay.setHint(this.deathHint());
-    this.intermission.setContinueHint(this.viewerContinues);
-    this.endCard.setContinueHint(this.viewerContinues);
+    this.intermission.setContinueHint(this.continueHint);
+    this.endCard.setContinueHint(this.continueHint);
     void this.saveTakeOver();
   }
 
@@ -1203,7 +1232,9 @@ export class Game {
    * is up. docs/hud.md § Scoreboard.
    */
   private intermissionScoreRows(): ScoreRow[] | null {
-    return this.popup === 'intermission' ? this.scoreRows() : null;
+    const rows = this.popup === 'intermission' ? this.scoreRows() : null;
+    // A deathmatch's result: ranked, its winner marked.
+    return rows && this.deathmatch ? rankByKills(rows) : rows;
   }
 
   /**
@@ -1260,6 +1291,11 @@ export class Game {
   /** A slot's name as the board shows it: {@link Game.rosterName}, else its player number. */
   private playerName(index: number): string {
     return this.rosterName(index) ?? `Player ${index + 1}`;
+  }
+
+  /** A slot's name as a message draws it: {@link Game.playerName}, in the slot's armour colour. */
+  private slotName(slot: PlayerSlot): TextRun {
+    return { text: this.playerName(slot.index), color: this.nameColors[slot.drawColor()] };
   }
 
   /** A slot's name in the network session's roster, null outside a network game. */
@@ -1836,12 +1872,15 @@ export class Game {
       slot.die(hit.cause, death.gibbed);
       if (this.deathmatch) {
         const killer = fragCredit(slot.index, hit);
-        if (killer !== null) this.slots[killer].frags[slot.index]++;
+        if (killer !== null) {
+          this.slots[killer].frags[slot.index]++;
+          if (killer !== slot.index) this.announceKillsLeft(this.slots[killer]);
+        }
       }
       // Everyone's feed, in a game with someone else to read it; the overlay below is the victim's.
       if (this.netgame) {
-        const killer = hit.slot !== undefined && hit.slot !== slot.index ? this.playerName(hit.slot) : null;
-        this.messages.show(deathLine(this.playerName(slot.index), killer));
+        const killer = hit.slot !== undefined && hit.slot !== slot.index ? this.slotName(this.slots[hit.slot]) : null;
+        this.messages.show(...deathLine(this.slotName(slot), killer));
       }
       // Dying on an `exitBelowHealth` floor ends the level whatever killed the player, not only
       // when that floor's own damage did it — E1M8's pit is the ending, and a baron finishing the
@@ -1953,11 +1992,21 @@ export class Game {
   }
 
   /**
-   * Whether the key that dismisses the intermission and the end card is the viewer's to press. It
-   * is the record's under a playback, so neither popup offers it (docs/replays.md § Playback).
+   * The line under the intermission and the end card: the continue key where the viewer holds it,
+   * the host's wait for a network game's other players, nothing under a playback, where the key is
+   * the record's (docs/hud.md § Intermission, docs/replays.md § Playback).
    */
-  private get viewerContinues(): boolean {
-    return this.playback === null;
+  private get continueHint(): ContinueHint {
+    if (this.playback) return 'none';
+    return this.net && !this.net.session.isHost ? 'waiting' : 'continue';
+  }
+
+  /**
+   * The cue a message announces itself with — vanilla's chat message's: `hu_stuff.c` plays
+   * `sfx_radio` in a commercial game and `sfx_tink` otherwise. docs/audio.md § Cues.
+   */
+  private get messageCue(): SfxId {
+    return this.gameMode === 'commercial' ? 'radio' : 'tink';
   }
 
   /** Which line the death overlay offers — nothing under a playback, where `R` is the record's. */
@@ -1965,6 +2014,16 @@ export class Game {
     if (this.playback) return 'none';
     if (this.netgame) return 'respawn';
     return this.savedState !== null ? 'reload-save' : 'restart';
+  }
+
+  /**
+   * What the death overlay counts down over {@link Game.viewed}'s corpse: a deathmatch's forced
+   * respawn, while the level runs on. docs/multiplayer-deathmatch.md § Forced respawn.
+   */
+  private overlayCountdown(): number | null {
+    const { viewed } = this;
+    if (!this.deathmatch || !viewed.dead || this.levelEnding) return null;
+    return respawnCountdown(viewed.deadTics);
   }
 
   /**
@@ -2136,7 +2195,7 @@ export class Game {
       episodeGraphic: this.levelNames.episodeGraphicFor(this.currentMap),
       subtitle: this.title,
       continues: this.nextMapIndex >= 0,
-      canContinue: this.viewerContinues,
+      hint: this.continueHint,
     });
     this.popup = 'endcard';
     this.intermissionTime = 0;
@@ -2316,8 +2375,11 @@ export class Game {
     // the popup in the same press.
     if (this.popup) {
       this.intermissionTime += DOOM_TIC;
-      // Any slot's press: over the network every browser sees every row, so this is one answer.
-      const go = this.slots.some((slot) => slot.input.pressed('Space') || slot.input.pressed('Enter'));
+      // Slot 0's press alone: the host's in a network game, whose rows every browser reads alike
+      // (docs/multiplayer-net.md § The session), the local player's otherwise — a take-over's
+      // included, being slot 0's (docs/replays.md § Playback). docs/hud.md § Intermission.
+      const host = this.slots[0].input;
+      const go = host.pressed('Space') || host.pressed('Enter');
       this.endTicInputs();
       if (this.intermissionTime < INTERMISSION_INPUT_DELAY || !go) return false;
       // The campaign's last exit shows the card *after* the level's own stats, so the intermission
@@ -2416,10 +2478,18 @@ export class Game {
       // walk-over is queued and consumed with nothing in between, but a crusher can kill between.
       this.endingOverCorpse();
       this.pendingExit = null;
+      // A center message goes with the level it was raised on, not over its result.
+      this.message.clear();
       // The cheated popup reads the *same* flag that already refuses a best time — a run that
       // can't set one has nothing worth stating (docs/cheats.md § Saves and best times).
-      this.intermission.setContinueHint(this.viewerContinues);
-      this.intermission.show(this.level.stats(), this.recordCompletion(), this.parFor(), this.cheated);
+      this.intermission.setContinueHint(this.continueHint);
+      // A deathmatch's result is the board alone (docs/multiplayer-deathmatch.md § Scoreboard and
+      // the overlay).
+      if (this.deathmatch) {
+        this.intermission.showDeathmatch();
+      } else {
+        this.intermission.show(this.level.stats(), this.recordCompletion(), this.parFor(), this.cheated);
+      }
       // Vanilla's own `S_ChangeMusic(mus_inter)` at the intermission, keeping
       // the level's track when the set has no intermission lump.
       const between = this.levelMusic.intermissionTrackFor(this.currentMap);
@@ -2431,11 +2501,15 @@ export class Game {
     }
 
     // A corpse answers one input: in single player `R`, which reloads the level; in a netgame use
-    // or `R` on the slot's own input, whichever browser this is, which stands them back up in it.
-    // Everything else a player drives is skipped below instead of branching here.
+    // or `R` on the slot's own input, whichever browser this is, which stands them back up in it —
+    // and in a deathmatch its own clock running out. Everything else a player drives is skipped
+    // below instead of branching here. docs/multiplayer-deathmatch.md § Forced respawn.
     if (this.netgame) {
       for (const slot of this.slots) {
-        if (slot.dead && !this.levelEnding && respawnPressed(slot.input)) {
+        if (!slot.dead) continue;
+        slot.deadTics++;
+        const forced = this.deathmatch && slot.deadTics >= FORCED_RESPAWN_TICS;
+        if (!this.levelEnding && (forced || respawnPressed(slot.input))) {
           this.respawnSlot(slot);
         }
       }
@@ -2470,7 +2544,10 @@ export class Game {
         slot.simCamera.tick(DOOM_TIC, slot.player.followPoint(), cursor);
       }
     }
-    if (anyPlayerAlive(this.slots)) this.level.time += DOOM_TIC;
+    if (anyPlayerAlive(this.slots)) {
+      this.level.time += DOOM_TIC;
+      this.announceTimeLeft();
+    }
     this.net?.tickViewCamera();
 
     this.refillBodies();
@@ -2727,7 +2804,7 @@ export class Game {
     if (sectorEffect.secretFound && slot === this.viewed) {
       this.message.show(SECRET_MESSAGE);
       // Unattenuated, like a pickup: it's an announcement to the player, not a sound in the world.
-      this.audio.playAsset('secret');
+      this.audio.playCue('secret');
     }
     // A damage floor that ends the level never leads to the secret exit
     // (vanilla's sector type 11 calls `G_ExitLevel`, not `G_SecretExitLevel`).
@@ -2749,14 +2826,60 @@ export class Game {
    * any player's net frags). docs/multiplayer-deathmatch.md § Limits.
    */
   private checkDeathmatchLimits(): void {
-    if (!this.deathmatch || this.levelEnding) return;
-    const timeLimit = getTimeLimit();
-    const fragLimit = getFragLimit();
-    const timeUp = timeLimit > 0 && Math.round(this.level.time / DOOM_TIC) >= timeLimit * TICS_PER_MINUTE;
+    if (this.levelEnding) return;
+    const { timeLimit, fragLimit } = this;
+    const timeUp = timeLimit > 0 && this.levelTics >= timeLimit * TICS_PER_MINUTE;
     const fragsUp = fragLimit > 0 && this.slots.some((slot) => slot.netFrags() >= fragLimit);
     if (timeUp || fragsUp) {
       this.pendingExit = 'normal';
     }
+  }
+
+  /** The time limit in minutes, a deathmatch's alone: 0 for none, as the rules read it. */
+  private get timeLimit(): number {
+    return this.deathmatch ? getTimeLimit() : 0;
+  }
+
+  /** The frag limit, a deathmatch's alone: 0 for none, as the rules read it. */
+  private get fragLimit(): number {
+    return this.deathmatch ? getFragLimit() : 0;
+  }
+
+  /** {@link Level.time} in whole tics, as the rules count it. */
+  private get levelTics(): number {
+    return Math.round(this.level.time / DOOM_TIC);
+  }
+
+  /**
+   * The time limit's countdown line, on the tic that moves the clock onto one of its last whole
+   * seconds — so never twice for one second while every player lies dead and the clock stands.
+   * docs/multiplayer-deathmatch.md § Limits.
+   */
+  private announceTimeLeft(): void {
+    if (this.levelEnding) return;
+    const countdown = timeLimitCountdown(this.levelTics, this.timeLimit);
+    if (countdown !== null) this.announce(timeLeftMessage(countdown));
+  }
+
+  /**
+   * The center message a kill that brought `slot` within reach of the kill limit raises — the
+   * viewer's own in the second person. docs/multiplayer-deathmatch.md § Limits.
+   */
+  private announceKillsLeft(slot: PlayerSlot): void {
+    const left = killsToLimit(slot.netFrags(), this.fragLimit);
+    if (left === null || this.levelEnding) return;
+    this.announce(...killsLeftMessage(slot === this.viewed ? null : this.slotName(slot), left));
+  }
+
+  /** A center message with its tick ({@link Game.messageCue}): how a deathmatch's limits speak. */
+  private announce(...runs: TextRun[]): void {
+    this.message.show(...runs);
+    this.audio.playCue(this.messageCue);
+  }
+
+  /** What the HUD clock reads in place of the time spent: a deathmatch time limit's time left. */
+  private hudTimeLeft(): number | null {
+    return timeLimitLeft(this.levelTics, this.timeLimit);
   }
 
   /**

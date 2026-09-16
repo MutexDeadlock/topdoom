@@ -91,6 +91,13 @@ export interface SlotAssignment {
   settings: PlayerSettings;
 }
 
+/** A player joining or leaving the running game, as the feed is told it: who, in which colour. */
+export interface NetNotice {
+  name: string;
+  color: PlayerColor;
+  event: 'joined' | 'left';
+}
+
 /** What the host hands a joiner, and every peer on a resync: the level at one tic. */
 export interface NetRestore {
   tic: number;

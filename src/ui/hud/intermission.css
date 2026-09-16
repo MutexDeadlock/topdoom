@@ -54,3 +54,17 @@
   margin-top: 14px;
   opacity: 0.6;
 }
+
+/*
+ * A deathmatch's popup is its scoreboard: the panel keeps only the hint, unframed, under the board
+ * (ui/hud/intermission.ts's `showDeathmatch`).
+ */
+#intermission.deathmatch .panel {
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+#intermission.deathmatch .panel > :not(.line-hint) {
+  display: none;
+}

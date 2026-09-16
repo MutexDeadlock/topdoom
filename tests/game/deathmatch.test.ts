@@ -4,10 +4,11 @@ import { World } from '../../src/game/world.ts';
 import { buildThingSprites } from '../../src/game/things.ts';
 import { ITEM_RESPAWN_QUEUE, ITEM_RESPAWN_TICS } from '../../src/game/things/defs.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
-import { CEILING_HUNG_HEIGHT } from '../../src/game/things/tables.ts';
+import { CEILING_HUNG_HEIGHT, PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_TICS } from '../../src/game/things/tables.ts';
+import { FORCED_RESPAWN_TICS, RESPAWN_COUNTDOWN_SECONDS, respawnCountdown } from '../../src/game/playerslot.ts';
 import { applyPickup, createInventory, giveAllKeys } from '../../src/game/inventory.ts';
 import { KEY_SLOTS } from '../../src/game/inventory/defs.ts';
-import { DOOM_TIC } from '../../src/constants.ts';
+import { DOOM_TIC, TICRATE } from '../../src/constants.ts';
 import type { Pos3 } from '../../src/types.ts';
 import type { ThingsSnapshot } from '../../src/game/snapshot.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
@@ -155,5 +156,16 @@ describe('Deathmatch · item respawn', () => {
     assert.equal(queue[0][0], 1, 'the first taken was dropped off the end');
     const back = build(JSON.parse(JSON.stringify(layer.snapshot())));
     assert.deepEqual(back.snapshot().itemRespawn, queue);
+  });
+});
+
+describe('Deathmatch · forced respawn', () => {
+  test('the countdown is full as the plain death chain ends, and runs out on the tic the corpse is due', () => {
+    const chainTics = PLAYER_DEATH_FRAMES.length * PLAYER_DEATH_FRAME_TICS;
+    assert.equal(FORCED_RESPAWN_TICS, chainTics + RESPAWN_COUNTDOWN_SECONDS * TICRATE);
+    assert.equal(respawnCountdown(chainTics), RESPAWN_COUNTDOWN_SECONDS, 'the overlay rises on a full count');
+    assert.equal(respawnCountdown(chainTics + 1), RESPAWN_COUNTDOWN_SECONDS);
+    assert.equal(respawnCountdown(FORCED_RESPAWN_TICS - 1), 1);
+    assert.equal(respawnCountdown(FORCED_RESPAWN_TICS), 0);
   });
 });

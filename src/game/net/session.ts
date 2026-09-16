@@ -13,7 +13,7 @@ import { MAX_PLAYERS } from '../playerstarts.ts';
 import { getRandomCursors } from '../../util/random.ts';
 import type { CameraPose } from '../../render/camera.ts';
 import type { Pos2 } from '../../types.ts';
-import { asPlayerColor, DEFAULT_PLAYER_COLOR, type PlayerColor } from '../../wad/playercolor.ts';
+import { asPlayerColor, DEFAULT_PLAYER_COLOR, slotColor, type PlayerColor } from '../../wad/playercolor.ts';
 import {
   DROP_TIMEOUT_MS,
   INPUT_DELAY,
@@ -26,6 +26,7 @@ import {
   type KickRequest,
   type LobbyPeer,
   type NetGame,
+  type NetNotice,
   type NetRestore,
   type NetRules,
   type PeerMessage,
@@ -157,7 +158,7 @@ export class NetSession {
    * `NetSeat` sits on this session; null between levels, when there is no feed to tell.
    * docs/multiplayer-net.md § Joining a game, § Leaving.
    */
-  onNotice: ((text: string) => void) | null = null;
+  onNotice: ((notice: NetNotice) => void) | null = null;
 
   private transport: Transport;
   private hooks: NetHooks;
@@ -696,7 +697,7 @@ export class NetSession {
     }
     if (joining) {
       this.scheduler?.ensureSlot(joining.slot, atTic + this.delay);
-      this.onNotice?.(`${joining.name} joined the game`);
+      this.onNotice?.({ name: joining.name, color: joining.color, event: 'joined' });
     }
   }
 
@@ -726,7 +727,9 @@ export class NetSession {
       this.end('dropped from the game: nothing you pressed reached the others for too long');
       return;
     }
-    if (this.playing) this.onNotice?.(`${this.nameOf(slot)} left the game`);
+    if (this.playing) {
+      this.onNotice?.({ name: this.nameOf(slot), color: this.colorOf(slot) ?? slotColor(slot), event: 'left' });
+    }
     this.hooks.changed();
   }
 

@@ -357,12 +357,17 @@ export class Hud {
     this.backpackRow = this.addPowerRow(gfx, BACKPACK_ICON).row;
   }
 
-  update(inv: Inventory, stats: LevelStats, recording: boolean): void {
+  /**
+   * @param timeLeft  the whole seconds a deathmatch time limit leaves, which the clock reads in
+   *                  place of the time spent; null with none (docs/multiplayer-deathmatch.md
+   *                  § Limits)
+   */
+  update(inv: Inventory, stats: LevelStats, recording: boolean, timeLeft: number | null): void {
     this.recordingEl.classList.toggle('hidden', !recording);
     this.drawStatLine(this.killsCanvas, 'M', stats.kills, stats.totalKills);
     this.drawStatLine(this.itemsCanvas, 'I', stats.items, stats.totalItems);
     this.drawStatLine(this.secretsCanvas, 'S', stats.secrets, stats.totalSecrets);
-    this.drawTimer(stats.elapsedSeconds);
+    this.drawTimer(timeLeft ?? stats.elapsedSeconds);
     this.healthValue.set(Math.round(inv.health));
     const berserk = hasPower(inv, 'berserk');
     this.healthIconNormal.classList.toggle('hidden', berserk);
@@ -449,11 +454,11 @@ export class Hud {
    * Draws the level clock, right of `#game-hud`, in the same native STCFN red as the strip's
    * labels.
    *
-   * @param elapsedSeconds  `Game`'s to freeze (on death or level completion) — this method only
-   *                        ever formats whatever it's handed
+   * @param seconds  the time spent, or a time limit's time left — `Game`'s to freeze (on death or
+   *                 level completion); this method only ever formats whatever it's handed
    */
-  private drawTimer(elapsedSeconds: number): void {
-    const text = formatClock(elapsedSeconds);
+  private drawTimer(seconds: number): void {
+    const text = formatClock(seconds);
     this.timerCanvas.width = this.redFont.measure(text);
     this.timerCanvas.height = this.redFont.height;
     this.redFont.draw(this.timerCanvas.getContext('2d')!, 0, 0, text);

@@ -1,7 +1,7 @@
 /**
  * The end-of-level popup: kills/items/secrets percentages, a face for how that went, then the
- * level time against best and par, and above it the scoreboard of a game of more than one player.
- * See docs/hud.md § Intermission.
+ * level time against best and par, and above it the scoreboard of a game of more than one player —
+ * in a deathmatch that board alone. See docs/hud.md § Intermission.
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import type { BestTimeResult } from '../../game/besttimes.ts';
@@ -17,6 +17,29 @@ import { Scoreboard, type ScoreRow } from './scoreboard.ts';
  * `R` hint for the same reason (docs/replays.md § Playback).
  */
 export const CONTINUE_HINT = 'Press SPACE to continue';
+
+/**
+ * What a network game's other players read in {@link CONTINUE_HINT}'s place: the key is the
+ * host's alone. docs/hud.md § Intermission.
+ */
+export const WAITING_HINT = 'Waiting for host';
+
+/**
+ * The line under both popups: the continue key, the host's wait, or none under a playback, where
+ * the key is the record's.
+ */
+export type ContinueHint = 'continue' | 'waiting' | 'none';
+
+/**
+ * Draws the line under a popup, or hides it under a playback — `Intermission`'s and `EndCard`'s
+ * `setContinueHint`.
+ *
+ * @param continueText  what `'continue'` reads: {@link CONTINUE_HINT}, or the end card's own
+ */
+export function drawContinueHint(canvas: HTMLCanvasElement, font: WadFont, hint: ContinueHint, continueText: string): void {
+  canvas.classList.toggle('hidden', hint === 'none');
+  if (hint !== 'none') drawText(canvas, font, hint === 'waiting' ? WAITING_HINT : continueText);
+}
 
 /**
  * How long the popup ignores that key. `Space` both uses the exit switch and dismisses the popup,
@@ -122,8 +145,6 @@ export class Intermission {
       this.redFont.measure('Par  '),
     );
     this.timeColumnWidth = this.yellowFont.measure(formatClock(0));
-    // Doesn't depend on the level, so it's drawn once per Game rather than per exit.
-    drawText(this.hintCanvas, this.redFont, CONTINUE_HINT);
   }
 
   /**
@@ -136,6 +157,7 @@ export class Intermission {
    *                 may set a record, rather than a second account of what happened this run
    */
   show(stats: LevelStats, record: BestTimeResult | null, parSeconds: number | null, cheated: boolean): void {
+    this.root.classList.remove('deathmatch');
     if (cheated) return this.showCheated();
     this.cheatedCanvas.classList.add('hidden');
     this.statsBlock.classList.remove('hidden');
@@ -155,11 +177,21 @@ export class Intermission {
   }
 
   /**
-   * Shows or hides the continue hint on a popup already up: taking a replay over hands that key
-   * back to the viewer with the popup on screen. See {@link CONTINUE_HINT}.
+   * A deathmatch's popup: the scoreboard above the panel is the whole result, so none of the
+   * level's own numbers — the panel keeps only the hint, unframed (`intermission.css`).
+   * docs/hud.md § Intermission.
    */
-  setContinueHint(shown: boolean): void {
-    this.hintCanvas.classList.toggle('hidden', !shown);
+  showDeathmatch(): void {
+    this.root.classList.add('deathmatch');
+    this.root.classList.remove('hidden');
+  }
+
+  /**
+   * The line under the popup: set before it goes up, and again on a popup already up — taking a
+   * replay over hands the key back to the viewer with the popup on screen.
+   */
+  setContinueHint(hint: ContinueHint): void {
+    drawContinueHint(this.hintCanvas, this.redFont, hint, CONTINUE_HINT);
   }
 
   /**

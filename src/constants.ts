@@ -25,10 +25,11 @@ export const DEVMODE = import.meta.env?.VITE_DEVMODE === 'true';
  */
 export const DEFAULT_RELAY_URL = 'wss://relay.topdoom.workers.dev';
 
-/**
- * One vanilla tic in seconds. DOOM's whole game clock runs at 35 Hz
- */
-export const DOOM_TIC = 1 / 35;
+/** `doomdef.h`'s `TICRATE`: tics in a second of game time. DOOM's whole game clock runs at 35 Hz. */
+export const TICRATE = 35;
+
+/** One vanilla tic in seconds, {@link TICRATE}'s reciprocal. */
+export const DOOM_TIC = 1 / TICRATE;
 
 /**
  * How much `render/sectorlight.ts` brightens dark sectors above vanilla's own ramp

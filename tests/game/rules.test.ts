@@ -1,6 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  TICS_PER_MINUTE,
+  KILL_LIMIT_WARNING,
+  TIME_LIMIT_COUNTDOWN_SECONDS,
   fragCredit,
   fragSum,
   getFragLimit,
@@ -12,7 +15,11 @@ import {
   setFragLimit,
   setFriendlyFire,
   setTimeLimit,
+  killsToLimit,
+  timeLimitCountdown,
+  timeLimitLeft,
 } from '../../src/game/rules.ts';
+import { TICRATE } from '../../src/constants.ts';
 import { captureSessionSettings, withSessionDefaults } from '../../src/game/replay/settings.ts';
 import { targetOfSlot } from '../../src/game/things/defs.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
@@ -91,5 +98,39 @@ describe('Rules · settings', () => {
     });
     setDeathmatch(false);
     setFragLimit(0);
+  });
+});
+
+describe('Rules · the time limit countdown', () => {
+  test('one line on each of the last whole seconds, none between them, before them or at the limit', () => {
+    const limit = 2 * TICS_PER_MINUTE;
+    const last = TIME_LIMIT_COUNTDOWN_SECONDS;
+    assert.equal(timeLimitCountdown(limit - last * TICRATE, 2), last);
+    assert.equal(timeLimitCountdown(limit - TICRATE, 2), 1);
+    assert.equal(timeLimitCountdown(limit - last * TICRATE + 1, 2), null, 'between two seconds');
+    assert.equal(timeLimitCountdown(limit - (last + 1) * TICRATE, 2), null, 'before the last seconds');
+    assert.equal(timeLimitCountdown(limit, 2), null, 'the limit itself ends the level');
+    assert.equal(timeLimitCountdown(0, 0), null, 'no limit');
+  });
+
+  test('the HUD clock reads the whole seconds left, rounded up, and none without a limit', () => {
+    const limit = 2 * TICS_PER_MINUTE;
+    assert.equal(timeLimitLeft(0, 2), 120);
+    assert.equal(timeLimitLeft(1, 2), 120, 'a tic in, the second has not passed');
+    assert.equal(timeLimitLeft(limit - TIME_LIMIT_COUNTDOWN_SECONDS * TICRATE, 2), TIME_LIMIT_COUNTDOWN_SECONDS, 'with the countdown');
+    assert.equal(timeLimitLeft(limit, 2), 0);
+    assert.equal(timeLimitLeft(limit + TICRATE, 2), 0, 'never negative');
+    assert.equal(timeLimitLeft(500, 0), null);
+  });
+});
+
+describe('Rules · the kill limit announcement', () => {
+  test('only within the warning of the limit, never at it, and never without one', () => {
+    const limit = 10;
+    assert.equal(killsToLimit(limit - KILL_LIMIT_WARNING - 1, limit), null, 'further off');
+    assert.equal(killsToLimit(limit - KILL_LIMIT_WARNING, limit), KILL_LIMIT_WARNING);
+    assert.equal(killsToLimit(limit - 1, limit), 1);
+    assert.equal(killsToLimit(limit, limit), null, 'the limit itself ends the level');
+    assert.equal(killsToLimit(9, 0), null, 'no limit');
   });
 });

@@ -113,8 +113,9 @@ the snapshot inside is unchanged.
 **The save holds every player slot** (`players`, by slot): each one's `player`, `inventory`,
 `weapons`, `cameraYawDeg`, `dead`, and optional `cheats`, `deathCause` (what killed a corpse,
 for the death overlay alone — docs/death.md § Who killed the player), `gibbed` (a corpse on the
-gib chain — docs/death.md § Player death) and `crushed` (a corpse a mover crunched to a pool —
-docs/specials-crushers.md § Crushed corpses), beside `netgame` and every slot's
+gib chain — docs/death.md § Player death), `crushed` (a corpse a mover crunched to a pool —
+docs/specials-crushers.md § Crushed corpses) and `deadTics` (the tics a corpse has lain —
+docs/multiplayer-deathmatch.md § Forced respawn), beside `netgame` and every slot's
 `SpecialsController.prev` and `SectorEffects` timer. A restore builds as many slots as the save
 holds, whatever the session was started with. docs/multiplayer-coop.md § Exit, death and saves.
 

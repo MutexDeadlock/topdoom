@@ -4,7 +4,7 @@
  * docs/multiplayer-net.md § What a tic does.
  */
 import type { NetSession, NetCapture } from './session.ts';
-import type { NetRestore, SlotAssignment } from './defs.ts';
+import type { NetNotice, NetRestore, SlotAssignment } from './defs.ts';
 import type { PlayerSlot } from '../playerslot.ts';
 import { IDLE_TIC_INPUT } from '../input.ts';
 import { aimPlaneZ } from '../player.ts';
@@ -47,7 +47,7 @@ export interface NetHost {
   /** Center-screen text: the stall notice, redrawn while the wait lasts. */
   say(text: string): void;
   /** A line for the feed: who joined, who left. docs/hud.md § HUD messages. */
-  notice(text: string): void;
+  notice(notice: NetNotice): void;
 }
 
 export class NetSeat {
@@ -65,7 +65,7 @@ export class NetSeat {
   constructor(session: NetSession, host: NetHost) {
     this.session = session;
     this.host = host;
-    session.onNotice = (text) => host.notice(text);
+    session.onNotice = (notice) => host.notice(notice);
   }
 
   /**

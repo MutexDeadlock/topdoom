@@ -486,7 +486,8 @@ export const MONSTER_RAISE_FRAMES: Record<number, string[]> = {};
  */
 export const PLAYER_DEATH_FRAMES = ['H', 'I', 'J', 'K', 'L', 'M', 'N'];
 export const PLAYER_XDEATH_FRAMES = ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W'];
-export const PLAYER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
+export const PLAYER_DEATH_FRAME_TICS = 6;
+export const PLAYER_DEATH_FRAME_SECONDS = PLAYER_DEATH_FRAME_TICS * DOOM_TIC;
 export const PLAYER_ATTACK_FRAMES = ['E', 'F'];
 export const PLAYER_PAIN_FRAMES = ['G'];
 export const PLAYER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;

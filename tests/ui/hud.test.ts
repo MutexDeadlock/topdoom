@@ -1,6 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatClock, percentOf } from '../../src/ui/hud/hud.ts';
+import { killsLeftMessage, timeLeftMessage } from '../../src/ui/hud/message.ts';
+import { rankByKills, type ScoreRow } from '../../src/ui/hud/scoreboard.ts';
 
 /**
  * The two pure helpers the HUD strip and the intermission popup share, so the bar and the popup
@@ -32,5 +34,51 @@ describe('HUD · level stat formatting', () => {
     assert.equal(formatClock(252), '00:04:12');
     assert.equal(formatClock(3661), '01:01:01');
     assert.equal(formatClock(-5), '00:00:00');
+  });
+});
+
+/**
+ * The deathmatch limits' center message lines — docs/multiplayer-deathmatch.md § Limits.
+ */
+describe('HUD · limit announcements', () => {
+  test('the countdown says second or seconds', () => {
+    assert.equal(timeLeftMessage(10), '10 seconds left');
+    assert.equal(timeLeftMessage(1), '1 second left');
+  });
+
+  test('the kill limit names the player in their colour, and the viewer as you', () => {
+    const who = { text: 'guest', color: [215, 66, 66] as const };
+    assert.deepEqual(killsLeftMessage(who, 3), [who, ' needs 3 more kills']);
+    assert.deepEqual(killsLeftMessage(null, 1), ['You need 1 more kill']);
+  });
+});
+
+/**
+ * The deathmatch intermission's board — docs/hud.md § Scoreboard.
+ */
+describe('HUD · deathmatch ranking', () => {
+  const row = (name: string, kills: number): ScoreRow => ({
+    name,
+    color: 'green',
+    kills,
+    pingMs: null,
+    local: false,
+    present: true,
+  });
+
+  test('most kills first, slot order among equals, the sole leader marked', () => {
+    const ranked = rankByKills([row('a', 1), row('b', 5), row('c', -1), row('d', 1)]);
+    assert.deepEqual(
+      ranked.map((r) => r.name),
+      ['b', 'a', 'd', 'c'],
+    );
+    assert.deepEqual(
+      ranked.map((r) => r.winner === true),
+      [true, false, false, false],
+    );
+  });
+
+  test('a shared top marks nobody', () => {
+    assert.ok(rankByKills([row('a', 3), row('b', 3), row('c', 0)]).every((r) => !r.winner));
   });
 });

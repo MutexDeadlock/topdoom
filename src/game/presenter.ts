@@ -100,6 +100,20 @@ export interface PresentHost {
    * @returns null while it is down
    */
   intermissionScoreRows(): readonly ScoreRow[] | null;
+  /**
+   * The seconds the death overlay counts down over the viewed corpse this frame.
+   * docs/multiplayer-deathmatch.md § Forced respawn.
+   *
+   * @returns null where no respawn is forced
+   */
+  respawnCountdown(): number | null;
+  /**
+   * What the HUD clock reads in place of the time spent this frame.
+   * docs/multiplayer-deathmatch.md § Limits.
+   *
+   * @returns null where no time limit counts down
+   */
+  timeLeft(): number | null;
 }
 
 export class Presenter {
@@ -190,10 +204,13 @@ export class Presenter {
   private updateOverlays(dt: number, alpha: number): void {
     const { inventory } = this.host.viewed;
     const { hud, crosshair, replayBar, screenEffects, intermission, scoreboard } = this.host.overlays;
-    hud.update(inventory, this.host.level.stats(), this.host.recording);
+    hud.update(inventory, this.host.level.stats(), this.host.recording, this.host.timeLeft());
     crosshair.update(inventory.health);
     replayBar.update(this.host.playback, this.replayAimNdc(alpha), inventory.health);
     this.tickOverlayClocks(dt);
+    this.host.overlays.deathOverlay.setCountdown(this.host.respawnCountdown());
+    // After the clocks, which may have raised the overlay this very frame.
+    this.host.overlays.message.setCovered(this.host.overlays.deathOverlay.up);
     screenEffects.update(dt, inventory);
     screenEffects.setColormapTint(this.viewColormap());
     scoreboard.update(this.host.scoreboardRows());

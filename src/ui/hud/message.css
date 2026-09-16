@@ -16,3 +16,9 @@
   opacity: 0.75;
   filter: drop-shadow(0 2px 4px #000);
 }
+
+/* Under the death overlay, whose translucent panel would show the line over its heading. Its own
+   class rather than `.hidden`, which is the message's timeout. */
+#hud-message.covered {
+  visibility: hidden;
+}

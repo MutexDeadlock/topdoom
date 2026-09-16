@@ -177,9 +177,11 @@ no damage and no knockback from it — `damageSlot`'s early return, and `resolve
 dead slot for the hitscan equivalent. The vile's knockup is the exception: it launches the corpse
 (above).
 
-The death itself shows `#death-overlay` (`ui/hud/deathoverlay.ts`) — three `WadFont` canvases in the
+The death itself shows `#death-overlay` (`ui/hud/deathoverlay.ts`) — `WadFont` canvases in the
 `EndCard` arrangement, the IWAD's own type rather than DOM text: the heading in STCFN's native HUD
-red, the killer line in `COLOR_YELLOW`, the hint in red dimmed by CSS. A canvas is always `:empty`,
+red, the killer line in `COLOR_YELLOW`, the hint in red dimmed by CSS, and in a deathmatch the
+countdown to the forced respawn under them in `COLOR_YELLOW` (`DeathOverlay.setCountdown`,
+docs/multiplayer-deathmatch.md § Forced respawn). A canvas is always `:empty`,
 so the "nothing attributed the blow" case that used to be a `:empty` selector is now a `blank` class
 the drawing code sets. It does not go up immediately: `DeathOverlay.show` only *arms* it, and
 `DeathOverlay.update` raises it once the corpse's chain (`PlayerSlot.deathFrames`) has played, so

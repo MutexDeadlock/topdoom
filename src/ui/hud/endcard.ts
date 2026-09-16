@@ -4,7 +4,7 @@
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import { drawIcon, drawText } from './hud.ts';
-import { CONTINUE_HINT } from './intermission.ts';
+import { CONTINUE_HINT, drawContinueHint, type ContinueHint } from './intermission.ts';
 import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 
 /** The two headings, by what actually ended — an episode of DOOM, or the whole map set. */
@@ -32,10 +32,10 @@ export interface EndCardInfo {
    */
   continues: boolean;
   /**
-   * Whether that key is the viewer's to press at all: under a playback it is the record's, so the
-   * card carries no hint (docs/replays.md § Playback).
+   * The line under the card: the continue key, the host's wait for a network game's other players,
+   * or none under a playback, where the key is the record's (docs/replays.md § Playback).
    */
-  canContinue: boolean;
+  hint: ContinueHint;
 }
 
 /**
@@ -55,6 +55,8 @@ export class EndCard {
   private hintCanvas = this.root.querySelector<HTMLCanvasElement>('.hint')!;
   private redFont: WadFont;
   private yellowFont: WadFont;
+  /** {@link EndCardInfo.continues} of the card up, which the continue key's wording reads. */
+  private continues = false;
 
   constructor(gfx: GraphicsBank) {
     this.gfx = gfx;
@@ -69,14 +71,14 @@ export class EndCard {
     if (!info.episodeGraphic || !drawIcon(this.subjectCanvas, this.gfx, info.episodeGraphic)) {
       drawText(this.subjectCanvas, this.redFont, info.subtitle);
     }
-    this.setContinueHint(info.canContinue);
-    drawText(this.hintCanvas, this.redFont, info.continues ? CONTINUE_HINT : MENU_HINT);
+    this.continues = info.continues;
+    this.setContinueHint(info.hint);
     this.root.classList.remove('hidden');
   }
 
   /** `Intermission.setContinueHint`'s twin — the take-over reaches whichever popup is up. */
-  setContinueHint(shown: boolean): void {
-    this.hintCanvas.classList.toggle('hidden', !shown);
+  setContinueHint(hint: ContinueHint): void {
+    drawContinueHint(this.hintCanvas, this.redFont, hint, this.continues ? CONTINUE_HINT : MENU_HINT);
   }
 
   /** Drops the card. The element outlives any one `Game`, so `dispose` clears it too. */

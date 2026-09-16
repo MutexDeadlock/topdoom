@@ -7,7 +7,7 @@ import type { KeyColor } from '../../game/inventory.ts';
 import type { LockRule } from '../../game/specials/defs.ts';
 import { lockedLine } from '../../game/specials/tables.ts';
 import { LEVEL_STATS_GREEN } from './hud.ts';
-import { WadFont, COLOR_YELLOW, type WadFontRecolor } from './wadfont.ts';
+import { COLOR_YELLOW, RunFonts, type TextRun, type WadFontRecolor } from './wadfont.ts';
 
 /**
  * How long one message stays up. Vanilla's `HU_MSGTIMEOUT` is 4 seconds
@@ -39,6 +39,26 @@ export function missingArtMessage(types: number): string {
 }
 
 /**
+ * The time limit's countdown over a deathmatch level's last seconds, one line a second: `game.ts`
+ * raises it on the tic `timeLimitCountdown` names. docs/multiplayer-deathmatch.md § Limits.
+ */
+export function timeLeftMessage(seconds: number): string {
+  return seconds === 1 ? '1 second left' : `${seconds} seconds left`;
+}
+
+/**
+ * The kill limit's announcement once a kill brings a player within reach of it: `game.ts` raises
+ * it on the kill `killsToLimit` names. docs/multiplayer-deathmatch.md § Limits.
+ *
+ * @param who    the player's name in their colour, or null for the viewer themselves
+ * @param kills  the kills still needed
+ */
+export function killsLeftMessage(who: TextRun | null, kills: number): TextRun[] {
+  const needed = kills === 1 ? '1 more kill' : `${kills} more kills`;
+  return who === null ? [`You need ${needed}`] : [who, ` needs ${needed}`];
+}
+
+/**
  * Each key color's own text color, sampled from that key's pickup sprite the same way
  * {@link COLOR_YELLOW} and {@link LEVEL_STATS_GREEN} are — `RKEYA0`'s and `YKEYA0`'s brightest
  * pixel exactly.
@@ -53,12 +73,6 @@ const KEY_TEXT_COLORS: Record<KeyColor, WadFontRecolor> = {
   red: [227, 0, 0],
   yellow: [215, 187, 67],
 };
-
-/**
- * One stretch of a message: a bare string draws in {@link COLOR_YELLOW}, otherwise in the color
- * given.
- */
-export type MessageRun = string | { text: string; color: WadFontRecolor };
 
 /**
  * The words a message draws in a color of their own rather than the message's. The three key
@@ -85,9 +99,9 @@ const COLOR_WORD = new RegExp(`\\b(?:${Object.keys(COLOR_WORDS).join('|')})\\b`,
  * split out of the finished line rather than composed from colored fragments so a patched line
  * keeps the effect. docs/hud.md § Center messages.
  */
-export function lockedLineMessage(lock: LockRule, kind: 'door' | 'switch'): MessageRun[] {
+export function lockedLineMessage(lock: LockRule, kind: 'door' | 'switch'): TextRun[] {
   const line = lockedLine(lock, kind);
-  const runs: MessageRun[] = [];
+  const runs: TextRun[] = [];
   let at = 0;
   for (const match of line.matchAll(COLOR_WORD)) {
     if (match.index > at) runs.push(line.slice(at, match.index));
@@ -103,43 +117,29 @@ export function lockedLineMessage(lock: LockRule, kind: 'door' | 'switch'): Mess
  * what raises one. Vanilla prints its messages in the top-left in `STCFN`'s own red
  * (`hu_stuff.c`); this engine puts them center-screen in {@link COLOR_YELLOW} instead, where a
  * top-down player is already looking.
- *
- * One {@link WadFont} per color, built on first use and kept for the level: a font decodes all 63
- * `STCFN` patches, far too much to redo per message.
  */
 export class CenterMessage {
-  private gfx: GraphicsBank;
-  private fonts = new Map<string, WadFont>();
+  private fonts: RunFonts;
   private canvas = document.getElementById('hud-message') as HTMLCanvasElement;
   /** Seconds of display time left; <= 0 means nothing is showing. */
   private secondsLeft = 0;
+  /** What {@link CenterMessage.setCovered} last set, so a frame that changes nothing writes nothing. */
+  private covered = false;
 
   constructor(gfx: GraphicsBank) {
-    this.gfx = gfx;
+    this.fonts = new RunFonts(gfx, COLOR_YELLOW);
   }
 
   /**
    * Draws `runs` as one line and restarts the timeout — a second message replaces whatever is up,
    * it doesn't queue.
    */
-  show(...runs: MessageRun[]): void {
-    const parts = runs.map((run) =>
-      typeof run === 'string'
-        ? { text: run, font: this.fontFor(COLOR_YELLOW) }
-        : { text: run.text, font: this.fontFor(run.color) },
-    );
-    let width = 0;
-    let height = 0;
-    for (const part of parts) {
-      width += part.font.measure(part.text);
-      height = Math.max(height, part.font.height);
-    }
-    this.canvas.width = Math.max(1, width);
-    this.canvas.height = Math.max(1, height);
+  show(...runs: TextRun[]): void {
+    this.canvas.width = Math.max(1, this.fonts.measure(runs));
+    this.canvas.height = Math.max(1, this.fonts.height);
     const ctx = this.canvas.getContext('2d')!;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    let x = 0;
-    for (const part of parts) x = part.font.draw(ctx, x, 0, part.text);
+    this.fonts.draw(ctx, 0, 0, runs);
     this.secondsLeft = MESSAGE_SECONDS;
     this.canvas.classList.remove('hidden');
   }
@@ -155,21 +155,22 @@ export class CenterMessage {
   }
 
   /**
+   * Hides whatever is up while the death overlay stands over it, its clock running on: the
+   * overlay's translucent panel would otherwise show the line over its heading.
+   * docs/hud.md § Center messages.
+   */
+  setCovered(covered: boolean): void {
+    if (covered === this.covered) return;
+    this.covered = covered;
+    this.canvas.classList.toggle('covered', covered);
+  }
+
+  /**
    * Drops whatever is up. Every level (re)load goes through here, so a message can't outlive its
    * level.
    */
   clear(): void {
     this.secondsLeft = 0;
     this.canvas.classList.add('hidden');
-  }
-
-  private fontFor(color: WadFontRecolor): WadFont {
-    const cacheKey = color.join(',');
-    let font = this.fonts.get(cacheKey);
-    if (!font) {
-      font = new WadFont(this.gfx, color);
-      this.fonts.set(cacheKey, font);
-    }
-    return font;
   }
 }

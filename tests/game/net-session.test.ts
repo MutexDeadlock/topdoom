@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyRow } from '../../src/game/replay/row.ts';
-import { DROP_TIMEOUT_MS, STALL_NOTICE_MS } from '../../src/game/net/defs.ts';
+import { DROP_TIMEOUT_MS, STALL_NOTICE_MS, type NetNotice } from '../../src/game/net/defs.ts';
 import { withRulesDefaults, type NetSession } from '../../src/game/net/session.ts';
 import { GAME, Hub, SETTINGS, hostSession, joinSession, snapshotFor } from '../fixtures/net.ts';
 
@@ -271,8 +271,8 @@ describe('Network · session', () => {
       [guest.session, [] as number[][]],
     ]);
     for (let tic = 0; tic < 4; tic++) runTic(hub, [host.session, guest.session], seen);
-    const notices: string[] = [];
-    host.session.onNotice = (text) => notices.push(text);
+    const notices: NetNotice[] = [];
+    host.session.onNotice = (notice) => notices.push(notice);
     // The guest goes quiet: nothing it sends is delivered any more.
     guest.transport.closed = true;
     runTic(hub, [host.session], seen);
@@ -284,7 +284,11 @@ describe('Network · session', () => {
     host.clock.now += DROP_TIMEOUT_MS;
     assert.ok(host.session.readyForTic(), 'the drop frees the tic');
     assert.deepEqual(host.session.roster().map((r) => r.present), [true, false]);
-    assert.deepEqual(notices, ['guest left the game'], "the drop is the feed's line, by roster name");
+    assert.deepEqual(
+      notices,
+      [{ name: 'guest', color: host.session.colorOf(1), event: 'left' }],
+      "the drop is the feed's line, by roster name and colour",
+    );
     const drop = host.transport.sent.at(-1) as { type: string; slot: number; atTic: number };
     assert.equal(drop.type, 'drop');
     assert.equal(drop.slot, 1);
@@ -424,15 +428,16 @@ describe('Network · session', () => {
     ]);
     for (let tic = 0; tic < 10; tic++) runTic(hub, [host.session, guest.session], seen);
 
-    const notices = new Map<NetSession, string[]>();
+    const notices = new Map<NetSession, NetNotice[]>();
     for (const session of [host.session, guest.session]) {
       notices.set(session, []);
-      session.onNotice = (text) => notices.get(session)!.push(text);
+      session.onNotice = (notice) => notices.get(session)!.push(notice);
     }
-    const late = joinSession(hub, 'ROOM1', { name: 'late' });
+    const late = joinSession(hub, 'ROOM1', { name: 'late', color: 'orange' });
     assert.equal(late.session.phase, 'loading', 'told its sync tic, waiting for the snapshot');
-    assert.deepEqual(notices.get(host.session), ['late joined the game'], "the sync is everyone else's feed line");
-    assert.deepEqual(notices.get(guest.session), ['late joined the game']);
+    const joined: NetNotice[] = [{ name: 'late', color: 'orange', event: 'joined' }];
+    assert.deepEqual(notices.get(host.session), joined, "the sync is everyone else's feed line, in the joiner's colour");
+    assert.deepEqual(notices.get(guest.session), joined);
     assert.equal(late.session.slot, 2);
     const syncAt = 10 + 4;
     const capture = (session: NetSession) =>

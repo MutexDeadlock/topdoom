@@ -411,6 +411,13 @@ export interface PlayerSlotSnapshot {
    */
   crushed?: boolean;
   /**
+   * `PlayerSlot.deadTics` of a corpse ({@link PlayerSlotSnapshot.dead}), written only once it has
+   * counted one: absent is none — a living slot, a save from before the count, whose corpse's
+   * deathmatch countdown starts over. A tic reads it.
+   * docs/multiplayer-deathmatch.md § Forced respawn.
+   */
+  deadTics?: number;
+  /**
    * The cheats switched on, written only while one is: an honest slot saves nothing, and absent
    * means neither cheat. docs/cheats.md § Saves and best times.
    */

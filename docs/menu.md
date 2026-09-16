@@ -262,7 +262,7 @@ that the three line up. Master **first**: it is the one that moves the other two
 the section is reading the signal path. It rides the `master` gain node the two channel buses hang
 off, and 0 on it stops both of them the way each channel's own 0 stops itself
 (docs/audio.md § Volume and the context). The master and sfx sliders preview themselves with
-`itemup` as they are dragged; the music slider needs no preview, riding the track already playing
+`itemup`, a cue (docs/audio.md § Cues), as they are dragged; the music slider needs no preview, riding the track already playing
 behind the menu (docs/music.md § Volume).
 
 **Replays is one select, `Keyframe interval`** (`#keyframeinterval-select`), whose `<option>` values

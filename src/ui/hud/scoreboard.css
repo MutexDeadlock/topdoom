@@ -66,3 +66,14 @@
 .scoreboard tr.gone {
   opacity: 0.45;
 }
+
+/* A deathmatch intermission's sole leader (ui/hud/scoreboard.ts's `rankByKills`). */
+.scoreboard tr.winner .name::before {
+  content: '★ ';
+  color: var(--caution);
+}
+
+.scoreboard tr.winner .kills {
+  color: var(--caution);
+  font-weight: bold;
+}

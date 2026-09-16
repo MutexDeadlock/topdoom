@@ -168,6 +168,10 @@ own doc in `game.ts`), before reaching the increment, so no separate "level comp
 needed on top of the death check. That frozen instant is exactly what the intermission below shows,
 and it stays frozen for as long as the popup is up: those tics return early too.
 
+**Under a deathmatch time limit the clock counts down** instead: the whole seconds left
+(`Hud.update`'s `timeLeft`, docs/multiplayer-deathmatch.md § Limits). The intermission's
+`Your time` stays the time spent.
+
 ## Level card
 
 `src/ui/hud/levelcard.ts` raises "Entering" over the level's name (`#level-card`, horizontally
@@ -243,11 +247,13 @@ hint stays: it is still what dismisses the popup — unless a playback owns that
 record, deliberately rather than a second account of the run — which also means a `?pos=x,y` start,
 excluded from records for its own reasons (§ Best times), reports itself cheated too.
 
-**Under a playback the continue hint is left out**, on this popup and on the end card alike
-(`show`'s `canContinue`, `Game.viewerContinues`): `Space` there is the record's input, and the
-viewer's own pauses the playback. Taking the replay over with either popup on screen puts the hint
-back — `Intermission.setContinueHint`/`EndCard.setContinueHint`, called from `Game.takenOver`, since
-neither popup redraws itself. The death overlay's `R` hint follows the same rule
+**The hint says whose key it is**, on this popup and on the end card alike (`ContinueHint`,
+`Game.continueHint`): `Press SPACE to continue` for slot 0 — a network game's host, the local
+player of any other game — `Waiting for host` for a network game's other players, whose press does
+nothing, and no hint under a playback: `Space` there is the record's input, and the viewer's own
+pauses the playback. Taking the replay over with either popup on screen puts the hint back —
+`Intermission.setContinueHint`/`EndCard.setContinueHint`, called from `Game.takenOver`, since
+neither popup redraws itself. The death overlay's `R` hint follows the playback rule
 (docs/death.md § Player death, docs/replays.md § Playback).
 
 Lines are centered in the panel, but the three stat lines sit in a `.stats` wrapper so they are
@@ -255,7 +261,10 @@ centered as **one block**: centering each on its own would stagger the labels an
 column `drawStatLine` lines the numbers up in. The time lines need no such wrapper — sharing both
 columns already makes them the same width.
 
-In a game of more than one player the scoreboard stands above the panel (§ Scoreboard).
+In a game of more than one player the scoreboard stands above the panel (§ Scoreboard). **In a
+deathmatch the board is the whole popup**: `Intermission.showDeathmatch` hides the panel's lines
+and its frame, leaving the hint under the board — kills, items, secrets and times say nothing about
+a match.
 
 The control flow is the part worth knowing:
 
@@ -263,8 +272,9 @@ The control flow is the part worth knowing:
   the specials block has returned — see that field's own doc for why the teardown can't happen
   inside the callback) it shows the popup and sets `popup` to `'intermission'`.
 - While `popup` is set, a branch at the **top** of `tic` advances nothing at all — no clock, no
-  specials, no monsters — and `frame` only redraws the still scene under the popup. `Space`/`Enter`
-  enters the next level, which clears the popup and the field along with every other per-level
+  specials, no monsters — and `frame` only redraws the still scene under the popup. Slot 0's
+  `Space`/`Enter` — no other slot's, so a network game's host alone — enters the next level, which
+  clears the popup and the field along with every other per-level
   overlay. `popup` is **one field, not a flag per screen** (§ End card adds the second): the two are
   mutually exclusive, and a field makes that unrepresentable instead of merely documented.
 - The popup ignores that key for its first `INTERMISSION_INPUT_DELAY` (`intermission.ts`). `Space`
@@ -422,7 +432,13 @@ between hold and fade are **tuned by feel**. A fourth line pushes the oldest out
 `Picked up a health bonus. (x3)`, the count (`countSuffix`) in the status amber, `base.css`'s
 `--caution`, read off the computed style so canvas and stylesheet share one value — and starts its
 clock again. The count dies with
-the line: once it has faded, the next one is `x1` again. What it prints:
+the line: once it has faded, the next one is `x1` again.
+
+**A player's name is drawn in their armour colour**: `show` takes the center message's runs
+(`TextRun`, drawn through the same `RunFonts`, § Center messages), a bare string in the red and a
+name in `nameColors` (`ui/hud/scoreboard.ts`) — the board's own colour (§ Scoreboard), which
+`Game.slotName` looks up. The death line's names and the join/leave line's name; a line's runs,
+colours included, are what the count compares. What it prints:
 
 - **every pickup the viewed player takes** — `pickupLine(type, inventory)` (`game/inventory.ts`),
   `P_TouchSpecialThing`'s `player->message` per sprite, verbatim from `d_englsh.h` in
@@ -433,8 +449,10 @@ the line: once it has faded, the next one is `x1` again. What it prints:
 - **a player's death, in a game with more than one player** — `deathLine(victim, killer)`, the
   feed's own third-person line ("A killed B", "B died"), raised by `Game.damageSlot` for every
   slot; the death overlay stays the victim's own (docs/death.md § Who killed the player).
-- **who joined or left a network game** — `NetSession.onNotice`, which `NetSeat` routes here
-  through `NetHost.notice` (docs/multiplayer-net.md § Joining a game, § Leaving). The stall notice
+- **who joined or left a network game** — `NetSession.onNotice` hands a `NetNotice` (name,
+  colour, `joined`/`left`), which `NetSeat` routes here through `NetHost.notice` and
+  `presenceLine` words, sounding the message cue with it (docs/audio.md § Cues;
+  docs/multiplayer-net.md § Joining a game, § Leaving). The stall notice
   stays a center message: it is redrawn every second for as long as the wait lasts.
 - **`game saved`** once a replay's take-over has written its save (`Game.saveTakeOver`,
   docs/replays.md § Playback). A store that refuses the write stays a center message: a reason why
@@ -478,7 +496,9 @@ holds at dead center), for 3 seconds. Its callers:
   Raised at level load, which `clearOverlays` precedes, and it sits in its own band clear of the
   level card's (30% vs. 40%);
 - the network stall notice (`NetHost.say`) and a take-over save the store refused
-  (`Game.saveTakeOver`) — both § HUD messages.
+  (`Game.saveTakeOver`) — both § HUD messages;
+- a deathmatch's limits — a time limit's last seconds (`Game.announceTimeLeft`) and a kill that
+  nears the kill limit (`Game.announceKillsLeft`), docs/multiplayer-deathmatch.md § Limits.
 
 `show` takes **runs**, not one string: a bare string draws in `COLOR_YELLOW`, a `{text, color}` run
 in whatever color it names, and they're laid out left to right on one canvas — which is what lets
@@ -487,16 +507,18 @@ the locked-door line print a color word in that color. `lockedLineMessage` produ
 colored fragments, and the difference is load-bearing: a patch writes one string, so a composed line
 would lose its coloring the moment `PD_*` replaced it. `green` is in that table for the same reason
 — no vanilla or Boom line names it, but a patched one might. Each distinct color costs one
-`WadFont` (all 63 `STCFN` patches decoded and retinted), so they're built on first use and cached
-for the level rather than per message. The key colors themselves are sampled from the key pickup
+`WadFont` (all 63 `STCFN` patches decoded and retinted), so `RunFonts` (`ui/hud/wadfont.ts`, which
+the feed's lines draw through too) builds them on first use and keeps them for the level rather
+than per message. A message goes with its level: the intermission going up clears it
+(`Game.tic`), as every level (re)load does. The key colors themselves are sampled from the key pickup
 sprites, the same convention `COLOR_YELLOW` and `LEVEL_STATS_GREEN` follow, with one documented
 exception: `BKEYA0`'s brightest pixel is pure `0,0,255`, unreadable over the playfield at 0.75
 opacity, so blue takes the light end of the same palette ramp instead.
 
 Both halves of the secret announcement are this engine's own, not vanilla reproductions: vanilla
 announces a secret nowhere at all (its status bar's `S` count just ticks up) and prints what
-messages it does have in the top-left in STCFN's native red; the chime isn't a WAD lump either
-(docs/audio.md § Player and pickups). Placement is center-screen in `COLOR_YELLOW`, where a top-down
+messages it does have in the top-left in STCFN's native red; the chime is no game WAD's either
+(docs/audio.md § Cues). Placement is center-screen in `COLOR_YELLOW`, where a top-down
 player is already looking, and 3 seconds rather than vanilla's 4-second `HU_MSGTIMEOUT` because text
 in the middle of the view outstays its welcome faster than text in a corner. Its CSS size (`13px`
 glyph height, roughly the level-stats strip's own) and `opacity: 0.75` are **tuned by feel** — it
@@ -505,6 +527,11 @@ sits over the playfield, so it reads as an overlay rather than competing with wh
 The timeout is ticked from `Presenter.tickOverlayClocks`, so a paused game doesn't burn a message's
 display time behind the menu; `buildLevel` and `dispose` both `clear()` it, since the element is
 static markup that outlives any one `Game` (the same reason `Hud`'s panels `replaceChildren()`).
+
+**The death overlay covers it**: while the overlay is up the line is hidden and its clock runs on
+(`CenterMessage.setCovered`, set every frame by `Presenter.updateOverlays` from `DeathOverlay.up`,
+written only on a change) — the overlay stands
+above it but its panel is translucent, so the line would show over the heading.
 
 ## Scoreboard
 
@@ -519,7 +546,10 @@ static markup that outlives any one `Game` (the same reason `Hud`'s panels `repl
 - **The intermission shows its own above its panel**, no key held, for as long as it is up
   (`Game.intermissionScoreRows`, `Intermission.showScores`); `#intermission` is a column for it.
 - **One row per slot, in slot order**: name, kills — **net frags in a deathmatch**, under the same
-  `Kills` heading (docs/multiplayer-deathmatch.md § Frags) — ping. A network game's names and pings are
+  `Kills` heading (docs/multiplayer-deathmatch.md § Frags) — ping. **A deathmatch's intermission
+  ranks them** (`rankByKills`): most kills first, slot order among equals, and a sole leader marked
+  the winner (`tr.winner`: a star, the kills in `--caution`); a shared top marks nobody. A network
+  game's names and pings are
   `NetSession.roster`'s; any other slot reads `Player n` with no ping (`—`). A slot whose player left
   is dimmed, the local player's name bold.
 - **Kills are the slot's own this level**: `PlayerSlot.kills` (docs/multiplayer-coop.md § Items and
@@ -527,9 +557,10 @@ static markup that outlives any one `Game` (the same reason `Hud`'s panels `repl
   running game starts at 0 (`Game.freshSlotSnapshot`).
 - **Ping** is the player's round trip to the relay in milliseconds, as the relay measures it or,
   where it cannot, as the player's browser reports it (docs/multiplayer-net.md § The relay).
-- **A name is drawn in its armour colour**: the ramp's sixth shade in the loaded PLAYPAL, the shade
-  the menu's swatch shows, its HSL lightness raised to `NAME_MIN_LIGHTNESS` (tuned by feel) — red's
-  `#7f1b1b` does not read as text on the board.
+- **A name is drawn in its armour colour** (`nameColors`, which a message's names share — § HUD
+  messages): the ramp's sixth shade in the loaded PLAYPAL, the shade the menu's swatch shows, its
+  HSL lightness raised to `NAME_MIN_LIGHTNESS` (tuned by feel) — red's `#7f1b1b` does not read as
+  text on the board.
 - The rows are rebuilt only when they change. `clearOverlays` takes the board down with the rest.
 
 ## `WadFont` and `WadNumbers` (`src/ui/hud/wadfont.ts`)

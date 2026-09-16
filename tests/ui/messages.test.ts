@@ -28,7 +28,27 @@ describe('HUD · message feed', () => {
 
   test('a death line names the killer where another player did it, and only the victim otherwise', async () => {
     const { deathLine } = await import('../../src/ui/hud/messages.ts');
-    assert.equal(deathLine('guest', 'host'), 'host killed guest');
-    assert.equal(deathLine('guest', null), 'guest died');
+    const host = { text: 'host', color: [215, 66, 66] as const };
+    const guest = { text: 'guest', color: [99, 99, 255] as const };
+    assert.deepEqual(deathLine(guest, host), [host, ' killed ', guest], 'both names in their colours');
+    assert.deepEqual(deathLine(guest, null), [guest, ' died']);
+  });
+
+  test('a join or leave line is the name in its colour, then what the player did', async () => {
+    const { presenceLine } = await import('../../src/ui/hud/messages.ts');
+    const late = { text: 'late', color: [255, 160, 0] as const };
+    assert.deepEqual(presenceLine(late, 'joined'), [late, ' joined the game']);
+    assert.deepEqual(presenceLine(late, 'left'), [late, ' left the game']);
+  });
+
+  test("a name's colour is its ramp's sixth shade, lifted where it is too dark to read", async () => {
+    const { nameColors } = await import('../../src/ui/hud/scoreboard.ts');
+    const { PLAYER_COLOR_RAMPS } = await import('../../src/wad/playercolor.ts');
+    const palette = new Uint8Array(768);
+    palette.set([127, 27, 27], (PLAYER_COLOR_RAMPS.red + 5) * 3);
+    palette.set([200, 200, 200], (PLAYER_COLOR_RAMPS.white + 5) * 3);
+    const colors = nameColors(palette);
+    assert.deepEqual(colors.red, [215, 66, 66], "red's #7f1b1b, its hue at the least lightness");
+    assert.deepEqual(colors.white, [200, 200, 200], 'a light enough shade stays as it is');
   });
 });

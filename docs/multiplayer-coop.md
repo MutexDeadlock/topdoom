@@ -57,7 +57,8 @@ where the lap stopped.
 A dead slot in a netgame respawns on **use** or **`R`** from its own input (`respawnPressed`), and
 the level runs on (`Game.respawnSlot`, `G_DoReborn`). A row carries its player's `R` to every
 browser: gated to the local slot, each `R` respawned on one browser alone, desynced, and the host's
-resync laid a guest's body down again.
+resync laid a guest's body down again. A deathmatch also respawns a corpse unasked once its
+countdown runs out (docs/multiplayer-deathmatch.md § Forced respawn).
 
 1. `G_PlayerReborn`: a fresh inventory, the weapons reset, the cheat toggles off (`Cheats.reborn`;
    `used` stays).
@@ -120,7 +121,8 @@ drawn (docs/fogofwar.md § Islands). Another player's reveal can let a monster b
 
 Any slot's exit ends the level for everyone. Entering the next level reborns every dead slot and
 keeps the living ones' inventories (`runEnterLevel`, `P_SetupLevel`'s `PST_REBORN`). `Level.time`
-runs while any slot lives.
+runs while any slot lives. Only slot 0 — the host — continues the intermission and the end card;
+the others read `Waiting for host` (docs/hud.md § Intermission).
 
 A save holds every slot (`GameSnapshot.players`) and `netgame`, and restores into as many slots as
 it holds, whatever the session was started with. A save is refused while the local slot is dead;

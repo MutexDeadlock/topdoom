@@ -1,9 +1,10 @@
 /**
  * The netgame rules the host sets — deathmatch, friendly fire, the frag and time limits — plus the
- * frag arithmetic a death, the scoreboard and the frag limit share. The three a tic reads are
+ * frag and clock arithmetic a death, the scoreboard and the limits share. The three a tic reads are
  * session settings `replay/settings.ts` captures and pins; the mode is the host's stored pick
  * alone. docs/multiplayer-deathmatch.md.
  */
+import { TICRATE } from '../constants.ts';
 import { readStorage, writeStorage } from '../util/storage.ts';
 import type { PlayerHit } from './combat.ts';
 
@@ -11,7 +12,21 @@ import type { PlayerHit } from './combat.ts';
 export const DM_START_TRIES = 20;
 
 /** `P_SpawnSpecials`' `-timer` (`p_spec.c`): `levelTimeCount = minutes * 60 * TICRATE`. */
-export const TICS_PER_MINUTE = 60 * 35;
+export const TICS_PER_MINUTE = 60 * TICRATE;
+
+/**
+ * The last seconds of a time limit the center message counts down, one line a second. No vanilla
+ * counterpart — `P_UpdateSpecials` ends the level unannounced; ten is tuned by feel.
+ * docs/multiplayer-deathmatch.md § Limits.
+ */
+export const TIME_LIMIT_COUNTDOWN_SECONDS = 10;
+
+/**
+ * How near the kill limit a player's kill is announced from, in kills. No counterpart in Boom,
+ * whose `-frags` ends the level unannounced; three is tuned by feel.
+ * docs/multiplayer-deathmatch.md § Limits.
+ */
+export const KILL_LIMIT_WARNING = 3;
 
 const DEATHMATCH_STORAGE_KEY = 'deathmatch';
 const FRIENDLY_FIRE_STORAGE_KEY = 'friendlyFire';
@@ -108,6 +123,54 @@ export function fragSum(frags: readonly number[], self: number): number {
 export function fragCredit(victim: number, hit: PlayerHit): number | null {
   if (hit.slot !== undefined) return hit.slot;
   return hit.source ? null : victim;
+}
+
+/**
+ * The second a time limit's countdown reaches on this tic: a whole second of the last
+ * {@link TIME_LIMIT_COUNTDOWN_SECONDS}, on the one tic the clock stands on it.
+ * docs/multiplayer-deathmatch.md § Limits.
+ *
+ * @param levelTics  the level's clock in tics
+ * @param minutes    the time limit, 0 for none
+ * @returns null on every other tic, and with no limit
+ */
+export function timeLimitCountdown(levelTics: number, minutes: number): number | null {
+  const left = minutes * TICS_PER_MINUTE - levelTics;
+  if (minutes <= 0 || left <= 0 || left % TICRATE !== 0) return null;
+  return left <= TIME_LIMIT_COUNTDOWN_SECONDS * TICRATE ? left / TICRATE : null;
+}
+
+/**
+ * What the HUD clock reads under a time limit: the whole seconds left, rounded up, so it stands on
+ * a second exactly when the countdown names it. docs/multiplayer-deathmatch.md § Limits.
+ *
+ * @param levelTics  the level's clock in tics
+ * @param minutes    the time limit, 0 for none
+ * @returns null with no limit
+ */
+export function timeLimitLeft(levelTics: number, minutes: number): number | null {
+  return minutes > 0 ? secondsUntil(levelTics, minutes * TICS_PER_MINUTE) : null;
+}
+
+/**
+ * The whole seconds from `tics` to `dueTics`, rounded up and never negative: what a countdown
+ * line reads, so the HUD clock and the death overlay's count agree on the last second.
+ */
+export function secondsUntil(tics: number, dueTics: number): number {
+  return Math.max(0, Math.ceil((dueTics - tics) / TICRATE));
+}
+
+/**
+ * The kills a player still needs to reach the kill limit, where their net kills stand within
+ * {@link KILL_LIMIT_WARNING} of it. docs/multiplayer-deathmatch.md § Limits.
+ *
+ * @param netFrags   the player's net kills
+ * @param fragLimit  the limit, 0 for none
+ * @returns null with no limit, further off, or at it
+ */
+export function killsToLimit(netFrags: number, fragLimit: number): number | null {
+  const left = fragLimit - netFrags;
+  return fragLimit > 0 && left > 0 && left <= KILL_LIMIT_WARNING ? left : null;
 }
 
 /** A limit as it is stored: a whole, non-negative number; anything else is none. */

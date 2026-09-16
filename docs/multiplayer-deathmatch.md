@@ -1,6 +1,7 @@
 # Multiplayer — deathmatch
 
-`src/game/rules.ts` (the rules and `fragSum`), `deathmatchStarts`/`deathmatchSpot` in
+`src/game/rules.ts` (the rules, `fragSum`, the time limit's countdown), the forced respawn in
+`src/game/playerslot.ts`, `deathmatchStarts`/`deathmatchSpot` in
 `src/game/playerstarts.ts`, `raycastPlayers` in `src/game/combat.ts`, the item queue in
 `src/game/things.ts`, the `deathmatch` branches in `src/game.ts`, the fog's `'arena'` mode
 (`src/game/fogofwar.ts`, `fogofwar/backstage.ts`), the Rules group in `src/ui/menu/multiplayer.ts`
@@ -152,6 +153,39 @@ then the next level — only the campaign's end takes a network game back to its
   `TICS_PER_MINUTE` — the clock runs while any player lives (docs/multiplayer.md § Player slots).
 - **Frag limit** (`prboom p_spec.c`, Ty 03/18/98's `-frags`): any slot's `netFrags` ≥ `fragLimit`.
 
+**What the players are told**, none of it vanilla's or Boom's — both `P_UpdateSpecials` end the
+level unannounced:
+
+- **The HUD clock counts down** under a time limit: the whole seconds left, rounded up, in place of
+  the time spent (`timeLimitLeft`, `Game.hudTimeLeft`; docs/hud.md § Level timer).
+- **The last `TIME_LIMIT_COUNTDOWN_SECONDS`** each raise a center message, "N seconds left"
+  (`timeLimitCountdown`, `message.ts: timeLeftMessage`), with a tick: vanilla's chat-message sound,
+  `hu_stuff.c`'s `radio` in a commercial game and `tink` otherwise, at one pitch (docs/audio.md § Cues). Raised on the tic that moves the
+  clock (`Game.announceTimeLeft`), so a clock that stands while every player is dead repeats none.
+- **A kill within `KILL_LIMIT_WARNING` of the kill limit** raises "Player 2 needs 1 more kill", the
+  name in its armour colour, or "You need …" for the viewer (`killsToLimit`, `killsLeftMessage`,
+  `Game.announceKillsLeft`), with the same tick. A suicide lowers the count and announces nothing.
+- Either limit's last line goes down with the level, as every center message does when the
+  intermission goes up (docs/hud.md § Center messages).
+
+## Forced respawn
+
+A dead slot is reborn on its own once `PlayerSlot.deadTics` reaches `FORCED_RESPAWN_TICS`
+(`playerslot.ts`): the plain death chain the overlay waits out before it rises, then
+`RESPAWN_COUNTDOWN_SECONDS`. Use or `R` still respawns sooner; the reborn itself is
+docs/multiplayer-coop.md § Respawn.
+
+- **`deadTics` is simulation state**, counted per slot in the netgame's respawn loop from the tic
+  after the killing one — not off `Level.time`, which stops while every player is dead. `die` and
+  `standUp` reset it; saved as `PlayerSlotSnapshot.deadTics`, absent when 0, so a save from before
+  it restarts a corpse's count. Coop counts it too and nothing reads it there.
+- **The overlay's countdown line** ("Respawn in N seconds", `DeathOverlay.setCountdown`) reads the
+  viewed corpse's `deadTics` every frame (`respawnCountdown`, `Game.overlayCountdown`), so it shows
+  what the tic will do. None outside a deathmatch, and none once the level is ending — nor a
+  respawn (docs/death.md § Dying on the way out).
+
+**Deviation:** vanilla's `P_DeathThink` (`p_user.c`) waits for `BT_USE` however long that takes.
+
 ## Friendly fire
 
 `friendlyFire`, coop only: `Game.pvp` is true and every rule of § Player versus player applies —
@@ -163,9 +197,12 @@ a player's bullets and missiles pass through the other players (docs/multiplayer
 
 The board's `Kills` column counts each slot's `netFrags` in a deathmatch (docs/hud.md
 § Scoreboard); the death overlay names the player who fragged you by their roster name, `Player n`
-without one (docs/death.md § Who killed the player); every player's feed gets the third-person line
-("A killed B", docs/hud.md § HUD messages). No frag counter on the HUD, no frag matrix on the
-intermission.
+without one (docs/death.md § Who killed the player), and counts down to the forced respawn
+(§ Forced respawn); every player's feed gets the third-person line ("A killed B", both names in
+their armour colours — docs/hud.md § HUD messages). No frag counter on the HUD, no frag matrix on
+the intermission: its popup is the board alone, ranked by kills with a sole leader marked the
+winner, the level's stats and times left out, the host's continue hint under it
+(docs/hud.md § Intermission, § Scoreboard).
 
 ## Testing locally
 
@@ -181,4 +218,5 @@ can be shot, fragged and walked over.
   modes; the number is still `WI_fragSum`, own deaths subtracted.
 - The time limit runs on `Level.time`, which pauses while every player is dead.
 - No `deathmatch == 1`: placed weapons never stay, items always respawn.
+- A corpse is reborn on its own after the overlay's countdown (§ Forced respawn).
 - The corpse and respawn deviations of docs/multiplayer-coop.md § Respawn hold.

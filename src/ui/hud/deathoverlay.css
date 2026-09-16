@@ -12,7 +12,7 @@
 }
 
 /*
- * All three lines are drawn native-size in the WAD's own font and scaled here — #end-card's pair of
+ * Every line is drawn native-size in the WAD's own font and scaled here — #end-card's pair of
  * rules, and the same reason: the type is the IWAD's, so its size belongs to CSS and not to a
  * second glyph set.
  */
@@ -28,12 +28,13 @@
   height: 20px;
 }
 
-/* Set whenever nothing attributed the killing blow, and on the hint under a replay, where `R` is
-   not the viewer's to press: the overlay then looks exactly as it did before that line existed,
-   rather than leaving a gap. A canvas is always `:empty`, so the state is a class the drawing code
-   sets and not a selector. */
+/* Set whenever nothing attributed the killing blow, on the hint under a replay, where `R` is not
+   the viewer's to press, and on the countdown outside a deathmatch: the overlay then looks exactly
+   as it did before that line existed, rather than leaving a gap. A canvas is always `:empty`, so
+   the state is a class the drawing code sets and not a selector. */
 #death-overlay .killer.blank,
-#death-overlay .hint.blank {
+#death-overlay .hint.blank,
+#death-overlay .countdown.blank {
   display: none;
 }
 
@@ -41,4 +42,10 @@
   height: 13px;
   margin-top: 6px;
   opacity: 0.6;
+}
+
+/* Set apart from the lines above: it is the one that changes while the overlay is up. */
+#death-overlay .countdown {
+  height: 16px;
+  margin-top: 22px;
 }

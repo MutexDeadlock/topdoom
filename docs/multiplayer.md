@@ -13,7 +13,7 @@ is docs/multiplayer-net.md.
 ## Player slots
 
 `PlayerSlot` is one player's whole share of a level: `player`, `inventory`, `weapons`, `cheats`,
-`dead`, `deathCause`, `gibbed`, `crushed`, `kills`, `frags`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
+`dead`, `deathCause`, `gibbed`, `crushed`, `deadTics`, `kills`, `frags`, `touch`, `simCamera`, `autoCamera`, `input`, `source`, `settings`, `color`, `actor`, `shadow`,
 `consumePickup`. `Game.slots` holds them by index. `localSlot` is the one this browser plays — its
 keyboard, the menu's settings, its `R`. **`Game.viewed` is the one drawn**: `local`, except under a
 playback, whose camera picker watches any slot (docs/replays.md § Playback). The HUD, crosshair,
@@ -33,7 +33,7 @@ keys and its auto camera ticks. `'replay'`: posed from the record each tic, the 
 row like a replay's, and the drawn one is driven apart (docs/multiplayer-net.md § What a tic does).
 
 **Saves and replays hold every slot.** `captureSave` writes `GameSnapshot.players`, one
-`PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`, `deathCause`, `gibbed`, `crushed`, `kills`, `frags`);
+`PlayerSlotSnapshot` per slot (player, inventory, weapons, cheats, `cameraYawDeg`, `dead`, `deathCause`, `gibbed`, `crushed`, `deadTics`, `kills`, `frags`);
 `SpecialsController.snapshot` writes every slot's `prev`, `SectorEffects.snapshot` every slot's
 timer; a replay holds one `SlotRecord` and one check column per slot. A restore builds as many
 slots as it holds. docs/savegames.md § What is saved and what is deliberately not, docs/replays.md §
@@ -98,7 +98,8 @@ slots where a step was per player.
 
 1. `local.input` is read — `ReplayDriver.set` points every slot's `input` at `replay.input(slot)`, or at
    the network's rows, or at the keyboard for the local slot and `IDLE_TIC_INPUT` for the rest, and
-   sets `source` with it; the popup's continue key is any slot's.
+   sets `source` with it; the popup's continue key is slot 0's alone, a network game's host's
+   (docs/hud.md § Intermission).
 2. Per slot: a living slot's cheat buffer, `player.noclip`, `player.autorun`, `weapons.autoSwitch`.
 3. Hotkeys and the audio listener — local only.
 4. Per live slot: `simCamera.applyYawInput`.
@@ -109,7 +110,9 @@ slots where a step was per player.
    lit this tic draws from the table this tic). Then `forces.tick` and the dolls (slot 0's).
 6. Per slot: `consumeLockedLine(slot)`; the message is the local slot's.
 7. The exit. Then a corpse's one input: the local `R` in single player (`restart`), use or the slot's
-   own `R` in a netgame (`respawnSlot`, docs/multiplayer-coop.md § Respawn).
+   own `R` in a netgame (`respawnSlot`, docs/multiplayer-coop.md § Respawn) — counting every
+   corpse's `deadTics`, which in a deathmatch respawns it unasked
+   (docs/multiplayer-deathmatch.md § Forced respawn).
 8. Per slot: `applyToCamera(1)` and `updateLivingPlayer` while alive, `moveBody` for a corpse
    (docs/death.md § Player death), then the camera ticks for a live slot.
 9. `Level.time` while any slot is alive; `refillBodies`; the fog from every slot's body; things

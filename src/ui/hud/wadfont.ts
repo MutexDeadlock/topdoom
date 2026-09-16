@@ -128,6 +128,55 @@ export class WadFont {
   }
 }
 
+/** One stretch of a line: a bare string draws in the line's own colour, otherwise in the one given. */
+export type TextRun = string | { text: string; color: WadFontRecolor };
+
+/**
+ * A line of {@link TextRun}s laid out left to right in one {@link WadFont} per colour, each built
+ * on first use and kept: a font decodes all 63 `STCFN` patches, far too much to redo per line. The
+ * center message and the feed draw through one of these each — docs/hud.md § Center messages.
+ */
+export class RunFonts {
+  private gfx: GraphicsBank;
+  private base: WadFont;
+  private fonts = new Map<string, WadFont>();
+
+  /** @param color  what a bare run draws in; none for STCFN's own red */
+  constructor(gfx: GraphicsBank, color?: WadFontRecolor) {
+    this.gfx = gfx;
+    this.base = new WadFont(gfx, color);
+  }
+
+  /** The line box's height, the same for every colour of one glyph set. */
+  get height(): number {
+    return this.base.height;
+  }
+
+  /** Total pixel width the runs draw at, for sizing a canvas. */
+  measure(runs: readonly TextRun[]): number {
+    let w = 0;
+    for (const run of runs) w += this.fontFor(run).measure(textOf(run));
+    return w;
+  }
+
+  /** Draws the runs with their top-left at (x, y); returns the x position just past the last. */
+  draw(ctx: CanvasRenderingContext2D, x: number, y: number, runs: readonly TextRun[]): number {
+    for (const run of runs) x = this.fontFor(run).draw(ctx, x, y, textOf(run));
+    return x;
+  }
+
+  private fontFor(run: TextRun): WadFont {
+    if (typeof run === 'string') return this.base;
+    const cacheKey = run.color.join(',');
+    let font = this.fonts.get(cacheKey);
+    if (!font) {
+      font = new WadFont(this.gfx, run.color);
+      this.fonts.set(cacheKey, font);
+    }
+    return font;
+  }
+}
+
 /**
  * Draws integers with the status bar's own digit lumps, laid out like `st_lib.c`'s
  * `STlib_drawNum`: a fixed cell the width of digit `0` (vanilla's `ST_TALLNUMWIDTH`), digits
@@ -234,4 +283,9 @@ function loadDigits(gfx: GraphicsBank, lumpFor: (d: number) => string, recolor?:
     digits.push(glyph);
   }
   return digits;
+}
+
+/** A run's text, whichever shape it takes. */
+function textOf(run: TextRun): string {
+  return typeof run === 'string' ? run : run.text;
 }

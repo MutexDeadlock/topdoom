@@ -5,7 +5,7 @@
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import { readStorage, writeStorage } from '../../util/storage.ts';
-import { WadFont, type WadFontRecolor } from './wadfont.ts';
+import { RunFonts, WadFont, type TextRun, type WadFontRecolor } from './wadfont.ts';
 
 /** Which games show the feed: none, only a game with more than one player, or every game. */
 export type HudMessageMode = 'off' | 'multiplayer' | 'all';
@@ -48,10 +48,19 @@ export function setHudMessageMode(mode: HudMessageMode): void {
  * the death overlay speaks to the victim alone (docs/death.md § Who killed the player). This
  * engine's own: vanilla has no obituaries.
  *
- * @param killer  the killing player's name, or null where no other player did it
+ * @param victim  the victim's name in their colour (`Game.slotName`)
+ * @param killer  the killing player's, or null where no other player did it
  */
-export function deathLine(victim: string, killer: string | null): string {
-  return killer === null ? `${victim} died` : `${killer} killed ${victim}`;
+export function deathLine(victim: TextRun, killer: TextRun | null): TextRun[] {
+  return killer === null ? [victim, ' died'] : [killer, ' killed ', victim];
+}
+
+/**
+ * The feed's line for a player joining or leaving a network game, on every other browser's feed.
+ * docs/multiplayer-net.md § Joining a game, § Leaving.
+ */
+export function presenceLine(player: TextRun, event: 'joined' | 'left'): TextRun[] {
+  return [player, ` ${event} the game`];
 }
 
 /**
@@ -64,7 +73,8 @@ export function countSuffix(count: number): string {
 
 /** One line up: what it says, how often it came in, its canvas, and how long it has left. */
 interface FeedLine {
-  text: string;
+  /** The line's runs, names' colours included: a line with the same key is the same line. */
+  key: string;
   count: number;
   canvas: HTMLCanvasElement;
   secondsLeft: number;
@@ -74,11 +84,11 @@ interface FeedLine {
  * The feed itself: up to {@link MAX_LINES} lines of STCFN text stacked over `#hud-bar`, the newest
  * at the bottom, each fading out on its own clock. Drawn in STCFN's own red, the colour vanilla
  * prints its messages in (`hu_stuff.c`), which also keeps it apart from the yellow the center
- * message announces in. Same "canvas sized to its content, CSS scales it" pattern the rest of the
- * HUD uses. See docs/hud.md § HUD messages.
+ * message announces in; a player's name in their armour colour. Same "canvas sized to its content,
+ * CSS scales it" pattern the rest of the HUD uses. See docs/hud.md § HUD messages.
  */
 export class HudMessages {
-  private font: WadFont;
+  private fonts: RunFonts;
   private countFont: WadFont;
   private root = document.getElementById('hud-messages')!;
   /** Oldest first; the DOM order is this order. */
@@ -91,33 +101,38 @@ export class HudMessages {
    *                     answer
    */
   constructor(gfx: GraphicsBank, multiplayer: boolean) {
-    this.font = new WadFont(gfx);
+    this.fonts = new RunFonts(gfx);
     // The line's own red where the token can't be read, rather than a copy of its value here.
     this.countFont = new WadFont(gfx, cssColor('--caution') ?? undefined);
     this.multiplayer = multiplayer;
   }
 
   /**
-   * Adds `text` as the newest line, dropping the oldest once {@link MAX_LINES} are up. A line still
-   * up with the same text is not repeated: it moves to the bottom, counts up ({@link countSuffix})
-   * and starts its clock again. Nothing happens under a mode that hides this game's feed.
+   * Adds the runs as the newest line, dropping the oldest once {@link MAX_LINES} are up. A line
+   * still up with the same runs is not repeated: it moves to the bottom, counts up
+   * ({@link countSuffix}) and starts its clock again. Nothing happens under a mode that hides this
+   * game's feed.
+   *
+   * @returns whether the line went up
    */
-  show(text: string): void {
-    if (!this.shown()) return;
-    const at = this.lines.findIndex((line) => line.text === text);
-    const line = at < 0 ? { text, count: 0, canvas: document.createElement('canvas'), secondsLeft: 0 } : this.lines[at];
+  show(...runs: TextRun[]): boolean {
+    if (!this.shown()) return false;
+    const key = JSON.stringify(runs);
+    const at = this.lines.findIndex((line) => line.key === key);
+    const line = at < 0 ? { key, count: 0, canvas: document.createElement('canvas'), secondsLeft: 0 } : this.lines[at];
     if (at >= 0) this.lines.splice(at, 1);
     line.count++;
     line.secondsLeft = HOLD_SECONDS + FADE_SECONDS;
     const suffix = countSuffix(line.count);
-    line.canvas.width = Math.max(1, this.font.measure(text) + this.countFont.measure(suffix));
-    line.canvas.height = Math.max(1, this.font.height);
+    line.canvas.width = Math.max(1, this.fonts.measure(runs) + this.countFont.measure(suffix));
+    line.canvas.height = Math.max(1, this.fonts.height);
     line.canvas.style.opacity = '1';
     const ctx = line.canvas.getContext('2d')!;
-    this.countFont.draw(ctx, this.font.draw(ctx, 0, 0, text), 0, suffix);
+    this.countFont.draw(ctx, this.fonts.draw(ctx, 0, 0, runs), 0, suffix);
     this.lines.push(line);
     while (this.lines.length > MAX_LINES) this.lines.shift();
     this.root.replaceChildren(...this.lines.map((up) => up.canvas));
+    return true;
   }
 
   /**

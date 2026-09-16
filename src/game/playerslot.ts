@@ -15,6 +15,7 @@ import { deserializeInventory, serializeInventory, type PlayerSlotSnapshot } fro
 import {
   CORPSE_GIB,
   PLAYER_DEATH_FRAME_SECONDS,
+  PLAYER_DEATH_FRAME_TICS,
   PLAYER_DEATH_FRAMES,
   PLAYER_SPAWN_HEALTH,
   PLAYER_XDEATH_FRAMES,
@@ -29,7 +30,8 @@ import { getPlayerColor, slotColor, type PlayerColor } from '../wad/playercolor.
 import type { Pos3 } from '../types.ts';
 import { asDamageCause, type DamageCause } from './combat.ts';
 import { MAX_PLAYERS } from './playerstarts.ts';
-import { fragSum } from './rules.ts';
+import { fragSum, secondsUntil } from './rules.ts';
+import { TICRATE } from '../constants.ts';
 
 /**
  * What drives a slot's input: the live `Input`, a replay's record, a network game's row, or
@@ -53,6 +55,30 @@ export interface PlayerSlotOptions {
   settings: PlayerSettings;
   actor: SpriteActor;
   consumePickup: PickupConsumer;
+}
+
+/**
+ * How many seconds the death overlay counts down over a deathmatch corpse before it stands back up
+ * without a press — tuned by feel. docs/multiplayer-deathmatch.md § Forced respawn.
+ */
+export const RESPAWN_COUNTDOWN_SECONDS = 6;
+
+/**
+ * Tics a deathmatch corpse lies before it is reborn on its own: the plain death chain the overlay
+ * waits out before it rises, then {@link RESPAWN_COUNTDOWN_SECONDS} of countdown on it. No vanilla
+ * counterpart — `P_DeathThink` (`p_user.c`) waits for `BT_USE` however long that takes.
+ */
+export const FORCED_RESPAWN_TICS =
+  PLAYER_DEATH_FRAMES.length * PLAYER_DEATH_FRAME_TICS + RESPAWN_COUNTDOWN_SECONDS * TICRATE;
+
+/**
+ * The whole seconds left before a deathmatch corpse is reborn on its own, rounded up — what the
+ * death overlay's countdown line reads.
+ *
+ * @param deadTics  the corpse's {@link PlayerSlot.deadTics}
+ */
+export function respawnCountdown(deadTics: number): number {
+  return secondsUntil(deadTics, FORCED_RESPAWN_TICS);
 }
 
 /** How a player's death plays out — {@link playerDeath}'s answer. */
@@ -114,6 +140,11 @@ export class PlayerSlot {
    * docs/specials-crushers.md § Crushed corpses.
    */
   crushed = false;
+  /**
+   * Tics this player has lain dead, counted in a netgame from the tic after the killing one: what
+   * a deathmatch's forced respawn waits out. docs/multiplayer-deathmatch.md § Forced respawn.
+   */
+  deadTics = 0;
   /**
    * The kills this player made this level — vanilla's `player_t.killcount`, which `P_SetupLevel`
    * zeroes and `Game.buildLevel` does too. Counted in a netgame only; what the scoreboard shows.
@@ -188,6 +219,7 @@ export class PlayerSlot {
     this.deathCause = undefined;
     this.gibbed = false;
     this.crushed = false;
+    this.deadTics = 0;
     this.actor.revive();
   }
 
@@ -202,6 +234,7 @@ export class PlayerSlot {
     this.dead = true;
     this.deathCause = cause;
     this.gibbed = gibbed;
+    this.deadTics = 0;
     this.pose();
   }
 
@@ -288,13 +321,15 @@ export class PlayerSlot {
       ...(this.deathCause !== undefined ? { deathCause: this.deathCause } : {}),
       ...(this.gibbed ? { gibbed: true } : {}),
       ...(this.crushed ? { crushed: true } : {}),
+      ...(this.dead && this.deadTics > 0 ? { deadTics: this.deadTics } : {}),
     };
   }
 
   /**
    * The slot back from its snapshot, at `Game.buildLevel`'s step for it: the cheats, the kills,
-   * the inventory, the weapons that read that inventory, and a corpse laid down again. The body and
-   * the camera yaw are the load's own steps, earlier — docs/savegames.md § Apply order.
+   * the inventory, the weapons that read that inventory, and a corpse laid down again with its
+   * clock. The body and the camera yaw are the load's own steps, earlier — docs/savegames.md
+   * § Apply order.
    */
   restore(saved: PlayerSlotSnapshot): void {
     this.cheats.restore(saved.cheats);
@@ -309,6 +344,7 @@ export class PlayerSlot {
     this.weapons.restore(saved.weapons, this.inventory);
     if (saved.dead) this.die(asDamageCause(saved.deathCause), saved.gibbed === true);
     if (saved.crushed) this.squash();
+    this.deadTics = saved.deadTics ?? 0;
   }
 
   /**

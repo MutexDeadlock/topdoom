@@ -7,8 +7,7 @@ import { VoodooDolls } from '../../src/game/specials/voodoo.ts';
 import { SectorEffects } from '../../src/game/specials/sectoreffects.ts';
 import { applyCrushDamage } from '../../src/game/specials/moverblocking.ts';
 import { createInventory, PICKUP_RANGE } from '../../src/game/inventory.ts';
-import { buildThingSprites } from '../../src/game/things.ts';
-import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { thingLayer } from '../fixtures/spritestubs.ts';
 import { World } from '../../src/game/world.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { DoomMap } from '../../src/wad/map.ts';
@@ -100,7 +99,7 @@ describe('Specials · voodoo dolls', () => {
     const rig = specialsRig(grid.map, start);
     const forces = new Forces(grid.map, rig.world);
     const dolls = new VoodooDolls(rig.world);
-    const layer = buildThingSprites(rig.world, { bank: BANK, materials: MATERIALS, skill: 3 });
+    const layer = thingLayer(rig.world);
     let taken = 0;
     for (let i = 0; i < 200; i++) {
       forces.tick();
@@ -124,7 +123,7 @@ describe('Specials · voodoo dolls', () => {
     const world = new World(grid.map);
     const forces = new Forces(grid.map, world);
     const dolls = new VoodooDolls(world);
-    const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
+    const layer = thingLayer(world);
     let taken = 0;
     for (let i = 0; i < 50; i++) {
       forces.tick();

@@ -1,11 +1,11 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites, monstersTelefrag } from '../../src/game/things.ts';
+import { monstersTelefrag } from '../../src/game/things.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { targetOfSlot } from '../../src/game/things/defs.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { thingLayer } from '../fixtures/spritestubs.ts';
 import { savedThing } from '../fixtures/snapshot.ts';
 
 /**
@@ -32,7 +32,7 @@ function arena(netgame = false) {
   );
   const world = new World(map);
   const onKill = (slot: number) => kills.push(slot);
-  const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3, netgame, onKill });
+  const layer = thingLayer(world, { netgame, onKill });
   return { layer, kills, pad: grid.centre(1, 1), lamp: grid.centre(2, 1), away: grid.centre(3, 1) };
 }
 

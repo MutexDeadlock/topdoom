@@ -1,6 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addControlLine, addControlSector, gridMap } from '../fixtures/gridmap.ts';
+import { forcesRig } from '../fixtures/forcesrig.ts';
+import type { CellHeights } from '../fixtures/gridmap.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
 import { makeTouchCache, World } from '../../src/game/world.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
@@ -15,13 +17,8 @@ describe('Specials · conveyors', () => {
   const TICS = 35;
 
   /** Three cells in a row, the middle one a 252 conveyor running east at `dx`/32 × 3/32 units per tic. */
-  function rig(dx = 128, heights?: Record<string, { floor: number; ceil: number }>) {
-    const grid = gridMap(['...'], heights ? { heights } : {});
-    grid.map.sectors[grid.index(1, 0)].tag = 7;
-    addControlLine(grid.map, dx, 0, 252, 7);
-    const forces = new Forces(grid.map, new World(grid.map));
-    forces.tick();
-    return { grid, forces, cache: makeTouchCache() };
+  function rig(dx = 128, heights?: Record<string, CellHeights>) {
+    return forcesRig(252, { dx, heights });
   }
 
   test('a body on the belt is carried at CARRYFACTOR × the scroll rate', () => {

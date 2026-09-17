@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites } from '../../src/game/things.ts';
 import { targetOfSlot } from '../../src/game/things/defs.ts';
 import { MONSTER_HEALTH } from '../../src/game/things/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
@@ -15,7 +14,7 @@ import { RowInput } from '../../src/game/replay/row.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { monsterArena } from '../fixtures/arena.ts';
-import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { thingLayer } from '../fixtures/spritestubs.ts';
 import { specialsRig } from '../fixtures/specialsrig.ts';
 
 /**
@@ -43,7 +42,7 @@ describe('Coop · netgame things', () => {
     const spawned = (netgame: boolean) => {
       const grid = gridMap(['#####', '#...#', '#####'], { cell: 128 });
       grid.map.things.push({ ...thingAt(grid, 2, 1, ThingType.zombieman), flags: 7 | MULTIPLAYER_ONLY });
-      return buildThingSprites(new World(grid.map), { bank: BANK, materials: MATERIALS, skill: 3, netgame }).stats
+      return thingLayer(new World(grid.map), { netgame }).stats
         .totalKills;
     };
     assert.equal(spawned(false), 0);
@@ -82,10 +81,7 @@ describe('Coop · netgame things', () => {
     layer.damage(0, 10_000, { slot: 1 });
     layer.damage(1, 10_000, { source: imp });
     assert.deepEqual(monsterBlock(layer, 0)?.explodeSource, { id: targetOfSlot(1), type: 0 }, 'as a projectile holds its shooter');
-    const restored = buildThingSprites(new World(grid.map), {
-      bank: BANK,
-      materials: MATERIALS,
-      skill: 3,
+    const restored = thingLayer(new World(grid.map), {
       netgame: true,
       restore: layer.snapshot(),
     });

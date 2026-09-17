@@ -266,6 +266,8 @@ describe('Best times · the localStorage migration', () => {
     assert.equal(store.rows.size, 1, 'and only the good one lands');
   });
 
+  // Two tests rather than a loop: the migration runs once per load, so a second blob in the same
+  // test would never be looked at.
   test('an unparseable blob migrates nothing and is dropped', async () => {
     legacy.set(LEGACY_STORAGE_KEY, '{not json');
     await loadBestTimes();

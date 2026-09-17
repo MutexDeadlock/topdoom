@@ -71,6 +71,12 @@ export interface GridMap {
    * it doesn't depend on the `cell` size the way a raw x-coordinate does.
    */
   westEdge(col: number, row: number): number;
+  /**
+   * The two-sided linedef between two **sectors**, whichever way round its sidedefs happen to sit —
+   * for a boundary a test names by its two cells rather than by a compass direction. Where the
+   * winding matters, {@link GridMap.westEdge} is the one that states it.
+   */
+  edgeBetween(a: number, b: number): number;
 }
 
 export function gridMap(art: readonly string[], options: GridMapOptions = {}): GridMap {
@@ -260,6 +266,16 @@ export function gridMap(art: readonly string[], options: GridMapOptions = {}): G
       const edge = edges.get(`v:${c}:${r}`);
       if (!edge) throw new Error(`gridMap: no west edge for cell (${c}, ${r})`);
       return edge.line;
+    },
+    edgeBetween: (a, b) => {
+      const i = linedefs.findIndex((l) => {
+        if (l.left === NO_SIDE) return false;
+        const front = sidedefs[l.right].sector;
+        const back = sidedefs[l.left].sector;
+        return (front === a && back === b) || (front === b && back === a);
+      });
+      if (i < 0) throw new Error(`gridMap: no linedef between sectors ${a} and ${b}`);
+      return i;
     },
   };
 }

@@ -7,11 +7,11 @@ import { TELEFRAG_DAMAGE } from '../../src/game/things.ts';
 import { World } from '../../src/game/world.ts';
 import { PLAYER_RADIUS, Player } from '../../src/game/player.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { NO_INPUT, TIC, specialsRig } from '../fixtures/specialsrig.ts';
+import { TIC, specialsRig } from '../fixtures/specialsrig.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { TeleportDest } from '../../src/game/specials.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
-import { heldInput } from '../fixtures/input.ts';
+import { NO_INPUT, heldInput } from '../fixtures/input.ts';
 
 /**
  * IDDQD, IDKFA, IDCLIP and IDCLEV, against `st_stuff.c`'s `ST_Responder`. See docs/cheats.md.

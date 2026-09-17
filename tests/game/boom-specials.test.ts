@@ -9,7 +9,8 @@ import {
   lookupSpecial,
 } from '../../src/game/specials/tables.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { specialsRig, NO_INPUT, TIC } from '../fixtures/specialsrig.ts';
+import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { NO_INPUT } from '../fixtures/input.ts';
 
 /**
  * Boom's extended (non-generalized) numbers: table sanity, plus the two new

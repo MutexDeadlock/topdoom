@@ -379,7 +379,7 @@ export interface TeleportEffect {
    * Boom's numbers clear `line->special` only when the teleport actually
    * happened (`if (EV_Silent…(…)) line->special = 0;`). Vanilla 39/125 clear
    * it either way — their `|| demo_compatibility` — which is the behavior the
-   * four vanilla entries keep and `tests/regression/teleport-back-side.test.ts`
+   * four vanilla entries keep and `tests/game/teleport-back-side.test.ts`
    * pins.
    */
   spendOnlyOnSuccess?: boolean;

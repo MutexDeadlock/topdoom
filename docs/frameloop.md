@@ -46,7 +46,7 @@ Three rules hold it together:
   game on a level's first frame. Reported against BOOMEDIT.WAD, whose `ANIMATED` runs two sequences
   at 2 tics/frame rather than vanilla's uniform 8 — the threshold is `-2 × speedTics/35` seconds, so
   its faster sequences reach it four times sooner. Covered by
-  `tests/regression/animated-negative-dt.test.ts`; `AnimatedTextures` also clamps its own
+  `tests/render/animated-negative-dt.test.ts`; `AnimatedTextures` also clamps its own
   accumulator, since it owns the invariant the index depends on.
 - **A stall drops its debt rather than paying it back.** `MAX_TICS_PER_FRAME` caps both the burst
   after a backgrounded tab and the worst-case cost of one frame. This is the same "never take a

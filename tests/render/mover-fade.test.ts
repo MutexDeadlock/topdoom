@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { addControlLine, gridMap } from '../fixtures/gridmap.ts';
+import { textureEverySide } from '../fixtures/movermesh.ts';
 import { specialsRig, type SpecialsRig } from '../fixtures/specialsrig.ts';
 import {
   FADE_RADIUS,
@@ -106,11 +107,7 @@ describe('Rendering · mover meshes a frame cannot touch', () => {
   function rig(row = '.L......') {
     const grid = gridMap([row], { cell: CELL, heights: { L: { floor: 64, ceil: 128 } } });
     const { map } = grid;
-    for (const side of map.sidedefs) {
-      side.upper = 'UPPER';
-      side.lower = 'LOWER';
-      side.middle = 'MIDDLE';
-    }
+    textureEverySide(map);
     // Raised above its neighbours, so triggering it actually moves and its mesh
     // is genuinely refreshed rather than left alone.
     const lift = grid.index(1, 0);
@@ -119,7 +116,7 @@ describe('Rendering · mover meshes a frame cannot touch', () => {
     const control = map.linedefs.length - 1;
     const r = specialsRig(map, grid.centre(7, 0));
     assert.ok(r.movableSectors.has(lift), 'the fixture must actually build a mover mesh');
-    const trigger = () => (r.specials as unknown as { trigger(line: number, keys: Set<never>): void }).trigger(control, new Set());
+    const trigger = () => r.trigger(control);
     return { grid, rig: r, lift, trigger, fade: fadePass(r) };
   }
 
@@ -218,11 +215,7 @@ describe('Rendering · one hole, whichever mesh it lands in', () => {
   function wallWithADoorInIt(art: readonly string[] = ['#+#', '...']) {
     const grid = gridMap(art, { cell: CELL });
     const { map } = grid;
-    for (const side of map.sidedefs) {
-      side.upper = 'UPPER';
-      side.lower = 'LOWER';
-      side.middle = 'MIDDLE';
-    }
+    textureEverySide(map);
     const door = grid.index(1, 0);
     map.sectors[door].tag = 1;
     addControlLine(map, 64, 0, 63, 1); // SR door, so the sector is a mover

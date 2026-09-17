@@ -1,6 +1,11 @@
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FrameProfiler } from '../../src/util/profiler.ts';
+import {
+  FrameProfiler,
+  OFF_FRAME_PENDING_CAP,
+  OFF_FRAME_SPREAD,
+  PROFILE_SMOOTHING,
+} from '../../src/util/profiler.ts';
 
 /**
  * The panel's one structural promise is that its bars sum to the total it reports, which is what
@@ -73,13 +78,15 @@ describe('Profiling · the frame breakdown', () => {
   test('a burst of off-frame work is spread over frames, not charged to the next one', () => {
     const profiler = settle((p) => p.time('A', () => elapse(0.5)));
     const before = profiler.totalMs;
+    const burst = 24; // a track start's whole lookahead in one report
+    // The two outcomes the dials put either side of this test: charged whole, the smoothed total
+    // jumps by `whole`; spread, one frame carries `OFF_FRAME_SPREAD` of that.
+    const whole = burst * PROFILE_SMOOTHING;
     profiler.beginFrame();
     elapse(0.5);
-    profiler.offFrame('Music', 24); // a track start's whole lookahead in one report
+    profiler.offFrame('Music', burst);
     profiler.endFrame();
-    // Charged whole, the total would have jumped by ~24ms * SMOOTHING ≈ 2.9;
-    // spread, the first frame carries only a fraction of that.
-    assert.ok(profiler.totalMs < before + 1, `total jumped from ${before} to ${profiler.totalMs}`);
+    assert.ok(profiler.totalMs < before + whole / 2, `total jumped from ${before} to ${profiler.totalMs}`);
     // The burst is still reported, just over the following frames.
     for (let i = 0; i < 5; i++) {
       profiler.beginFrame();
@@ -87,8 +94,8 @@ describe('Profiling · the frame breakdown', () => {
       profiler.endFrame();
     }
     const bars = byLabel(profiler);
-    assert.ok(bars.Music > 0.3, `Music still draining, got ${bars.Music}`);
-    assert.ok(bars.Music < 5, `Music never spiked to the burst, got ${bars.Music}`);
+    assert.ok(bars.Music > whole * OFF_FRAME_SPREAD, `Music still draining, got ${bars.Music}`);
+    assert.ok(bars.Music < whole, `Music never spiked to the burst, got ${bars.Music}`);
     assert.ok(Math.abs(barSum(profiler) - profiler.totalMs) < 1e-9, `bars ${barSum(profiler)} vs ${profiler.totalMs}`);
   });
 
@@ -103,7 +110,10 @@ describe('Profiling · the frame breakdown', () => {
       profiler.endFrame();
       peak = Math.max(peak, profiler.totalMs);
     }
-    assert.ok(peak < before + 8, `capped backlog still pushed the total to ${peak} (baseline ${before})`);
+    // Nothing beyond the cap is ever replayed, so no frame can be charged more than one cap's
+    // worth of spread — the smoothed total follows that, it does not exceed it.
+    const capped = OFF_FRAME_PENDING_CAP * OFF_FRAME_SPREAD;
+    assert.ok(peak < before + capped, `capped backlog still pushed the total to ${peak} (baseline ${before})`);
     // And it drains away entirely rather than inflating the total forever.
     assert.ok(profiler.totalMs < before + 0.5, `total settled back to ${profiler.totalMs} (baseline ${before})`);
   });

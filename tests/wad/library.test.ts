@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadWadFiles, mergedMaps, type WadSource } from '../../src/wad/library.ts';
 import { writePwad } from '../../src/wad/write.ts';
+import { wadSource } from '../fixtures/wadsource.ts';
 
 /**
  * The menu's level list is built from the manifest alone — no WAD is downloaded to fill it in — so
@@ -9,18 +10,7 @@ import { writePwad } from '../../src/wad/write.ts';
  * which file provides each map, and which title (if any) applies. See docs/wad.md § Level names.
  */
 function source(label: string, type: 'IWAD' | 'PWAD', maps: string[], levelNames: Record<string, string> = {}): WadSource {
-  return {
-    key: label,
-    id: `id:${label}`,
-    label,
-    type,
-    maps,
-    lumpCount: maps.length,
-    levelNames,
-    size: 0,
-    origin: 'server',
-    bytes: () => Promise.reject(new Error('the menu must not need the bytes')),
-  };
+  return wadSource(label, { type, maps, lumpCount: maps.length, levelNames });
 }
 
 describe('WAD parsing · the menu level list', () => {

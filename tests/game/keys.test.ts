@@ -4,7 +4,8 @@ import { applyPickup, createInventory, satisfiesLock, type KeySlot } from '../..
 import { lockedLineMessage } from '../../src/ui/hud/message.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { specialsRig, USE_INPUT, TIC } from '../fixtures/specialsrig.ts';
+import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { USE_INPUT } from '../fixtures/input.ts';
 
 /**
  * Six-slot keys and `LockRule` (Boom `P_CanUnlockGenDoor` semantics): cards and

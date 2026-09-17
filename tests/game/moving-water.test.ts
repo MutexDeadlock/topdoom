@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import type * as THREE from 'three';
 import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { gridMap, addTransferLine } from '../fixtures/gridmap.ts';
-import { specialsRig, vertexHeights, USE_INPUT, TIC } from '../fixtures/specialsrig.ts';
+import { specialsRig, vertexHeights, TIC } from '../fixtures/specialsrig.ts';
+import { USE_INPUT } from '../fixtures/input.ts';
 import type { Pos2 } from '../../src/types.ts';
 
 /**

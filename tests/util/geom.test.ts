@@ -1,5 +1,4 @@
 import { describe, test } from 'node:test';
-import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import {
   blastDistanceToBox,
@@ -14,7 +13,7 @@ import {
   traceHitsBox,
 } from '../../src/util/geom.ts';
 import { polygonArea } from '../fixtures/geometry.ts';
-import { filesUnder } from '../fixtures/files.ts';
+import { callsIn, filesUnder } from '../fixtures/files.ts';
 
 /**
  * The primitives under every sightline in the engine — wall occlusion, fog
@@ -380,9 +379,7 @@ describe('Geometry · one spelling for a distance', () => {
     // implementation-approximated result (ECMA-262 leaves `Math.hypot`'s last
     // bits to the engine) out of code a replayed run has to reproduce.
     // See `vecLength` for the argument, docs/testing.md § Determinism.
-    const offenders = filesUnder('src', (path) => path.endsWith('.ts')).filter((path) =>
-      readFileSync(path, 'utf8').includes('Math.hypot('),
-    );
-    assert.deepEqual(offenders, [], 'measure with util/geom.ts: vecLength');
+    const offenders = callsIn(filesUnder('src', (path) => path.endsWith('.ts')), /\bMath\.hypot\s*\(/g);
+    assert.deepEqual(offenders, [], `measure with util/geom.ts: vecLength\n${offenders.join('\n')}`);
   });
 });

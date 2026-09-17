@@ -26,12 +26,9 @@ describe('Specials · inverted plane moves', () => {
     map.linedefs[line].tag = 1;
     map.sectors[0].tag = 1;
     const r = specialsRig(map, grid.centre(0, 0), { blocksFloorRise });
-    const s = r.specials as unknown as {
-      trigger(lineIndex: number, keys: Set<never>): unknown;
-      floorMovers: Map<number, { state: string }>;
-    };
+    const s = r.specials as unknown as { floorMovers: Map<number, { state: string }> };
     const pull = () => {
-      s.trigger(line, new Set());
+      r.trigger(line);
       r.tick();
     };
     return { map, rig: r, s, pull };
@@ -63,7 +60,7 @@ describe('Specials · inverted plane moves', () => {
     map.linedefs[line].tag = 1;
     map.sectors[0].tag = 1;
     const r = specialsRig(map, grid.centre(0, 0));
-    (r.specials as unknown as { trigger(l: number, k: Set<never>): unknown }).trigger(line, new Set());
+    r.trigger(line);
     r.tick();
     assert.equal(map.sectors[0].ceilHeight, 128, 'snapped down to the highest neighbor ceiling');
   });

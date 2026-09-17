@@ -104,7 +104,7 @@ freedoom2 MAP16, raising 5100 → 12000 changed the spawn seed sweep by under 0.
 subsectors revealed at spawn **not at all** on any of them; only NUTS.WAD MAP01, wide open with a
 vantage over a drop, moved (8 → 21).
 
-The reveal distance is not readable from outside, so `tests/regression/fog-reveal-radius.test.ts`
+The reveal distance is not readable from outside, so `tests/game/fogofwar-reveal-radius.test.ts`
 brackets it from both sides — against `VIEW_DISTANCE` rather than literals, since the reveal
 tracking the dial *is* the rule: a cell inside the view must be revealed, a cell past it must be
 dark. It holds wherever the dial is set; see docs/testing.md § Feel dials are read, never pinned.

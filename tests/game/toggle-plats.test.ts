@@ -1,8 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { specialsRig, NO_INPUT, TIC } from '../fixtures/specialsrig.ts';
-import type { SpecialsSnapshot } from '../../src/game/snapshot.ts';
+import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { NO_INPUT } from '../fixtures/input.ts';
 
 /**
  * Boom's instant toggle plats, 211 (SR) and 212 (WR) — `EV_DoPlat(toggleUpDn)`.
@@ -23,14 +23,11 @@ describe('Specials · toggle plats', () => {
     map.sectors[1].tag = 1;
     const r = specialsRig(map, grid.centre(1, 0));
     const s = r.specials as unknown as {
-      trigger(lineIndex: number, keys: Set<never>): unknown;
       floorMovers: Map<number, { state: string; instant?: boolean; crush?: boolean }>;
-      snapshot(): SpecialsSnapshot;
-      restore(snapshot: SpecialsSnapshot): void;
     };
     /** Trigger, then one tic — the stroke completes inside that tic. */
     const press = () => {
-      s.trigger(line, new Set());
+      r.trigger(line);
       r.specials.update(TIC, { x: 0, y: 0, angle: 0 }, NO_INPUT, new Set());
     };
     return { map, rig: r, s, line, press, ceil: map.sectors[1].ceilHeight, floor: map.sectors[1].floorHeight };
@@ -95,11 +92,11 @@ describe('Specials · toggle plats', () => {
   });
 
   test('a toggle parked in stasis survives a save and reverses correctly after', () => {
-    const { map, s, press, ceil, floor } = rig(212);
+    const { map, rig: r, s, press, ceil, floor } = rig(212);
     press();
     assert.equal(map.sectors[1].floorHeight, ceil);
-    const saved = s.snapshot();
-    s.restore(saved);
+    const saved = r.specials.snapshot();
+    r.specials.restore(saved);
     assert.equal(s.floorMovers.get(1)?.state, 'stasis', 'restored still parked');
     press();
     assert.equal(map.sectors[1].floorHeight, floor, 'and reverses from the direction it remembered');

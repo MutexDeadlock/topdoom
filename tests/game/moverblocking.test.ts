@@ -1,13 +1,13 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites, type ThingLayer } from '../../src/game/things.ts';
+import { type ThingLayer } from '../../src/game/things.ts';
 import { MoverOccupancy } from '../../src/game/specials/moverblocking.ts';
 import { VoodooDolls } from '../../src/game/specials/voodoo.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { thingLayer } from '../fixtures/spritestubs.ts';
 import { AWAY, crushSources, occupant } from '../fixtures/specialsrig.ts';
 import type { Pos3 } from '../../src/types.ts';
 
@@ -40,7 +40,7 @@ describe('Specials · the bodies a mover reaches', () => {
     const occupancy = new MoverOccupancy(world, crushSources({ things: () => things }));
     assert.equal(occupancy.crush(sector, true), false, 'no layer yet, so nobody is in the way');
 
-    things = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
+    things = thingLayer(world);
     assert.equal(occupancy.crush(sector, true), true, 'the knight built afterwards is caught');
   });
 

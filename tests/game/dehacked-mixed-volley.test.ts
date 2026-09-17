@@ -3,14 +3,11 @@ import assert from 'node:assert/strict';
 import { applyDehacked, resetDehacked } from '../../src/game/dehacked/apply.ts';
 import { parseDehacked } from '../../src/game/dehacked.ts';
 import { MONSTER_STATS, monsterStatsFor } from '../../src/game/monsters/tables.ts';
-import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
-import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { World } from '../../src/game/world.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { soundLog } from '../fixtures/specialsrig.ts';
-import { DOOM_TIC } from '../../src/constants.ts';
-import { monsterBody } from '../fixtures/monsterbody.ts';
+import { chaseStep, monsterBody } from '../fixtures/monsterbody.ts';
 
 /**
  * A missile chain used to be read for its *first* damaging action alone, so every later shot of a
@@ -46,7 +43,7 @@ function volleySprites(type: number): string[] {
   const log = soundLog();
   const sprites: string[] = [];
   for (let i = 0; i < 120; i++) {
-    const attack = stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, sfx: log.sfx });
+    const attack = chaseStep(body, stats, world, target, { sfx: log.sfx });
     for (const shot of attack?.projectiles ?? []) sprites.push(shot.sprite);
     // One volley only: stop the moment its last shot has left, before a second attack is chosen.
     if (sprites.length > 0 && body.burstLeft === 0) break;

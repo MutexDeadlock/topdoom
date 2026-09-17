@@ -1,7 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addControlLine, gridMap } from '../fixtures/gridmap.ts';
+import { forcesRig } from '../fixtures/forcesrig.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
+import { ORIG_FRICTION } from '../../src/game/specials/defs.ts';
 import { makeTouchCache, World } from '../../src/game/world.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
 
@@ -11,21 +13,30 @@ import { PLAYER_RADIUS } from '../../src/game/player.ts';
  * mapping onto this engine's movement model.
  * See docs/specials-forces.md § Friction and docs/movement.md § Friction.
  */
+/**
+ * `P_SpawnFriction`'s curve at six line lengths, each worked out by hand:
+ * `friction = (0x1EB8 × len) / 0x80 + 0xD000`, so 32 → 0x07AE + 0xD000, 96 → 0x170A + 0xD000,
+ * 128 → 0x1EB8 + 0xD000, 160 → 0x2666 + 0xD000, 192 → 0x2E14 + 0xD000. A length of 0 is the
+ * intercept alone. These are transcriptions, not a second copy of the formula.
+ */
+const FRICTION_ANCHORS: readonly (readonly [length: number, raw: number])[] = [
+  [0, 0xd000],
+  [32, 0xd7ae],
+  [96, 0xe70a],
+  [128, 0xeeb8],
+  [160, 0xf666],
+  [192, 0xfe14],
+];
+
 describe('Specials · Boom friction', () => {
-  const ORIG_FRICTION = 0xe800 / 0x10000;
   /** Boom's generalized friction bit, `p_spec.h`'s `FRICTION_MASK`. */
   const FRICTION_MASK = 0x100;
   /** Well past `MORE_FRICTION_MOMENTUM << 2`, so a muddy floor gives its full boost. */
   const WALKING = 500;
 
   /** Three cells; the middle one gets a 223 line of `length` and the friction bit. */
-  function rig(length: number, art = ['...']) {
-    const grid = gridMap(art);
-    const middle = grid.index(1, 0);
-    grid.map.sectors[middle].tag = 7;
-    grid.map.sectors[middle].special = FRICTION_MASK;
-    addControlLine(grid.map, length, 0, 223, 7);
-    return { grid, middle, forces: new Forces(grid.map, new World(grid.map)), cache: makeTouchCache() };
+  function rig(length: number) {
+    return forcesRig(223, { dx: length, sectorBit: FRICTION_MASK });
   }
 
   /** `frictionUnder` at a cell's centre, standing on its floor. */
@@ -37,9 +48,11 @@ describe('Specials · Boom friction', () => {
   }
 
   test('the friction curve is P_SpawnFriction’s, in map-unit line lengths', () => {
-    // friction = (0x1EB8 × 128) / 0x80 + 0xD000 = 0xF6B8 → 0.96363…
-    const expected = ((0x1eb8 * 128) / 0x80 + 0xd000) / 0x10000;
-    assert.ok(Math.abs(under(rig(128), 1).friction - expected) < 1e-12);
+    // Worked out by hand from `friction = (0x1EB8 × len) / 0x80 + 0xD000`, rather than recomputed
+    // here: an expression that mirrors the implementation agrees with any implementation of it.
+    for (const [length, raw] of FRICTION_ANCHORS) {
+      assert.equal(under(rig(length), 1).friction, raw / 0x10000, `length ${length}`);
+    }
   });
 
   test('a short line is mud — slower, and a long one is ice — slipperier', () => {
@@ -82,10 +95,9 @@ describe('Specials · Boom friction', () => {
   test('the MAXMOVE bound leaves an ordinary ice line alone', () => {
     // The two curves' own values still reach `frictionUnder` untouched either
     // side of the crossover — the bound only ever binds where MBF's own clamp did.
-    for (const length of [0, 32, 96, 128, 160, 192]) {
-      const raw = ((0x1eb8 * length) / 0x80 + 0xd000) / 0x10000;
+    for (const [length, raw] of FRICTION_ANCHORS) {
       const got = under(rig(length), 1).friction;
-      assert.ok(Math.abs(got - raw) < 1e-12, `length ${length}: ${got} vs ${raw}`);
+      assert.equal(got, raw / 0x10000, `length ${length}: ${got} vs ${raw / 0x10000}`);
     }
   });
 

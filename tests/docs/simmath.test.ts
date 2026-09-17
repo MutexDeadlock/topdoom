@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { filesUnder } from '../fixtures/files.ts';
+import { callsIn, filesUnder } from '../fixtures/files.ts';
 
 /**
  * Nothing a tic runs may reach the platform's approximated `Math` functions: ECMA-262 lets an
@@ -22,18 +21,6 @@ import { filesUnder } from '../fixtures/files.ts';
 const REPLACED = /\bMath\.(sin|cos|atan2|exp|log)\s*\(/g;
 /** Every function ECMA-262 leaves approximated: what a simulation file may not reach for at all. */
 const APPROXIMATED = /\bMath\.(sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|exp|expm1|log|log2|log10|log1p|pow|hypot|cbrt)\s*\(/g;
-
-/** `file:line Math.x(` for every match, so a failure names the call rather than the count. */
-function callsIn(files: string[], pattern: RegExp): string[] {
-  const out: string[] = [];
-  for (const file of files) {
-    const source = readFileSync(file, 'utf8');
-    for (const match of source.matchAll(pattern)) {
-      out.push(`${file}:${source.slice(0, match.index).split('\n').length} ${match[0].trim()}`);
-    }
-  }
-  return out;
-}
 
 describe('Simulation determinism · the tic does not call the platform Math', () => {
   test('no approximated Math call anywhere under src/game', () => {

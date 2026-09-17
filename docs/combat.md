@@ -171,14 +171,14 @@ takes `PLAYER_WEAPON_RANGE` like a free one, as `P_GunShot` and `A_FireShotgun2`
 every bullet `MISSILERANGE` whatever `P_BulletSlope` found. Stopping it at the target left every
 pellet the spread threw off the body **in mid-air beside it**: a shotgun blast's tracers and puffs
 all ended at the clicked monster, and nothing behind it could be hit.
-`tests/regression/locked-pellet-range.test.ts` pins it.
+`tests/game/locked-pellet-range.test.ts` pins it.
 
 A locked-on missile flies `mapSpan` for the same reason. Bounding it at the launch-time distance to
 the target made a rocket **burst in mid-air on the spot a monster had been standing**, since a
 rocket takes about a third of a second to cross 200 units and an imp covers 160 in that time
 (§ How a shot deals damage).
 
-`tests/regression/player-shot-range.test.ts` guards the 2048/8192 split on the corridor from the
+`tests/game/player-shot-range.test.ts` guards the 2048/8192 split on the corridor from the
 repro above, through `spawnPlayerShot` itself (`tests/fixtures/shotrig.ts`), locked on and free.
 
 ## Shoot-triggered specials
@@ -260,7 +260,7 @@ The box is close enough to the art that little of the feel moved: an imp's `TROO
 its 20-unit radius. The two part company on a lost soul (16 against a 44 px `SKUL`) and, the other
 way, on a mancubus, whose 48-unit box is wider than the 73 px `FATT` that draws it. Vertically the
 box ends at the head where a sprite's transparent margin did not, so the reach is a little tighter
-than what is painted. `tests/regression/aim-pick-body-box.test.ts` pins all of it.
+than what is painted. `tests/game/autoaim.test.ts` pins all of it.
 
 Reading no render state is also what lets the tic cast this ray without first re-posing the sprite
 batch (docs/frameloop.md § Posing for the aim ray); with the sprite gone the pick no longer needs
@@ -284,7 +284,7 @@ the walkway a few units past the cursor and ran on through the crowd on the grou
 pointer position over the walkway locked a monster 400-1400 units away, up to **180° off** the
 pointer — where the shot then went, and where the player turned to face. It takes a floor the ray
 can pass *under* while bodies stand on a lower one further along, so a flat map never shows it.
-`tests/regression/aim-pick-ground-clip.test.ts` pins it.
+`tests/game/autoaim.test.ts` pins it.
 
 **Three of vanilla's own limits on aiming are deliberately absent**, all of them consequences of
 picking with a pointer instead of tracing down the facing, and none of them missed by accident:
@@ -467,7 +467,7 @@ against the target — perpendicular offset within `MONSTER_HIT_RADIUS` and, for
 `shotPath`'s distance saying whether a wall cut the shot short — and a body nearer than the target
 on that line still takes the pellet first. Counting a pellet that passed the lock test as a hit
 without the trace let a click shoot straight through whatever stood in front of the target.
-`tests/regression/locked-pellet-body-in-front.test.ts` pins it. Under `CombatContext.pvp` the other
+`tests/game/locked-pellet-body-in-front.test.ts` pins it. Under `CombatContext.pvp` the other
 players' bodies are in that trace too (`raycastPlayers`, `combat.ts`), for a free pellet, a swing
 and each BFG ray alike; a lock on a player is tested at the player's own box
 (docs/multiplayer-deathmatch.md § Player versus player).
@@ -560,7 +560,7 @@ aims and take the cone; a monster's bullet already carries the slope `shotPath` 
 where the bolt genuinely crosses its body. **A player is tested on the same span**
 (`raycastPlayers`): `PTR_ShootTraverse` makes no exception for `MT_PLAYER`, and a box-only test let
 a bolt hit a player it passed far over or under — a gunner on a ledge shooting across the room hit
-the player standing at the ledge's foot. `tests/regression/monster-bullet-over-player.test.ts`.
+the player standing at the ledge's foot. `tests/game/monster-bullet-over-player.test.ts`.
 
 **A *locked* pellet passes its slope too**, and that is the one thing here that is not simply
 vanilla's split. Its body trace (§ How a shot deals damage) carries the slope the lock resolved —
@@ -620,7 +620,7 @@ move longer than `MAXMOVE/2` along either axis is tried in two halves (MBF's sym
 (`ProjectileLayer`'s `burstShortOf`). The direct hit's origin, the splash and the explosion all sit
 there. Bursting where the step ended put the blast up to a whole step past the contact, inside the
 body, so the struck monster took splash measured from inside its own box.
-`tests/regression/missile-burst-short-of-body.test.ts` pins it.
+`tests/game/missile-burst-short-of-body.test.ts` pins it.
 
 A struck body ends the flight, so it fires no shoot-triggered special — the missile never reached
 the wall whose `lineIndex` it carries.
@@ -680,7 +680,7 @@ own tic. A wall resolved at launch is wrong the moment a door or lift moves: a r
 shut door that then opened burst in mid-air where the door had been, and one fired through an open
 16-unit door that then shut flew through it whenever a 20-unit step jumped the door's sector,
 which is all the floor/ceiling test (`hitGround`, sampled where a step ends) ever saw of it.
-`tests/regression/missile-moving-door.test.ts` pins both.
+`tests/game/missile-moving-door.test.ts` pins both.
 
 **The standoff belongs to the flight, not to a correction applied where the flight is read.** A
 straight step is probed a radius further than it moves and stops that radius short of the plane it
@@ -694,14 +694,14 @@ wall (floor == ceiling).
 stopped it has a sky ceiling on its back side and the missile is above that ceiling
 (`World.missileHitsSky`) — `P_XYMovement`'s sky hack on `ceilingline->backsector`, with Boom's
 narrowing to a missile above the ceiling (killough), so one that meets the lower wall of a sky
-sector still bursts. No shoot special fires either. `tests/regression/missile-sky-hack.test.ts`.
+sector still bursts. No shoot special fires either. `tests/game/skyhack.test.ts`.
 
 `projectileStepBlocker` still reports the exact plane crossing, and an effect spawned there
 resolves its subsector to whichever side of the BSP splitter the point falls on. A far-side leaf the player has
 never seen is skipped by the fog gate (§ Effects and their batching), so without the standoff the
 rocket, plasma and BFG explosions were **not drawn at all** against those walls. Repro: DOOM2
 MAP01's start room, whose north wall (lines 22-25) puts every impact in subsector 184 behind it.
-`tests/regression/impact-on-wall-plane.test.ts` pins both flights — only the straight one was
+`tests/game/impact-on-wall-plane.test.ts` pins both flights — only the straight one was
 covered when the standoff moved, and the homing one silently went back to exploding on the plane.
 
 **A wall beats the floor on the tic both would answer to.** `P_MobjThinker` runs `P_XYMovement`
@@ -730,7 +730,7 @@ within 24 units **climbs** it — it crosses the line and bursts on the floor be
 strikes the step's face. Stopping it at the line instead put the explosion on the wrong side and
 fired a shoot-triggered special on a line vanilla's missile would have crossed.
 
-`tests/regression/missile-floor-ceiling.test.ts` pins each rule on its own.
+`tests/game/missile-floor-ceiling.test.ts` pins each rule on its own.
 
 ## Blood
 
@@ -794,7 +794,7 @@ Boom's narrower terms:
   line) showed no puff anywhere. Both branches stay reachable — on DOOM2 MAP01, 10 of the 36
   sky/sky lines have a lowered back ceiling, and its 11 zero-height sky "pillars" (floor == ceiling,
   e.g. lines 200-205) put every shot above their ceiling.
-  `tests/regression/sky-hack-wall-puff.test.ts` pins both. The shoot-triggered special still fires
+  `tests/game/skyhack.test.ts` pins both. The shoot-triggered special still fires
   either way — `P_ShootSpecialLine` runs *before* this test.
 
 The wall puff sits `PUFF_WALL_OFFSET` (4 units, vanilla's `frac - 4/attackrange`) back along the

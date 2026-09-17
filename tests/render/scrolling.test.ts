@@ -2,6 +2,9 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { SurfaceScroller } from '../../src/render/scroller.ts';
+import { buildMapMesh } from '../../src/render/mapmesh.ts';
+import { gridMap } from '../fixtures/gridmap.ts';
+import { BANK as MESH_BANK } from '../fixtures/specialsrig.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
 import { World } from '../../src/game/world.ts';
 import type { FlatSurface, WallOccluder } from '../../src/render/mapmesh.ts';
@@ -116,14 +119,22 @@ describe('Rendering · scrolling textures, special 48', () => {
     assert.ok(Math.abs(uv.getX(0) - expected) < 1e-5, `left edge U was ${uv.getX(0)}, expected ${expected}`);
   });
 
-  test("the quad edges keep addWall's [A, D, C, A, C, B] vertex order", () => {
-    const { run, uv } = rig(48);
-    run(1);
-    // 0/1/3 are the left edge, 2/4/5 the right — the same U on each side.
-    assert.equal(uv.getX(0), uv.getX(1));
-    assert.equal(uv.getX(0), uv.getX(3));
-    assert.equal(uv.getX(2), uv.getX(4));
-    assert.equal(uv.getX(2), uv.getX(5));
+  test("the mesh builder's own quad has the [A, D, C, A, C, B] order the fixture above mirrors", () => {
+    // Read off `addWall`'s real output rather than restated: a one-cell room's first wall, 128
+    // units over the same 64-wide texture, so its U runs 0..2 as `quadMesh` states it. Without
+    // this the fixture could drift from the builder and the scroll tests would still pass.
+    const grid = gridMap(['.'], { cell: 128 });
+    for (const side of grid.map.sidedefs) side.middle = 'WALL';
+    const built = buildMapMesh(grid.map, MESH_BANK);
+    const wall = built.occluders[0];
+    const attr = built.wallMeshes.get(wall.key)!.geometry.getAttribute('uv') as THREE.BufferAttribute;
+    const builderUs = Array.from({ length: wall.vertexCount }, (_, i) => attr.getX(wall.vertexStart + i));
+    // 0/1/3 are the A end, 2/4/5 the B end — the same U on each side, and the two ends differ.
+    assert.deepEqual(builderUs, [0, 0, 2, 0, 2, 2]);
+
+    const fixture = quadMesh().geometry.getAttribute('uv') as THREE.BufferAttribute;
+    const fixtureUs = Array.from({ length: 6 }, (_, i) => fixture.getX(i));
+    assert.deepEqual(fixtureUs, builderUs, 'the fixture the scroll tests run on carries that order');
   });
 
   test('the back sidedef never scrolls', () => {

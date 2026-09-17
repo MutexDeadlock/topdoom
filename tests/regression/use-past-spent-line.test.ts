@@ -1,7 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { specialsRig, soundLog, NO_INPUT, USE_INPUT, TIC } from '../fixtures/specialsrig.ts';
+import { specialsRig, soundLog, TIC } from '../fixtures/specialsrig.ts';
+import { NO_INPUT, USE_INPUT } from '../fixtures/input.ts';
 
 /**
  * A shot G1 line kept shadowing the switch behind it from the use trace: vanilla zeroes a

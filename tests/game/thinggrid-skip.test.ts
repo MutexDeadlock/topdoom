@@ -6,14 +6,14 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites, type ThingLayer } from '../../src/game/things.ts';
+import { type ThingLayer } from '../../src/game/things.ts';
 import { AIM_SLOPE_LIMIT, type MonsterRef } from '../../src/game/things/defs.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { blastDistanceToBox, segmentEntersBox, traceHitsBox } from '../../src/util/geom.ts';
 import { cos, sin } from '../../src/util/fdlibm.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { thingLayer } from '../fixtures/spritestubs.ts';
 import type { Pos3 } from '../../src/types.ts';
 
 const CELL = 128;
@@ -46,7 +46,7 @@ function scene(): { things: ThingLayer; player: Pos3 } {
     }
   }
   const world = new World(grid.map);
-  const things = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
+  const things = thingLayer(world);
   const start = grid.centre(1, 1);
   return { things, player: { x: start.x, y: start.y, z: 0 } };
 }

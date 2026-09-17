@@ -304,10 +304,6 @@ describe('WAD parsing · reaching the verdict from a directory', () => {
     assert.deepEqual(described.support, [{ code: 'hexen', maps: ['MAP02'] }]);
   });
 
-  test('a real vanilla fixture is found supported', async () => {
-    assert.deepEqual((await describeFixture('doom1_e1m1.wad')).support, []);
-  });
-
   test('a TEXTMAP after the marker is read as UDMF, and its namespace off the lump head', async () => {
     const group = (namespace: string): Lump[] => [
       'MAP01',
@@ -330,8 +326,10 @@ describe('WAD parsing · reaching the verdict from a directory', () => {
     assert.deepEqual(codes(verdict), ['noBsp']);
   });
 
-  test('a real GL-node fixture is found supported', async () => {
-    assert.deepEqual((await describeFixture('doom1_e1m1_xgl.wad')).support, []);
+  test('a real fixture is found supported, whichever node format it ships', async () => {
+    for (const wad of ['doom1_e1m1.wad', 'doom1_e1m1_xgl.wad']) {
+      assert.deepEqual((await describeFixture(wad)).support, [], wad);
+    }
   });
 
   test('a map shipped without nodes is caught', async () => {

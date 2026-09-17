@@ -147,7 +147,7 @@ describe('Savegames · specials round-trip', () => {
 
     const played: string[] = [];
     const audio: SoundEmitter = { play: (id: SfxId) => played.push(id) };
-    ws.update(0.016, false, inv, audio, { x: 0, y: 0, z: 0 });
+    ws.update(TIC, false, inv, audio, { x: 0, y: 0, z: 0 });
 
     // `sawidl` is expected and correct — the saw is the ready weapon with a
     // restored timer of 0. Only the bring-up would be a phantom switch.

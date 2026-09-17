@@ -54,7 +54,7 @@ player* rather than *monsters only* — so a barrel or a decoration a belt pushe
 teleports. Nothing but a conveyor ever moves a decoration in vanilla, which is why that only shows
 up here: BOOMEDIT's 252/253 and 216/217 belts each run an evil eye into a **267** line-to-line
 teleporter that loops it back to the start, and without this the eye rides off the end and is gone
-(`tests/regression/conveyor-carries-over-teleporter.test.ts`). Momentum survives the trip the way
+(`tests/game/conveyor-carries-over-teleporter.test.ts`). Momentum survives the trip the way
 the arrival says it should — a loud `P_Teleport` zeroes it, a silent one rotates it — so the cargo
 comes out of the far end still moving.
 

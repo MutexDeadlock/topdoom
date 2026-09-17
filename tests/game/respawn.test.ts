@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites } from '../../src/game/things.ts';
 import { MONSTER_HEALTH } from '../../src/game/things/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { clearRandom } from '../../src/util/random.ts';
@@ -10,7 +9,7 @@ import type { Skill } from '../../src/game/skill.ts';
 import type { Pos3 } from '../../src/types.ts';
 import type { ThingState } from '../../src/game/snapshot.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { thingLayer } from '../fixtures/spritestubs.ts';
 import { stepFor } from '../fixtures/tics.ts';
 import { savedThing } from '../fixtures/snapshot.ts';
 
@@ -25,9 +24,7 @@ function arena(skill: Skill, fogs: [Pos3, Pos3][] = []) {
   const map = grid.map;
   map.things.push(thingAt(grid, 1, 1, 1), thingAt(grid, 2, 1, ThingType.imp));
   const world = new World(map);
-  const layer = buildThingSprites(world, {
-    bank: BANK,
-    materials: MATERIALS,
+  const layer = thingLayer(world, {
     skill,
     onRespawn: (from, to) => fogs.push([{ ...from }, { ...to }]),
   });
@@ -113,7 +110,7 @@ describe('Monster AI · nightmare respawn', () => {
     layer.damage(IMP_ID, MONSTER_HEALTH[ThingType.imp]);
 
     const saved = layer.snapshot();
-    const restored = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 5, restore: saved });
+    const restored = thingLayer(world, { skill: 5, restore: saved });
     // The imp walked east, so only `spawnX` differs from where it lies and only `spawnX` is
     // written; `spawnY` is elided and stands for the saved `y`, which is still the spawn row.
     assert.equal(imp(restored, grid).monster?.spawnX, spawn.x);

@@ -183,7 +183,7 @@ Two deviations here, both deliberate:
   `burstLeft`), which is vanilla — entering painstate replaces the chain — and is why staggering a
   demon mid-bite is worth a shot.
 
-`tests/regression/melee-windup.test.ts` pins the offset, the miss, the fallback fireball and the
+`tests/game/melee-windup.test.ts` pins the offset, the miss, the fallback fireball and the
 sound split below.
 
 ## Fast monsters
@@ -346,7 +346,7 @@ Two shapes of geometry need it, and only the first was known when the fallback w
   while blocking everything between — a wedge apex, or the corner of a solid
   body's `PIT_CheckThing` box crossed on the diagonal. DOOM2 MAP06's demon at (-68, 482) grazes the
   vertex at (-64, 512) for the first 7 units of its 10-unit step and froze in the pit below the
-  player (`tests/regression/monster-substep-blocked-midway.test.ts`).
+  player (`tests/game/monster-substep-blocked-midway.test.ts`).
 
 The reach is exactly one chase step, the same bound vanilla's `P_TryWalk` has: 89 of the 95
 overlapping spawns recover, and the six that don't are wide types (mancubus, spectre) wedged deeper
@@ -449,7 +449,7 @@ hangs over a ledge: every direction it could shuffle still hangs over that ledge
 E1M5's alcove in front of the yellow door (sector 13, x -704..-656) is 48 units wide against a
 demon's 60, so a demon in there always straddles the lift line (161) or the door line (158), and
 with the lift (sector 12) parked down at -104 it stood frozen until the lift came back up
-(`tests/regression/monster-hanging-over-ledge.test.ts`). `dropoffRefuses` therefore measures the
+(`tests/game/monster-hanging-over-ledge.test.ts`). `dropoffRefuses` therefore measures the
 destination against where the body *stands*, in three comparisons:
 
 1. **MBF's `monkeys` clipping** (`p_map.c`, under killough's "Prevent monsters from getting stuck
@@ -474,7 +474,7 @@ down.
 
 **Repro (3): GoingDown.wad MAP25**, sector 9's south-east corner (lines 84 and 5641, floor -144): a
 demon climbed the rubble there and froze at z -144 over sector 127 (floor -176).
-`tests/regression/monster-perched-on-ledge-corner.test.ts`.
+`tests/game/monster-perched-on-ledge-corner.test.ts`.
 
 **MBF pairs its clipping change with `P_AvoidDropoff`, which steers a hanging monster away from the
 ledge, and this engine deliberately does not.** That half exists to stop the outward drift the two
@@ -511,7 +511,7 @@ The cacodemon, lost soul and pain elemental (`MonsterStats.flies`) are `MF_FLOAT
 and all three of those halves are load-bearing — with only the dropoff exemption they still walked
 the floor, and **a cacodemon in a pit deeper than `MAX_STEP_UP` could never leave it**: every chase
 step out was refused as too big a step up, so it paced the far wall forever while vanilla's floats
-straight out (`tests/regression/floating-monster-ledge.test.ts`, `caco_pit_test.wad`: a 48-unit
+straight out (`tests/game/floating-monster-ledge.test.ts`, `caco_pit_test.wad`: a 48-unit
 pit).
 
 Three rules, all in `monsters/ai.ts`:
@@ -562,7 +562,7 @@ linedef 1131 passes 24 units away — closer than the cacodemon's 31-unit radius
 that block from the moment it spawns and can never step clear of it. With the floor winning it
 snapped 128 units up to z = 480 the instant it woke and hung there for the rest of the level; with
 the step bound it never leaves 352 unless it flies there itself.
-`tests/regression/floater-under-low-ceiling.test.ts` states the same geometry in round numbers.
+`tests/game/floater-under-low-ceiling.test.ts` states the same geometry in round numbers.
 
 `testStep` carries its own copy of vanilla's "mobj must lower itself to fit"
 (`tmceilingz - thing->z < thing->height`) even though `checkPosition` now applies that rule per
@@ -711,7 +711,7 @@ target's own — `PLAYER_HEIGHT` when `ThingLayer` resolved the target to the pl
 `PosedThing.bodyHeight` for an infight — threaded in as `stepMonsterAI`'s `targetHeight`.
 
 Repro maps, committed as fixtures: `tests/fixtures/wads/pinky_{below,above}_test.wad`, covered by
-`tests/regression/pinky-vertical-melee.test.ts`. `above` is the sharper of the two — standing at the
+`tests/game/pinky-vertical-melee.test.ts`. `above` is the sharper of the two — standing at the
 wall the sight wedge is already clipped by the ledge lip, so the missing check only showed once the
 player backed off far enough to see over it. Both predicates are pinned as functions, apart from any
 map, in `tests/game/melee.test.ts`.

@@ -40,19 +40,30 @@ describe('Suite hygiene · WAD fixtures', () => {
   });
 
   test('every committed fixture is loaded by something', () => {
-    const sources = testSources().map((path) => readFileSync(path, 'utf8'));
+    // Code lines only, on the same rule as the test above: a fixture named in a comment as where
+    // something was lifted out of is not a fixture anything loads.
+    const code = testSources().map((path) =>
+      readFileSync(path, 'utf8')
+        .split('\n')
+        .filter((line) => !COMMENT.test(line))
+        .join('\n'),
+    );
+    const unloaded: string[] = [];
     // Both directories a test takes real bytes from: WAD fixtures, and the DEHACKED patches
     // lifted out as text (docs/testing.md § The DEHACKED fixtures).
     for (const dir of ['wads', 'dehacked']) {
-      for (const file of readdirSync(join('tests', 'fixtures', dir))) {
+      const files = readdirSync(join('tests', 'fixtures', dir));
+      for (const file of files) {
         // Matched without the extension: `pinky.ts` builds its two names from a union, and
-        // `dehFixture` takes `'epic' | 'freedoom2'`.
+        // `dehFixture` takes `'epic' | 'freedoom2'`. A stem that is a prefix of another fixture's
+        // (`doom1_e1m1` of `doom1_e1m1_xgl`) would otherwise be satisfied by that one alone, so
+        // those are matched with the extension the loader would have written.
         const stem = file.replace(/\.(wad|deh)$/i, '');
-        assert.ok(
-          sources.some((source) => source.includes(stem)),
-          `${dir}/${file} is committed but nothing loads it`,
-        );
+        const nested = files.some((other) => other !== file && other.startsWith(stem));
+        const want = nested ? file : stem;
+        if (!code.some((source) => source.includes(want))) unloaded.push(`${dir}/${file}`);
       }
     }
+    assert.deepEqual(unloaded, [], `committed but nothing loads them:\n${unloaded.join('\n')}`);
   });
 });

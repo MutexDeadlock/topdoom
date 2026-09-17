@@ -20,16 +20,18 @@ export const PROFILE_SMOOTHING = 0.12;
  * Fraction of the pending off-frame pool charged into each frame — see
  * {@link FrameProfiler.offFrame}. **Tuned by feel**: at 60fps this spreads a burst over roughly the
  * music pump's own 150 ms interval, so the charge per frame converges on the per-frame average the
- * bursts amount to instead of spiking whichever frame happened to follow one.
+ * bursts amount to instead of spiking whichever frame happened to follow one. Exported so a test
+ * derives its bounds from it (docs/testing.md § Feel dials are read, never pinned).
  */
-const OFF_FRAME_SPREAD = 0.12;
+export const OFF_FRAME_SPREAD = 0.12;
 
 /**
  * Ceiling on the pending off-frame pool, in ms — a couple of 60fps frames' worth.
  * **Tuned by feel.** Anything bigger is a stall's backlog, dropped rather than replayed against
- * frames that didn't do the work — docs/devmode.md § Profiling overlay.
+ * frames that didn't do the work — docs/devmode.md § Profiling overlay. Exported for the test, as
+ * {@link OFF_FRAME_SPREAD} is.
  */
-const OFF_FRAME_PENDING_CAP = 32;
+export const OFF_FRAME_PENDING_CAP = 32;
 
 /**
  * Per-frame wall-clock breakdown the profiler overlay reads from (`ui/hud/profiler.ts`). A single

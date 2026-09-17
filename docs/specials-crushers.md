@@ -34,7 +34,7 @@ docs/movement.md § Collision), so measuring damage from the centre point alone 
 a grinding ceiling taking nothing — no flinch, no pain sound, no death. **Repro: NoSp2.wad MAP04**,
 whose crusher room is two sectors, 198 (tag 84) and 141, with identical heights: two thirds of the
 cybruisers penned there stood at the join and survived stroke after stroke.
-`tests/regression/crush-straddling-body.test.ts`.
+`tests/game/crush-straddling-body.test.ts`.
 
 Membership in the crushing sector is still required — `boxOverlapsSector`, i.e. `World.sectorsTouching` —
 so a body squeezed by something else next door is that mover's business, not this one's. Its

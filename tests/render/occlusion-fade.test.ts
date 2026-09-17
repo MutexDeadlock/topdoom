@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { buildMapMesh, WALL_CHUNK_LEN, type WallOccluder } from '../../src/render/mapmesh.ts';
+import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import {
   FADE_ALPHA,
   FADE_CORE,
@@ -17,14 +17,22 @@ import { Transfers } from '../../src/game/specials/transfers.ts';
 import { World } from '../../src/game/world.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
-import { buildThingSprites } from '../../src/game/things.ts';
-import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
-import { ThingType } from '../../src/game/things/doomednums.ts';
-import { DOOM_TIC } from '../../src/constants.ts';
-import { gridMap, thingAt } from '../fixtures/gridmap.ts';
+import { gridMap } from '../fixtures/gridmap.ts';
 import { BANK, MASKED_TEXTURE } from '../fixtures/specialsrig.ts';
-import { BANK as SPRITE_BANK, MATERIALS as SPRITE_MATERIALS } from '../fixtures/spritestubs.ts';
-import { fadeFrame, lowestAlpha, openingsOf, targetAt } from '../fixtures/fade.ts';
+import {
+  CELL,
+  CHUNK,
+  cornerList,
+  corners,
+  fadeFrame,
+  group,
+  lineAtY,
+  lowestAlpha,
+  openingsOf,
+  targetAt,
+  walledRow,
+  WALLTEX,
+} from '../fixtures/fade.ts';
 
 /**
  * The fade is a *ball* around where a sightline meets something solid, not the
@@ -40,32 +48,9 @@ import { fadeFrame, lowestAlpha, openingsOf, targetAt } from '../fixtures/fade.t
  * instead of reddening it. They are feel dials; a test that pins one in place
  * is a bug in the test.
  */
-const CHUNK = WALL_CHUNK_LEN;
-
-/** Cells long enough that a wall runs both several chunks and several hole-widths, whole chunks either way. */
-const CELL = CHUNK * Math.max(4, Math.ceil((4 * FADE_RADIUS) / CHUNK));
-
 /** A point `t` of the way up the ramp from full fade to none — what a "fades hard"/"barely fades" assertion means once `FADE_ALPHA` can be anything. */
 function ramp(t: number): number {
   return FADE_ALPHA + (1 - FADE_ALPHA) * t;
-}
-
-const WALLTEX = 'WALL';
-
-/**
- * Three open cells in a row, walled north and south, at `CELL` per cell — so
- * each open cell's north edge is one 512-unit linedef, four chunks wide.
- * Upper textures go on every side, since a `#` cell is a zero-height sector
- * and the step up to it is what draws.
- */
-function walledRow() {
-  const grid = gridMap(['###', '...', '###'], { cell: CELL });
-  for (const l of grid.map.linedefs) {
-    if (l.right !== NO_SIDE) grid.map.sidedefs[l.right].upper = WALLTEX;
-    if (l.left !== NO_SIDE) grid.map.sidedefs[l.left].upper = WALLTEX;
-  }
-  const built = buildMapMesh(grid.map, BANK, { transfers: new Transfers(grid.map) });
-  return { grid, ...built, world: new World(grid.map) };
 }
 
 /**
@@ -77,92 +62,8 @@ function awake(x: number, y: number, z: number, height = PLAYER_HEIGHT) {
   return { x, y, z, height };
 }
 
-/** Every quad cut from one line side, in build order. */
-function group(occluders: readonly WallOccluder[], line: number, frontSide: boolean): WallOccluder[] {
-  return occluders.filter((o) => o.line === line && o.frontSide === frontSide);
-}
-
-/** The line running east-west at `y`, whichever index it landed on. */
-function lineAtY(grid: ReturnType<typeof gridMap>, y: number, x: number): number {
-  const { map } = grid;
-  for (const [i, l] of map.linedefs.entries()) {
-    const v1 = map.vertexes[l.v1];
-    const v2 = map.vertexes[l.v2];
-    if (v1.y !== y || v2.y !== y) continue;
-    if (Math.min(v1.x, v2.x) <= x && x <= Math.max(v1.x, v2.x)) return i;
-  }
-  throw new Error(`no east-west line at y=${y} spanning x=${x}`);
-}
-
-/**
- * A quad's four corner alphas as `commit` wrote them, with the map position each
- * belongs to — `addWall` pushes [A, D, C, A, C, B], so indices 0/1/2/5 are
- * top-left, bottom-left, bottom-right, top-right.
- */
-function corners(meshes: Map<string, THREE.Mesh>, o: WallOccluder) {
-  const attr = meshes.get(o.key)!.geometry.getAttribute('color') as THREE.BufferAttribute;
-  return {
-    topLeft: { a: attr.getW(o.vertexStart), x: o.ax, y: o.ay, z: o.topH },
-    botLeft: { a: attr.getW(o.vertexStart + 1), x: o.ax, y: o.ay, z: o.botH },
-    botRight: { a: attr.getW(o.vertexStart + 2), x: o.bx, y: o.by, z: o.botH },
-    topRight: { a: attr.getW(o.vertexStart + 5), x: o.bx, y: o.by, z: o.topH },
-  };
-}
-
-/** Every corner of a quad, as a flat list. */
-function cornerList(meshes: Map<string, THREE.Mesh>, o: WallOccluder) {
-  const c = corners(meshes, o);
-  return [c.topLeft, c.botLeft, c.botRight, c.topRight];
-}
-
 /** One long `dt`, so `dampen` snaps to its target and the test reads the steady state. */
 const SETTLE = 10;
-
-describe('Rendering · a wall is cut into chunks the fade can window', () => {
-  test('a long wall builds one quad per chunk, tiling the line end to end', () => {
-    const b = walledRow();
-    // The middle cell's north edge: y = 2 * CELL, x from CELL to 2 * CELL.
-    const line = lineAtY(b.grid, 2 * CELL, CELL * 1.5);
-    const quads = group(b.occluders, line, true);
-    assert.equal(quads.length, CELL / CHUNK, 'a wall that many chunks long is cut into that many quads');
-
-    for (const [i, q] of quads.entries()) {
-      assert.equal(q.segAx, quads[0].segAx, 'every chunk names the same parent segment');
-      assert.equal(q.segBx, quads[0].segBx);
-      assert.equal(Math.hypot(q.bx - q.ax, q.by - q.ay), CHUNK, 'each chunk is one chunk long');
-      if (i > 0) {
-        assert.deepEqual(
-          { x: q.ax, y: q.ay },
-          { x: quads[i - 1].bx, y: quads[i - 1].by },
-          'and their footprints meet exactly, leaving no gap to see through',
-        );
-      }
-    }
-  });
-
-  test('a wall shorter than a chunk stays one quad', () => {
-    const grid = gridMap(['###', '...', '###'], { cell: CHUNK });
-    for (const l of grid.map.linedefs) {
-      if (l.right !== NO_SIDE) grid.map.sidedefs[l.right].upper = WALLTEX;
-      if (l.left !== NO_SIDE) grid.map.sidedefs[l.left].upper = WALLTEX;
-    }
-    const b = buildMapMesh(grid.map, BANK, { transfers: new Transfers(grid.map) });
-    const line = lineAtY(grid, 2 * CHUNK, CHUNK * 1.5);
-    assert.equal(group(b.occluders, line, true).length, 1);
-  });
-
-  test('chunk UVs stay continuous, so the texture does not jump at a cut', () => {
-    const b = walledRow();
-    const line = lineAtY(b.grid, 2 * CELL, CELL * 1.5);
-    const quads = group(b.occluders, line, true);
-    const attr = b.wallMeshes.get(quads[0].key)!.geometry.getAttribute('uv') as THREE.BufferAttribute;
-    for (let i = 1; i < quads.length; i++) {
-      const previousRight = attr.getX(quads[i - 1].vertexStart + 2);
-      const left = attr.getX(quads[i].vertexStart);
-      assert.ok(Math.abs(previousRight - left) < 1e-6, `chunk ${i} starts where ${i - 1} ended`);
-    }
-  });
-});
 
 /**
  * Both faders reject on a box around the camera and its targets before doing any crossing work —
@@ -770,98 +671,6 @@ describe('Rendering · flats fade around the sightline too', () => {
     fader.commit(() => 1);
     for (const s of surfaces) {
       assert.deepEqual(new Set(fanAlphas(b.flatMeshes, s)), new Set([1]));
-    }
-  });
-});
-
-describe('Rendering · commit writes only what moved', () => {
-  /** `needsUpdate` is write-only in three.js; the upload it schedules shows up as a bumped `version`. */
-  function uploads(attr: THREE.BufferAttribute, act: () => void): boolean {
-    const before = attr.version;
-    act();
-    return attr.version !== before;
-  }
-
-  test('an unchanged frame re-uploads nothing but still reports visibility', () => {
-    const b = walledRow();
-    const fader = new WallFader(b.occluders, b.wallMeshes, true);
-    const key = b.occluders[0].key;
-    fader.commit(() => 1);
-
-    const attr = b.wallMeshes.get(key)!.geometry.getAttribute('color') as THREE.BufferAttribute;
-    assert.equal(uploads(attr, () => fader.commit(() => 1)), false, 'a settled wall costs no buffer upload');
-    assert.equal(fader.maxAlphaByKey.get(key), 1, 'but it is still reported as drawn');
-
-    assert.equal(uploads(attr, () => fader.commit(() => 0.5)), true, 'a fog change does reach the buffer');
-    assert.equal(fader.maxAlphaByKey.get(key), 0.5);
-  });
-
-  test('flats do the same, per fan', () => {
-    const grid = gridMap(['...', '...'], { cell: CELL });
-    const b = buildMapMesh(grid.map, BANK, { transfers: new Transfers(grid.map) });
-    const fader = new FlatFader(b.flatSurfaces, b.flatMeshes, true);
-    const key = b.flatSurfaces[0].key;
-    fader.commit(() => 1);
-
-    const attr = b.flatMeshes.get(key)!.geometry.getAttribute('color') as THREE.BufferAttribute;
-    assert.equal(uploads(attr, () => fader.commit(() => 1)), false);
-    assert.equal(fader.maxAlphaByKey.get(key), 1);
-
-    assert.equal(uploads(attr, () => fader.commit(() => 0)), true);
-    assert.equal(fader.maxAlphaByKey.get(key), 0);
-  });
-});
-
-describe('Rendering · fade targets', () => {
-  test('every target is centred in its own body, not in a shared one', () => {
-    // A monster brings its `mobjinfo.height`, so its wedge spans exactly the
-    // body: feet to crown, centre halfway. docs/render-occlusion.md § The target is the
-    // billboard.
-    const cyberdemon = 110;
-    const targets = collectFadeTargets({ x: 0, y: 0, z: 16 }, [awake(64, 0, 48, cyberdemon)]);
-    assert.equal(targets[0].z, 16 + PLAYER_HEIGHT / 2);
-    assert.equal(targets[0].halfHeight, PLAYER_HEIGHT / 2);
-    assert.equal(targets[1].z, 48 + cyberdemon / 2);
-    assert.equal(targets[1].halfHeight, cyberdemon / 2);
-    // The whole point: a tall one reaches higher than the player's band would.
-    assert.ok(targets[1].z + targets[1].halfHeight > 48 + PLAYER_HEIGHT);
-  });
-
-  test('a short body gets a shorter wedge than a tall one at the same spot', () => {
-    const imp = 56;
-    const [, small] = collectFadeTargets({ x: 0, y: 0, z: 0 }, [awake(64, 0, 0, imp)]);
-    const [, big] = collectFadeTargets({ x: 0, y: 0, z: 0 }, [awake(64, 0, 0, 110)]);
-    assert.ok(small.halfHeight < big.halfHeight, 'the imp does not borrow the cyberdemon’s reach');
-    assert.equal(small.z - small.halfHeight, big.z - big.halfHeight, 'both stand on the same floor');
-  });
-
-  test('the live thing layer hands out each species’ own mobjinfo height', () => {
-    // The end of the wiring: `bodyHeight` is seeded from `MONSTER_STATS`
-    // (DEHACKED-patched, so a patch that retunes a height moves the fade with
-    // it), and `awakeMonsters` is what carries it to `collectFadeTargets`.
-    const grid = gridMap(['#'.repeat(8), `#${'.'.repeat(6)}#`, '#'.repeat(8)], { cell: 128 });
-    const map = grid.map;
-    map.things.push(
-      thingAt(grid, 1, 1, 1),
-      thingAt(grid, 3, 1, ThingType.imp, 180),
-      thingAt(grid, 5, 1, ThingType.baronOfHell, 180),
-    );
-    const layer = buildThingSprites(new World(map), { bank: SPRITE_BANK, materials: SPRITE_MATERIALS, skill: 3 });
-    const player = { ...grid.centre(1, 1), z: 0 };
-    // Long enough for `A_Look` to wake both and for the fog to mark them drawn.
-    for (let i = 0; i < 60; i++) layer.update(DOOM_TIC, [player]);
-
-    const awakened = layer.awakeMonsters();
-    assert.ok(awakened.length >= 2, `both monsters awake and drawn, got ${awakened.length}`);
-    const heights = new Set(awakened.map((m) => m.height));
-    assert.ok(heights.has(MONSTER_STATS[ThingType.imp].height), 'the imp reports its own height');
-    assert.ok(heights.has(MONSTER_STATS[ThingType.baronOfHell].height), 'and the baron its own');
-    assert.equal(heights.size, 2, 'two species, two heights — not one shared band');
-
-    for (const m of awakened) {
-      const target = collectFadeTargets(player, [m])[1];
-      assert.equal(target.halfHeight, m.height / 2, 'the wedge is that body’s own half-height');
-      assert.equal(target.z - target.halfHeight, m.z, 'and its underside sits at the body’s feet');
     }
   });
 });

@@ -53,7 +53,7 @@ level's spawn loop) wants and what `groundCeiling`/`headroom` always pass.
 **Repro: DOOM1 E1M1**, the shotgun guys at (240, -3376) and (240, -3088). They stand in sector 24
 (floor -8) and their 20-unit box overlaps by 4 units the linedefs of the platforms beside them
 (sectors 44/45, floor 40), so waking one used to hop it 48 units into the air.
-`tests/regression/monster-under-high-ledge.test.ts` states that geometry in round numbers. It is
+`tests/game/monster-under-high-ledge.test.ts` states that geometry in round numbers. It is
 authored geometry and not an accident of this engine: 39 of the 16,821 monsters in DOOM1, DOOM2 and
 the two freedooms stand in one, up to DOOM2 MAP26's cyberdemon at 216 units.
 
@@ -97,7 +97,7 @@ the box spans an opening, which keeps the player's exemption inside a single cru
 minimum ceiling fails them exactly when one opening does.
 
 **Repro: rush.wad MAP01** (936, -1026): line 2118's opening into sector 373 (floor 160, ceiling
-224) and the 8×8 step sector 381 (floor 184), 24 units apart. `tests/regression/straddle-no-headroom.test.ts`.
+224) and the 8×8 step sector 381 (floor 184), 24 units apart. `tests/game/straddle-no-headroom.test.ts`.
 
 **Thing-vs-thing collision has the same class of deadlock, and the same shape of fix.**
 `blockedByThings` (used by `checkPosition`, and through it by `slideMove`) takes an optional `from`,
@@ -236,7 +236,7 @@ Vanilla rarely shows this because its momentum comes from an angle that is almos
 axis-aligned. **This engine hits it constantly**: movement is camera-relative off a yaw that snaps
 to fixed values, so holding one strafe key produces an exactly zero component as the *normal* case.
 **Repro: DOOM2 MAP01** line 334, the diagonal (-448,576)-(-576,704) — running due west into it
-stopped dead. Pinned by `tests/regression/blocking-line-slide.test.ts` on freedoom2 MAP01 line 514,
+stopped dead. Pinned by `tests/game/blocking-line-slide.test.ts` on freedoom2 MAP01 line 514,
 since the grid fixture cannot build a diagonal.
 
 Aligning the traverse with what actually refuses the move can only ever turn a dead stop into a

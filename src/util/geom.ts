@@ -177,7 +177,7 @@ export function boxReach(halfWidth: number): number {
  *
  * Sweeping is this engine's own; under the tic lock the fastest missile covers
  * 25 units a step, narrower than any box it can meet, so it is belt-and-braces
- * rather than load-bearing (`tests/regression/projectile-contact.test.ts`).
+ * rather than load-bearing (`tests/game/projectile-contact.test.ts`).
  * Exactly grazing the box is a miss, matching vanilla's `>=`.
  * See docs/monster-attacks.md § Monster projectiles in flight.
  */

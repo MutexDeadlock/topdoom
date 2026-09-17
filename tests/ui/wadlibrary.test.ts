@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildFolderTree, filterTree, scanResult } from '../../src/ui/menu/library.ts';
 import type { WadSource } from '../../src/wad/library.ts';
+import { wadSource } from '../fixtures/wadsource.ts';
 
 /**
  * The WAD Library overlay's left pane (docs/menu-wads.md § WAD Library). The tree is a flat list of
@@ -10,24 +11,8 @@ import type { WadSource } from '../../src/wad/library.ts';
  * a parent folder always precedes its children, and that a row lists its own WADs while counting
  * everything at or below it.
  */
-function source(key: string, over: Partial<WadSource> = {}): WadSource {
-  return {
-    key,
-    id: `id:${key}`,
-    label: key.split('/').pop() ?? key,
-    type: 'PWAD',
-    maps: [],
-    lumpCount: 1,
-    levelNames: {},
-    size: 0,
-    origin: 'server',
-    bytes: () => Promise.reject(new Error('the tree must not need the bytes')),
-    ...over,
-  };
-}
-
 const lib = (path: string, over: Partial<WadSource> = {}) =>
-  source(`lib:${path}`, {
+  wadSource(`lib:${path}`, {
     label: path.split('/').pop()!,
     origin: 'library',
     folder: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '',
@@ -44,11 +29,11 @@ describe('Menu · the WAD Library tree', () => {
   test('the server groups split on the folder a file is served from, not its signature', () => {
     const nodes = buildFolderTree(
       [
-        source('DOOM2.WAD', { type: 'IWAD', folder: 'iwad' }),
-        source('SCYTHE.WAD', { folder: 'pwad' }),
+        wadSource('DOOM2.WAD', { type: 'IWAD', folder: 'iwad' }),
+        wadSource('SCYTHE.WAD', { folder: 'pwad' }),
         // A PWAD-signed mapset placed in game/iwad/ is a game WAD — docs/wad.md § The
         // `public/game/` manifest.
-        source('EPIC.WAD', { type: 'PWAD', folder: 'iwad' }),
+        wadSource('EPIC.WAD', { type: 'PWAD', folder: 'iwad' }),
       ],
       'Your library',
       true,
@@ -67,7 +52,7 @@ describe('Menu · the WAD Library tree', () => {
 
   test('a manifest with no folder field falls back to the signature rather than vanishing', () => {
     const nodes = buildFolderTree(
-      [source('DOOM.WAD', { type: 'IWAD' }), source('AV.WAD', { type: 'PWAD' })],
+      [wadSource('DOOM.WAD', { type: 'IWAD' }), wadSource('AV.WAD', { type: 'PWAD' })],
       'Your library',
       true,
     );
@@ -93,7 +78,7 @@ describe('Menu · the WAD Library tree', () => {
   test('with no folder set there is no library row at all', () => {
     assert.deepEqual(buildFolderTree([], 'Your library', false), []);
     // The served rows are unaffected — only the library root turns on the flag.
-    const nodes = buildFolderTree([source('SCYTHE.WAD', { folder: 'pwad' })], 'Your library', false);
+    const nodes = buildFolderTree([wadSource('SCYTHE.WAD', { folder: 'pwad' })], 'Your library', false);
     assert.deepEqual(
       nodes.map((n) => n.id),
       ['server:pwad'],
@@ -102,7 +87,7 @@ describe('Menu · the WAD Library tree', () => {
 
   test('an empty served group drops out while its populated sibling stays', () => {
     // Only add-ons on the server: `Game WADs` has nothing to show and should not be offered.
-    const nodes = buildFolderTree([source('SCYTHE.WAD', { folder: 'pwad' })], 'wads', true);
+    const nodes = buildFolderTree([wadSource('SCYTHE.WAD', { folder: 'pwad' })], 'wads', true);
     assert.equal(
       nodes.some((n) => n.id === 'server:iwad'),
       false,
@@ -218,9 +203,9 @@ describe('Menu · the WAD Library tree', () => {
   test('a served folder shows its subdirectories, rooted under Add-ons', () => {
     const nodes = buildFolderTree(
       [
-        source('SCYTHE.WAD', { folder: 'pwad' }),
-        source('AV.WAD', { folder: 'pwad/megawads' }),
-        source('HR.WAD', { folder: 'pwad/megawads/classic' }),
+        wadSource('SCYTHE.WAD', { folder: 'pwad' }),
+        wadSource('AV.WAD', { folder: 'pwad/megawads' }),
+        wadSource('HR.WAD', { folder: 'pwad/megawads/classic' }),
       ],
       'wads',
       true,
@@ -253,9 +238,9 @@ describe('Menu · the WAD Library tree', () => {
   });
 
   test('the uploads row appears only once something has been dropped', () => {
-    assert.equal(buildFolderTree([source('DOOM2.WAD', { folder: 'iwad' })], 'wads', true).some((n) => n.id === 'uploads'), false);
+    assert.equal(buildFolderTree([wadSource('DOOM2.WAD', { folder: 'iwad' })], 'wads', true).some((n) => n.id === 'uploads'), false);
 
-    const nodes = buildFolderTree([source('upload:X.WAD:1', { label: 'X.WAD', origin: 'upload' })], 'wads', true);
+    const nodes = buildFolderTree([wadSource('upload:X.WAD:1', { label: 'X.WAD', origin: 'upload' })], 'wads', true);
     assert.deepEqual(byId(nodes, 'uploads').sources.map((s) => s.label), ['X.WAD']);
   });
 });
@@ -303,11 +288,11 @@ describe('WAD library · the filter', () => {
   const tree = () =>
     buildFolderTree(
       [
-        source('server:iwad/DOOM2.WAD', { type: 'IWAD', folder: 'iwad' }),
-        source('server:pwad/SCYTHE.WAD', { folder: 'pwad' }),
-        source('lib:mega/hell/valiant.wad', { origin: 'library', folder: 'mega/hell' }),
-        source('lib:mega/nuts.wad', { origin: 'library', folder: 'mega' }),
-        source('lib:vanilla/scythe2.wad', { origin: 'library', folder: 'vanilla' }),
+        wadSource('server:iwad/DOOM2.WAD', { type: 'IWAD', folder: 'iwad' }),
+        wadSource('server:pwad/SCYTHE.WAD', { folder: 'pwad' }),
+        wadSource('lib:mega/hell/valiant.wad', { origin: 'library', folder: 'mega/hell' }),
+        wadSource('lib:mega/nuts.wad', { origin: 'library', folder: 'mega' }),
+        wadSource('lib:vanilla/scythe2.wad', { origin: 'library', folder: 'vanilla' }),
       ],
       'Your library',
       true,

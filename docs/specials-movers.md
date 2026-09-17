@@ -314,7 +314,7 @@ moving sector's own lines, not its adjacency.** A candidate is found by the sect
 centre, and a strip narrower than a body's box puts that centre two sectors away while the box
 still reaches the mover — the lift then carries it into the ceiling beyond the strip. Repro:
 GoingDown.wad MAP03, the demon at (-569, -823) centred in sector 7, its box across the 8-unit
-sector 304 onto lift 67 (`tests/regression/lift-carries-monster-into-neighbor.test.ts`). The same
+sector 304 onto lift 67 (`tests/game/lift-carries-monster-into-neighbor.test.ts`). The same
 set bounds every ceiling a box on the mover can meet, which is what `lowestCeilingAround` needs.
 Vanilla reaches the same bodies through `P_ChangeSector`'s walk of the blockmap blocks over the
 sector's bounding box widened by `MAXRADIUS` (`p_map.c`, `p_setup.c: P_GroupLines`).
@@ -324,7 +324,7 @@ sampling of the box. Sampling its eight corners and edge midpoints would step ov
 sector narrower than the body's radius: GoingDown.wad MAP08's crate-lift is an 8-unit ring (sector
 1) around its inner sector, and a demon beside it has every rim point land either outside the crate
 or in the middle of it, so the lift would read as unobstructed and carry the demon up to be pinned
-there. `tests/regression/mover-sector-narrow-strip.test.ts`.
+there. `tests/game/mover-sector-narrow-strip.test.ts`.
 
 Both take prospective heights as explicit parameters rather than reading `player.z`/`m.z`: the
 caller is always asking about the height a boundary is *about* to move to, matching

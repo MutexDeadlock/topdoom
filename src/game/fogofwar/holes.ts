@@ -9,16 +9,18 @@ import type { World } from '../world.ts';
 
 /**
  * A hole in the wall is lower than this (tuned by feel: an 8-high sound channel is one, a 24-high
- * crawlspace is not) — the first of {@link findHoleSectors}' limits.
+ * crawlspace is not) — the first of {@link findHoleSectors}' limits. The four are exported so a
+ * test states its geometry as a multiple of them rather than pinning them
+ * (docs/testing.md § Feel dials are read, never pinned).
  * docs/fogofwar.md § Holes in the wall.
  */
-const HOLE_BELOW_HEIGHT = 16;
+export const HOLE_BELOW_HEIGHT = 16;
 /** …no wider than this across its bounding box (tuned by feel)… */
-const HOLE_MAX_WIDTH = 16;
+export const HOLE_MAX_WIDTH = 16;
 /** …walled in, by one-sided or shut lines, for at least this share of its boundary (tuned by feel)… */
-const HOLE_MIN_WALLED = 0.5;
+export const HOLE_MIN_WALLED = 0.5;
 /** …and has no opening line this long, a body's width (tuned by feel). */
-const HOLE_OPENING_BELOW = 32;
+export const HOLE_OPENING_BELOW = 32;
 
 /**
  * The sectors too small to be a place — within all four `HOLE_*` limits, roofed (its ceiling below

@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites, type ThingLayer } from '../../src/game/things.ts';
+import { type ThingLayer } from '../../src/game/things.ts';
 import { MoverOccupancy, squashCorpses } from '../../src/game/specials/moverblocking.ts';
 import { CORPSE_GIB, MONSTER_HEALTH } from '../../src/game/things/tables.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
@@ -9,7 +9,7 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import type { ThingsSnapshot } from '../../src/game/snapshot.ts';
 import { addControlLine, gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { MATERIALS, recordingBank } from '../fixtures/spritestubs.ts';
+import { recordingBank, thingLayer } from '../fixtures/spritestubs.ts';
 import { AWAY, crushSources, occupant, specialsRig, TIC } from '../fixtures/specialsrig.ts';
 import { savedThing } from '../fixtures/snapshot.ts';
 
@@ -30,7 +30,7 @@ function room(restore?: ThingsSnapshot) {
   const sectorIndex = grid.index(1, 1);
   const world = new World(map);
   const { bank, askedSprites } = recordingBank();
-  const things = buildThingSprites(world, { bank, materials: MATERIALS, skill: 3, restore });
+  const things = thingLayer(world, { bank, restore });
   return {
     things,
     /** Drops the ceiling to `gap` above the floor and runs `P_ChangeSector` over the sector. */
@@ -144,11 +144,11 @@ describe('Death · corpses under a mover', () => {
       occupancy: (world) => new MoverOccupancy(world, crushSources({ things: () => layer })),
     });
     const { bank, askedSprites } = recordingBank();
-    const things = buildThingSprites(rig.world, { bank, materials: MATERIALS, skill: 3 });
+    const things = thingLayer(rig.world, { bank });
     layer = things;
 
     kill(things);
-    (rig.specials as unknown as { trigger(line: number, keys: Set<never>): unknown }).trigger(closeLine, new Set());
+    rig.trigger(closeLine);
     for (let i = 0; i < Math.round(4 / TIC); i++) rig.tick();
     assert.equal(map.sectors[door].ceilHeight, 0, 'the door is shut');
     assert.ok(crushed(things), 'and what was lying under it is a pool of blood');

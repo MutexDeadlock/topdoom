@@ -1,8 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
 import { clearRandom, mRandom, pRandom, RNDTABLE } from '../../src/util/random.ts';
+import { callsIn, filesUnder } from '../fixtures/files.ts';
 
 /**
  * DOOM's `rndtable` and the two cursors over it. Every damage roll, every aim
@@ -74,15 +73,13 @@ describe('Vanilla tables · the table is the only entropy source', () => {
     // The repo runs no linter, so this test is the only thing standing between
     // a new call site and a second, undocumented source of randomness
     // alongside the table. docs/testing.md § Determinism.
-    const offenders: string[] = [];
-    const walk = (dir: string): void => {
-      for (const entry of readdirSync(dir)) {
-        const path = join(dir, entry);
-        if (statSync(path).isDirectory()) walk(path);
-        else if (entry.endsWith('.ts') && readFileSync(path, 'utf8').includes('Math.random')) offenders.push(path);
-      }
-    };
-    walk('src');
-    assert.deepEqual(offenders, [], 'draw from util/random.ts: pRandom for the simulation, mRandom for cosmetics');
+    // Call sites, not mentions: a declaration whose comment names the banned call is documenting
+    // this very rule, and must not break the build for it.
+    const offenders = callsIn(filesUnder('src', (path) => path.endsWith('.ts')), /\bMath\.random\s*\(/g);
+    assert.deepEqual(
+      offenders,
+      [],
+      `draw from util/random.ts: pRandom for the simulation, mRandom for cosmetics\n${offenders.join('\n')}`,
+    );
   });
 });

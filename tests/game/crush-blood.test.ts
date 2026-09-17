@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites } from '../../src/game/things.ts';
 import { applyCrushDamage } from '../../src/game/specials/moverblocking.ts';
 import { BLOOD_FRAMES, CRUSH_BLOOD_SPEED } from '../../src/game/spritefx/tables.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
@@ -12,7 +11,7 @@ import type { Pos3 } from '../../src/types.ts';
 import type { SpriteBank } from '../../src/wad/sprites.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { BANK, MATERIALS, ROT0_BANK, drawnLumps, drawnSprites, fxLayer } from '../fixtures/spritestubs.ts';
+import { ROT0_BANK, drawnLumps, drawnSprites, fxLayer, thingLayer } from '../fixtures/spritestubs.ts';
 import { AWAY, crushSources, occupant } from '../fixtures/specialsrig.ts';
 import { stepFor } from '../fixtures/tics.ts';
 
@@ -30,7 +29,7 @@ function crushingRoom(type?: number) {
   const sectorIndex = grid.index(1, 1);
   grid.map.sectors[sectorIndex].ceilHeight = 8;
   const world = new World(grid.map);
-  const things = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
+  const things = thingLayer(world);
   const sprayed: Pos3[] = [];
   const pulse = (dealDamage = true, player = AWAY, dead = false) =>
     applyCrushDamage(

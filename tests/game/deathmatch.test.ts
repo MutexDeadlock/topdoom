@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites } from '../../src/game/things.ts';
 import { ITEM_RESPAWN_QUEUE, ITEM_RESPAWN_TICS } from '../../src/game/things/defs.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { CEILING_HUNG_HEIGHT, PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_TICS } from '../../src/game/things/tables.ts';
@@ -12,7 +11,7 @@ import { DOOM_TIC, TICRATE } from '../../src/constants.ts';
 import type { Pos3 } from '../../src/types.ts';
 import type { ThingsSnapshot } from '../../src/game/snapshot.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { thingLayer } from '../fixtures/spritestubs.ts';
 import { savedThing } from '../fixtures/snapshot.ts';
 
 /**
@@ -29,7 +28,7 @@ const RESERVED = 256;
 function spawned(things: [type: number, flags?: number][], options: { netgame?: boolean; deathmatch?: boolean }) {
   const grid = gridMap(['########', '#......#', '########'], { cell: 128 });
   things.forEach(([type, flags = 7], i) => grid.map.things.push({ ...thingAt(grid, 1 + i, 1, type), flags }));
-  const layer = buildThingSprites(new World(grid.map), { bank: BANK, materials: MATERIALS, skill: 3, ...options });
+  const layer = thingLayer(new World(grid.map), { ...options });
   return { layer, grid };
 }
 
@@ -74,10 +73,7 @@ describe('Deathmatch · item respawn', () => {
     const items = [ThingType.stimpack, ThingType.shotgun, ThingType.berserk, ThingType.invulnerability];
     items.forEach((type, i) => grid.map.things.push(thingAt(grid, 1 + i, 1, type)));
     const world = new World(grid.map);
-    const layer = buildThingSprites(world, {
-      bank: BANK,
-      materials: MATERIALS,
-      skill: 3,
+    const layer = thingLayer(world, {
       netgame: true,
       deathmatch,
       onItemRespawn: (at) => returned.push(at),
@@ -145,7 +141,7 @@ describe('Deathmatch · item respawn', () => {
     for (let i = 0; i < ITEM_RESPAWN_QUEUE + 1; i++) grid.map.things.push(thingAt(grid, 1 + i, 1, ThingType.stimpack));
     const world = new World(grid.map);
     const build = (restore?: ThingsSnapshot) =>
-      buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3, netgame: true, deathmatch: true, restore });
+      thingLayer(world, { netgame: true, deathmatch: true, restore });
     const layer = build();
     for (let i = 0; i < ITEM_RESPAWN_QUEUE + 1; i++) {
       const at = { ...grid.centre(1 + i, 1), z: 0 };

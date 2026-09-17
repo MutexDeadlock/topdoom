@@ -29,9 +29,11 @@ const ALPHA_AIRBORNE = 0.45;
 
 /**
  * Height above the ground, in map units, at which the darkening tops out. Tuned by feel and set
- * near a tall DOOM drop, so a step down barely registers.
+ * near a tall DOOM drop, so a step down barely registers. Exported with {@link shadowAlpha} so a
+ * test states heights as points along the ramp
+ * (docs/testing.md § Feel dials are read, never pinned).
  */
-const FALL_RANGE = 160;
+export const FALL_RANGE = 160;
 
 /**
  * How dark the shadow draws at this height above its ground — {@link ALPHA_GROUNDED} at zero,

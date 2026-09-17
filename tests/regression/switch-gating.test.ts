@@ -1,36 +1,24 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
-import type { Placement, Pos2 } from '../../src/types.ts';
-import type { Input } from '../../src/game/input.ts';
+import type { DoomMap } from '../../src/wad/map.ts';
+import type { Pos2 } from '../../src/types.ts';
 import type { SpecialsController } from '../../src/game/specials.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { NO_INPUT, specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { NO_INPUT } from '../fixtures/input.ts';
 
 /**
- * Two rules a crusher-and-switch pair has to keep, both confirmed against
- * `linuxdoom-1.10` rather than the wiki:
+ * Two rules a switch has to keep, both confirmed against `linuxdoom-1.10` rather than the wiki:
  *
  * - `P_UseSpecialLine` flips a switch (and spends a one-shot line) only when its
  *   EV_ call reported it did something. A no-op press that consumed the line
  *   left an S1 switch dead for the rest of the level.
- * - `EV_CeilingCrushStop` saves `olddirection` and `P_ActivateInStasisCeiling`
- *   restores it, so a crusher frozen on its way up resumes *upward*.
+ * - `P_ChangeSwitchTexture` only starts a revert timer for a repeatable switch, so a one-shot one
+ *   stays pressed for good.
  *
- * See docs/specials.md § A switch only flips when it acts and § Crushers.
+ * The crusher half of this pair is `crusher-stasis.test.ts`.
+ * See docs/specials.md § A switch only flips when it acts.
  */
-
-/** The line between two grid cells, whichever way round its sidedefs happen to sit. */
-function boundary(map: DoomMap, a: number, b: number): number {
-  const i = map.linedefs.findIndex((l) => {
-    if (l.left === NO_SIDE) return false;
-    const f = map.sidedefs[l.right].sector;
-    const k = map.sidedefs[l.left].sector;
-    return (f === a && k === b) || (f === b && k === a);
-  });
-  assert.ok(i >= 0, 'the boundary line exists');
-  return i;
-}
 
 /**
  * The rig's controller as these tests drive it: `update` picked off the class so its signature is
@@ -46,13 +34,6 @@ function controller(map: DoomMap, at: Pos2): SwitchProbe {
   return specialsRig(map, at).specials as unknown as SwitchProbe;
 }
 
-/** The crusher test reaches for three more of the controller's private members. */
-type CrusherProbe = SwitchProbe & {
-  triggerCrusherStop(s: number): boolean;
-  triggerCrusher(s: number, e: unknown): boolean;
-  ceilingMovers: Map<number, { state: string; stoppedFrom?: string; speed: number; silent: boolean }>;
-};
-
 /**
  * Two rooms either side of a corridor. Both switch lines carry the same tag, so
  * either can drive the target sector — which is what lets one be pressed while
@@ -65,8 +46,8 @@ function twoSwitchMap(special: number) {
   const mid = grid.index(2, 1);
   const target = grid.index(3, 1);
   map.sectors[target].tag = 1;
-  const lineA = boundary(map, left, mid);
-  const lineB = boundary(map, mid, target);
+  const lineA = grid.edgeBetween(left, mid);
+  const lineB = grid.edgeBetween(mid, target);
   for (const i of [lineA, lineB]) {
     map.linedefs[i].special = special;
     map.linedefs[i].tag = 1;
@@ -74,7 +55,7 @@ function twoSwitchMap(special: number) {
   return { grid, map, lineA, lineB, target };
 }
 
-describe('Regressions · switch gating and crusher stasis', () => {
+describe('Regressions · a switch only flips when it acts', () => {
   test('an S1 switch whose effect does nothing is neither flipped nor spent', () => {
     // 23 = S1 lower floor to lowest: one-shot, use-triggered, and slow enough
     // that the second press lands while the first is still running.
@@ -110,8 +91,8 @@ describe('Regressions · switch gating and crusher stasis', () => {
     map.sectors[grid.index(4, 1)].tag = 1;
     map.sectors[grid.index(5, 1)].tag = 2;
 
-    const once = boundary(map, grid.index(1, 1), grid.index(2, 1)); // 103 = S1 open door
-    const again = boundary(map, grid.index(2, 1), grid.index(3, 1)); // 61 = SR open door
+    const once = grid.edgeBetween(grid.index(1, 1), grid.index(2, 1)); // 103 = S1 open door
+    const again = grid.edgeBetween(grid.index(2, 1), grid.index(3, 1)); // 61 = SR open door
     map.linedefs[once].special = 103;
     map.linedefs[once].tag = 1;
     map.linedefs[again].special = 61;
@@ -131,110 +112,5 @@ describe('Regressions · switch gating and crusher stasis', () => {
     for (let i = 0; i < 70; i++) specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
     assert.equal(art(once), 'SW2BRCOM', 'the one-shot switch is pressed for good — no P_StartButton');
     assert.equal(art(again), 'SW1BRCOM', 'the repeatable one reverts so it can be pressed again');
-  });
-
-  test('a crusher grinds at an eighth speed while it is crushing something', () => {
-    // `T_MoveCeiling`'s `ceiling->speed = CEILSPEED / 8`. Without it a descent
-    // spends an eighth as long over a body and deals an eighth the damage —
-    // a Hell Knight survived MAP06's crusher for four cycles instead of one.
-    const grid = gridMap(['####', '#..#', '####'], { heights: { '.': { floor: 0, ceil: 256 } } });
-    const map = grid.map;
-    const room = grid.index(1, 1);
-    const crush = grid.index(2, 1);
-    map.sectors[crush].tag = 1;
-    const line = boundary(map, room, crush);
-    map.linedefs[line].special = 49;
-    map.linedefs[line].tag = 1;
-
-    const start = grid.centre(1, 1);
-    // `caught` stands in for a body under the ceiling; the controller only ever
-    // learns about one through this callback.
-    let caught = true;
-    let damageTics = 0;
-    const specials = specialsRig(map, start, {
-      onCrush: (_s, dealDamage) => {
-        if (caught && dealDamage) {
-          damageTics++;
-        }
-        return caught;
-      },
-    }).specials as unknown as {
-      trigger(i: number, keys: Set<never>): unknown;
-      ceilingMovers: Map<number, { state: string; slowed?: boolean }>;
-      update(dt: number, at: Placement, input: Input, keys: Set<never>): void;
-    };
-
-    specials.trigger(line, new Set());
-    const tick = () => specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
-
-    // One tic at full speed, then the first crush report slows it.
-    tick();
-    const afterFirst = map.sectors[crush].ceilHeight;
-    tick();
-    const slowStep = afterFirst - map.sectors[crush].ceilHeight;
-    assert.equal(specials.ceilingMovers.get(crush)!.slowed, true, 'a crush report slows the descent');
-    assert.ok(
-      Math.abs(slowStep - 35 / 8 / 35) < 1e-6,
-      `the slowed step is an eighth of CEILSPEED, got ${slowStep}`,
-    );
-
-    // Run to the bottom; the slowdown is cleared there, so the way up is full speed.
-    for (let i = 0; i < 20000 && specials.ceilingMovers.get(crush)!.state === 'lowering'; i++) tick();
-    assert.equal(specials.ceilingMovers.get(crush)!.slowed, false, 'reaching the bottom restores full speed');
-    const beforeUp = map.sectors[crush].ceilHeight;
-    tick();
-    assert.ok(
-      Math.abs(map.sectors[crush].ceilHeight - beforeUp - 1) < 1e-6,
-      'the up-stroke runs at the full 1 unit per tic',
-    );
-    assert.ok(damageTics > 0, 'and damage was dealt on the way down');
-  });
-
-  test('a crusher frozen on its way up resumes upward, not downward', () => {
-    const grid = gridMap(['####', '#..#', '####'], { heights: { '.': { floor: 0, ceil: 128 } } });
-    const map = grid.map;
-    const room = grid.index(1, 1);
-    const crush = grid.index(2, 1);
-    map.sectors[crush].tag = 1;
-    const line = boundary(map, room, crush);
-    map.linedefs[line].special = 49; // S1 ceiling crush and raise
-    map.linedefs[line].tag = 1;
-
-    const start = grid.centre(1, 1);
-    const specials = controller(map, start) as CrusherProbe;
-
-    specials.trigger(line, new Set());
-    // Read through accessors, not a captured `mover`: `assert/strict`'s `equal`
-    // carries an `asserts actual is T` signature, so asserting on a captured
-    // field pins its type to that literal for the rest of the test.
-    const state = () => specials.ceilingMovers.get(crush)!.state;
-    const stoppedFrom = () => specials.ceilingMovers.get(crush)!.stoppedFrom;
-    assert.equal(state(), 'lowering');
-
-    // Run to the bottom and into the up-stroke.
-    for (let i = 0; i < 2000 && state() !== 'raising'; i++) {
-      specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
-    }
-    assert.equal(state(), 'raising', 'the crusher reversed at the bottom');
-    const frozenAt = map.sectors[crush].ceilHeight;
-
-    assert.equal(specials.triggerCrusherStop(crush), true, 'stopping a running crusher is a hit');
-    assert.equal(state(), 'stopped');
-    assert.equal(stoppedFrom(), 'raising', 'the direction is remembered — vanilla olddirection');
-
-    for (let i = 0; i < 35; i++) specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
-    assert.equal(map.sectors[crush].ceilHeight, frozenAt, 'in stasis it does not move at all');
-
-    // A second stop is not a hit: vanilla's own `direction != 0` guard.
-    assert.equal(specials.triggerCrusherStop(crush), false);
-
-    // Restarting resumes the up-stroke, and reports rtn 0 — stasis never cleared
-    // specialdata, so EV_DoCeiling's loop skips the sector.
-    const restarted = specials.triggerCrusher(crush, { kind: 'crusher', speed: 35, silent: false });
-    assert.equal(restarted, false, 'reactivating an in-stasis crusher is not a fresh thinker');
-    assert.equal(state(), 'raising', 'it resumes upward, not back down');
-
-    specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
-    assert.ok(map.sectors[crush].ceilHeight > frozenAt, 'and actually moves up');
   });
 });

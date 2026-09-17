@@ -20,7 +20,7 @@ const FRAME = TELEPORT_FOG.frameSeconds;
 function layerOn(): { layer: SpriteFxLayer; world: World } {
   const world = new World(gridMap(['######', '#....#', '#....#', '######'], { cell: 128 }).map);
   // Everything revealed: what this file pins is the animation clock, and the
-  // fog-of-war draw gate is `tests/regression/effects-in-unseen-rooms.test.ts`'.
+  // fog-of-war draw gate is `tests/game/effects-in-unseen-rooms.test.ts`'.
   const layer = fxLayer({ fogVisible: () => true });
   layer.beginLevel(world);
   return { layer, world };

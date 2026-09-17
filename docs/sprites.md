@@ -450,7 +450,7 @@ drawing (docs/frameloop.md § What runs in a tic) removed that accident — a mo
 `MonsterAttacks.resolve`, *after* `ThingLayer.update` advanced it, is drawn before it is ever
 advanced again. `resolve` then read `frames[animIndex]` as `undefined` and `SpriteBank.lookup` threw
 on `frame.toUpperCase()`. Repro: NUTS.WAD, within seconds of waking the first crowd. Covered by
-`tests/regression/anim-frame-after-state-change.test.ts`.
+`tests/render/anim-frame-after-state-change.test.ts`.
 
 ## Pain, and attack/pain poses
 
@@ -516,14 +516,14 @@ differently:
 - **A flat overall rate** left the arch-vile posed for 30 tics of its 94-tic cast and standing in
   its idle frame for the other 64, through the back half of the windup and the blast itself
   (docs/monster-archvile.md § The attack). The mancubus had the same shape at 9 tics of 80. Covered
-  by `tests/regression/vile-attack-pose.test.ts`.
+  by `tests/game/vile-attack-pose.test.ts`.
 - **An even split within the pose** put the *firing* frame in the wrong place. A monster fires
   partway into its chain (docs/monster-ai.md § The windup), vanilla marks that frame
   `FF_FULLBRIGHT`, and an equal slice does not land on it: the zombieman's chain is 10/8/8 tics, so
   two equal letters put its flash 13 tics in where `A_PosAttack` is at 10. With the shot itself
   firing at offset 0 at the time, the muzzle flash lit up four tenths of a second after the bullet.
   Repro: freedoom2's MAP01, whose DEHACKED brightens `S_POSS_ATK2`; the stock shotgun guy and
-  chaingunner do it without any patch. Covered by `tests/regression/muzzle-flash-timing.test.ts`.
+  chaingunner do it without any patch. Covered by `tests/game/muzzle-flash-timing.test.ts`.
 
 **The pose starts when the attack does, never when its shot lands.** With a real windup the firing
 frame is mid-pose, so a pose triggered by the returned attack event would show the *wind-up* frame

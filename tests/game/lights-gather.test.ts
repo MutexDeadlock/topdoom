@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites } from '../../src/game/things.ts';
 import { TELEPORT_FOG } from '../../src/game/spritefx/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { THING_SPRITES } from '../../src/game/things/tables.ts';
@@ -9,7 +8,7 @@ import { DynamicLights } from '../../src/render/lights.ts';
 import { parseGldefs } from '../../src/wad/gldefs.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
-import { MATERIALS, ROT0_BANK, fxLayer } from '../fixtures/spritestubs.ts';
+import { ROT0_BANK, fxLayer, thingLayer } from '../fixtures/spritestubs.ts';
 
 /**
  * Which draw funnels hand the light pass its emitters — the thing sprites and the transient
@@ -62,12 +61,7 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
     map.things.push(thingAt(grid, 1, 1, ThingType.tallRedTorch));
     const at0 = grid.centre(1, 1);
     const lights = new RecordingLights(DEFS);
-    const layer = buildThingSprites(new World(map), {
-      bank: ROT0_BANK,
-      materials: MATERIALS,
-      skill: 3,
-      lights,
-    });
+    const layer = thingLayer(new World(map), { bank: ROT0_BANK, lights });
     // `update` is what settles `visible`; the draw loop skips anything it has not.
     layer.update(DOOM_TIC, [{ x: at0.x, y: at0.y, z: 0 }]);
     lights.beginFrame(0, 0, 0);
@@ -75,10 +69,9 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
     lights.commit();
 
     assert.equal(lights.offers.length, 1);
-    const at = at0;
     assert.equal(lights.offers[0].key, `${THING_SPRITES[ThingType.tallRedTorch]}A`);
-    assert.equal(lights.offers[0].x, at.x);
-    assert.equal(lights.offers[0].y, at.y);
+    assert.equal(lights.offers[0].x, at0.x);
+    assert.equal(lights.offers[0].y, at0.y);
     assert.ok(lights.offers[0].id >= 0, 'a thing id is a plain array index');
     assert.equal(lights.uniforms.uLightCount.value, 1);
   });
@@ -159,7 +152,7 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
     const grid = gridMap(['####', '#..#', '####'], { cell: 128 });
     const map = grid.map;
     map.things.push(thingAt(grid, 1, 1, ThingType.tallRedTorch));
-    const layer = buildThingSprites(new World(map), { bank: ROT0_BANK, materials: MATERIALS, skill: 3 });
+    const layer = thingLayer(new World(map), { bank: ROT0_BANK });
     assert.doesNotThrow(() => layer.draw(1, 0));
   });
 });

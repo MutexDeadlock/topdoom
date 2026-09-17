@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites } from '../../src/game/things.ts';
 import { MONSTER_FIELD_DEFAULTS } from '../../src/game/snapshot.ts';
 import { MONSTER_HEALTH } from '../../src/game/things/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
@@ -9,7 +8,7 @@ import { clearRandom, getRandomCursors, setRandomCursors } from '../../src/util/
 import { DOOM_TIC } from '../../src/constants.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
-import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import { thingLayer } from '../fixtures/spritestubs.ts';
 import { changedThing, savedThing } from '../fixtures/snapshot.ts';
 
 /**
@@ -35,7 +34,7 @@ function arena() {
   return { grid, map, world };
 }
 
-const build = (world: World) => buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
+const build = (world: World) => thingLayer(world);
 
 describe('Savegames · things round-trip', () => {
   test('a battle-scarred layer restores field for field and steps identically', () => {
@@ -59,7 +58,7 @@ describe('Savegames · things round-trip', () => {
     const cursors = getRandomCursors();
 
     const fresh = arena();
-    const restored = buildThingSprites(fresh.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
+    const restored = thingLayer(fresh.world, { restore: saved });
     setRandomCursors(cursors);
     assert.deepEqual(restored.snapshot(), layer.snapshot(), 'the rebuilt layer snapshots identically');
     assert.deepEqual(restored.stats, layer.stats);
@@ -101,7 +100,7 @@ describe('Savegames · things round-trip', () => {
     );
 
     const fresh = arena();
-    const restored = buildThingSprites(fresh.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
+    const restored = thingLayer(fresh.world, { restore: saved });
     assert.deepEqual(restored.snapshot(), layer.snapshot(), 'the re-spawned layer matches, field for field');
     assert.deepEqual(restored.stats, layer.stats);
   });
@@ -168,7 +167,7 @@ describe('Savegames · things round-trip', () => {
     }
 
     const fresh = arena();
-    const restored = buildThingSprites(fresh.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: padded });
+    const restored = thingLayer(fresh.world, { restore: padded });
     setRandomCursors(cursors);
     assert.deepEqual(restored.snapshot(), saved, 'the padded block round-trips to the same sparse snapshot');
     assert.equal(restored.monsterById(1), null, 'the corpse is still dead');
@@ -193,7 +192,7 @@ describe('Savegames · things round-trip', () => {
     const cursors = getRandomCursors();
 
     const first = arena();
-    const once = buildThingSprites(first.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
+    const once = thingLayer(first.world, { restore: saved });
     setRandomCursors(cursors);
     const afterFirst = once.snapshot();
     // Run the restored level on, which is what would corrupt a snapshot the
@@ -202,7 +201,7 @@ describe('Savegames · things round-trip', () => {
     once.damage(2, 30, { from: player });
 
     const second = arena();
-    const twice = buildThingSprites(second.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
+    const twice = thingLayer(second.world, { restore: saved });
     setRandomCursors(cursors);
     assert.deepEqual(twice.snapshot(), afterFirst, 'the second restore lands on the same state as the first');
   });
@@ -217,7 +216,7 @@ describe('Savegames · things round-trip', () => {
     saved.changed.push([99, { type: 99999, x: 0, y: 0, z: 0, facingDeg: 0 }]);
     const fresh = arena();
     assert.throws(
-      () => buildThingSprites(fresh.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved }),
+      () => thingLayer(fresh.world, { restore: saved }),
       /no art for thing 99999/,
     );
   });
@@ -248,7 +247,7 @@ describe('Savegames · a restored thing stands in the sector under it', () => {
 
     const fresh = gridMap(['####', '#hl#', '####'], { cell: 128, heights });
     fresh.map.things.push(thingAt(fresh, 1, 1, 1), thingAt(fresh, 1, 1, ThingType.imp));
-    const restored = buildThingSprites(new World(fresh.map), { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
+    const restored = thingLayer(new World(fresh.map), { restore: saved });
     restored.update(DOOM_TIC, [player]);
     const after = restored.snapshot().changed.find((entry) => entry[0] === 0)![1];
     assert.equal(after.z, 24, 'the corpse rides the floor it lies on, not the one it spawned on');
@@ -290,10 +289,7 @@ describe('Savegames · a restored level looks around on the recording’s own ca
     const saved = JSON.parse(JSON.stringify(layer.snapshot()));
 
     const fresh = corridor();
-    const restored = buildThingSprites(new World(fresh.map), {
-      bank: BANK,
-      materials: MATERIALS,
-      skill: 3,
+    const restored = thingLayer(new World(fresh.map), {
       restore: saved,
     });
     const live = ticsUntilAwake(layer, player);
@@ -328,10 +324,7 @@ describe('Savegames · a restored monster crosses lines from where the save left
 
     const fresh = gridMap(['########', '#......#', '########'], { cell: 128 });
     fresh.map.things.push(thingAt(fresh, 1, 1, 1), thingAt(fresh, 6, 1, ThingType.imp, 180));
-    const restored = buildThingSprites(new World(fresh.map), {
-      bank: BANK,
-      materials: MATERIALS,
-      skill: 3,
+    const restored = thingLayer(new World(fresh.map), {
       restore: saved,
     });
     const from: { x: number; y: number }[] = [];

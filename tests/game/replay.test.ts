@@ -166,9 +166,9 @@ describe('Replays · recording and playing back', () => {
     const input = new ReplayRecorder([live], recordingStart()).input(0);
     assert.equal(input.consumeWheel(), 1);
     const aim = input.aim(NO_CAMERA, 0);
-    assert.deepEqual(aim, { x: Math.round(100.123 * 64) / 64, y: -50.5 });
+    assert.deepEqual(aim, { x: Math.round(100.123 / AIM_QUANTUM) * AIM_QUANTUM, y: -50.5 });
+    assert.ok(aim !== null && aim.x !== 100.123, 'the raw pointer position is not what the tic sees');
     assert.equal(quantizeAim(null), null);
-    assert.equal(AIM_QUANTUM, 1 / 64);
   });
 
   test('a settings change is an event on the tic it is first in force for', () => {

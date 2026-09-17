@@ -19,15 +19,17 @@ export const STRENGTH = 0.45;
 
 /**
  * The furthest any channel may travel from neutral, whatever the sky. Tuned by feel, and it binds —
- * docs/render-lighting.md § Outdoor sky tint.
+ * docs/render-lighting.md § Outdoor sky tint. Exported for the test, as {@link COLOURLESS_SKY} is.
  */
-const LIMIT = 0.3;
+export const LIMIT = 0.3;
 
 /**
  * What a sky with no colour of its own lends instead — a cool daylight, at luminance 1.
  * **Tuned by feel, and the one invented value here** — docs/render-lighting.md § Outdoor sky tint.
+ * Exported beside {@link STRENGTH} so a test derives its expectations from the dial
+ * (docs/testing.md § Feel dials are read, never pinned).
  */
-const COLOURLESS_SKY: readonly [number, number, number] = [0.9, 0.99, 1.3];
+export const COLOURLESS_SKY: readonly [number, number, number] = [0.9, 0.99, 1.3];
 
 /**
  * How much colour a sky needs before it speaks for itself rather than blending toward

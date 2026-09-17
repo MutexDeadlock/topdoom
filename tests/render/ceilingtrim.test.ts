@@ -1,10 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildMapMesh, buildMoverMesh, type WallOccluder } from '../../src/render/mapmesh.ts';
-import { buildSubSectorPolys } from '../../src/render/bsp.ts';
-import { buildMoverIndex } from '../../src/game/specials/movergeometry.ts';
 import { LF, NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
 import { gridMap, type CellHeights } from '../fixtures/gridmap.ts';
+import { moverSource } from '../fixtures/movermesh.ts';
 import { BANK, MASKED_TEXTURE } from '../fixtures/specialsrig.ts';
 import type { MaterialBank } from '../../src/render/textures.ts';
 
@@ -139,13 +138,9 @@ describe('Rendering · ceiling trims and movers', () => {
   /** The trim-shaped pair above, with the lower-ceilinged neighbour pulled out as a mover. */
   function mover(moving: boolean) {
     const map = pair(OPEN, TRIM);
-    const polys = buildSubSectorPolys(map);
     const sector = 1;
-    const options = {
-      movableSectors: new Set([sector]),
-      movingSectors: new Set(moving ? [sector] : []),
-    };
-    const built = buildMoverMesh({ map, polys, bank: BANK, options, index: buildMoverIndex(map, polys) }, sector);
+    const movingSectors = new Set(moving ? [sector] : []);
+    const built = buildMoverMesh(moverSource(map, sector, { movingSectors }), sector);
     return built.wallQuads.filter((o) => o.texName === UPPER);
   }
 

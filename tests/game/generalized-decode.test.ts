@@ -4,7 +4,8 @@ import { decodeGeneralized, isGeneralized } from '../../src/game/specials/genera
 import { lookupSpecial } from '../../src/game/specials/tables.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { specialsRig, NO_INPUT, USE_INPUT, TIC } from '../fixtures/specialsrig.ts';
+import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { NO_INPUT, USE_INPUT } from '../fixtures/input.ts';
 
 /**
  * Boom's generalized linedef bitfields (p_spec.h masks, p_genlin.c semantics),

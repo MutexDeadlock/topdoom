@@ -1,7 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { specialsRig, NO_INPUT, TIC } from '../fixtures/specialsrig.ts';
+import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
+import { NO_INPUT } from '../fixtures/input.ts';
 import type { DoomMap } from '../../src/wad/map.ts';
 
 /**

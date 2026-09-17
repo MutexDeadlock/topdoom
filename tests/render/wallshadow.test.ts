@@ -2,10 +2,8 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { beginWallShade, RADIUS, wallShadeAt } from '../../src/render/wallshadow.ts';
 import { buildMoverMesh, ownTransfers, refreshMoverMesh } from '../../src/render/mapmesh.ts';
-import { buildSubSectorPolys } from '../../src/render/bsp.ts';
-import { buildMoverIndex } from '../../src/game/specials/movergeometry.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { BANK } from '../fixtures/specialsrig.ts';
+import { moverSource, textureEverySide } from '../fixtures/movermesh.ts';
 
 /**
  * What a floor darkens against, and what it does not: the shading exists to say where a wall
@@ -94,13 +92,8 @@ describe('Rendering · wall contact shading', () => {
     const grid = gridMap(['...', '.L.', '...'], { cell: CELL, heights: { L: { floor: -64, ceil: 128 } } });
     const map = grid.map;
     const sector = grid.index(1, 1);
-    for (const side of map.sidedefs) {
-      side.upper = 'UPPER';
-      side.lower = 'LOWER';
-      side.middle = 'MIDDLE';
-    }
-    const polys = buildSubSectorPolys(map);
-    const mover = { map, polys, bank: BANK, options: { movableSectors: new Set([sector]) }, index: buildMoverIndex(map, polys) };
+    textureEverySide(map);
+    const mover = moverSource(map, sector);
     const shadeOf = (mesh: ReturnType<typeof buildMoverMesh>) => {
       const fan = mesh.flatFans[0];
       // A batch with no shading at all carries no attribute, which the shader reads back as 0.

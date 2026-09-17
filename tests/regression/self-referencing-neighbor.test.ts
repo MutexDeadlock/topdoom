@@ -46,12 +46,11 @@ function rig(special: number, platformFloor: number) {
   addControlLine(map, 64, 0, special, 1);
   const line = map.linedefs.length - 1;
   const r = specialsRig(map, grid.centre(0, 0));
-  const s = r.specials as unknown as { trigger(lineIndex: number, keys: Set<never>): unknown };
   return {
     map,
     world: r.world,
     platform,
-    press: () => s.trigger(line, new Set()),
+    press: () => r.trigger(line),
     run: (seconds: number) => {
       for (let i = 0; i < Math.round(seconds / TIC); i++) r.tick();
     },

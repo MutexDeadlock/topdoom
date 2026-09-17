@@ -1,9 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { skyTintOf, STRENGTH } from '../../src/render/skytint.ts';
+import { COLOURLESS_SKY, LIMIT, skyTintOf, STRENGTH } from '../../src/render/skytint.ts';
 import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { SKY_FLAT } from '../../src/wad/map.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
+import { textureEverySide } from '../fixtures/movermesh.ts';
 import { BANK } from '../fixtures/specialsrig.ts';
 import type { Bitmap } from '../../src/wad/graphics.ts';
 import type * as THREE from 'three';
@@ -43,7 +44,11 @@ describe('Rendering · the outdoor sky tint', () => {
   test('a colourless sky still reads as outdoors', () => {
     // DOOM's own SKY1 averages to flat grey, and "no tint at all" is not an outdoor cue.
     const tint = skyTintOf(sky(143, 143, 142));
-    assert.ok(tint[2] - tint[0] > 0.1, `grey sky lent nothing: ${tint.join(', ')}`);
+    // The default's own blue lean, carried by the strength dial: derived, not mirrored.
+    const lean = (COLOURLESS_SKY[2] - COLOURLESS_SKY[0]) * STRENGTH;
+    const spread = tint[2] - tint[0];
+    assert.ok(spread * lean > 0, `grey sky leaned against the default: ${tint.join(', ')}`);
+    assert.ok(Math.abs(spread) > Math.abs(lean) / 2, `grey sky lent nothing: ${tint.join(', ')}`);
   });
 
   test('a sky with a colour of its own overrides the colourless default', () => {
@@ -54,7 +59,7 @@ describe('Rendering · the outdoor sky tint', () => {
   test('no sky can wash the level in its own colour', () => {
     // DOOM II's SKY3 is the case: 2.6 times as much red as green over the lump.
     for (const c of skyTintOf(sky(255, 0, 0))) {
-      assert.ok(c >= 0.6 && c <= 1.4, `${c} is past any sane clamp`);
+      assert.ok(Math.abs(c - 1) <= LIMIT + 1e-6, `${c} is past the clamp`);
     }
   });
 
@@ -80,11 +85,7 @@ describe('Rendering · what the sky tint reaches', () => {
    */
   function level() {
     const grid = gridMap(['..'], { cell: 256 });
-    for (const side of grid.map.sidedefs) {
-      side.upper = 'UPPER';
-      side.lower = 'LOWER';
-      side.middle = 'MIDDLE';
-    }
+    textureEverySide(grid.map);
     grid.map.sectors[grid.index(0, 0)].ceilTex = SKY_FLAT;
     // A step, so the shared line draws a tier on each side rather than nothing at all.
     grid.map.sectors[grid.index(1, 0)].floorHeight = 64;

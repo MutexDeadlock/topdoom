@@ -1,5 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DOOM_TIC } from '../../src/constants.ts';
 import { consumeSecret, decodeSectorType } from '../../src/game/specials/sectortypes.ts';
 import { SectorEffects } from '../../src/game/specials/sectoreffects.ts';
 import { createInventory } from '../../src/game/inventory.ts';
@@ -67,13 +68,13 @@ describe('Specials · generalized sector types', () => {
     const inv = createInventory();
     let dealt = 0;
     const at = { ...grid.centre(0, 0), z: 0 };
-    const first = effects.update(1 / 35, world, at, inv, (n) => (dealt += n));
+    const first = effects.update(DOOM_TIC, world, at, inv, (n) => (dealt += n));
     assert.equal(first.secretFound, true);
     assert.equal(effects.secretsFound, 1);
     // The secret bit is gone, the damage class stays armed.
     assert.equal(map.sectors[0].special, 3 << 5);
     for (let i = 0; i < 40; i++) effects.update(DAMAGE_FLOOR_INTERVAL / 32, world, at, inv, (n) => (dealt += n));
     assert.ok(dealt >= 20, `damage floor under the generalized bits dealt ${dealt}`);
-    assert.equal(effects.update(1 / 35, world, at, inv, () => {}).secretFound, false);
+    assert.equal(effects.update(DOOM_TIC, world, at, inv, () => {}).secretFound, false);
   });
 });

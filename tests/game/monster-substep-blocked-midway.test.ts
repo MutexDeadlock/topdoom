@@ -1,0 +1,122 @@
+import { describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { gridMap } from '../fixtures/gridmap.ts';
+import { makeCollider, type ThingBlocker, World } from '../../src/game/world.ts';
+import { DIR_X, DIR_Y, type MonsterBody } from '../../src/game/monsters/defs.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
+import { chaseFor, chaseStep, monsterBody } from '../fixtures/monsterbody.ts';
+
+/**
+ * A monster whose *approved* chase step lands clear, but whose per-tic sub-step
+ * along the way does not, stood still forever: the sub-step set `moveBlocked`,
+ * the next chase call re-routed, `tryWalk` approved the very same direction
+ * again because the destination really is clear, and round it went. Reported on
+ * DOOM2 MAP06 — a demon at (-68, 482) in the pit below the player, whose radius
+ * grazes the wedge corner at (-64, 512) for the first 7 units of a 10-unit step.
+ *
+ * The sub-step is this engine's own; vanilla's `P_Move` judges a move on its
+ * destination and on nothing in between. See docs/monster-ai.md § Movement.
+ *
+ * The fixture reproduces the same shape against a solid body rather than that
+ * map's slanted geometry, which the ASCII grid cannot express: a monster walking
+ * diagonally clips the corner of a blocker's box (`PIT_CheckThing` is an
+ * axis-aligned box on the summed radii) and is clear of it again one step later.
+ * A blocker that never moves — any `SOLID_DECORATION_TYPES` prop — froze the
+ * monster just as permanently as the map corner did.
+ */
+
+const stats = MONSTER_STATS[ThingType.demon];
+
+/** Sum of the two radii: the half-width of `blockedByThings`' box for this pair. */
+const REACH = stats.radius + 20;
+
+/**
+ * The blocker sits south-east of the start, just outside the box on x and
+ * inside it on y. Walking north-east brings x into the box before y leaves it,
+ * so the overlap is a short window part-way along the step rather than
+ * something the monster is already standing in or heading straight at.
+ */
+const BLOCKER_DX = REACH + 1.5;
+const BLOCKER_DY = -(REACH - 5.5);
+
+/** North-east, the direction `newChaseDir` takes toward a target up and to the right. */
+const NE = 1;
+
+/** The demon's box with its feet at `z`, and whatever else is solid around it. */
+const asMonster = (z: number, blockers?: readonly ThingBlocker[]) =>
+  makeCollider({ radius: stats.radius, z, height: stats.height, forMonster: true, blockers });
+
+function scene(): { world: World; body: MonsterBody; blockers: ThingBlocker[]; target: { x: number; y: number; z: number } } {
+  const grid = gridMap(['#######', '#.....#', '#.....#', '#.....#', '#.....#', '#.....#', '#######'], { cell: 128 });
+  const world = new World(grid.map);
+  const at = grid.centre(3, 3);
+  const body = monsterBody({ ...at, z: 0 });
+  return {
+    world,
+    body,
+    blockers: [{ x: at.x + BLOCKER_DX, y: at.y + BLOCKER_DY, z: 0, radius: 20, height: stats.height }],
+    // Far to the north-east, so every chase call keeps choosing the diagonal.
+    target: { x: at.x + 1000, y: at.y + 1000, z: 0 },
+  };
+}
+
+describe('Monster AI · a sub-step refused part-way through an approved chase step', () => {
+  test('the fixture really does block only mid-step', () => {
+    const { world, body, blockers } = scene();
+    const blockedAt = (travel: number): boolean =>
+      world.positionBlocked(body.x + DIR_X[NE] * travel, body.y + DIR_Y[NE] * travel, asMonster(body.z, blockers));
+
+    assert.equal(blockedAt(0), false, 'starts clear, so this is not the spawned-inside-a-wall case');
+    assert.equal(blockedAt(stats.speed * DOOM_TIC), true, 'one tic along the step is refused');
+    assert.equal(blockedAt(stats.speed * stats.chaseInterval), false, 'the whole chase step lands clear');
+  });
+
+  test('the monster walks the step instead of freezing against the corner', () => {
+    const { world, body, blockers, target } = scene();
+    const moved = chaseFor(body, stats, world, target, 2, { blockersFor: () => blockers });
+    assert.ok(moved > 100, 'must cover real ground in two seconds');
+    assert.equal(
+      world.positionBlocked(body.x, body.y, asMonster(body.z, blockers)),
+      false,
+      'and must end up clear of the blocker',
+    );
+  });
+
+  test('it takes exactly the step vanilla would, not a longer one', () => {
+    // The fallback is `P_Move`'s own jump, so the monster covers one chase step
+    // and no more — overshooting the destination `tryWalk` approved would be a
+    // different bug.
+    const { world, body, blockers, target } = scene();
+    // Already committed to the diagonal, with `movecount` left over, so this
+    // tic is pure movement and no chase call runs inside it.
+    body.movedir = NE;
+    body.movecount = 8;
+    const start = { x: body.x, y: body.y };
+    chaseStep(body, stats, world, target, { blockersFor: () => blockers });
+    const moved = Math.hypot(body.x - start.x, body.y - start.y);
+    // `DIR_X`/`DIR_Y`'s diagonals are vanilla's 0.71716, so a diagonal step is
+    // the documented ~1.4% longer than a cardinal one.
+    const expected = stats.speed * stats.chaseInterval * Math.hypot(DIR_X[NE], DIR_Y[NE]);
+    assert.ok(Math.abs(moved - expected) < 0.01, `moved ${moved.toFixed(2)}, expected one ${expected.toFixed(2)}-unit chase step`);
+  });
+
+  test('a monster with nowhere legal to land still refuses to move', () => {
+    // The guard against over-correcting, and it covers the escape hatch in
+    // `monster-flush-against-wall.test.ts` too: both fallbacks only fire when
+    // the full chase step lands clear, so a monster wedged into a space smaller
+    // than itself must not walk out through the wall. A 56-unit cell is narrower
+    // than the demon's 60-unit diameter.
+    const grid = gridMap(['###', '#.#', '###'], { cell: 56 });
+    const world = new World(grid.map);
+    const { body } = scene();
+    const at = grid.centre(1, 1);
+    body.x = at.x;
+    body.y = at.y;
+    assert.ok(world.positionBlocked(body.x, body.y, asMonster(0)), 'boxed in');
+    chaseFor(body, stats, world, { x: at.x + 400, y: at.y, z: 0 }, 2);
+    assert.equal(body.x, at.x, 'goes nowhere');
+    assert.equal(body.y, at.y, 'goes nowhere');
+  });
+});

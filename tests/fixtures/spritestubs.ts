@@ -3,9 +3,12 @@ import { VIEWER_ANGLE_DEG } from '../../src/render/sprites.ts';
 import type { SpriteBank } from '../../src/wad/sprites.ts';
 import type { SpriteMaterialCache } from '../../src/render/sprites.ts';
 import { SpriteFxLayer, type FogVisibility } from '../../src/game/spritefx.ts';
+import { buildThingSprites, type ThingLayer, type ThingLayerOptions } from '../../src/game/things.ts';
+import type { World } from '../../src/game/world.ts';
 import { TELEPORT_FOG } from '../../src/game/spritefx/tables.ts';
 import { SILENT } from '../../src/audio/sfx.ts';
 import type { DynamicLights } from '../../src/render/lights.ts';
+import type { Pos3 } from '../../src/types.ts';
 
 
 /**
@@ -136,4 +139,29 @@ export function fxLayer(options: {
     resolveVileFlame: () => null,
     ...options,
   });
+}
+
+/**
+ * A `ThingLayer` over `world` on the stub banks, at the default skill — the three arguments every
+ * thing-layer test passes identically. `over` carries what that test varies: a `restore` snapshot,
+ * another skill, the netgame and deathmatch flags, the callbacks.
+ */
+export function thingLayer(world: World, over: Partial<ThingLayerOptions> = {}): ThingLayer {
+  return buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3, ...over });
+}
+
+/**
+ * Every point the layer was asked to put an impact at, recorded as the spawns happen and passed
+ * straight through — so a test reads the standoff a missile was backed off by without reaching
+ * into the layer's own `impacts` list, and the effect is still really spawned and still really
+ * drawn. docs/combat.md § Where an impact sits.
+ */
+export function recordImpacts(effects: SpriteFxLayer): Pos3[] {
+  const seen: Pos3[] = [];
+  const spawnImpact = effects.spawnImpact.bind(effects);
+  effects.spawnImpact = (sprite: string, frames: string[], frameSeconds: number, at: Pos3) => {
+    seen.push({ ...at });
+    spawnImpact(sprite, frames, frameSeconds, at);
+  };
+  return seen;
 }

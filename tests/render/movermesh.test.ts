@@ -1,10 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildMoverMesh, refreshMoverMesh, WALL_CHUNK_LEN, type MoverMesh } from '../../src/render/mapmesh.ts';
-import { buildSubSectorPolys } from '../../src/render/bsp.ts';
-import { buildMoverIndex } from '../../src/game/specials/movergeometry.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { BANK } from '../fixtures/specialsrig.ts';
+import { moverSource, textureEverySide } from '../fixtures/movermesh.ts';
 
 /**
  * A mover's per-tic mesh update: the in-place refresh that stands in for a
@@ -23,14 +21,8 @@ function level() {
   const sector = grid.index(1, 0);
   // The fixture leaves every texture slot unset, and an unset slot draws no
   // quad at all — so there would be nothing for a refresh to rewrite.
-  for (const side of map.sidedefs) {
-    side.upper = 'UPPER';
-    side.lower = 'LOWER';
-    side.middle = 'MIDDLE';
-  }
-  const polys = buildSubSectorPolys(map);
-  const options = { movableSectors: new Set([sector]) };
-  const mover = { map, polys, bank: BANK, options, index: buildMoverIndex(map, polys) };
+  textureEverySide(map);
+  const mover = moverSource(map, sector);
   return {
     map,
     sector,
@@ -123,14 +115,8 @@ describe('Rendering · mover meshes', () => {
     const grid = gridMap(['.L.'], { cell: 512, heights: { L: { floor: 32, ceil: 128 } } });
     const map = grid.map;
     const sector = grid.index(1, 0);
-    for (const side of map.sidedefs) {
-      side.upper = 'UPPER';
-      side.lower = 'LOWER';
-      side.middle = 'MIDDLE';
-    }
-    const polys = buildSubSectorPolys(map);
-    const options = { movableSectors: new Set([sector]) };
-    const mover = { map, polys, bank: BANK, options, index: buildMoverIndex(map, polys) };
+    textureEverySide(map);
+    const mover = moverSource(map, sector);
     const mesh = buildMoverMesh(mover, sector);
 
     assert.ok(
@@ -167,15 +153,9 @@ describe('Rendering · mover meshes', () => {
     const grid = gridMap([layout], { heights: { T: { floor: 0, ceil: 512 }, L: { floor: 32, ceil: 128 } } });
     const map = grid.map;
     const sector = grid.index(1, 0);
-    for (const side of map.sidedefs) {
-      side.upper = 'UPPER';
-      side.lower = 'LOWER';
-      side.middle = 'MIDDLE';
-    }
-    const polys = buildSubSectorPolys(map);
+    textureEverySide(map);
     const movable = new Set(map.sectors.map((_, i) => i).filter((i) => layout[i % layout.length] !== '.'));
-    const options = { movableSectors: new Set([sector, ...movable]), movingSectors };
-    const mover = { map, polys, bank: BANK, options, index: buildMoverIndex(map, polys) };
+    const mover = moverSource(map, sector, { movableSectors: new Set([sector, ...movable]), movingSectors });
     return {
       map,
       sector,

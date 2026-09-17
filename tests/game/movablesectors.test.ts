@@ -1,6 +1,5 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
 import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 
@@ -12,18 +11,6 @@ import { gridMap } from '../fixtures/gridmap.ts';
  * See docs/render.md § Mover meshes.
  */
 describe('Specials · movable versus moving sectors', () => {
-  /** The line between two grid cells, whichever way round its sidedefs happen to sit. */
-  function boundary(map: DoomMap, a: number, b: number): number {
-    const i = map.linedefs.findIndex((l) => {
-      if (l.left === NO_SIDE) return false;
-      const f = map.sidedefs[l.right].sector;
-      const k = map.sidedefs[l.left].sector;
-      return (f === a && k === b) || (f === b && k === a);
-    });
-    assert.ok(i >= 0, 'the boundary line exists');
-    return i;
-  }
-
   /**
    * Three cells in a row. The switch sits on the *left* cell's wall and lowers
    * the *right* one, so the sector that carries the art and the sector that
@@ -35,7 +22,7 @@ describe('Specials · movable versus moving sectors', () => {
     const host = grid.index(0, 0);
     const target = grid.index(2, 0);
     map.sectors[target].tag = 7;
-    const line = boundary(map, host, grid.index(1, 0));
+    const line = grid.edgeBetween(host, grid.index(1, 0));
     map.linedefs[line].special = 23; // S1 floor lower to lowest
     map.linedefs[line].tag = 7;
     const side = map.sidedefs[map.linedefs[line].right].sector === host ? map.linedefs[line].right : map.linedefs[line].left;

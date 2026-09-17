@@ -1,34 +1,17 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { colormapTint } from '../../src/wad/colormaps.ts';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
-import { fixtureWad } from '../fixtures/wadfile.ts';
+import { Wad } from '../../src/wad/wad.ts';
+import { fixtureWad, wadFile } from '../fixtures/wadfile.ts';
 
 /**
  * The colour cast of a named Boom colormap lump — what a 242 sector tints the
  * view with. See docs/wad.md § Colormap lumps.
  */
 
-/** A WAD holding PLAYPAL plus the named lumps, built as real bytes. */
+/** A WAD holding the named lumps, built as real bytes. */
 function wadWith(lumps: { name: string; data: Uint8Array }[]): Wad {
-  const dirSize = lumps.length * 16;
-  const dataSize = lumps.reduce((n, l) => n + l.data.length, 0);
-  const buf = new Uint8Array(12 + dataSize + dirSize);
-  const view = new DataView(buf.buffer);
-  buf.set([0x50, 0x57, 0x41, 0x44]); // "PWAD"
-  view.setInt32(4, lumps.length, true);
-  view.setInt32(8, 12 + dataSize, true);
-  let offset = 12;
-  let entry = 12 + dataSize;
-  for (const l of lumps) {
-    buf.set(l.data, offset);
-    view.setInt32(entry, offset, true);
-    view.setInt32(entry + 4, l.data.length, true);
-    for (let i = 0; i < 8; i++) buf[entry + 8 + i] = i < l.name.length ? l.name.charCodeAt(i) : 0;
-    offset += l.data.length;
-    entry += 16;
-  }
-  return new Wad([new WadFile(buf.buffer as ArrayBuffer, 'test.wad')]);
+  return new Wad([wadFile('PWAD', 'test.wad', lumps.map((l) => ({ name: l.name, bytes: l.data })))]);
 }
 
 /** A palette whose entry i is a pure grey ramp, so a remap's arithmetic is easy to predict. */

@@ -23,13 +23,13 @@ it lands on, not the one it left. Both landings do it: `Player.teleportTo` and `
 `arriveAt` (things.ts), the latter covering monsters, corpses and conveyor cargo. Without it a body
 keeps the departure sector's height and gravity takes it down the difference, which for the usual
 teleport ambush — a closet raised above the arena it feeds — reads as monsters dropping out of the
-sky; covered by `tests/regression/teleport-arrival-height.test.ts`.
+sky; covered by `tests/game/teleport-arrival-height.test.ts`.
 
 **A crossing from the *back* of the line never teleports** — `EV_Teleport`'s own `if (side == 1)
 return 0;`, commented there as "so you can get out of teleporter". Without it, stepping off the pad
 you just landed on crosses that pad's own teleport line and bounces you straight back, forever.
 Repro: freedoom2 MAP01's two-way pair, sectors 167 (tag 3) and 133 (tag 5), whose 97 lines all have
-the pad on their back side; covered by `tests/regression/teleport-back-side.test.ts`.
+the pad on their back side; covered by `tests/game/teleport-back-side.test.ts`.
 
 The side is vanilla's `P_CrossSpecialLine` `side` argument, which `P_TryMove` fills with
 **`oldside`** — the side the thing occupied *before* the move, not after — so `trigger`'s
@@ -155,7 +155,7 @@ load-bearing:
 **Boom's numbers spend a one-shot line only on success.** Their dispatch is
 `if (EV_Silent…(…)) line->special = 0;` with no `|| demo_compatibility`, unlike vanilla's `case 39`,
 whose clear is unconditional — the behavior § Teleporters describes and
-`tests/regression/teleport-back-side.test.ts` pins. `TeleportEffect.spendOnlyOnSuccess` is that
+`tests/game/teleport-back-side.test.ts` pins. `TeleportEffect.spendOnlyOnSuccess` is that
 split, per number rather than as a global rule.
 
 **209/210 flip their switch inside the teleport branch**, not at the end of `trigger`: the branch

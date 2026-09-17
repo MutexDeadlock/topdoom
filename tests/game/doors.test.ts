@@ -31,10 +31,7 @@ describe('Specials · doors', () => {
     });
     const { sfx, played } = soundLog();
     const r = specialsRig(map, grid.centre(0, 0), { sfx });
-    const s = r.specials as unknown as {
-      trigger(lineIndex: number, keys: Set<never>): unknown;
-      ceilingMovers: Map<number, { state: string }>;
-    };
+    const s = r.specials as unknown as { ceilingMovers: Map<number, { state: string }> };
     /** Run `seconds` of tics at the rate `game.ts` drives specials at. */
     const run = (seconds: number) => {
       for (let i = 0; i < Math.round(seconds / TIC); i++) r.tick();
@@ -48,7 +45,7 @@ describe('Specials · doors', () => {
       lines,
       played,
       run,
-      trigger: (lineIndex: number) => s.trigger(lineIndex, new Set()),
+      trigger: (lineIndex: number) => r.trigger(lineIndex),
       ceil: () => map.sectors[door].ceilHeight,
       state: () => s.ceilingMovers.get(door)?.state,
     };

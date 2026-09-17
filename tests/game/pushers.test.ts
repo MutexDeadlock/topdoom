@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addControlLine, addControlSector, gridMap } from '../fixtures/gridmap.ts';
+import { forcesRig } from '../fixtures/forcesrig.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
 import { makeTouchCache, World } from '../../src/game/world.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
@@ -19,15 +20,9 @@ describe('Specials · Boom pushers', () => {
   /** Boom's generalized push bit, `p_spec.h`'s `PUSH_MASK`. */
   const PUSH_MASK = 0x200;
 
-  /** Three open cells in a row; the middle one is tagged 7 and carries the push bit. */
+  /** Three open cells in a row; the middle one is tagged and carries the push bit. */
   function rig(special: number, dx: number, dy: number) {
-    const grid = gridMap(['...']);
-    const middle = grid.index(1, 0);
-    grid.map.sectors[middle].tag = 7;
-    grid.map.sectors[middle].special = PUSH_MASK;
-    addControlLine(grid.map, dx, dy, special, 7);
-    const world = new World(grid.map);
-    return { grid, middle, forces: new Forces(grid.map, world), cache: makeTouchCache() };
+    return forcesRig(special, { dx, dy, sectorBit: PUSH_MASK });
   }
 
   test('a current pushes at full force on the floor and not at all above it', () => {

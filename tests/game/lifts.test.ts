@@ -28,17 +28,14 @@ describe('Specials · lifts', () => {
       return map.linedefs.length - 1;
     });
     const r = specialsRig(map, grid.centre(2, 0));
-    const s = r.specials as unknown as {
-      trigger(lineIndex: number, keys: Set<never>): unknown;
-      floorMovers: Map<number, { state: string }>;
-    };
+    const s = r.specials as unknown as { floorMovers: Map<number, { state: string }> };
     const run = (seconds: number) => {
       for (let i = 0; i < Math.round(seconds / TIC); i++) r.tick();
     };
     return {
       lines,
       run,
-      trigger: (lineIndex: number) => s.trigger(lineIndex, new Set()),
+      trigger: (lineIndex: number) => r.trigger(lineIndex),
       floor: () => map.sectors[lift].floorHeight,
       state: () => s.floorMovers.get(lift)?.state,
       /** Move the west neighbour, the way a floor mover on it would. */

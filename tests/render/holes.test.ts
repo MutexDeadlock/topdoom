@@ -121,7 +121,7 @@ describe('Rendering · closed holes', () => {
  * whose flats come from its own mover mesh rather than the static batches, and
  * whose lid has to come and go with its floor.
  */
-describe('Regressions · a pit that is also a mover', () => {
+describe('Rendering · a pit that is also a mover', () => {
   /** The pit sector's own mover mesh, the one the running game would draw its flats from. */
   function moverFans(map: DoomMap, sector: number) {
     const polys = buildSubSectorPolys(map);
@@ -159,7 +159,7 @@ describe('Regressions · a pit that is also a mover', () => {
  * higher floor), which lidded 23,000 map units² of the courtyard's grass with
  * the alcove's flat. docs/render.md § Closed holes.
  */
-describe('Regressions · a leaf of an open room is not a hole', () => {
+describe('Rendering · a leaf of an open room is not a hole', () => {
   /**
    * Three cells in a row: the west one raised, the other two one room, whose
    * east leaf keeps only the seg on the drop — the shape a node split leaves.

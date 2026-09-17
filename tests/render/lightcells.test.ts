@@ -72,18 +72,25 @@ describe('Dynamic lights · light cells', () => {
     assert.equal(lightCellsOf(polys), lightCellsOf(polys));
   });
 
-  test('on a big leaf a light lists in the cells near it and no others, and the mesh files by cell', () => {
+  /** A room several cells across, so its one leaf is split into a grid of them. */
+  function bigLeaf() {
     const side = LIGHT_CELL_SIZE * 4;
     const grid = gridMap(['.'], { cell: side });
     const map = grid.map;
     const world = new World(map);
     const vis = new LightVisibility(map, buildSubSectorPolys(map), world);
-    const leaf = world.subsectorAt(grid.centre(0, 0).x, grid.centre(0, 0).y);
+    const centre = grid.centre(0, 0);
+    const leaf = world.subsectorAt(centre.x, centre.y);
     assert.ok(vis.cells.isSplit(leaf), 'the fixture leaf must be big enough to split');
+    // A light in the south-west corner of the room.
+    const at = { x: centre.x - side / 2 + 40, y: centre.y - side / 2 + 40 };
+    return { grid, map, world, vis, leaf, at, side };
+  }
+
+  test('on a big leaf a light lists in the cells near it and no others', () => {
+    const { vis, leaf, at, side } = bigLeaf();
     const lights = new DynamicLights(DEFS);
     lights.bindLevel(vis);
-    // A light in the south-west corner of the room.
-    const at = { x: grid.centre(0, 0).x - side / 2 + 40, y: grid.centre(0, 0).y - side / 2 + 40 };
     lights.beginFrame(0, at.x, at.y);
     lights.offer('LAMPA', at.x, at.y, 0, 1);
     lights.commit();
@@ -92,10 +99,10 @@ describe('Dynamic lights · light cells', () => {
     assert.ok(lit(at.x, at.y), 'the cell the light stands in');
     assert.ok((slots[vis.cells.wholeCell(leaf) * 4] & 0xff) === 0, 'the catch-all');
     assert.ok(!lit(at.x + side - 80, at.y + side - 80), 'the far corner, out of reach');
-    const t = { r: 0, g: 0, b: 0 };
-    lights.tintAt(at.x, at.y, 0, 99, t, leaf);
-    assert.ok(t.r > 0);
+  });
 
+  test('the mesh files a big leaf’s floor under several cells', () => {
+    const { map, world, vis, leaf } = bigLeaf();
     const built = buildMapMesh(map, BANK, { transfers: new Transfers(map), subsectorAt: (x, y) => world.subsectorAt(x, y) });
     const flat = built.flatSurfaces.find((f) => f.subsector === leaf)!;
     const cells = built.flatMeshes.get(flat.key)!.geometry.getAttribute('aLightCell');

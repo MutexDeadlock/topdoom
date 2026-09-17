@@ -7,9 +7,12 @@
  */
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import { DOOM_TIC } from '../../src/constants.ts';
 import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
 import { SpecialsController, type Occupancy, type TeleportDest } from '../../src/game/specials.ts';
+import type { Activator } from '../../src/game/specials/defs.ts';
+import type { KeySlot } from '../../src/game/inventory.ts';
 import type { OccupancySources } from '../../src/game/specials/moverblocking.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { scanSectors } from '../../src/game/specials/mapscan.ts';
@@ -19,7 +22,7 @@ import type { MaterialBank } from '../../src/render/textures.ts';
 import type { SfxId, SoundEmitter } from '../../src/audio/sfx.ts';
 import type { Pos2, Pos3 } from '../../src/types.ts';
 import type { CrossingBody } from '../../src/game/things/defs.ts';
-import { NO_INPUT, USE_INPUT } from './input.ts';
+import { NO_INPUT } from './input.ts';
 
 /**
  * The one texture name `BANK` hands back a **masked** material for — a grate,
@@ -64,11 +67,11 @@ export function crushSources(over: Partial<OccupancySources> = {}): OccupancySou
   };
 }
 
-/** The `pressed`-shaped inputs live in `input.ts`; re-exported so a specials test imports one fixture. */
-export { NO_INPUT, USE_INPUT };
+/** Empty-handed: the keys a `trigger` caller holds unless it says otherwise. */
+const NO_KEYS: ReadonlySet<KeySlot> = new Set();
 
 /** One vanilla tic, the step `game.ts` drives specials at and this rig's default. */
-export const TIC = 1 / 35;
+export const TIC = DOOM_TIC;
 
 /**
  * Every drawn vertex height in the meshes whose batch key `wanted` accepts — how a test reads a
@@ -151,9 +154,11 @@ export interface SpecialsRig {
   tick(dt?: number, x?: number, y?: number, angle?: number): void;
   /**
    * Fires one line's special the way a press or crossing would, keys in hand — the one place the
-   * cast onto the controller's private `trigger` lives, instead of once per test file.
+   * cast onto the controller's private `trigger` lives, instead of once per test file. `activator`
+   * is who set it off, for the specials that only some may work (docs/specials.md § Trigger
+   * dispatch); `keys` are the ones in hand, for a locked door.
    */
-  trigger(lineIndex: number): void;
+  trigger(lineIndex: number, activator?: Activator, keys?: ReadonlySet<KeySlot>): void;
 }
 
 /**
@@ -205,7 +210,11 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
       // path now (docs/frameloop.md § Interpolation), and these tests assert tic-exact meshes.
       specials.drawMovers(1);
     },
-    trigger: (lineIndex) =>
-      (specials as unknown as { trigger(line: number, keys: Set<never>): unknown }).trigger(lineIndex, new Set()),
+    trigger: (lineIndex, activator = 'player', keys = NO_KEYS) =>
+      (
+        specials as unknown as {
+          trigger(line: number, keys: ReadonlySet<KeySlot>, activator: Activator): unknown;
+        }
+      ).trigger(lineIndex, keys, activator),
   };
 }

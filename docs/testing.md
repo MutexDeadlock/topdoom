@@ -34,8 +34,23 @@ tests/
   server/                the relay's room logic (server/rooms.ts), the one thing outside src/
   regression/            one file per fixed bug, named after the bug
   fixtures/              builders and test data, never tests
-  docs/                  the tree-wide guards: doc pointers, WAD fixtures, layer splits
+  docs/                  the tree-wide guards: doc pointers, test paths, WAD fixtures, layer splits
 ```
+
+**`regression/` is for a bug, not for a subsystem.** A file belongs there while it pins one clause
+against one named repro. Once it states the rule in general, carries its own positive and negative
+cases and has a fixture of its own, it is that subsystem's suite and moves to the directory it
+mirrors, with a subject name to match — which is what the fog of war, the projectiles, the shot
+path, the pickups, the monster ledges and auto-aim all did, having grown into the only coverage
+those modules had. What stays is the handful that really is one repro: the framerate lock, the two
+clocks a scroller runs on, a switch that must not be spent, a fixture's own shape.
+
+**A file holds one subject.** Where a file grew a second, it is split and each half says in its
+header where the other lives — the occlusion fade gave up the wall dicing, the fade targets and the
+commit bookkeeping; the auto camera split into the openness probe, the buried-eye rescue and the
+occluder framing; `weapons` split into which weapon is in hand and what it does once it is. The
+test for it is whether a new case has an obvious home: a file named after two subjects stops
+telling you where one belongs.
 
 **Every test file wraps its tests in one or more `describe` blocks named
 `Subject area · what it covers`** — `Geometry · convex polygons`, `WAD parsing · lump names`,
@@ -86,21 +101,24 @@ a note is keyed on and the rendered samples are measured, which is how "a releas
   Where a rule genuinely has no outside face — which slot a mover landed in, whether a stasis wake
   reported a hit — the tests reach the private field through a narrow
   `as unknown as { … }` cast naming only what they touch (`switch-gating.test.ts` set the
-  precedent; `moverclasses.test.ts` and `toggle-plats.test.ts` follow it). That is deliberately
-  ugly, so it stays confined to rules that are otherwise unobservable, and is still preferred over
-  widening the class's visibility. `tickDoor`/`tickLift` remain untested as pure functions; doing
-  that properly means extracting the per-mover tick into `(state, dt) → state`, which nothing has
-  needed yet.
-- **`ProjectileLayer` / `SpriteFxLayer`** — every `spawn*` short-circuits on
-  `SpriteAnimator.resolve`, so a stubbed run would test the stubs. Test at `shotPath`/`aimSlope`
-  level, or through `tests/fixtures/shotrig.ts` (§ Shared helpers), whose stub bank resolves the
-  sprites it fires.
+  precedent; `moverclasses.test.ts`, `toggle-plats.test.ts` and `crusher-stasis.test.ts` follow
+  it). That is deliberately ugly, so it stays confined to rules that are otherwise unobservable, and
+  is still preferred over widening the class's visibility. **Triggering a line is not one of those
+  rules**: `SpecialsRig.trigger` owns that cast once, and a test that re-declares it has made a
+  private method look like nine files' business. `tickDoor`/`tickLift` remain untested as pure
+  functions; doing that properly means extracting the per-mover tick into `(state, dt) → state`,
+  which nothing has needed yet.
+- **`SpriteFxLayer`'s `spawn*` paths** short-circuit on `SpriteAnimator.resolve`, so a stubbed run
+  would test the stubs. Test at `shotPath`/`aimSlope` level, or through `tests/fixtures/shotrig.ts`
+  (§ Shared helpers), whose stub bank resolves the sprites it fires. `ProjectileLayer` *is* covered
+  that way — `tests/game/missile-*.test.ts` and `impact-on-wall-plane.test.ts` fly real missiles
+  over the stub bank and read back where each one burst.
 - **`src/render/` (anything that needs a GL context), `src/ui/`, `main.ts`, `session/`, `game.ts`,
   `audio/audio.ts`, `audio/music.ts`** — need a DOM or a renderer. Three carve-outs: `render/bsp.ts`
   *is* covered, being pure geometry despite where it lives; so is any pure helper a DOM module
   happens to export — `tests/ui/hud.test.ts` covers `hud.ts`'s `formatClock`/`percentOf` while `Hud`
   itself stays out; and *constructing* THREE objects is fine on its own, only rendering them isn't,
-  which is what lets `tests/regression/aim-pick-body-box.test.ts` cast a real `THREE.Ray` at a real
+  which is what lets `tests/game/autoaim.test.ts` cast a real `THREE.Ray` at a real
   `ThingLayer`.
 - **Performance.** Hot paths are measured deliberately, in a script, on a quiet machine. A timing
   assertion in the suite turns a loaded machine into a red build and teaches everyone to ignore it.
@@ -243,8 +261,10 @@ test that needs to read those back takes it from there, as `strobing-lift-light`
 
 ## The fade fixture
 
-`tests/fixtures/fade.ts` holds what the occlusion-fade tests share on both sides of the pass. Going
-in: `targetAt(x, y, z, over)` builds the `FadeTarget` the faders aim at — so a dial added to that
+`tests/fixtures/fade.ts` holds what the occlusion-fade tests share on both sides of the pass, and
+what its two neighbours (`walldicing.test.ts`, `fadecommit.test.ts`) take too: `walledRow()` is the
+diced wall all three run over, sized from `CHUNK` and `CELL`, and `group`/`lineAtY` find a line's
+quads in it. Going in: `targetAt(x, y, z, over)` builds the `FadeTarget` the faders aim at — so a dial added to that
 type is a one-file edit rather than one per case — and `openingsOf(world)` wraps `World.openingInto`
 in the shape the wall half takes it. Coming out: `lowestAlpha(meshes)` is the minimum the commit
 wrote anywhere in a batch, for "did anything fade at all", and `lowestAlphaAt(occluders, meshes, x)`
@@ -254,7 +274,8 @@ would answer about the wrong wall.
 
 The dials are still *read* from the source rather than mirrored (docs/render-occlusion.md § The fade
 is a hole, not a wall). The readbacks are the half worth sharing: they encode `addWall`'s vertex
-layout, and there were three copies of that walk before.
+layout — `corners`/`cornerList` name its `[A, D, C, A, C, B]` order, `lowestAlpha`/`lowestAlphaAt`
+walk a whole quad — and there were several copies of that walk before.
 
 ## Shared helpers
 
@@ -263,6 +284,20 @@ layout, and there were three copies of that walk before.
 before the first chase call — with `over` for what the test varies (`angle`, `movedir`, `movecount`,
 `justHit`). Every test that steps the AI by hand, and `pinky.ts`, builds its body here, so a field
 added to `MonsterBody` is a one-file edit.
+
+Beside it are the two runners that step it, because `{ dt: DOOM_TIC, target, targetRadius:
+PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT }` was written out in eighteen places:
+`chaseStep(body, stats, world, target, over?)` is one tic, returning the attack, with `over` for the
+`MonsterStep` fields a test varies (a sound log, `blockersFor`, `useLines`); `chaseFor(…, seconds,
+options?)` runs `stepFor` over it and returns how far the body travelled, with `each` for a per-tic
+assertion. `framerate-independence.test.ts` deliberately does *not* use them — which `dt` is passed
+is its whole subject.
+
+`tests/fixtures/spritestubs.ts`'s `thingLayer(world, over?)` is `buildThingSprites` over the stub
+bank at the default skill, the other shape that was copied into nearly forty places; `over` carries
+the `restore` snapshot, the skill, the netgame flags and the callbacks. `recordImpacts(effects)`
+records every point the layer was asked to put an impact at and passes the spawn through, so a test
+reads a missile's standoff without reaching into the layer's own list.
 
 `tests/fixtures/arena.ts`'s `monsterArena(types, { netgame? })` is the open room the thing layer's
 player-targeting tests stand in: `types` down its east wall facing west, every look rotation
@@ -290,8 +325,33 @@ has already established the change.
 receives one, and the recorder's rig — `scriptedInput(rows)` (a live `TicInput` over `ScriptedRow`s)
 and `recordingStart()`.
 
-`tests/fixtures/files.ts`'s `filesUnder(dir, keep?)` is the recursive file walker the tree-wide
-guards in `tests/docs/` and `markup.test.ts` share.
+`tests/fixtures/files.ts` holds what the tree-wide guards share: `filesUnder(dir, keep?)`, the
+recursive file walker, and `callsIn(files, pattern)`, the source scanner that reports `file:line`
+for every match — which is what the three "nothing in `src/` calls this" guards
+(`Math.random`, `Math.hypot`, the approximated `Math` under `src/game/`) are written on. They match
+**call sites**, not mentions: a declaration whose comment names the banned call is documenting that
+very rule and must not break the build for it.
+
+`tests/fixtures/forcesrig.ts`'s `forcesRig(special, options?)` is a `Forces` over three cells whose
+middle one is tagged and driven by one Boom parameter line — the conveyor, pusher and friction
+suites all configure a sector exactly that way and differ only in the special and the sector bit.
+
+`tests/fixtures/movermesh.ts` holds the two things a test driving `buildMoverMesh`/
+`refreshMoverMesh` needs around it: `textureEverySide(map)`, because an unset texture slot draws no
+quad and a fixture that skips it makes a mesh test pass vacuously, and `moverSource(map, sector,
+options?)`, the four-field argument both builders take.
+
+`tests/fixtures/camerarooms.ts` holds the rooms the three auto-camera suites stand in — shut in,
+open, a dead end facing a hall, a plateau, a wall to frame past — so a shape retuned for one is
+retuned for all.
+
+`tests/fixtures/wadsource.ts`'s `wadSource(key, over?)` is a `WadSource` as the menu sees one, with
+`bytes` rejecting: a listing that reached for the bytes would load every WAD in the library to draw
+a row, so the stub fails loudly and names the rule.
+
+`gridMap`'s own `edgeBetween(a, b)` is the two-sided line between two sectors whichever way round
+its sidedefs sit — what a test naming a boundary by its two cells takes, where `westEdge(col, row)`
+is the one that states the winding.
 
 ## The network fixture
 
@@ -349,6 +409,11 @@ silently resolved nothing would satisfy every negative assertion in the file.
 
 ## Doc references
 
+Three guards carry a **vacuity control** — an assertion that the scan found anything at all —
+because a walker or a regex that quietly stopped matching would make every other assertion in the
+file pass silently: `describenames`, `testpaths` and `references` each count what they scanned
+first.
+
 `tests/docs/simmath.test.ts` greps for the `Math` functions ECMA-262 leaves approximated: a tic
 that calls one plays differently in another browser, and `util/fdlibm.ts` is where those come from
 instead (docs/replays.md § What breaks determinism). Two scopes, since a simulation file reaches
@@ -356,6 +421,12 @@ the platform through a helper as easily as directly — every approximated funct
 `src/game.ts` and `src/game/`, and the five with replacements under `src/util/`, which is what
 `src/game/` imports. `tests/util/fdlibm.test.ts` holds those five to a ULP of the platform and pins
 their results to the bit.
+
+`tests/docs/testpaths.test.ts` is its sibling for **file** paths: every `<name>.test.ts` a doc or a
+comment names has to exist, and a pointer that spells the directory out has to name the real one.
+The docs name test files constantly, and moving a suite between `tests/regression/` and the
+directory it mirrors left every one of those pointing at nothing with nothing to notice — the move
+of the fog, projectile, shot-path and monster suites out of `regression/` turned up two dozen.
 
 `tests/docs/references.test.ts` asserts that every `docs/<name>.md § <Heading>` pointer resolves —
 the file exists and some heading in it starts with the quoted words. It exists because splitting the
@@ -504,8 +575,18 @@ one side of it: below `WALL_CHUNK_LEN / 2` a `FADE_CORE` no longer guarantees a 
 the core, so the test expects the exact floor at or above that and a point on the ramp below it. The
 suite passes at every setting from `FADE_RADIUS` 128 to 2048 and `FADE_ALPHA` 0 to 0.99.
 
+**A dial that a test wants is exported for it**, beside whatever the module already exports for
+testing — five were, when the tests pinning them turned up: `fogofwar/holes.ts`'s four `HOLE_*`
+limits, `playershadow.ts`'s `FALL_RANGE`, `skytint.ts`'s `LIMIT` and `COLOURLESS_SKY` (`STRENGTH`
+was already), and `profiler.ts`'s `OFF_FRAME_SPREAD` and `OFF_FRAME_PENDING_CAP`. Each declaration
+says it is exported for the test, and each test then states its geometry as a multiple of the dial
+(`HOLE_MAX_WIDTH + 1` for "wider than the limit", `shadowAlpha(FALL_RANGE)` for the top of the ramp)
+rather than as the number that dial happens to hold. Where two dials bound one case, the test
+asserts the relationship it depends on — a cell wider than `HOLE_MAX_WIDTH` but still short of
+`HOLE_OPENING_BELOW` — so a retune that breaks the case says which one.
+
 Where it can't, the test brackets it from both sides. The sight-sampling step and the fog's reveal
-distance are not readable from outside their modules. `fog-reveal-radius.test.ts` brackets the
+distance are not readable from outside their modules. `fogofwar-reveal-radius.test.ts` brackets the
 reveal against `constants.ts: VIEW_DISTANCE` — the last grid cell inside the view must be revealed,
 the first cell a full cell past it must be dark — because the reveal *is* that dial, read straight
 out of `constants.ts` (docs/fogofwar.md § Reveal radius). Deriving the two columns from the dial
@@ -582,7 +663,7 @@ step size, and that a negative first-frame delta leaves it finite (the same haza
 - A regression test that has never been seen fail is not yet a regression test. Break the thing it
   guards, watch it go red, put it back.
 - **One category per file, one `describe` per subject.** `corridor-fixture`, `player-shot-range`
-  and `fog-reveal-radius` are three files, not one, even though two of them share a map — a file
+  and `fogofwar-reveal-radius` are three files, not one, even though two of them share a map — a file
   named after two subjects stops telling you where a new test belongs. Put the file under the
   `src/` directory it mirrors, and give its suite a `Subject · detail` name.
 - Pin a shared fixture's own shape in its own test. `corridor-fixture.test.ts` asserts the corridor
@@ -592,5 +673,11 @@ step size, and that a negative first-frame delta leaves it finite (the same haza
   revealed everything, which is why "fog does not reveal through a wall" sits next to it.
 - **Say what a test asserts, not what it commemorates.** A title referring to "the bug" leaves the
   next reader hunting for which one; the file's header comment is the place for that context.
+- **Never restate the rule you are checking.** An expectation computed with the implementation's own
+  expression agrees with any implementation of it, right or wrong — `friction.test.ts` recomputed
+  `P_SpawnFriction`'s curve and passed for years beside a comment whose arithmetic was wrong by
+  `0x800`. Transcribe the vanilla anchors by hand instead and say so at the table. The same trap in
+  a fixture: `scrolling.test.ts` asserted the vertex order of a UV array it had hand-written five
+  lines earlier, never calling `addWall` at all.
 - The table tests in `tables.test.ts` check that transcriptions are **complete**, not that they are
   **correct** — only `info.c` settles correctness, and CLAUDE.md's citation rule still governs.

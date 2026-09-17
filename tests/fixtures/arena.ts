@@ -4,9 +4,8 @@
  * docs/testing.md § Shared helpers.
  */
 import { World } from '../../src/game/world.ts';
-import { buildThingSprites } from '../../src/game/things.ts';
 import { gridMap, thingAt } from './gridmap.ts';
-import { BANK, MATERIALS } from './spritestubs.ts';
+import { thingLayer } from './spritestubs.ts';
 
 /**
  * The room with `types` spawned down column 5, its world, and the thing layer over it.
@@ -26,6 +25,6 @@ export function monsterArena(types: readonly number[], options: { netgame?: bool
     lastlook: '0'.repeat(types.length),
   };
   const onKill = (slot: number) => kills.push(slot);
-  const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3, netgame, restore, onKill });
+  const layer = thingLayer(world, { netgame, restore, onKill });
   return { grid, world, layer, kills };
 }

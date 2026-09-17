@@ -2,7 +2,8 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type * as THREE from 'three';
 import { gridMap, addControlLine } from '../fixtures/gridmap.ts';
-import { specialsRig, vertexHeights, MASKED_TEXTURE, NO_INPUT, TIC } from '../fixtures/specialsrig.ts';
+import { specialsRig, vertexHeights, MASKED_TEXTURE, TIC } from '../fixtures/specialsrig.ts';
+import { NO_INPUT } from '../fixtures/input.ts';
 import type { WallOccluder } from '../../src/render/mapmesh.ts';
 
 /**

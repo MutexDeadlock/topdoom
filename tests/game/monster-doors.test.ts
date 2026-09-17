@@ -1,16 +1,14 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { specialsRig, soundLog, TIC } from '../fixtures/specialsrig.ts';
-import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
+import { specialsRig, soundLog } from '../fixtures/specialsrig.ts';
 import { type MonsterBody } from '../../src/game/monsters/defs.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
-import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { LF } from '../../src/wad/map.ts';
 import type { CrossingBody } from '../../src/game/things/defs.ts';
 import type { SfxId } from '../../src/audio/sfx.ts';
-import { monsterBody } from '../fixtures/monsterbody.ts';
+import { chaseStep, monsterBody } from '../fixtures/monsterbody.ts';
 import { stepFor } from '../fixtures/tics.ts';
 
 /**
@@ -54,23 +52,16 @@ function doorRig(special: number, flags = 0): DoorRig {
   const body = monsterBody({ ...start, z: 0 });
   const asCrossing = (): CrossingBody => ({ x: body.x, y: body.y, id: 1, type: ThingType.demon, blockRadius: stats.radius, angle: body.angle });
   const target = { ...grid.centre(3, 0), z: 0 };
-  const s = rig.specials as unknown as {
-    ceilingMovers: Map<number, { state: string }>;
-    trigger(lineIndex: number, keys: Set<never>, activator: string): unknown;
-  };
+  const s = rig.specials as unknown as { ceilingMovers: Map<number, { state: string }> };
   return {
     body,
     played,
     ceil: () => map.sectors[door].ceilHeight,
     state: () => s.ceilingMovers.get(door)?.state,
-    press: (who) => s.trigger(line, new Set(), who),
+    press: (who) => rig.trigger(line, who),
     run: (seconds) => {
       stepFor(seconds, () => {
-        stepMonsterAI(body, stats, rig.world, {
-          dt: TIC,
-          target,
-          targetRadius: PLAYER_RADIUS,
-          targetHeight: PLAYER_HEIGHT,
+        chaseStep(body, stats, rig.world, target, {
           useLines: (_body, x, y) => rig.specials.useMonster(asCrossing(), x, y, new Set()),
         });
         rig.tick();

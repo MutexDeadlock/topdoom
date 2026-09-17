@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { lightSegment } from '../../src/render/sectorlight.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { specialsRig } from '../fixtures/specialsrig.ts';
+import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
 
 /**
  * A sector that both strobes and moves has its geometry in its own mover mesh,
@@ -65,7 +65,7 @@ describe('Regressions · strobing lift light', () => {
 
     // blink05 starts bright with an expired timer, so the first tick flips it
     // to the darkest neighbour's level.
-    tick(1 / 35);
+    tick(TIC);
     assert.equal(map.sectors[lift].light, NEIGHBOR_LIGHT, 'the strobe went dark');
     assert.deepEqual(
       new Set(flatSegments(scene)),
@@ -86,7 +86,7 @@ describe('Regressions · strobing lift light', () => {
       return out;
     };
     const before = alphas();
-    tick(1 / 35);
+    tick(TIC);
     assert.deepEqual(alphas(), before);
   });
 });

@@ -226,18 +226,6 @@ outside the WAD is needed. A music PWAD shipping Ogg/FLAC/MP3/WAV plays that dir
 Volumes live on the start menu and are remembered between sessions.
 See [docs/audio.md](docs/audio.md) and [docs/music.md](docs/music.md).
 
-## But... why?
-
-I started this project to get into working with that mysterious "Claude Code" thing.
-As a DOOMer for three decades, doing something with DOOM came to mind.
-While the engine took shape, I realized that the game became actually fun to play - as was the development process, during which I learned a great deal (including about DOOM itself).
-So I kept going and tried to refine it into a properly polished thing.
-
-I am, of course, aware that projects like this have a reputation for having an unmaintainable codebase.
-I hope (and believe) that I was able to counter that, thanks to my software engineering skills - having worked professionally as a web developer for about 15 years and programmed as a hobbyist for at least 30.
-
-I am sure the renderer and all those geometry calculations (which are black boxes to me, honestly) are a little over-complicated, but on the other hand it is also well optimized and works well - which is what counts in the end.
-
 ## Working on it
 
 There is a [CLAUDE.md](CLAUDE.md) which is written and maintained by Claude, but at least 

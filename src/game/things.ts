@@ -610,7 +610,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
             // A flier keeps the height it drifted to: `MF_NOGRAVITY` outlives losing a target,
             // and dropping it here would pop a hovering cacodemon down the instant the player
             // dies.
-            if (!stats.flies) p.z = p.sector?.floorHeight ?? p.z;
+            if (!stats.flies) restOnGround(p);
           } else {
             const beforeX = p.x;
             const beforeY = p.y;
@@ -682,8 +682,11 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
           // A flier keeps the height it hovered to, so a dormant cacodemon must not pop down to
           // the floor. A *rising* floor still pushes it up, which is all `P_ZMovement` does for a
           // no-gravity body on contact. docs/monster-ai.md § Floating monsters.
-          const floorZ = p.sector?.floorHeight ?? p.z;
-          p.z = stats.flies ? Math.max(p.z, floorZ) : floorZ;
+          if (stats.flies) {
+            p.z = Math.max(p.z, p.sector?.floorHeight ?? p.z);
+          } else {
+            restOnGround(p);
+          }
           // A not-yet-alerted monster can still be knocked back: `damage` always sets velX/velY,
           // and it alerts in the same call, so this mostly guards the same-frame ordering.
           if (p.velX !== 0 || p.velY !== 0) {
@@ -1615,6 +1618,18 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     if (p.x !== fromX || p.y !== fromY) {
       refreshSector(p);
     }
+  }
+
+  /**
+   * Puts a grounded monster on the floor its whole box stands on — vanilla's `mo->z = mo->floorz`,
+   * where `floorz` is `P_CheckPosition`'s box-wide `tmfloorz`, not the sector under the centre. The
+   * centre's floor drops a body perched on a ledge corner below the ledge it still overlaps, and
+   * every step from there is walled. docs/monster-ai.md § Losing the target.
+   */
+  function restOnGround(p: PosedThing): void {
+    const floorZ = p.sector?.floorHeight ?? p.z;
+    // Already on its own sector's floor is the common case, and needs no walk.
+    if (p.z !== floorZ) p.z = world.groundFloor(p.x, p.y, p.blockRadius, true, p.z);
   }
 
   /**

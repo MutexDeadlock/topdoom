@@ -1,3 +1,17 @@
+v0.21.1 (2026-09-24)
+
+Back after a break due to illness
+
+Features and improvements
+  - more fancy logo
+
+Fixed bugs
+  - a monster going idle on the edge of a ledge no longer sinks into
+    the ledge and gets stuck there for good
+
+
+===============================================================================
+
 v0.21.0 (2026-09-16)
 
 Features and improvements

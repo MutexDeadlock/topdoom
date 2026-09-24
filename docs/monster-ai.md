@@ -868,6 +868,13 @@ dropped its attack the tic its target died — an arch-vile never blasted a play
 windup — and, gone idle, kept the unfired shots for its next wake. A monster already infighting
 someone else is unaffected by the player's death and fights on regardless.
 
+**An idle monster rests on its box's floor, not its centre's** (`things.ts: restOnGround`, both the
+give-up branch and the dormant one): vanilla's `mo->floorz` is `P_CheckPosition`'s box-wide
+`tmfloorz`. The centre's floor put a body perched on a ledge corner (§ The dropoff rule) below the
+ledge its box still overlapped, where every step climbs more than `MAX_STEP_UP` and it never moved
+again. Repro: smax.wad MAP13, line 314 (sector 97, floor -40, over sector 49's -72), a revenant at
+(-1370, 3134); `tests/game/monster-perched-goes-idle.test.ts`.
+
 ## The lost soul: a charge, not a projectile
 
 `A_SkullAttack` gives it no projectile at all — it sets `MF_SKULLFLY` and launches the monster along

@@ -8,7 +8,6 @@ export default defineConfig({
   plugins: [gameWad(), wadManifest(), replayManifest(), htmlPartials()],
   server: {
     port: 5173,
-    // Game WADs live under public/ and are not checked into the repo.
     fs: { strict: true },
   },
   build: {

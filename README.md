@@ -10,8 +10,8 @@ It behaves as close to vanilla as it can, and deviates where the top-down view d
 
 **Play it right here: [topdoom.vercel.app](https://topdoom.vercel.app)**
 
-Freedoom and the
-shareware `DOOM1.WAD` ship with it, so there is a game to play before you add a WAD of your own.
+Freedoom and the shareware `DOOM1.WAD` ship with it, so there is a game to play 
+before you add a WAD of your own.
 
 ## What is working
 
@@ -123,9 +123,7 @@ went. See [docs/cheats.md](docs/cheats.md).
 ## Gameplay
 
 It plays like DOOM because the rules are DOOM's: monster stats, weapon rates, damage rolls, powerup
-timers and the random table all come out of the original source. All weapons and monsters are in.
-Pickup items and all powerups are collected by walking into them, and the bar along the bottom
-tracks what you are carrying.
+timers and the random table all come out of the original source.
 I'll skip explaining a game that's over thirty years old in detail here and move on to the
 TopDOOM-specific features:
 
@@ -134,7 +132,7 @@ at that monster's actual position and height instead of at wherever the cursor's
 the floor plane lands - so shooting an enemy up on a ledge angles the shot to reach it. It's the
 pointer-driven equivalent of DOOM's own auto-aim, which had no cursor to work from.
 
-**A dollhouse camera can see the whole level, so the level fights back with fog of war.** Rooms you
+**A dollhouse camera can see the whole level, so fog of war keeps it from spoiling anything.** Rooms you
 haven't had line of sight to yet stay hidden, revealed one BSP leaf at a time as you actually see
 into them - so a wide top-down view doesn't spoil a secret or the room behind the locked door before
 you get there.
@@ -232,7 +230,7 @@ There is a [CLAUDE.md](CLAUDE.md) which is written and maintained by Claude, but
 I brang some structure in it so humans **may** get along with it too. 
 It has the source tree, the project-wide conventions and the index of `docs/`, where every 
 subsystem is documented in great depth.
-Reading the code itself (entry point: `src/main.ts`) might also be a good starting point.
+Reading the code itself (entry point: `src/main.ts`) might be the best starting point.
 
 ```bash
 npm test          # Node's own runner: no extra dependencies, no browser

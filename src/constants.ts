@@ -10,7 +10,7 @@
 import { ThingType } from './game/things/doomednums.ts';
 
 /** Shown on the start menu. */
-export const VERSION = '0.21.0';
+export const VERSION = '0.21.1';
 
 /**
  * Set VITE_DEVMODE=true in .env.local to default the three Debug / Dev settings on. It gates
@@ -59,7 +59,7 @@ export const FOG_START_FRACTION = 0.54;
  * the same pixel size, and small collectibles like a clip or a shell box are the ones that suffer
  * most.
  */
-export const DEFAULT_PICKUP_SCALE = 1.25;
+const DEFAULT_PICKUP_SCALE = 1.25;
 
 /**
  * Which things draw larger than vanilla's native patch size, and by how much — a type missing here

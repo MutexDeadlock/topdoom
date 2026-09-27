@@ -15,7 +15,7 @@ import { pristineFrameTables } from '../dehacked/frames.ts';
 import { ThingType } from './doomednums.ts';
 import type { MonsterAttackEvent, MonsterBody, MonsterStats } from '../monsters/defs.ts';
 import type { ThingsSnapshot } from '../snapshot.ts';
-import type { PinnedMemo, SectorTouchCache, ThingBlocker } from '../world.ts';
+import type { PinnedMemo, SectorTouchCache, ThingBlocker, World } from '../world.ts';
 import type { SpriteAnimator } from '../../render/sprites.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 import type { TeleportDest } from '../specials.ts';
@@ -671,7 +671,7 @@ export interface ThingLayer {
    * distance rather than a flat height band (docs/combat.md § The vertical test).
    *
    * @param opts  `slope` is the trace's own fixed slope, `PTR_ShootTraverse`'s `aimslope`; omitting
-   *              it takes `P_AimLineAttack`'s ±{@link AIM_SLOPE_LIMIT} cone. The rest serves a
+   *              it takes `P_AimLineAttack`'s cone ({@link World.shotReachesBody}). The rest serves a
    *              *monster's* own hitscan: `ignoreId` excludes the shooter, and `includeHidden`
    *              skips the fog-of-war filter, since two monsters fighting in a room the player
    *              hasn't seen must still connect.
@@ -683,14 +683,6 @@ export interface ThingLayer {
     opts?: { ignoreId?: number; includeHidden?: boolean; slope?: number },
   ): (MonsterRef & { dist: number }) | null;
 }
-
-/**
- * The vertical half-angle `P_AimLineAttack` searches, as a slope: its
- * `topslope = 100*FRACUNIT/160` and `bottomslope = -100*FRACUNIT/160` (`p_map.c`).
- * {@link ThingLayer.raycastMonster} takes it as the default span a body's own slope range has to
- * overlap — see docs/combat.md § The vertical test.
- */
-export const AIM_SLOPE_LIMIT = 100 / 160;
 
 /**
  * The two types whose sight and death sounds vanilla plays **unattenuated**, from nowhere in

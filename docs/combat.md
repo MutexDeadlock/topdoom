@@ -462,11 +462,12 @@ standing between the player and the wall they're shooting at gets hit though it 
 only the nearer of "a wall/step" (`shotPath`) and "a body in the way" stops the shot.
 
 **A lock adds a candidate and never removes one.** A locked-on pellet also tests its own line
-against the target — perpendicular offset within `MONSTER_HIT_RADIUS` and, for a pellet carrying a
-`slopeOffset`, vertical miss within half of `MONSTER_LOCK_HEIGHT` at the body's distance, with
-`shotPath`'s distance saying whether a wall cut the shot short — and a body nearer than the target
-on that line still takes the pellet first. Counting a pellet that passed the lock test as a hit
-without the trace let a click shoot straight through whatever stood in front of the target.
+against the target — perpendicular offset within `MONSTER_HIT_RADIUS`, and the height of the slope
+*fired* (`ShotPath.slope`, not the one aimed: a shut wedge fires flat, § The vertical test) within
+half of `MONSTER_LOCK_HEIGHT` of the body's centre at the body's distance, with `shotPath`'s
+distance saying whether a wall cut the shot short — and a body nearer than the target on that line
+still takes the pellet first. Counting a pellet that passed the lock test as a hit without the
+trace let a click shoot straight through whatever stood in front of the target;
 `tests/game/locked-pellet-body-in-front.test.ts` pins it. Under `CombatContext.pvp` the other
 players' bodies are in that trace too (`raycastPlayers`, `combat.ts`), for a free pellet, a swing
 and each BFG ray alike; a lock on a player is tested at the player's own box
@@ -484,11 +485,10 @@ its real width. Zero-spread
 weapons are unaffected — `player.angle` is set from the same lock (`Math.atan2` toward `aim`, at the
 end of `Player.update`, after the frame's movement), so their perpendicular offset is exactly 0.
 
-The vertical half of the test only ever fires for the super shotgun, the one weapon with a
-`slopeSpread` (docs/weapons.md § Spread), and only on the locked-on path: the free-shot `raycastMonster` is a 2D ray
-that carries no slope of its own, and admits any body inside `P_AimLineAttack`'s aim cone
-(§ The vertical test), so a wide pellet's *vertical* miss is not reproduced once it falls through to
-that branch.
+On an open shot the fired slope is the body's centre, so the vertical half only bites for a shut
+wedge and for the super shotgun, the one weapon with a `slopeSpread` (docs/weapons.md § Spread).
+A pellet that fails it falls through to the body trace, which carries that same fired slope
+(§ The vertical test), so the vertical miss stands there too.
 
 **Only the locked-on gate uses the shared `MONSTER_HIT_RADIUS`; everything a shot can actually
 collide with is tested at its own width.** `raycastMonster` and a projectile's swept contact test
@@ -550,19 +550,35 @@ flat height band around the fire height.** Vanilla's `PTR_AimTraverse` and `PTR_
 the trace's own `[bottomslope, topslope]` — "shot over the thing" / "shot under the thing". The two
 differ in one thing only, which span they carry: an **aim** (`P_AimLineAttack`) searches the
 `±AIM_SLOPE_LIMIT` cone (`topslope = 100*FRACUNIT/160`), a **fired shot** collapses it to the single
-`aimslope` it was handed. `raycastMonster` reproduces both through one `opts.slope` — omitted for
-the cone, supplied for a shot that already has a slope.
+`aimslope` it was handed. `World.shotReachesBody` is that test, and `raycastMonster` and
+`raycastPlayers` reproduce both through one `opts.slope` — omitted for the cone, supplied for a shot
+that already has a slope.
 
-Which callers get which follows vanilla: the BFG spray (`A_BFGSpray` calls `P_AimLineAttack`), the
-player's fist and chainsaw (`A_Punch`/`A_Saw`) and a free player pellet (`P_BulletSlope`) are all
-aims and take the cone; a monster's bullet already carries the slope `shotPath` sloped it to
+**The cone narrows at every opening it crosses short of the body**, as `PTR_AimTraverse` narrows
+`bottomslope`/`topslope` at each two-sided line and stops at a solid one (`World.narrowWedge`, the
+walk `shotPath`'s wedge shares). A fixed slope needs no such step: its own trace already stopped at
+the geometry. Repro: TLM.wad MAP03, the mancubus at (-561, -604) behind the barred window north of
+it (sill 4 under the fire height). `tests/game/pellet-over-target.test.ts` pins it.
+
+Which callers get which follows vanilla: the BFG spray (`A_BFGSpray` calls
+`P_AimLineAttack`) and the player's fist and chainsaw (`A_Punch`/`A_Saw`) are aims and take the
+cone; a monster's bullet already carries the slope `shotPath` sloped it to
 (`monsters/attacks.ts: resolveBullet`) and passes that, so another monster blocks the bolt only
 where the bolt genuinely crosses its body. **A player is tested on the same span**
 (`raycastPlayers`): `PTR_ShootTraverse` makes no exception for `MT_PLAYER`, and a box-only test let
 a bolt hit a player it passed far over or under — a gunner on a ledge shooting across the room hit
 the player standing at the ledge's foot. `tests/game/monster-bullet-over-player.test.ts`.
 
-**A *locked* pellet passes its slope too**, and that is the one thing here that is not simply
+**A free player pellet takes no cone — a deliberate deviation.** Vanilla's `P_BulletSlope` aims
+one: any body within ±32° of the facing is found and the bullet sloped onto it. Here the pointer is
+that aim — a body under it is locked (§ Auto-aim) — so a free pellet flies the slope `shotPath`
+fired, flat or a shoot-wall's (`ShotPath.slope`), and hits only a body that line crosses. Repro: DOOM2 MAP22
+(rudy2.wad's DEHACKED), the player on the pit's west edge at (-682, -272), pointing at the wall
+above the teleporter at (-352, -288): the MiniMaster at (-432, -288) sits 168 below, inside the cone.
+The cost: a body on a lower or higher step than the fire height takes a lock to hit.
+`tests/game/pellet-over-target.test.ts`.
+
+**A *locked* pellet passes its slope too**, and that is the other thing here that is not simply
 vanilla's split. Its body trace (§ How a shot deals damage) carries the slope the lock resolved —
 `ShotPath.slope`, returned by `shotPath` rather than recovered from `(z - origin.z) / dist`, which a
 zero-length path loses outright — so a body blocks it only where the line genuinely crosses one,

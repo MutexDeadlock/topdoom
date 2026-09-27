@@ -21,7 +21,6 @@ import {
 import { pRandom } from '../util/random.ts';
 import { DOOM_TIC } from '../constants.ts';
 import {
-  AIM_SLOPE_LIMIT,
   BARREL_CHAIN,
   BARREL_HEALTH,
   BARREL_MASS,
@@ -1006,10 +1005,6 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   ): (MonsterRef & { dist: number }) | null {
     const dx = cos(angleRad);
     const dy = sin(angleRad);
-    // The span this trace reaches vertically: one slope for a shot that already has one,
-    // `P_AimLineAttack`'s cone for a trace that is an aim. docs/combat.md § The vertical test.
-    const topSlope = opts?.slope ?? AIM_SLOPE_LIMIT;
-    const bottomSlope = opts?.slope ?? -AIM_SLOPE_LIMIT;
     let nearest: (MonsterRef & { dist: number }) | null = null;
     // Grid-backed rather than a scan of every thing, and sized to clear the widest body this map
     // holds — docs/monster-ai.md § Spatial indexing.
@@ -1026,11 +1021,8 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
       // thing's real bounding box. docs/combat.md § How a shot deals damage.
       const t = traceHitsBox(origin.x, origin.y, dx, dy, p.x, p.y, p.blockRadius);
       if (t === null || t > maxDist || (nearest && t >= nearest.dist)) return;
-      // `PTR_AimTraverse`'s vertical test: the slopes reaching this body's feet and top have to
-      // overlap the span above. Guarded against a zero distance, where both run to infinity.
-      const dist = Math.max(t, 1e-6);
-      if ((p.z + p.bodyHeight - origin.z) / dist < bottomSlope) return; // over it
-      if ((p.z - origin.z) / dist > topSlope) return; // under it
+      // In height too, on the shot's own slope or the aim cone. docs/combat.md § The vertical test.
+      if (!world.shotReachesBody(origin, angleRad, t, { feet: p.z, height: p.bodyHeight }, opts?.slope)) return;
       nearest = {
         id: p.id,
         x: origin.x + dx * t,

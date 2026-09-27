@@ -171,7 +171,10 @@ export class ProjectileLayer {
         const relY = target.y - origin.y;
         const along = relX * dirX + relY * dirY;
         const perp = Math.abs(relX * dirY - relY * dirX);
-        const missZ = Math.abs(slopeOffset) * along;
+        // The fired slope's height at the body — the slope fired, not the one aimed.
+        // docs/combat.md § How a shot deals damage.
+        const zAt = origin.z + path.slope * along;
+        const missZ = Math.abs(zAt - (target.z + half));
         // A player lock is tested at the player's own box; a monster's at the shared hitbox.
         const lockRadius = target.id < 0 ? PLAYER_RADIUS : MONSTER_HIT_RADIUS;
         const lockHeight = target.id < 0 ? PLAYER_HEIGHT : MONSTER_LOCK_HEIGHT;
@@ -180,17 +183,16 @@ export class ProjectileLayer {
           hitMonsterId = target.id;
           endX = origin.x + dirX * along;
           endY = origin.y + dirY * along;
-          endZ = origin.z + path.slope * along;
+          endZ = zAt;
           reach = along;
         }
       }
       // Every body on the pellet's line short of `reach`, locked on or not: the nearest takes it,
       // so one standing in front of the target or between the player and the wall isn't invisible
-      // to the shot. A locked pellet carries the slope the lock resolved, so a body blocks it only
-      // where the line genuinely crosses one — which is what lets the super shotgun's vertical
-      // spread miss; a shot with no lock keeps the aim cone. docs/combat.md § The vertical test.
-      const slope = target !== null && path.dist > 0 ? path.slope : undefined;
-      const monsterHit = raycastBody(this.ctx, origin, shot.angleRad, reach, shooter, slope);
+      // to the shot. Every pellet carries the slope it flies; a free one deliberately takes no aim
+      // cone, since here the pointer is the aim and `P_BulletSlope`'s cone hit bodies below the
+      // wall pointed at. docs/combat.md § The vertical test.
+      const monsterHit = raycastBody(this.ctx, origin, shot.angleRad, reach, shooter, path.slope);
       // The locked target answering the trace itself is the hit already found.
       if (monsterHit && monsterHit.id !== hitMonsterId) {
         hitMonsterId = monsterHit.id;

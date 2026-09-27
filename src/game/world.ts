@@ -34,6 +34,13 @@ export const ANY_HEIGHT = Infinity;
  */
 const WALL_OVERLAP = 0.25;
 
+/**
+ * The vertical half-angle `P_AimLineAttack` searches, as a slope: its `topslope = 100*FRACUNIT/160`
+ * and `bottomslope = -100*FRACUNIT/160` (`p_map.c`). The span a body's own slope range has to
+ * overlap when {@link World.shotReachesBody} runs as an aim — docs/combat.md § The vertical test.
+ */
+export const AIM_SLOPE_LIMIT = 100 / 160;
+
 export interface Opening {
   top: number;
   bottom: number;
@@ -282,6 +289,14 @@ export interface ShotLock {
    * wedge clamps.
    */
   slopeOffset: number;
+}
+
+/** A body a shot is tested against in height — {@link World.shotReachesBody}'s `body`. */
+export interface BodySpan {
+  /** The body's feet height. */
+  feet: number;
+  /** Its real height, `mobjinfo.height`. */
+  height: number;
 }
 
 /**
@@ -1810,6 +1825,29 @@ export class World {
   }
 
   /**
+   * Whether a shot from `origin` along `angleRad` reaches `body`, standing `dist` out, in height —
+   * `PTR_AimTraverse`'s vertical test: the slopes to the body's feet and top have to overlap the
+   * shot's span. A shot with a `slope` flies that one line. Without one it is an aim, and takes
+   * `P_AimLineAttack`'s ±{@link AIM_SLOPE_LIMIT} cone narrowed at every opening crossed short of
+   * the body and shut by a solid wall; a fixed slope's own trace already stopped at the geometry.
+   * docs/combat.md § The vertical test.
+   */
+  shotReachesBody(origin: Pos3, angleRad: number, dist: number, body: BodySpan, slope: number | undefined): boolean {
+    // Guarded against a zero distance, where both slopes run to infinity.
+    const d = Math.max(dist, 1e-6);
+    const bodyTop = (body.feet + body.height - origin.z) / d;
+    const bodyBottom = (body.feet - origin.z) / d;
+    if (slope !== undefined) return bodyBottom <= slope && slope <= bodyTop;
+    const bottomSlope = Math.max(bodyBottom, -AIM_SLOPE_LIMIT);
+    const topSlope = Math.min(bodyTop, AIM_SLOPE_LIMIT);
+    if (topSlope < bottomSlope) return false;
+    if (dist <= 0) return true;
+    const tx = origin.x + cos(angleRad) * dist;
+    const ty = origin.y + sin(angleRad) * dist;
+    return this.narrowWedge(this.sortedCrossings(origin.x, origin.y, tx, ty), dist, origin.z, bottomSlope, topSlope, dist) !== null;
+  }
+
+  /**
    * Traces a shot fired from `origin` along `angleRad` and returns where it ends up, stopped at
    * the nearest line that blocks it — a hitscan weapon's tracer endpoint. A missile takes only the
    * slope, from {@link World.aimSlope}.
@@ -2080,7 +2118,7 @@ export class World {
   /**
    * Every line the segment (x1, y1)-(x2, y2) crosses, nearest first, with the fraction along it
    * each crossing sits at — off {@link World.lineOverlapEnds}, which carries the corner-leak
-   * extension documented on {@link WALL_OVERLAP}. The order {@link World.wedgeSlope} narrows in.
+   * extension documented on {@link WALL_OVERLAP}. The order {@link World.narrowWedge} narrows in.
    */
   private sortedCrossings(x1: number, y1: number, x2: number, y2: number): { t: number; i: number }[] {
     const ends = this.lineOverlapEnds;
@@ -2119,30 +2157,46 @@ export class World {
     // `[z, z + height]`. Measured at the target's *own* distance, which is where its half-height
     // subtends that angle.
     const spread = toTarget > 0 ? lock.halfHeight / toTarget : 0;
-    let bottomSlope = slope - spread;
-    let topSlope = slope + spread;
+    // Geometry that stops the wedge short is `P_AimLineAttack` with no `linetarget`, which returns
+    // 0 rather than `aimslope` (`p_map.c`), so the shot goes out flat.
+    const wedge = this.narrowWedge(crossings, span, z, slope - spread, slope + spread, toTarget);
+    if (wedge === null) return lock.slopeOffset;
+    return (wedge.bottom + wedge.top) / 2 + lock.slopeOffset;
+  }
+
+  /**
+   * `PTR_AimTraverse`'s narrowing: `[bottomSlope, topSlope]` closed against every opening among
+   * `crossings` short of `upTo`, or null where a solid wall, a shut door or the openings
+   * themselves shut it.
+   *
+   * @param crossings  nearest first, as {@link World.sortedCrossings} gathers them
+   * @param span       the length of the segment their `t` are fractions of
+   * @param z          the fire height
+   */
+  private narrowWedge(
+    crossings: readonly { t: number; i: number }[],
+    span: number,
+    z: number,
+    bottomSlope: number,
+    topSlope: number,
+    upTo: number,
+  ): { bottom: number; top: number } | null {
+    const opening = this.openingScratch;
     for (const { t, i } of crossings) {
       const d = span * t;
-      // Past the target: the aim traverse has found what it was looking for and ends here.
-      if (d > toTarget) break;
+      // Past the body: the aim traverse has found what it was looking for and ends here.
+      if (d > upTo) break;
       // A genuinely solid wall or a shut door stops any shot outright, the same two cases
-      // `blocksShot` leads with. Geometry that stops the wedge short is `P_AimLineAttack` with no
-      // `linetarget`, which returns 0 rather than `aimslope` (`p_map.c`), so the shot goes out
-      // flat.
-      const line = this.map.linedefs[i];
-      const twoSided = line.left !== NO_SIDE && line.right !== NO_SIDE;
-      const opening = twoSided ? this.openingOf(i) : null;
-      if (!opening || opening.top <= opening.bottom) {
-        return lock.slopeOffset;
-      }
+      // `blocksShot` leads with.
+      if (!this.openingInto(i, opening) || opening.top <= opening.bottom) return null;
       if (d <= 0) continue; // a line the shot starts on contributes no constraint
       const bottom = (opening.bottom - z) / d;
-      const topOfGap = (opening.top - z) / d;
+      const top = (opening.top - z) / d;
       if (bottom > bottomSlope) bottomSlope = bottom;
-      if (topOfGap < topSlope) topSlope = topOfGap;
-      if (topSlope <= bottomSlope) return lock.slopeOffset;
+      if (top < topSlope) topSlope = top;
+      if (topSlope <= bottomSlope) return null;
     }
-    return (bottomSlope + topSlope) / 2 + lock.slopeOffset;
+    return { bottom: bottomSlope, top: topSlope };
   }
 
   /**

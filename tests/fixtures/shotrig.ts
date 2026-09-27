@@ -78,8 +78,8 @@ export function rocket(splash: ProjectileShot['splash'] = null): ProjectileShot 
 /**
  * A shooter standing at `at` on `level` — a `gridMap`, or a loaded map's `World` — and `bodies`
  * for its shots to hit. The bodies stand in for `ThingLayer.raycastMonster` through the same
- * {@link traceHitsBox} diagonal, nearest first — with no vertical test, so a scene that needs one
- * belongs to the real thing layer. A missile is offered every body and runs its own contact test.
+ * {@link traceHitsBox} diagonal and vertical test, nearest first. A missile is offered every body
+ * and runs its own contact test.
  */
 export function shotRig(level: { map: DoomMap }, at: { x: number; y: number }, bodies: MonsterRef[]): ShotRig {
   const world = new World(level.map);
@@ -89,13 +89,14 @@ export function shotRig(level: { map: DoomMap }, at: { x: number; y: number }, b
   const tracers: Pos3[] = [];
   const impacts: Pos3[] = [];
   const things = {
-    raycastMonster(o: Pos3, angleRad: number, maxDist: number) {
+    raycastMonster(o: Pos3, angleRad: number, maxDist: number, opts?: { slope?: number }) {
       const dirX = Math.cos(angleRad);
       const dirY = Math.sin(angleRad);
       let best: (MonsterRef & { dist: number }) | null = null;
       for (const b of bodies) {
         const dist = traceHitsBox(o.x, o.y, dirX, dirY, b.x, b.y, b.radius);
         if (dist === null || dist > maxDist || (best && dist >= best.dist)) continue;
+        if (!world.shotReachesBody(o, angleRad, dist, { feet: b.z, height: b.height }, opts?.slope)) continue;
         best = { ...b, x: o.x + dirX * dist, y: o.y + dirY * dist, dist };
       }
       return best;

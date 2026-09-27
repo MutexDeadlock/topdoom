@@ -13,7 +13,7 @@ import { PLAYER_HEIGHT, PLAYER_RADIUS, type Player } from './player.ts';
 import type { BarrelExplosion, ThingLayer } from './things.ts';
 import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './things/tables.ts';
 import { ThingType } from './things/doomednums.ts';
-import { AIM_SLOPE_LIMIT, slotOfTarget, targetOfSlot, type MonsterRef } from './things/defs.ts';
+import { slotOfTarget, targetOfSlot, type MonsterRef } from './things/defs.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { blastDistanceToBox, traceHitsBox } from '../util/geom.ts';
 import { cos, sin } from '../util/fdlibm.ts';
@@ -186,17 +186,13 @@ export function raycastPlayers(
 ): (MonsterRef & { dist: number }) | null {
   const dx = cos(angleRad);
   const dy = sin(angleRad);
-  const topSlope = slope ?? AIM_SLOPE_LIMIT;
-  const bottomSlope = slope ?? -AIM_SLOPE_LIMIT;
   let nearest: (MonsterRef & { dist: number }) | null = null;
   for (let slot = 0; slot < ctx.slots.length; slot++) {
     const { player, dead } = ctx.slots[slot];
     if (slot === shooter || dead) continue;
     const t = traceHitsBox(origin.x, origin.y, dx, dy, player.x, player.y, PLAYER_RADIUS);
     if (t === null || t > maxDist || (nearest && t >= nearest.dist)) continue;
-    const dist = Math.max(t, 1e-6);
-    if ((player.z + PLAYER_HEIGHT - origin.z) / dist < bottomSlope) continue;
-    if ((player.z - origin.z) / dist > topSlope) continue;
+    if (!ctx.world.shotReachesBody(origin, angleRad, t, { feet: player.z, height: PLAYER_HEIGHT }, slope)) continue;
     nearest = playerRef(slot, player, origin.x + dx * t, origin.y + dy * t, t);
   }
   return nearest;

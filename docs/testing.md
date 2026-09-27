@@ -311,7 +311,7 @@ restored to 0. It returns `grid`, `world` and `layer`.
 map's `World` — fires a player's hitscan (`fire`) or
 missile (`launch`, then `fly` a tic at a time until `inFlight()` is 0) at hand-placed `MonsterRef`s
 with no thing layer — the bodies answer for `ThingLayer.raycastMonster` through the same
-`traceHitsBox` diagonal, with no vertical test — and records every hit with its amount and origin,
+`traceHitsBox` diagonal and `World.shotReachesBody` — and records every hit with its amount and origin,
 blood splash, tracer end and explosion. `impBody(id, at)` is an imp's `MonsterRef`, `rocket(splash?)`
 a rocket fired east, and `SHOT_ROOM` the open room a pellet test fires across.
 

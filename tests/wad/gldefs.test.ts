@@ -56,12 +56,14 @@ describe('GLDEFS · the grammar', () => {
   });
 
   test('the flag keys are read, whether or not they carry a value', () => {
-    const g = parseGldefs('pulselight P { color 1 1 1  size 20  dontlightself 1  subtractive 1 }');
+    const g = parseGldefs('pulselight P { color 1 1 1  size 20  dontlightself 1  attenuate 1  subtractive 1 }');
     const d = g.lights.get('P')!;
     assert.equal(d.dontLightSelf, true);
+    assert.equal(d.attenuate, true);
     assert.equal(d.subtractive, true);
     const off = parseGldefs('pulselight Q { color 1 1 1  size 20  dontlightself 0 }');
     assert.equal(off.lights.get('Q')!.dontLightSelf, false);
+    assert.equal(off.lights.get('Q')!.attenuate, false);
   });
 
   test('keywords and names are case-insensitive, and names are stored uppercased', () => {

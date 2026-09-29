@@ -3,12 +3,15 @@ v0.21.2 (2026-09-2?)
 Features and improvements
   - main menu: switching to a tab with a filter focuses it
   - low-resolution setting (75%) for weaker GPUs
+  - dynamic lights honour GLDEFS attenuate: surfaces turned away from a
+    light take less of it
 
 Fixed bugs
   - a shot a window sill forces flat no longer hits the monster below
     it passes over
   - a shot not aimed at a monster flies flat: pointing at a wall no
     longer hits the monster standing below it
+  - dynamic lights no longer light a wall from behind
 
 
 ===============================================================================

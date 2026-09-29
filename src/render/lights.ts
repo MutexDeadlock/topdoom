@@ -70,12 +70,27 @@ export const EMPTY_SLOT = 0xff;
 export const EMPTY_WORD = 0xffffffff;
 
 /**
- * How far past its nearest blocker a fragment may still be lit, so a lit wall face — at exactly the
- * blocker distance — does not shadow itself. **Tuned by feel**, bounded on both sides: below about
- * 2 the faces flicker on shallow angles, and above the thickness of the thinnest wall a map draws
- * the far side of that wall lights up too.
+ * How far past its nearest blocker a wall fragment may still be lit, so a lit wall face — at
+ * exactly the blocker distance — does not shadow itself. **Tuned by feel**, bounded on both sides:
+ * below about 2 the faces flicker on shallow angles, and above the thickness of the thinnest wall a
+ * map draws the far side of that wall lights up too.
  */
 export const SHADOW_BIAS = 4;
+
+/**
+ * {@link SHADOW_BIAS} for a floor or ceiling, which never lies on a blocker: at the wall's bias the
+ * floor strip just behind a wall is lit. **Tuned by feel**; docs/lights.md § Shadows.
+ */
+export const FLAT_SHADOW_BIAS = 1;
+
+/**
+ * How far behind a surface's plane, in map units, a light may stand and still light it. GZDoom
+ * rejects a light behind the surface outright (`lightContribution`, `material_normal.fp`); the
+ * slack is ours, because the normal here comes from screen-space derivatives and a light standing
+ * *in* the plane — a floor-level offset — would otherwise speckle on their noise. **Tuned by
+ * feel**; docs/lights.md § Back faces.
+ */
+export const BACKFACE_SLACK = 1;
 
 /**
  * How wide a shadow's edge is, as a half-width in angular bins: a fragment is lit by the fraction
@@ -213,7 +228,7 @@ export class DynamicLights {
   readonly uniforms = {
     uLightCount: { value: 0 },
     uLightPos: { value: new Float32Array(MAX_DYN_LIGHTS * 4) },
-    uLightColor: { value: new Float32Array(MAX_DYN_LIGHTS * 3) },
+    uLightColor: { value: new Float32Array(MAX_DYN_LIGHTS * 4) },
     /** Light cell -> compacted list of lights reaching it. See {@link DynamicLights.bindLevel}. */
     uLightVis: { value: makeVisTexture(new Uint32Array(VIS_WORDS).fill(EMPTY_WORD), 1, 1) },
     /**
@@ -467,9 +482,11 @@ export class DynamicLights {
       pos[i * 4 + 3] = e.radius;
       // The one place a light's colour is published, so `sampleLight`'s sprite tint and the
       // geometry shader cannot disagree about how bright a dimmed offer is.
-      col[i * 3] = e.def.r * e.intensity;
-      col[i * 3 + 1] = e.def.g * e.intensity;
-      col[i * 3 + 2] = e.def.b * e.intensity;
+      col[i * 4] = e.def.r * e.intensity;
+      col[i * 4 + 1] = e.def.g * e.intensity;
+      col[i * 4 + 2] = e.def.b * e.intensity;
+      // The `attenuate` flag, which only geometry reads: a sprite has no normal to weigh it by.
+      col[i * 4 + 3] = e.def.attenuate ? 1 : 0;
       c.x[i] = e.x;
       c.y[i] = e.y;
       c.z[i] = e.z;
@@ -670,9 +687,9 @@ export class DynamicLights {
     // GZDoom's own linear falloff (`shaders/glsl/main.fp`), matching the shader half.
     const att = ((radius - Math.sqrt(distSq)) / radius) * lit;
     const col = this.lightColor;
-    out.r += col[i * 3] * att;
-    out.g += col[i * 3 + 1] * att;
-    out.b += col[i * 3 + 2] * att;
+    out.r += col[i * 4] * att;
+    out.g += col[i * 4 + 1] * att;
+    out.b += col[i * 4 + 2] * att;
   }
 }
 

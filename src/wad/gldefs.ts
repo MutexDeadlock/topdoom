@@ -63,6 +63,11 @@ export interface LightDef {
    * paths).
    */
   dontLightSelf: boolean;
+  /**
+   * GZDoom's `attenuate`: geometry takes this light weighted by N·L, not at the plain falloff
+   * alone. docs/lights.md § Attenuate.
+   */
+  attenuate: boolean;
   /** Parsed but never rendered — see docs/lights.md § Falloff and what is not reproduced. */
   subtractive: boolean;
 }
@@ -214,13 +219,18 @@ export function parseGldefs(text: string, into: Gldefs = emptyGldefs()): Gldefs 
             def.dontLightSelf = v === null ? true : v !== 0;
             break;
           }
+          case 'attenuate': {
+            const v = num();
+            def.attenuate = v === null ? true : v !== 0;
+            break;
+          }
           case 'subtractive': {
             const v = num();
             def.subtractive = v === null ? true : v !== 0;
             break;
           }
           default:
-            // An unrecognised key (`attenuate`, `additive`, `spot`, `halo`, …): drop whatever
+            // An unrecognised key (`additive`, `spot`, `halo`, …): drop whatever
             // numbers follow it and carry on with the next key.
             while (num() !== null);
             break;
@@ -378,6 +388,7 @@ function blankLight(kind: LightKind): LightDef {
     offY: 0,
     offZ: 0,
     dontLightSelf: false,
+    attenuate: false,
     subtractive: false,
   };
 }

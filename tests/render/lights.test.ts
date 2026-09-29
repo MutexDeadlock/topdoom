@@ -96,6 +96,8 @@ describe('Dynamic lights · what reaches the uniforms', () => {
     // three's (x, y, z) is DOOM's (x, z, -y) — docs/render.md § Mesh building.
     assert.deepEqual([...l.uniforms.uLightPos.value.slice(0, 3)], [100, 0, -200]);
     assert.deepEqual([...l.uniforms.uLightColor.value.slice(0, 3)], [1.0, 0.5, 0.25]);
+    // Alpha is the attenuate flag, which PT does not set.
+    assert.equal(l.uniforms.uLightColor.value[3], 0);
   });
 
   test('the radius a light reaches is its GLDEFS size scaled by the dial', () => {

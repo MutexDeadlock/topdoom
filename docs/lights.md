@@ -245,6 +245,10 @@ that only ever sees the map from above: the world the shadow is cast in is two-d
 - **`SHADOW_BIAS` is why a lit wall does not shadow itself.** The wall casting the shadow sits at
   exactly the blocker distance, so a fragment is lit out to `blocker + BIAS`. That bias must stay
   under the thinnest wall a map draws, or the *far* side of that wall lights up too.
+- **Floors and ceilings take `FLAT_SHADOW_BIAS` instead**, picked by the fragment's normal
+  (§ Back faces): they never lie on a blocker, and at the wall's bias the floor strip just behind
+  a wall is lit. Repro: DOOM2 MAP22, the torch niches' pillars, whose outer foot glowed.
+  Sprites keep `SHADOW_BIAS`: a thing's centre never stands that close behind a wall.
 - The lookup is behind the falloff test in the shader, so only fragments a light actually reaches
   pay for the `atan` and the fetch.
 
@@ -277,6 +281,32 @@ the fragment clears its blocker.
 
 The cost is four `texelFetch`es where there was one, paid only by fragments a light actually
 reaches — the falloff test still gates the whole lookup.
+
+### Back faces
+
+A surface is lit only from its front: a light more than `BACKFACE_SLACK` behind the fragment's
+plane skips it, as GZDoom rejects one "from the backside" for every light (`lightContribution`,
+`material_normal.fp`). Neither test above catches this — a one-sided wall's drawn face lies at
+exactly its own blocker distance, so `SHADOW_BIAS` lights it, and the leaf it looks into may be
+reached round the other way. Repro: DOOM2 MAP22, the green torch in sector 126 lit the south face
+of line 609 behind it.
+
+- **The normal comes from `dFdx`/`dFdy` of the world position**, no vertex attribute: their cross
+  always points to the camera's side of the plane, which is the side being drawn. It is taken
+  before the loop, since derivatives need uniform control flow.
+- **The slack is ours**: a light standing in the plane (a floor-level offset) would otherwise
+  speckle on the derivatives' noise.
+- **Sprites are not tested** — a billboard has no meaningful back.
+- **The same normal carries `attenuate`** (§ Attenuate).
+
+### Attenuate
+
+A light that sets `attenuate` — every one in the stock file — lights geometry at the falloff times
+`clamp(N·L, 0, 1)`, as GZDoom's `lightContribution` does for a light flagged attenuated
+(`material_normal.fp`; the flag rides the sign of the shadow index, `hw_dynlightdata.cpp`). Here it
+rides `uLightColor.a`. A wall facing the light takes it full; one it grazes, and a floor far from
+a torch, take less. Sprites ignore it, as GZDoom's `hw_spritelight.cpp` does: a billboard has no
+normal.
 
 ### How the answer reaches a fragment
 
@@ -428,10 +458,9 @@ scene agree.
 
 Deliberate deviations, all documented at their declarations:
 
-- **`attenuate` is ignored.** In GZDoom it switches the light to an N·L diffuse term; this
-  pipeline has no normals (walls and flats are `MeshBasicMaterial` with baked vertex colour), so
-  there is nothing to dot against. Every light in the stock file sets it, and all of them render
-  as the plain linear falloff.
+- **GZDoom's z fudge is not reproduced.** It keeps a light 5 units off its emitter's floor and
+  ceiling (`FDynamicLight::UpdateLocation`) so N·L cannot blank those planes; nothing in the stock
+  file sits that low, and `offer` has no floor height to clamp to.
 - **`subtractive` is parsed and never rendered.** The only user in the stock file is the spectre's
   light, whose binding is commented out anyway.
 

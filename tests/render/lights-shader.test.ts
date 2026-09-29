@@ -75,7 +75,7 @@ describe('Dynamic lights · the geometry shader patch', () => {
     assert.ok(vertex.includes('vDynWorldPos = (modelMatrix'), 'the varying is never written');
     assert.ok(fragment.includes('varying vec3 vDynWorldPos;'), 'the varying never reaches the fragment stage');
     assert.ok(fragment.includes(`uniform vec4 uLightPos[${MAX_DYN_LIGHTS}]`), 'no light uniforms');
-    assert.ok(fragment.includes('dynLight += uLightColor[i] * att * lit;'), 'no accumulation loop');
+    assert.ok(fragment.includes('dynLight += uLightColor[i].rgb * att * lit;'), 'no accumulation loop');
   });
 
   test('the visibility gate is wired: attribute, vertex-side fetch, flat varying and the slot walk', () => {

@@ -6,12 +6,14 @@
 import * as THREE from 'three';
 import type { Bitmap, GraphicsBank } from '../wad/graphics.ts';
 import {
+  BACKFACE_SLACK,
   BIN_HALF,
   BIN_PER_RADIAN,
   EMPTY_SLOT,
   EMPTY_WORD,
   MAX_DYN_LIGHTS,
   MAX_LIGHTS_PER_LEAF,
+  FLAT_SHADOW_BIAS,
   SHADOW_BIAS,
   SHADOW_SOFT_BINS,
   SHADOW_STEPS,
@@ -64,6 +66,14 @@ const DYN_LIGHT_FRAGMENT = /* glsl */ `
             // geometry: there is no leaf list to walk.
             if (uLightCount > 0 && uLightVisWidth > 0) {
               vec3 dynLight = vec3(0.0);
+              // The surface's normal from the world position's screen derivatives, which always
+              // points to the camera's side of the plane — the side being drawn. Taken before the
+              // loop: derivatives need uniform control flow, and the loop's continue/break isn't.
+              // docs/lights.md § Back faces.
+              vec3 dynNormal = normalize(cross(dFdx(vDynWorldPos), dFdy(vDynWorldPos)));
+              // A wall needs the shadow bias to light itself; a floor or ceiling, never on a
+              // blocker, takes the small one. docs/lights.md § Shadows.
+              float shadowBias = mix(${glslFloat(SHADOW_BIAS)}, ${glslFloat(FLAT_SHADOW_BIAS)}, abs(dynNormal.y));
               // The leaf's light list comes in flat from the vertex stage — see the vertex patch
               // below. The loop walks only the lights that reached this leaf, not the committed
               // set: on a light-saturated map the committed set is 64 while a leaf holds a
@@ -85,6 +95,13 @@ const DYN_LIGHT_FRAGMENT = /* glsl */ `
                 // Ordered so the shadow lookup — an atan and a fetch — is only paid for by the
                 // fragments a light actually reaches.
                 if (att <= 0.0) continue;
+                // A light behind the face lights the other side of it, not this one.
+                vec3 toLight = uLightPos[i].xyz - vDynWorldPos;
+                float facing = dot(dynNormal, toLight);
+                if (facing < -${glslFloat(BACKFACE_SLACK)}) continue;
+                // GZDoom's attenuate, flagged in the colour's alpha: N·L on top of the falloff.
+                // docs/lights.md § Attenuate.
+                if (uLightColor[i].a > 0.0) att *= clamp(facing / max(dist, 1e-3), 0.0, 1.0);
                 vec2 rel = vDynWorldPos.xz - uLightPos[i].xz;
                 float flatDist = length(rel);
                 // The lit fraction of the arc [bin - soft, bin + soft], not the one bin the
@@ -101,11 +118,11 @@ const DYN_LIGHT_FRAGMENT = /* glsl */ `
                   // Wrapped, not clamped: the interval straddles bin 0 due west like any other.
                   b = b < 0 ? b + ${SHADOW_STEPS} : (b >= ${SHADOW_STEPS} ? b - ${SHADOW_STEPS} : b);
                   float blocker = texelFetch(uLightShadow, ivec2(b, i), 0).r;
-                  lit += max(w, 0.0) * step(flatDist, blocker + ${glslFloat(SHADOW_BIAS)});
+                  lit += max(w, 0.0) * step(flatDist, blocker + shadowBias);
                 }
                 lit /= ${SOFT_SPAN};
                 if (lit <= 0.0) continue;
-                dynLight += uLightColor[i] * att * lit;
+                dynLight += uLightColor[i].rgb * att * lit;
               }
               // Deliberately unclamped: the fullbright ceiling is three's own tone mapping, the
               // same per-channel saturate, and leaving the excess intact is what the bloom
@@ -266,7 +283,7 @@ export class MaterialBank {
             flat varying uvec4 vLightVis;
             uniform int uLightCount;
             uniform vec4 uLightPos[${MAX_DYN_LIGHTS}];
-            uniform vec3 uLightColor[${MAX_DYN_LIGHTS}];
+            uniform vec4 uLightColor[${MAX_DYN_LIGHTS}];
             uniform int uLightVisWidth;
             uniform sampler2D uLightShadow;`,
         );

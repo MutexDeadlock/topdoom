@@ -516,6 +516,22 @@ resolution sweep — docs/lights.md § Profiling has the recipe
 (`EXT_disjoint_timer_query_webgl2`, which GPU chromium is pointed at, sizing the drawing buffer like
 the player's). Halving a number that turns out to be 4% of the frame is how time gets wasted here.
 
+## Low resolution (`viewport.ts: getLowResolution`)
+
+The `lowResolution` setting (Settings → Visuals → Resolution, off by default) multiplies the pixel
+ratio by `LOW_RESOLUTION_SCALE` (0.75) after its cap at 2, so the drawing buffer shrinks and the
+browser stretches the canvas back over the window. Since a frame costs per pixel (§ What a frame
+costs), this is the lever for a weak GPU: 56% of the pixels. **One step only, on purpose**: 50%
+looks too coarse, and a player that far short should turn effects off first (dynamic lights, bloom).
+
+- **Read per frame in `Viewport.present`**, which applies it to the running level and also picks
+  up a browser zoom that changes `devicePixelRatio` mid-session. `Bloom` re-reads the drawing
+  buffer's size on every render, so it follows.
+- **The context's MSAA does not follow.** `antialias` is fixed when the WebGL context is created,
+  so it is decided at the ratio the session starts at. A toggle mid-session keeps the old
+  choice until the page reloads. The bloom chain's own MSAA (docs/lights.md § Bloom and the
+  canvas's MSAA) reads the live ratio.
+
 ## The void floor (`voidfloor.ts`)
 
 One plane under the whole level carrying a slow drift of fog, so the space around the map geometry

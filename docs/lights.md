@@ -49,7 +49,7 @@ drops the numbers that follow it, and a malformed block warns rather than throwi
 | `pointlight` | Fixed at `size`. |
 | `pulselight` | Sine-cycles between `size` and `secondarySize` over `interval` seconds — GZDoom's `CYCLE_Sin` cycler. |
 | `flickerlight` | Per tic, probability `chance` of `size`, else `secondarySize`. A hard switch, not a blend. |
-| `flickerlight2` | A random blend of the two sizes, rerolled every `interval` seconds. |
+| `flickerlight2` | A random blend of the two sizes, rerolled every `interval` seconds. **Deliberately not GZDoom's**: it stores this `interval` as `interval * 360` tics (`gldefs.cpp: ParseFlickerLight2`) and rerolls one tic past that, about once a second for the stock torches' 0.1. Ten times a second reads as fire; once a second as a lamp changing size. |
 
 Three parse details are load-bearing:
 

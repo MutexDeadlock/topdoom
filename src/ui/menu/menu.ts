@@ -29,6 +29,7 @@ import { getCeilingTrims, setCeilingTrims } from '../../render/mapmesh/walls.ts'
 import { getBloom, setBloom } from '../../render/bloom.ts';
 import { getWallShade, setWallShade } from '../../render/wallshadow.ts';
 import { getSkyTint, setSkyTint } from '../../render/skytint.ts';
+import { getLowResolution, setLowResolution } from '../../render/viewport.ts';
 import { getPickupPuff, setPickupPuff } from '../../game/spritefx.ts';
 import {
   getPlayerSpriteMode,
@@ -160,37 +161,44 @@ interface StoredSelection {
  */
 export class Menu {
   private root = el<HTMLDivElement>('menu');
+  private resumeButton = el<HTMLButtonElement>('resume-button');
+  private statusEl = el<HTMLSpanElement>('menu-status');
+  // "New Game"
   private iwadSelect = el<HTMLSelectElement>('iwad-select');
   private pwadList = el<HTMLDivElement>('pwad-list');
   private levelSelect = el<HTMLSelectElement>('level-select');
   private skillSelect = el<HTMLSelectElement>('skill-select');
   private startButton = el<HTMLButtonElement>('start-button');
-  private resumeButton = el<HTMLButtonElement>('resume-button');
-  private statusEl = el<HTMLSpanElement>('menu-status');
   private fileInput = el<HTMLInputElement>('file-input');
+  // Settings -> Audio
   private masterSlider = el<HTMLInputElement>('master-volume-slider');
   private masterValue = el<HTMLSpanElement>('master-volume-value');
   private volumeSlider = el<HTMLInputElement>('volume-slider');
   private volumeValue = el<HTMLSpanElement>('volume-value');
   private musicSlider = el<HTMLInputElement>('music-volume-slider');
   private musicValue = el<HTMLSpanElement>('music-volume-value');
+  // Settings -> Controls
   private autorunCheckbox = el<HTMLInputElement>('autorun-checkbox');
   private shiftAction = el<HTMLSpanElement>('shift-action');
   private rightMouseSelect = el<HTMLSelectElement>('rightmouse-select');
+  // Settings -> Visuals
   private cameraModeSelect = el<HTMLSelectElement>('cameramode-select');
   private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
-  private playerSpritesSelect = el<HTMLSelectElement>('playersprites-select');
-  private hudMessagesSelect = el<HTMLSelectElement>('hudmessages-select');
-  private keyframeIntervalSelect = el<HTMLSelectElement>('keyframeinterval-select');
-  private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private dynLightsCheckbox = el<HTMLInputElement>('dynlights-checkbox');
   private voidFogCheckbox = el<HTMLInputElement>('voidfog-checkbox');
   private solidCapsCheckbox = el<HTMLInputElement>('solidcaps-checkbox');
   private ceilingTrimsCheckbox = el<HTMLInputElement>('ceilingtrims-checkbox');
   private bloomCheckbox = el<HTMLInputElement>('bloom-checkbox');
+  private lowResCheckbox = el<HTMLInputElement>('lowres-checkbox');
   private wallShadeCheckbox = el<HTMLInputElement>('wallshade-checkbox');
   private skyTintCheckbox = el<HTMLInputElement>('skytint-checkbox');
   private pickupPuffCheckbox = el<HTMLInputElement>('pickuppuff-checkbox');
+  private playerSpritesSelect = el<HTMLSelectElement>('playersprites-select');
+  private hudMessagesSelect = el<HTMLSelectElement>('hudmessages-select');
+  // Settings -> Replays
+  private keyframeIntervalSelect = el<HTMLSelectElement>('keyframeinterval-select');
+  // Settings -> General
+  private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private pistolStartCheckbox = el<HTMLInputElement>('pistolstart-checkbox');
   private autoSwitchCheckbox = el<HTMLInputElement>('autoswitch-checkbox');
   private fpsCheckbox = el<HTMLInputElement>('fps-checkbox');
@@ -350,6 +358,7 @@ export class Menu {
     this.installToggle(this.skyTintCheckbox, getSkyTint, setSkyTint);
     this.installToggle(this.pickupPuffCheckbox, getPickupPuff, setPickupPuff);
     this.installToggle(this.bloomCheckbox, getBloom, setBloom);
+    this.installToggle(this.lowResCheckbox, getLowResolution, setLowResolution);
     this.installPlayerSprites();
     this.installHudMessages();
     this.installKeyframeInterval();

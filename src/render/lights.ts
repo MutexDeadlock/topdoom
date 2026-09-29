@@ -751,7 +751,11 @@ function animatedSize(def: LightDef, id: number, clock: number): number {
       return hash01(id, tic) < def.chance ? def.size : def.secondarySize;
     }
     case 'flicker2': {
-      // GZDoom rerolls a random blend between the sizes on an interval counter.
+      // A random blend between the sizes, rerolled every `interval` **seconds**. A deliberate
+      // deviation: GZDoom stores this `interval` as `interval * 360` tics, not `* TICRATE` as for a
+      // pulse (`gldefs.cpp: ParseFlickerLight2`), and holds each blend one tic past that
+      // (`a_dynlight.cpp`) — about a second for the stock torches' 0.1. Read as seconds they flicker
+      // ten times a second, which looks more like fire. docs/lights.md § The grammar.
       const bucket = def.interval > 0 ? Math.floor(clock / def.interval) : 0;
       return def.size + (def.secondarySize - def.size) * hash01(id, bucket);
     }

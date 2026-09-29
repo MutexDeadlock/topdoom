@@ -39,7 +39,11 @@ export interface LightDef {
    * `point`.
    */
   secondarySize: number;
-  /** Seconds per cycle, for `pulse` and `flicker2`. GZDoom stores `interval * TICRATE` tics. */
+  /**
+   * Seconds per cycle, for `pulse` and `flicker2`. GZDoom stores `interval * TICRATE` tics for a
+   * pulse but `interval * 360` for a `flicker2`, which this reads as seconds all the same — see
+   * `animatedSize` in `render/lights.ts`.
+   */
   interval: number;
   /**
    * Probability 0..1 of taking {@link LightDef.size} rather than {@link LightDef.secondarySize} on

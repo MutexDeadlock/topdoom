@@ -7,6 +7,33 @@ import { TopDownCamera } from './camera.ts';
 import { Bloom, getBloom } from './bloom.ts';
 import { GpuTimer } from './gputimer.ts';
 import { Input } from '../game/input.ts';
+import { readStorage, writeStorage } from '../util/storage.ts';
+
+const LOW_RESOLUTION_STORAGE_KEY = 'lowResolution';
+
+/**
+ * What the low-resolution setting scales the drawing buffer by, below the display's own pixel
+ * ratio: a bit over half the pixels. **Tuned by feel** — a frame's cost is per pixel
+ * (docs/render.md § What a frame costs), and this is the step that bought an integrated GPU its
+ * frame rate back while still looking right; 50% was too coarse to offer.
+ */
+const LOW_RESOLUTION_SCALE = 0.75;
+
+/**
+ * Whether the drawing buffer is scaled down by {@link LOW_RESOLUTION_SCALE}. Off by default, and
+ * read per frame by {@link Viewport.present}, so a change applies to the level already running.
+ * docs/render.md § Low resolution.
+ */
+let lowResolution = readStorage(LOW_RESOLUTION_STORAGE_KEY, false);
+
+export function getLowResolution(): boolean {
+  return lowResolution;
+}
+
+export function setLowResolution(enabled: boolean): void {
+  lowResolution = enabled;
+  writeStorage(LOW_RESOLUTION_STORAGE_KEY, enabled);
+}
 
 export class Viewport {
   readonly renderer: THREE.WebGLRenderer;
@@ -21,16 +48,15 @@ export class Viewport {
   private bloom: Bloom;
 
   constructor(container: HTMLElement) {
-    // Capped at 2 because the cost of this frame is per fragment almost end to end
-    // (docs/render.md § What a frame costs), and a ratio of 3 would triple it for pixels no panel
-    // this runs on can show apart.
-    const pixelRatio = Math.min(window.devicePixelRatio, 2);
-    // MSAA only where the pixel ratio is not already supersampling. At a ratio of 2 there are four
-    // device pixels per CSS pixel before MSAA adds a sample, and the only thing it can still smooth
-    // is a geometry silhouette: the textures are point-sampled (`NearestFilter`,
-    // `render/textures.ts`) and the occlusion fade discards whole fragments, so neither gets
-    // anything from a coverage mask. It is not a small saving — 38% of the frame's GPU time,
-    // measured on an integrated GPU at every ratio. docs/render.md § What a frame costs.
+    const pixelRatio = targetPixelRatio();
+    // MSAA only where the pixel ratio is not already supersampling — decided once, at the ratio the
+    // session starts at, since a context's MSAA cannot change later (docs/render.md § Low
+    // resolution). At a ratio of 2 there are four device pixels per CSS pixel before MSAA adds a
+    // sample, and the only thing it can still smooth is a geometry silhouette: the textures are
+    // point-sampled (`NearestFilter`, `render/textures.ts`) and the occlusion fade discards whole
+    // fragments, so neither gets anything from a coverage mask. It is not a small saving — 38% of
+    // the frame's GPU time, measured on an integrated GPU at every ratio. docs/render.md § What a
+    // frame costs.
     const wantsAntialias = pixelRatio < 2;
     // Behind the bloom chain the canvas's own MSAA smooths nothing: the scene lands in a render
     // target and the only thing reaching the default framebuffer is one triangle covering it whole.
@@ -74,6 +100,11 @@ export class Viewport {
    * docs/lights.md § Bloom.
    */
   present(scene: THREE.Scene, camera: THREE.Camera): void {
+    // Checked per frame rather than on an event, which also catches a browser zoom changing
+    // `devicePixelRatio` under the running level. `setPixelRatio` resizes the drawing buffer, and
+    // the bloom chain re-reads that size on its next render.
+    const ratio = targetPixelRatio();
+    if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
     this.bloom.render(scene, camera);
   }
 
@@ -93,4 +124,14 @@ export class Viewport {
     canvas.getContext('2d')!.drawImage(src, 0, 0, width, height);
     return canvas.toDataURL('image/jpeg', 0.7);
   }
+}
+
+/**
+ * The drawing buffer's pixels per CSS pixel: the display's own, capped at 2 because the cost of this
+ * frame is per fragment almost end to end and a ratio of 3 would triple it for pixels no panel this
+ * runs on can show apart (docs/render.md § What a frame costs), then scaled down where
+ * {@link lowResolution} is on.
+ */
+function targetPixelRatio(): number {
+  return Math.min(window.devicePixelRatio, 2) * (lowResolution ? LOW_RESOLUTION_SCALE : 1);
 }

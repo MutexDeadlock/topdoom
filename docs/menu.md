@@ -221,7 +221,7 @@ not move to General with the rest.
 stacked full width, with `Debug / Dev` following them. Level start leads because it is the one of
 the two a player picks *before* a run rather than sets once and forgets.
 
-**Visuals is Camera, Frame rate, Lighting, Top-down extras, Messages, Player sprites** — everything that
+**Visuals is Camera, Frame rate, Lighting, Top-down extras, Resolution, Messages, Player sprites** — everything that
 changes what the running level *looks* like, in that order: the camera first, being the one a player
 actually goes looking for. Camera and Frame rate **share one `.columns even` row**: both are a
 heading over a single select, and stacked they cost two rows of the tab's height for one line of
@@ -242,7 +242,9 @@ The frame limit is `#fpscap-select`, and its `<option>` values *are* the capped 
 (`0` = unlimited; `60` is the default), so the control needs no mapping table. It is owned by `game.ts`
 (`getFpsCap`/`setFpsCap`), whose frame loop is the only thing it changes, and is read live per frame
 — changing it mid-level applies to the level already running, like volume and autorun. See
-docs/frameloop.md § The FPS cap for how a cap is actually held. Lighting is the one
+docs/frameloop.md § The FPS cap for how a cap is actually held. Resolution is the one
+`#lowres-checkbox`, in a row of its own under Lighting and Top-down extras, owned by
+`render/viewport.ts` and read per frame (docs/render.md § Low resolution). Lighting is the one
 `#dynlights-checkbox`, on by default and likewise read per frame, so it too takes effect without a
 reload (docs/lights.md § The toggle). Distance lighting has no row here on purpose —
 docs/render-lighting.md § It has no setting.
@@ -375,6 +377,7 @@ a setting touches one module.
 | `rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
 | `cameraMode` | `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) | docs/camera.md § Auto camera |
 | `fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
+| `lowResolution` | `render/viewport.ts` (`getLowResolution`/`setLowResolution`) | docs/render.md § Low resolution |
 | `fps` | `ui/hud/debug.ts` (`getFpsVisible`/`setFpsVisible`) | docs/devmode.md § FPS counter |
 | `profiler` | `ui/hud/profiler.ts` (`getProfilerVisible`/`setProfilerVisible`) | docs/devmode.md § Profiling overlay |
 | `hudMessages` | `ui/hud/messages.ts` (`getHudMessageMode`/`setHudMessageMode`) | docs/hud.md § HUD messages |

@@ -1,5 +1,8 @@
 v0.21.2 (2026-09-2?)
 
+Features and improvements
+  - low-resolution setting (75%) for weaker GPUs
+
 Fixed bugs
   - a shot a window sill forces flat no longer hits the monster below
     it passes over

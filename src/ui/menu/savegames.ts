@@ -84,6 +84,10 @@ export class SavegamesUi {
    * everything per tab indexes alike.
    */
   private lists = { save: el<HTMLDivElement>('save-list'), load: el<HTMLDivElement>('load-list') };
+  private filterInputs = {
+    save: el<HTMLInputElement>('save-filter'),
+    load: el<HTMLInputElement>('load-filter'),
+  };
   private nameInput = el<HTMLInputElement>('save-name');
   private saveButton = el<HTMLButtonElement>('save-button');
   private refusalHint = el<HTMLSpanElement>('save-refusal');
@@ -125,16 +129,12 @@ export class SavegamesUi {
     this.hooks = hooks;
     this.setStatus = setStatus;
     this.describe = describe;
-    // Spelled out rather than looped over the two tabs: an element is looked up by a literal id
-    // (docs/styles.md § One owner per element), which `tests/ui/markup.test.ts` is what enforces.
-    installFilter(el<HTMLInputElement>('save-filter'), (filter) => {
-      this.filters.save = filter;
-      this.renderList('save', true);
-    });
-    installFilter(el<HTMLInputElement>('load-filter'), (filter) => {
-      this.filters.load = filter;
-      this.renderList('load', true);
-    });
+    for (const tab of ['save', 'load'] as const) {
+      installFilter(this.filterInputs[tab], (filter) => {
+        this.filters[tab] = filter;
+        this.renderList(tab, true);
+      });
+    }
     this.saveButton.addEventListener('click', () => void this.save());
     this.nameInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') void this.save();
@@ -168,11 +168,13 @@ export class SavegamesUi {
   }
 
   /**
-   * Which tab is showing — `Menu.setTab`'s hand-off.
+   * Which tab is showing — `Menu.setTab`'s hand-off. The tab it brings up takes the keyboard in
+   * its filter field (docs/menu-saves.md § Save and Load tabs).
    * @param tab  null for one of the menu's others
    */
   setVisible(tab: 'save' | 'load' | null): void {
     this.visible = tab;
+    if (tab !== null) this.filterInputs[tab].focus();
     void this.renderVisible();
   }
 

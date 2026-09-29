@@ -88,7 +88,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   its margin to sit in it — the WAD Library header's shape). A save is matched on its name and its
   level, a replay on name, player, notes and level (§ Replays tab); the comparison is a plain
   case-insensitive substring, over text `installFilter` trimmed and lowercased once per keystroke
-  rather than once per row. Three rules make it behave:
+  rather than once per row. Five rules make it behave:
   - **The Save and Load tabs filter independently.** They are looked through for different reasons,
     so text typed over one must not hide rows on the other.
   - **A keystroke re-renders from the cached listing, never from the store** (`SavegamesUi.entries`,
@@ -103,6 +103,8 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
     save list claims.
   - **ESC clears a filter that has something in it** and stops there; an already empty field lets
     the key through to `main.ts`, which closes the menu with it — the in-place rename's rule.
+  - **Bringing a tab up focuses its filter** (`setVisible`, on every `Menu.setTab`: a click, F2/F3,
+    `open` on a tab), so typing searches straight away; the empty field's ESC still closes the menu.
 - **Delete and Overwrite confirm by being held** (`hold.ts: confirmOnHold`, `HOLD_MS` — shared with
   the WAD Library's Forget, and styled by the class alone in `hold.css` so any `#menu` button can
   wear it): a bar sweeps the button and the action fires when it lands, letting go early cancels and

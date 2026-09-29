@@ -97,6 +97,7 @@ export class ReplaysUi {
   private cancelButton = el<HTMLButtonElement>('replay-cancel');
   private recordHint = el<HTMLSpanElement>('replay-record-hint');
   private fileInput = el<HTMLInputElement>('replay-file-input');
+  private filterInput = el<HTMLInputElement>('replay-filter');
 
   private hooks: ReplayHooks;
   private setStatus: StatusLine;
@@ -126,7 +127,7 @@ export class ReplaysUi {
     this.hooks = hooks;
     this.setStatus = setStatus;
     this.describe = describe;
-    installFilter(el<HTMLInputElement>('replay-filter'), (filter) => {
+    installFilter(this.filterInput, (filter) => {
       this.filter = filter;
       this.renderList(true);
     });
@@ -160,9 +161,13 @@ export class ReplaysUi {
     void this.renderVisible();
   }
 
-  /** Whether the Replays tab is showing — `Menu.setTab`'s hand-off. */
+  /**
+   * Whether the Replays tab is showing — `Menu.setTab`'s hand-off. Brought up, it takes the
+   * keyboard in its filter field, as the save tabs do.
+   */
   setVisible(on: boolean): void {
     this.visible = on;
+    if (on) this.filterInput.focus();
     void this.renderVisible();
   }
 

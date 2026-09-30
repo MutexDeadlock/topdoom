@@ -1,10 +1,14 @@
-/* The profiling overlay — src/ui/hud/profiler.ts. */
+/*
+ * The profiling overlay — src/ui/hud/profiler.ts. Left of centre, mirroring the HUD's weapon column:
+ * the right edge is the HUD's, and the status text above grows with its settings.
+ */
 
 #profiler-hud {
   display: none;
   position: fixed;
-  right: 12px;
-  top: 12px;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: var(--z-hud);
   pointer-events: none;
   background: rgba(13, 13, 16, 0.85);

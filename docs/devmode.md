@@ -59,7 +59,7 @@ working, not a scene in trouble.
 
 ## Profiling overlay
 
-A panel of its own, top-right, breaks a frame's cost down by category — `Specials`, `Player`,
+A panel of its own, left of centre, breaks a frame's cost down by category — `Specials`, `Player`,
 `Weapons`, `Fog of War`, `Monsters`, `Effects`, `Fading`, `Render`, `Music`, plus an `Other` bucket
 for whatever wasn't explicitly measured (input handling, HUD text, the player sprite's own pose) —
 so a slow frame can be traced to *which* system is responsible rather than just how many fps it
@@ -148,7 +148,7 @@ dev mode. `Presenter.debugLines` is a closure for the same shape of reason: its 
 BSP for the player's sector and must not run when the *debug* text is off.
 
 **The checkbox alone decides whether the panel is up** — General's `Debug / Dev` section
-(`#profiler-checkbox`), in every build, since the overlay covers the top-right corner of the level.
+(`#profiler-checkbox`), in every build, since the overlay covers the left edge of the level.
 The setting is `profiler.ts`'s own (`profiler`,
 `getProfilerVisible`/`setProfilerVisible`) and **defaults to `DEVMODE`**: on in a dev build, as it
 behaved before the checkbox existed, off in a shipped one — a stored `true`/`false` overrides that

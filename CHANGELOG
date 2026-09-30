@@ -1,6 +1,9 @@
 v0.21.2 (2026-09-29)
 
 Features and improvements
+  - new HUD layout: no bar, readouts in the screen corners, ammo as
+    current/max, the owned weapons listed on the right
+  - the level clock turns red once the run is past the level's best time
   - main menu: switching to a tab with a filter focuses it
   - low-resolution setting (75%) for weaker GPUs
   - dynamic lights honour GLDEFS attenuate: surfaces turned away from a

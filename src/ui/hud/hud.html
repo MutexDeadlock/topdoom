@@ -1,36 +1,41 @@
-<div id="hud-bar">
-  <div id="hud-levelstats">
-    <canvas class="line-kills"></canvas>
-    <canvas class="line-items"></canvas>
-    <canvas class="line-secrets"></canvas>
+<div id="game-hud">
+  <div class="hud-corner hud-bottom-left">
+    <div id="hud-levelstats">
+      <canvas class="line-kills"></canvas>
+      <canvas class="line-items"></canvas>
+      <canvas class="line-secrets"></canvas>
+    </div>
+    <div class="hud-vitals">
+      <div class="hud-stat hud-health">
+        <canvas class="icon icon-normal"></canvas>
+        <canvas class="icon icon-berserk hidden"></canvas>
+        <canvas class="value"></canvas>
+      </div>
+      <div class="hud-stat hud-armor empty">
+        <canvas class="icon icon-green hidden"></canvas>
+        <canvas class="icon icon-blue hidden"></canvas>
+        <canvas class="value"></canvas>
+      </div>
+    </div>
   </div>
-  <div id="game-hud">
-    <div class="hud-stat hud-health">
-      <canvas class="icon icon-normal"></canvas>
-      <canvas class="icon icon-berserk hidden"></canvas>
-      <canvas class="value"></canvas>
+  <div class="hud-corner hud-bottom-right">
+    <div class="hud-powers"></div>
+    <div class="hud-keys">
+      <canvas class="icon key-blue hidden"></canvas>
+      <canvas class="icon key-red hidden"></canvas>
+      <canvas class="icon key-yellow hidden"></canvas>
+      <canvas class="icon backpack hidden"></canvas>
     </div>
-    <div class="hud-stat hud-armor empty">
-      <canvas class="icon icon-green hidden"></canvas>
-      <canvas class="icon icon-blue hidden"></canvas>
-      <canvas class="value"></canvas>
+    <div class="hud-ammo">
+      <div class="row-bullets"><canvas class="icon"></canvas><canvas class="value"></canvas><canvas class="slash"></canvas><canvas class="max"></canvas></div>
+      <div class="row-shells"><canvas class="icon"></canvas><canvas class="value"></canvas><canvas class="slash"></canvas><canvas class="max"></canvas></div>
+      <div class="row-rockets"><canvas class="icon"></canvas><canvas class="value"></canvas><canvas class="slash"></canvas><canvas class="max"></canvas></div>
+      <div class="row-cells"><canvas class="icon"></canvas><canvas class="value"></canvas><canvas class="slash"></canvas><canvas class="max"></canvas></div>
     </div>
-    <div class="hud-stat hud-weapon"></div>
-    <div class="hud-stat hud-ammo">
-      <div class="row-bullets"><canvas class="icon"></canvas><canvas class="value"></canvas></div>
-      <div class="row-shells"><canvas class="icon"></canvas><canvas class="value"></canvas></div>
-      <div class="row-rockets"><canvas class="icon"></canvas><canvas class="value"></canvas></div>
-      <div class="row-cells"><canvas class="icon"></canvas><canvas class="value"></canvas></div>
-    </div>
-    <div class="hud-stat hud-keys">
-      <div class="key-blue"><canvas class="icon"></canvas></div>
-      <div class="key-red"><canvas class="icon"></canvas></div>
-      <div class="key-yellow"><canvas class="icon"></canvas></div>
-    </div>
-    <div class="hud-stat hud-powers"></div>
   </div>
+  <div class="hud-weapons"></div>
   <div id="hud-run">
-    <canvas id="hud-timer"></canvas>
     <span id="hud-recording" class="hidden" title="This run is being recorded as a replay"></span>
+    <canvas id="hud-timer"></canvas>
   </div>
 </div>

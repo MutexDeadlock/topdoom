@@ -81,7 +81,7 @@ interface FeedLine {
 }
 
 /**
- * The feed itself: up to {@link MAX_LINES} lines of STCFN text stacked over `#hud-bar`, the newest
+ * The feed itself: up to {@link MAX_LINES} lines of STCFN text stacked at the bottom centre, the newest
  * at the bottom, each fading out on its own clock. Drawn in STCFN's own red, the colour vanilla
  * prints its messages in (`hu_stuff.c`), which also keeps it apart from the yellow the center
  * message announces in; a player's name in their armour colour. Same "canvas sized to its content,

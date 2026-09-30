@@ -12,6 +12,17 @@ the profiling overlay `src/ui/hud/profiler.ts` in docs/devmode.md § Profiling o
 
 ## The HUD
 
+**No bar and no backdrop**: `#game-hud` is a full-view layer whose clusters are pinned to its edges
+(`hud.css`), each with a drop shadow so the art reads over a bright floor.
+
+- **bottom-left** — the level stats (§ Level stats), under them health, then armor;
+- **bottom-right** — bottom up: the four ammo rows, the key row, the running powerups;
+- **right, vertically centred** — the owned weapons;
+- **top-right** — the clock and the recording light (§ Level timer).
+
+The two bottom stacks grow upward from the edge, so a powerup appearing never moves the ammo rows.
+Both lift with `body.replay-expanded` over the replay bar's expanded panel.
+
 The HUD draws its icons from the same WAD pickup-sprite graphics the world renders items with
 (`MEDIA0`, `ARM1A0`/`ARM2A0`, `CLIPA0`, … via `GraphicsBank.picture`) rather than hand-drawn icons,
 decoded once into `<canvas>` elements whose markup lives statically in `hud.html` (`#game-hud`)
@@ -27,17 +38,16 @@ itself draws those same numbers with (`tallnum`/`shortnum`). Layout is `st_lib.c
 every digit occupies a fixed cell the width of digit `0` (`ST_TALLNUMWIDTH`), the value fills a
 three-cell block from the right (`ST_HEALTHWIDTH`/`ST_ARMORWIDTH`/`ST_AMMOWIDTH`, all 3), a value of
 0 draws a single `0` rather than a blank, and a value too wide for the block keeps its lowest three
-digits. The block is reserved whether or not the number fills it, which is also what keeps a panel —
-and every panel beside it — from resizing as a count crosses 10 or 100, the same rule
-`.hud-weapon`'s fixed column follows. Nothing here can go negative, so vanilla's `STTMINUS` branch
+digits. The block is reserved whether or not the number fills it, which is also what keeps a readout
+from resizing as a count crosses 10 or 100. Nothing here can go negative, so vanilla's `STTMINUS` branch
 has no counterpart (a negative value clamps to 0); a WAD without the digit set falls back to the
 message font's own `STCFN048`-`STCFN057`, which is what these readouts were drawn with before —
 answered for the set as a whole, since a PWAD shipping only some of `STTNUM` would otherwise draw
 two font families inside one cell block with nothing to signal it. `Hud.update` runs every frame
 while almost none of these numbers change, so each readout (`NumberField`) memoizes the value last
 drawn into its canvas and rasterizes only when it moves; a `null` value hides the canvas rather
-than blanking it, so the countdown-less rows (the computer map, the backpack) don't reserve an
-empty block beside their icon.
+than blanking it, so a countdown-less row (the computer map) doesn't reserve an
+empty block beside its icon.
 
 **Health and armor are tinted by how much is left** (`VALUE_TIERS`): over 100 blue, 50-100 green,
 25-49 yellow, and under 25 `STTNUM`'s own undyed red — the state you are meant to notice keeps the
@@ -59,34 +69,40 @@ dimmed — the whole row, icon included, since dimming reads at a glance where t
 number no longer can — and an empty armor slot dims its number the same way, in place of the grey it
 used to print in.
 
-**The key strip is one panel per color, lit when either of that color's slots is owned** (cards
-and skulls are tracked separately — docs/items.md § Locked doors and use triggers). The panel
-shows the keycard sprite by default and swaps to the skull sprite (`BSKUA0`/`RSKUA0`/`YSKUA0`)
-while the skull is the only key of its color held, so what you see is what you actually carry.
+**Each ammo row reads `current/max`**: the count, STCFN's `/` in the level stats' yellow (the
+digit sets have no slash), and `ammoMax` — vanilla's `maxammo[]`, doubled by the backpack — so the
+backpack shows in every row the moment it is taken. The icons sit in a fixed box so the digit
+columns line up whatever each pickup sprite measures.
 
-**The weapon icon is not decoration.** Unlike the original's status bar, where the weapon fills the
-bottom third of the screen, this game's player sprite looks identical whatever it's holding — `PLAY`
-has no per-weapon art, and at this camera distance it wouldn't read anyway. The HUD icon is
-therefore the *only* indication of what's selected. Its markup is built in `Hud`'s constructor from
-`WEAPON_CYCLE` rather than written into `hud.html` like the other panels: the weapon list is a
-compile-time constant in `weapons.ts`, so duplicating it as static markup would be two lists to keep
-in sync. Icons reuse each weapon's own ground-pickup sprite (`WeaponDef.iconLump`); fist and pistol
-have no pickup, so they fall back to their first-person `PUNGA0`/`PISGA0` frames.
+**The key row shows only what is held: one icon per color, then the backpack.** A color's icon is up
+when either of its slots is owned (cards and skulls are tracked separately — docs/items.md
+§ Locked doors and use triggers). It shows the keycard sprite by default and swaps to the skull
+sprite (`BSKUA0`/`RSKUA0`/`YSKUA0`) while the skull is the only key of its color held, so what you
+see is what you actually carry. The backpack (`BPAKA0`) has no number of its own either.
 
-Those sprites differ wildly in aspect — at the strip's 32px height DOOM2's `SHOTA0` renders 168px
-wide against `PISGA0`'s 29px — so `.hud-weapon` is pinned to a **fixed 140px column** rather than
-sized by its icon: otherwise `#game-hud` changes width on every weapon switch and every panel beside
-it jumps. Icons narrower than the column are centred in it, and a wider one is scaled down to fit,
-which is `object-fit: contain` on the canvas — `max-width` alone clamps the box but stretches the
-content into it, since the canvas is a replaced element.
+**The weapon column is not decoration.** Unlike the original's status bar, where the weapon fills
+the bottom third of the screen, this game's player sprite looks identical whatever it's holding —
+`PLAY` has no per-weapon art, and at this camera distance it wouldn't read anyway. The column is
+therefore the *only* indication of what's selected: every owned weapon, one per row in
+`WEAPON_CYCLE` (the wheel's) order, the current one full size and lit, the rest smaller and dimmed.
+Its markup is built in `Hud`'s constructor from `WEAPON_CYCLE` rather than written into `hud.html`
+like the other panels: the weapon list is a compile-time constant in `weapons.ts`, so duplicating it
+as static markup would be two lists to keep in sync. Icons reuse each weapon's own ground-pickup
+sprite (`WeaponDef.iconLump`); fist and pistol have no pickup, so they fall back to their
+first-person `PUNGA0`/`PISGA0` frames.
 
-**The powerup strip** (`.hud-powers`, built from `STRIP_POWER_IDS` the same way) exists for the same
-reason: a running powerup has no other on-screen presence at all — no number that changes, no door
-that opens — so without it there's no way to know one is active or how much is left. Each row shows
-that powerup's ground-pickup sprite plus a countdown, blank for the one remaining
-`Infinity`-duration entry. The backpack shares the strip: same "you have this now" status, also with
-no number of its own. The whole panel collapses via `.hud-stat.hidden` while nothing is active, so
-`#game-hud`'s flex `gap` doesn't leave a hole.
+Those sprites differ wildly in aspect — at a 32px height DOOM2's `SHOTA0` renders 168px wide
+against `PISGA0`'s 29px — so the column is right-aligned (nothing beside it moves with a row's
+width) and a wide icon is scaled down to its `max-width` cap, which is `object-fit: contain` on the
+canvas — `max-width` alone clamps the box but stretches the content into it, since the canvas is a
+replaced element.
+
+**The powerup column** (`.hud-powers`, built from `STRIP_POWER_IDS` the same way) exists for the
+same reason: a running powerup has no other on-screen presence at all — no number that changes, no
+door that opens — so without it there's no way to know one is active or how much is left. Each row
+shows that powerup's ground-pickup sprite plus a countdown, blank for the one remaining
+`Infinity`-duration entry (the computer map). The whole column collapses via `.hidden` while
+nothing is active, so the corner's `gap` doesn't leave a hole above the key row.
 
 **Berserk is deliberately not in the strip** (`STRIP_POWER_IDS` = `POWER_IDS` minus `'berserk'`) —
 it already has an on-screen presence the others don't: the health icon swaps from `MEDIA0` to
@@ -100,18 +116,10 @@ would otherwise stack a second full set of icons on the first's.
 
 ## Level stats (kills / items / secrets)
 
-`#hud-levelstats` — a plain sibling of `#game-hud`'s own bordered box, both inside `#hud-bar`,
-sitting immediately to its left rather than inside it — shows vanilla's classic three ratios —
+`#hud-levelstats` — bottom-left, above health and armor — shows vanilla's classic three ratios —
 `M: kills/totalKills`, `I: items/totalItems`, `S: secrets/totalSecrets` — confirmed against
 `linuxdoom-1.10/info.c`'s `mobjinfo` table rather than assumed from doomednum lists that exist for
 other purposes.
-
-`#hud-bar` lays the pair out as a three-column grid (`1fr auto 1fr`), not a centered flex row: a
-centered flex row centers the *pair's combined* bounding box, which would push `#game-hud` off the
-true viewport center by half of `#hud-levelstats`'s own width. With the grid, the two `1fr` outer
-tracks stay equal width regardless of what's in them, so the middle `auto` column — `#game-hud` —
-always lands exactly on center; `#hud-levelstats` sits in the left track, right-aligned
-(`justify-self: end`) so it's flush against `#game-hud`'s own left edge.
 
 - **Kills** — `things/tables.ts`'s `COUNTKILL_TYPES` is `MONSTER_TYPES` minus the lost soul (3006)
   and the Icon of Sin's brain (88), neither of which carries vanilla's `MF_COUNTKILL`. `totalKills`
@@ -155,14 +163,15 @@ to sample the color from follows the same convention the yellow recolor already 
 a pulsing red dot while `Game.recording`, hidden otherwise — `Hud.update` is handed the flag with
 the rest of the frame's state, so every path that ends a recording clears it. Beside the clock
 because both are about the run rather than about the player, and a drawn dot rather than the word
-REC because everything else in this bar is the WAD's own sprite glyphs. docs/replays.md § Recording.
+REC because everything else in the HUD is the WAD's own sprite glyphs. docs/replays.md § Recording.
 
 ## Level timer
 
-`#hud-timer`, the third column of `#hud-bar`'s grid (mirroring `#hud-levelstats` on the opposite
-side, flush against `#game-hud`'s right edge via `justify-self: start`), shows time spent in the
-level as `hh:mm:ss`, drawn with the same `WadFont` used for the strip's labels (native STCFN red,
-no recolor). `Level.time` advances a `DOOM_TIC` per tic while any slot lives (`Game.tic`), and
+`#hud-timer`, top-right, shows time spent in the level as `hh:mm:ss` in STCFN text, yellow (the
+level stats' `COLOR_YELLOW`) — and in STCFN's own red once `Level.time` is past the level's stored
+best time (§ Best times), read through `OverlayHost.bestTime` under the same key a completion
+files under. Any run compares, a cheated one or a replay included — only the writing is gated; a
+netgame has no best time and stays yellow, and so does a deathmatch countdown. `Level.time` advances a `DOOM_TIC` per tic while any slot lives (`Game.tic`), and
 starts at 0 with every `buildLevel`. It also never advances on the tic an exit is consumed: that
 tic already returns early once `pendingExit` is set (see that field's
 own doc in `game.ts`), before reaching the increment, so no separate "level complete" check is
@@ -423,9 +432,9 @@ dropped like any other — there is nothing in it to keep.
 
 ## HUD messages
 
-`src/ui/hud/messages.ts`'s `HudMessages` is the feed over the bar (`#hud-messages`, centred over
-`#game-hud`): up to three lines of STCFN text in the font's own red, newest at the bottom, each held
-3 s and faded out over the 1 s after — together vanilla's `HU_MSGTIMEOUT` of four seconds
+`src/ui/hud/messages.ts`'s `HudMessages` is the HUD's feed (`#hud-messages`, centred on the
+bottom edge between the HUD's two corners): up to three lines of STCFN text in the font's own red,
+newest at the bottom, each held 3 s and faded out over the 1 s after — together vanilla's `HU_MSGTIMEOUT` of four seconds
 (`hu_stuff.h`); vanilla shows one line, top-left, and the three, the placement and the split
 between hold and fade are **tuned by feel**. A fourth line pushes the oldest out.
 
@@ -471,8 +480,9 @@ mode no longer shows them.
 
 The clocks tick from `Overlays.tickClocks` like the center message's, so a paused game
 doesn't burn a line's time behind the menu; `Overlays.beginLevel` and a view switch clear the feed.
-Same rung as the bar (`--z-hud`): it is part of the bar, not a message over the view. Its
-`bottom` pair tracks `#hud-bar`'s, so it lifts with the bar over the replay bar's expanded panel.
+Same rung as the HUD (`--z-hud`): it is part of the HUD, not a message over the view. Its
+`bottom` pair tracks `.hud-corner`'s, so it lifts with the corners over the replay bar's expanded
+panel.
 
 ## Center messages
 

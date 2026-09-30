@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import type { Wad, WadFile } from './wad/wad.ts';
 import { mapProvider, wadId } from './wad/checksum.ts';
-import { bestTimeKey, recordBestTime, type BestTimeResult } from './game/besttimes.ts';
+import { bestTimeKey, readBestTime, recordBestTime, type BestTimeResult } from './game/besttimes.ts';
 import { GraphicsBank, type Bitmap } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
 import { loadMap, mapLinedefBytes } from './wad/map.ts';
@@ -484,6 +484,11 @@ export class Game {
   private wad: Wad;
   private skill: Skill;
   /**
+   * {@link Game.levelBestTimeKey}'s answer for the map it was asked about: the HUD clock asks every
+   * frame, and the key never changes within a level.
+   */
+  private bestTimeKeyMemo: { map: string; key: string | null } | null = null;
+  /**
    * The session's savegame writer, called when a replay is taken over — see {@link GameOptions}.
    */
   private autoSave: (() => Promise<unknown>) | null;
@@ -805,6 +810,7 @@ export class Game {
       deathHint: () => this.deathHint(),
       respawnCountdown: () => this.overlayCountdown(),
       timeLeft: () => this.hudTimeLeft(),
+      bestTime: () => this.hudBestTime(),
     };
     this.overlays = new Overlays(host, {
       gfx,
@@ -2697,9 +2703,18 @@ export class Game {
   }
 
   /**
+   * The level's stored best time the HUD clock turns red past, or null with none — and always null
+   * in a netgame, whose runs never claim one. docs/hud.md § Level timer.
+   */
+  private hudBestTime(): number | null {
+    if (this.netgame) return null;
+    const key = this.levelBestTimeKey();
+    return key === null ? null : readBestTime(key);
+  }
+
+  /**
    * Files the completion that just happened and reports how it compares to the level's best, or
-   * null if this level's run may claim none. The record is keyed to the WAD file that
-   * *provides* the map rather than to the loaded set — see docs/hud.md § Best times.
+   * null if this level's run may claim none.
    */
   private recordCompletion(): BestTimeResult | null {
     // A replay is watched, not run, and a netgame's run is several players' — neither claims one,
@@ -2707,12 +2722,22 @@ export class Game {
     if (this.playback || this.cheated || this.netgame) return null;
     const map = this.currentMap;
     const source = mapProvider(this.wad, map);
-    if (!source) return null;
-    return recordBestTime(bestTimeKey(source.id, map, this.skill), this.level.time, {
-      wad: source.name,
-      map,
-      skill: this.skill,
-    });
+    const key = this.levelBestTimeKey();
+    if (!source || key === null) return null;
+    return recordBestTime(key, this.level.time, { wad: source.name, map, skill: this.skill });
+  }
+
+  /**
+   * The current level's best-time key, or null when no loaded file provides the map. Keyed to the
+   * WAD file that *provides* the map rather than to the loaded set — see docs/hud.md § Best times.
+   */
+  private levelBestTimeKey(): string | null {
+    const map = this.currentMap;
+    if (this.bestTimeKeyMemo?.map !== map) {
+      const source = mapProvider(this.wad, map);
+      this.bestTimeKeyMemo = { map, key: source ? bestTimeKey(source.id, map, this.skill) : null };
+    }
+    return this.bestTimeKeyMemo.key;
   }
 
   /**

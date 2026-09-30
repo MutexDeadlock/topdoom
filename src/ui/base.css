@@ -7,7 +7,7 @@
 :root {
   /* Stacking ladder. The full list, so a new overlay can be placed by reading one block. */
   --z-tint: 5; /* #screen-tint, #pain-flash */
-  --z-hud: 10; /* #hud, #profiler-hud, #hud-bar, #hud-messages */
+  --z-hud: 10; /* #hud, #profiler-hud, #game-hud, #hud-messages */
   --z-message: 12; /* #hud-message, #level-card */
   --z-overlay: 15; /* #intermission, #death-overlay — never up at the same time */
   --z-replaybar: 16; /* #replay-bar — usable over the two above, under the menu */

@@ -22,7 +22,7 @@ src/ui/loading.*      #loading and its panel (#loading-title, #loading-bar/#load
                       (docs/session.md § The loading screen)
 src/ui/hud/           everything drawn over the running level (docs/hud.md's own file list)
     debug.*           #hud — the debug status text (docs/devmode.md § FPS counter)
-    hud.*             #hud-bar, #game-hud, #hud-levelstats, #hud-run (#hud-timer,
+    hud.*             #game-hud, and inside it #hud-levelstats, #hud-run (#hud-timer,
                       #hud-recording)
     screeneffects.*   #screen-tint, #colormap-tint, #pain-flash
     message.*         #hud-message
@@ -180,7 +180,7 @@ One further documented exception:
 ### The stacking ladder
 
 `--z-tint: 5` (`#screen-tint`, `#colormap-tint`, `#pain-flash`) → `--z-hud: 10` (`#hud`,
-`#profiler-hud`, `#hud-bar`, `#hud-messages`) → `--z-message: 12` (`#hud-message`, `#level-card`) → `--z-overlay: 15`
+`#profiler-hud`, `#game-hud`, `#hud-messages`) → `--z-message: 12` (`#hud-message`, `#level-card`) → `--z-overlay: 15`
 (`#intermission`, `#death-overlay`, which can never be up at the same time) → `--z-replaybar: 16`
 (`#replay-bar`) → `--z-scoreboard: 17` (`#scoreboard`, held up over everything on the level) →
 `--z-menu: 20` →

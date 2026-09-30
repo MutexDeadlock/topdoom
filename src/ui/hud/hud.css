@@ -1,21 +1,37 @@
 /*
- * A three-column grid rather than a centered flex row: the outer two `1fr` tracks are always
- * equal width, so the middle (`auto`-sized) column — `#game-hud` — lands exactly on the viewport
- * center regardless of how wide `#hud-levelstats` is, instead of the *pair's combined* bounding
- * box being centered (which would push `#game-hud` off-center by half the stats block's width).
- * `#hud-levelstats` lives in the left track, right-aligned so it sits flush against `#game-hud`.
+ * No bar: four clusters pinned to the view's edges — vitals and level stats bottom-left, ammo, keys
+ * and powerups bottom-right, the weapons right of centre, the clock top-right. Each carries a drop
+ * shadow in place of the backdrop it no longer has, so the WAD art reads over a bright floor.
+ * docs/hud.md § The HUD.
  */
-#hud-bar {
+#game-hud {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 14px;
+  inset: 0;
   z-index: var(--z-hud);
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  column-gap: 16px;
   pointer-events: none;
+}
+
+#game-hud > * {
+  position: absolute;
+  filter: drop-shadow(0 2px 3px #000);
+}
+
+/* Stacks grow upward from the bottom edge, so a powerup appearing never moves the ammo rows. */
+#game-hud .hud-corner {
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#game-hud .hud-bottom-left {
+  left: 16px;
+  align-items: flex-start;
+}
+
+#game-hud .hud-bottom-right {
+  right: 16px;
+  align-items: flex-end;
 }
 
 /*
@@ -23,32 +39,23 @@
  * same conditions the panel's own display rule reads, so the two can't disagree — a replay
  * restarted from the keyboard closes the panel without a `pointerleave` to hear about it.
  */
-body.replay-expanded #hud-bar {
+body.replay-expanded #game-hud .hud-corner {
   bottom: 74px;
 }
 
-#game-hud {
-  grid-column: 2;
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  padding: 8px 20px;
-  background: rgba(13, 13, 16, 0.65);
-  border: 1px solid var(--border);
-}
-
 /*
- * Every canvas in the bar holds WAD art at its native pixel size and is scaled by CSS: the icons
- * from the pickup sprites, the readouts from the status bar's own digit lumps (STTNUM/STYSNUM).
- * Sized by height only — width follows whatever the loaded WAD's art measures, and for the
- * readouts that is a fixed three-cell block, so no panel resizes as a count crosses 10 or 100.
+ * Every canvas here holds WAD art at its native pixel size and is scaled by CSS: the icons from the
+ * pickup sprites, the readouts from the status bar's own digit lumps (STTNUM/STYSNUM). Sized by
+ * height only — width follows whatever the loaded WAD's art measures, and for the readouts that is
+ * a fixed three-cell block, so no readout resizes as a count crosses 10 or 100.
  */
 #game-hud .icon {
   height: 32px;
 }
 
 /* The short digit set (STYSNUM), which every readout but health and armor draws with. */
-#game-hud .value {
+#game-hud .value,
+#game-hud .max {
   height: 12px;
 }
 
@@ -56,6 +63,36 @@ body.replay-expanded #hud-bar {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+#game-hud .hud-vitals {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/*
+ * A fixed icon column, so the two numbers line up although MEDIA0 and the armor sprites differ in
+ * width — and so an empty armor slot, which shows no icon, keeps its number in line too.
+ */
+#game-hud .hud-vitals .hud-stat {
+  display: grid;
+  grid-template-columns: 44px auto;
+  column-gap: 8px;
+  align-items: center;
+}
+
+#game-hud .hud-vitals .icon {
+  grid-column: 1;
+  grid-row: 1;
+  width: 44px;
+  height: 32px;
+  object-fit: contain;
+}
+
+#game-hud .hud-vitals .value {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 /* Health and armor draw with the tall set (STTNUM) — `Hud`'s `TieredNumbers`. */
@@ -68,72 +105,7 @@ body.replay-expanded #hud-bar {
   opacity: 0.35;
 }
 
-#game-hud .hud-ammo {
-  display: flex;
-  gap: 14px;
-}
-
-/*
- * The current weapon's ammo row is the lit one and the other three are dimmed — the sprite digits
- * have no bold to mark it with, and dimming the row (icon included) reads at a glance where a
- * font-weight change on the number alone no longer can.
- */
-#game-hud .hud-ammo > div {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  opacity: 0.5;
-}
-
-#game-hud .hud-ammo > div.current {
-  opacity: 1;
-}
-
-#game-hud .hud-ammo .icon {
-  height: 22px;
-}
-
-#game-hud .hud-keys {
-  display: flex;
-  gap: 6px;
-}
-
-#game-hud .hud-keys > div {
-  height: 22px;
-  opacity: 0.15;
-  filter: grayscale(1);
-}
-
-#game-hud .hud-keys > div.collected {
-  opacity: 1;
-  filter: none;
-}
-
-#game-hud .hud-keys .icon {
-  height: 22px;
-}
-
-/*
- * Fixed width, so switching weapons doesn't resize #game-hud and shuffle every panel beside it —
- * the pickup sprites the icons come from differ hugely in aspect (DOOM2's SHOTA0 is 168px wide at
- * a 32px height, PISGA0 29px). Icons narrower than the column are centred in it; a wider one is
- * scaled down to fit, which needs `object-fit` — `max-width` alone would squash the canvas, since
- * a replaced element's content is stretched to whatever box the used width and height give it.
- */
-#game-hud .hud-weapon {
-  flex: 0 0 140px;
-  justify-content: center;
-}
-
-#game-hud .hud-weapon .icon {
-  height: 32px;
-  max-width: 100%;
-  object-fit: contain;
-}
-
 #hud-levelstats {
-  grid-column: 1;
-  justify-self: end;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -144,10 +116,104 @@ body.replay-expanded #hud-bar {
   height: 14px;
 }
 
-/* Mirrors #hud-levelstats on the grid's other side — flush against #game-hud's right edge. */
+#game-hud .hud-ammo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/*
+ * The current weapon's ammo row is the lit one and the other three are dimmed — the sprite digits
+ * have no bold to mark it with, and dimming the row (icon included) reads at a glance where a
+ * font-weight change on the number alone no longer can.
+ */
+#game-hud .hud-ammo > div {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0.5;
+}
+
+#game-hud .hud-ammo > div.current {
+  opacity: 1;
+}
+
+/*
+ * A fixed box, the art centred in it: the four pickup sprites differ in width, and the digit
+ * columns to their right only line up if the icons in front of them all take the same room.
+ */
+#game-hud .hud-ammo .icon {
+  width: 30px;
+  height: 20px;
+  margin-right: 5px;
+  object-fit: contain;
+}
+
+/* STCFN's `/`, which carries its own side bearing, at the digits' height. */
+#game-hud .hud-ammo .slash {
+  height: 12px;
+}
+
+#game-hud .hud-keys {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#game-hud .hud-keys .icon {
+  height: 22px;
+}
+
+#game-hud .hud-powers {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+#game-hud .hud-powers > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#game-hud .hud-powers .icon {
+  height: 22px;
+}
+
+/*
+ * The owned weapons, right of centre, one per row in the wheel's order. Right-aligned, so the
+ * pickup sprites' wildly different widths (DOOM2's SHOTA0 is 168px at a 32px height, PISGA0 29px)
+ * never move anything: a wide one is scaled down to the column's cap, which needs `object-fit` —
+ * `max-width` alone would squash the canvas, a replaced element's content being stretched to
+ * whatever box the used width and height give it.
+ */
+#game-hud .hud-weapons {
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+#game-hud .hud-weapons .icon {
+  height: 24px;
+  max-width: 110px;
+  object-fit: contain;
+  opacity: 0.45;
+}
+
+#game-hud .hud-weapons .icon.current {
+  height: 32px;
+  opacity: 1;
+}
+
 #hud-run {
-  grid-column: 3;
-  justify-self: start;
+  top: 14px;
+  right: 16px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -182,19 +248,3 @@ body.replay-expanded #hud-bar {
     opacity: 0.35;
   }
 }
-
-#game-hud .hud-powers {
-  display: flex;
-  gap: 10px;
-}
-
-#game-hud .hud-powers > div {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-#game-hud .hud-powers .icon {
-  height: 22px;
-}
-

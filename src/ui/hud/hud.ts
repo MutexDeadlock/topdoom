@@ -1,10 +1,12 @@
 /**
- * The bar along the bottom: health, armor, the four ammo counts, key slots, the selected weapon,
- * plus the level stats/timer line. Drawn from the WAD's own art. See docs/hud.md § The HUD.
+ * The in-game readouts pinned to the view's edges: health, armor and the level stats bottom-left,
+ * the ammo counts, keys and powerups bottom-right, the owned weapons right of centre, the clock
+ * top-right. Drawn from the WAD's own art. See docs/hud.md § The HUD.
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import {
   AMMO_TYPES,
+  ammoMax,
   hasPower,
   KEY_COLORS,
   POWER_IDS,
@@ -139,10 +141,7 @@ const POWER_ICONS: Record<PowerId, string> = {
  */
 const STRIP_POWER_IDS = POWER_IDS.filter((p) => p !== 'berserk');
 
-/**
- * The backpack shares the powerup strip: it's the same kind of "you have this for good now" status,
- * and has no number of its own either.
- */
+/** The backpack sits in the key row: held for good, with no number of its own. */
 const BACKPACK_ICON = 'BPAKA0';
 
 /**
@@ -253,9 +252,8 @@ class NumberField {
 }
 
 /**
- * The in-game status readout: health, armor, ammo, collected keys, and the kill/item/secret
- * strip. Static markup lives in index.html (`#hud-bar`, containing `#hud-levelstats` and
- * `#game-hud` as siblings — the strip sits outside `#game-hud`'s own bordered box); this class
+ * The in-game status readout: health, armor, ammo, keys, powerups, the owned weapons, the
+ * kill/item/secret strip and the clock. Static markup lives in `hud.html` (`#game-hud`); this class
  * only draws the WAD icons once per level load and pushes numbers/visibility on every frame.
  */
 export class Hud {
@@ -264,20 +262,14 @@ export class Hud {
   private yellowFont: WadFont;
   private greenFont: WadFont;
   private labelColumnWidth: number;
-  /**
-   * Sits outside `#game-hud`'s own bordered box — a plain sibling immediately to its left inside
-   * `#hud-bar` — so it isn't `this.root`-scoped like everything else here.
-   */
-  private levelStatsRoot = document.getElementById('hud-levelstats')!;
-  private killsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-kills')!;
-  private itemsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-items')!;
-  private secretsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-secrets')!;
-  /**
-   * Mirrors {@link Hud.levelStatsRoot}: a plain sibling of `#game-hud` inside `#hud-bar`, on its
-   * right this time.
-   */
-  private timerCanvas = document.getElementById('hud-timer') as HTMLCanvasElement;
-  private recordingEl = document.getElementById('hud-recording')!;
+  private killsCanvas = this.root.querySelector<HTMLCanvasElement>('#hud-levelstats .line-kills')!;
+  private itemsCanvas = this.root.querySelector<HTMLCanvasElement>('#hud-levelstats .line-items')!;
+  private secretsCanvas = this.root.querySelector<HTMLCanvasElement>('#hud-levelstats .line-secrets')!;
+  private timerCanvas = this.root.querySelector<HTMLCanvasElement>('#hud-timer')!;
+  /** What {@link Hud.drawTimer} last drew, so an unchanged second isn't rasterized again. */
+  private timerShown: string | null = null;
+  private timerOverBest = false;
+  private recordingEl = this.root.querySelector<HTMLElement>('#hud-recording')!;
   private tallNumbers: TieredNumbers;
   private shortNumbers: WadNumbers;
   private healthValue: NumberField;
@@ -287,15 +279,14 @@ export class Hud {
   private armorPanel = this.root.querySelector<HTMLElement>('.hud-armor')!;
   private armorIconGreen = this.root.querySelector<HTMLCanvasElement>('.hud-armor .icon-green')!;
   private armorIconBlue = this.root.querySelector<HTMLCanvasElement>('.hud-armor .icon-blue')!;
-  private ammoRows: Record<AmmoType, { row: HTMLElement; value: NumberField }>;
-  private keyPanels: Record<KeyColor, HTMLElement>;
+  private ammoRows: Record<AmmoType, { row: HTMLElement; value: NumberField; max: NumberField }>;
+  private keyIcons: Record<KeyColor, HTMLCanvasElement>;
   private keyVariantShown: Record<KeyColor, 'card' | 'skull'>;
   private gfx: GraphicsBank;
   private weaponIcons: Record<WeaponId, HTMLCanvasElement>;
-  private currentWeaponShown: WeaponId | null = null;
   private powerPanel = this.root.querySelector<HTMLElement>('.hud-powers')!;
   private powerRows: Partial<Record<PowerId, { row: HTMLElement; value: NumberField }>>;
-  private backpackRow: HTMLElement;
+  private backpackIcon = this.root.querySelector<HTMLCanvasElement>('.hud-keys .backpack')!;
 
   constructor(gfx: GraphicsBank) {
     this.redFont = new WadFont(gfx);
@@ -316,31 +307,37 @@ export class Hud {
     drawIcon(this.armorIconGreen, gfx, 'ARM1A0');
     drawIcon(this.armorIconBlue, gfx, 'ARM2A0');
 
-    this.ammoRows = {} as Record<AmmoType, { row: HTMLElement; value: NumberField }>;
+    this.ammoRows = {} as Record<AmmoType, { row: HTMLElement; value: NumberField; max: NumberField }>;
     for (const t of AMMO_TYPES) {
       const row = this.root.querySelector<HTMLElement>(`.hud-ammo .row-${t}`)!;
       drawIcon(row.querySelector<HTMLCanvasElement>('.icon')!, gfx, AMMO_ICONS[t]);
-      this.ammoRows[t] = { row, value: new NumberField(row.querySelector<HTMLCanvasElement>('.value')!, this.shortNumbers) };
+      drawText(row.querySelector<HTMLCanvasElement>('.slash')!, this.yellowFont, '/');
+      this.ammoRows[t] = {
+        row,
+        value: new NumberField(row.querySelector<HTMLCanvasElement>('.value')!, this.shortNumbers),
+        max: new NumberField(row.querySelector<HTMLCanvasElement>('.max')!, this.shortNumbers),
+      };
     }
 
     this.gfx = gfx;
-    this.keyPanels = {} as Record<KeyColor, HTMLElement>;
+    this.keyIcons = {} as Record<KeyColor, HTMLCanvasElement>;
     this.keyVariantShown = { blue: 'card', red: 'card', yellow: 'card' };
     for (const c of KEY_COLORS) {
-      const panel = this.root.querySelector<HTMLElement>(`.hud-keys .key-${c}`)!;
-      drawIcon(panel.querySelector('canvas')!, gfx, KEY_ICONS[c]);
-      this.keyPanels[c] = panel;
+      const icon = this.root.querySelector<HTMLCanvasElement>(`.hud-keys .key-${c}`)!;
+      drawIcon(icon, gfx, KEY_ICONS[c]);
+      this.keyIcons[c] = icon;
     }
+    drawIcon(this.backpackIcon, gfx, BACKPACK_ICON);
 
     // The weapon set is fixed at compile time (game/weapons.ts's WEAPON_CYCLE),
     // unlike ammo/keys there's no small fixed handful worth hand-authoring in
-    // index.html — built here instead, one hidden icon per weapon, same as
-    // hud-armor's two icons toggling by `.hidden`.
+    // hud.html — built here instead, one hidden icon per weapon, shown once
+    // owned.
     // `replaceChildren` (rather than plain appends) because the markup is
     // static and shared: starting a second game from the menu builds a new Hud
     // against the same #game-hud element, and appending would stack a second
     // full set of icons onto the first.
-    const weaponPanel = this.root.querySelector<HTMLElement>('.hud-weapon')!;
+    const weaponPanel = this.root.querySelector<HTMLElement>('.hud-weapons')!;
     weaponPanel.replaceChildren();
     this.weaponIcons = {} as Record<WeaponId, HTMLCanvasElement>;
     for (const w of WEAPON_CYCLE) {
@@ -354,20 +351,23 @@ export class Hud {
     this.powerPanel.replaceChildren();
     this.powerRows = {};
     for (const p of STRIP_POWER_IDS) this.powerRows[p] = this.addPowerRow(gfx, POWER_ICONS[p]);
-    this.backpackRow = this.addPowerRow(gfx, BACKPACK_ICON).row;
   }
 
   /**
    * @param timeLeft  the whole seconds a deathmatch time limit leaves, which the clock reads in
    *                  place of the time spent; null with none (docs/multiplayer-deathmatch.md
    *                  § Limits)
+   * @param bestTime  the level's stored best time in seconds, which the clock turns red past; null
+   *                  with none
    */
-  update(inv: Inventory, stats: LevelStats, recording: boolean, timeLeft: number | null): void {
+  update(inv: Inventory, stats: LevelStats, recording: boolean, timeLeft: number | null, bestTime: number | null): void {
     this.recordingEl.classList.toggle('hidden', !recording);
     this.drawStatLine(this.killsCanvas, 'M', stats.kills, stats.totalKills);
     this.drawStatLine(this.itemsCanvas, 'I', stats.items, stats.totalItems);
     this.drawStatLine(this.secretsCanvas, 'S', stats.secrets, stats.totalSecrets);
-    this.drawTimer(timeLeft ?? stats.elapsedSeconds);
+    // A countdown is no run against the clock: it stays yellow.
+    const overBest = timeLeft === null && bestTime !== null && stats.elapsedSeconds > bestTime;
+    this.drawTimer(timeLeft ?? stats.elapsedSeconds, overBest);
     this.healthValue.set(Math.round(inv.health));
     const berserk = hasPower(inv, 'berserk');
     this.healthIconNormal.classList.toggle('hidden', berserk);
@@ -376,31 +376,35 @@ export class Hud {
     this.armorIconGreen.classList.toggle('hidden', inv.armorType !== 1);
     this.armorIconBlue.classList.toggle('hidden', inv.armorType !== 2);
     this.armorPanel.classList.toggle('empty', inv.armorType === 0);
-    for (const t of AMMO_TYPES) this.ammoRows[t].value.set(inv.ammo[t]);
+    for (const t of AMMO_TYPES) {
+      this.ammoRows[t].value.set(inv.ammo[t]);
+      this.ammoRows[t].max.set(ammoMax(inv, t));
+    }
     for (const c of KEY_COLORS) {
       const card = inv.keys.has(KEY_SLOTS_BY_COLOR[c].card);
       const skull = inv.keys.has(KEY_SLOTS_BY_COLOR[c].skull);
-      this.keyPanels[c].classList.toggle('collected', card || skull);
+      this.keyIcons[c].classList.toggle('hidden', !card && !skull);
       // Skull art only when the skull is all we have of the color; a card
-      // (or nothing yet) shows the card icon, the panel's resting state.
+      // (or nothing yet) shows the card icon, the slot's resting state.
       const variant = skull && !card ? 'skull' : 'card';
       if (variant !== this.keyVariantShown[c]) {
-        drawIcon(this.keyPanels[c].querySelector('canvas')!, this.gfx, variant === 'skull' ? KEY_SKULL_ICONS[c] : KEY_ICONS[c]);
+        drawIcon(this.keyIcons[c], this.gfx, variant === 'skull' ? KEY_SKULL_ICONS[c] : KEY_ICONS[c]);
         this.keyVariantShown[c] = variant;
       }
     }
+    this.backpackIcon.classList.toggle('hidden', !inv.backpack);
 
-    if (inv.currentWeapon !== this.currentWeaponShown) {
-      if (this.currentWeaponShown) this.weaponIcons[this.currentWeaponShown].classList.add('hidden');
-      this.weaponIcons[inv.currentWeapon].classList.remove('hidden');
-      this.currentWeaponShown = inv.currentWeapon;
+    for (const w of WEAPON_CYCLE) {
+      const icon = this.weaponIcons[w];
+      icon.classList.toggle('hidden', !inv.weapons.has(w));
+      icon.classList.toggle('current', w === inv.currentWeapon);
     }
     const currentAmmoType = WEAPONS[inv.currentWeapon].ammoType;
     // The whole row lights, not just its number: sprite digits have no bold, and the row's own
     // dimming reads at a glance where a font-weight change no longer can.
     for (const t of AMMO_TYPES) this.ammoRows[t].row.classList.toggle('current', t === currentAmmoType);
 
-    let anyPower = inv.backpack;
+    let anyPower = false;
     for (const p of STRIP_POWER_IDS) {
       const left = inv.powers[p];
       const { row, value } = this.powerRows[p]!;
@@ -411,10 +415,8 @@ export class Hud {
       // icon — a countdown there would only ever read the same number.
       value.set(Number.isFinite(left) ? Math.ceil(left) : null);
     }
-    this.backpackRow.classList.toggle('hidden', !inv.backpack);
     // Collapsed entirely while nothing is active, so the panel's own gap in
-    // #game-hud's flex row doesn't leave a hole between the weapon icon and
-    // the HUD's right edge.
+    // the corner's column doesn't leave a hole above the key row.
     this.powerPanel.classList.toggle('hidden', !anyPower);
   }
 
@@ -451,16 +453,21 @@ export class Hud {
   }
 
   /**
-   * Draws the level clock, right of `#game-hud`, in the same native STCFN red as the strip's
-   * labels.
+   * Draws the level clock, top-right: in the status bar's yellow, and in STCFN's own red once the
+   * run is past the level's best time. Redrawn only when the text or the color changes.
    *
-   * @param seconds  the time spent, or a time limit's time left — `Game`'s to freeze (on death or
-   *                 level completion); this method only ever formats whatever it's handed
+   * @param seconds   the time spent, or a time limit's time left — `Game`'s to freeze (on death or
+   *                  level completion); this method only ever formats whatever it's handed
+   * @param overBest  whether the run is already slower than the stored best
    */
-  private drawTimer(seconds: number): void {
+  private drawTimer(seconds: number, overBest: boolean): void {
     const text = formatClock(seconds);
-    this.timerCanvas.width = this.redFont.measure(text);
-    this.timerCanvas.height = this.redFont.height;
-    this.redFont.draw(this.timerCanvas.getContext('2d')!, 0, 0, text);
+    if (text === this.timerShown && overBest === this.timerOverBest) return;
+    this.timerShown = text;
+    this.timerOverBest = overBest;
+    const font = overBest ? this.redFont : this.yellowFont;
+    this.timerCanvas.width = font.measure(text);
+    this.timerCanvas.height = font.height;
+    font.draw(this.timerCanvas.getContext('2d')!, 0, 0, text);
   }
 }

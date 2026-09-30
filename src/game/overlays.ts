@@ -93,6 +93,13 @@ export interface OverlayHost {
    * @returns null where no time limit counts down
    */
   timeLeft(): number | null;
+  /**
+   * The level's stored best time in seconds, which the HUD clock turns red past.
+   * docs/hud.md § Level timer.
+   *
+   * @returns null where there is none to compare against
+   */
+  bestTime(): number | null;
 }
 
 /** What building the overlays takes beside the host. */
@@ -154,7 +161,7 @@ export class Overlays {
   update(dt: number, replayAim: Pos2 | null, tint: ColorTint | null): void {
     const { host } = this;
     const { inventory } = host.viewed;
-    this.hud.update(inventory, host.level.stats(), host.recording, host.timeLeft());
+    this.hud.update(inventory, host.level.stats(), host.recording, host.timeLeft(), host.bestTime());
     this.crosshair.update(inventory.health);
     this.replayBar.update(host.playback, replayAim, inventory.health);
     this.tickClocks(dt);

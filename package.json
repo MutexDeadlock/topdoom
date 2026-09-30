@@ -1,6 +1,6 @@
 {
   "name": "topdoom",
-  "version": "0.21.1",
+  "version": "0.21.2",
   "description": "",
   "main": "index.js",
   "engines": {
@@ -22,7 +22,7 @@
     "@types/three": "^0.185.4",
     "playwright-core": "^1.63.0",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.3.1"
   },
   "dependencies": {
     "three": "^0.185.1"

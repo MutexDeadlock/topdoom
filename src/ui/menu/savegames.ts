@@ -47,6 +47,8 @@ export interface SaveHooks {
   onOverwrite(id: string): void | Promise<void>;
   /** Tears down the current session and starts one from `save` — the load-side `onStart`. */
   onLoad(save: SaveGame): void | Promise<void>;
+  /** The save the running game was loaded from or last wrote, whose Overwrite or Load its tab focuses. */
+  currentSave(): string | null;
   /**
    * Why the current moment can't be saved — the same sentence
    * {@link SaveHooks.onSave}/{@link SaveHooks.onOverwrite} would throw, asked ahead of the click so
@@ -104,6 +106,8 @@ export class SavegamesUi {
    * one is ever built — docs/menu-saves.md § Save and Load tabs.
    */
   private visible: 'save' | 'load' | null = null;
+  /** Whether the next build of the visible list hands it the keyboard ({@link SavegamesUi.takeFocus}). */
+  private focusPending = false;
   private stale = { save: true, load: true };
   /**
    * Monotonic ticket for {@link SavegamesUi.renderVisible}: a render that finds a newer one started
@@ -168,14 +172,16 @@ export class SavegamesUi {
   }
 
   /**
-   * Which tab is showing — `Menu.setTab`'s hand-off. The tab it brings up takes the keyboard in
-   * its filter field (docs/menu-saves.md § Save and Load tabs).
+   * Which tab is showing — `Menu.setTab`'s hand-off. The tab it brings up takes the keyboard
+   * ({@link SavegamesUi.takeFocus}) once its list is built.
    * @param tab  null for one of the menu's others
    */
   setVisible(tab: 'save' | 'load' | null): void {
     this.visible = tab;
-    if (tab !== null) this.filterInputs[tab].focus();
+    this.focusPending = tab !== null;
     void this.renderVisible();
+    // A list that needed no rebuild is the one already on screen; a stale one focuses as it lands.
+    if (tab !== null && !this.stale[tab]) this.takeFocus(tab);
   }
 
   /**
@@ -222,6 +228,7 @@ export class SavegamesUi {
     this.stale[tab] = false;
     this.entries = entries;
     this.renderList(tab);
+    if (this.focusPending) this.takeFocus(tab);
   }
 
   private async save(): Promise<void> {
@@ -233,6 +240,8 @@ export class SavegamesUi {
     this.saveButton.disabled = !this.canSave;
     if (!ok) return;
     this.nameInput.value = '';
+    // The new row is the run's save now, and its Overwrite takes the focus as it lands.
+    this.focusPending = true;
     this.refresh();
   }
 
@@ -322,6 +331,7 @@ export class SavegamesUi {
       // hold: from the launcher, and over a replay, this is an ordinary button with nothing to warn
       // about.
       load.title = this.session === 'game' ? 'Hold to abandon the game you are running' : '';
+      load.dataset.id = meta.id;
       confirmOnHold(load, {
         hint: 'Hold Load to abandon the game you are running.',
         setStatus: this.setStatus,
@@ -339,6 +349,7 @@ export class SavegamesUi {
       // disabled button never shows its tooltip.
       overwrite.title = 'Hold to replace this save with the current moment';
       overwrite.disabled = !this.canSave;
+      overwrite.dataset.id = meta.id;
       confirmOnHold(overwrite, {
         hint: 'Hold Overwrite to replace that save.',
         setStatus: this.setStatus,
@@ -431,7 +442,24 @@ export class SavegamesUi {
 
   private async overwrite(id: string): Promise<void> {
     if (!this.canSave) return;
-    if (await attempt(this.setStatus, () => this.hooks.onOverwrite(id), 'Save overwritten.')) this.refresh();
+    if (!(await attempt(this.setStatus, () => this.hooks.onOverwrite(id), 'Save overwritten.'))) return;
+    // The rebuild replaces the button that held the focus; the new one takes it back.
+    this.focusPending = true;
+    this.refresh();
+  }
+
+  /**
+   * Hands a tab's keyboard to where it is used from: the Overwrite or Load of
+   * {@link SaveHooks.currentSave} — or, where the game has no save of its own or its row is
+   * filtered out or greyed, Save's name field and Load's filter. docs/menu-saves.md § Save and
+   * Load tabs.
+   */
+  private takeFocus(tab: 'save' | 'load'): void {
+    this.focusPending = false;
+    const current = this.hooks.currentSave();
+    const buttons = this.lists[tab].querySelectorAll<HTMLButtonElement>('button[data-id]');
+    const own = [...buttons].find((button) => button.dataset.id === current && !button.disabled);
+    (own ?? (tab === 'save' ? this.nameInput : this.filterInputs.load)).focus();
   }
 
   private load(id: string): void {

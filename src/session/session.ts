@@ -58,6 +58,11 @@ export class Session {
   private readonly deathmatch: boolean;
   /** The running level, or null. A {@link Game} is per-WAD-set/per-level, thrown away and replaced. */
   private game: Game | null = null;
+  /**
+   * The save the running game was loaded from or last wrote, which the Save and Load tabs focus;
+   * null with no game, and after any other start — docs/menu-saves.md § Save and Load tabs.
+   */
+  private currentSave: string | null = null;
   private readonly room: Room;
 
   constructor(options: SessionOptions) {
@@ -78,6 +83,7 @@ export class Session {
         onSave: (name) => this.withCapture((capture) => savegames.writeSave(capture, name)),
         onOverwrite: (id) => this.withCapture((capture) => savegames.overwriteSave(id, capture)),
         onLoad: (save) => this.loadSave(save),
+        currentSave: () => this.currentSave,
         // No game is the menu's own `session` gate, so there is nothing to say here.
         saveRefusal: () => this.game?.saveRefusal() ?? null,
       },
@@ -142,6 +148,7 @@ export class Session {
   disposeGame(): void {
     const finished = this.game;
     this.game = null;
+    this.currentSave = null;
     if (!finished) return;
     this.storeRecording(finished);
     finished.dispose();
@@ -229,6 +236,7 @@ export class Session {
         playerSkins,
         loading,
       });
+      this.currentSave = save?.id ?? null;
 
       // Recording begins on the level as loaded, before the first tic.
       // docs/replays.md § Recording.
@@ -316,11 +324,16 @@ export class Session {
 
   /**
    * The body Save, Overwrite and the autosave share: only the store call differs, and
-   * {@link Game.saveVia} owns the capture around it — docs/menu-saves.md § Save and Load tabs.
+   * {@link Game.saveVia} owns the capture around it. Whichever it wrote is the run's
+   * {@link Session.currentSave} from here on — docs/menu-saves.md § Save and Load tabs.
    */
-  private async withCapture(write: (capture: savegames.SaveCapture) => Promise<unknown>): Promise<void> {
+  private async withCapture(
+    write: (capture: savegames.SaveCapture) => Promise<savegames.SaveMeta>,
+  ): Promise<void> {
     if (!this.game) throw new Error('no running game to save');
-    await this.game.saveVia(write);
+    await this.game.saveVia(async (capture) => {
+      this.currentSave = (await write(capture)).id;
+    });
   }
 }
 
